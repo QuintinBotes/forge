@@ -1,0 +1,69 @@
+[project]
+name = "forge"
+version = "0.1.0"
+description = "Forge — OSS engineering orchestration platform"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "The Forge Authors" }]
+dependencies = [
+    "forge-contracts",
+    "forge-db",
+    "forge-workflow",
+    "forge-agent",
+    "forge-coordinator",
+    "forge-spec",
+    "forge-board",
+    "forge-knowledge",
+    "forge-integrations",
+    "forge-mcp",
+    "forge-policy",
+    "forge-skill",
+    "forge-eval",
+    "forge-api",
+    "forge-worker",
+    "forge-mcp-gateway",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "httpx>=0.27",
+]
+
+# The workspace root is a virtual project: its dependencies (every member) are
+# installed, but the root itself is not built or published.
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*", "apps/*"]
+exclude = ["packages/ui-kit", "apps/web"]
+
+[tool.uv.sources]
+forge-contracts = { workspace = true }
+forge-db = { workspace = true }
+forge-workflow = { workspace = true }
+forge-agent = { workspace = true }
+forge-coordinator = { workspace = true }
+forge-spec = { workspace = true }
+forge-board = { workspace = true }
+forge-knowledge = { workspace = true }
+forge-integrations = { workspace = true }
+forge-mcp = { workspace = true }
+forge-policy = { workspace = true }
+forge-skill = { workspace = true }
+forge-eval = { workspace = true }
+forge-api = { workspace = true }
+forge-worker = { workspace = true }
+forge-mcp-gateway = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "packages", "apps"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+asyncio_mode = "auto"

@@ -1,0 +1,45 @@
+.DEFAULT_GOAL := help
+.PHONY: help setup install dev test lint fmt typecheck migrate seed build clean
+
+help: ## Show available targets
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+
+setup: install ## Install all deps (python + node), then prepare local env
+	@echo "Setup complete. Start Postgres, then run 'make migrate' and 'make seed'."
+
+install: ## Resolve and install python (uv) and node (pnpm) dependencies
+	uv sync
+	pnpm install
+
+dev: ## Start all services for local development (docker compose)
+	docker compose -f deploy/docker-compose.dev.yml up --remove-orphans
+
+test: ## Run the python test suite
+	uv run pytest
+
+lint: ## Lint python sources with ruff (check + format verification)
+	uv run ruff check .
+	uv run ruff format --check .
+
+fmt: ## Auto-format and auto-fix python sources with ruff
+	uv run ruff format .
+	uv run ruff check --fix .
+
+typecheck: ## Static type-check python packages and apps with mypy
+	uv run mypy packages apps
+
+migrate: ## Apply database migrations (alembic upgrade head)
+	uv run alembic -c packages/db/alembic.ini upgrade head
+
+seed: ## Seed a demo workspace
+	uv run python -m forge_api.scripts.seed
+
+build: ## Build web assets and python wheels
+	pnpm -r build
+	uv build --all-packages
+
+clean: ## Remove python caches and build artifacts
+	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+	find . -type d -name '*.egg-info' -prune -exec rm -rf {} +
+	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build
