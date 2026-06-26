@@ -1,0 +1,97 @@
+"""Forge SQLAlchemy models — the shared data-model substrate.
+
+Importing this package registers every model on ``Base.metadata`` (used by
+Alembic's ``env.py`` and by ``Base.metadata.create_all`` in tests).
+"""
+
+from __future__ import annotations
+
+from forge_db.models import enums
+from forge_db.models.connections import MCPConnection, RepositoryConnection
+from forge_db.models.enums import (
+    APIKeyKind,
+    ApprovalGate,
+    ApprovalStatus,
+    ChunkType,
+    ExecutionMode,
+    IncidentSeverity,
+    IncidentState,
+    KnowledgeSourceKind,
+    MCPAuthType,
+    MCPIndexStrategy,
+    MCPTransport,
+    Priority,
+    RepoProvider,
+    RunStatus,
+    SpecStatus,
+    SyncMode,
+    TaskKind,
+    TaskStatus,
+    UserRole,
+    WorkflowState,
+)
+from forge_db.models.knowledge import (
+    CHUNK_TYPE_WEIGHTS,
+    EMBEDDING_DIM,
+    KnowledgeSource,
+    RetrievalChunk,
+)
+from forge_db.models.planning import (
+    Epic,
+    Incident,
+    Milestone,
+    SpecDocument,
+    Sprint,
+    Task,
+)
+from forge_db.models.profiles import PolicyProfile, SkillProfile
+from forge_db.models.project import Constitution, Project
+from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
+from forge_db.models.workspace import APIKey, User, Workspace
+
+__all__ = [
+    "CHUNK_TYPE_WEIGHTS",
+    "EMBEDDING_DIM",
+    "APIKey",
+    "APIKeyKind",
+    "AgentRun",
+    "ApprovalGate",
+    "ApprovalRequest",
+    "ApprovalStatus",
+    "ChunkType",
+    "Constitution",
+    "Epic",
+    "ExecutionMode",
+    "Incident",
+    "IncidentSeverity",
+    "IncidentState",
+    "KnowledgeSource",
+    "KnowledgeSourceKind",
+    "MCPAuthType",
+    "MCPConnection",
+    "MCPIndexStrategy",
+    "MCPTransport",
+    "Milestone",
+    "PolicyProfile",
+    "Priority",
+    "Project",
+    "RepoProvider",
+    "RepositoryConnection",
+    "RetrievalChunk",
+    "RunStatus",
+    "SkillProfile",
+    "SpecDocument",
+    "SpecStatus",
+    "Sprint",
+    "SubAgentRun",
+    "SyncMode",
+    "Task",
+    "TaskKind",
+    "TaskStatus",
+    "User",
+    "UserRole",
+    "WorkflowRun",
+    "WorkflowState",
+    "Workspace",
+    "enums",
+]
