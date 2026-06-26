@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ------------------------------------------------------------------- #
+  # Python: lint + type-check + tests (against a real pgvector Postgres) #
+  # ------------------------------------------------------------------- #
+  python:
+    name: python (lint + types + tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: forge
+          POSTGRES_PASSWORD: forge
+          POSTGRES_DB: forge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forge"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FORGE_TEST_DATABASE_URL: postgresql+psycopg://forge:forge@localhost:5432/forge_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+
+      - name: Format check (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Type-check (mypy)
+        # Module mode avoids the dual source-root ambiguity of `mypy packages apps`.
+        run: >-
+          uv run mypy
+          -p forge_contracts -p forge_db -p forge_workflow -p forge_agent
+          -p forge_coordinator -p forge_spec -p forge_board -p forge_knowledge
+          -p forge_integrations -p forge_mcp -p forge_policy -p forge_skill
+          -p forge_eval -p forge_api -p forge_worker -p forge_mcp_gateway
+
+      - name: Test (pytest)
+        run: uv run pytest -q
+
+  # ------------------------------------------------------------------- #
+  # Web: lint + build                                                    #
+  # ------------------------------------------------------------------- #
+  web:
+    name: web (lint + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm -r lint
+
+      - name: Build
+        run: pnpm -r build
+
+  # ------------------------------------------------------------------- #
+  # Deploy: validate compose files build cleanly                         #
+  # ------------------------------------------------------------------- #
+  compose:
+    name: compose (config validation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate production compose
+        run: docker compose -f deploy/docker-compose.yml config --quiet
+
+      - name: Validate dev compose
+        run: docker compose -f deploy/docker-compose.dev.yml config --quiet

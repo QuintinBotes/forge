@@ -1,0 +1,46 @@
+# Forge — Caddy reverse proxy (plan Task 0.6).
+#
+# Routes the public site through a single TLS-terminating edge. Caddy obtains and
+# renews certificates automatically for a real DOMAIN; for local use the default
+# `localhost` serves over Caddy's internal CA.
+#
+#   - /api/*  -> FastAPI backend (api:8000)
+#   - /mcp/*  -> MCP gateway service (mcp-gateway:8001)
+#   - /*      -> Next.js frontend (web:3000)
+
+{
+	# Operational email for ACME (Let's Encrypt). Override via ACME_EMAIL.
+	email {$ACME_EMAIL:admin@localhost}
+}
+
+{$DOMAIN:localhost} {
+	encode gzip zstd
+
+	# API surface.
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	# MCP gateway surface.
+	handle_path /mcp/* {
+		reverse_proxy mcp-gateway:8001
+	}
+
+	# Everything else is the web frontend.
+	handle {
+		reverse_proxy web:3000
+	}
+
+	# Security headers.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
