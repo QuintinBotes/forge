@@ -47,6 +47,11 @@ EXPECTED_TABLES = {
         "AgentRun",
         "ApprovalRequest",
         "SubAgentRun",
+        "IncidentAlert",
+        "IncidentEvent",
+        "RemediationPlan",
+        "Postmortem",
+        "PostmortemActionItem",
     ]
 }
 

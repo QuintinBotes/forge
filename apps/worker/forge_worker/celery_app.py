@@ -30,6 +30,7 @@ celery_app = Celery(
         "forge_worker.indexer",
         "forge_worker.syncer",
         "forge_worker.agent_runner",
+        "forge_worker.tasks.incident",
     ],
 )
 celery_app.conf.task_default_queue = "forge"

@@ -1,0 +1,10 @@
+{
+  "id": "1234567890",
+  "alert_id": "9988",
+  "aggreg_key": "checkout-api:latency",
+  "title": "[Triggered] Checkout latency P99 high",
+  "priority": "P1",
+  "alert_type": "error",
+  "scope": "service:checkout-api",
+  "body": "p99 latency exceeded 2s for 5 minutes"
+}

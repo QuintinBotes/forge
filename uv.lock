@@ -567,12 +567,16 @@ version = "0.1.0"
 source = { editable = "packages/board-core" }
 dependencies = [
     { name = "forge-contracts" },
+    { name = "forge-skill" },
+    { name = "forge-workflow" },
     { name = "sqlalchemy" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "forge-skill", editable = "packages/skill-sdk" },
+    { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
@@ -769,18 +773,24 @@ version = "0.1.0"
 source = { editable = "apps/worker" }
 dependencies = [
     { name = "celery" },
+    { name = "forge-board" },
     { name = "forge-contracts" },
     { name = "forge-db" },
     { name = "forge-knowledge" },
+    { name = "forge-skill" },
+    { name = "forge-workflow" },
     { name = "redis" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "celery", specifier = ">=5.3" },
+    { name = "forge-board", editable = "packages/board-core" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
+    { name = "forge-skill", editable = "packages/skill-sdk" },
+    { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "redis", specifier = ">=5.0" },
 ]
 

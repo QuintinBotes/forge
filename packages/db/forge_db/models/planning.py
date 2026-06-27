@@ -19,6 +19,7 @@ from forge_db.models.enums import (
     TaskKind,
     TaskStatus,
 )
+from forge_db.models.incidents import open_incident_dedup_index
 
 if TYPE_CHECKING:
     from forge_db.models.project import Project
@@ -198,10 +199,19 @@ class Task(WorkspaceScopedModel):
 
 
 class Incident(WorkspaceScopedModel):
-    """An operational incident (spec: Incident Workflow States)."""
+    """An operational incident (spec: Incident Workflow States).
+
+    F17 extends this with the incident-workflow lifecycle fields: ``source`` /
+    ``dedup_key`` (alert intake + dedup), ``lifecycle_state`` (the FSM-state
+    mirror spanning the forward + error/terminal states), ``commander_id``,
+    ``impact_summary``, ``acknowledged_at``, and ``postmortem_id``.
+    """
 
     __tablename__ = "incident"
-    __table_args__ = (UniqueConstraint("workspace_id", "key"),)
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "key"),
+        open_incident_dedup_index(),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("project.id", ondelete="CASCADE"), nullable=False
@@ -215,10 +225,22 @@ class Incident(WorkspaceScopedModel):
     state: Mapped[IncidentState] = mapped_column(
         enum_type(IncidentState), default=IncidentState.ALERT_RECEIVED, nullable=False
     )
+    # FSM-state mirror (free string: spans forward + error/terminal states).
+    lifecycle_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
+    dedup_key: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    commander_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
+    )
     blast_radius: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    impact_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     runbook: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     postmortem: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # FK to postmortem.id is intentionally omitted (would create an
+    # incident<->postmortem table cycle that SQLite create_all cannot resolve).
+    postmortem_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     detected_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     project: Mapped[Project] = relationship(back_populates="incidents")

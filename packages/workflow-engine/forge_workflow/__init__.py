@@ -32,6 +32,17 @@ from forge_workflow.fsm import (
     TransitionGraph,
     evaluate_guard,
 )
+from forge_workflow.incident import (
+    INCIDENT_DEFINITION_NAME,
+    INCIDENT_EVENTS,
+    INCIDENT_STATES,
+    INCIDENT_TERMINAL_STATES,
+    IncidentTransitionOutcome,
+    allowed_incident_events,
+    default_incident_definition,
+    drive_incident,
+    incident_graph,
+)
 from forge_workflow.store import (
     InMemoryWorkflowStore,
     SqlAlchemyWorkflowStore,
@@ -43,11 +54,16 @@ __version__ = "0.1.0"
 __all__ = [
     "DEFAULT_FEATURE_WORKFLOW_YAML",
     "DEFAULT_WORKFLOW_NAME",
+    "INCIDENT_DEFINITION_NAME",
+    "INCIDENT_EVENTS",
+    "INCIDENT_STATES",
+    "INCIDENT_TERMINAL_STATES",
     "RETRY_BUDGET_EXHAUSTED",
     "RETRY_BUDGET_REMAINING",
     "RETRY_COUNT_KEY",
     "AmbiguousTransitionError",
     "InMemoryWorkflowStore",
+    "IncidentTransitionOutcome",
     "InvalidTransitionError",
     "SqlAlchemyWorkflowStore",
     "TransitionGraph",
@@ -56,8 +72,12 @@ __all__ = [
     "WorkflowError",
     "WorkflowRunNotFoundError",
     "WorkflowStore",
+    "allowed_incident_events",
     "default_feature_definition",
+    "default_incident_definition",
+    "drive_incident",
     "evaluate_guard",
+    "incident_graph",
     "load_definition",
     "parse_definition",
 ]

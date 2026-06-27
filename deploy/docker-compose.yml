@@ -125,6 +125,11 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MCP_GATEWAY_URL: http://mcp-gateway:8001
       SECRET_KEY: ${SECRET_KEY:-change-me}
+      # Incident alert webhook signing secrets (F17); absent -> 501 fail-closed.
+      FORGE_PAGERDUTY_WEBHOOK_SECRET: ${FORGE_PAGERDUTY_WEBHOOK_SECRET:-}
+      FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
+      FORGE_SENTRY_WEBHOOK_SECRET: ${FORGE_SENTRY_WEBHOOK_SECRET:-}
+      FORGE_GRAFANA_WEBHOOK_SECRET: ${FORGE_GRAFANA_WEBHOOK_SECRET:-}
     depends_on:
       db:
         condition: service_healthy
@@ -161,12 +166,20 @@ services:
     image: forge/worker:${FORGE_VERSION:-0.1.0}
     restart: unless-stopped
     user: "1000:1000"
+    # Consume the default queue plus the dedicated F17 `incident` queue, so
+    # long-running incident diagnosis / recovery monitoring does not starve the
+    # feature/verification/indexing work on the default queue.
+    command: ["celery", "-A", "forge_worker", "worker", "--loglevel=info", "-Q", "forge,incident"]
     environment:
       FORGE_ENV: production
       FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
       FORGE_REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: http://minio:9000
       MCP_GATEWAY_URL: http://mcp-gateway:8001
+      FORGE_PAGERDUTY_WEBHOOK_SECRET: ${FORGE_PAGERDUTY_WEBHOOK_SECRET:-}
+      FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
+      FORGE_SENTRY_WEBHOOK_SECRET: ${FORGE_SENTRY_WEBHOOK_SECRET:-}
+      FORGE_GRAFANA_WEBHOOK_SECRET: ${FORGE_GRAFANA_WEBHOOK_SECRET:-}
     depends_on:
       db:
         condition: service_healthy

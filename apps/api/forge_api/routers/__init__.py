@@ -12,10 +12,12 @@ from fastapi import APIRouter
 
 from forge_api.routers import (
     agent,
+    alerts,
     approval,
     auth,
     board,
     health,
+    incidents,
     integration,
     knowledge,
     mcp,
@@ -40,6 +42,8 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     mcp.router,
     integration.router,
     approval.router,
+    incidents.router,
+    alerts.router,
     observability.router,
 )
 
@@ -47,10 +51,12 @@ __all__ = [
     "FEATURE_ROUTERS",
     "HEALTH_ROUTER",
     "agent",
+    "alerts",
     "approval",
     "auth",
     "board",
     "health",
+    "incidents",
     "integration",
     "knowledge",
     "mcp",

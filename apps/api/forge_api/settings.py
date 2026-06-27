@@ -57,6 +57,19 @@ class Settings(BaseSettings):
     slack_token: str | None = None
     slack_default_channel: str | None = None
 
+    # Per-provider alert webhook signing secrets (F17). Unset by default so the
+    # corresponding webhook returns 501 Not Configured (fail-closed): an alert is
+    # only trusted when its provider secret is configured and the signature over
+    # the exact raw bytes verifies.
+    pagerduty_webhook_secret: str | None = None
+    datadog_webhook_secret: str | None = None
+    sentry_webhook_secret: str | None = None
+    grafana_webhook_secret: str | None = None
+
+    # Recovery-monitoring knobs (F17).
+    incident_recovery_window_seconds: int = 300
+    incident_recovery_max_windows: int = 6
+
     # CORS — explicit list of allowed origins (JSON-encoded in the env var).
     # Locked down by default: no cross-origin access until a deployment names its
     # web origin(s). A wildcard ("*") is never combined with credentials (see
