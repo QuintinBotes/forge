@@ -7,11 +7,13 @@ embedding, fixture reranker. No network, no live Redis/Celery broker.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from forge_contracts.enums import SyncMode
 from forge_db.base import Base
 from forge_db.models import KnowledgeSource, Workspace
 from forge_db.session import create_session_factory
@@ -20,7 +22,7 @@ from forge_knowledge import (
     FixtureRerankerClient,
     KnowledgeService,
 )
-from forge_worker.syncer import sync_files, sync_source_task
+from forge_worker.syncer import sync_files, sync_repo, sync_source_task
 
 
 @pytest.fixture
@@ -86,3 +88,47 @@ def test_celery_task_is_registered() -> None:
 
     assert "forge.knowledge.sync_source" in celery_app.tasks
     assert sync_source_task.name == "forge.knowledge.sync_source"
+
+
+def test_sync_repo_full_sync_from_tree(
+    service: KnowledgeService, source_id: uuid.UUID, tmp_path: Path
+) -> None:
+    (tmp_path / "auth.py").write_text(FILES["auth.py"])
+    (tmp_path / "README.md").write_text(FILES["README.md"])
+    result = sync_repo(service, str(source_id), str(tmp_path), mode=SyncMode.FULL)
+    assert result.indexed > 0
+    assert result.source_id == str(source_id)
+
+
+def test_sync_source_task_with_files(
+    monkeypatch: pytest.MonkeyPatch,
+    service: KnowledgeService,
+    source_id: uuid.UUID,
+) -> None:
+    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    result = sync_source_task(str(source_id), files=FILES)
+    assert isinstance(result, dict)
+    assert result["indexed"] > 0
+
+
+def test_sync_source_task_with_root(
+    monkeypatch: pytest.MonkeyPatch,
+    service: KnowledgeService,
+    source_id: uuid.UUID,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "auth.py").write_text(FILES["auth.py"])
+    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    result = sync_source_task(str(source_id), root=str(tmp_path))
+    assert isinstance(result, dict)
+    assert result["indexed"] > 0
+
+
+def test_sync_source_task_requires_files_or_root(
+    monkeypatch: pytest.MonkeyPatch,
+    service: KnowledgeService,
+    source_id: uuid.UUID,
+) -> None:
+    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    with pytest.raises(ValueError, match="requires either"):
+        sync_source_task(str(source_id))

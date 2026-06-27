@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent.sandbox import WorktreeSandbox, load_agents_md
+from forge_agent.sandbox import SandboxError, WorktreeSandbox, _git, load_agents_md
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
 
@@ -65,3 +65,46 @@ def test_worktree_context_manager(tmp_path: Path) -> None:
         assert worktree.exists()
         path = worktree
     assert not path.exists()
+
+
+def test_create_twice_raises_already_created(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    sandbox = WorktreeSandbox(repo, base_branch="main")
+    sandbox.create("forge/once")
+    try:
+        with pytest.raises(SandboxError, match="already created"):
+            sandbox.create("forge/twice")
+    finally:
+        sandbox.cleanup()
+
+
+def test_cleanup_is_idempotent(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    sandbox = WorktreeSandbox(repo, base_branch="main")
+    worktree = sandbox.create("forge/clean")
+    sandbox.cleanup()
+    # A second cleanup on an already-removed sandbox is a no-op (no raise).
+    sandbox.cleanup()
+    assert not worktree.exists()
+
+
+def test_git_missing_binary_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def _raise(*_args: object, **_kwargs: object) -> object:
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr("forge_agent.sandbox.subprocess.run", _raise)
+    with pytest.raises(SandboxError, match="git executable not found"):
+        _git(tmp_path, "status")
+
+
+def test_git_command_failure_raises(tmp_path: Path) -> None:
+    # ``tmp_path`` is not a git repository, so ``git status`` exits non-zero and
+    # the helper surfaces a SandboxError carrying git's stderr.
+    with pytest.raises(SandboxError, match="failed"):
+        _git(tmp_path, "status")

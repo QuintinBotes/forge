@@ -74,3 +74,71 @@ def test_runaway_loop_is_bounded() -> None:
     compiled = g.compile()
     with pytest.raises(GraphError):
         compiled.invoke(_Counter(), max_steps=50)
+
+
+def _identity(state: _Counter) -> _Counter:
+    return state
+
+
+def test_add_node_rejects_reserved_end_name() -> None:
+    g: StateGraph[_Counter] = StateGraph()
+    with pytest.raises(GraphError, match="reserved"):
+        g.add_node(END, _identity)
+
+
+def test_add_node_rejects_duplicate() -> None:
+    g: StateGraph[_Counter] = StateGraph()
+    g.add_node("a", _identity)
+    with pytest.raises(GraphError, match="duplicate"):
+        g.add_node("a", _identity)
+
+
+def test_add_edge_after_conditional_edges_rejected() -> None:
+    g: StateGraph[_Counter] = StateGraph()
+    g.add_node("a", _identity)
+    g.add_conditional_edges("a", lambda _s: "x", {"x": END})
+    with pytest.raises(GraphError, match="conditional edges"):
+        g.add_edge("a", END)
+
+
+def test_add_conditional_edges_after_edge_rejected() -> None:
+    g: StateGraph[_Counter] = StateGraph()
+    g.add_node("a", _identity)
+    g.add_edge("a", END)
+    with pytest.raises(GraphError, match="unconditional edge"):
+        g.add_conditional_edges("a", lambda _s: "x", {"x": END})
+
+
+def test_compile_rejects_entry_point_not_a_node() -> None:
+    g: StateGraph[_Counter] = StateGraph()
+    g.add_node("a", _identity)
+    g.set_entry_point("ghost")
+    with pytest.raises(GraphError, match="entry point"):
+        g.compile()
+
+
+def test_compile_rejects_edge_source_not_a_node() -> None:
+    g: StateGraph[_Counter] = StateGraph()
+    g.add_node("a", _identity)
+    g.set_entry_point("a")
+    g.add_edge("ghost", "a")
+    with pytest.raises(GraphError, match="edge source"):
+        g.compile()
+
+
+def test_compile_rejects_conditional_source_not_a_node() -> None:
+    g: StateGraph[_Counter] = StateGraph()
+    g.add_node("a", _identity)
+    g.set_entry_point("a")
+    g.add_conditional_edges("ghost", lambda _s: "x", {"x": "a"})
+    with pytest.raises(GraphError, match="conditional source"):
+        g.compile()
+
+
+def test_compile_rejects_conditional_target_not_a_node() -> None:
+    g: StateGraph[_Counter] = StateGraph()
+    g.add_node("a", _identity)
+    g.set_entry_point("a")
+    g.add_conditional_edges("a", lambda _s: "x", {"x": "ghost"})
+    with pytest.raises(GraphError, match="conditional target"):
+        g.compile()
