@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from forge_agent.context import build_system_prompt, skill_profile_directives
 from forge_agent.graph import END, CompiledGraph, GraphError, StateGraph
+from forge_agent.multi_repo import MultiRepoWorkspace, WorktreeHandle
 from forge_agent.policy_gate import ActionPolicyGate, PolicyEvaluatorGate, PolicyGate
+from forge_agent.policy_guard import MultiRepoPolicyGuard
 from forge_agent.runtime import AgentRunner
 from forge_agent.sandbox import SandboxError, WorktreeSandbox, load_agents_md
 from forge_agent.state import AgentState
@@ -38,6 +40,8 @@ __all__ = [
     "AgentState",
     "CompiledGraph",
     "GraphError",
+    "MultiRepoPolicyGuard",
+    "MultiRepoWorkspace",
     "PolicyEvaluatorGate",
     "PolicyGate",
     "SandboxError",
@@ -46,6 +50,7 @@ __all__ = [
     "ToolHandler",
     "ToolRegistry",
     "ToolResult",
+    "WorktreeHandle",
     "WorktreeSandbox",
     "build_system_prompt",
     "default_tool_registry",

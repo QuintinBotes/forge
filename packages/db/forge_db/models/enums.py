@@ -291,6 +291,33 @@ class PMDeliveryStatus(enum.StrEnum):
     ERROR = "error"
 
 
+class RepoRole(enum.StrEnum):
+    """F22 multi-repo: a repo target's coordination role within a task."""
+
+    PRIMARY = "primary"
+    SECONDARY = "secondary"
+
+
+class PRGroupStatus(enum.StrEnum):
+    """F22 multi-repo PR-group (merge-unit) status."""
+
+    OPEN = "open"
+    READY = "ready"
+    MERGING = "merging"
+    MERGED = "merged"
+    PARTIALLY_MERGED = "partially_merged"
+    FAILED = "failed"
+
+
+class PRMergeState(enum.StrEnum):
+    """F22 per-repo PR merge state within a group."""
+
+    PENDING = "pending"
+    MERGED = "merged"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
 __all__ = [
     "APIKeyKind",
     "ApprovalGate",
@@ -315,8 +342,11 @@ __all__ = [
     "PMProvider",
     "PMSyncDirection",
     "PMSyncState",
+    "PRGroupStatus",
+    "PRMergeState",
     "Priority",
     "RepoProvider",
+    "RepoRole",
     "RunStatus",
     "SandboxKind",
     "SandboxNetwork",

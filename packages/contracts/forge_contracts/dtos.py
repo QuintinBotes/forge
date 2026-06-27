@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -178,13 +178,30 @@ class AcceptanceCriterion(_Model):
 
 
 class RepoTarget(_Model):
-    """A repository an agent run may write to (spec: Task Schema ``repo_targets``)."""
+    """A repository an agent run may write to (spec: Task Schema ``repo_targets``).
+
+    F22 widens this with multi-repo coordination fields. They are all optional
+    with V1-compatible defaults so single-repo tasks (the V1 shape) keep parsing
+    and behaving identically; ``role`` only becomes load-bearing when a task has
+    more than one repo target (see ``MergePlanBuilder``).
+    """
 
     repo: str
     branch_strategy: str = "task_branch"
     branch_prefix: str | None = None
     base_branch: str = "main"
     worktree: bool = True
+    # --- F22 multi-repo coordination ---------------------------------------- #
+    #: Exactly one target in a multi-repo task is ``primary`` (the dependency
+    #: root / merge anchor); the rest are ``secondary``.
+    role: Literal["primary", "secondary"] = "secondary"
+    #: ``repo`` ids whose PRs must merge BEFORE this repo's PR (a DAG edge).
+    depends_on: list[str] = Field(default_factory=list)
+    #: Per-repo skill-profile override; ``None`` falls back to the task default.
+    skill_profile: str | None = None
+    #: When ``False`` an empty/absent diff for this repo does not block the merge
+    #: gate (e.g. a generated-client repo that turned out to need no change).
+    required_for_merge: bool = True
 
 
 class ApprovalPolicy(_Model):
@@ -271,6 +288,42 @@ class AgentObjective(_Model):
     model: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def primary_repo_target(self) -> RepoTarget | None:
+        """The single ``role='primary'`` target, else the first target (V1).
+
+        For a single-repo task (the V1 shape) the lone target is the primary
+        regardless of its declared ``role`` — this keeps ``objective.repo_target``
+        style access working byte-for-byte for V1 callers.
+        """
+        if not self.repo_targets:
+            return None
+        for target in self.repo_targets:
+            if target.role == "primary":
+                return target
+        return self.repo_targets[0]
+
+    @property
+    def repo_target(self) -> RepoTarget | None:
+        """V1 back-compat alias for :attr:`primary_repo_target`."""
+        return self.primary_repo_target
+
+
+class RepoChangeSet(_Model):
+    """The diff an agent produced in one repo worktree (F22 multi-repo result).
+
+    ``has_changes=False`` means the agent decided this repo needed no edit; no PR
+    is opened for it and it is excluded from the merge gate.
+    """
+
+    repo: str
+    branch_name: str | None = None
+    base_commit_sha: str | None = None
+    head_commit_sha: str | None = None
+    changed_files: list[str] = Field(default_factory=list)
+    diff_stat: dict[str, int] = Field(default_factory=dict)
+    has_changes: bool = False
+
 
 class AgentRunResult(_Model):
     """Structured output of ``AgentRuntime.run`` (spec: AgentRun ``steps``/output)."""
@@ -286,6 +339,88 @@ class AgentRunResult(_Model):
     acceptance_criteria_satisfied: list[str] = Field(default_factory=list)
     artifacts: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    # F22: one change set per repo target (empty on the V1 single-repo path).
+    repo_change_sets: list[RepoChangeSet] = Field(default_factory=list)
+
+    @property
+    def changed_files(self) -> list[str]:
+        """V1 back-compat: the primary (first) repo's changed files, flattened."""
+        if not self.repo_change_sets:
+            return []
+        return list(self.repo_change_sets[0].changed_files)
+
+
+# --------------------------------------------------------------------------- #
+# Multi-repo execution (F22)                                                   #
+# --------------------------------------------------------------------------- #
+
+
+class MergePlan(_Model):
+    """The dependency-ordered merge plan for a multi-repo run (F22).
+
+    ``merge_order`` is a topological sort of the ``depends_on`` DAG (a repo's
+    dependencies merge before it); the ``primary`` repo sorts first among repos
+    with no outstanding dependency.
+    """
+
+    primary_repo_id: str
+    merge_order: list[str] = Field(default_factory=list)
+    edges: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class CrossPRLink(_Model):
+    """One repo's PR within a multi-repo PR group (for cross-PR link blocks)."""
+
+    repo_id: str
+    pr_number: int | None = None
+    url: str | None = None
+    merge_order: int = 0
+
+
+class PRGroup(_Model):
+    """The set of PRs opened by one multi-repo run — the merge unit (F22)."""
+
+    id: uuid.UUID | None = None
+    workflow_run_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    merge_order: list[str] = Field(default_factory=list)
+    prs: list[CrossPRLink] = Field(default_factory=list)
+    status: Literal[
+        "open", "ready", "merging", "merged", "partially_merged", "failed"
+    ] = "open"
+    merged_repo_ids: list[str] = Field(default_factory=list)
+
+
+class RepoMergeStatus(_Model):
+    """Per-repo mergeability within the aggregate gate (F22)."""
+
+    repo_id: str
+    has_changes: bool = True
+    required_for_merge: bool = True
+    review_approved: bool = False
+    ci_green: bool = False
+    spec_validated: bool = False
+    merge_order: int = 0
+    blocking_reasons: list[str] = Field(default_factory=list)
+
+
+class MultiRepoMergeGateResult(_Model):
+    """Aggregate merge gate across every required, changed repo (F22)."""
+
+    can_merge: bool = False
+    repos: list[RepoMergeStatus] = Field(default_factory=list)
+    merge_order: list[str] = Field(default_factory=list)
+    blocking_reasons: list[str] = Field(default_factory=list)
+
+
+class MergeGroupOutcome(_Model):
+    """The result of an ordered, halt-on-failure group merge (F22)."""
+
+    status: Literal["merged", "partially_merged", "blocked", "failed"] = "blocked"
+    merged_repo_ids: list[str] = Field(default_factory=list)
+    failed_repo_id: str | None = None
+    workflow_state: str | None = None
+    gate: MultiRepoMergeGateResult | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -894,6 +1029,7 @@ __all__ = [
     "CheckResult",
     "Chunk",
     "Constitution",
+    "CrossPRLink",
     "Decision",
     "DeployRules",
     "EpicDTO",
@@ -913,18 +1049,24 @@ __all__ = [
     "MCPResource",
     "MCPResourceContent",
     "MCPToolResult",
+    "MergeGroupOutcome",
+    "MergePlan",
     "MilestoneDTO",
     "ModelMessage",
     "ModelRequest",
     "ModelResponse",
     "ModelStreamEvent",
     "ModelToolCall",
+    "MultiRepoMergeGateResult",
     "OpenQuestion",
+    "PRGroup",
     "Policy",
     "PolicySkillProfiles",
     "PullRequest",
     "PullRequestRequest",
     "Ranked",
+    "RepoChangeSet",
+    "RepoMergeStatus",
     "RepoSyncResult",
     "RepoTarget",
     "RepositoryConnection",

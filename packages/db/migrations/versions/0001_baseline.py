@@ -43,6 +43,9 @@ DEFERRED_TABLES = frozenset(
         # F21 automations — created by 0005_f21_automations.
         "automation_rule",
         "automation_execution",
+        # F22 multi-repo execution — created by 0006_f22_multi_repo.
+        "pr_group",
+        "agent_repo_workspace",
     }
 )
 

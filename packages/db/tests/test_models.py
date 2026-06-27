@@ -76,6 +76,9 @@ EXPECTED_MODELS = [
     # F21 automation tables.
     "AutomationRule",
     "AutomationExecution",
+    # F22 multi-repo execution tables.
+    "PRGroup",
+    "AgentRepoWorkspace",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
