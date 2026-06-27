@@ -16,6 +16,15 @@
 {$DOMAIN:localhost} {
 	encode gzip zstd
 
+	# Incident alert webhooks (F17): provider signatures are HMAC over the EXACT
+	# raw request bytes, so this path MUST be proxied verbatim — do NOT add any
+	# request_body buffering/rewrite/transform here (same constraint as the
+	# GitHub webhook). Caddy's reverse_proxy streams the body unchanged by
+	# default; keep it that way.
+	handle /api/v1/integrations/alerts/*/webhook {
+		reverse_proxy api:8000
+	}
+
 	# API surface.
 	handle_path /api/* {
 		reverse_proxy api:8000

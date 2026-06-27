@@ -10,6 +10,9 @@ dependencies = [
     "forge-contracts",
     "forge-db",
     "forge-knowledge",
+    "forge-board",
+    "forge-skill",
+    "forge-workflow",
     "celery>=5.3",
     "redis>=5.0",
 ]

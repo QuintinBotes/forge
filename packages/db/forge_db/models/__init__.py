@@ -30,6 +30,13 @@ from forge_db.models.enums import (
     UserRole,
     WorkflowState,
 )
+from forge_db.models.incidents import (
+    IncidentAlert,
+    IncidentEvent,
+    Postmortem,
+    PostmortemActionItem,
+    RemediationPlan,
+)
 from forge_db.models.knowledge import (
     CHUNK_TYPE_WEIGHTS,
     EMBEDDING_DIM,
@@ -63,6 +70,8 @@ __all__ = [
     "Epic",
     "ExecutionMode",
     "Incident",
+    "IncidentAlert",
+    "IncidentEvent",
     "IncidentSeverity",
     "IncidentState",
     "KnowledgeSource",
@@ -73,8 +82,11 @@ __all__ = [
     "MCPTransport",
     "Milestone",
     "PolicyProfile",
+    "Postmortem",
+    "PostmortemActionItem",
     "Priority",
     "Project",
+    "RemediationPlan",
     "RepoProvider",
     "RepositoryConnection",
     "RetrievalChunk",

@@ -1,0 +1,45 @@
+{# Postmortem template (F17).
+
+   Canonical reference for the postmortem markdown structure. The deterministic
+   V1 `TemplatePostmortemComposer` (board-core) renders this layout in pure
+   Python (`forge_board.incidents.render_postmortem_md`) — matching the spec
+   engine's `render_*_md` pattern — so board-core needs no Jinja dependency. An
+   LLM-backed composer plugging in behind the `PostmortemComposer` Protocol may
+   render this template directly. #}
+# Postmortem: {{ summary }}
+
+## Root Cause
+
+{{ root_cause | default("_unknown_") }}
+
+## Resolution
+
+{{ resolution | default("_n/a_") }}
+
+## Timeline
+
+{% for entry in timeline %}
+- `{{ entry.at.isoformat() }}` — {{ entry.summary }}
+{% else %}
+_No timeline entries recorded._
+{% endfor %}
+
+## Contributing Factors
+
+{% for factor in contributing_factors %}
+- {{ factor }}
+{% else %}
+_None recorded._
+{% endfor %}
+
+## Lessons Learned
+
+{% for lesson in lessons_learned %}
+- {{ lesson }}
+{% endfor %}
+
+## Action Items
+
+{% for item in action_items %}
+- [{{ item.kind }}/{{ item.priority }}] {{ item.title }} — {{ item.description }}
+{% endfor %}

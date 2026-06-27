@@ -1,0 +1,14 @@
+{
+  "status": "firing",
+  "groupKey": "{}/{alertname=\"HighErrorRate\"}",
+  "commonLabels": {"alertname": "HighErrorRate", "severity": "critical", "service": "checkout-api"},
+  "commonAnnotations": {"summary": "High error rate", "description": "5xx > 5% for 10m"},
+  "alerts": [
+    {
+      "status": "firing",
+      "fingerprint": "abc123fingerprint",
+      "labels": {"alertname": "HighErrorRate", "severity": "critical", "service": "checkout-api"},
+      "annotations": {"description": "5xx > 5% for 10m"}
+    }
+  ]
+}

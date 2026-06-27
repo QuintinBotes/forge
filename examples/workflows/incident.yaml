@@ -1,0 +1,99 @@
+# Community copy of the canonical incident workflow (F17).
+#
+# This MUST parse to the same WorkflowDefinition as the wheel-bundled
+# `forge_workflow/definitions/incident.yaml` (a drift test enforces equality).
+# See docs/FORGE_SPEC.md ("Incident Workflow States").
+workflow: incident
+version: "1"
+modes:
+  default: single_agent
+
+transitions:
+  - from: alert_received
+    to: incident_created
+    action: alert_ingested
+
+  - from: incident_created
+    to: context_gathering
+    action: incident_acknowledged
+    skill: incident-response
+
+  - from: context_gathering
+    to: impact_assessed
+    action: context_gathered
+    skill: incident-response
+
+  - from: impact_assessed
+    to: remediation_proposed
+    action: impact_assessed
+    skill: incident-response
+
+  - from: remediation_proposed
+    to: awaiting_approval
+    action: remediation_proposed
+    condition: remediation_within_blast_radius
+
+  - from: remediation_proposed
+    to: needs_human_input
+    action: remediation_blast_radius_exceeded
+    condition: remediation_exceeds_blast_radius
+
+  - from: awaiting_approval
+    to: executing_runbook
+    action: remediation_approved
+    condition: approval_granted
+    record: approval_event
+
+  - from: awaiting_approval
+    to: needs_human_input
+    action: remediation_rejected
+    record: approval_event
+
+  - from: executing_runbook
+    to: monitoring
+    action: runbook_completed
+
+  - from: executing_runbook
+    to: remediation_proposed
+    when: runbook_step_failed
+    condition: retry_budget_remaining
+    skill: incident-response
+
+  - from: executing_runbook
+    to: needs_human_input
+    when: runbook_step_failed
+    condition: retry_budget_exhausted
+
+  - from: monitoring
+    to: resolved
+    action: recovery_confirmed
+
+  - from: monitoring
+    to: remediation_proposed
+    when: recovery_failed
+    condition: retry_budget_remaining
+    skill: incident-response
+
+  - from: monitoring
+    to: needs_human_input
+    when: recovery_failed
+    condition: retry_budget_exhausted
+
+  - from: resolved
+    to: postmortem_created
+    action: postmortem_requested
+
+  - from: postmortem_created
+    to: closed
+    action: close
+    condition: postmortem_persisted
+
+retry_policy:
+  max_retries: 2
+  backoff: exponential
+  initial_delay_seconds: 60
+
+escalation_policy:
+  confidence_threshold: 0.72
+  on_low_confidence: pause_and_notify
+  on_policy_conflict: escalate_to_admin

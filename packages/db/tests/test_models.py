@@ -33,7 +33,9 @@ from forge_db.models import (
 from forge_db.models.enums import ChunkType
 from forge_db.models.knowledge import CHUNK_TYPE_WEIGHTS
 
-# The full spec Core Data Model — 22 entities.
+# The full spec Core Data Model — base entities + the F17 incident-workflow
+# tables (incident_alert / incident_event / remediation_plan / postmortem /
+# postmortem_action_item) that extend the model.
 EXPECTED_MODELS = [
     "Workspace",
     "User",
@@ -56,6 +58,12 @@ EXPECTED_MODELS = [
     "AgentRun",
     "ApprovalRequest",
     "SubAgentRun",
+    # F17 incident-workflow tables.
+    "IncidentAlert",
+    "IncidentEvent",
+    "RemediationPlan",
+    "Postmortem",
+    "PostmortemActionItem",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

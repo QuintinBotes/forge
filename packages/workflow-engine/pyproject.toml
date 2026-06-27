@@ -19,3 +19,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["forge_workflow"]
+artifacts = ["forge_workflow/definitions/*.yaml"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"forge_workflow/definitions" = "forge_workflow/definitions"
