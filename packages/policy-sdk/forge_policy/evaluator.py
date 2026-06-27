@@ -33,6 +33,7 @@ from forge_contracts import (
     Policy,
     PolicyEvaluator,
     ToolCall,
+    UnknownRepoError,
 )
 
 #: Tool/action names that write to (or delete from) the filesystem and are
@@ -249,8 +250,56 @@ class RepoPolicyEvaluator:
 _: PolicyEvaluator = RepoPolicyEvaluator()
 
 
+def repo_of(call: ToolCall) -> str | None:
+    """Resolve the target repo id from a tool call (F22).
+
+    The repo is carried in the tool's ``arguments`` (every multi-repo tool arg
+    schema gains a required ``repo`` field) and, as a fallback, in ``metadata``.
+    Returns ``None`` when the call does not name a repo — the caller treats a
+    missing repo as out-of-scope (no implicit default).
+    """
+    for source in (call.arguments, call.metadata):
+        value = source.get("repo")
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+class RepoScopedPolicyEvaluator:
+    """Repo-aware wrapper that selects a repo's policy before evaluating (F22).
+
+    Holds a ``repo_id -> Policy`` map (e.g. from :func:`load_policies`). For each
+    :class:`~forge_contracts.ToolCall` it selects ``policies[call.repo]`` and
+    delegates to the single-repo :func:`evaluate`. There is **no merged
+    super-policy** and **no implicit default repo**: an out-of-scope or missing
+    ``repo`` raises :class:`~forge_contracts.UnknownRepoError` (it is denied, not
+    coerced — spec §8).
+    """
+
+    def __init__(self, policies: dict[str, Policy]) -> None:
+        self._policies = dict(policies)
+
+    @property
+    def repos(self) -> list[str]:
+        return list(self._policies)
+
+    def policy_for(self, repo: str) -> Policy:
+        try:
+            return self._policies[repo]
+        except KeyError as exc:
+            raise UnknownRepoError(repo) from exc
+
+    def evaluate(self, call: ToolCall) -> Decision:
+        repo = repo_of(call)
+        if repo is None or repo not in self._policies:
+            raise UnknownRepoError(repo)
+        return evaluate(call, self._policies[repo])
+
+
 __all__ = [
     "WRITE_ACTIONS",
     "RepoPolicyEvaluator",
+    "RepoScopedPolicyEvaluator",
     "evaluate",
+    "repo_of",
 ]

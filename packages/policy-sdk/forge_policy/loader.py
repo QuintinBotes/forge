@@ -12,10 +12,24 @@ from pathlib import Path
 
 import yaml
 
-from forge_contracts import Policy
+from forge_contracts import ForgeError, Policy
 
 #: Conventional location of the machine-readable policy inside a repo.
 POLICY_RELATIVE_PATH = Path(".forge") / "policy.yaml"
+
+
+class PolicyLoadError(ForgeError):
+    """Raised when a repo's ``.forge/policy.yaml`` cannot be loaded (F22).
+
+    Multi-repo loading is fail-closed *per repo*: a single bad/missing policy
+    fails the whole run, named by ``repo`` — never a partial, silently-permissive
+    run (spec §8 "Fail-closed config").
+    """
+
+    def __init__(self, repo: str, cause: Exception) -> None:
+        self.repo = repo
+        self.cause = cause
+        super().__init__(f"failed to load policy for repo {repo!r}: {cause}")
 
 
 def resolve_policy_path(repo_root: str | Path) -> Path:
@@ -54,4 +68,29 @@ def load_policy(repo_root: str | Path) -> Policy:
     return Policy.model_validate(raw)
 
 
-__all__ = ["POLICY_RELATIVE_PATH", "load_policy", "resolve_policy_path"]
+def load_policies(worktree_roots: dict[str, str | Path]) -> dict[str, Policy]:
+    """Load + validate the policy for every repo in a multi-repo run (F22).
+
+    ``worktree_roots`` maps each ``repo_id`` to the repo directory (or a direct
+    policy-file path). Loading is **fail-closed per repo**: the first repo whose
+    policy is missing/invalid raises :class:`PolicyLoadError` naming that repo, so
+    a run never starts with a partially-loaded (and therefore unsafe) policy set.
+
+    Returns a ``repo_id -> Policy`` mapping with one entry per input repo.
+    """
+    policies: dict[str, Policy] = {}
+    for repo_id, root in worktree_roots.items():
+        try:
+            policies[repo_id] = load_policy(root)
+        except Exception as exc:
+            raise PolicyLoadError(repo_id, exc) from exc
+    return policies
+
+
+__all__ = [
+    "POLICY_RELATIVE_PATH",
+    "PolicyLoadError",
+    "load_policies",
+    "load_policy",
+    "resolve_policy_path",
+]

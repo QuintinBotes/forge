@@ -48,6 +48,19 @@ class MCPWriteForbiddenError(ForgeError):
     """
 
 
+class UnknownRepoError(ForgeError, KeyError):
+    """Raised when a multi-repo tool call names a repo outside the run's scope.
+
+    F22: every tool call carries a ``repo`` evaluated against *that* repo's
+    policy — there is no implicit default repo and no merged super-policy, so an
+    unknown/out-of-scope repo is denied rather than coerced.
+    """
+
+    def __init__(self, repo: object) -> None:
+        self.repo = repo
+        super().__init__(f"unknown repo (not in run scope): {repo!r}")
+
+
 __all__ = [
     "ApprovalRequiredError",
     "CycleError",
@@ -55,5 +68,6 @@ __all__ = [
     "MCPWriteForbiddenError",
     "PolicyViolationError",
     "SpecGateError",
+    "UnknownRepoError",
     "UnknownSkillProfileError",
 ]

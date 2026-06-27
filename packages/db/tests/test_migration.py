@@ -244,6 +244,50 @@ def test_f21_automations_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F22 multi-repo tables, owned by the 0006_f22_multi_repo migration.
+F22_TABLES = {"pr_group", "agent_repo_workspace"}
+
+
+def test_f22_multi_repo_migration_up_down(alembic_config: Config) -> None:
+    """F22 AC: 0006_f22_multi_repo creates the pr_group + agent_repo_workspace
+    tables (with their unique constraints) and drops them on downgrade, leaving
+    the baseline + PM + sandbox + F20 + F21 tables intact."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to the F21 migration: F22 tables absent, core present.
+        command.upgrade(alembic_config, "0005_f21_automations")
+        after_f21 = set(inspect(engine).get_table_names())
+        assert not (F22_TABLES & after_f21), "F21 stage must not create F22 tables"
+        assert after_f21 >= EXPECTED_TABLES
+
+        # Apply the F22 migration: both tables appear with their unique constraints.
+        command.upgrade(alembic_config, "0006_f22_multi_repo")
+        inspector = inspect(engine)
+        after_f22 = set(inspector.get_table_names())
+        assert after_f22 >= F22_TABLES, f"missing F22 tables: {sorted(F22_TABLES - after_f22)}"
+
+        pr_group_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("pr_group")
+        }
+        assert "uq_pr_group_workflow_run_id" in pr_group_uniques
+        arw_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("agent_repo_workspace")
+        }
+        assert "uq_agent_repo_workspace_agent_run_id_repo_id" in arw_uniques
+
+        # Downgrade one step: F22 tables gone, everything else untouched.
+        command.downgrade(alembic_config, "0005_f21_automations")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (F22_TABLES & after_down), "downgrade left F22 tables"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and
