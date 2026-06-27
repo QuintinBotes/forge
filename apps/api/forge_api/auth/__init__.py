@@ -1,7 +1,7 @@
 """Auth & secrets layer for the Forge API (Task 1.15).
 
 Public surface:
-- :mod:`crypto` — standard-library authenticated encryption for secrets at rest.
+- :mod:`crypto` — authenticated encryption for secrets at rest (Fernet default).
 - :mod:`vault` — encrypted, per-workspace BYOK secret store.
 - :mod:`apikeys` — Forge API-key minting / verification (hashed, never stored raw).
 - :mod:`rbac` — role -> permission matrix and evaluation helpers.
@@ -11,7 +11,13 @@ Public surface:
 from __future__ import annotations
 
 from forge_api.auth.apikeys import APIKeyInfo, APIKeyStore, generate_api_token
-from forge_api.auth.crypto import HmacAeadCipher, InvalidTokenError, generate_key
+from forge_api.auth.crypto import (
+    FernetCipher,
+    HmacAeadCipher,
+    InvalidTokenError,
+    default_cipher,
+    generate_key,
+)
 from forge_api.auth.rbac import (
     ROLE_PERMISSIONS,
     Permission,
@@ -35,6 +41,7 @@ __all__ = [
     "APIKeyStore",
     "AuthService",
     "AuthenticationError",
+    "FernetCipher",
     "HmacAeadCipher",
     "InvalidTokenError",
     "Permission",
@@ -43,6 +50,7 @@ __all__ = [
     "SecretNotFoundError",
     "SecretVault",
     "can",
+    "default_cipher",
     "ensure",
     "generate_api_token",
     "generate_key",
