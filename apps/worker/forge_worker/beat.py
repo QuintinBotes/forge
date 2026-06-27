@@ -13,18 +13,29 @@ import os
 from forge_worker.celery_app import celery_app
 
 SANDBOX_REAP_TASK = "sandbox.reap_orphans"
+MCP_REFRESH_TASK = "forge.knowledge.refresh_stale_mcp_sources"
 
 
 def reap_interval_seconds() -> float:
     return float(os.environ.get("FORGE_SANDBOX_REAP_INTERVAL_SECONDS", "300"))
 
 
+def mcp_index_poll_seconds() -> float:
+    """Beat cadence for the F20 stale-MCP-source refresh (``MCP_INDEX_POLL_SECONDS``)."""
+    return float(os.environ.get("MCP_INDEX_POLL_SECONDS", "300"))
+
+
 def configure_beat(app: object) -> dict[str, object]:
-    """Install the sandbox-reaper beat entry on ``app`` and return the schedule."""
+    """Install the periodic beat entries on ``app`` and return the schedule."""
     schedule = {
         "sandbox-reap-orphans": {
             "task": SANDBOX_REAP_TASK,
             "schedule": reap_interval_seconds(),
+        },
+        # F20: periodically refresh stale sync-and-index MCP sources.
+        "mcp-refresh-stale-sources": {
+            "task": MCP_REFRESH_TASK,
+            "schedule": mcp_index_poll_seconds(),
         },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
@@ -35,4 +46,11 @@ def configure_beat(app: object) -> dict[str, object]:
 
 BEAT_SCHEDULE = configure_beat(celery_app)
 
-__all__ = ["BEAT_SCHEDULE", "SANDBOX_REAP_TASK", "configure_beat", "reap_interval_seconds"]
+__all__ = [
+    "BEAT_SCHEDULE",
+    "MCP_REFRESH_TASK",
+    "SANDBOX_REAP_TASK",
+    "configure_beat",
+    "mcp_index_poll_seconds",
+    "reap_interval_seconds",
+]

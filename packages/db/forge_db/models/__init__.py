@@ -53,6 +53,10 @@ from forge_db.models.knowledge import (
     KnowledgeSource,
     RetrievalChunk,
 )
+from forge_db.models.mcp_index import (
+    KnowledgeSyncRun,
+    MCPIndexedResource,
+)
 from forge_db.models.planning import (
     Epic,
     Incident,
@@ -88,9 +92,11 @@ __all__ = [
     "IncidentState",
     "KnowledgeSource",
     "KnowledgeSourceKind",
+    "KnowledgeSyncRun",
     "MCPAuthType",
     "MCPConnection",
     "MCPIndexStrategy",
+    "MCPIndexedResource",
     "MCPTransport",
     "Milestone",
     "PMAuthType",

@@ -70,6 +70,9 @@ EXPECTED_MODELS = [
     "PMWebhookDelivery",
     # F19 container-sandboxing table.
     "SandboxInstance",
+    # F20 MCP sync-and-index tables.
+    "KnowledgeSyncRun",
+    "MCPIndexedResource",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

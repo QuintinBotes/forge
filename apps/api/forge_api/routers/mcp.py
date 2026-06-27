@@ -19,6 +19,7 @@ MCP security rules map to HTTP status codes:
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import lru_cache
@@ -26,10 +27,14 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.auth.rbac import Permission
+from forge_api.db import get_session_factory
 from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
+from forge_api.schemas.mcp import McpIndexStatus, UpdateConnectionRequest
+from forge_api.services import mcp_index_service
 from forge_contracts import (
     ApprovalRequiredError,
     MCPAuditEntry,
@@ -40,6 +45,7 @@ from forge_contracts import (
     MCPWriteForbiddenError,
     PolicyViolationError,
 )
+from forge_contracts.enums import MCPIndexStrategy
 from forge_mcp import MCPConnectionManager
 from forge_mcp.exceptions import (
     MCPConnectionNotFoundError,
@@ -66,6 +72,16 @@ router = APIRouter(
 ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
 WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 RunnerDep = Annotated[Principal, Depends(require_permission(Permission.RUN_AGENT))]
+# F20: flipping index_strategy, reindex, and switch-away are admin-only mutations.
+AdminDep = Annotated[Principal, Depends(require_permission(Permission.ADMIN))]
+
+
+def get_mcp_session_factory() -> sessionmaker[Session]:
+    """Session factory for the F20 index control plane (overridable in tests)."""
+    return get_session_factory()
+
+
+SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_mcp_session_factory)]
 
 
 # --------------------------------------------------------------------------- #
@@ -223,3 +239,106 @@ def list_audit(
         # (raises 404 otherwise), then return its trail.
         manager.get(connection_id, workspace_id=principal.workspace_id)
         return manager.audit_entries(connection_id, workspace_id=principal.workspace_id)
+
+
+# --------------------------------------------------------------------------- #
+# F20: sync-and-index control plane                                            #
+# --------------------------------------------------------------------------- #
+
+
+def _resolve_connection(
+    manager: MCPConnectionManager, connection_id: str, workspace_id: uuid.UUID
+) -> MCPConnection:
+    """Return the tenant-scoped connection (404 if missing/foreign)."""
+    with _mcp_errors():
+        client = manager.get(connection_id, workspace_id=workspace_id)
+    connection = client.connection
+    if connection is None:  # pragma: no cover - registered clients are always connected
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="connection not found")
+    return connection
+
+
+@router.patch("/connections/{connection_id}", response_model=MCPConnection)
+def update_connection(
+    manager: ManagerDep,
+    factory: SessionFactoryDep,
+    principal: AdminDep,
+    connection_id: str,
+    request: UpdateConnectionRequest,
+) -> MCPConnection:
+    """Update a connection. F20: flipping ``index_strategy`` provisions/tears down
+    the linked sync-and-index source. ``allow_write`` stays immutable-false."""
+    connection = _resolve_connection(manager, connection_id, principal.workspace_id)
+
+    updates: dict[str, object] = {}
+    if request.name is not None:
+        updates["name"] = request.name
+    if request.allowed_namespaces is not None:
+        updates["allowed_namespaces"] = request.allowed_namespaces
+    if request.index_strategy is not None:
+        updates["index_strategy"] = request.index_strategy
+
+    updated = connection.model_copy(update=updates)
+    with _mcp_errors():
+        manager.register(updated, workspace_id=principal.workspace_id)
+
+    if request.index_strategy is MCPIndexStrategy.SYNC_AND_INDEX:
+        source_id = mcp_index_service.ensure_indexed_source(
+            factory,
+            slug=updated.id,
+            workspace_id=principal.workspace_id,
+            allowed_namespaces=updated.allowed_namespaces,
+            freshness_sla_minutes=updated.freshness_sla_minutes,
+        )
+        mcp_index_service.enqueue_full_sync(source_id)
+    elif request.index_strategy is MCPIndexStrategy.QUERY_THROUGH:
+        mcp_index_service.teardown_indexed_source(
+            factory, slug=updated.id, workspace_id=principal.workspace_id
+        )
+
+    return updated
+
+
+@router.post(
+    "/connections/{connection_id}/index/reindex",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def reindex_connection(
+    manager: ManagerDep,
+    factory: SessionFactoryDep,
+    principal: AdminDep,
+    connection_id: str,
+) -> dict[str, str]:
+    """Enqueue a full re-sync of an indexed connection (409 if not indexed)."""
+    connection = _resolve_connection(manager, connection_id, principal.workspace_id)
+    if connection.index_strategy is not MCPIndexStrategy.SYNC_AND_INDEX:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="connection is not in sync_and_index mode",
+        )
+    source_id = mcp_index_service.ensure_indexed_source(
+        factory,
+        slug=connection.id,
+        workspace_id=principal.workspace_id,
+        allowed_namespaces=connection.allowed_namespaces,
+        freshness_sla_minutes=connection.freshness_sla_minutes,
+    )
+    mcp_index_service.enqueue_full_sync(source_id)
+    return {"status": "enqueued", "source_id": str(source_id)}
+
+
+@router.get("/connections/{connection_id}/index", response_model=McpIndexStatus)
+def get_connection_index(
+    manager: ManagerDep,
+    factory: SessionFactoryDep,
+    principal: ReaderDep,
+    connection_id: str,
+) -> McpIndexStatus:
+    """Index status for a connection's provisioned sync-and-index source."""
+    connection = _resolve_connection(manager, connection_id, principal.workspace_id)
+    return mcp_index_service.index_status(
+        factory,
+        slug=connection.id,
+        workspace_id=principal.workspace_id,
+        index_strategy=connection.index_strategy,
+    )

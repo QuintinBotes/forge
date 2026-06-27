@@ -17,6 +17,30 @@ from forge_knowledge.embeddings import (
     HttpEmbeddingClient,
 )
 from forge_knowledge.fusion import fuse
+from forge_knowledge.mcp_chunking import (
+    McpResourceChunker,
+    McpResourceSnapshot,
+    provenance_uri,
+)
+from forge_knowledge.mcp_indexer import (
+    LedgerRow,
+    McpResourceFetcher,
+    McpSyncIndexer,
+    ResourceLedger,
+    ResourceRef,
+    SyncDirection,
+    SyncReport,
+    SyncRunRecorder,
+)
+from forge_knowledge.mcp_ledger import (
+    SqlResourceLedger,
+    SqlSyncRunRecorder,
+    index_status_counts,
+    latest_run,
+    purge_index,
+)
+from forge_knowledge.mcp_retrieval import McpRetrievalRouter, retrieve_with_mcp
+from forge_knowledge.redaction import redact_secrets
 from forge_knowledge.reranker import (
     FixtureRerankerClient,
     JinaRerankerClient,
@@ -53,7 +77,20 @@ __all__ = [
     "JinaRerankerClient",
     "KnowledgeService",
     "KnowledgeSourceNotFoundError",
+    "LedgerRow",
+    "McpResourceChunker",
+    "McpResourceFetcher",
+    "McpResourceSnapshot",
+    "McpRetrievalRouter",
+    "McpSyncIndexer",
     "PgVectorStore",
+    "ResourceLedger",
+    "ResourceRef",
+    "SqlResourceLedger",
+    "SqlSyncRunRecorder",
+    "SyncDirection",
+    "SyncReport",
+    "SyncRunRecorder",
     "chunk_code",
     "chunk_file",
     "chunk_markdown",
@@ -62,8 +99,14 @@ __all__ = [
     "fuse",
     "git_changed_files",
     "incremental_sync",
+    "index_status_counts",
     "iter_source_files",
+    "latest_run",
+    "provenance_uri",
+    "purge_index",
     "read_repo_files",
+    "redact_secrets",
+    "retrieve_with_mcp",
     "sync_source",
     "tokenize",
     "treesitter_available",

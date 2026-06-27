@@ -37,6 +37,9 @@ DEFERRED_TABLES = frozenset(
         "pm_webhook_delivery",
         # F19 container-sandboxing — created by 0003_container_sandboxing.
         "sandbox_instance",
+        # F20 MCP sync-and-index — created by 0004_mcp_sync_and_index.
+        "knowledge_sync_run",
+        "mcp_indexed_resource",
     }
 )
 

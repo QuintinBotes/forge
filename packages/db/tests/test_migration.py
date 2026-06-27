@@ -161,6 +161,50 @@ def test_sandbox_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F20 MCP sync-and-index tables, owned by the 0004_mcp_sync_and_index migration.
+F20_TABLES = {"knowledge_sync_run", "mcp_indexed_resource"}
+
+
+def test_mcp_sync_index_migration_up_down(alembic_config: Config) -> None:
+    """F20 AC1: 0004_mcp_sync_and_index creates the knowledge_sync_run +
+    mcp_indexed_resource tables and drops them on downgrade, leaving the
+    baseline + PM + sandbox tables intact."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to the sandbox migration: F20 tables absent, core present.
+        command.upgrade(alembic_config, "0003_container_sandboxing")
+        after_sbx = set(inspect(engine).get_table_names())
+        assert not (F20_TABLES & after_sbx), "sandbox stage must not create F20 tables"
+        assert after_sbx >= EXPECTED_TABLES
+
+        # Apply the F20 migration: both tables appear with the documented indexes.
+        command.upgrade(alembic_config, "0004_mcp_sync_and_index")
+        inspector = inspect(engine)
+        after_f20 = set(inspector.get_table_names())
+        assert after_f20 >= F20_TABLES, f"missing F20 tables: {sorted(F20_TABLES - after_f20)}"
+
+        index_names = {ix["name"] for ix in inspector.get_indexes("mcp_indexed_resource")}
+        assert "ux_mcp_idx_resource" in index_names
+        assert "ix_mcp_idx_tenant_source" in index_names
+        assert "ix_mcp_idx_seen" in index_names
+        unique_indexes = {
+            ix["name"] for ix in inspector.get_indexes("mcp_indexed_resource") if ix["unique"]
+        }
+        assert "ux_mcp_idx_resource" in unique_indexes
+
+        # Downgrade one step: F20 tables gone, core + PM + sandbox untouched.
+        command.downgrade(alembic_config, "0003_container_sandboxing")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (F20_TABLES & after_down), "downgrade left F20 tables"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and
