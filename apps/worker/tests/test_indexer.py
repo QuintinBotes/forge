@@ -110,3 +110,32 @@ def test_celery_task_is_registered() -> None:
 
     assert "forge.knowledge.index_source" in celery_app.tasks
     assert index_source_task.name == "forge.knowledge.index_source"
+
+
+def test_build_knowledge_service_constructs(
+    monkeypatch: pytest.MonkeyPatch, session_factory: sessionmaker[Session]
+) -> None:
+    # ``build_knowledge_service`` resolves the default session factory at call
+    # time via ``from forge_db import create_session_factory``; redirect it at the
+    # source module so we get an in-memory service instead of a live Postgres one.
+    monkeypatch.setattr(
+        "forge_db.create_session_factory", lambda *a, **k: session_factory
+    )
+    from forge_worker.indexer import build_knowledge_service
+
+    service = build_knowledge_service()
+    assert isinstance(service, KnowledgeService)
+
+
+def test_index_source_task_delegates(
+    monkeypatch: pytest.MonkeyPatch,
+    service: KnowledgeService,
+    source_id: uuid.UUID,
+) -> None:
+    monkeypatch.setattr(
+        "forge_worker.indexer.build_knowledge_service", lambda: service
+    )
+    result = index_source_task(str(source_id), FILES)
+    assert isinstance(result, dict)
+    assert result["indexed"] > 0
+    assert result["source_id"] == str(source_id)

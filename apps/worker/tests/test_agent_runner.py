@@ -37,3 +37,15 @@ def test_celery_task_is_registered() -> None:
 
     assert "forge.agent.run" in celery_app.tasks
     assert run_agent_task.name == "forge.agent.run"
+
+
+def test_run_agent_task_executes_and_serializes() -> None:
+    # Calling the Celery task object runs the task body synchronously (no broker).
+    result = run_agent_task({"objective": "do the thing"})
+    assert isinstance(result, dict)
+    assert result["status"] in {RunStatus.SUCCEEDED.value, RunStatus.ESCALATED.value}
+    assert "steps" in result
+    # The result is JSON-serialisable (mode="json"): no raw UUID/enum objects.
+    import json
+
+    json.dumps(result)

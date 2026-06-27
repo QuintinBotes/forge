@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from forge_agent.policy_gate import ActionPolicyGate, PolicyEvaluatorGate
-from forge_agent.tools import Tool, ToolRegistry, ToolResult
+from forge_agent.tools import Tool, ToolRegistry, ToolResult, default_tool_registry
 from forge_contracts import (
     AgentObjective,
     Decision,
@@ -56,6 +58,70 @@ def test_registry_schemas_expose_names() -> None:
     registry.add("read_file", lambda _a: ToolResult(ok=True), description="read a file")
     schemas = registry.schemas()
     assert {"name": "read_file", "description": "read a file"} in schemas
+
+
+def test_tool_policy_action_defaults_to_name() -> None:
+    tool = Tool(name="echo", handler=lambda _a: ToolResult(ok=True))
+    assert tool.policy_action == "echo"
+    # An explicit action overrides the name.
+    explicit = Tool(name="w", handler=lambda _a: ToolResult(ok=True), action="write_code")
+    assert explicit.policy_action == "write_code"
+
+
+def test_registry_get_has_names_and_action_for() -> None:
+    registry = ToolRegistry()
+    registry.add("reader", lambda _a: ToolResult(ok=True), action="read_repo")
+    assert registry.get("reader") is not None
+    assert registry.get("missing") is None
+    assert registry.has("reader") is True
+    assert registry.has("missing") is False
+    assert registry.names() == ["reader"]
+    assert registry.action_for("reader") == "read_repo"
+    # An unknown tool's action falls back to the requested name.
+    assert registry.action_for("ghost") == "ghost"
+
+
+def test_default_tool_registry_without_root_is_empty() -> None:
+    assert default_tool_registry().names() == []
+
+
+def test_default_tool_registry_read_write_list(tmp_path: Path) -> None:
+    registry = default_tool_registry(tmp_path)
+    assert set(registry.names()) == {"read_file", "write_file", "list_dir"}
+
+    write = registry.dispatch("write_file", {"path": "sub/a.txt", "content": "hello"})
+    assert write.ok is True
+    assert (tmp_path / "sub" / "a.txt").read_text() == "hello"
+
+    read = registry.dispatch("read_file", {"path": "sub/a.txt"})
+    assert read.ok is True
+    assert read.output == "hello"
+
+    listing = registry.dispatch("list_dir", {"path": "sub"})
+    assert listing.ok is True
+    assert "a.txt" in listing.output
+    assert listing.data["entries"] == ["a.txt"]
+
+
+def test_default_tool_registry_read_missing_and_list_non_dir(tmp_path: Path) -> None:
+    registry = default_tool_registry(tmp_path)
+    missing = registry.dispatch("read_file", {"path": "nope.txt"})
+    assert missing.ok is False
+    assert "not a file" in (missing.error or "")
+
+    (tmp_path / "afile.txt").write_text("x")
+    not_dir = registry.dispatch("list_dir", {"path": "afile.txt"})
+    assert not_dir.ok is False
+    assert "not a directory" in (not_dir.error or "")
+
+
+def test_default_tool_registry_rejects_path_escape(tmp_path: Path) -> None:
+    registry = default_tool_registry(tmp_path)
+    # A traversal outside the sandbox root is rejected; dispatch turns the raised
+    # ValueError into a structured failure result rather than crashing.
+    result = registry.dispatch("read_file", {"path": "../../etc/passwd"})
+    assert result.ok is False
+    assert "escapes sandbox" in (result.error or "")
 
 
 def test_action_gate_denies_restricted_action() -> None:
