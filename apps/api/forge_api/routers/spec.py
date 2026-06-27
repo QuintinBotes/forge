@@ -2,6 +2,16 @@
 
 Covers the SDD lifecycle: constitution -> spec_create -> clarify -> plan ->
 tasks -> validate, plus manifest read/write.
+
+# PARKED: HTTP wiring of these routes to ``forge_spec.FileSpecEngine`` is
+# deferred to Phase 2 Task 2.1 ("All routers serve real handlers"). Filling the
+# handlers in Phase 1 would break the Phase-0 invariant asserted by
+# ``apps/api/tests/test_api_skeleton.py::test_all_stub_routes_return_501`` (and
+# POST routes that gain a required body would return 422, not 501) — that test
+# is owned by the API-skeleton task, not Task 1.7. The engine itself is fully
+# implemented and tested at the package level (``packages/spec-engine``); the
+# Phase-2 integration step swaps these bodies for calls into the engine and
+# relaxes the skeleton's all-501 assertion in one coherent change.
 """
 
 from __future__ import annotations

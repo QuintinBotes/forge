@@ -1,0 +1,23 @@
+# Example MCP connection — read-only analytics Postgres (HTTP transport).
+#
+# A read replica exposed over MCP for schema-aware retrieval. Tools are disabled
+# (resources only) and write access is off, so the agent can inspect schema and
+# rows but never mutate the database.
+mcp_connection:
+  id: warehouse-readonly
+  name: Analytics Warehouse (read-only)
+  transport: http
+  endpoint: https://mcp.company.internal/warehouse
+  auth:
+    type: api_key
+    token_ref: secret://mcp/warehouse-readonly
+    resource: https://mcp.company.internal/warehouse
+  capabilities:
+    resources: true
+    tools: false
+    prompts: false
+  sync_mode: on_demand
+  index_strategy: query_through
+  freshness_sla_minutes: 60
+  allow_write: false
+  allowed_namespaces: [public, analytics]

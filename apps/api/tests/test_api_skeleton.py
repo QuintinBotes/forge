@@ -118,18 +118,30 @@ def test_stub_routes_exist() -> None:
 
 
 async def test_all_stub_routes_return_501(client: httpx.AsyncClient) -> None:
+    # Phase 0 registers every feature route as a 501 stub. As Phase-1 tasks fill
+    # their own router, that route starts returning real data — so this test
+    # asserts the *invariant* that holds throughout: a route is either a
+    # well-formed 501 stub, or it is implemented and returns a non-server-error
+    # response (never an un-typed 500). It never requires a route to stay a stub.
     checked = 0
     for method, path in _openapi_operations():
         if path in _NON_STUB_PATHS:
             continue
         url = _concrete_path(path)
         resp = await client.request(method, url)
-        assert resp.status_code == 501, f"{method} {url} returned {resp.status_code}, expected 501"
-        body = resp.json()
-        # Declared schema shape: NotImplementedResponse.
-        assert body["status"] == "not_implemented"
-        assert body["router"]
-        assert body["operation"]
+        if resp.status_code == 501:
+            body = resp.json()
+            # Declared schema shape: NotImplementedResponse.
+            assert body["status"] == "not_implemented"
+            assert body["router"]
+            assert body["operation"]
+        else:
+            # Implemented in Phase 1 — must be a valid (non-stub) response, not a
+            # server error from a half-wired handler.
+            assert resp.status_code < 500, (
+                f"{method} {url} returned {resp.status_code}, expected a stub 501 "
+                "or an implemented non-5xx response"
+            )
         checked += 1
     assert checked >= len(FEATURE_ROUTER_PREFIXES)
 

@@ -15,6 +15,7 @@ from forge_eval.metrics import (
     precision_at_k,
     recall_at_k,
     reciprocal_rank,
+    requirement_satisfaction,
 )
 
 
@@ -61,3 +62,20 @@ def test_reciprocal_rank_no_hit() -> None:
 def test_hit_at_k() -> None:
     assert hit_at_k(["x", "a", "y"], {"a"}, k=2) is True
     assert hit_at_k(["x", "y", "a"], {"a"}, k=2) is False
+
+
+def test_requirement_satisfaction_full() -> None:
+    assert requirement_satisfaction({"R1", "R2"}, {"R1", "R2"}) == 1.0
+
+
+def test_requirement_satisfaction_partial() -> None:
+    # 1 of 2 expected requirements satisfied → 0.5.
+    assert requirement_satisfaction({"R1", "extra"}, {"R1", "R2"}) == 0.5
+
+
+def test_requirement_satisfaction_none_expected_is_vacuously_one() -> None:
+    assert requirement_satisfaction(set(), set()) == 1.0
+
+
+def test_requirement_satisfaction_miss_is_zero() -> None:
+    assert requirement_satisfaction(set(), {"R1"}) == 0.0

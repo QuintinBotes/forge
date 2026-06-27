@@ -33,17 +33,33 @@ interface CommandPaletteContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
   toggle: () => void;
+  /** Register a named set of commands (replaces any prior set with that id). */
+  registerCommands: (id: string, commands: CommandAction[]) => void;
+  unregisterCommands: (id: string) => void;
 }
 
 const CommandPaletteContext = createContext<CommandPaletteContextValue | null>(null);
 
-/** Open/close the command palette from anywhere (e.g. a top-bar button). */
+/** Open/close the command palette, or (un)register dynamic commands. */
 export function useCommandPalette(): CommandPaletteContextValue {
   const ctx = useContext(CommandPaletteContext);
   if (!ctx) {
     throw new Error("useCommandPalette must be used within <CommandPaletteProvider>");
   }
   return ctx;
+}
+
+/**
+ * Register a set of page-scoped commands while the calling component is mounted
+ * (e.g. the board view contributes "Create task" / "Search knowledge"). Pass a
+ * **stable** `commands` reference (memoize it) to avoid re-registration loops.
+ */
+export function useRegisterCommands(id: string, commands: CommandAction[]): void {
+  const { registerCommands, unregisterCommands } = useCommandPalette();
+  useEffect(() => {
+    registerCommands(id, commands);
+    return () => unregisterCommands(id);
+  }, [id, commands, registerCommands, unregisterCommands]);
 }
 
 export interface CommandAction {
@@ -56,31 +72,11 @@ export interface CommandAction {
 }
 
 /**
- * The Phase-0 command set. Task 1.6 replaces/extends these with real board
- * actions (create task, change status, assign, search...). Each action receives
- * the router so navigation works out of the box.
+ * Always-available navigation/create commands. Page-scoped behavioural commands
+ * (create-task wired to the API, etc.) are contributed via
+ * {@link useRegisterCommands}.
  */
 export const DEFAULT_COMMANDS: CommandAction[] = [
-  {
-    id: "create-task",
-    label: "Create task",
-    group: "Create",
-    icon: <Plus />,
-    shortcut: "C",
-    run: () => {
-      /* wired in Task 1.6 */
-    },
-  },
-  {
-    id: "search",
-    label: "Search knowledge",
-    group: "Create",
-    icon: <Search />,
-    shortcut: "/",
-    run: () => {
-      /* wired in Task 1.6 */
-    },
-  },
   {
     id: "go-list",
     label: "Go to List",
@@ -104,8 +100,42 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
   },
 ];
 
+export interface BuildBoardCommandsOptions {
+  onCreateTask: () => void;
+  onSearch?: () => void;
+}
+
+/** Board-scoped command set, parameterised by the page's callbacks. */
+export function buildBoardCommands({
+  onCreateTask,
+  onSearch,
+}: BuildBoardCommandsOptions): CommandAction[] {
+  const commands: CommandAction[] = [
+    {
+      id: "create-task",
+      label: "Create task",
+      group: "Create",
+      icon: <Plus />,
+      shortcut: "C",
+      run: () => onCreateTask(),
+    },
+  ];
+  if (onSearch) {
+    commands.push({
+      id: "search-knowledge",
+      label: "Search knowledge",
+      group: "Create",
+      icon: <Search />,
+      shortcut: "/",
+      run: () => onSearch(),
+    });
+  }
+  return commands;
+}
+
 export interface CommandPaletteProviderProps {
   children: ReactNode;
+  /** Base commands (defaults to navigation/create). */
   commands?: CommandAction[];
 }
 
@@ -114,9 +144,25 @@ export function CommandPaletteProvider({
   commands = DEFAULT_COMMANDS,
 }: CommandPaletteProviderProps) {
   const [open, setOpen] = useState(false);
+  const [dynamic, setDynamic] = useState<Record<string, CommandAction[]>>({});
   const router = useRouter();
 
   const toggle = useCallback(() => setOpen((value) => !value), []);
+
+  const registerCommands = useCallback((id: string, next: CommandAction[]) => {
+    setDynamic((prev) => ({ ...prev, [id]: next }));
+  }, []);
+
+  const unregisterCommands = useCallback((id: string) => {
+    setDynamic((prev) => {
+      if (!(id in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
 
   // Cmd+K / Ctrl+K toggles the palette globally.
   useEffect(() => {
@@ -131,19 +177,24 @@ export function CommandPaletteProvider({
   }, [toggle]);
 
   const value = useMemo(
-    () => ({ open, setOpen, toggle }),
-    [open, toggle],
+    () => ({ open, setOpen, toggle, registerCommands, unregisterCommands }),
+    [open, toggle, registerCommands, unregisterCommands],
+  );
+
+  const allCommands = useMemo(
+    () => [...commands, ...Object.values(dynamic).flat()],
+    [commands, dynamic],
   );
 
   const grouped = useMemo(() => {
     const groups = new Map<string, CommandAction[]>();
-    for (const command of commands) {
+    for (const command of allCommands) {
       const list = groups.get(command.group) ?? [];
       list.push(command);
       groups.set(command.group, list);
     }
     return Array.from(groups.entries());
-  }, [commands]);
+  }, [allCommands]);
 
   return (
     <CommandPaletteContext.Provider value={value}>

@@ -16,6 +16,7 @@ __all__ = [
     "precision_at_k",
     "recall_at_k",
     "reciprocal_rank",
+    "requirement_satisfaction",
 ]
 
 
@@ -74,3 +75,19 @@ def average_precision(retrieved: Sequence[str], relevant: Collection[str]) -> fl
             hits += 1
             score += hits / index
     return score / len(relevant_set)
+
+
+def requirement_satisfaction(
+    satisfied: Collection[str], expected: Collection[str]
+) -> float:
+    """Fraction of expected requirement ids that were satisfied.
+
+    This is the *spec-requirement satisfaction rate* (spec: Observability and
+    Evaluation, "Agent quality") at the per-task level: set overlap, order
+    independent. Returns ``1.0`` when nothing is expected (vacuously satisfied).
+    """
+    expected_set = set(expected)
+    if not expected_set:
+        return 1.0
+    satisfied_set = set(satisfied)
+    return len(expected_set & satisfied_set) / len(expected_set)

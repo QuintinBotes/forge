@@ -1,168 +1,374 @@
-"""Board router stubs (filled by Task 1.5 — board-core).
+"""Board router (Task 1.5 — board-core).
 
-Endpoints cover Epic / Task / Sprint / Milestone / Incident CRUD plus the
-cross-cutting status, bulk-update and dependency operations of ``BoardService``.
+Serves the ``BoardService`` surface over HTTP: CRUD for Epic / Task / Sprint /
+Milestone / Incident, plus the cross-cutting status, bulk-update and dependency
+operations. Handlers delegate to a process-wide :class:`InMemoryBoardService`
+(Phase 1: hermetic, no Postgres). The DB-backed service is swapped in behind the
+same dependency at the Phase-2 wire-up barrier via ``app.dependency_overrides``.
+
+Domain errors map to HTTP: missing entity -> 404; dependency cycle or illegal
+status transition -> 409 Conflict.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from functools import lru_cache
+from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
-from forge_api._stubs import NotImplementedResponse, eventual, not_implemented
-from forge_api.deps import CurrentPrincipal, get_current_principal
+from forge_api.deps import get_current_principal
+from forge_board import InMemoryBoardService
+from forge_board.exceptions import (
+    CycleError,
+    EntityNotFoundError,
+    InvalidStatusTransitionError,
+)
 from forge_contracts import (
+    BoardFilter,
+    BulkUpdate,
     EpicDTO,
     IncidentDTO,
     MilestoneDTO,
+    Priority,
     SprintDTO,
     TaskDTO,
+    TaskKind,
+    TaskStatus,
 )
 
 router = APIRouter(
     prefix="/board",
     tags=["board"],
     dependencies=[Depends(get_current_principal)],
-    responses={501: {"model": NotImplementedResponse}},
 )
 
-_R = "board"
+
+# --------------------------------------------------------------------------- #
+# Service dependency (overridable for tests / Phase-2 DB swap)                 #
+# --------------------------------------------------------------------------- #
 
 
-# --- Tasks --------------------------------------------------------------- #
+@lru_cache(maxsize=1)
+def _board_service_singleton() -> InMemoryBoardService:
+    return InMemoryBoardService()
 
 
-@router.get(
-    "/tasks",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(TaskDTO, "List tasks matching a board filter."),
-)
-def list_tasks(principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "list_tasks")
+def get_board_service() -> InMemoryBoardService:
+    """Return the process-wide board service (override in tests via DI)."""
+    return _board_service_singleton()
 
 
-@router.post(
-    "/tasks",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(TaskDTO, "Create a task."),
-)
-def create_task(principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "create_task")
+BoardServiceDep = Annotated[InMemoryBoardService, Depends(get_board_service)]
 
 
-@router.get(
-    "/tasks/{task_id}",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(TaskDTO, "Fetch a single task."),
-)
-def get_task(task_id: uuid.UUID, principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "get_task")
+# --------------------------------------------------------------------------- #
+# Error mapping + request bodies                                              #
+# --------------------------------------------------------------------------- #
 
 
-@router.patch(
-    "/tasks/{task_id}",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(TaskDTO, "Update a task."),
-)
-def update_task(task_id: uuid.UUID, principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "update_task")
+@contextmanager
+def _domain_errors() -> Iterator[None]:
+    """Translate board domain exceptions into HTTP error responses."""
+    try:
+        yield
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (CycleError, InvalidStatusTransitionError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
-@router.delete(
-    "/tasks/{task_id}",
-    response_model=NotImplementedResponse,
-    status_code=501,
-)
-def delete_task(task_id: uuid.UUID, principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "delete_task")
+class StatusUpdateRequest(BaseModel):
+    """Body for ``POST /board/tasks/{task_id}/status``."""
+
+    status: TaskStatus
 
 
-@router.post(
-    "/tasks/{task_id}/status",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(TaskDTO, "Transition a task's status."),
-)
-def set_task_status(task_id: uuid.UUID, principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "set_status")
+class DependencyRequest(BaseModel):
+    """Body for ``POST /board/tasks/{task_id}/dependencies``."""
+
+    depends_on_id: uuid.UUID
 
 
-@router.post(
-    "/tasks/bulk",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(TaskDTO, "Bulk-update a set of tasks."),
-)
-def bulk_update(principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "bulk_update")
+def _build_task_filter(
+    *,
+    project_id: uuid.UUID | None,
+    statuses: list[str] | None,
+    kinds: list[TaskKind] | None,
+    priorities: list[Priority] | None,
+    labels: list[str] | None,
+    assignee_id: uuid.UUID | None,
+    sprint_id: uuid.UUID | None,
+    epic_id: uuid.UUID | None,
+    text: str | None,
+    limit: int | None,
+    offset: int,
+) -> BoardFilter:
+    return BoardFilter(
+        project_id=project_id,
+        statuses=statuses or [],
+        kinds=kinds or [],
+        priorities=priorities or [],
+        labels=labels or [],
+        assignee_id=assignee_id,
+        sprint_id=sprint_id,
+        epic_id=epic_id,
+        text=text,
+        limit=limit,
+        offset=offset,
+    )
 
 
-@router.post(
-    "/tasks/{task_id}/dependencies",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(TaskDTO, "Add a dependency edge (rejects cycles)."),
-)
-def add_dependency(task_id: uuid.UUID, principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "dependency_add")
+# --------------------------------------------------------------------------- #
+# Tasks                                                                        #
+# --------------------------------------------------------------------------- #
 
 
-# --- Epics --------------------------------------------------------------- #
+@router.get("/tasks", response_model=list[TaskDTO])
+def list_tasks(
+    svc: BoardServiceDep,
+    project_id: uuid.UUID | None = None,
+    status: Annotated[list[str] | None, Query()] = None,
+    kind: Annotated[list[TaskKind] | None, Query()] = None,
+    priority: Annotated[list[Priority] | None, Query()] = None,
+    label: Annotated[list[str] | None, Query()] = None,
+    assignee_id: uuid.UUID | None = None,
+    sprint_id: uuid.UUID | None = None,
+    epic_id: uuid.UUID | None = None,
+    text: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[TaskDTO]:
+    return svc.list_tasks(
+        _build_task_filter(
+            project_id=project_id,
+            statuses=status,
+            kinds=kind,
+            priorities=priority,
+            labels=label,
+            assignee_id=assignee_id,
+            sprint_id=sprint_id,
+            epic_id=epic_id,
+            text=text,
+            limit=limit,
+            offset=offset,
+        )
+    )
 
 
-@router.get(
-    "/epics",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(EpicDTO, "List epics."),
-)
-def list_epics(principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "list_epics")
+@router.post("/tasks", response_model=TaskDTO, status_code=status.HTTP_201_CREATED)
+def create_task(svc: BoardServiceDep, data: TaskDTO) -> TaskDTO:
+    return svc.create_task(data)
 
 
-@router.post(
-    "/epics",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(EpicDTO, "Create an epic."),
-)
-def create_epic(principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "create_epic")
+@router.post("/tasks/bulk", response_model=list[TaskDTO])
+def bulk_update(svc: BoardServiceDep, updates: list[BulkUpdate]) -> list[TaskDTO]:
+    with _domain_errors():
+        return svc.bulk_update(updates)
 
 
-# --- Sprints / Milestones / Incidents ------------------------------------ #
+@router.get("/tasks/{task_id}", response_model=TaskDTO)
+def get_task(svc: BoardServiceDep, task_id: uuid.UUID) -> TaskDTO:
+    with _domain_errors():
+        return svc.get_task(task_id)
 
 
-@router.get(
-    "/sprints",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(SprintDTO, "List sprints."),
-)
-def list_sprints(principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "list_sprints")
+@router.patch("/tasks/{task_id}", response_model=TaskDTO)
+def update_task(svc: BoardServiceDep, task_id: uuid.UUID, data: TaskDTO) -> TaskDTO:
+    with _domain_errors():
+        return svc.update_task(task_id, data)
 
 
-@router.get(
-    "/milestones",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(MilestoneDTO, "List milestones."),
-)
-def list_milestones(principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "list_milestones")
+@router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(svc: BoardServiceDep, task_id: uuid.UUID) -> None:
+    with _domain_errors():
+        svc.delete_task(task_id)
 
 
-@router.get(
-    "/incidents",
-    response_model=NotImplementedResponse,
-    status_code=501,
-    responses=eventual(IncidentDTO, "List incidents."),
-)
-def list_incidents(principal: CurrentPrincipal) -> NotImplementedResponse:
-    return not_implemented(_R, "list_incidents")
+@router.post("/tasks/{task_id}/status", response_model=TaskDTO)
+def set_task_status(
+    svc: BoardServiceDep, task_id: uuid.UUID, payload: StatusUpdateRequest
+) -> TaskDTO:
+    with _domain_errors():
+        return svc.set_status(task_id, payload.status)
+
+
+@router.post("/tasks/{task_id}/dependencies", response_model=TaskDTO)
+def add_dependency(
+    svc: BoardServiceDep, task_id: uuid.UUID, payload: DependencyRequest
+) -> TaskDTO:
+    with _domain_errors():
+        svc.dependency_add(task_id, payload.depends_on_id)
+        return svc.get_task(task_id)
+
+
+# --------------------------------------------------------------------------- #
+# Epics                                                                        #
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/epics", response_model=list[EpicDTO])
+def list_epics(
+    svc: BoardServiceDep,
+    project_id: uuid.UUID | None = None,
+    text: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[EpicDTO]:
+    return svc.list_epics(
+        BoardFilter(project_id=project_id, text=text, limit=limit, offset=offset)
+    )
+
+
+@router.post("/epics", response_model=EpicDTO, status_code=status.HTTP_201_CREATED)
+def create_epic(svc: BoardServiceDep, data: EpicDTO) -> EpicDTO:
+    return svc.create_epic(data)
+
+
+@router.get("/epics/{epic_id}", response_model=EpicDTO)
+def get_epic(svc: BoardServiceDep, epic_id: uuid.UUID) -> EpicDTO:
+    with _domain_errors():
+        return svc.get_epic(epic_id)
+
+
+@router.patch("/epics/{epic_id}", response_model=EpicDTO)
+def update_epic(svc: BoardServiceDep, epic_id: uuid.UUID, data: EpicDTO) -> EpicDTO:
+    with _domain_errors():
+        return svc.update_epic(epic_id, data)
+
+
+@router.delete("/epics/{epic_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_epic(svc: BoardServiceDep, epic_id: uuid.UUID) -> None:
+    with _domain_errors():
+        svc.delete_epic(epic_id)
+
+
+# --------------------------------------------------------------------------- #
+# Sprints                                                                      #
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/sprints", response_model=list[SprintDTO])
+def list_sprints(
+    svc: BoardServiceDep,
+    project_id: uuid.UUID | None = None,
+    text: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[SprintDTO]:
+    return svc.list_sprints(
+        BoardFilter(project_id=project_id, text=text, limit=limit, offset=offset)
+    )
+
+
+@router.post("/sprints", response_model=SprintDTO, status_code=status.HTTP_201_CREATED)
+def create_sprint(svc: BoardServiceDep, data: SprintDTO) -> SprintDTO:
+    return svc.create_sprint(data)
+
+
+@router.get("/sprints/{sprint_id}", response_model=SprintDTO)
+def get_sprint(svc: BoardServiceDep, sprint_id: uuid.UUID) -> SprintDTO:
+    with _domain_errors():
+        return svc.get_sprint(sprint_id)
+
+
+@router.patch("/sprints/{sprint_id}", response_model=SprintDTO)
+def update_sprint(svc: BoardServiceDep, sprint_id: uuid.UUID, data: SprintDTO) -> SprintDTO:
+    with _domain_errors():
+        return svc.update_sprint(sprint_id, data)
+
+
+@router.delete("/sprints/{sprint_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sprint(svc: BoardServiceDep, sprint_id: uuid.UUID) -> None:
+    with _domain_errors():
+        svc.delete_sprint(sprint_id)
+
+
+# --------------------------------------------------------------------------- #
+# Milestones                                                                   #
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/milestones", response_model=list[MilestoneDTO])
+def list_milestones(
+    svc: BoardServiceDep,
+    project_id: uuid.UUID | None = None,
+    text: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[MilestoneDTO]:
+    return svc.list_milestones(
+        BoardFilter(project_id=project_id, text=text, limit=limit, offset=offset)
+    )
+
+
+@router.post("/milestones", response_model=MilestoneDTO, status_code=status.HTTP_201_CREATED)
+def create_milestone(svc: BoardServiceDep, data: MilestoneDTO) -> MilestoneDTO:
+    return svc.create_milestone(data)
+
+
+@router.get("/milestones/{milestone_id}", response_model=MilestoneDTO)
+def get_milestone(svc: BoardServiceDep, milestone_id: uuid.UUID) -> MilestoneDTO:
+    with _domain_errors():
+        return svc.get_milestone(milestone_id)
+
+
+@router.patch("/milestones/{milestone_id}", response_model=MilestoneDTO)
+def update_milestone(
+    svc: BoardServiceDep, milestone_id: uuid.UUID, data: MilestoneDTO
+) -> MilestoneDTO:
+    with _domain_errors():
+        return svc.update_milestone(milestone_id, data)
+
+
+@router.delete("/milestones/{milestone_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_milestone(svc: BoardServiceDep, milestone_id: uuid.UUID) -> None:
+    with _domain_errors():
+        svc.delete_milestone(milestone_id)
+
+
+# --------------------------------------------------------------------------- #
+# Incidents                                                                    #
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/incidents", response_model=list[IncidentDTO])
+def list_incidents(
+    svc: BoardServiceDep,
+    project_id: uuid.UUID | None = None,
+    text: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[IncidentDTO]:
+    return svc.list_incidents(
+        BoardFilter(project_id=project_id, text=text, limit=limit, offset=offset)
+    )
+
+
+@router.post("/incidents", response_model=IncidentDTO, status_code=status.HTTP_201_CREATED)
+def create_incident(svc: BoardServiceDep, data: IncidentDTO) -> IncidentDTO:
+    return svc.create_incident(data)
+
+
+@router.get("/incidents/{incident_id}", response_model=IncidentDTO)
+def get_incident(svc: BoardServiceDep, incident_id: uuid.UUID) -> IncidentDTO:
+    with _domain_errors():
+        return svc.get_incident(incident_id)
+
+
+@router.patch("/incidents/{incident_id}", response_model=IncidentDTO)
+def update_incident(
+    svc: BoardServiceDep, incident_id: uuid.UUID, data: IncidentDTO
+) -> IncidentDTO:
+    with _domain_errors():
+        return svc.update_incident(incident_id, data)
+
+
+@router.delete("/incidents/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_incident(svc: BoardServiceDep, incident_id: uuid.UUID) -> None:
+    with _domain_errors():
+        svc.delete_incident(incident_id)
