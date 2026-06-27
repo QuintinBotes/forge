@@ -3,7 +3,7 @@ name = "forge-db"
 version = "0.1.0"
 description = "SQLAlchemy 2.x data model and Alembic migrations for Forge."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = { text = "Apache-2.0" }
 authors = [{ name = "The Forge Authors" }]
 dependencies = [

@@ -3,7 +3,7 @@ name = "forge-api"
 version = "0.1.0"
 description = "FastAPI backend application for Forge."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = { text = "Apache-2.0" }
 authors = [{ name = "The Forge Authors" }]
 dependencies = [
