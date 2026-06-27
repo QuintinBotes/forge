@@ -16,6 +16,7 @@ dependencies = [
     "uvicorn[standard]>=0.29",
     "pydantic-settings>=2.2",
     "sqlalchemy>=2.0",
+    "cryptography>=43",
 ]
 
 [build-system]

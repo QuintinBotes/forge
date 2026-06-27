@@ -1,9 +1,15 @@
-"""Authenticated encryption for secrets at rest (Task 1.15 — auth & secrets).
+"""Authenticated encryption for secrets at rest (Task 1.15 / H3 — auth & secrets).
 
-Spec Security: "Secrets — Encrypted at rest". The plan calls for a Fernet /
-libsodium-backed vault. Those libraries are not present in this build sandbox and
-``uv sync`` is disallowed here, so the *default, fully-tested* cipher is built on
-the Python standard library only:
+Spec Security: "Secrets — Encrypted at rest". The *default* cipher is
+:class:`FernetCipher`, a real authenticated cipher backed by the ``cryptography``
+package (Fernet = AES-128-CBC + HMAC-SHA256, with a random IV per message and a
+constant-time MAC verified before any plaintext is produced). Use
+:func:`default_cipher` to construct it; the vault and the auth service depend on
+that factory rather than on a concrete class.
+
+:class:`HmacAeadCipher` remains as a dependency-free, standard-library fallback
+implementing the same :class:`SecretCipher` surface (encrypt-then-MAC over an
+HMAC-SHA256 counter-mode keystream):
 
     blob = version(1) || nonce(16) || tag(32) || ciphertext
 
@@ -16,19 +22,14 @@ the Python standard library only:
   master key and the random nonce (HKDF-Expand-style single block), so keys are
   never reused across messages.
 
-This is genuine authenticated encryption: ciphertext never contains the
-plaintext, tampering or a wrong key raises :class:`InvalidTokenError`, and a
-fresh nonce per call makes ciphertexts non-deterministic.
-
-# PARKED: a ``cryptography.Fernet`` / libsodium backend (the spec's preferred
-# implementation) is not exercised here because those packages are not installed
-# and ``uv sync`` is disallowed in this phase. :class:`FernetCipher` below is the
-# drop-in production seam; it imports ``cryptography`` lazily and is intentionally
-# left untested in this sandbox. See MORNING_REPORT.
+Both ciphers provide genuine authenticated encryption: ciphertext never contains
+the plaintext, tampering or a wrong key raises :class:`InvalidTokenError`, and a
+fresh IV/nonce per call makes ciphertexts non-deterministic.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import os
@@ -133,19 +134,36 @@ class HmacAeadCipher:
             raise InvalidTokenError("decrypted payload is not valid UTF-8") from exc
 
 
-class FernetCipher:  # pragma: no cover
-    """Production seam: ``cryptography.Fernet``-backed cipher.
+def _fernet_key(key: bytes) -> bytes:
+    """Normalize raw master-key material into a Fernet url-safe base64 key.
 
-    # PARKED: ``cryptography`` is not installed in this build sandbox and
-    # ``uv sync`` is disallowed, so this adapter is not import-loaded or tested
-    # here. Swap it in for :class:`HmacAeadCipher` once the dependency is present;
-    # the :class:`SecretCipher` surface is identical.
+    Fernet requires exactly 32 bytes encoded as url-safe base64. Accepting raw
+    key material (any length ``>= _MIN_KEY_SIZE``) keeps :class:`FernetCipher` a
+    drop-in for :class:`HmacAeadCipher` and interoperable with
+    :func:`generate_key` / the service's HMAC-derived subkeys. The 32-byte key is
+    derived deterministically with SHA-256, so a stable input key yields a stable
+    cipher (secrets survive a restart when ``FORGE_SECRET_KEY`` is stable).
+    """
+    if len(key) < _MIN_KEY_SIZE:
+        raise ValueError(
+            f"master key must be at least {_MIN_KEY_SIZE} bytes, got {len(key)}"
+        )
+    return base64.urlsafe_b64encode(hashlib.sha256(key).digest())
+
+
+class FernetCipher:
+    """Default cipher: ``cryptography.Fernet``-backed authenticated encryption.
+
+    Fernet is AES-128-CBC with HMAC-SHA256 over a random per-message IV; the MAC
+    is verified in constant time before decryption, so a wrong key or any
+    tampering raises :class:`InvalidTokenError`. ``key`` is raw master-key
+    material (``>= 16`` bytes; :func:`generate_key` returns 32 random bytes).
     """
 
     def __init__(self, key: bytes) -> None:
         from cryptography.fernet import Fernet
 
-        self._fernet = Fernet(key)
+        self._fernet = Fernet(_fernet_key(key))
 
     def encrypt(self, plaintext: str) -> bytes:
         return self._fernet.encrypt(plaintext.encode("utf-8"))
@@ -156,7 +174,18 @@ class FernetCipher:  # pragma: no cover
         try:
             return self._fernet.decrypt(blob).decode("utf-8")
         except InvalidToken as exc:
-            raise InvalidTokenError("authentication failed (wrong key or tampered)") from exc
+            raise InvalidTokenError(
+                "authentication failed (wrong key or tampered)"
+            ) from exc
+
+
+def default_cipher(key: bytes) -> SecretCipher:
+    """Construct the default secret cipher (Fernet) from raw master-key material.
+
+    This is the single seam the vault / auth service use to obtain a cipher, so
+    the backend can be swapped in one place.
+    """
+    return FernetCipher(key)
 
 
 __all__ = [
@@ -164,5 +193,6 @@ __all__ = [
     "HmacAeadCipher",
     "InvalidTokenError",
     "SecretCipher",
+    "default_cipher",
     "generate_key",
 ]
