@@ -6,12 +6,14 @@ and secret redaction over the real ASGI app with an isolated AuthService.
 
 from __future__ import annotations
 
+import urllib.parse
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import httpx
 import pytest
 
+from forge_api.auth.oauth import OAuthClient, OAuthClientCredentials
 from forge_api.auth.service import AuthService, get_auth_service
 from forge_api.main import app
 from forge_contracts.enums import UserRole
@@ -160,3 +162,111 @@ async def test_login_describes_oauth_providers(
     body = resp.json()
     assert body["provider"] == "github"
     assert "authorize_url" in body
+
+
+# -- OAuth callback (code exchange) ------------------------------------------ #
+
+
+def _github_idp(request: httpx.Request) -> httpx.Response:
+    """Mock GitHub token + userinfo endpoints for the callback route tests."""
+    path = urllib.parse.urlsplit(str(request.url)).path
+    if path == "/login/oauth/access_token":
+        return httpx.Response(200, json={"access_token": "gh-tok", "token_type": "bearer"})
+    if path == "/user":
+        return httpx.Response(
+            200, json={"id": 7, "login": "octo", "name": "Octo", "email": "octo@gh.com"}
+        )
+    return httpx.Response(404, json={"error": "unexpected"})
+
+
+@pytest.fixture
+def oauth_service() -> Iterator[Callable[[Callable[[httpx.Request], httpx.Response]], None]]:
+    """Install an AuthService whose OAuth client uses an injected mock transport."""
+
+    def _install(handler: Callable[[httpx.Request], httpx.Response]) -> None:
+        svc = AuthService(
+            secret_key=b"1" * 32,
+            oauth=OAuthClient(
+                credentials={
+                    "github": OAuthClientCredentials(client_id="id", client_secret="sec")
+                },
+                transport=httpx.MockTransport(handler),
+            ),
+        )
+        app.dependency_overrides[get_auth_service] = lambda: svc
+
+    try:
+        yield _install
+    finally:
+        app.dependency_overrides.pop(get_auth_service, None)
+
+
+async def test_callback_exchanges_code_for_user(
+    client: httpx.AsyncClient,
+    oauth_service: Callable[[Callable[[httpx.Request], httpx.Response]], None],
+) -> None:
+    oauth_service(_github_idp)
+    resp = await client.post(
+        "/auth/callback",
+        json={"provider": "github", "code": "abc", "redirect_uri": "https://app/cb"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["provider"] == "github"
+    assert body["user"]["subject"] == "7"
+    assert body["user"]["email"] == "octo@gh.com"
+    assert body["tokens"]["access_token"] == "gh-tok"
+
+
+async def test_callback_rejects_unknown_provider(
+    client: httpx.AsyncClient,
+    oauth_service: Callable[[Callable[[httpx.Request], httpx.Response]], None],
+) -> None:
+    oauth_service(_github_idp)
+    resp = await client.post("/auth/callback", json={"provider": "myspace", "code": "x"})
+    assert resp.status_code == 400
+
+
+async def test_callback_state_mismatch_is_400(
+    client: httpx.AsyncClient,
+    oauth_service: Callable[[Callable[[httpx.Request], httpx.Response]], None],
+) -> None:
+    oauth_service(_github_idp)
+    resp = await client.post(
+        "/auth/callback",
+        json={
+            "provider": "github",
+            "code": "x",
+            "state": "returned",
+            "expected_state": "issued",
+        },
+    )
+    assert resp.status_code == 400
+
+
+async def test_callback_idp_rejection_is_502(
+    client: httpx.AsyncClient,
+    oauth_service: Callable[[Callable[[httpx.Request], httpx.Response]], None],
+) -> None:
+    def reject(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "invalid_grant"})
+
+    oauth_service(reject)
+    resp = await client.post("/auth/callback", json={"provider": "github", "code": "x"})
+    assert resp.status_code == 502
+
+
+async def test_callback_unconfigured_provider_is_500(
+    client: httpx.AsyncClient,
+) -> None:
+    # A valid provider with no client credentials configured -> server config error.
+    svc = AuthService(
+        secret_key=b"1" * 32,
+        oauth=OAuthClient(credentials={}, transport=httpx.MockTransport(_github_idp)),
+    )
+    app.dependency_overrides[get_auth_service] = lambda: svc
+    try:
+        resp = await client.post("/auth/callback", json={"provider": "github", "code": "x"})
+        assert resp.status_code == 500
+    finally:
+        app.dependency_overrides.pop(get_auth_service, None)
