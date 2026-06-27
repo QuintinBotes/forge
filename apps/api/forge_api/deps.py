@@ -1,9 +1,11 @@
 """Shared FastAPI dependencies (auth principal, settings, DB session).
 
-The auth dependency here is a **stub** (plan Task 0.4): it returns a deterministic
-test principal so feature routers can declare ``Depends(get_current_principal)``
-today and have real authentication swapped in by Task 1.15 (auth & secrets)
-without changing any router signatures.
+``get_current_principal`` is the authentication dependency every feature router
+depends on. Phase-2 Task 2.3 wires it to the **real** auth layer (Task 1.15): it
+verifies an API key (``Authorization: Bearer <key>`` or ``X-API-Key``) and
+returns the resolved :class:`Principal` (role + scopes from the key), raising 401
+when no valid credential is presented. There is no longer a hardcoded admin
+principal — the previous stub left every endpoint unauthenticated.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Header
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -19,17 +21,12 @@ from forge_api.db import get_db
 from forge_api.settings import Settings, get_settings
 from forge_contracts import UserRole
 
-# Deterministic identifiers for the stub principal (stable across calls so tests
-# and local development behave predictably).
-TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
-TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000b2")
-
 
 class Principal(BaseModel):
     """The authenticated actor for a request (user, agent-runner, or API key).
 
-    Task 1.15 fills this from Better Auth / API-key verification; until then the
-    stub dependency returns a fixed admin principal.
+    Populated by :func:`get_current_principal` from a verified API key; ``role``
+    and ``scopes`` reflect the key's RBAC grant.
     """
 
     user_id: uuid.UUID
@@ -40,19 +37,24 @@ class Principal(BaseModel):
     scopes: list[str] = Field(default_factory=list)
 
 
-def get_current_principal() -> Principal:
-    """Auth stub: return a deterministic admin test principal.
+def get_current_principal(
+    authorization: Annotated[str | None, Header()] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> Principal:
+    """Authenticate the caller via API key and return the resolved principal.
 
-    PARKED-FOR: real OAuth / API-key verification is implemented in Task 1.15;
-    this stub keeps every authenticated route callable in Phase 0.
+    Delegates to the real auth layer (``forge_api.auth.service``): the request
+    must present a valid, unexpired API key whose role determines the principal's
+    scopes. Missing or invalid credentials raise HTTP 401.
+
+    The auth-service import is deferred to call time on purpose:
+    ``forge_api.auth.service`` imports :class:`Principal` from this module, so a
+    module-level import would create a cycle.
     """
-    return Principal(
-        user_id=TEST_USER_ID,
-        workspace_id=TEST_WORKSPACE_ID,
-        role=UserRole.ADMIN,
-        email="test-principal@forge.local",
-        auth_method="stub",
-        scopes=["*"],
+    from forge_api.auth.service import get_auth_service, get_authenticated_principal
+
+    return get_authenticated_principal(
+        get_auth_service(), authorization=authorization, x_api_key=x_api_key
     )
 
 

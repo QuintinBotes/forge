@@ -8,10 +8,11 @@ maps domain errors (cycle -> 409, missing -> 404, illegal transition -> 409).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from forge_api.main import create_app
@@ -22,8 +23,9 @@ PROJECT = "00000000-0000-0000-0000-0000000000a1"
 
 
 @pytest.fixture
-def client() -> Iterator[TestClient]:
+def client(authenticate_app: Callable[..., FastAPI]) -> Iterator[TestClient]:
     app = create_app()
+    authenticate_app(app)
     # One fresh, isolated service shared across requests within a single test.
     service = InMemoryBoardService()
     app.dependency_overrides[get_board_service] = lambda: service

@@ -49,7 +49,10 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
     }
 )
 
-#: Verb tokens that mark a tool name as mutating (rule 1: read-only by default).
+#: Verb tokens that positively mark a tool name as mutating. This is *not* the
+#: only signal — an un-annotated tool whose verb is unrecognised is still treated
+#: as a write (see :func:`is_write_tool`); the list just lets an obvious mutating
+#: verb override a read-looking leading verb (e.g. ``list_and_merge``).
 WRITE_KEYWORDS: frozenset[str] = frozenset(
     {
         "write",
@@ -79,6 +82,65 @@ WRITE_KEYWORDS: frozenset[str] = frozenset(
         "apply",
         "archive",
         "restore",
+        # Mutating verbs that fail-closed defaulting now also covers, listed so a
+        # read-looking leading token can never whitewash them.
+        "merge",
+        "approve",
+        "reject",
+        "decline",
+        "sync",
+        "deploy",
+        "release",
+        "cancel",
+        "close",
+        "reopen",
+        "assign",
+        "unassign",
+        "grant",
+        "revoke",
+        "enable",
+        "disable",
+        "trigger",
+        "invoke",
+        "dispatch",
+        "transfer",
+        "rollback",
+        "reset",
+        "revert",
+        "import",
+        "register",
+        "deregister",
+        "subscribe",
+        "unsubscribe",
+    }
+)
+
+#: Verb tokens that mark a tool name as clearly read-only. Only a *leading* verb
+#: from this set keeps an un-annotated tool a read; everything else fails closed.
+READ_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "get",
+        "list",
+        "read",
+        "search",
+        "query",
+        "fetch",
+        "find",
+        "view",
+        "show",
+        "describe",
+        "count",
+        "exists",
+        "lookup",
+        "ping",
+        "head",
+        "scan",
+        "browse",
+        "inspect",
+        "retrieve",
+        "summarize",
+        "summarise",
+        "preview",
     }
 )
 
@@ -99,17 +161,28 @@ def _split_name(name: str) -> list[str]:
 def is_write_tool(name: str, spec: ToolSpec | None = None) -> bool:
     """Return ``True`` if ``name`` should be treated as a mutating tool.
 
-    Annotation precedence (MCP 2025 ``readOnlyHint`` / ``destructiveHint``):
-    an explicit hint wins; otherwise a verb heuristic over the name decides.
-    Unknown/neutral names default to read (the policy/write gate still applies).
+    Fail-closed classification (MCP 2025 ``readOnlyHint`` / ``destructiveHint``):
+
+    1. An explicit annotation always wins: ``read_only=True`` -> read;
+       ``read_only=False`` or ``destructive=True`` -> write.
+    2. Otherwise a write verb anywhere in the name marks it as a write.
+    3. Otherwise the tool is a read **only** when its leading verb is a
+       recognised read-only verb. Everything else (no annotation, unrecognised
+       verb — e.g. ``merge``, ``approve``, ``merge_pull_request``) is assumed
+       **destructive**, matching the MCP 2025 convention that ``readOnlyHint``
+       defaults to false. This is the security default: an un-annotated tool must
+       never slip through a read-only connection.
     """
     if spec is not None:
         if spec.read_only is True:
             return False
         if spec.read_only is False or spec.destructive is True:
             return True
-    tokens = set(_split_name(name))
-    return bool(tokens & WRITE_KEYWORDS)
+    tokens = _split_name(name)
+    if set(tokens) & WRITE_KEYWORDS:
+        return True
+    # Fail closed: only a recognised leading read verb keeps the tool a read.
+    return not (tokens and tokens[0] in READ_KEYWORDS)
 
 
 def token_binding(conn: MCPConnection) -> str | None:
@@ -201,6 +274,7 @@ def payload_hash(arguments: Any) -> str:
 
 
 __all__ = [
+    "READ_KEYWORDS",
     "REDACTED",
     "SENSITIVE_KEYS",
     "WRITE_KEYWORDS",

@@ -24,8 +24,9 @@ import uuid
 
 import httpx
 import pytest
+from fastapi import HTTPException
 
-from forge_api.deps import Principal, get_current_principal
+from forge_api.deps import get_current_principal
 from forge_api.main import app, create_app
 from forge_api.settings import Settings, get_settings
 
@@ -147,16 +148,17 @@ async def test_all_stub_routes_return_501(client: httpx.AsyncClient) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Auth stub principal                                                          #
+# Auth is wired (no stub admin)                                                #
 # --------------------------------------------------------------------------- #
 
 
-def test_auth_stub_returns_test_principal() -> None:
-    principal = get_current_principal()
-    assert isinstance(principal, Principal)
-    assert principal.workspace_id is not None
-    assert principal.user_id is not None
-    assert principal.role.value in {"admin", "member", "viewer", "agent-runner"}
+def test_auth_dependency_rejects_anonymous_callers() -> None:
+    # Phase-2 fix: the Phase-0 stub admin principal is gone. With no credentials
+    # the auth dependency must reject the request (401) rather than hand back a
+    # full-scope admin.
+    with pytest.raises(HTTPException) as exc:
+        get_current_principal()
+    assert exc.value.status_code == 401
 
 
 # --------------------------------------------------------------------------- #

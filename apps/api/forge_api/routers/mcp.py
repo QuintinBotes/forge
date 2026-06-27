@@ -27,7 +27,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from forge_api.deps import get_current_principal
+from forge_api.auth.rbac import Permission
+from forge_api.deps import Principal, get_current_principal
+from forge_api.routers._rbac import require_permission
 from forge_contracts import (
     ApprovalRequiredError,
     MCPAuditEntry,
@@ -51,6 +53,19 @@ router = APIRouter(
     tags=["mcp"],
     dependencies=[Depends(get_current_principal)],
 )
+
+# RBAC + tenancy (Phase-2 bug fix r3). The MCP control plane was auth-only, so a
+# read-only ``viewer`` could register connections (and flip ``allow_write``) and
+# call tools. These permission-gated principals authorize per-route *and* carry
+# the caller's ``workspace_id`` so every operation is scoped to the tenant that
+# owns the connection (cross-tenant enumeration/read/call/audit is impossible):
+#
+# * READ      — list/read resources + audit (all roles hold READ),
+# * WRITE     — register a connection (config mutation; viewer/agent-runner 403),
+# * RUN_AGENT — call a tool (an action; member/agent-runner/admin, viewer 403).
+ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
+WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
+RunnerDep = Annotated[Principal, Depends(require_permission(Permission.RUN_AGENT))]
 
 
 # --------------------------------------------------------------------------- #
@@ -115,8 +130,8 @@ class ToolCallRequest(BaseModel):
 
 
 @router.get("/connections", response_model=list[MCPConnection])
-def list_connections(manager: ManagerDep) -> list[MCPConnection]:
-    return manager.list_connections()
+def list_connections(manager: ManagerDep, principal: ReaderDep) -> list[MCPConnection]:
+    return manager.list_connections(workspace_id=principal.workspace_id)
 
 
 @router.post(
@@ -124,10 +139,12 @@ def list_connections(manager: ManagerDep) -> list[MCPConnection]:
     response_model=MCPConnection,
     status_code=status.HTTP_201_CREATED,
 )
-def create_connection(manager: ManagerDep, connection: MCPConnection) -> MCPConnection:
+def create_connection(
+    manager: ManagerDep, principal: WriterDep, connection: MCPConnection
+) -> MCPConnection:
     """Register an MCP connection (read-only by default; RFC 8707 bound on connect)."""
     with _mcp_errors():
-        return manager.register(connection)
+        return manager.register(connection, workspace_id=principal.workspace_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -141,11 +158,14 @@ def create_connection(manager: ManagerDep, connection: MCPConnection) -> MCPConn
 )
 def list_resources(
     manager: ManagerDep,
+    principal: ReaderDep,
     connection_id: str,
     namespace: str | None = Query(default=None),
 ) -> list[MCPResource]:
     with _mcp_errors():
-        return manager.list_resources(connection_id, namespace)
+        return manager.list_resources(
+            connection_id, namespace, workspace_id=principal.workspace_id
+        )
 
 
 @router.get(
@@ -154,11 +174,12 @@ def list_resources(
 )
 def read_resource(
     manager: ManagerDep,
+    principal: ReaderDep,
     connection_id: str,
     uri: str = Query(...),
 ) -> MCPResourceContent:
     with _mcp_errors():
-        return manager.read_resource(connection_id, uri)
+        return manager.read_resource(connection_id, uri, workspace_id=principal.workspace_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -172,11 +193,17 @@ def read_resource(
 )
 def call_tool(
     manager: ManagerDep,
+    principal: RunnerDep,
     connection_id: str,
     request: ToolCallRequest,
 ) -> MCPToolResult:
     with _mcp_errors():
-        return manager.call_tool(connection_id, request.name, request.arguments)
+        return manager.call_tool(
+            connection_id,
+            request.name,
+            request.arguments,
+            workspace_id=principal.workspace_id,
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -188,8 +215,11 @@ def call_tool(
     "/connections/{connection_id}/audit",
     response_model=list[MCPAuditEntry],
 )
-def list_audit(manager: ManagerDep, connection_id: str) -> list[MCPAuditEntry]:
+def list_audit(
+    manager: ManagerDep, principal: ReaderDep, connection_id: str
+) -> list[MCPAuditEntry]:
     with _mcp_errors():
-        # Validate the connection exists (raises 404 if not), then return its trail.
-        manager.get(connection_id)
-        return manager.audit_entries(connection_id)
+        # Validate the connection exists *and* belongs to the caller's workspace
+        # (raises 404 otherwise), then return its trail.
+        manager.get(connection_id, workspace_id=principal.workspace_id)
+        return manager.audit_entries(connection_id, workspace_id=principal.workspace_id)

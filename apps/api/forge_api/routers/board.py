@@ -21,7 +21,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
-from forge_api.deps import get_current_principal
+from forge_api.auth.rbac import Permission
+from forge_api.deps import Principal, get_current_principal
+from forge_api.routers._rbac import require_permission
 from forge_board import InMemoryBoardService
 from forge_board.exceptions import (
     CycleError,
@@ -47,20 +49,67 @@ router = APIRouter(
     dependencies=[Depends(get_current_principal)],
 )
 
+# RBAC (Phase-2 bug fix r3): the board is the primary write surface, so every
+# mutating route must *authorize*, not just authenticate. The router-level
+# ``get_current_principal`` handles auth (401); ``_REQUIRE_WRITE`` is attached
+# per-route to the create/update/delete/status/bulk/dependency handlers so a
+# read-only ``viewer`` (and the ``agent-runner``, which lacks WRITE) gets 403.
+# Reads stay open to any authenticated role (all roles hold READ).
+_REQUIRE_WRITE = Depends(require_permission(Permission.WRITE))
+
 
 # --------------------------------------------------------------------------- #
-# Service dependency (overridable for tests / Phase-2 DB swap)                 #
+# Per-workspace service registry (tenant isolation)                            #
 # --------------------------------------------------------------------------- #
+
+
+class BoardServiceRegistry:
+    """Vends a :class:`InMemoryBoardService` per workspace (tenant isolation).
+
+    Phase-2 bug fix r4: the board is the primary write surface and must enforce
+    the spec's mandatory per-workspace isolation (design doc section 4; plan Task
+    1.15) like every other tenant surface hardened in r3. The frozen
+    ``BoardService`` protocol has no ``workspace_id`` dimension, and the entities
+    (``TaskDTO`` etc.) carry no workspace field, so isolation is achieved by
+    giving each workspace its **own** in-memory service instance. A caller can
+    therefore only ever see, fetch, mutate, or delete entities in its own
+    workspace; a foreign id simply does not exist there (404), and listing never
+    spans tenants. The DB-backed service swapped in at the wire-up barrier filters
+    by ``workspace_id`` behind the same dependency.
+    """
+
+    def __init__(self) -> None:
+        self._services: dict[uuid.UUID, InMemoryBoardService] = {}
+
+    def for_workspace(self, workspace_id: uuid.UUID) -> InMemoryBoardService:
+        service = self._services.get(workspace_id)
+        if service is None:
+            service = InMemoryBoardService()
+            self._services[workspace_id] = service
+        return service
 
 
 @lru_cache(maxsize=1)
-def _board_service_singleton() -> InMemoryBoardService:
-    return InMemoryBoardService()
+def _board_registry_singleton() -> BoardServiceRegistry:
+    return BoardServiceRegistry()
 
 
-def get_board_service() -> InMemoryBoardService:
-    """Return the process-wide board service (override in tests via DI)."""
-    return _board_service_singleton()
+def get_board_registry() -> BoardServiceRegistry:
+    """Return the process-wide board registry (override in tests via DI)."""
+    return _board_registry_singleton()
+
+
+def get_board_service(
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    registry: Annotated[BoardServiceRegistry, Depends(get_board_registry)],
+) -> InMemoryBoardService:
+    """Return the board service scoped to the caller's workspace.
+
+    Scoping happens here (not in the handlers) so every route — reads and writes
+    alike — operates only on the authenticated workspace's entities. Tests may
+    override this dependency directly to inject a single shared service.
+    """
+    return registry.for_workspace(principal.workspace_id)
 
 
 BoardServiceDep = Annotated[InMemoryBoardService, Depends(get_board_service)]
@@ -160,12 +209,17 @@ def list_tasks(
     )
 
 
-@router.post("/tasks", response_model=TaskDTO, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/tasks",
+    response_model=TaskDTO,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[_REQUIRE_WRITE],
+)
 def create_task(svc: BoardServiceDep, data: TaskDTO) -> TaskDTO:
     return svc.create_task(data)
 
 
-@router.post("/tasks/bulk", response_model=list[TaskDTO])
+@router.post("/tasks/bulk", response_model=list[TaskDTO], dependencies=[_REQUIRE_WRITE])
 def bulk_update(svc: BoardServiceDep, updates: list[BulkUpdate]) -> list[TaskDTO]:
     with _domain_errors():
         return svc.bulk_update(updates)
@@ -177,19 +231,23 @@ def get_task(svc: BoardServiceDep, task_id: uuid.UUID) -> TaskDTO:
         return svc.get_task(task_id)
 
 
-@router.patch("/tasks/{task_id}", response_model=TaskDTO)
+@router.patch("/tasks/{task_id}", response_model=TaskDTO, dependencies=[_REQUIRE_WRITE])
 def update_task(svc: BoardServiceDep, task_id: uuid.UUID, data: TaskDTO) -> TaskDTO:
     with _domain_errors():
         return svc.update_task(task_id, data)
 
 
-@router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/tasks/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[_REQUIRE_WRITE],
+)
 def delete_task(svc: BoardServiceDep, task_id: uuid.UUID) -> None:
     with _domain_errors():
         svc.delete_task(task_id)
 
 
-@router.post("/tasks/{task_id}/status", response_model=TaskDTO)
+@router.post("/tasks/{task_id}/status", response_model=TaskDTO, dependencies=[_REQUIRE_WRITE])
 def set_task_status(
     svc: BoardServiceDep, task_id: uuid.UUID, payload: StatusUpdateRequest
 ) -> TaskDTO:
@@ -197,7 +255,11 @@ def set_task_status(
         return svc.set_status(task_id, payload.status)
 
 
-@router.post("/tasks/{task_id}/dependencies", response_model=TaskDTO)
+@router.post(
+    "/tasks/{task_id}/dependencies",
+    response_model=TaskDTO,
+    dependencies=[_REQUIRE_WRITE],
+)
 def add_dependency(
     svc: BoardServiceDep, task_id: uuid.UUID, payload: DependencyRequest
 ) -> TaskDTO:
@@ -224,7 +286,12 @@ def list_epics(
     )
 
 
-@router.post("/epics", response_model=EpicDTO, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/epics",
+    response_model=EpicDTO,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[_REQUIRE_WRITE],
+)
 def create_epic(svc: BoardServiceDep, data: EpicDTO) -> EpicDTO:
     return svc.create_epic(data)
 
@@ -235,13 +302,17 @@ def get_epic(svc: BoardServiceDep, epic_id: uuid.UUID) -> EpicDTO:
         return svc.get_epic(epic_id)
 
 
-@router.patch("/epics/{epic_id}", response_model=EpicDTO)
+@router.patch("/epics/{epic_id}", response_model=EpicDTO, dependencies=[_REQUIRE_WRITE])
 def update_epic(svc: BoardServiceDep, epic_id: uuid.UUID, data: EpicDTO) -> EpicDTO:
     with _domain_errors():
         return svc.update_epic(epic_id, data)
 
 
-@router.delete("/epics/{epic_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/epics/{epic_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[_REQUIRE_WRITE],
+)
 def delete_epic(svc: BoardServiceDep, epic_id: uuid.UUID) -> None:
     with _domain_errors():
         svc.delete_epic(epic_id)
@@ -265,7 +336,12 @@ def list_sprints(
     )
 
 
-@router.post("/sprints", response_model=SprintDTO, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/sprints",
+    response_model=SprintDTO,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[_REQUIRE_WRITE],
+)
 def create_sprint(svc: BoardServiceDep, data: SprintDTO) -> SprintDTO:
     return svc.create_sprint(data)
 
@@ -276,13 +352,17 @@ def get_sprint(svc: BoardServiceDep, sprint_id: uuid.UUID) -> SprintDTO:
         return svc.get_sprint(sprint_id)
 
 
-@router.patch("/sprints/{sprint_id}", response_model=SprintDTO)
+@router.patch("/sprints/{sprint_id}", response_model=SprintDTO, dependencies=[_REQUIRE_WRITE])
 def update_sprint(svc: BoardServiceDep, sprint_id: uuid.UUID, data: SprintDTO) -> SprintDTO:
     with _domain_errors():
         return svc.update_sprint(sprint_id, data)
 
 
-@router.delete("/sprints/{sprint_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/sprints/{sprint_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[_REQUIRE_WRITE],
+)
 def delete_sprint(svc: BoardServiceDep, sprint_id: uuid.UUID) -> None:
     with _domain_errors():
         svc.delete_sprint(sprint_id)
@@ -306,7 +386,12 @@ def list_milestones(
     )
 
 
-@router.post("/milestones", response_model=MilestoneDTO, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/milestones",
+    response_model=MilestoneDTO,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[_REQUIRE_WRITE],
+)
 def create_milestone(svc: BoardServiceDep, data: MilestoneDTO) -> MilestoneDTO:
     return svc.create_milestone(data)
 
@@ -317,7 +402,11 @@ def get_milestone(svc: BoardServiceDep, milestone_id: uuid.UUID) -> MilestoneDTO
         return svc.get_milestone(milestone_id)
 
 
-@router.patch("/milestones/{milestone_id}", response_model=MilestoneDTO)
+@router.patch(
+    "/milestones/{milestone_id}",
+    response_model=MilestoneDTO,
+    dependencies=[_REQUIRE_WRITE],
+)
 def update_milestone(
     svc: BoardServiceDep, milestone_id: uuid.UUID, data: MilestoneDTO
 ) -> MilestoneDTO:
@@ -325,7 +414,11 @@ def update_milestone(
         return svc.update_milestone(milestone_id, data)
 
 
-@router.delete("/milestones/{milestone_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/milestones/{milestone_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[_REQUIRE_WRITE],
+)
 def delete_milestone(svc: BoardServiceDep, milestone_id: uuid.UUID) -> None:
     with _domain_errors():
         svc.delete_milestone(milestone_id)
@@ -349,7 +442,12 @@ def list_incidents(
     )
 
 
-@router.post("/incidents", response_model=IncidentDTO, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/incidents",
+    response_model=IncidentDTO,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[_REQUIRE_WRITE],
+)
 def create_incident(svc: BoardServiceDep, data: IncidentDTO) -> IncidentDTO:
     return svc.create_incident(data)
 
@@ -360,7 +458,11 @@ def get_incident(svc: BoardServiceDep, incident_id: uuid.UUID) -> IncidentDTO:
         return svc.get_incident(incident_id)
 
 
-@router.patch("/incidents/{incident_id}", response_model=IncidentDTO)
+@router.patch(
+    "/incidents/{incident_id}",
+    response_model=IncidentDTO,
+    dependencies=[_REQUIRE_WRITE],
+)
 def update_incident(
     svc: BoardServiceDep, incident_id: uuid.UUID, data: IncidentDTO
 ) -> IncidentDTO:
@@ -368,7 +470,11 @@ def update_incident(
         return svc.update_incident(incident_id, data)
 
 
-@router.delete("/incidents/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/incidents/{incident_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[_REQUIRE_WRITE],
+)
 def delete_incident(svc: BoardServiceDep, incident_id: uuid.UUID) -> None:
     with _domain_errors():
         svc.delete_incident(incident_id)

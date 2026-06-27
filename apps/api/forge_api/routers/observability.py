@@ -43,11 +43,15 @@ def list_audit(
     connection_id: str | None = None,
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> list[AuditEntry]:
+    # Per-workspace isolation: a caller may only read their own tenant's audit
+    # entries. The principal's workspace scopes the query so the cross-tenant
+    # audit log never leaks (every entry carries its actor's ``workspace_id``).
     return service.query_audit(
         category=category,
         actor=actor,
         run_id=run_id,
         connection_id=connection_id,
+        workspace_id=principal.workspace_id,
         limit=limit,
     )
 
@@ -62,8 +66,10 @@ def get_run_trace(
     principal: CurrentPrincipal,
     service: ServiceDep,
 ) -> RunTrace:
+    # Scope the lookup to the caller's workspace: a foreign (or unknown) run id
+    # surfaces as 404 so one tenant cannot fetch another tenant's run trace.
     try:
-        return service.get_run_trace(run_id)
+        return service.get_run_trace(run_id, workspace_id=principal.workspace_id)
     except RunNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

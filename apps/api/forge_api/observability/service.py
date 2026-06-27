@@ -36,6 +36,11 @@ class ObservabilityService:
         self.assembler = assembler or RunTraceAssembler()
         self.recorder = recorder or get_span_recorder()
         self._runs: dict[uuid.UUID, RunTrace] = {}
+        # Per-workspace ownership of each recorded run (Phase-2 bug fix r3). The
+        # trace store is keyed by run id; ``None`` means a run was recorded
+        # without a tenant dimension and is not scoped (back-compat for direct
+        # unit tests). The router always records/queries with a workspace.
+        self._run_owners: dict[uuid.UUID, uuid.UUID] = {}
 
     def record_run(
         self,
@@ -46,6 +51,7 @@ class ObservabilityService:
         status: RunStatus | None = None,
         confidence: float | None = None,
         subagent_steps: dict[str, list[Step]] | None = None,
+        workspace_id: uuid.UUID | None = None,
     ) -> RunTrace:
         """Assemble and register a run's trace, keyed by run id."""
         if result is not None:
@@ -61,13 +67,26 @@ class ObservabilityService:
             )
             key = run_id
         self._runs[key] = trace
+        if workspace_id is not None:
+            self._run_owners[key] = workspace_id
         return trace
 
-    def get_run_trace(self, run_id: uuid.UUID) -> RunTrace:
+    def get_run_trace(
+        self, run_id: uuid.UUID, *, workspace_id: uuid.UUID | None = None
+    ) -> RunTrace:
+        """Return a run's trace, scoped to ``workspace_id`` when supplied.
+
+        A run that is unknown *or* owned by a different workspace raises
+        :class:`RunNotFoundError` (mapped to 404) so a caller cannot read another
+        tenant's run trace by guessing/replaying its id.
+        """
         try:
-            return self._runs[run_id]
+            trace = self._runs[run_id]
         except KeyError as exc:
             raise RunNotFoundError(run_id) from exc
+        if workspace_id is not None and self._run_owners.get(run_id) != workspace_id:
+            raise RunNotFoundError(run_id)
+        return trace
 
     def query_audit(
         self,
@@ -76,6 +95,7 @@ class ObservabilityService:
         actor: str | None = None,
         run_id: uuid.UUID | None = None,
         connection_id: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         limit: int | None = None,
     ) -> list[AuditEntry]:
         return self.audit.query(
@@ -83,6 +103,7 @@ class ObservabilityService:
             actor=actor,
             run_id=run_id,
             connection_id=connection_id,
+            workspace_id=workspace_id,
             limit=limit,
         )
 

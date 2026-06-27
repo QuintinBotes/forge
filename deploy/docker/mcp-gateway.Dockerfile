@@ -1,8 +1,5 @@
 # syntax=docker/dockerfile:1
-# Forge MCP gateway image (plan Task 0.6 substrate; built in Phase 2).
-#
-# PARKED: `docker compose build` is not runnable in the overnight sandbox (no
-# network). Phase 2 (Task 2.1) verifies the build.
+# Forge MCP gateway image (plan Task 0.6 substrate; built + verified in Phase 2 Task 2.1).
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 ENV UV_COMPILE_BYTECODE=1 \
@@ -21,4 +18,4 @@ RUN groupadd -g 1000 forge && useradd -u 1000 -g forge -m forge \
 USER forge
 
 EXPOSE 8001
-CMD ["uvicorn", "forge_mcp_gateway.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "forge_mcp_gateway.app:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -8,26 +8,41 @@ trace viewer. These hit the ASGI app via httpx with an isolated, overridden
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import httpx
 import pytest
+from fastapi import FastAPI
 
+from forge_api.deps import get_current_principal
 from forge_api.main import app
 from forge_api.observability.audit import AuditCategory
 from forge_api.observability.service import ObservabilityService, get_observability_service
 from forge_contracts import Step
 from forge_contracts.enums import RunStatus, StepKind
 
+# The audit log and run traces are workspace-scoped (Phase-2 bug fix r3): the
+# router scopes every read to the authenticated principal's workspace. The
+# ``authenticate_app`` fixture injects a principal in ``TEST_WORKSPACE_ID``
+# (conftest), so these same-tenant tests record their entries/runs under that
+# workspace; cross-tenant denial is covered in ``test_rbac_tenant_r3.py``.
+TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
+
 
 @pytest.fixture
-def service() -> Iterator[ObservabilityService]:
+def service(
+    authenticate_app: Callable[..., FastAPI],
+) -> Iterator[ObservabilityService]:
     svc = ObservabilityService()
     app.dependency_overrides[get_observability_service] = lambda: svc
+    # Real auth is enforced; inject an authenticated principal on the shared app
+    # and clean it up so it never leaks into other tests using the module app.
+    authenticate_app(app)
     try:
         yield svc
     finally:
         app.dependency_overrides.pop(get_observability_service, None)
+        app.dependency_overrides.pop(get_current_principal, None)
 
 
 @pytest.fixture
@@ -41,8 +56,18 @@ async def test_audit_endpoint_returns_recorded_entries(
     client: httpx.AsyncClient, service: ObservabilityService
 ) -> None:
     run = uuid.uuid4()
-    service.audit.record(category=AuditCategory.AGENT_ACTION, action="plan", run_id=run)
-    service.audit.record(category=AuditCategory.TOOL_CALL, action="write_file", run_id=run)
+    service.audit.record(
+        category=AuditCategory.AGENT_ACTION,
+        action="plan",
+        run_id=run,
+        workspace_id=TEST_WORKSPACE_ID,
+    )
+    service.audit.record(
+        category=AuditCategory.TOOL_CALL,
+        action="write_file",
+        run_id=run,
+        workspace_id=TEST_WORKSPACE_ID,
+    )
 
     resp = await client.get("/observability/audit")
     assert resp.status_code == 200
@@ -54,8 +79,14 @@ async def test_audit_endpoint_returns_recorded_entries(
 async def test_audit_endpoint_filters_by_category(
     client: httpx.AsyncClient, service: ObservabilityService
 ) -> None:
-    service.audit.record(category=AuditCategory.AGENT_ACTION, action="plan")
-    service.audit.record(category=AuditCategory.TOOL_CALL, action="write_file")
+    service.audit.record(
+        category=AuditCategory.AGENT_ACTION, action="plan", workspace_id=TEST_WORKSPACE_ID
+    )
+    service.audit.record(
+        category=AuditCategory.TOOL_CALL,
+        action="write_file",
+        workspace_id=TEST_WORKSPACE_ID,
+    )
 
     resp = await client.get("/observability/audit", params={"category": "tool_call"})
     assert resp.status_code == 200
@@ -71,6 +102,7 @@ async def test_audit_endpoint_redacts_secrets(
         category=AuditCategory.TOOL_CALL,
         action="call_api",
         metadata={"api_key": "sk-SECRET1234567890"},
+        workspace_id=TEST_WORKSPACE_ID,
     )
     resp = await client.get("/observability/audit")
     assert resp.status_code == 200
@@ -88,6 +120,7 @@ async def test_run_trace_endpoint_returns_ordered_steps(
             Step(index=0, kind=StepKind.PLAN),
         ],
         status=RunStatus.SUCCEEDED,
+        workspace_id=TEST_WORKSPACE_ID,
     )
     resp = await client.get(f"/observability/runs/{run}/trace")
     assert resp.status_code == 200
