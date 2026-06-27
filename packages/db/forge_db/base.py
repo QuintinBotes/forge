@@ -16,11 +16,14 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    DDL,
     JSON,
     DateTime,
     ForeignKey,
     MetaData,
+    Table,
     Uuid,
+    event,
     func,
 )
 from sqlalchemy import (
@@ -58,6 +61,45 @@ def enum_type[E: enum.Enum](enum_cls: type[E]) -> SAEnum:
         validate_strings=True,
         values_callable=lambda e: [member.value for member in e],
     )
+
+
+#: Name of the shared plpgsql function that raises on UPDATE/DELETE.
+_IMMUTABILITY_FN = "forge_block_mutation"
+
+
+def attach_immutability_trigger(table: Table) -> None:
+    """Make ``table`` append-only on Postgres (BEFORE UPDATE/DELETE → raise).
+
+    This is the reusable F39-audit-log helper that per-domain append-only tables
+    opt into (here: ``automation_execution``). It is a no-op on non-Postgres
+    dialects (SQLite unit tests), where the repository layer enforces
+    append-only by exposing no update/delete path. Registered on the table's
+    ``after_create`` so it applies via both ``create_all`` and Alembic.
+    """
+
+    create_fn = DDL(
+        f"""
+        CREATE OR REPLACE FUNCTION {_IMMUTABILITY_FN}() RETURNS trigger AS $$
+        BEGIN
+            RAISE EXCEPTION 'table %% is append-only and cannot be modified',
+                TG_TABLE_NAME;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    trigger_name = f"{table.name}_immutable"
+    create_trigger = DDL(
+        f"""
+        CREATE TRIGGER {trigger_name}
+        BEFORE UPDATE OR DELETE ON {table.name}
+        FOR EACH ROW EXECUTE FUNCTION {_IMMUTABILITY_FN}();
+        """
+    )
+    drop_trigger = DDL(f"DROP TRIGGER IF EXISTS {trigger_name} ON {table.name};")
+
+    event.listen(table, "after_create", create_fn.execute_if(dialect="postgresql"))
+    event.listen(table, "after_create", create_trigger.execute_if(dialect="postgresql"))
+    event.listen(table, "before_drop", drop_trigger.execute_if(dialect="postgresql"))
 
 
 class Base(DeclarativeBase):

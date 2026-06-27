@@ -7,11 +7,17 @@ Alembic's ``env.py`` and by ``Base.metadata.create_all`` in tests).
 from __future__ import annotations
 
 from forge_db.models import enums
+from forge_db.models.automation import AutomationExecution, AutomationRule
 from forge_db.models.connections import MCPConnection, RepositoryConnection
 from forge_db.models.enums import (
     APIKeyKind,
     ApprovalGate,
     ApprovalStatus,
+    AutomationActionType,
+    AutomationEntityType,
+    AutomationExecutionStatus,
+    AutomationTriggerSource,
+    AutomationTriggerType,
     ChunkType,
     ExecutionMode,
     IncidentSeverity,
@@ -81,6 +87,13 @@ __all__ = [
     "ApprovalGate",
     "ApprovalRequest",
     "ApprovalStatus",
+    "AutomationActionType",
+    "AutomationEntityType",
+    "AutomationExecution",
+    "AutomationExecutionStatus",
+    "AutomationRule",
+    "AutomationTriggerSource",
+    "AutomationTriggerType",
     "ChunkType",
     "Constitution",
     "Epic",
