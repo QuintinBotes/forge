@@ -1,0 +1,13 @@
+{
+  "id": "10001",
+  "key": "ENG-1",
+  "fields": {
+    "summary": "Add pagination",
+    "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Add pagination to the list endpoint"}]}]},
+    "status": {"name": "In Progress", "statusCategory": {"key": "indeterminate"}},
+    "priority": {"name": "High"},
+    "assignee": {"accountId": "acc-1", "emailAddress": "alice@acme.test"},
+    "labels": ["backend", "api"],
+    "updated": "2026-01-02T10:00:00.000+0000"
+  }
+}

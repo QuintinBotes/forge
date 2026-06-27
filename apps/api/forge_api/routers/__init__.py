@@ -22,6 +22,7 @@ from forge_api.routers import (
     knowledge,
     mcp,
     observability,
+    pm,
     policy,
     spec,
     workflow,
@@ -45,6 +46,7 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     incidents.router,
     alerts.router,
     observability.router,
+    pm.router,
 )
 
 __all__ = [
@@ -61,6 +63,7 @@ __all__ = [
     "knowledge",
     "mcp",
     "observability",
+    "pm",
     "policy",
     "spec",
     "workflow",

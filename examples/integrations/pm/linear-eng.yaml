@@ -1,0 +1,20 @@
+# OSS connector template — Linear (F18 PMAdapter).
+# Security notes:
+#   * Linear webhooks are HMAC-SHA256 signed over the EXACT raw request body
+#     (`Linear-Signature`) with a freshness window on `webhookTimestamp`; the
+#     reverse proxy must not buffer/rewrite the webhook path.
+#   * The API key / OAuth token is stored ENCRYPTED in the F37 vault, never
+#     returned or logged.
+pm_connection:
+  provider: linear
+  name: Engineering Linear
+  project_id: <forge-project-uuid>
+  external_base_url: null     # Linear is a fixed GraphQL endpoint
+  external_project_key: ENG   # Linear team key
+  auth_type: oauth            # oauth | api_token (personal API key)
+  sync_direction: bidirectional
+  conflict_policy: newest_wins
+  status_map: {}              # Linear workflow-state type is 1:1 with Forge category
+  priority_map: {}
+  field_map: {}
+  on_external_delete: unlink

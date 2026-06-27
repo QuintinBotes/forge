@@ -1,0 +1,7 @@
+{"data": {"team": {"states": {"nodes": [
+  {"id": "st-0", "name": "Backlog", "type": "backlog"},
+  {"id": "st-1", "name": "Todo", "type": "unstarted"},
+  {"id": "st-2", "name": "In Progress", "type": "started"},
+  {"id": "st-3", "name": "Done", "type": "completed"},
+  {"id": "st-4", "name": "Canceled", "type": "canceled"}
+]}}}}

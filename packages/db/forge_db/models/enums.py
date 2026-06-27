@@ -203,6 +203,59 @@ class ApprovalStatus(enum.StrEnum):
     CHANGES_REQUESTED = "changes_requested"
 
 
+# --------------------------------------------------------------------------- #
+# F18 — external PM adapters (Jira, Linear)                                    #
+# --------------------------------------------------------------------------- #
+
+
+class PMProvider(enum.StrEnum):
+    """Supported external project-management providers (F18)."""
+
+    JIRA = "jira"
+    LINEAR = "linear"
+
+
+class PMAuthType(enum.StrEnum):
+    OAUTH = "oauth"
+    API_TOKEN = "api_token"
+
+
+class PMSyncDirection(enum.StrEnum):
+    BIDIRECTIONAL = "bidirectional"
+    INBOUND_ONLY = "inbound_only"
+    OUTBOUND_ONLY = "outbound_only"
+
+
+class PMConflictPolicy(enum.StrEnum):
+    FORGE_WINS = "forge_wins"
+    EXTERNAL_WINS = "external_wins"
+    NEWEST_WINS = "newest_wins"
+    MANUAL = "manual"
+
+
+class PMConnectionStatus(enum.StrEnum):
+    PENDING = "pending"
+    CONNECTED = "connected"
+    ERROR = "error"
+    DISABLED = "disabled"
+
+
+class PMSyncState(enum.StrEnum):
+    SYNCED = "synced"
+    PENDING_OUT = "pending_out"
+    PENDING_IN = "pending_in"
+    CONFLICT = "conflict"
+    ERROR = "error"
+
+
+class PMDeliveryStatus(enum.StrEnum):
+    RECEIVED = "received"
+    PROCESSED = "processed"
+    SKIPPED = "skipped"
+    ECHO_SUPPRESSED = "echo_suppressed"
+    ERROR = "error"
+
+
 __all__ = [
     "APIKeyKind",
     "ApprovalGate",
@@ -215,6 +268,13 @@ __all__ = [
     "MCPAuthType",
     "MCPIndexStrategy",
     "MCPTransport",
+    "PMAuthType",
+    "PMConflictPolicy",
+    "PMConnectionStatus",
+    "PMDeliveryStatus",
+    "PMProvider",
+    "PMSyncDirection",
+    "PMSyncState",
     "Priority",
     "RepoProvider",
     "RunStatus",

@@ -64,10 +64,17 @@ EXPECTED_MODELS = [
     "RemediationPlan",
     "Postmortem",
     "PostmortemActionItem",
+    # F18 external PM-adapter tables.
+    "PMConnection",
+    "PMTaskLink",
+    "PMWebhookDelivery",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
-NON_WORKSPACE_SCOPED = {"workspace"}
+# ``pm_webhook_delivery`` is an inbound idempotency/audit ledger that must
+# survive connection (and hence workspace) deletion, so it is intentionally not
+# workspace-scoped (mirrors F03's webhook-delivery table).
+NON_WORKSPACE_SCOPED = {"workspace", "pm_webhook_delivery"}
 
 
 @pytest.fixture

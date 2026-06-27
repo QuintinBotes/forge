@@ -28,13 +28,23 @@ down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# Tables owned by later, dedicated migrations (created/dropped there, not here).
+# Keeps the baseline focused on the core data model while still metadata-driven.
+DEFERRED_TABLES = frozenset(
+    {"pm_connection", "pm_task_link", "pm_webhook_delivery"}
+)
+
+
+def _baseline_tables() -> list:
+    return [t for t in Base.metadata.sorted_tables if t.name not in DEFERRED_TABLES]
+
 
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
         op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    Base.metadata.create_all(bind=bind)
+    Base.metadata.create_all(bind=bind, tables=_baseline_tables())
 
 
 def downgrade() -> None:
-    Base.metadata.drop_all(bind=op.get_bind())
+    Base.metadata.drop_all(bind=op.get_bind(), tables=_baseline_tables())

@@ -20,6 +20,13 @@ from forge_db.models.enums import (
     MCPAuthType,
     MCPIndexStrategy,
     MCPTransport,
+    PMAuthType,
+    PMConflictPolicy,
+    PMConnectionStatus,
+    PMDeliveryStatus,
+    PMProvider,
+    PMSyncDirection,
+    PMSyncState,
     Priority,
     RepoProvider,
     RunStatus,
@@ -51,6 +58,7 @@ from forge_db.models.planning import (
     Sprint,
     Task,
 )
+from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
 from forge_db.models.profiles import PolicyProfile, SkillProfile
 from forge_db.models.project import Constitution, Project
 from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
@@ -81,6 +89,16 @@ __all__ = [
     "MCPIndexStrategy",
     "MCPTransport",
     "Milestone",
+    "PMAuthType",
+    "PMConflictPolicy",
+    "PMConnection",
+    "PMConnectionStatus",
+    "PMDeliveryStatus",
+    "PMProvider",
+    "PMSyncDirection",
+    "PMSyncState",
+    "PMTaskLink",
+    "PMWebhookDelivery",
     "PolicyProfile",
     "Postmortem",
     "PostmortemActionItem",
