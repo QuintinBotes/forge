@@ -1,6 +1,9 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Keep the existing JS design-token config (colors, radius, container,
+   keyframes) working under Tailwind v4 via the @config directive. */
+@config "../../tailwind.config.ts";
 
 @layer base {
   :root {

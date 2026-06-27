@@ -11,7 +11,7 @@ function makeFakeSocket() {
   const listeners = new Map<string, Set<(ev: unknown) => void>>();
   const socket: WebSocketLike & {
     emit: (type: string, ev: unknown) => void;
-    close: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn<() => void>>;
   } = {
     readyState: 1,
     addEventListener(type, listener) {
@@ -22,7 +22,7 @@ function makeFakeSocket() {
     removeEventListener(type, listener) {
       listeners.get(type)?.delete(listener);
     },
-    close: vi.fn(),
+    close: vi.fn<() => void>(),
     emit(type, ev) {
       listeners.get(type)?.forEach((l) => l(ev));
     },
