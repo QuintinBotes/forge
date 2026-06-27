@@ -1,0 +1,41 @@
+# Example .forge/policy.yaml — Go microservice.
+#
+# A lean service repo: a fast verification profile is the default, generated
+# protobuf code is excluded from indexing, and deploys remain human-gated.
+repo_id: github.com/acme/inventory-svc
+name: Inventory Service
+purpose: gRPC microservice owning inventory state.
+languages: [go]
+entrypoints:
+  - cmd/server/main.go
+commands:
+  install: go mod download
+  lint: golangci-lint run
+  type_check: go vet ./...
+  test: go test ./...
+  test_coverage: go test -coverprofile=coverage.out ./...
+  build: go build ./...
+write_rules:
+  allow: ["cmd/**", "internal/**", "pkg/**", "*_test.go", "docs/**"]
+  deny: ["deploy/**", "charts/**", ".env*", "secrets/**", "*.pem", "*.key", "go.sum"]
+review_rules:
+  required_reviewers: [team-platform]
+  approval_required_for_merge: true
+  min_approvals: 2
+deploy_rules:
+  allow_agent_deploy: false
+  environments: [dev]
+  restricted_environments: [staging, production]
+knowledge_rules:
+  index_paths: ["cmd/**", "internal/**", "pkg/**", "docs/**"]
+  exclude_paths: ["vendor/**", "*.pb.go", "bin/**"]
+  freshness_sla_hours: 24
+skill_profiles:
+  default: backend-fast
+  allowed: [backend-fast, backend-tdd, security-review]
+subagent_rules:
+  allow_subagents: true
+  allowed_roles: [reviewer]
+  max_parallel: 1
+allowed_actions: [read_repo, write_code, run_tests, open_pr, read_knowledge, query_mcp]
+restricted_actions: [deploy_prod, delete_files, push_to_main, modify_access_controls]

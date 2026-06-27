@@ -1,0 +1,438 @@
+# Forge V1 golden task set (plan Task 1.16).
+#
+# >=30 representative engineering-task inputs paired with their known-good
+# outputs. Built per spec (Observability and Evaluation) and the LangGraph 2026
+# production guidance the spec cites: the golden set exists before framework
+# complexity is added, and every release is scored against it so regressions
+# block merge (forge_eval.harness.TaskScorecard.assert_threshold).
+#
+# Each task declares:
+#   - objective         human task statement
+#   - kind              a forge_contracts.TaskKind value
+#   - skill_profile     the skill profile a correct run should use (optional)
+#   - requirements      ground-truth requirements; difficulty core|stretch
+#   - expected_status   terminal task status of a known-good run
+#   - expected_checks   verification checks a known-good run must pass
+#   - expected_chunks   retrieval chunks a correct run should surface (optional)
+#
+# Loaded through forge_eval.tasks.load_golden_tasks, scored by
+# forge_eval.harness.evaluate_tasks. The reference baseline solver
+# (forge_eval.harness.reference_solver) solves every `core` requirement but no
+# `stretch` requirement, so stretch goals genuinely differentiate pipelines.
+tasks:
+  # ---------------------------------------------------------------- knowledge --
+  - id: KNOW-001
+    objective: "Chunk a Python module into function/class-level chunks via AST."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-001-R1, text: "One chunk per top-level def/class" }
+      - { id: KNOW-001-R2, text: "Correct start/end line spans" }
+      - { id: KNOW-001-R3, text: "Falls back to ast when tree-sitter absent" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [knowledge, chunking]
+
+  - id: KNOW-002
+    objective: "Chunk Markdown semantically on headings and paragraphs."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-002-R1, text: "Split on heading boundaries" }
+      - { id: KNOW-002-R2, text: "Preserve paragraph integrity" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [knowledge, chunking]
+
+  - id: KNOW-003
+    objective: "Apply chunk-type priority weights (README 1.3, policy 1.5, spec 1.4)."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-003-R1, text: "Weights table matches spec" }
+      - { id: KNOW-003-R2, text: "Default weight 1.0" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [knowledge, ranking]
+
+  - id: KNOW-004
+    objective: "Implement PgVectorStore.index/search with cosine similarity."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-004-R1, text: "Index chunks with embeddings" }
+      - { id: KNOW-004-R2, text: "Vector search returns nearest by cosine" }
+      - { id: KNOW-004-R3, text: "Secrets redacted from results", difficulty: stretch }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [knowledge, store]
+
+  - id: KNOW-005
+    objective: "Implement Bm25Store.search over Postgres tsvector/ts_rank."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-005-R1, text: "Exact-identifier match a vector miss loses" }
+      - { id: KNOW-005-R2, text: "ts_rank ordering" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [knowledge, keyword]
+
+  - id: KNOW-006
+    objective: "Implement RRF fusion score(d)=sum 1/(k+rank), k=60."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-006-R1, text: "Exact RRF formula with k=60" }
+      - { id: KNOW-006-R2, text: "Matches hand-computed example" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [knowledge, fusion]
+
+  - id: KNOW-007
+    objective: "Build a fixture-backed Jina reranker client."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-007-R1, text: "Reorders candidates per fixture" }
+      - { id: KNOW-007-R2, text: "No live network in tests" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [knowledge, rerank]
+
+  - id: KNOW-008
+    objective: "Chain semantic+keyword->RRF->rerank->top-k with source attribution."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-008-R1, text: "Hybrid pipeline returns attributed chunks" }
+      - { id: KNOW-008-R2, text: "Top-k truncation honoured" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    expected_chunks:
+      - "app/middleware/auth.py::require_bearer"
+      - "app/api/customers.py::list_customers"
+    tags: [knowledge, search]
+
+  - id: KNOW-009
+    objective: "Incremental (git-diff) sync re-indexes only changed files."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-009-R1, text: "Touches only changed files" }
+      - { id: KNOW-009-R2, text: "Full sync still supported" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [knowledge, sync]
+
+  - id: KNOW-010
+    objective: "Golden retrieval eval reports recall@k and MRR with a threshold gate."
+    kind: spike
+    skill_profile: backend-tdd
+    requirements:
+      - { id: KNOW-010-R1, text: ">=15 query->expected-chunk pairs" }
+      - { id: KNOW-010-R2, text: "Asserts recall threshold on fake pipeline" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    expected_chunks:
+      - "docs/FORGE_SPEC.md::knowledge-architecture"
+    tags: [knowledge, eval]
+
+  # -------------------------------------------------------------------- board --
+  - id: BOARD-001
+    objective: "Implement Epic/Task CRUD domain services."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: BOARD-001-R1, text: "Create/read/update entities" }
+      - { id: BOARD-001-R2, text: "Workspace scoping enforced" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [board, crud]
+
+  - id: BOARD-002
+    objective: "Dependency graph with cycle detection raising CycleError."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: BOARD-002-R1, text: "Adding a cycle raises CycleError" }
+      - { id: BOARD-002-R2, text: "Acyclic adds succeed" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [board, graph]
+
+  - id: BOARD-003
+    objective: "Bulk status update across many tasks atomically."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: BOARD-003-R1, text: "Bulk set_status updates all targets" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [board, bulk]
+
+  - id: BOARD-004
+    objective: "Kanban UI with optimistic status changes and rollback-on-error."
+    kind: feature
+    skill_profile: frontend-ui
+    requirements:
+      - { id: BOARD-004-R1, text: "Optimistic update applies immediately" }
+      - { id: BOARD-004-R2, text: "Rollback restores prior state on error" }
+      - { id: BOARD-004-R3, text: "Keyboard navigation + a11y", difficulty: stretch }
+    expected_status: done
+    expected_checks: [lint, types, tests, a11y]
+    tags: [board, ui]
+
+  - id: BOARD-005
+    objective: "Fix invalid status transition allowing done->backlog."
+    kind: bug
+    skill_profile: backend-fast
+    requirements:
+      - { id: BOARD-005-R1, text: "Illegal transition rejected" }
+      - { id: BOARD-005-R2, text: "Regression test added" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [board, bug]
+
+  # --------------------------------------------------------------------- spec --
+  - id: SPEC-001
+    objective: "SDD lifecycle constitution_init->spec_create->clarify->plan->tasks->validate."
+    kind: feature
+    skill_profile: spec-analyst
+    requirements:
+      - { id: SPEC-001-R1, text: "Lifecycle produces folder layout + manifest" }
+      - { id: SPEC-001-R2, text: "Each phase advances spec status" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [spec, lifecycle]
+
+  - id: SPEC-002
+    objective: "Read/write manifest.yaml against the spec schema."
+    kind: feature
+    skill_profile: spec-analyst
+    requirements:
+      - { id: SPEC-002-R1, text: "Round-trips manifest fields" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [spec, manifest]
+
+  - id: SPEC-003
+    objective: "Gate enforcement: block implement when spec status != approved."
+    kind: feature
+    skill_profile: spec-analyst
+    requirements:
+      - { id: SPEC-003-R1, text: "Implement blocked without approved spec" }
+      - { id: SPEC-003-R2, text: "Raises SpecGateError" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [spec, gate]
+
+  - id: SPEC-004
+    objective: "Requirement->acceptance->task->test traceability report."
+    kind: feature
+    skill_profile: spec-analyst
+    requirements:
+      - { id: SPEC-004-R1, text: "Maps R->A->task->test" }
+      - { id: SPEC-004-R2, text: "Flags unsatisfied requirements", difficulty: stretch }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [spec, traceability]
+
+  # -------------------------------------------------------------------- agent --
+  - id: AGENT-001
+    objective: "LangGraph StateGraph single-agent plan->act->observe loop."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: AGENT-001-R1, text: "Graph runs to completion on scripted fake model" }
+      - { id: AGENT-001-R2, text: "Emits Step[] trace" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [agent, langgraph]
+
+  - id: AGENT-002
+    objective: "Policy-checked tool dispatch denies restricted tool calls."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: AGENT-002-R1, text: "Restricted tool call denied by policy gate" }
+      - { id: AGENT-002-R2, text: "Allowed call dispatched" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [agent, policy]
+
+  - id: AGENT-003
+    objective: "Git-worktree sandbox created then cleaned per run."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: AGENT-003-R1, text: "Worktree created for run" }
+      - { id: AGENT-003-R2, text: "Worktree removed on completion" }
+      - { id: AGENT-003-R3, text: "Cleanup even on crash", difficulty: stretch }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [agent, sandbox]
+
+  # ----------------------------------------------------------------- workflow --
+  - id: WF-001
+    objective: "Postgres-backed FSM drives the default feature workflow to merged."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: WF-001-R1, text: "Happy path created->...->merged" }
+      - { id: WF-001-R2, text: "Illegal transitions rejected" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [workflow, fsm]
+
+  - id: WF-002
+    objective: "Retry policy (max 3, exp backoff) then escalate at confidence 0.72."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: WF-002-R1, text: "Budget retries on checks_failed" }
+      - { id: WF-002-R2, text: "Escalates to needs_human_input after budget" }
+      - { id: WF-002-R3, text: "Exponential backoff schedule", difficulty: stretch }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [workflow, retry]
+
+  - id: WF-003
+    objective: "Parse the workflow YAML DSL into a validated transition graph."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: WF-003-R1, text: "DSL parses to validated transition graph" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [workflow, dsl]
+
+  # ------------------------------------------------------------ policy / skill --
+  - id: POL-001
+    objective: "Load .forge/policy.yaml and evaluate ToolCall to a Decision."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: POL-001-R1, text: "Write to app/** allowed, secrets/** denied" }
+      - { id: POL-001-R2, text: "deploy_prod restricted" }
+      - { id: POL-001-R3, text: "Unknown action defaults deny" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [policy]
+
+  - id: SKILL-001
+    objective: "Skill-profile registry + behavior injection into AgentObjective."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: SKILL-001-R1, text: "backend-tdd injects test-first + coverage floor" }
+      - { id: SKILL-001-R2, text: "incident-response forbids deploy_prod" }
+      - { id: SKILL-001-R3, text: "Unknown profile raises" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [skill]
+
+  # -------------------------------------------------------- mcp / integration --
+  - id: MCP-001
+    objective: "Read-only MCP connection rejects a write tool call and audits."
+    kind: feature
+    skill_profile: security-review
+    requirements:
+      - { id: MCP-001-R1, text: "Write tool call rejected by default" }
+      - { id: MCP-001-R2, text: "Audit entry with redacted secrets" }
+      - { id: MCP-001-R3, text: "RFC 8707 token binding", difficulty: stretch }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [mcp, security]
+
+  - id: INT-001
+    objective: "Build the GitHub open-PR payload (verified against fixture)."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: INT-001-R1, text: "PR-open payload matches fixture" }
+      - { id: INT-001-R2, text: "No live calls" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [integration, github]
+
+  - id: INT-002
+    objective: "Format a Slack approval-request notification."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: INT-002-R1, text: "Approval message formatted correctly" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [integration, slack]
+
+  # ---------------------------------------------------- observability / auth --
+  - id: OBS-001
+    objective: "Append-only audit log + run-trace assembler with redaction."
+    kind: feature
+    skill_profile: backend-tdd
+    requirements:
+      - { id: OBS-001-R1, text: "Audit entries append-only" }
+      - { id: OBS-001-R2, text: "Run trace reconstructs ordered steps" }
+      - { id: OBS-001-R3, text: "Secret redaction applied" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [observability, audit]
+
+  - id: AUTH-001
+    objective: "Encrypted BYOK vault + RBAC denies viewer a write."
+    kind: feature
+    skill_profile: security-review
+    requirements:
+      - { id: AUTH-001-R1, text: "Secret encrypted at rest, decrypts" }
+      - { id: AUTH-001-R2, text: "RBAC denies viewer a write" }
+      - { id: AUTH-001-R3, text: "Secrets never in serialized output" }
+      - { id: AUTH-001-R4, text: "Automatic agent-token expiry", difficulty: stretch }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [auth, secrets]
+
+  # -------------------------------------------------------- incident / chores --
+  - id: INC-001
+    objective: "Incident remediation workflow forbids deploy_prod without approval."
+    kind: incident
+    skill_profile: incident-response
+    requirements:
+      - { id: INC-001-R1, text: "deploy_prod blocked pending approval" }
+      - { id: INC-001-R2, text: "Remediation requires human approval gate" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [incident, safety]
+
+  - id: CR-001
+    objective: "Change-request: switch reranker provider behind RerankerClient."
+    kind: change_request
+    skill_profile: backend-tdd
+    requirements:
+      - { id: CR-001-R1, text: "Provider swap behind interface" }
+      - { id: CR-001-R2, text: "Existing fixtures still pass" }
+    expected_status: done
+    expected_checks: [lint, types, tests]
+    tags: [change_request, knowledge]
+
+  - id: DOC-001
+    objective: "Write the self-hosting quickstart documentation."
+    kind: doc
+    skill_profile: spec-analyst
+    requirements:
+      - { id: DOC-001-R1, text: "make setup && make dev documented" }
+      - { id: DOC-001-R2, text: "Backup/restore covered" }
+    expected_status: done
+    expected_checks: [docs-lint]
+    tags: [docs, self-hosting]
+
+  - id: CHORE-001
+    objective: "Pin docker image digests and add healthchecks in compose."
+    kind: chore
+    skill_profile: chore-fast
+    requirements:
+      - { id: CHORE-001-R1, text: "All images pinned by digest" }
+      - { id: CHORE-001-R2, text: "Healthchecks present" }
+    expected_status: done
+    expected_checks: [lint]
+    tags: [chore, deploy]

@@ -1,0 +1,8 @@
+{
+  "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "state": "success",
+  "context": "ci/forge",
+  "description": "All checks passed",
+  "target_url": "https://ci.example.com/builds/100",
+  "repository": { "full_name": "org/api" }
+}

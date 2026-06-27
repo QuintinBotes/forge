@@ -1,0 +1,23 @@
+# Example MCP connection — GitHub Issues (HTTP transport, API key).
+#
+# Query-through strategy: issues are fetched live at retrieval time so the agent
+# always sees current state. Read-only; the token is bound to this server via
+# the RFC 8707 `resource` parameter.
+mcp_connection:
+  id: github-issues
+  name: GitHub Issues
+  transport: http
+  endpoint: https://mcp.company.internal/github
+  auth:
+    type: api_key
+    token_ref: secret://mcp/github-issues
+    resource: https://mcp.company.internal/github
+  capabilities:
+    resources: true
+    tools: true
+    prompts: false
+  sync_mode: query_through
+  index_strategy: query_through
+  freshness_sla_minutes: 5
+  allow_write: false
+  allowed_namespaces: [issues, pulls]

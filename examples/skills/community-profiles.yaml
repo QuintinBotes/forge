@@ -1,0 +1,51 @@
+# Example community skill profiles (wrapped `skill_profiles:` collection form).
+#
+# Parsed by `forge_skill.load_profiles`; each top-level key becomes the profile
+# `name`. These are NEW profiles that extend the seven built-ins — they enforce
+# engineering discipline structurally, not via prompt text. Register them with a
+# `SkillProfileRegistry` to make them resolvable by name in a task or workflow.
+skill_profiles:
+
+  docs-writer:
+    description: Documentation-only changes with prose-quality review.
+    requires_plan: false
+    verification_steps: [lint, link_check, spellcheck]
+    review_required: true
+    forbidden_shortcuts: [broken_links, undocumented_examples]
+    allowed_actions: [read_repo, read_knowledge, write_docs, open_pr]
+    forbidden_actions: [write_code, deploy_prod, delete_data]
+
+  dependency-upgrade:
+    description: Routine dependency bumps that must keep the suite green.
+    requires_plan: false
+    requires_tests_before_implementation: false
+    min_test_coverage: 70
+    verification_steps: [install, lint, type_check, unit_tests, integration_tests]
+    review_required: true
+    forbidden_shortcuts: [skip_tests, pin_to_prerelease, ignore_lockfile]
+    allowed_actions: [read_repo, write_code, run_tests, open_pr]
+    forbidden_actions: [deploy_prod, modify_access_controls]
+
+  data-migration:
+    description: Schema/data migrations requiring an explicit human go-ahead.
+    requires_plan: true
+    requires_tests_before_implementation: true
+    min_test_coverage: 80
+    requires_human_approval_before_action: true
+    max_blast_radius: medium
+    verification_steps: [lint, type_check, unit_tests, migration_dry_run]
+    review_required: true
+    forbidden_shortcuts: [irreversible_migration, skip_dry_run, no_rollback_plan]
+    allowed_actions: [read_repo, write_code, run_tests, run_migration_dry_run, open_pr]
+    forbidden_actions: [delete_data, deploy_prod, modify_access_controls]
+
+  api-contract-review:
+    description: Reviews API/schema changes for backward compatibility.
+    requires_plan: false
+    output_type: review_report
+    human_review_required: true
+    review_required: true
+    tools: [openapi_diff, contract_test]
+    allowed_actions: [read_repo, read_knowledge, write_review_comment]
+    forbidden_actions: [write_code, deploy_prod, delete_data]
+    report_format: markdown

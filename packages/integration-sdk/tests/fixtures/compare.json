@@ -1,0 +1,11 @@
+{
+  "status": "ahead",
+  "ahead_by": 2,
+  "behind_by": 0,
+  "total_commits": 2,
+  "files": [
+    { "filename": "app/main.py", "status": "modified" },
+    { "filename": "app/new_feature.py", "status": "added" },
+    { "filename": "app/legacy.py", "status": "removed" }
+  ]
+}

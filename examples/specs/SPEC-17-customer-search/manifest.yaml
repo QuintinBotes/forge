@@ -1,0 +1,39 @@
+# Example spec manifest (machine-readable spec metadata).
+#
+# Loaded by `forge_spec.load_manifest`. Acceptance criteria reference declared
+# requirements via `req_refs`, giving the requirement -> acceptance -> task ->
+# test traceability the spec engine validates and the approval UI renders.
+id: SPEC-17
+name: Customer search endpoint improvements
+status: approved
+constitution_refs:
+  - engineering/api-principles
+repos:
+  - github.com/acme/payments-api
+requirements:
+  - id: R1
+    text: Add customer search endpoint with cursor-based pagination
+  - id: R2
+    text: Endpoint must support bearer token authentication
+acceptance_criteria:
+  - id: A1
+    req_refs: [R1]
+    text: Endpoint accepts cursor and limit params, returns next_cursor
+  - id: A2
+    req_refs: [R2]
+    text: Requests without a valid bearer token return 401
+constraints:
+  - Follow existing auth middleware pattern in app/middleware/auth.py
+  - No breaking changes before the v2 migration
+decisions:
+  - id: ADR-1
+    title: Use keyset (cursor) pagination instead of offset
+    status: accepted
+    context: Offset pagination degrades on large result sets and is unstable under writes.
+    decision: Paginate on an indexed (created_at, id) keyset and return an opaque next_cursor.
+    consequences: Cursors are not random-access; clients must follow next_cursor links.
+plan_ref: plan.md
+tasks_ref: tasks.md
+validation_ref: validation.md
+execution_mode: single_agent
+skill_profile: backend-tdd

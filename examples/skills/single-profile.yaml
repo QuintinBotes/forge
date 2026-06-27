@@ -1,0 +1,15 @@
+# Example single skill profile (standalone document form).
+#
+# Parsed by `forge_skill.load_profile`; a single-document profile must carry its
+# own `name`. Use this shape when distributing one profile per file.
+name: performance-tuning
+description: Performance work that must prove a measurable improvement.
+requires_plan: true
+requires_tests_before_implementation: true
+min_test_coverage: 80
+verification_steps: [lint, type_check, unit_tests, benchmark]
+review_required: true
+forbidden_shortcuts: [unverified_optimization, remove_tests, micro_bench_only]
+allowed_actions: [read_repo, read_knowledge, write_code, run_tests, run_benchmark, open_pr]
+forbidden_actions: [deploy_prod, delete_data, modify_access_controls]
+report_format: markdown

@@ -1,0 +1,11 @@
+{
+  "action": "completed",
+  "check_run": {
+    "name": "pytest",
+    "status": "completed",
+    "conclusion": "failure",
+    "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+    "details_url": "https://github.com/org/api/runs/9001"
+  },
+  "repository": { "full_name": "org/api" }
+}

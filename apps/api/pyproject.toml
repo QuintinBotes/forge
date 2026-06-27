@@ -9,6 +9,7 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "forge-db",
+    "forge-board",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic-settings>=2.2",

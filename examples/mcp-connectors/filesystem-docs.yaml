@@ -1,0 +1,19 @@
+# Example MCP connection — local docs filesystem (stdio transport).
+#
+# A stdio-launched MCP server exposing a docs directory. No network auth is
+# needed for a local subprocess, so `auth.type` is none. Still read-only.
+mcp_connection:
+  id: local-docs
+  name: Local Documentation
+  transport: stdio
+  auth:
+    type: none
+  capabilities:
+    resources: true
+    tools: false
+    prompts: false
+  sync_mode: full
+  index_strategy: sync_and_index
+  freshness_sla_minutes: 1440
+  allow_write: false
+  allowed_namespaces: [handbook, runbooks]

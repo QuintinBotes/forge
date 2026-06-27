@@ -1,0 +1,66 @@
+# Example workflow DSL — incident response.
+#
+# Mirrors docs/FORGE_SPEC.md ("Incident Workflow States"). Remediation is always
+# human-approved before any runbook executes; monitoring can loop back to a new
+# remediation proposal if metrics regress.
+workflow: incident_response
+version: "1"
+modes:
+  default: single_agent
+
+transitions:
+  - from: alert_received
+    to: incident_created
+    action: create_incident
+
+  - from: incident_created
+    to: context_gathering
+    action: gather_context
+    skill: incident-response
+
+  - from: context_gathering
+    to: impact_assessed
+    action: assess_impact
+
+  - from: impact_assessed
+    to: remediation_proposed
+    action: propose_remediation
+
+  - from: remediation_proposed
+    to: awaiting_approval
+    action: request_remediation_approval
+
+  - from: awaiting_approval
+    to: executing_runbook
+    when: remediation_approved_by_human
+    record: approval_event
+
+  - from: awaiting_approval
+    to: remediation_proposed
+    when: changes_requested
+
+  - from: executing_runbook
+    to: monitoring
+    action: run_runbook
+
+  - from: monitoring
+    to: resolved
+    when: metrics_recovered
+
+  - from: monitoring
+    to: remediation_proposed
+    when: metrics_degraded
+
+  - from: resolved
+    to: postmortem_created
+    action: write_postmortem
+
+retry_policy:
+  max_retries: 1
+  backoff: exponential
+  initial_delay_seconds: 30
+
+escalation_policy:
+  confidence_threshold: 0.72
+  on_low_confidence: pause_and_notify
+  on_policy_conflict: escalate_to_admin
