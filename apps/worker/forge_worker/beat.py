@@ -14,6 +14,7 @@ from forge_worker.celery_app import celery_app
 
 SANDBOX_REAP_TASK = "sandbox.reap_orphans"
 MCP_REFRESH_TASK = "forge.knowledge.refresh_stale_mcp_sources"
+AUTOMATION_SWEEP_TASK = "forge.automations.sweep_unprocessed_triggers"
 
 
 def reap_interval_seconds() -> float:
@@ -23,6 +24,11 @@ def reap_interval_seconds() -> float:
 def mcp_index_poll_seconds() -> float:
     """Beat cadence for the F20 stale-MCP-source refresh (``MCP_INDEX_POLL_SECONDS``)."""
     return float(os.environ.get("MCP_INDEX_POLL_SECONDS", "300"))
+
+
+def automation_sweep_seconds() -> float:
+    """Beat cadence for the F21 trigger reconciliation sweep."""
+    return float(os.environ.get("FORGE_AUTOMATION_SWEEP_INTERVAL_SECONDS", "60"))
 
 
 def configure_beat(app: object) -> dict[str, object]:
@@ -37,6 +43,11 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": MCP_REFRESH_TASK,
             "schedule": mcp_index_poll_seconds(),
         },
+        # F21: reconcile any trigger envelopes whose enqueue was lost.
+        "automation-sweep-unprocessed-triggers": {
+            "task": AUTOMATION_SWEEP_TASK,
+            "schedule": automation_sweep_seconds(),
+        },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
     existing.update(schedule)
@@ -47,9 +58,11 @@ def configure_beat(app: object) -> dict[str, object]:
 BEAT_SCHEDULE = configure_beat(celery_app)
 
 __all__ = [
+    "AUTOMATION_SWEEP_TASK",
     "BEAT_SCHEDULE",
     "MCP_REFRESH_TASK",
     "SANDBOX_REAP_TASK",
+    "automation_sweep_seconds",
     "configure_beat",
     "mcp_index_poll_seconds",
     "reap_interval_seconds",

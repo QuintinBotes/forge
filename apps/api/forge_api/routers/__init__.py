@@ -15,6 +15,7 @@ from forge_api.routers import (
     alerts,
     approval,
     auth,
+    automations,
     board,
     health,
     incidents,
@@ -47,6 +48,7 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     alerts.router,
     observability.router,
     pm.router,
+    automations.router,
 )
 
 __all__ = [
@@ -56,6 +58,7 @@ __all__ = [
     "alerts",
     "approval",
     "auth",
+    "automations",
     "board",
     "health",
     "incidents",

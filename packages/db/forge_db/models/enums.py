@@ -9,6 +9,17 @@ from __future__ import annotations
 
 import enum
 
+# F21 automation enums are defined once in the frozen contracts package and
+# re-exported here so the SQLAlchemy column types (enum_type(...)) and the rest
+# of forge_db follow the local ``forge_db.models.enums`` import convention.
+from forge_contracts.automation import (
+    AutomationActionType,
+    AutomationEntityType,
+    AutomationExecutionStatus,
+    AutomationTriggerSource,
+    AutomationTriggerType,
+)
+
 
 class UserRole(enum.StrEnum):
     """Workspace member roles (spec: admin, member, viewer, agent-runner)."""
@@ -284,6 +295,11 @@ __all__ = [
     "APIKeyKind",
     "ApprovalGate",
     "ApprovalStatus",
+    "AutomationActionType",
+    "AutomationEntityType",
+    "AutomationExecutionStatus",
+    "AutomationTriggerSource",
+    "AutomationTriggerType",
     "ChunkType",
     "ExecutionMode",
     "IncidentSeverity",

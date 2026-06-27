@@ -1,0 +1,11 @@
+# When a task breaches its SLA, raise its priority to urgent.
+name: Escalate on SLA breach
+description: When a task SLA is breached, set its priority to urgent.
+enabled: true
+trigger:
+  type: task_sla_breached
+condition: {}
+actions:
+  - type: set_priority
+    priority: urgent
+run_order: 50

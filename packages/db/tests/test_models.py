@@ -73,6 +73,9 @@ EXPECTED_MODELS = [
     # F20 MCP sync-and-index tables.
     "KnowledgeSyncRun",
     "MCPIndexedResource",
+    # F21 automation tables.
+    "AutomationRule",
+    "AutomationExecution",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

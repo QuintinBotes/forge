@@ -205,6 +205,45 @@ def test_mcp_sync_index_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F21 automation tables, owned by the 0005_f21_automations migration.
+F21_TABLES = {"automation_rule", "automation_execution"}
+
+
+def test_f21_automations_migration_up_down(alembic_config: Config) -> None:
+    """F21 AC: 0005_f21_automations creates the automation tables and drops them
+    on downgrade, leaving the baseline + PM + sandbox + F20 tables intact."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to the F20 migration: F21 tables absent, core present.
+        command.upgrade(alembic_config, "0004_mcp_sync_and_index")
+        after_f20 = set(inspect(engine).get_table_names())
+        assert not (F21_TABLES & after_f20), "F20 stage must not create F21 tables"
+        assert after_f20 >= EXPECTED_TABLES
+
+        # Apply the F21 migration: both tables appear with the dispatch index.
+        command.upgrade(alembic_config, "0005_f21_automations")
+        inspector = inspect(engine)
+        after_f21 = set(inspector.get_table_names())
+        assert after_f21 >= F21_TABLES, f"missing F21 tables: {sorted(F21_TABLES - after_f21)}"
+
+        exec_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("automation_execution")
+        }
+        assert "uq_automation_execution_idempotency_key" in exec_uniques
+
+        # Downgrade one step: F21 tables gone, everything else untouched.
+        command.downgrade(alembic_config, "0004_mcp_sync_and_index")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (F21_TABLES & after_down), "downgrade left F21 tables"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

@@ -40,6 +40,9 @@ DEFERRED_TABLES = frozenset(
         # F20 MCP sync-and-index — created by 0004_mcp_sync_and_index.
         "knowledge_sync_run",
         "mcp_indexed_resource",
+        # F21 automations — created by 0005_f21_automations.
+        "automation_rule",
+        "automation_execution",
     }
 )
 
