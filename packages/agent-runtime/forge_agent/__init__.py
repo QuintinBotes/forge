@@ -8,7 +8,7 @@ Public surface:
   tool dispatch.
 * :class:`PolicyGate` / :class:`ActionPolicyGate` / :class:`PolicyEvaluatorGate`.
 * :class:`WorktreeSandbox` + :func:`load_agents_md` — git-worktree isolation.
-* :class:`StateGraph` / :class:`CompiledGraph` — the dependency-free graph engine.
+* :class:`StateGraph` / :class:`CompiledGraph` — a ``langgraph``-backed graph engine.
 """
 
 from __future__ import annotations
