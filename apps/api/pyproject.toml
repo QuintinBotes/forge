@@ -10,6 +10,8 @@ dependencies = [
     "forge-contracts",
     "forge-db",
     "forge-board",
+    "forge-knowledge",
+    "forge-mcp",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic-settings>=2.2",

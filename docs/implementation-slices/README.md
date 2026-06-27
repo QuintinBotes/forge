@@ -53,8 +53,21 @@ docs/implementation-slices/
 ├── v1/                # Phase 1 — Foundation (V1):  F01–F16  (16 slices)
 ├── v2/                # Phase 2 — Depth (V2):       F17–F26  (10 slices)
 ├── v3/                # Phase 3 — Scale (V3):       F27–F35  ( 9 slices)
-└── cross-cutting/     # Span all phases:            F36–F39  ( 4 slices)
+├── cross-cutting/     # Span all phases:            F36–F39  ( 4 slices)
+└── future/            # Deferred backlog:           F40 + the future spec
 ```
+
+### The `future/` folder — deferred backlog
+
+`future/` holds the **deferred-scope backlog**: everything the 39 V1/V2/V3/cross-cutting slices
+explicitly pushed out of their own shippable scope in their `## 12. Out of scope / future`
+section. [`future/SPEC-FUTURE-deferred-scope.md`](./future/SPEC-FUTURE-deferred-scope.md) is the
+consolidated spec that harvests and de-duplicates every §12 deferral into concrete, estimable
+requirements, and [`future/F40-deferred-scope.md`](./future/F40-deferred-scope.md) is the F40
+roll-up slice that turns that backlog into independently-shippable, themed mini-slices. Together
+**F40 + the future spec are the deferred backlog to implement *after* the V1 (and, where noted,
+V2) slices** — they extend the V1 baseline rather than block it, so nothing here is on the
+critical path for shipping V1.
 
 - **`v1/`, `v2/`, `v3/`** map one-to-one to the three roadmap phases in
   [`FORGE_SPEC.md` → Phased Roadmap](../FORGE_SPEC.md). Each checkbox in a phase is one slice.

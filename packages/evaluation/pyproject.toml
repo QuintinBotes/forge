@@ -8,6 +8,9 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
+    # The golden retrieval eval (Task 1.4) scores the real hybrid pipeline.
+    "forge-knowledge",
+    "forge-db",
 ]
 
 [build-system]

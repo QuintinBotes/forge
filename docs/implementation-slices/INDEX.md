@@ -78,6 +78,16 @@ slice. See [`README.md`](./README.md) for what a slice is and how to use one.
 | F38 | Observability & Cost Metrics | cross | F00*, F06, F39, F10 | L | Med | [cross-cutting/F38-observability-cost-metrics.md](./cross-cutting/F38-observability-cost-metrics.md) |
 | F39 | Immutable Audit Log | cross | F00* | L | Med | [cross-cutting/F39-audit-log.md](./cross-cutting/F39-audit-log.md) |
 
+## Future / Deferred Scope · `future/`
+
+The deferred-scope backlog: the `## 12. Out of scope / future` work consolidated from all 39
+slices (F01–F39) into one schedulable home. Implement *after* the V1 (and where noted, V2) slices.
+
+| ID | Feature | Phase | Slice link |
+|---|---|---|---|
+| F40 | Deferred Scope (Follow-up Roll-up) — roll-up index of the section-12 deferred work from all 39 slices | future | [future/F40-deferred-scope.md](./future/F40-deferred-scope.md) |
+| — | Deferred Scope (Follow-up Spec) — consolidated backlog spec the F40 roll-up draws from | future | [future/SPEC-FUTURE-deferred-scope.md](./future/SPEC-FUTURE-deferred-scope.md) |
+
 ---
 
 ## Counts

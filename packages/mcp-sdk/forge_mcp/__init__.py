@@ -20,6 +20,7 @@ from forge_mcp.exceptions import (
     MCPSecurityError,
     MCPTransportUnavailableError,
 )
+from forge_mcp.manager import MCPConnectionManager, TransportFactory
 from forge_mcp.query_through import query_through
 from forge_mcp.security import (
     SENSITIVE_KEYS,
@@ -41,6 +42,7 @@ __all__ = [
     "WRITE_KEYWORDS",
     "AuditSink",
     "InMemoryAuditLog",
+    "MCPConnectionManager",
     "MCPConnectionNotFoundError",
     "MCPError",
     "MCPGatewayClient",
@@ -51,6 +53,7 @@ __all__ = [
     "NullTransport",
     "ToolSpec",
     "Transport",
+    "TransportFactory",
     "build_audit_entry",
     "filter_resources",
     "is_write_tool",

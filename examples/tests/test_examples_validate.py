@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from forge_contracts import (
     DecisionEffect,
     MCPConnection,
@@ -163,4 +164,6 @@ def test_spec_manifest_example_loads(path: Path) -> None:
     req_ids = {r.id for r in manifest.requirements}
     for ac in manifest.acceptance_criteria:
         for ref in ac.req_refs:
-            assert ref in req_ids, f"{path}: acceptance {ac.id} references unknown requirement {ref}"
+            assert ref in req_ids, (
+                f"{path}: acceptance {ac.id} references unknown requirement {ref}"
+            )
