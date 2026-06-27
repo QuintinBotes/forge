@@ -20,8 +20,16 @@ from forge_api.auth.models import (
     APIKeyCreated,
     APIKeyCreateRequest,
     LoginRequest,
+    OAuthCallbackRequest,
     OAuthChallenge,
+    OAuthResult,
     SecretCreateRequest,
+)
+from forge_api.auth.oauth import (
+    OAuthConfigError,
+    OAuthExchangeError,
+    OAuthStateError,
+    UnsupportedOAuthProviderError,
 )
 from forge_api.auth.rbac import Permission
 from forge_api.auth.service import (
@@ -46,6 +54,42 @@ SecretManager = Annotated[Principal, Depends(require_permission(Permission.MANAG
 )
 def login(body: LoginRequest, service: AuthServiceDep) -> OAuthChallenge:
     return service.oauth_challenge(body.provider, body.redirect_uri)
+
+
+@router.post(
+    "/callback",
+    response_model=OAuthResult,
+    summary="Complete an OAuth flow: exchange the IdP code for tokens and a user.",
+)
+async def oauth_callback(
+    body: OAuthCallbackRequest, service: AuthServiceDep
+) -> OAuthResult:
+    try:
+        return await service.exchange_oauth_code(
+            body.provider,
+            body.code,
+            redirect_uri=body.redirect_uri,
+            state=body.state,
+            expected_state=body.expected_state,
+        )
+    except UnsupportedOAuthProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    except OAuthStateError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    except OAuthConfigError as exc:
+        # The provider is valid but this deployment has no client credentials.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
+    except OAuthExchangeError as exc:
+        # The upstream IdP rejected the code or returned an unusable response.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
 
 
 @router.post(

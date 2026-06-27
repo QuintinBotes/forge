@@ -33,19 +33,12 @@ from fastapi import Depends, Header, HTTPException, status
 
 from forge_api.auth.apikeys import APIKeyInfo, APIKeyStore
 from forge_api.auth.crypto import default_cipher
-from forge_api.auth.models import OAuthChallenge
+from forge_api.auth.models import OAuthChallenge, OAuthResult
+from forge_api.auth.oauth import OAuthClient, UnsupportedOAuthProviderError
 from forge_api.auth.rbac import Permission, PermissionDeniedError, ensure
 from forge_api.auth.vault import SecretVault
 from forge_api.deps import Principal
 from forge_contracts.enums import APIKeyKind, UserRole
-
-#: Provider authorize endpoints for the OAuth sign-in descriptor (V1: Google,
-#: GitHub, GitLab per spec). No tokens are exchanged here.
-_OAUTH_AUTHORIZE_URLS: dict[str, str] = {
-    "google": "https://accounts.google.com/o/oauth2/v2/auth",
-    "github": "https://github.com/login/oauth/authorize",
-    "gitlab": "https://gitlab.com/oauth/authorize",
-}
 
 
 class AuthenticationError(Exception):
@@ -110,12 +103,16 @@ class AuthService:
         secret_key: bytes | None = None,
         api_keys: APIKeyStore | None = None,
         vault: SecretVault | None = None,
+        oauth: OAuthClient | None = None,
     ) -> None:
         master = _resolve_master_key(secret_key)
         self.api_keys = api_keys or APIKeyStore(secret_key=_subkey(master, b"forge-apikey"))
         self.vault = vault or SecretVault(
             cipher=default_cipher(_subkey(master, b"forge-cipher"))
         )
+        # Constructs without network access; the IdP is only contacted when an
+        # authorization-code exchange is actually requested.
+        self.oauth = oauth or OAuthClient.from_env()
 
     # -- authentication ----------------------------------------------------- #
 
@@ -162,25 +159,57 @@ class AuthService:
     ) -> OAuthChallenge:
         """Build an OAuth authorization-code descriptor (no external call).
 
-        # PARKED: the authorization-code *exchange* (callback -> tokens -> user
-        # provisioning) requires a live provider and client credentials and is
-        # not performed in this no-network phase; the frontend / Better Auth
-        # completes the flow. See MORNING_REPORT.
+        Returns the provider authorize URL (with ``client_id`` and requested
+        scopes when configured) plus an anti-CSRF ``state``; the client redirects
+        the user there and later hands the returned ``code`` back to
+        :meth:`exchange_oauth_code` (the ``/auth/callback`` route).
         """
-        base = _OAUTH_AUTHORIZE_URLS.get(provider.lower())
-        if base is None:
+        try:
+            config = self.oauth.provider_config(provider)
+        except UnsupportedOAuthProviderError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"unsupported OAuth provider '{provider}'",
-            )
+                detail=str(exc),
+            ) from exc
         state = secrets.token_urlsafe(24)
         params = {"response_type": "code", "state": state}
+        creds = self.oauth.credentials.get(config.name)
+        if creds is not None:
+            params["client_id"] = creds.client_id
+        if config.scopes:
+            params["scope"] = " ".join(config.scopes)
         if redirect_uri:
             params["redirect_uri"] = redirect_uri
         return OAuthChallenge(
-            provider=provider.lower(),
-            authorize_url=f"{base}?{urlencode(params)}",
+            provider=config.name,
+            authorize_url=f"{config.authorize_url}?{urlencode(params)}",
             state=state,
+        )
+
+    async def exchange_oauth_code(
+        self,
+        provider: str,
+        code: str,
+        *,
+        redirect_uri: str | None = None,
+        state: str | None = None,
+        expected_state: str | None = None,
+    ) -> OAuthResult:
+        """Complete an OAuth flow: code -> tokens -> external user identity.
+
+        Verifies ``state`` against ``expected_state`` when the latter is given,
+        exchanges the authorization ``code`` for tokens at the provider token
+        endpoint, then resolves the user from the userinfo endpoint. All network
+        access flows through the injectable :class:`OAuthClient` transport, so the
+        flow is fully mockable. Raises an :class:`~forge_api.auth.oauth.OAuthError`
+        subclass on any failure (the ``/auth/callback`` route maps these to HTTP).
+        """
+        return await self.oauth.complete(
+            provider,
+            code,
+            redirect_uri=redirect_uri,
+            state=state,
+            expected_state=expected_state,
         )
 
 
