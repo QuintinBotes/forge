@@ -15,11 +15,13 @@ from forge_db.models.enums import (
     ApprovalStatus,
     ExecutionMode,
     RunStatus,
+    SandboxKind,
     WorkflowState,
 )
 
 if TYPE_CHECKING:
     from forge_db.models.planning import Task
+    from forge_db.models.sandbox import SandboxInstance
 
 
 class WorkflowRun(WorkspaceScopedModel):
@@ -76,6 +78,12 @@ class AgentRun(WorkspaceScopedModel):
     confidence: Mapped[float | None] = mapped_column(nullable=True)
     worktree_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # F19 — container sandboxing: which provider ran this run + container handle.
+    sandbox_kind: Mapped[SandboxKind] = mapped_column(
+        enum_type(SandboxKind), default=SandboxKind.WORKTREE, nullable=False
+    )
+    sandbox_image: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    sandbox_container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
@@ -85,6 +93,9 @@ class AgentRun(WorkspaceScopedModel):
     )
     sub_agent_runs: Mapped[list[SubAgentRun]] = relationship(
         back_populates="parent_agent_run", cascade="all, delete-orphan"
+    )
+    sandbox_instances: Mapped[list[SandboxInstance]] = relationship(
+        back_populates="agent_run", cascade="all, delete-orphan"
     )
 
 

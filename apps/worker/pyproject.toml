@@ -9,6 +9,7 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "forge-db",
+    "forge-agent",
     "forge-knowledge",
     "forge-board",
     "forge-skill",

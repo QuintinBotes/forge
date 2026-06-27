@@ -54,6 +54,7 @@ from forge_contracts.dtos import (
     ModelToolCall,
     OpenQuestion,
     Policy,
+    PolicySandboxBlock,
     PolicySkillProfiles,
     PullRequest,
     PullRequestRequest,
@@ -141,6 +142,17 @@ from forge_contracts.protocols import (
     State,
     WorkflowEngine,
 )
+from forge_contracts.sandbox import (
+    CommandOutput,
+    SandboxCommandRunner,
+    SandboxInstanceRead,
+    SandboxKind,
+    SandboxNetwork,
+    SandboxProvider,
+    SandboxResourceLimits,
+    SandboxSession,
+    SandboxSpec,
+)
 
 __version__ = "0.1.0"
 
@@ -169,6 +181,7 @@ __all__ = [
     "CheckResult",
     "Chunk",
     "ChunkType",
+    "CommandOutput",
     "Constitution",
     "CycleError",
     "Decision",
@@ -218,6 +231,7 @@ __all__ = [
     "PRState",
     "Policy",
     "PolicyEvaluator",
+    "PolicySandboxBlock",
     "PolicySkillProfiles",
     "PolicyViolationError",
     "Priority",
@@ -237,6 +251,14 @@ __all__ = [
     "RetryPolicy",
     "ReviewRules",
     "RunStatus",
+    "SandboxCommandRunner",
+    "SandboxInstanceRead",
+    "SandboxKind",
+    "SandboxNetwork",
+    "SandboxProvider",
+    "SandboxResourceLimits",
+    "SandboxSession",
+    "SandboxSpec",
     "SkillProfile",
     "SkillProfileRegistry",
     "SlackDeliveryResult",

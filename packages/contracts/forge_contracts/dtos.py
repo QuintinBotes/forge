@@ -327,6 +327,28 @@ class SubagentRules(_Model):
     max_parallel: int = 0
 
 
+class PolicySandboxBlock(_Model):
+    """The ``sandbox:`` block of ``.forge/policy.yaml`` (F19).
+
+    A repo may *strengthen* isolation above the workspace minimum but never
+    weaken it (enforced by ``forge_agent.sandbox.selection.resolve_sandbox_kind``).
+    ``isolation``/``network`` are stored as plain strings (``worktree``/
+    ``container``, ``none``/``egress``) to keep the contract dependency-free;
+    they are validated when resolved into a ``SandboxSpec``.
+    """
+
+    isolation: str | None = None  # worktree | container (request)
+    image: str | None = None  # optional; must be on the workspace allowlist
+    network: str | None = None  # none | egress
+    egress_allowlist: list[str] = Field(default_factory=list)
+    cpus: float | None = None
+    memory: str | None = None  # e.g. "4g", "512m"
+    pids_limit: int | None = None
+    tmpfs_mb: int | None = None
+    exec_timeout_seconds: int | None = None
+    setup_commands: list[str] = Field(default_factory=list)
+
+
 class Policy(_Model):
     """Parsed ``.forge/policy.yaml`` (spec: policy.yaml Schema)."""
 
@@ -342,6 +364,7 @@ class Policy(_Model):
     knowledge_rules: KnowledgeRules = Field(default_factory=KnowledgeRules)
     skill_profiles: PolicySkillProfiles = Field(default_factory=PolicySkillProfiles)
     subagent_rules: SubagentRules = Field(default_factory=SubagentRules)
+    sandbox: PolicySandboxBlock | None = None
     allowed_actions: list[str] = Field(default_factory=list)
     restricted_actions: list[str] = Field(default_factory=list)
 

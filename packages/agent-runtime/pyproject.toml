@@ -1,7 +1,7 @@
 [project]
 name = "forge-agent"
 version = "0.1.0"
-description = "LangGraph single-agent execution loop, tool registry, and worktree sandbox."
+description = "LangGraph single-agent execution loop, tool registry, and sandboxes (worktree + container)."
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "Apache-2.0" }
@@ -9,6 +9,7 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "langgraph>=1.2,<2",
+    "docker>=7.1,<8",
 ]
 
 [build-system]

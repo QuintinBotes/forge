@@ -180,15 +180,38 @@ services:
       FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
       FORGE_SENTRY_WEBHOOK_SECRET: ${FORGE_SENTRY_WEBHOOK_SECRET:-}
       FORGE_GRAFANA_WEBHOOK_SECRET: ${FORGE_GRAFANA_WEBHOOK_SECRET:-}
+      # F19 container sandboxing — the worker reaches the daemon ONLY via the
+      # socket-proxy (never the raw socket); a per-task container mounts only the
+      # run's subpath of the worktree volume.
+      FORGE_SANDBOX_KIND: ${FORGE_SANDBOX_KIND:-worktree}
+      DOCKER_HOST: tcp://docker-proxy:2375
+      FORGE_SANDBOX_DOCKER_HOST: tcp://docker-proxy:2375
+      FORGE_SANDBOX_WORKTREE_VOLUME: ${FORGE_WORKTREE_VOLUME:-forge_repos}
+      FORGE_SANDBOX_IMAGE_PYTHON: ${FORGE_SANDBOX_IMAGE_PYTHON:-ghcr.io/forge-platform/forge-sandbox-python:0.1.0}
+      FORGE_SANDBOX_IMAGE_NODE: ${FORGE_SANDBOX_IMAGE_NODE:-ghcr.io/forge-platform/forge-sandbox-node:0.1.0}
+      FORGE_SANDBOX_IMAGE_GO: ${FORGE_SANDBOX_IMAGE_GO:-ghcr.io/forge-platform/forge-sandbox-go:0.1.0}
+      FORGE_SANDBOX_ALLOWED_IMAGES: ${FORGE_SANDBOX_ALLOWED_IMAGES:-}
+      FORGE_SANDBOX_NETWORK: ${FORGE_SANDBOX_NETWORK:-none}
+      FORGE_SANDBOX_EGRESS_NETWORK: forge_sandbox_egress
+      FORGE_SANDBOX_EGRESS_ALLOWLIST: ${FORGE_SANDBOX_EGRESS_ALLOWLIST:-pypi.org,files.pythonhosted.org,registry.npmjs.org}
+      FORGE_SANDBOX_REAP_INTERVAL_SECONDS: ${FORGE_SANDBOX_REAP_INTERVAL_SECONDS:-300}
+      FORGE_SANDBOX_MAX_TTL_SECONDS: ${FORGE_SANDBOX_MAX_TTL_SECONDS:-21600}
+    volumes:
+      # Worktrees live on a named volume so sibling sandbox containers can mount
+      # only their run's subpath (volume-subpath; Docker Engine >= 26.1).
+      - forge_repos:/srv/forge/worktrees
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      docker-proxy:
+        condition: service_started
     networks:
       - backend
       - data
       - mcp
+      - sandbox_ctl
     healthcheck:
       test: ["CMD-SHELL", "celery -A forge_worker inspect ping || exit 1"]
       interval: 30s
@@ -338,6 +361,91 @@ services:
         max-size: 100m
         max-file: "5"
 
+  # --------------------------------------------------------------------- #
+  # F19 container sandboxing — socket-proxy + egress-proxy                #
+  # --------------------------------------------------------------------- #
+  # The ONLY component near the raw Docker socket (read-only, documented
+  # exception like `autoheal`). Restricted to the minimal verbs the worker
+  # needs to create/exec/inspect per-task sandbox containers — no NETWORKS
+  # create, no VOLUMES delete, no swarm, no privileged.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      IMAGES: "1"
+      POST: "1"
+      EXEC: "1"
+      INFO: "1"
+      # everything else denied
+      NETWORKS: "0"
+      VOLUMES: "0"
+      SWARM: "0"
+      SERVICES: "0"
+      TASKS: "0"
+      SECRETS: "0"
+      CONFIGS: "0"
+      NODES: "0"
+      PLUGINS: "0"
+      SYSTEM: "0"
+      AUTH: "0"
+      BUILD: "0"
+      COMMIT: "0"
+      DISTRIBUTION: "0"
+      SESSION: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - sandbox_ctl
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2375/_ping >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  # Allow-listing forward proxy for `network: egress` sandboxes. Dual-homed:
+  # the internal `sandbox_egress` network (sandbox containers' ONLY route out)
+  # plus `backend` for the bridge to the registry hosts on the allowlist.
+  sandbox-proxy:
+    image: ubuntu/squid:6.6-24.04_edge
+    restart: unless-stopped
+    volumes:
+      - ./sandbox/squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      - sandbox_egress
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "squid -k check >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
 networks:
   edge:
     driver: bridge
@@ -348,6 +456,14 @@ networks:
     internal: true
   mcp:
     driver: bridge
+  # Worker <-> docker-proxy only; no route to the internet.
+  sandbox_ctl:
+    driver: bridge
+    internal: true
+  # Sandbox containers <-> sandbox-proxy only; the proxy bridges out.
+  sandbox_egress:
+    driver: bridge
+    internal: true
 
 volumes:
   db-data:
@@ -355,3 +471,5 @@ volumes:
   minio-data:
   caddy-data:
   caddy-config:
+  # Worktrees, mounted by the worker and (subpath) by sandbox containers.
+  forge_repos:

@@ -31,6 +31,8 @@ celery_app = Celery(
         "forge_worker.syncer",
         "forge_worker.agent_runner",
         "forge_worker.tasks.incident",
+        "forge_worker.tasks.sandbox",
+        "forge_worker.beat",
     ],
 )
 celery_app.conf.task_default_queue = "forge"
