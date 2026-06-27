@@ -95,6 +95,39 @@ def test_upgrade_then_downgrade_roundtrip(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F18 external PM-adapter tables, owned by the 0002_pm_adapters migration.
+PM_TABLES = {"pm_connection", "pm_task_link", "pm_webhook_delivery"}
+
+
+def test_pm_adapters_migration_up_down(alembic_config: Config) -> None:
+    """AC1: 0002_pm_adapters creates the three PM tables and drops them on
+    downgrade, independently of the baseline core tables."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Baseline only: PM tables absent, core present.
+        command.upgrade(alembic_config, "0001_baseline")
+        after_baseline = set(inspect(engine).get_table_names())
+        assert not (PM_TABLES & after_baseline), "baseline must not create PM tables"
+        assert after_baseline >= EXPECTED_TABLES
+
+        # Apply the PM migration: all three PM tables appear.
+        command.upgrade(alembic_config, "0002_pm_adapters")
+        after_pm = set(inspect(engine).get_table_names())
+        assert after_pm >= PM_TABLES, f"missing PM tables: {sorted(PM_TABLES - after_pm)}"
+
+        # Downgrade one step: PM tables gone, core untouched.
+        command.downgrade(alembic_config, "0001_baseline")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (PM_TABLES & after_down), "downgrade left PM tables"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

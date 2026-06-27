@@ -25,6 +25,14 @@
 		reverse_proxy api:8000
 	}
 
+	# External PM webhooks (F18 — Jira, Linear): Linear's HMAC-SHA256 is computed
+	# over the EXACT raw request body, so this path MUST be proxied verbatim — do
+	# NOT add any request_body buffering/rewrite/transform here. Caddy streams the
+	# body unchanged by default; keep it that way.
+	handle /api/v1/integrations/pm/webhooks/* {
+		reverse_proxy api:8000
+	}
+
 	# API surface.
 	handle_path /api/* {
 		reverse_proxy api:8000
