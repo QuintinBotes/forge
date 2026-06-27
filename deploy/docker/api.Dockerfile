@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Forge API image (plan Task 0.6 substrate; built + verified in Phase 2 Task 2.1).
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

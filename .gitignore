@@ -14,8 +14,6 @@ htmlcov/
 dist/
 build/
 
-# uv
-uv.lock
 
 # Node / Next.js
 node_modules/
