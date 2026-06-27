@@ -30,6 +30,9 @@ from forge_db.models.enums import (
     Priority,
     RepoProvider,
     RunStatus,
+    SandboxKind,
+    SandboxNetwork,
+    SandboxStatus,
     SpecStatus,
     SyncMode,
     TaskKind,
@@ -62,6 +65,7 @@ from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
 from forge_db.models.profiles import PolicyProfile, SkillProfile
 from forge_db.models.project import Constitution, Project
 from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
+from forge_db.models.sandbox import SandboxInstance
 from forge_db.models.workspace import APIKey, User, Workspace
 
 __all__ = [
@@ -109,6 +113,10 @@ __all__ = [
     "RepositoryConnection",
     "RetrievalChunk",
     "RunStatus",
+    "SandboxInstance",
+    "SandboxKind",
+    "SandboxNetwork",
+    "SandboxStatus",
     "SkillProfile",
     "SpecDocument",
     "SpecStatus",

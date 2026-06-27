@@ -31,7 +31,13 @@ depends_on: str | Sequence[str] | None = None
 # Tables owned by later, dedicated migrations (created/dropped there, not here).
 # Keeps the baseline focused on the core data model while still metadata-driven.
 DEFERRED_TABLES = frozenset(
-    {"pm_connection", "pm_task_link", "pm_webhook_delivery"}
+    {
+        "pm_connection",
+        "pm_task_link",
+        "pm_webhook_delivery",
+        # F19 container-sandboxing — created by 0003_container_sandboxing.
+        "sandbox_instance",
+    }
 )
 
 

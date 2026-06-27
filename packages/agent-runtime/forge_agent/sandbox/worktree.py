@@ -1,9 +1,13 @@
-"""Git-worktree sandbox and ``AGENTS.md`` loader.
+"""Git-worktree sandbox and ``AGENTS.md`` loader (V1 isolation).
 
 V1 isolation uses git worktrees (spec: "Sandbox (V1) | Git worktrees"). A
 :class:`WorktreeSandbox` creates a throwaway worktree+branch off a base ref and
 removes it on cleanup, giving an agent an isolated checkout with no cross-task
 filesystem access. All git operations are local (no network).
+
+This module is unchanged from F06 except that :class:`SandboxError` now lives in
+``forge_agent.sandbox.base`` so the worktree and container error families share a
+single root; the public ``forge_agent.sandbox.SandboxError`` name is preserved.
 """
 
 from __future__ import annotations
@@ -16,14 +20,12 @@ import uuid
 from pathlib import Path
 from types import TracebackType
 
+from forge_agent.sandbox.base import SandboxError
+
 __all__ = ["SandboxError", "WorktreeSandbox", "load_agents_md"]
 
 #: Candidate AGENTS.md filenames, in priority order.
 _AGENTS_FILENAMES = ("AGENTS.md", "agents.md", "AGENTS.MD")
-
-
-class SandboxError(RuntimeError):
-    """Raised when a worktree operation fails."""
 
 
 def load_agents_md(repo_root: str | Path) -> str | None:

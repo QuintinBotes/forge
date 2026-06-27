@@ -84,6 +84,48 @@ than weaken them:
 - **Immutable audit log.** Every agent action, tool call, MCP call, and approval
   is appended to an append-only audit log for after-the-fact review.
 
+## Container sandboxing (F19)
+
+By default Forge executes a task's verification/build commands as host
+subprocesses inside a git **worktree** (`FORGE_SANDBOX_KIND=worktree`). Worktrees
+are an isolation convenience, **not** a security boundary: untrusted repo code
+(tests, build scripts, transitive deps) runs with the worker's privileges. For
+multi-tenant deployments, opt in to **container** isolation
+(`FORGE_SANDBOX_KIND=container`) to run those commands inside a per-task,
+locked-down Docker container.
+
+- **No raw Docker socket in the worker.** The worker reaches the daemon **only**
+  through a `tecnativa/docker-socket-proxy` (`DOCKER_HOST=tcp://docker-proxy:2375`)
+  restricted to the minimal verbs (`CONTAINERS/IMAGES/POST/EXEC/INFO`) — no
+  network create, no volume delete, no swarm, no privileged. The socket-mounting
+  proxy is the single privileged surface (read-only, on the `internal`
+  `sandbox_ctl` network), a documented exception alongside `autoheal`.
+- **Least privilege by default.** Each sandbox runs with `cap_drop: ALL`,
+  `no-new-privileges`, a non-root uid/gid (10001), a read-only root fs + tmpfs
+  scratch, and CPU/memory/PID limits.
+- **No cross-task filesystem access.** A container mounts **only** its run's
+  worktree subpath at `/workspace` (`volume-subpath`, Docker Engine >= 26.1 —
+  `preflight.sh` gates this). No other task's worktree or host path is mounted.
+- **No network by default.** `FORGE_SANDBOX_NETWORK=none`. `egress` mode routes
+  the container's only path out through an allow-listing forward proxy
+  (`sandbox-proxy`) on the `internal` `sandbox_egress` network, with a domain
+  allowlist (`FORGE_SANDBOX_EGRESS_ALLOWLIST`).
+- **Curated image allowlist.** The sandbox image must be on
+  `FORGE_SANDBOX_ALLOWED_IMAGES`; a repo policy cannot point the sandbox at an
+  arbitrary image.
+- **Secrets never enter the sandbox.** The BYOK model key and GitHub App
+  credentials are never placed in the sandbox environment or any persisted
+  `sandbox_instance` row.
+- **No silent downgrade.** If `container` is requested but the daemon/proxy is
+  unreachable, the run fails loudly — Forge never quietly executes untrusted code
+  on the host when the operator asked for containment.
+- **Orphan reaping.** A `sandbox.reap_orphans` beat task and a worker-boot pass
+  remove any `forge.sandbox=true` container whose run is terminal or older than
+  `FORGE_SANDBOX_MAX_TTL_SECONDS`.
+
+> Future hardening (V3): Sysbox/gVisor runtimes and Firecracker microVMs plug in
+> behind the same `SandboxProvider` seam.
+
 ## Operational checklist
 
 - [ ] All four core secrets are unique 32-byte random values.

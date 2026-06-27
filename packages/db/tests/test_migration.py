@@ -128,6 +128,39 @@ def test_pm_adapters_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F19 container-sandboxing table, owned by the 0003_container_sandboxing migration.
+SANDBOX_TABLES = {"sandbox_instance"}
+
+
+def test_sandbox_migration_up_down(alembic_config: Config) -> None:
+    """F19 AC: 0003_container_sandboxing creates the sandbox_instance table and
+    drops it on downgrade, independently of the baseline + PM tables."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to PM migration: sandbox table absent, core present.
+        command.upgrade(alembic_config, "0002_pm_adapters")
+        after_pm = set(inspect(engine).get_table_names())
+        assert not (SANDBOX_TABLES & after_pm), "PM stage must not create sandbox tables"
+        assert after_pm >= EXPECTED_TABLES
+
+        # Apply the sandbox migration: the table appears.
+        command.upgrade(alembic_config, "0003_container_sandboxing")
+        after_sbx = set(inspect(engine).get_table_names())
+        assert after_sbx >= SANDBOX_TABLES, "missing sandbox_instance table"
+
+        # Downgrade one step: sandbox table gone, core + PM untouched.
+        command.downgrade(alembic_config, "0002_pm_adapters")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (SANDBOX_TABLES & after_down), "downgrade left sandbox tables"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

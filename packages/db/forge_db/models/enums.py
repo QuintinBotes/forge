@@ -185,6 +185,30 @@ class RunStatus(enum.StrEnum):
     CANCELLED = "cancelled"
 
 
+class SandboxKind(enum.StrEnum):
+    """Command-execution isolation provider (F19; spec: Sandbox V1/V2)."""
+
+    WORKTREE = "worktree"
+    CONTAINER = "container"
+
+
+class SandboxNetwork(enum.StrEnum):
+    """Container network posture (F19)."""
+
+    NONE = "none"
+    EGRESS = "egress"
+
+
+class SandboxStatus(enum.StrEnum):
+    """Lifecycle of a sandbox instance (F19)."""
+
+    CREATING = "creating"
+    RUNNING = "running"
+    EXITED = "exited"
+    REMOVED = "removed"
+    FAILED = "failed"
+
+
 class ApprovalGate(enum.StrEnum):
     """Approval gate types (spec: Approval Gate Types)."""
 
@@ -278,6 +302,9 @@ __all__ = [
     "Priority",
     "RepoProvider",
     "RunStatus",
+    "SandboxKind",
+    "SandboxNetwork",
+    "SandboxStatus",
     "SpecStatus",
     "SyncMode",
     "TaskKind",

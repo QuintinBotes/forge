@@ -68,6 +68,8 @@ EXPECTED_MODELS = [
     "PMConnection",
     "PMTaskLink",
     "PMWebhookDelivery",
+    # F19 container-sandboxing table.
+    "SandboxInstance",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
