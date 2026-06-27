@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from forge_knowledge.chunking import (
     DEFAULT_MAX_CHARS,
+    TREE_SITTER_LANGUAGES,
     chunk_code,
     chunk_file,
     chunk_markdown,
     classify_path,
+    treesitter_available,
     weight_for,
 )
 from forge_knowledge.embeddings import (
@@ -41,6 +43,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "DEFAULT_MAX_CHARS",
+    "TREE_SITTER_LANGUAGES",
     "Bm25Store",
     "ChangeSet",
     "DeterministicEmbeddingClient",
@@ -63,5 +66,6 @@ __all__ = [
     "read_repo_files",
     "sync_source",
     "tokenize",
+    "treesitter_available",
     "weight_for",
 ]
