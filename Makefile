@@ -1,6 +1,17 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup install dev test lint fmt typecheck migrate seed build clean
 
+# Every typed first-party package/app, one mypy module each. mypy runs in
+# *module mode* (``-p``) so each ``forge_*`` package resolves to its single
+# installed location, avoiding the "Source file found twice under different
+# module names" ambiguity that ``mypy packages apps`` hits in this uv workspace
+# (every package dir is on ``sys.path`` via its editable install, so directory
+# mode maps the same file to both ``forge_x`` and ``packages.x.forge_x``).
+MYPY_PACKAGES := \
+	forge_contracts forge_db forge_workflow forge_agent forge_coordinator \
+	forge_spec forge_board forge_knowledge forge_integrations forge_mcp \
+	forge_policy forge_skill forge_eval forge_api forge_worker forge_mcp_gateway
+
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -27,7 +38,7 @@ fmt: ## Auto-format and auto-fix python sources with ruff
 	uv run ruff check --fix .
 
 typecheck: ## Static type-check python packages and apps with mypy
-	uv run mypy packages apps
+	uv run mypy $(addprefix -p ,$(MYPY_PACKAGES))
 
 migrate: ## Apply database migrations (alembic upgrade head)
 	uv run alembic -c packages/db/alembic.ini upgrade head

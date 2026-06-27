@@ -57,13 +57,10 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Type-check (mypy)
-        # Module mode avoids the dual source-root ambiguity of `mypy packages apps`.
-        run: >-
-          uv run mypy
-          -p forge_contracts -p forge_db -p forge_workflow -p forge_agent
-          -p forge_coordinator -p forge_spec -p forge_board -p forge_knowledge
-          -p forge_integrations -p forge_mcp -p forge_policy -p forge_skill
-          -p forge_eval -p forge_api -p forge_worker -p forge_mcp_gateway
+        # Single source of truth: the package list + module-mode invocation live
+        # in the Makefile (module mode avoids the dual source-root ambiguity of
+        # `mypy packages apps`). CI and local stay in lockstep this way.
+        run: make typecheck
 
       - name: Test (pytest)
         run: uv run pytest -q

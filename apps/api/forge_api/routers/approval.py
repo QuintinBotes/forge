@@ -78,7 +78,9 @@ class ApprovalStore:
         self, *, workspace_id: uuid.UUID, status: ApprovalStatus | None = None
     ) -> list[ApprovalRequest]:
         items = [
-            i for i in self._items.values() if self._owner.get(i.id) == workspace_id
+            req
+            for key, req in self._items.items()
+            if self._owner.get(key) == workspace_id
         ]
         if status is not None:
             items = [i for i in items if i.status == status]
