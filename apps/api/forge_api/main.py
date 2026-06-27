@@ -41,10 +41,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     if cfg.cors_origins:
+        allow_credentials = cfg.cors_allow_credentials
+        # A wildcard origin combined with credentials is forbidden by the CORS
+        # spec and a credential-leak vector (the browser would receive a
+        # reflected origin + ``Allow-Credentials: true``). If a deployment
+        # configures both, fail safe: keep the wildcard but drop credentials.
+        if "*" in cfg.cors_origins and allow_credentials:
+            allow_credentials = False
         app.add_middleware(
             CORSMiddleware,
             allow_origins=cfg.cors_origins,
-            allow_credentials=cfg.cors_allow_credentials,
+            allow_credentials=allow_credentials,
             allow_methods=["*"],
             allow_headers=["*"],
         )

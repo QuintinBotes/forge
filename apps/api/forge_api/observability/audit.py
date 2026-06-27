@@ -120,6 +120,7 @@ class AuditStore(Protocol):
         actor: str | None = None,
         run_id: uuid.UUID | None = None,
         connection_id: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         limit: int | None = None,
     ) -> list[AuditEntry]: ...
 
@@ -154,6 +155,7 @@ class InMemoryAuditStore:
         actor: str | None = None,
         run_id: uuid.UUID | None = None,
         connection_id: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         limit: int | None = None,
     ) -> list[AuditEntry]:
         rows = self._entries
@@ -165,6 +167,8 @@ class InMemoryAuditStore:
             rows = [e for e in rows if e.run_id == run_id]
         if connection_id is not None:
             rows = [e for e in rows if e.connection_id == connection_id]
+        if workspace_id is not None:
+            rows = [e for e in rows if e.workspace_id == workspace_id]
         if limit is not None and limit >= 0:
             rows = rows[-limit:] if limit else []
         return list(rows)
@@ -313,6 +317,7 @@ class AuditLog:
         actor: str | None = None,
         run_id: uuid.UUID | None = None,
         connection_id: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         limit: int | None = None,
     ) -> list[AuditEntry]:
         return self._store.query(
@@ -320,6 +325,7 @@ class AuditLog:
             actor=actor,
             run_id=run_id,
             connection_id=connection_id,
+            workspace_id=workspace_id,
             limit=limit,
         )
 

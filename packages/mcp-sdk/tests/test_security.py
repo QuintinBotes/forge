@@ -48,6 +48,31 @@ def test_annotation_marks_write_even_for_neutral_name() -> None:
     assert is_write_tool("run", spec) is True
 
 
+def test_unannotated_mutating_tool_with_unknown_verb_defaults_to_write() -> None:
+    # Fail-closed (Phase-2 bug fix r4): the MCP 2025 convention defaults
+    # ``readOnlyHint`` to false, so an un-annotated tool whose verb is NOT a
+    # recognised read verb must be assumed destructive. Previously these slipped
+    # through as reads because the name matched no WRITE_KEYWORD.
+    assert is_write_tool("merge") is True
+    assert is_write_tool("approve") is True
+    assert is_write_tool("merge_pull_request") is True
+    assert is_write_tool("dispatchWorkflow") is True
+    assert is_write_tool("transfer_funds") is True
+
+
+def test_unannotated_read_verb_tool_is_still_read() -> None:
+    # A clearly read-only leading verb keeps the tool a read without annotation.
+    assert is_write_tool("search_pages") is False
+    assert is_write_tool("get_document") is False
+    assert is_write_tool("list_spaces") is False
+    assert is_write_tool("fetchRecord") is False
+
+
+def test_read_verb_first_but_mutating_verb_present_is_write() -> None:
+    # A read-looking leading verb does not whitewash an embedded mutating verb.
+    assert is_write_tool("list_and_merge") is True
+
+
 # --------------------------------------------------------------------------- #
 # RFC 8707 token binding                                                        #
 # --------------------------------------------------------------------------- #

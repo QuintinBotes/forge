@@ -26,7 +26,11 @@ celery_app = Celery(
     "forge",
     broker=get_broker_url(),
     backend=get_broker_url(),
-    include=["forge_worker.indexer"],
+    include=[
+        "forge_worker.indexer",
+        "forge_worker.syncer",
+        "forge_worker.agent_runner",
+    ],
 )
 celery_app.conf.task_default_queue = "forge"
 

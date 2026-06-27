@@ -15,9 +15,10 @@ transport is mocked — no network traffic). They prove the route layer:
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from forge_api.main import create_app
@@ -27,8 +28,9 @@ from forge_mcp.testing import sample_connection, sample_transport
 
 
 @pytest.fixture
-def client() -> Iterator[TestClient]:
+def client(authenticate_app: Callable[..., FastAPI]) -> Iterator[TestClient]:
     app = create_app()
+    authenticate_app(app)
     # A manager whose every connection gets a fresh fixture transport: no live
     # MCP traffic ever happens (plan Task 1.12: "live transport mocked").
     manager = MCPConnectionManager(transport_factory=lambda conn: sample_transport())

@@ -16,15 +16,20 @@ connection), deterministic embedding, fixture reranker. No network.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.main import create_app
-from forge_api.routers.knowledge import get_knowledge_service
+from forge_api.routers.knowledge import (
+    get_knowledge_service,
+    get_knowledge_session_factory,
+)
+from forge_contracts import Chunk
 from forge_db.base import Base
 from forge_db.models import KnowledgeSource, Workspace
 from forge_db.session import create_session_factory
@@ -76,11 +81,35 @@ def service(session_factory: sessionmaker[Session]) -> KnowledgeService:
 
 
 @pytest.fixture
-def client(service: KnowledgeService) -> Iterator[TestClient]:
+def client(
+    service: KnowledgeService,
+    session_factory: sessionmaker[Session],
+    authenticate_app: Callable[..., FastAPI],
+) -> Iterator[TestClient]:
     app = create_app()
+    authenticate_app(app)  # principal authenticated in WORKSPACE_ID
     app.dependency_overrides[get_knowledge_service] = lambda: service
+    app.dependency_overrides[get_knowledge_session_factory] = lambda: session_factory
     with TestClient(app) as c:
         yield c
+
+
+def _seed_other_workspace(
+    session_factory: sessionmaker[Session],
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """Create a second tenant (workspace + source) and return their ids."""
+    other_ws = uuid.uuid4()
+    with session_factory() as session:
+        session.add(Workspace(id=other_ws, name="Other", slug=f"other-{other_ws.hex[:8]}"))
+        session.flush()
+        source = KnowledgeSource(
+            workspace_id=other_ws, kind="repo", name="other", uri="github.com/other/secret"
+        )
+        session.add(source)
+        session.flush()
+        other_src_id = source.id
+        session.commit()
+    return other_ws, other_src_id
 
 
 def _index_payload(source_id: uuid.UUID) -> dict[str, object]:
@@ -211,3 +240,71 @@ def test_sync_full_requires_files_or_root(
         json={"source_id": str(source_id), "mode": "full"},
     )
     assert resp.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Per-workspace isolation (cross-tenant data access fix)                       #
+# --------------------------------------------------------------------------- #
+
+
+def test_index_rejects_source_in_another_workspace(
+    client: TestClient, session_factory: sessionmaker[Session]
+) -> None:
+    # The caller (WORKSPACE_ID) must not be able to write into a source owned by
+    # a different tenant, even knowing its id.
+    _, other_src_id = _seed_other_workspace(session_factory)
+    resp = client.post(
+        "/knowledge/index",
+        json={"source_id": str(other_src_id), "chunks": [{"content": "x", "path": "x.py"}]},
+    )
+    assert resp.status_code == 404
+
+
+def test_sync_rejects_source_in_another_workspace(
+    client: TestClient, session_factory: sessionmaker[Session]
+) -> None:
+    _, other_src_id = _seed_other_workspace(session_factory)
+    resp = client.post(
+        "/knowledge/sync",
+        json={"source_id": str(other_src_id), "mode": "full", "files": {"a.py": "def a(): ..."}},
+    )
+    assert resp.status_code == 404
+
+
+def test_search_cannot_read_another_workspace(
+    client: TestClient,
+    source_id: uuid.UUID,
+    service: KnowledgeService,
+    session_factory: sessionmaker[Session],
+) -> None:
+    # Seed the caller's own workspace through the API.
+    client.post("/knowledge/index", json=_index_payload(source_id))
+    # Seed a SECOND tenant's source directly (bypassing the API's workspace gate)
+    # with a chunk that would match the query.
+    other_ws, other_src_id = _seed_other_workspace(session_factory)
+    service.index(
+        str(other_src_id),
+        [Chunk(content="def validate_jwt(token): TENANT B SECRET", path="secret.py")],
+    )
+
+    # Spoof attempt: pass tenant B's workspace_id in the request scope.
+    spoof = client.post(
+        "/knowledge/search",
+        json={
+            "query": "validate an oauth jwt token",
+            "scope": {"workspace_id": str(other_ws)},
+            "k": 10,
+        },
+    )
+    assert spoof.status_code == 200
+    assert all(c["source_id"] != str(other_src_id) for c in spoof.json())
+
+    # Default (empty) scope must also stay within the caller's workspace.
+    default = client.post(
+        "/knowledge/search",
+        json={"query": "validate an oauth jwt token", "k": 10},
+    )
+    assert default.status_code == 200
+    returned = default.json()
+    assert returned  # caller's own workspace results are present
+    assert all(c["source_id"] != str(other_src_id) for c in returned)

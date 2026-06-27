@@ -1,8 +1,5 @@
 # syntax=docker/dockerfile:1
-# Forge Celery worker image (plan Task 0.6 substrate; built in Phase 2).
-#
-# PARKED: `docker compose build` is not runnable in the overnight sandbox (no
-# network). Phase 2 (Task 2.1) verifies the build.
+# Forge Celery worker image (plan Task 0.6 substrate; built + verified in Phase 2 Task 2.1).
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 ENV UV_COMPILE_BYTECODE=1 \

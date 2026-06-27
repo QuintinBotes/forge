@@ -43,8 +43,25 @@ class Settings(BaseSettings):
     database_url: str = DEFAULT_DATABASE_URL
     redis_url: str = DEFAULT_REDIS_URL
 
-    # CORS — list of allowed origins (JSON-encoded in the env var).
-    cors_origins: list[str] = ["*"]
+    # Filesystem root for the spec engine's SDD artifacts (manifests, plans).
+    spec_root: str = "specs"
+
+    # Integration credentials (BYOK). Unset by default so the overnight build
+    # never makes live GitHub/Slack calls; configured per workspace in prod.
+    github_token: str | None = None
+    github_api_url: str = "https://api.github.com"
+    # Shared secret GitHub signs webhook deliveries with (``X-Hub-Signature-256``).
+    # Unset by default: the webhook ingest route rejects every delivery until a
+    # secret is configured (fail-closed — an unsigned webhook is never trusted).
+    github_webhook_secret: str | None = None
+    slack_token: str | None = None
+    slack_default_channel: str | None = None
+
+    # CORS — explicit list of allowed origins (JSON-encoded in the env var).
+    # Locked down by default: no cross-origin access until a deployment names its
+    # web origin(s). A wildcard ("*") is never combined with credentials (see
+    # ``forge_api.main.create_app``) because that is a credential-leak vector.
+    cors_origins: list[str] = []
     cors_allow_credentials: bool = True
 
     docs_enabled: bool = True

@@ -14,6 +14,7 @@ explicitly. Both the gateway service (``apps/mcp-gateway``) and the API
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -59,13 +60,26 @@ class MCPConnectionManager:
         self._evaluator = evaluator
         self._clients: dict[str, MCPGatewayClient] = {}
         self._connections: dict[str, MCPConnection] = {}
+        # Per-workspace ownership of each connection (Phase-2 bug fix r3). The
+        # frozen ``MCPConnection`` contract carries no ``workspace_id`` field, so
+        # tenancy is tracked alongside the registry. ``None`` means the connection
+        # was registered without a tenant dimension (e.g. the single-tenant
+        # ``apps/mcp-gateway`` service) and is not scoped.
+        self._owners: dict[str, uuid.UUID] = {}
 
     # ------------------------------------------------------------------ #
     # Registration                                                       #
     # ------------------------------------------------------------------ #
 
-    def register(self, conn: MCPConnection) -> MCPConnection:
-        """Register ``conn`` and prepare its client (read-only by default)."""
+    def register(
+        self, conn: MCPConnection, *, workspace_id: uuid.UUID | None = None
+    ) -> MCPConnection:
+        """Register ``conn`` and prepare its client (read-only by default).
+
+        When ``workspace_id`` is supplied the connection is bound to that tenant:
+        all later reads/calls/audit must present the same workspace or be treated
+        as if the connection does not exist (cross-tenant isolation).
+        """
         client = MCPGatewayClient(
             transport=self._transport_factory(conn),
             audit_log=self._audit,
@@ -75,37 +89,77 @@ class MCPConnectionManager:
         client.connect(conn)
         self._clients[conn.id] = client
         self._connections[conn.id] = conn
+        if workspace_id is not None:
+            self._owners[conn.id] = workspace_id
         return conn
 
-    def list_connections(self) -> list[MCPConnection]:
-        return list(self._connections.values())
+    def list_connections(
+        self, *, workspace_id: uuid.UUID | None = None
+    ) -> list[MCPConnection]:
+        """List registered connections, scoped to ``workspace_id`` when given."""
+        if workspace_id is None:
+            return list(self._connections.values())
+        return [
+            conn
+            for cid, conn in self._connections.items()
+            if self._owners.get(cid) == workspace_id
+        ]
 
-    def get(self, connection_id: str) -> MCPGatewayClient:
+    def get(
+        self, connection_id: str, *, workspace_id: uuid.UUID | None = None
+    ) -> MCPGatewayClient:
+        """Resolve a connection's client, enforcing tenant ownership.
+
+        A connection that is missing *or* owned by a different workspace raises
+        :class:`MCPConnectionNotFoundError` (mapped to 404) so the control plane
+        never leaks the existence of another tenant's MCP server.
+        """
         try:
-            return self._clients[connection_id]
+            client = self._clients[connection_id]
         except KeyError as exc:
             raise MCPConnectionNotFoundError(
                 f"no MCP connection registered with id {connection_id!r}"
             ) from exc
+        if workspace_id is not None and self._owners.get(connection_id) != workspace_id:
+            raise MCPConnectionNotFoundError(
+                f"no MCP connection registered with id {connection_id!r}"
+            )
+        return client
 
     # ------------------------------------------------------------------ #
     # Delegated operations                                               #
     # ------------------------------------------------------------------ #
 
     def list_resources(
-        self, connection_id: str, namespace: str | None = None
+        self,
+        connection_id: str,
+        namespace: str | None = None,
+        *,
+        workspace_id: uuid.UUID | None = None,
     ) -> list[MCPResource]:
-        return self.get(connection_id).list_resources(namespace)
+        return self.get(connection_id, workspace_id=workspace_id).list_resources(namespace)
 
-    def read_resource(self, connection_id: str, uri: str) -> MCPResourceContent:
-        return self.get(connection_id).read_resource(uri)
+    def read_resource(
+        self, connection_id: str, uri: str, *, workspace_id: uuid.UUID | None = None
+    ) -> MCPResourceContent:
+        return self.get(connection_id, workspace_id=workspace_id).read_resource(uri)
 
     def call_tool(
-        self, connection_id: str, name: str, arguments: dict[str, object]
+        self,
+        connection_id: str,
+        name: str,
+        arguments: dict[str, object],
+        *,
+        workspace_id: uuid.UUID | None = None,
     ) -> MCPToolResult:
-        return self.get(connection_id).call_tool(name, arguments)
+        return self.get(connection_id, workspace_id=workspace_id).call_tool(name, arguments)
 
-    def audit_entries(self, connection_id: str | None = None) -> list[MCPAuditEntry]:
+    def audit_entries(
+        self, connection_id: str | None = None, *, workspace_id: uuid.UUID | None = None
+    ) -> list[MCPAuditEntry]:
+        # Enforce tenant ownership before returning a connection's audit trail.
+        if connection_id is not None and workspace_id is not None:
+            self.get(connection_id, workspace_id=workspace_id)
         if isinstance(self._audit, InMemoryAuditLog):
             if connection_id is None:
                 return self._audit.entries

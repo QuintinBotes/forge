@@ -80,6 +80,20 @@ def test_write_tool_allowed_when_connection_permits_write() -> None:
     assert ("create_page", {"title": "x"}) in tr.calls
 
 
+def test_read_only_connection_rejects_unannotated_mutating_tool() -> None:
+    # Repro (Phase-2 bug fix r4): a mutating tool the server advertises with NO
+    # annotation (and whose verb is outside the write-keyword list) must NOT slip
+    # through a read-only connection. Previously this returned status='ok' and the
+    # transport was actually invoked.
+    client, tr = _connect(allow_write=False)
+    with pytest.raises(MCPWriteForbiddenError):
+        client.call_tool("merge_pull_request", {"number": 7})
+    # Fail-closed: the live transport was never reached.
+    assert tr.calls == []
+    assert client.audit_entries[-1].tool == "merge_pull_request"
+    assert client.audit_entries[-1].status == "forbidden"
+
+
 # --------------------------------------------------------------------------- #
 # Read tool calls + audit with redaction (spec rules 4 & 6)                    #
 # --------------------------------------------------------------------------- #
