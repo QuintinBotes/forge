@@ -5,8 +5,11 @@ the un-indexed unit that the embedding + hybrid-search layers (Tasks 1.2-1.4)
 consume. Two strategies, mirroring the spec's *Chunk Types and Priority Weights*
 table:
 
-* :func:`chunk_code` — Python function/class-level chunking via the stdlib
-  ``ast``. Each top-level ``def``/``class`` becomes one chunk (decorators
+* :func:`chunk_code` — function/class-level code chunking. The primary backend
+  is :mod:`forge_knowledge.treesitter_chunking` (multi-language: Python,
+  JavaScript/JSX, TypeScript/TSX, Go); the stdlib ``ast`` chunker is the Python
+  fallback when tree-sitter is unavailable. Either way, each top-level
+  ``def``/``class``/func/type becomes one chunk (decorators / ``export``
   included in the span); the remaining top-level statements (module docstring,
   imports, constants, ``__main__`` guard) are grouped into contiguous
   ``<module>`` chunks. Malformed input degrades to a single whole-file chunk —
@@ -19,12 +22,6 @@ table:
 Chunk-type weights come from the frozen ``CHUNK_TYPE_WEIGHTS`` table in
 ``forge_contracts.constants`` (single source of truth): README 1.3,
 policy/AGENTS.md 1.5, spec/plan/validation 1.4, summary 1.2, default 1.0.
-
-# PARKED: tree-sitter multi-language chunking is intentionally optional (plan
-# Task 1.1 says "tree-sitter optional, ``ast`` fallback"). ``tree_sitter`` is not
-# installed in this environment, so the active, tested path is the stdlib ``ast``
-# chunker for Python plus paragraph chunking for everything else. Adding a
-# tree-sitter backend later is a drop-in alternative to :func:`chunk_code`.
 """
 
 from __future__ import annotations
@@ -36,13 +33,21 @@ import re
 from forge_contracts.constants import CHUNK_TYPE_WEIGHTS
 from forge_contracts.dtos import Chunk
 from forge_contracts.enums import ChunkType
+from forge_knowledge.treesitter_chunking import (
+    TREE_SITTER_LANGUAGES,
+    chunk_with_treesitter,
+    language_for_path,
+    treesitter_available,
+)
 
 __all__ = [
     "DEFAULT_MAX_CHARS",
+    "TREE_SITTER_LANGUAGES",
     "chunk_code",
     "chunk_file",
     "chunk_markdown",
     "classify_path",
+    "treesitter_available",
     "weight_for",
 ]
 
@@ -201,12 +206,19 @@ def _code_chunk(
 
 
 def chunk_code(path: str, src: str, *, language: str = "python") -> list[Chunk]:
-    """Chunk Python source into one chunk per top-level ``def``/``class``.
+    """Chunk source into one chunk per top-level definition.
+
+    The tree-sitter backend (:mod:`forge_knowledge.treesitter_chunking`) is tried
+    first for any supported ``language`` (Python, JavaScript/JSX, TypeScript/TSX,
+    Go). When tree-sitter or the grammar is unavailable, or the parse errors,
+    Python falls back to the stdlib ``ast`` chunker and other languages to a
+    single whole-file chunk.
 
     Top-level statements that are not functions/classes (module docstring,
     imports, constants, ``__main__`` guard) are grouped into contiguous
     ``<module>`` chunks so identifier-bearing preamble survives for keyword
-    (BM25) retrieval. Decorators are included in a definition's line span.
+    (BM25) retrieval. Decorators / ``export`` wrappers are included in a
+    definition's line span.
 
     Never raises on malformed input: a ``SyntaxError`` (or empty AST with
     content present) falls back to a single whole-file chunk.
@@ -214,6 +226,20 @@ def chunk_code(path: str, src: str, *, language: str = "python") -> list[Chunk]:
     if not src.strip():
         return []
 
+    ts_chunks = chunk_with_treesitter(
+        path, src, language, weight=weight_for(ChunkType.CODE)
+    )
+    if ts_chunks is not None:
+        return ts_chunks
+
+    if language != "python":
+        return [_whole_file_code_chunk(path, src, language)]
+
+    return _chunk_python_ast(path, src, language)
+
+
+def _chunk_python_ast(path: str, src: str, language: str) -> list[Chunk]:
+    """Stdlib ``ast`` Python chunker — the fallback when tree-sitter is absent."""
     try:
         tree = ast.parse(src)
     except SyntaxError:
@@ -416,10 +442,15 @@ def chunk_markdown(
 def chunk_file(path: str, src: str, *, max_chars: int = DEFAULT_MAX_CHARS) -> list[Chunk]:
     """Chunk a file by routing on its path.
 
-    Python files go through the AST chunker; everything else (markdown, docs,
-    policy/spec YAML, and non-Python source as a graceful fallback) goes through
-    the paragraph/text chunker.
+    Python files always go through :func:`chunk_code` (tree-sitter primary, stdlib
+    ``ast`` fallback). Other code files with a tree-sitter grammar available
+    (JavaScript/JSX, TypeScript/TSX, Go) also go through :func:`chunk_code`.
+    Everything else — markdown, docs, policy/spec YAML, and code files with no
+    available grammar — goes through the paragraph/text chunker.
     """
-    if path and path.lower().endswith((".py", ".pyi")):
-        return chunk_code(path, src)
+    language = language_for_path(path)
+    if language == "python":
+        return chunk_code(path, src, language="python")
+    if language is not None and treesitter_available(language):
+        return chunk_code(path, src, language=language)
     return chunk_markdown(path, src, max_chars=max_chars)
