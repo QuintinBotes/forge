@@ -11,6 +11,7 @@ dependencies = [
     "forge-db",
     "forge-agent",
     "forge-knowledge",
+    "forge-mcp",
     "forge-board",
     "forge-skill",
     "forge-workflow",

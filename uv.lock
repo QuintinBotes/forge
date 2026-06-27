@@ -549,6 +549,7 @@ name = "forge-api"
 version = "0.1.0"
 source = { editable = "apps/api" }
 dependencies = [
+    { name = "celery" },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "forge-board" },
@@ -564,6 +565,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "celery", specifier = ">=5.3" },
     { name = "cryptography", specifier = ">=43" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "forge-board", editable = "packages/board-core" },
@@ -794,6 +796,7 @@ dependencies = [
     { name = "forge-contracts" },
     { name = "forge-db" },
     { name = "forge-knowledge" },
+    { name = "forge-mcp" },
     { name = "forge-skill" },
     { name = "forge-workflow" },
     { name = "redis" },
@@ -807,6 +810,7 @@ requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
+    { name = "forge-mcp", editable = "packages/mcp-sdk" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "redis", specifier = ">=5.0" },
