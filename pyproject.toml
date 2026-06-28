@@ -10,6 +10,7 @@ dependencies = [
     "forge-contracts",
     "forge-db",
     "forge-workflow",
+    "forge-deploy",
     "forge-agent",
     "forge-coordinator",
     "forge-spec",
@@ -52,6 +53,7 @@ exclude = ["packages/ui-kit", "apps/web"]
 forge-contracts = { workspace = true }
 forge-db = { workspace = true }
 forge-workflow = { workspace = true }
+forge-deploy = { workspace = true }
 forge-agent = { workspace = true }
 forge-coordinator = { workspace = true }
 forge-spec = { workspace = true }

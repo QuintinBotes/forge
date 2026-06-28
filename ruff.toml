@@ -33,6 +33,7 @@ known-first-party = [
     "forge_contracts",
     "forge_db",
     "forge_workflow",
+    "forge_deploy",
     "forge_agent",
     "forge_coordinator",
     "forge_spec",

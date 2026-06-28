@@ -9,10 +9,6 @@ from __future__ import annotations
 
 import enum
 
-# F30 multi-team RBAC enums are defined once in the frozen contracts package
-# (``forge_contracts.authz``) and re-exported here so the SQLAlchemy column
-# types (``enum_type(...)``) follow the local ``forge_db.models.enums`` import
-# convention. ``Role`` reuses :class:`UserRole` (defined below) verbatim.
 from forge_contracts.authz import (
     AccessLevel,
     PrincipalType,
@@ -30,6 +26,20 @@ from forge_contracts.automation import (
     AutomationExecutionStatus,
     AutomationTriggerSource,
     AutomationTriggerType,
+)
+
+# F30 multi-team RBAC enums are defined once in the frozen contracts package
+# (``forge_contracts.authz``) and re-exported here so the SQLAlchemy column
+# types (``enum_type(...)``) follow the local ``forge_db.models.enums`` import
+# convention. ``Role`` reuses :class:`UserRole` (defined below) verbatim.
+from forge_contracts.deployment import (
+    DeploymentEventType,
+    DeploymentKind,
+    DeploymentState,
+    DeploymentTrigger,
+    GateCheckName,
+    GateCheckStatus,
+    HealthStatus,
 )
 
 # F26 sprint-velocity enums are defined once in the frozen contracts package and
@@ -364,8 +374,15 @@ __all__ = [
     "AutomationTriggerType",
     "CarryoverTarget",
     "ChunkType",
+    "DeploymentEventType",
+    "DeploymentKind",
+    "DeploymentState",
+    "DeploymentTrigger",
     "EngineBackend",
     "ExecutionMode",
+    "GateCheckName",
+    "GateCheckStatus",
+    "HealthStatus",
     "IncidentSeverity",
     "IncidentState",
     "KnowledgeSourceKind",
