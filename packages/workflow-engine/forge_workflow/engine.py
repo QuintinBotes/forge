@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from forge_contracts import (
     RunStatus,
@@ -32,6 +33,9 @@ from forge_workflow.store import InMemoryWorkflowStore, WorkflowStore
 
 #: Key under which the retry counter is held in ``WorkflowRun.context``.
 RETRY_COUNT_KEY = "retry_count"
+#: Context keys recording the resolved (and pinned) DB definition revision (F28).
+DEFINITION_REVISION_KEY = "definition_revision_id"
+DEFINITION_VERSION_KEY = "definition_version"
 
 #: States that complete a run successfully.
 _SUCCESS_STATES = {WorkflowState.MERGED.value, WorkflowState.CLOSED.value}
@@ -56,6 +60,7 @@ class WorkflowEngineImpl:
         definition: WorkflowDefinition | None = None,
         *,
         definitions: list[WorkflowDefinition] | None = None,
+        definition_provider: Any | None = None,
     ) -> None:
         self._store: WorkflowStore = store or InMemoryWorkflowStore()
         self._default = definition or default_feature_definition()
@@ -64,26 +69,55 @@ class WorkflowEngineImpl:
         }
         for extra in definitions or []:
             self._graphs[extra.name] = TransitionGraph.from_definition(extra)
+        # F28 — DB-over-bundled resolver (default None preserves F07 behavior).
+        self._definition_provider = definition_provider
 
     # -- protocol surface ----------------------------------------------------- #
 
-    def start(self, task_id: uuid.UUID) -> WorkflowRun:
-        """Open a new run for ``task_id`` in the default workflow's initial state."""
-        graph = self._graphs[self._default.name]
+    def start(
+        self,
+        task_id: uuid.UUID,
+        definition_name: str | None = None,
+        *,
+        workspace_id: uuid.UUID | None = None,
+    ) -> WorkflowRun:
+        """Open a new run for ``task_id`` in the workflow's initial state.
+
+        F28: when a ``definition_provider`` is injected and a ``workspace_id`` is
+        given, the engine resolves the workspace's published definition (DB over
+        bundled) and **pins** the exact revision into the run context so in-flight
+        runs never drift to a newer publish. Without a provider this is exactly
+        F07's behavior.
+        """
+        name = definition_name or self._default.name
+        context: dict[str, object] = {RETRY_COUNT_KEY: 0}
+        if self._definition_provider is not None and workspace_id is not None:
+            definition, revision_id, dsl_version = self._definition_provider.resolve(
+                name, workspace_id=workspace_id
+            )
+            graph = TransitionGraph.from_definition(definition)
+            self._graphs[definition.name] = graph
+            name = definition.name
+            context[DEFINITION_VERSION_KEY] = dsl_version
+            if revision_id is not None:
+                context[DEFINITION_REVISION_KEY] = str(revision_id)
+        else:
+            graph = self._graphs.get(name, self._graphs[self._default.name])
+            name = graph.definition.name
         run = WorkflowRun(
             task_id=task_id,
-            workflow_name=self._default.name,
+            workflow_name=name,
             current_state=graph.initial_state,
             status=RunStatus.RUNNING,
             started_at=_now(),
-            context={RETRY_COUNT_KEY: 0},
+            context=context,
         )
         return self._store.create(run)
 
     def transition(self, run_id: uuid.UUID, event: str) -> WorkflowState:
         """Apply ``event`` to the run and return its new state."""
         run = self._store.get(run_id)
-        graph = self._graph_for(run.workflow_name)
+        graph = self._graph_for_run(run)
         max_retries = graph.definition.retry_policy.max_retries
         retry_count = int(run.context.get(RETRY_COUNT_KEY, 0))
 
@@ -137,6 +171,14 @@ class WorkflowEngineImpl:
 
     def _graph_for(self, workflow_name: str) -> TransitionGraph:
         return self._graphs.get(workflow_name, self._graphs[self._default.name])
+
+    def _graph_for_run(self, run: WorkflowRun) -> TransitionGraph:
+        """Resolve the graph for a run, loading its pinned revision when set (F28)."""
+        pinned = run.context.get(DEFINITION_REVISION_KEY)
+        if pinned and self._definition_provider is not None:
+            definition = self._definition_provider.load_pinned(uuid.UUID(str(pinned)))
+            return TransitionGraph.from_definition(definition)
+        return self._graph_for(run.workflow_name)
 
     @staticmethod
     def _apply_status(run: WorkflowRun, new_state: str) -> None:

@@ -439,6 +439,54 @@ def test_f27_multi_agent_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F28 workflow-editor tables + run pin column, owned by 0010_f28_workflow_editor.
+F28_TABLES = {"workflow_definition", "workflow_definition_revision"}
+F28_RUN_COLUMNS = {"definition_revision_id"}
+
+
+def test_f28_workflow_editor_migration_up_down(alembic_config: Config) -> None:
+    """F28 AC: 0010 creates the two editor tables (with the single-draft partial
+    unique index) + the workflow_run pin column, and drops them on downgrade,
+    leaving workflow_run intact."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to F27: F28 tables absent, core present.
+        command.upgrade(alembic_config, "0009_f27_multi_agent")
+        after_f27 = set(inspect(engine).get_table_names())
+        assert not (F28_TABLES & after_f27), "F27 stage must not create F28 tables"
+        assert after_f27 >= EXPECTED_TABLES
+
+        # Apply the F28 migration: both tables + the pin column appear.
+        command.upgrade(alembic_config, "0010_f28_workflow_editor")
+        inspector = inspect(engine)
+        after_f28 = set(inspector.get_table_names())
+        assert after_f28 >= F28_TABLES, f"missing F28 tables: {sorted(F28_TABLES - after_f28)}"
+
+        rev_indexes = {i["name"] for i in inspector.get_indexes("workflow_definition_revision")}
+        assert "uq_workflow_definition_revision_one_draft" in rev_indexes
+        assert "uq_workflow_definition_revision_revision" in rev_indexes
+        def_indexes = {i["name"] for i in inspector.get_indexes("workflow_definition")}
+        assert "uq_workflow_definition_workspace_name" in def_indexes
+
+        run_cols = {c["name"] for c in inspector.get_columns("workflow_run")}
+        assert run_cols >= F28_RUN_COLUMNS
+
+        # Downgrade one step: F28 tables + column gone, workflow_run intact.
+        command.downgrade(alembic_config, "0009_f27_multi_agent")
+        inspector = inspect(engine)
+        after_down = set(inspector.get_table_names())
+        assert not (F28_TABLES & after_down), "downgrade left F28 tables"
+        assert "workflow_run" in after_down
+        cols_after = {c["name"] for c in inspector.get_columns("workflow_run")}
+        assert not (F28_RUN_COLUMNS & cols_after), "downgrade left F28 run column"
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

@@ -82,6 +82,13 @@ class WorkflowRun(WorkspaceScopedModel):
     )
     temporal_workflow_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     temporal_run_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # F28 — the DB definition revision a run resolved to (NULL = bundled file was
+    # used). Pinned at start so in-flight runs never drift to a newer publish.
+    # Plain UUID column (no DB-level FK) to keep workflow_run independent of the
+    # editor tables' create/drop ordering; integrity is app-enforced.
+    definition_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 

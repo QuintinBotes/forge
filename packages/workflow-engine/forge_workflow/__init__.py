@@ -18,7 +18,12 @@ from forge_workflow.default_workflow import (
     default_feature_definition,
 )
 from forge_workflow.dsl import load_definition, parse_definition
-from forge_workflow.engine import RETRY_COUNT_KEY, WorkflowEngineImpl
+from forge_workflow.engine import (
+    DEFINITION_REVISION_KEY,
+    DEFINITION_VERSION_KEY,
+    RETRY_COUNT_KEY,
+    WorkflowEngineImpl,
+)
 from forge_workflow.exceptions import (
     AmbiguousTransitionError,
     DuplicateRunError,
@@ -66,6 +71,8 @@ __version__ = "0.1.0"
 __all__ = [
     "DEFAULT_FEATURE_WORKFLOW_YAML",
     "DEFAULT_WORKFLOW_NAME",
+    "DEFINITION_REVISION_KEY",
+    "DEFINITION_VERSION_KEY",
     "INCIDENT_DEFINITION_NAME",
     "INCIDENT_EVENTS",
     "INCIDENT_STATES",
