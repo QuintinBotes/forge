@@ -9,6 +9,11 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "forge-agent",
+    "forge-policy",
+    "forge-skill",
+    "forge-db",
+    "forge-knowledge",
+    "sqlalchemy>=2.0",
 ]
 
 [build-system]

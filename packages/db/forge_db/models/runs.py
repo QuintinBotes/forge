@@ -6,7 +6,16 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, Index, String, Text, Uuid, text
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    Uuid,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from forge_db.base import WorkspaceScopedModel, enum_type, json_type
@@ -100,6 +109,17 @@ class AgentRun(WorkspaceScopedModel):
     status: Mapped[RunStatus] = mapped_column(
         enum_type(RunStatus), default=RunStatus.PENDING, nullable=False
     )
+    # F27 — supervised multi-agent coordinator columns (null/false for single-agent).
+    # ``is_supervisor`` marks the parent coordinator run; ``pattern`` records the
+    # chosen ``CoordinationPattern``; ``supervision`` holds the resolved plan +
+    # merge summary (redacted; large blobs offloaded to object store).
+    is_supervisor: Mapped[bool] = mapped_column(
+        Boolean(), default=False, server_default=text("false"), nullable=False
+    )
+    pattern: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    supervision: Mapped[dict[str, Any]] = mapped_column(
+        json_type(), default=dict, server_default=text("'{}'"), nullable=False
+    )
     inputs: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     steps: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
     output: Mapped[dict[str, Any] | None] = mapped_column(json_type(), nullable=True)
@@ -120,7 +140,9 @@ class AgentRun(WorkspaceScopedModel):
         back_populates="agent_run", cascade="all, delete-orphan"
     )
     sub_agent_runs: Mapped[list[SubAgentRun]] = relationship(
-        back_populates="parent_agent_run", cascade="all, delete-orphan"
+        back_populates="parent_agent_run",
+        cascade="all, delete-orphan",
+        foreign_keys="SubAgentRun.parent_agent_run_id",
     )
     sandbox_instances: Mapped[list[SandboxInstance]] = relationship(
         back_populates="agent_run", cascade="all, delete-orphan"
@@ -162,24 +184,81 @@ class ApprovalRequest(WorkspaceScopedModel):
 
 
 class SubAgentRun(WorkspaceScopedModel):
-    """A sub-agent execution spawned by a primary agent (multi-agent mode)."""
+    """A sub-agent execution spawned by the F27 Supervisor (multi-agent mode).
+
+    One row per spawned specialist (``SubAgentRun[]`` of the Core Data Model).
+    Conforms to the foundation: ``role`` is the :class:`SubAgentRole` value as a
+    string and ``status`` reuses the shared :class:`RunStatus` enum (rather than
+    introducing parallel ``sub_agent_role`` / ``sub_agent_status`` enums).
+    ``completed_at`` doubles as the spec's ``finished_at``.
+    """
 
     __tablename__ = "sub_agent_run"
+    __table_args__ = (
+        # Unique as an INDEX (not a named constraint) so the F27 migration's
+        # downgrade is cross-dialect reversible (SQLite cannot ALTER-DROP a named
+        # constraint, but DROP INDEX works).
+        Index(
+            "uq_sub_agent_run_assignment",
+            "parent_agent_run_id",
+            "assignment_id",
+            unique=True,
+        ),
+        Index("ix_sub_agent_run_parent", "parent_agent_run_id", "ordinal"),
+        Index("ix_sub_agent_run_child", "agent_run_id"),
+    )
 
     parent_agent_run_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("agent_run.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # The child F06 ExecutionAgent run (its steps live in ``agent_run``); null
+    # until the subagent is spawned. The DB-level FK (ON DELETE SET NULL) is added
+    # on Postgres by the F27 migration — it is intentionally NOT declared inline so
+    # the column stays cross-dialect droppable on the migration's SQLite downgrade.
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=True,
+    )
+    assignment_id: Mapped[str] = mapped_column(
+        String(128), default="", server_default=text("''"), nullable=False
+    )
     role: Mapped[str] = mapped_column(String(64), nullable=False)
+    pattern: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ordinal: Mapped[int] = mapped_column(
+        Integer(), default=0, server_default=text("0"), nullable=False
+    )
+    depends_on: Mapped[list[Any]] = mapped_column(
+        json_type(), default=list, server_default=text("'[]'"), nullable=False
+    )
     status: Mapped[RunStatus] = mapped_column(
         enum_type(RunStatus), default=RunStatus.PENDING, nullable=False
+    )
+    optional: Mapped[bool] = mapped_column(
+        Boolean(), default=False, server_default=text("false"), nullable=False
+    )
+    objective: Mapped[dict[str, Any]] = mapped_column(
+        json_type(), default=dict, server_default=text("'{}'"), nullable=False
+    )
+    artifact: Mapped[dict[str, Any]] = mapped_column(
+        json_type(), default=dict, server_default=text("'{}'"), nullable=False
+    )
+    confidence: Mapped[float | None] = mapped_column(nullable=True)
+    branch_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    merged: Mapped[bool] = mapped_column(
+        Boolean(), default=False, server_default=text("false"), nullable=False
+    )
+    token_usage: Mapped[dict[str, Any]] = mapped_column(
+        json_type(), default=dict, server_default=text("'{}'"), nullable=False
     )
     inputs: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     steps: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
     output: Mapped[dict[str, Any] | None] = mapped_column(json_type(), nullable=True)
-    confidence: Mapped[float | None] = mapped_column(nullable=True)
+    error: Mapped[dict[str, Any] | None] = mapped_column(json_type(), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
-    parent_agent_run: Mapped[AgentRun] = relationship(back_populates="sub_agent_runs")
+    parent_agent_run: Mapped[AgentRun] = relationship(
+        back_populates="sub_agent_runs", foreign_keys=[parent_agent_run_id]
+    )
