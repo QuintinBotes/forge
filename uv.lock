@@ -633,12 +633,22 @@ source = { editable = "packages/multi-agent-coordinator" }
 dependencies = [
     { name = "forge-agent" },
     { name = "forge-contracts" },
+    { name = "forge-db" },
+    { name = "forge-knowledge" },
+    { name = "forge-policy" },
+    { name = "forge-skill" },
+    { name = "sqlalchemy" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "forge-agent", editable = "packages/agent-runtime" },
     { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "forge-db", editable = "packages/db" },
+    { name = "forge-knowledge", editable = "packages/knowledge-core" },
+    { name = "forge-policy", editable = "packages/policy-sdk" },
+    { name = "forge-skill", editable = "packages/skill-sdk" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
 [[package]]

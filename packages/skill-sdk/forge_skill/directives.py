@@ -82,6 +82,9 @@ class SkillDirectives:
     max_blast_radius: BlastRadius | None = None
     allowed_actions: frozenset[str] = field(default_factory=frozenset)
     forbidden_actions: frozenset[str] = field(default_factory=frozenset)
+    #: Whether the profile mandates a review gate (drives F27 MAKER_CHECKER
+    #: pattern selection). Projected from ``SkillProfile.review_required``.
+    review_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,6 +112,7 @@ def to_directives(profile: SkillProfile) -> SkillDirectives:
         max_blast_radius=blast,
         allowed_actions=frozenset(normalize_action(a) for a in profile.allowed_actions),
         forbidden_actions=frozenset(normalize_action(a) for a in profile.forbidden_actions),
+        review_required=profile.review_required,
     )
 
 

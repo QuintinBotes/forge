@@ -384,6 +384,61 @@ def test_f26_sprint_velocity_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F27 supervised multi-agent columns, owned by 0009_f27_multi_agent.
+F27_AGENT_RUN_COLUMNS = {"is_supervisor", "pattern", "supervision"}
+F27_SUB_AGENT_RUN_COLUMNS = {
+    "agent_run_id",
+    "assignment_id",
+    "pattern",
+    "ordinal",
+    "depends_on",
+    "optional",
+    "objective",
+    "artifact",
+    "branch_name",
+    "merged",
+    "token_usage",
+    "error",
+}
+
+
+def test_f27_multi_agent_migration_up_down(alembic_config: Config) -> None:
+    """F27 AC: 0009 owns the coordinator columns on agent_run + sub_agent_run
+    (with their indexes + unique index) and drops them on downgrade, leaving the
+    baseline-owned tables intact.
+
+    (forge_db's baseline is metadata-driven, so the columns are provisioned on a
+    fresh chain; this asserts the F27 migration owns a clean, reversible down.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        command.upgrade(alembic_config, "head")
+        inspector = inspect(engine)
+        agent_cols = {c["name"] for c in inspector.get_columns("agent_run")}
+        sub_cols = {c["name"] for c in inspector.get_columns("sub_agent_run")}
+        assert agent_cols >= F27_AGENT_RUN_COLUMNS
+        assert sub_cols >= F27_SUB_AGENT_RUN_COLUMNS
+        sub_indexes = {i["name"] for i in inspector.get_indexes("sub_agent_run")}
+        assert {"ix_sub_agent_run_parent", "ix_sub_agent_run_child"} <= sub_indexes
+        unique_indexes = {i["name"] for i in inspector.get_indexes("sub_agent_run") if i["unique"]}
+        assert "uq_sub_agent_run_assignment" in unique_indexes
+
+        # Downgrade one step: F27 columns/indexes gone, tables intact.
+        command.downgrade(alembic_config, "0008_f26_sprint_velocity")
+        inspector = inspect(engine)
+        assert "agent_run" in inspector.get_table_names()
+        assert "sub_agent_run" in inspector.get_table_names()
+        agent_cols = {c["name"] for c in inspector.get_columns("agent_run")}
+        sub_cols = {c["name"] for c in inspector.get_columns("sub_agent_run")}
+        assert not (F27_AGENT_RUN_COLUMNS & agent_cols), "downgrade left F27 agent_run cols"
+        assert not (F27_SUB_AGENT_RUN_COLUMNS & sub_cols), "downgrade left F27 sub_agent_run cols"
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and
