@@ -83,6 +83,9 @@ EXPECTED_MODELS = [
     "SprintScopeEvent",
     "SprintBurndownSnapshot",
     "SprintVelocity",
+    # F28 workflow visual editor tables.
+    "WorkflowDefinition",
+    "WorkflowDefinitionRevision",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

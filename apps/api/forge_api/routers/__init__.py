@@ -28,6 +28,7 @@ from forge_api.routers import (
     spec,
     sprints,
     workflow,
+    workflow_editor,
 )
 
 #: Mounted at the application root (no API prefix, no auth) for probes.
@@ -40,6 +41,7 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     spec.router,
     knowledge.router,
     workflow.router,
+    workflow_editor.router,
     agent.router,
     policy.router,
     mcp.router,
@@ -73,4 +75,5 @@ __all__ = [
     "spec",
     "sprints",
     "workflow",
+    "workflow_editor",
 ]

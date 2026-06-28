@@ -86,6 +86,13 @@ from forge_db.models.sprint_velocity import (
     SprintScopeEvent,
     SprintVelocity,
 )
+from forge_db.models.workflow_editor import (
+    RevisionStatus,
+    RevisionValidationStatus,
+    WorkflowDefinition,
+    WorkflowDefinitionRevision,
+    WorkflowDefinitionSource,
+)
 from forge_db.models.workspace import APIKey, User, Workspace
 
 __all__ = [
@@ -147,6 +154,8 @@ __all__ = [
     "RepoRole",
     "RepositoryConnection",
     "RetrievalChunk",
+    "RevisionStatus",
+    "RevisionValidationStatus",
     "RunStatus",
     "SandboxInstance",
     "SandboxKind",
@@ -166,6 +175,9 @@ __all__ = [
     "TaskStatus",
     "User",
     "UserRole",
+    "WorkflowDefinition",
+    "WorkflowDefinitionRevision",
+    "WorkflowDefinitionSource",
     "WorkflowRun",
     "WorkflowState",
     "Workspace",
