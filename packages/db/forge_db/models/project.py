@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from forge_db.base import WorkspaceScopedModel, json_type
+from forge_db.base import WorkspaceScopedModel, enum_type, json_type
+from forge_db.models.enums import ProjectVisibility
 
 if TYPE_CHECKING:
     from forge_db.models.planning import Epic, Incident, Milestone, Sprint, Task
@@ -26,6 +27,20 @@ class Project(WorkspaceScopedModel):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     settings: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    # F30: project visibility + optional owning team (multi-team controls).
+    visibility: Mapped[ProjectVisibility] = mapped_column(
+        enum_type(ProjectVisibility),
+        default=ProjectVisibility.WORKSPACE,
+        server_default=ProjectVisibility.WORKSPACE.value,
+        nullable=False,
+    )
+    # Plain column on the model (no ORM-level FK) so SQLite can drop it on
+    # downgrade; the ``team`` FK (ON DELETE SET NULL) is added on Postgres by the
+    # F30 migration, mirroring 0009's child-run FK pattern.
+    owner_team_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=True,
+    )
 
     workspace: Mapped[Workspace] = relationship(back_populates="projects")
     constitution: Mapped[Constitution | None] = relationship(

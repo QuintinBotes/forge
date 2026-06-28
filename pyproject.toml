@@ -18,6 +18,7 @@ dependencies = [
     "forge-integrations",
     "forge-mcp",
     "forge-policy",
+    "forge-authz",
     "forge-skill",
     "forge-eval",
     "forge-api",
@@ -59,6 +60,7 @@ forge-knowledge = { workspace = true }
 forge-integrations = { workspace = true }
 forge-mcp = { workspace = true }
 forge-policy = { workspace = true }
+forge-authz = { workspace = true }
 forge-skill = { workspace = true }
 forge-eval = { workspace = true }
 forge-api = { workspace = true }

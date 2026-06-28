@@ -9,6 +9,18 @@ from __future__ import annotations
 
 import enum
 
+# F30 multi-team RBAC enums are defined once in the frozen contracts package
+# (``forge_contracts.authz``) and re-exported here so the SQLAlchemy column
+# types (``enum_type(...)``) follow the local ``forge_db.models.enums`` import
+# convention. ``Role`` reuses :class:`UserRole` (defined below) verbatim.
+from forge_contracts.authz import (
+    AccessLevel,
+    PrincipalType,
+    ProjectVisibility,
+    ScopeType,
+    TeamRole,
+)
+
 # F21 automation enums are defined once in the frozen contracts package and
 # re-exported here so the SQLAlchemy column types (enum_type(...)) and the rest
 # of forge_db follow the local ``forge_db.models.enums`` import convention.
@@ -342,6 +354,7 @@ class PRMergeState(enum.StrEnum):
 
 __all__ = [
     "APIKeyKind",
+    "AccessLevel",
     "ApprovalGate",
     "ApprovalStatus",
     "AutomationActionType",
@@ -368,7 +381,9 @@ __all__ = [
     "PMSyncState",
     "PRGroupStatus",
     "PRMergeState",
+    "PrincipalType",
     "Priority",
+    "ProjectVisibility",
     "RepoProvider",
     "RepoRole",
     "RunStatus",
@@ -376,12 +391,14 @@ __all__ = [
     "SandboxNetwork",
     "SandboxStatus",
     "ScopeActorKind",
+    "ScopeType",
     "SpecStatus",
     "SprintScopeEventType",
     "SprintState",
     "SyncMode",
     "TaskKind",
     "TaskStatus",
+    "TeamRole",
     "UserRole",
     "WorkflowState",
 ]

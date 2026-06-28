@@ -19,10 +19,18 @@ MCP_REFRESH_TASK = "forge.knowledge.refresh_stale_mcp_sources"
 AUTOMATION_SWEEP_TASK = "forge.automations.sweep_unprocessed_triggers"
 # F26: daily burndown snapshot for every active sprint (workspace-naive UTC).
 SPRINT_SNAPSHOT_TASK = "sprint.snapshot_burndown"
+# F30: purge expired role grants every 5m (hygiene + audit; expiry is
+# authoritative at resolution time, so a missed run never grants stale access).
+AUTHZ_PURGE_TASK = "authz.purge_expired_grants"
 
 
 def reap_interval_seconds() -> float:
     return float(os.environ.get("FORGE_SANDBOX_REAP_INTERVAL_SECONDS", "300"))
+
+
+def authz_purge_seconds() -> float:
+    """Beat cadence for the F30 expired-grant purge (``FORGE_AUTHZ_PURGE_INTERVAL_SECONDS``)."""
+    return float(os.environ.get("FORGE_AUTHZ_PURGE_INTERVAL_SECONDS", "300"))
 
 
 def mcp_index_poll_seconds() -> float:
@@ -57,6 +65,11 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": SPRINT_SNAPSHOT_TASK,
             "schedule": crontab(hour=23, minute=55),
         },
+        # F30: purge expired role grants on a fixed cadence (default 5m).
+        "authz-purge-expired-grants": {
+            "task": AUTHZ_PURGE_TASK,
+            "schedule": authz_purge_seconds(),
+        },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
     existing.update(schedule)
@@ -67,11 +80,13 @@ def configure_beat(app: object) -> dict[str, object]:
 BEAT_SCHEDULE = configure_beat(celery_app)
 
 __all__ = [
+    "AUTHZ_PURGE_TASK",
     "AUTOMATION_SWEEP_TASK",
     "BEAT_SCHEDULE",
     "MCP_REFRESH_TASK",
     "SANDBOX_REAP_TASK",
     "SPRINT_SNAPSHOT_TASK",
+    "authz_purge_seconds",
     "automation_sweep_seconds",
     "configure_beat",
     "mcp_index_poll_seconds",

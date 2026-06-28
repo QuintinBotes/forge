@@ -7,9 +7,11 @@ Alembic's ``env.py`` and by ``Base.metadata.create_all`` in tests).
 from __future__ import annotations
 
 from forge_db.models import enums
+from forge_db.models.audit import AuditLog
 from forge_db.models.automation import AutomationExecution, AutomationRule
 from forge_db.models.connections import MCPConnection, RepositoryConnection
 from forge_db.models.enums import (
+    AccessLevel,
     APIKeyKind,
     ApprovalGate,
     ApprovalStatus,
@@ -35,18 +37,22 @@ from forge_db.models.enums import (
     PMSyncDirection,
     PMSyncState,
     PRGroupStatus,
+    PrincipalType,
     Priority,
     PRMergeState,
+    ProjectVisibility,
     RepoProvider,
     RepoRole,
     RunStatus,
     SandboxKind,
     SandboxNetwork,
     SandboxStatus,
+    ScopeType,
     SpecStatus,
     SyncMode,
     TaskKind,
     TaskStatus,
+    TeamRole,
     UserRole,
     WorkflowState,
 )
@@ -80,6 +86,8 @@ from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
 from forge_db.models.policy_rule_evaluation import PolicyRuleEvaluation
 from forge_db.models.profiles import PolicyProfile, SkillProfile
 from forge_db.models.project import Constitution, Project
+from forge_db.models.project_team_access import ProjectTeamAccess
+from forge_db.models.role_grant import RoleGrant
 from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
 from forge_db.models.sandbox import SandboxInstance
 from forge_db.models.sprint_velocity import (
@@ -87,6 +95,8 @@ from forge_db.models.sprint_velocity import (
     SprintScopeEvent,
     SprintVelocity,
 )
+from forge_db.models.team import Team
+from forge_db.models.team_member import TeamMember
 from forge_db.models.workflow_editor import (
     RevisionStatus,
     RevisionValidationStatus,
@@ -101,11 +111,13 @@ __all__ = [
     "EMBEDDING_DIM",
     "APIKey",
     "APIKeyKind",
+    "AccessLevel",
     "AgentRepoWorkspace",
     "AgentRun",
     "ApprovalGate",
     "ApprovalRequest",
     "ApprovalStatus",
+    "AuditLog",
     "AutomationActionType",
     "AutomationEntityType",
     "AutomationExecution",
@@ -149,8 +161,11 @@ __all__ = [
     "PolicyRuleEvaluation",
     "Postmortem",
     "PostmortemActionItem",
+    "PrincipalType",
     "Priority",
     "Project",
+    "ProjectTeamAccess",
+    "ProjectVisibility",
     "RemediationPlan",
     "RepoProvider",
     "RepoRole",
@@ -158,11 +173,13 @@ __all__ = [
     "RetrievalChunk",
     "RevisionStatus",
     "RevisionValidationStatus",
+    "RoleGrant",
     "RunStatus",
     "SandboxInstance",
     "SandboxKind",
     "SandboxNetwork",
     "SandboxStatus",
+    "ScopeType",
     "SkillProfile",
     "SpecDocument",
     "SpecStatus",
@@ -175,6 +192,9 @@ __all__ = [
     "Task",
     "TaskKind",
     "TaskStatus",
+    "Team",
+    "TeamMember",
+    "TeamRole",
     "User",
     "UserRole",
     "WorkflowDefinition",

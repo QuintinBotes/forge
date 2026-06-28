@@ -528,6 +528,101 @@ def test_f29_policy_rule_evaluation_migration_up_down(alembic_config: Config) ->
         engine.dispose()
 
 
+# F30 multi-team RBAC tables + project columns + backfill, owned by
+# 0012_f30_multi_team_rbac.
+F30_TABLES = {"team", "team_member", "project_team_access", "role_grant", "audit_log"}
+F30_PROJECT_COLUMNS = {"visibility", "owner_team_id"}
+
+
+def test_f30_multi_team_rbac_migration_up_down(alembic_config: Config) -> None:
+    """F30 AC1: 0012 creates the RBAC tables + project columns and backfills one
+    workspace-scope ``role_grant`` per existing ``app_user`` row; downgrade drops
+    them all (removing the backfilled grants), leaving the baseline intact."""
+    import uuid
+
+    from sqlalchemy import text
+
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to F29: the F30 (deferred) tables are absent, core present. The
+        # project columns are metadata-provisioned by the baseline (like the
+        # F25/F27 columns), so they are not asserted absent here; the migration
+        # still owns the explicit, reversible add/drop step verified below.
+        command.upgrade(alembic_config, "0011_f29_policy_rule_evaluation")
+        after_f29 = set(inspect(engine).get_table_names())
+        assert not (F30_TABLES & after_f29), "F29 stage must not create F30 tables"
+        assert after_f29 >= EXPECTED_TABLES
+
+        # Seed v1-style identity rows (one app_user per role) BEFORE applying F30.
+        ws_id = uuid.uuid4()
+        users = {
+            "admin": uuid.uuid4(),
+            "member": uuid.uuid4(),
+            "viewer": uuid.uuid4(),
+            "agent-runner": uuid.uuid4(),
+        }
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO workspace (id, name, slug, settings, created_at, updated_at) "
+                    "VALUES (:id, 'Acme', 'acme', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {"id": str(ws_id)},
+            )
+            for role, uid in users.items():
+                conn.execute(
+                    text(
+                        "INSERT INTO app_user (id, workspace_id, email, role, is_active, "
+                        "created_at, updated_at) VALUES (:id, :ws, :email, :role, 1, "
+                        "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ),
+                    {"id": str(uid), "ws": str(ws_id), "email": f"{role}@acme.test", "role": role},
+                )
+
+        # Apply F30: tables + project columns appear.
+        command.upgrade(alembic_config, "0012_f30_multi_team_rbac")
+        inspector = inspect(engine)
+        after_f30 = set(inspector.get_table_names())
+        assert after_f30 >= F30_TABLES, f"missing F30 tables: {sorted(F30_TABLES - after_f30)}"
+        pcols = {c["name"] for c in inspector.get_columns("project")}
+        assert pcols >= F30_PROJECT_COLUMNS
+
+        # AC1: exactly one workspace-scope grant per user, same role.
+        with engine.connect() as conn:
+            grants = conn.execute(
+                text(
+                    "SELECT principal_id, scope_type, scope_id, role FROM role_grant "
+                    "WHERE principal_type = 'user'"
+                )
+            ).fetchall()
+        assert len(grants) == len(users)
+
+        def _norm(value: object) -> str:
+            return str(value if isinstance(value, uuid.UUID) else uuid.UUID(str(value)))
+
+        by_principal = {_norm(g[0]): g for g in grants}
+        for role, uid in users.items():
+            g = by_principal[str(uid)]
+            assert g[1] == "workspace"
+            assert _norm(g[2]) == str(ws_id)
+            assert g[3] == role
+
+        # Downgrade one step: F30 tables + columns gone (grants removed), core intact.
+        command.downgrade(alembic_config, "0011_f29_policy_rule_evaluation")
+        inspector = inspect(engine)
+        after_down = set(inspector.get_table_names())
+        assert not (F30_TABLES & after_down), "downgrade left F30 tables"
+        assert after_down >= EXPECTED_TABLES
+        pcols = {c["name"] for c in inspector.get_columns("project")}
+        assert not (F30_PROJECT_COLUMNS & pcols), "downgrade left F30 project columns"
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and
