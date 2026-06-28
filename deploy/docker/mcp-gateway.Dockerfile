@@ -8,10 +8,10 @@ ENV UV_COMPILE_BYTECODE=1 \
     PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock README.md ./
 COPY packages ./packages
 COPY apps ./apps
-RUN uv sync --no-dev --no-editable
+RUN uv sync --frozen --no-dev --no-editable
 
 RUN groupadd -g 1000 forge && useradd -u 1000 -g forge -m forge \
     && chown -R forge:forge /app

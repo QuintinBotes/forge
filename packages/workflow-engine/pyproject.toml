@@ -24,7 +24,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["forge_workflow"]
+# `packages` already ships everything under forge_workflow/ (including the
+# definitions/*.yaml); `artifacts` keeps the YAML included even if a VCS-ignore
+# rule would otherwise drop it. A `force-include` of the same directory is
+# redundant and makes the wheel build fail ("a second file is being added to the
+# wheel archive at the same path"), so it is intentionally omitted.
 artifacts = ["forge_workflow/definitions/*.yaml"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"forge_workflow/definitions" = "forge_workflow/definitions"
