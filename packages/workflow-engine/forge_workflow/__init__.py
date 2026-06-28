@@ -21,7 +21,10 @@ from forge_workflow.dsl import load_definition, parse_definition
 from forge_workflow.engine import RETRY_COUNT_KEY, WorkflowEngineImpl
 from forge_workflow.exceptions import (
     AmbiguousTransitionError,
+    DuplicateRunError,
+    GuardFailedError,
     InvalidTransitionError,
+    PreconditionError,
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowRunNotFoundError,
@@ -72,6 +75,8 @@ __all__ = [
     "RETRY_COUNT_KEY",
     "AmbiguousTransitionError",
     "CyclicRepoDependencyError",
+    "DuplicateRunError",
+    "GuardFailedError",
     "InMemoryWorkflowStore",
     "IncidentTransitionOutcome",
     "InvalidTransitionError",
@@ -79,6 +84,7 @@ __all__ = [
     "MultiRepoMergeGate",
     "MultiRepoMerger",
     "MultipleOrNoPrimaryError",
+    "PreconditionError",
     "RepoMergeClient",
     "SqlAlchemyWorkflowStore",
     "TransitionGraph",

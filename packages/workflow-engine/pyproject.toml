@@ -11,6 +11,11 @@ dependencies = [
     "forge-db",
     "sqlalchemy>=2.0",
     "pyyaml>=6.0",
+    # F25 — Temporal durable workflow engine (V2). Pinned exactly: the Workflow
+    # Update API + time-skipping WorkflowEnvironment are version-sensitive.
+    "temporalio==1.29.0",
+    # F25 — RedactingEncryptionCodec AES-GCM encryption of Temporal payloads.
+    "cryptography>=43",
 ]
 
 [build-system]

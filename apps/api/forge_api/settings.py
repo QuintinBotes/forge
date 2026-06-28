@@ -79,6 +79,14 @@ class Settings(BaseSettings):
 
     docs_enabled: bool = True
 
+    # F25 — workflow engine selection. ``postgres_fsm`` (default) keeps the V1
+    # in-process FSM; ``temporal`` wires the V2 durable Temporal engine. The
+    # detailed Temporal connection settings live in
+    # ``forge_workflow.temporal.config.TemporalSettings`` (env vars without the
+    # FORGE_ prefix: WORKFLOW_ENGINE_BACKEND, TEMPORAL_*), the single source of
+    # truth shared with both workers + the CLI.
+    workflow_engine_backend: str = "postgres_fsm"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

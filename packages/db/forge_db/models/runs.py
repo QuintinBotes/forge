@@ -6,13 +6,14 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, String, Text, Uuid
+from sqlalchemy import ForeignKey, Index, String, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from forge_db.base import WorkspaceScopedModel, enum_type, json_type
 from forge_db.models.enums import (
     ApprovalGate,
     ApprovalStatus,
+    EngineBackend,
     ExecutionMode,
     RunStatus,
     SandboxKind,
@@ -25,9 +26,26 @@ if TYPE_CHECKING:
 
 
 class WorkflowRun(WorkspaceScopedModel):
-    """A durable FSM run for a task (spec: Default Feature Workflow States)."""
+    """A durable FSM run for a task (spec: Default Feature Workflow States).
+
+    F25 adds three engine-attribution columns so a run can be driven either by
+    the V1 Postgres FSM or the V2 Temporal durable workflow engine. The Temporal
+    engine writes ``temporal_workflow_id = wf-<run_id>``; a partial-unique index
+    on it (where not null) gives the same single-active-run guarantee the FSM
+    enforces, complementing Temporal's ``WorkflowIdReusePolicy.REJECT_DUPLICATE``.
+    """
 
     __tablename__ = "workflow_run"
+    __table_args__ = (
+        Index("ix_workflow_run_temporal_wfid", "temporal_workflow_id"),
+        Index(
+            "uq_workflow_run_temporal_workflow_id",
+            "temporal_workflow_id",
+            unique=True,
+            postgresql_where=text("temporal_workflow_id IS NOT NULL"),
+            sqlite_where=text("temporal_workflow_id IS NOT NULL"),
+        ),
+    )
 
     task_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("task.id", ondelete="CASCADE"), nullable=False
@@ -45,6 +63,16 @@ class WorkflowRun(WorkspaceScopedModel):
         enum_type(RunStatus), default=RunStatus.PENDING, nullable=False
     )
     context: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    # F25 — engine attribution. ``enum_type`` renders VARCHAR + CHECK in
+    # (postgres_fsm, temporal); defaults keep every pre-F25 / FSM run unchanged.
+    engine_backend: Mapped[EngineBackend] = mapped_column(
+        enum_type(EngineBackend),
+        default=EngineBackend.POSTGRES_FSM,
+        server_default=EngineBackend.POSTGRES_FSM.value,
+        nullable=False,
+    )
+    temporal_workflow_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    temporal_run_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 

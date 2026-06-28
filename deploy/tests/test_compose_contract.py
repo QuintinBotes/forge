@@ -137,6 +137,65 @@ def _run_preflight_with_stub_docker(tmp_path: Path, reported_version: str) -> in
     return proc.returncode
 
 
+# --------------------------------------------------------------------------- #
+# F25 — Temporal profile services (AC18)                                       #
+# --------------------------------------------------------------------------- #
+
+_TEMPORAL_SERVICES = ("temporal", "temporal-ui", "temporal-worker")
+
+
+def test_temporal_services_are_profile_gated() -> None:
+    """AC18 — every Temporal service is opt-in behind the `temporal` profile."""
+    for name in _TEMPORAL_SERVICES:
+        assert "temporal" in _service(name).get("profiles", []), f"{name} not profile-gated"
+
+
+def test_temporal_services_publish_no_host_ports() -> None:
+    """AC18 — none of the Temporal services publish host ports (UI via Caddy)."""
+    for name in _TEMPORAL_SERVICES:
+        assert "ports" not in _service(name), f"{name} must not publish ports"
+
+
+def test_temporal_services_inherit_hardening_matrix() -> None:
+    """AC18 — digest/tag-pinned image, capped logs, resource limits, autoheal."""
+    for name in _TEMPORAL_SERVICES:
+        svc = _service(name)
+        assert svc["logging"]["options"]["max-size"] == "100m"
+        assert svc["logging"]["options"]["max-file"] == "5"
+        assert "limits" in svc["deploy"]["resources"]
+        assert "autoheal=true" in svc["labels"]
+
+
+def test_temporal_services_on_internal_networks_only() -> None:
+    """AC18 — Temporal reaches Postgres over the internal `data` network; the
+    server/worker never sit on `edge`; only the UI is bridged to `edge` (Caddy)."""
+    assert "data" in _service("temporal")["networks"]
+    assert "edge" not in _service("temporal")["networks"]
+    assert "edge" not in _service("temporal-worker")["networks"]
+    # The Web UI is fronted by Caddy, so it is the only one on `edge`.
+    assert "edge" in _service("temporal-ui")["networks"]
+
+
+def test_temporal_services_have_healthchecks() -> None:
+    for name in _TEMPORAL_SERVICES:
+        assert "healthcheck" in _service(name), f"{name} missing healthcheck"
+
+
+def test_temporal_worker_runs_temporal_entrypoint() -> None:
+    """AC18 — temporal-worker runs the F25 entrypoint with the temporal backend."""
+    worker = _service("temporal-worker")
+    assert worker["command"] == ["python", "-m", "forge_worker.temporal_main"]
+    assert worker["environment"]["WORKFLOW_ENGINE_BACKEND"] == "temporal"
+
+
+def test_caddy_exposes_admin_gated_temporal_route() -> None:
+    """AC18 — the Temporal Web UI is reachable only via Caddy's gated /_temporal."""
+    caddy = (DEPLOY / "caddy" / "Caddyfile").read_text(encoding="utf-8")
+    assert "/_temporal" in caddy
+    assert "basic_auth" in caddy
+    assert "temporal-ui:8080" in caddy
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_preflight_rejects_old_engine(tmp_path: Path) -> None:
     """AC17 — preflight.sh fails on Docker Engine < 26.1 (stubbed version)."""
