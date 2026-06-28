@@ -446,6 +446,136 @@ services:
         max-size: 100m
         max-file: "5"
 
+  # --------------------------------------------------------------------- #
+  # F25 — Temporal durable workflow engine (V2, opt-in via the `temporal`  #
+  # profile + WORKFLOW_ENGINE_BACKEND=temporal). Inherits F14's hardening  #
+  # matrix: pinned images, healthchecks, resource limits, capped logs,     #
+  # autoheal, internal-only networks, no host ports (the Web UI is reached #
+  # only via Caddy's admin-gated /_temporal route).                        #
+  # --------------------------------------------------------------------- #
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    profiles: [temporal]
+    restart: unless-stopped
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-forge}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-forge}
+      POSTGRES_SEEDS: db
+      # auto-setup creates the `temporal` / `temporal_visibility` logical DBs.
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      NUM_HISTORY_SHARDS: "4"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "tctl --address temporal:7233 cluster health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  temporal-ui:
+    image: temporalio/ui:2.34.0
+    profiles: [temporal]
+    restart: unless-stopped
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost
+      # Served only behind Caddy's admin-gated /_temporal route (no host port).
+      TEMPORAL_UI_PUBLIC_PATH: /_temporal
+    depends_on:
+      - temporal
+    networks:
+      - backend
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  temporal-worker:
+    build:
+      context: ..
+      dockerfile: deploy/docker/worker.Dockerfile
+    image: forge/worker:${FORGE_VERSION:-0.1.0}
+    profiles: [temporal]
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["python", "-m", "forge_worker.temporal_main"]
+    environment:
+      FORGE_ENV: production
+      FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
+      FORGE_REDIS_URL: redis://redis:6379/0
+      MCP_GATEWAY_URL: http://mcp-gateway:8001
+      WORKFLOW_ENGINE_BACKEND: temporal
+      TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-forge}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-forge-feature}
+      TEMPORAL_CODEC_KEY: ${TEMPORAL_CODEC_KEY:-}
+      AGENT_ACTIVITY_TIMEOUT: ${AGENT_ACTIVITY_TIMEOUT:-7200}
+      FORGE_SANDBOX_WORKTREE_VOLUME: ${FORGE_WORKTREE_VOLUME:-forge_repos}
+    volumes:
+      - forge_repos:/srv/forge/worktrees
+    depends_on:
+      db:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    networks:
+      - backend
+      - data
+      - mcp
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import forge_worker.temporal_main' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
 networks:
   edge:
     driver: bridge

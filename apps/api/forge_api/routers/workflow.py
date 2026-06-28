@@ -29,7 +29,10 @@ from forge_api.routers._rbac import require_permission
 from forge_contracts import WorkflowRun
 from forge_workflow import (
     AmbiguousTransitionError,
+    DuplicateRunError,
+    GuardFailedError,
     InvalidTransitionError,
+    PreconditionError,
     WorkflowEngineImpl,
     WorkflowRunNotFoundError,
 )
@@ -85,8 +88,28 @@ def _workflow_ownership_singleton() -> WorkflowOwnership:
     return WorkflowOwnership()
 
 
-def get_workflow_engine() -> WorkflowEngineImpl:
-    """Return the process-wide workflow engine (override in tests via DI)."""
+@lru_cache(maxsize=1)
+def _temporal_engine_singleton() -> object:
+    # F25 — the V2 durable engine, selected by WORKFLOW_ENGINE_BACKEND=temporal.
+    # Connects lazily (client_factory); the projection store is in-process here.
+    # NOTE: a DB-backed, per-request engine sharing the worker's Postgres
+    # projection is the production wiring (parked — see slice notes).
+    from forge_api.services.workflow_engine import select_workflow_engine
+
+    return select_workflow_engine()
+
+
+def get_workflow_engine() -> object:
+    """Return the configured workflow engine (override in tests via DI).
+
+    ``WORKFLOW_ENGINE_BACKEND=temporal`` selects the durable Temporal engine;
+    otherwise the V1 in-process FSM. Both satisfy the frozen ``WorkflowEngine``
+    protocol so the handlers below are engine-agnostic.
+    """
+    from forge_api.services.workflow_engine import resolve_backend
+
+    if resolve_backend() == "temporal":
+        return _temporal_engine_singleton()
     return _workflow_engine_singleton()
 
 
@@ -111,7 +134,13 @@ def _workflow_errors() -> Iterator[None]:
         yield
     except WorkflowRunNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except (InvalidTransitionError, AmbiguousTransitionError) as exc:
+    except (
+        InvalidTransitionError,
+        AmbiguousTransitionError,
+        GuardFailedError,
+        PreconditionError,
+        DuplicateRunError,
+    ) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
@@ -150,7 +179,8 @@ def start_run(
     request: StartRunRequest,
 ) -> WorkflowRun:
     """Start a workflow run for a task in the default workflow's initial state."""
-    run = engine.start(request.task_id)
+    with _workflow_errors():
+        run = engine.start(request.task_id)
     if run.id is not None:
         ownership.record(run.id, principal.workspace_id)
     return run

@@ -43,6 +43,17 @@
 		reverse_proxy mcp-gateway:8001
 	}
 
+	# Temporal Web UI (F25) — admin-gated, opt-in `temporal` profile. The frontend
+	# (7233) is NEVER exposed; only this read-only UI, behind HTTP basic-auth.
+	# Set TEMPORAL_UI_BASIC_AUTH to a `caddy hash-password` bcrypt hash to enable;
+	# unset leaves the route present but locked (no credentials accepted).
+	handle /_temporal* {
+		basic_auth {
+			admin {$TEMPORAL_UI_BASIC_AUTH:$2a$14$disabledbydefaultdisabledbydefaultdisabledbydefaultdisabledby}
+		}
+		reverse_proxy temporal-ui:8080
+	}
+
 	# Everything else is the web frontend.
 	handle {
 		reverse_proxy web:3000

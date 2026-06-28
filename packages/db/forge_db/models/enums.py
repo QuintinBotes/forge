@@ -139,6 +139,18 @@ class SpecStatus(enum.StrEnum):
     CLOSED = "closed"
 
 
+class EngineBackend(enum.StrEnum):
+    """Which workflow engine owns a run (F25 temporal-integration).
+
+    ``postgres_fsm`` is the V1 in-process FSM driver; ``temporal`` is the V2
+    durable Temporal workflow engine. Selected per deployment via
+    ``WORKFLOW_ENGINE_BACKEND``; existing runs keep the backend they started on.
+    """
+
+    POSTGRES_FSM = "postgres_fsm"
+    TEMPORAL = "temporal"
+
+
 class WorkflowState(enum.StrEnum):
     """Default feature workflow states (spec: Default Feature Workflow States)."""
 
@@ -328,6 +340,7 @@ __all__ = [
     "AutomationTriggerSource",
     "AutomationTriggerType",
     "ChunkType",
+    "EngineBackend",
     "ExecutionMode",
     "IncidentSeverity",
     "IncidentState",

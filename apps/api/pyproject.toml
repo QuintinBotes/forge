@@ -12,6 +12,9 @@ dependencies = [
     "forge-board",
     "forge-knowledge",
     "forge-mcp",
+    # F25 — workflow engine (FSM + Temporal V2): the /workflow router, engine
+    # selection, Temporal readiness check, and the temporal bootstrap/replay CLI.
+    "forge-workflow",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic-settings>=2.2",

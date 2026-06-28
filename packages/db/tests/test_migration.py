@@ -288,6 +288,42 @@ def test_f22_multi_repo_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F25 temporal-engine columns on workflow_run, owned by 0007_f25_temporal_engine.
+F25_COLUMNS = {"engine_backend", "temporal_workflow_id", "temporal_run_id"}
+F25_INDEXES = {"ix_workflow_run_temporal_wfid", "uq_workflow_run_temporal_workflow_id"}
+
+
+def test_f25_temporal_engine_migration_up_down(alembic_config: Config) -> None:
+    """F25 AC17: 0007 adds the engine-attribution columns + indexes to
+    workflow_run and drops them on downgrade, leaving the table intact.
+
+    (forge_db's baseline is metadata-driven, so the columns are provisioned on a
+    fresh chain; this asserts the F25 migration *owns* a clean, reversible down.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        command.upgrade(alembic_config, "head")
+        inspector = inspect(engine)
+        cols = {c["name"] for c in inspector.get_columns("workflow_run")}
+        assert cols >= F25_COLUMNS, f"missing F25 columns: {sorted(F25_COLUMNS - cols)}"
+        idx = {i["name"] for i in inspector.get_indexes("workflow_run")}
+        assert idx >= F25_INDEXES, f"missing F25 indexes: {sorted(F25_INDEXES - idx)}"
+        unique = {i["name"] for i in inspector.get_indexes("workflow_run") if i["unique"]}
+        assert "uq_workflow_run_temporal_workflow_id" in unique
+
+        # Downgrade one step: F25 columns/indexes gone, workflow_run still present.
+        command.downgrade(alembic_config, "0006_f22_multi_repo")
+        inspector = inspect(engine)
+        assert "workflow_run" in inspector.get_table_names()
+        cols_after = {c["name"] for c in inspector.get_columns("workflow_run")}
+        assert not (F25_COLUMNS & cols_after), "downgrade left F25 columns"
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

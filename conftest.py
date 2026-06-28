@@ -67,11 +67,33 @@ def postgres_url() -> Iterator[str]:
 
 @pytest.fixture(scope="session")
 def pg_engine(postgres_url: str) -> Iterator[Engine]:
-    """A SQLAlchemy engine bound to a pgvector-enabled Postgres."""
+    """A SQLAlchemy engine bound to a pgvector-enabled Postgres.
+
+    The shared test database is **reset to an empty ``public`` schema** once at
+    session start, before any test creates tables. The supported test Postgres is
+    a long-lived container (``docker start forge-test-pg``) or a CI service that
+    is reused across runs, so it accumulates leftover schema objects from earlier
+    or interrupted runs (stale tables, orphaned composite/enum types). Those
+    collide non-deterministically with the per-module ``Base.metadata.create_all``
+    that every DB test performs — the same object can be invisible to
+    ``has_table`` yet still block ``CREATE TABLE`` (e.g. an orphaned ``workspace``
+    type). Dropping and recreating ``public`` gives ``create_all`` a guaranteed
+    clean slate, making the whole suite deterministic regardless of prior state.
+
+    This is safe because every Postgres test owns its schema via
+    ``create_all``/``drop_all`` (or transactional ``pg_connection``); none relies
+    on a pre-existing schema in the shared database, and the configured URL is a
+    disposable test database, never production.
+    """
     from sqlalchemy import create_engine, text
 
     engine = create_engine(postgres_url, future=True)
     with engine.begin() as conn:
+        # Clean slate: wipe any leftover objects (stale tables, orphaned types)
+        # from a reused database so create_all is collision-free and repeatable.
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+        # The vector extension lives in public, so (re)create it after the reset.
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     try:
         yield engine
