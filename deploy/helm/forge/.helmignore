@@ -1,0 +1,13 @@
+# Patterns to ignore when packaging the chart (helm package / helm push).
+.DS_Store
+.git/
+.gitignore
+*.tmproj
+*.bak
+*.orig
+*.swp
+.idea/
+.vscode/
+# helm-unittest specs and the Python/static test harness are dev-only.
+tests/
+ci/

@@ -24,12 +24,17 @@ DOCS_DIR = REPO_ROOT / "docs" / "self-hosting"
 REQUIRED_DOCS = [
     "quickstart.md",
     "docker-compose.md",
+    "kubernetes.md",
     "backup.md",
     "restore.md",
     "upgrade.md",
     "security.md",
     "troubleshooting.md",
 ]
+
+# F24: the Kubernetes guide must document a SUPPORTED chart (no longer a preview)
+# and keep F15's `must_reference` strings.
+KUBERNETES_MUST_REFERENCE = ["deploy/helm", "helm install", "helm upgrade"]
 
 # Inline markdown links: [text](target) — capture the target.
 _LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
@@ -85,3 +90,22 @@ def test_repo_relative_links_resolve(path: Path) -> None:
                 continue
             resolved = (path.parent / link).resolve()
             assert resolved.exists(), f"{path.name}: broken relative link -> {target}"
+
+
+def test_kubernetes_doc_supported() -> None:
+    """F24/AC20 — the Kubernetes guide documents a supported chart, not a preview."""
+    text = (DOCS_DIR / "kubernetes.md").read_text(encoding="utf-8")
+    # Locate the `## Status` section and assert it no longer says "preview".
+    status = ""
+    capture = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            capture = line.strip().lower() == "## status"
+            continue
+        if capture:
+            status += line + "\n"
+    assert status.strip(), "kubernetes.md must have a `## Status` section"
+    assert "preview" not in status.lower(), "kubernetes.md still marked as preview"
+    assert "supported" in status.lower(), "kubernetes.md `## Status` must say supported"
+    for ref in KUBERNETES_MUST_REFERENCE:
+        assert ref in text, f"kubernetes.md must reference {ref!r}"

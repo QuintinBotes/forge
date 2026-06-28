@@ -1,0 +1,393 @@
+# Default values for the Forge Helm chart.
+#
+# This file ships a WORKING out-of-the-box install with BUNDLED datastores
+# (pgvector / redis / minio subcharts) so an operator can "kick the tyres" on a
+# cluster with one command. For production, layer values-production.yaml on top
+# (bundled OFF, managed Postgres/Redis/S3, HA replica counts, digest-pinned
+# images). See docs/self-hosting/kubernetes.md.
+#
+# SECURITY: the dev secret values below (SECRET_KEY, AUTH_SECRET, ...) are
+# PLACEHOLDERS. Generate real ones with `openssl rand -hex 32` and pass them via
+# --set / a private values file, or (recommended) use secrets.existingSecret with
+# an operator-managed Secret (External Secrets Operator / sealed-secrets / Vault).
+
+global:
+  # Optional global registry prefix applied to bundled subcharts.
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+  # The bundled Postgres subchart uses a pgvector image (not a stock Bitnami
+  # image) because hybrid retrieval (F05) needs the `vector` extension. Recent
+  # Bitnami charts refuse non-Bitnami images unless this flag is set.
+  security:
+    allowInsecureImages: true
+
+forge:
+  # Public DNS name the platform is served on (Ingress host).
+  domain: forge.example.com
+  # Public base URL; defaults to https://{domain} when empty.
+  publicUrl: ""
+  logLevel: info
+  # Default model provider name (the API key itself is a Secret: MODEL_PROVIDER_KEY).
+  modelProvider: anthropic
+
+# Image defaults shared by all four workloads. Per-workload image.repository/tag/
+# digest live under each workload block below.
+image:
+  # Registry that hosts the forge-{api,worker,web,mcp-gateway} images.
+  registry: ghcr.io/forge-platform
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Pod-level security context applied to every workload + hook (F14 hardening).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level security context applied to every container (F14 hardening).
+containerSecurityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+# --------------------------------------------------------------------------- #
+# Stateless workloads                                                         #
+# --------------------------------------------------------------------------- #
+api:
+  enabled: true
+  image:
+    repository: forge-api
+    tag: "0.1.0"
+    digest: ""
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  service:
+    port: 8000
+  probes:
+    liveness: /healthz
+    readiness: /readyz
+    startup: /healthz
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 75
+  pdb:
+    enabled: true
+    minAvailable: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+worker:
+  enabled: true
+  image:
+    repository: forge-worker
+    tag: "0.1.0"
+    digest: ""
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  # Celery queues consumed (mirrors the compose worker command, F14/F17).
+  queues: "forge,incident"
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
+  pdb:
+    enabled: true
+    minAvailable: 1
+  # KEDA Redis-list autoscaling (recommended production path for a Celery/Redis
+  # queue). Requires the KEDA operator installed in the cluster. When enabled the
+  # ScaledObject replaces the CPU HPA for the worker.
+  keda:
+    enabled: false
+    listName: forge
+    lagThreshold: 20
+    minReplicaCount: 1
+    maxReplicaCount: 10
+  # Generous grace + warm shutdown so in-flight agent runs can finish (best
+  # effort; durable survival across evictions is Temporal's job — F25).
+  terminationGracePeriodSeconds: 600
+  # Worktree storage for sandboxed runs. Default is per-pod ephemeral emptyDir.
+  repoStorage: emptyDir
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+web:
+  enabled: true
+  image:
+    repository: forge-web
+    tag: "0.1.0"
+    digest: ""
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  service:
+    port: 3000
+  probes:
+    liveness: /healthz
+    readiness: /healthz
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+  pdb:
+    enabled: true
+    minAvailable: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+mcpGateway:
+  enabled: true
+  image:
+    repository: forge-mcp-gateway
+    tag: "0.1.0"
+    digest: ""
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  service:
+    port: 8001
+  probes:
+    # The foundation gateway exposes GET /health (not /healthz) — see notes.
+    liveness: /health
+    readiness: /health
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+  pdb:
+    enabled: true
+    minAvailable: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+# --------------------------------------------------------------------------- #
+# Secrets — rendered ONLY when secrets.create=true (dev/eval). Production uses  #
+# secrets.existingSecret (operator-managed). No secret value is ever rendered   #
+# into the ConfigMap.                                                           #
+# --------------------------------------------------------------------------- #
+secrets:
+  create: true
+  existingSecret: ""
+  data:
+    # Boot-critical (api/worker fail closed without these — F37). The dev
+    # placeholders below MUST be replaced for any real deployment.
+    SECRET_KEY: "dev-change-me-SECRET_KEY"
+    AUTH_SECRET: "dev-change-me-AUTH_SECRET"
+    # Versioned KEK map "1:<b64-32B>[,2:<b64-32B>]" (BYOK vault master key).
+    FORGE_VAULT_KEYS: "1:ZGV2LWNoYW5nZS1tZS0zMi1ieXRlLXZhdWx0LWtleS0xMjM="
+    API_KEY_PEPPER: "dev-change-me-API_KEY_PEPPER"
+    INTERNAL_SERVICE_TOKEN: "dev-change-me-INTERNAL_SERVICE_TOKEN"
+    MODEL_PROVIDER_KEY: "dev-change-me-MODEL_PROVIDER_KEY"
+    # Bundled datastore credentials (used to build FORGE_DATABASE_URL / _REDIS_URL).
+    POSTGRES_PASSWORD: "forge"
+    REDIS_PASSWORD: ""
+    MINIO_ROOT_USER: "forge"
+    MINIO_ROOT_PASSWORD: "forge-change-me"
+    # Integration credentials (optional; blank = feature disabled).
+    GITHUB_APP_PRIVATE_KEY: ""
+    GITHUB_APP_WEBHOOK_SECRET: ""
+    GITHUB_APP_CLIENT_SECRET: ""
+    SLACK_SIGNING_SECRET: ""
+    SLACK_BOT_TOKEN: ""
+
+# Non-secret configuration surfaced through the ConfigMap (never the Secret).
+config:
+  # FORGE_VAULT_ACTIVE_KEY_VERSION is NON-secret (the key material is in the Secret).
+  vaultActiveKeyVersion: "1"
+  githubAppId: ""
+  githubAppSlug: ""
+  githubAppClientId: ""
+  # Where the GitHub App PEM is mounted from the Secret (file, not env value).
+  githubAppPrivateKeyPath: /etc/forge/secrets/github-app-private-key.pem
+  rerankEnabled: "false"
+
+# --------------------------------------------------------------------------- #
+# Datastores — BUNDLED (subcharts) XOR EXTERNAL (managed). Exactly one of each  #
+# pair must be configured; a template guard fails fast otherwise.              #
+# --------------------------------------------------------------------------- #
+postgresql:
+  enabled: true
+  # pgvector-enabled image (stock Bitnami Postgres lacks the `vector` extension).
+  image:
+    registry: docker.io
+    repository: pgvector/pgvector
+    tag: pg16
+  auth:
+    username: forge
+    database: forge
+    # Reuse the chart Secret so the bundled DB password matches FORGE_DATABASE_URL.
+    existingSecret: ""
+    secretKeys:
+      adminPasswordKey: POSTGRES_PASSWORD
+      userPasswordKey: POSTGRES_PASSWORD
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+externalDatabase:
+  host: ""
+  port: 5432
+  user: forge
+  database: forge
+  existingSecret: ""
+  passwordKey: POSTGRES_PASSWORD
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+    existingSecret: ""
+    existingSecretPasswordKey: REDIS_PASSWORD
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+externalRedis:
+  host: ""
+  port: 6379
+  existingSecret: ""
+  passwordKey: REDIS_PASSWORD
+
+minio:
+  enabled: true
+  mode: standalone
+  auth:
+    existingSecret: ""
+    rootUserSecretKey: MINIO_ROOT_USER
+    rootPasswordSecretKey: MINIO_ROOT_PASSWORD
+  defaultBuckets: forge
+  persistence:
+    enabled: true
+    size: 16Gi
+externalObjectStore:
+  endpoint: ""
+  bucket: forge
+  region: us-east-1
+  existingSecret: ""
+
+# Optional self-hosted Jina Reranker v2 (F05). When disabled, set
+# reranker.external.url to a managed endpoint, or leave retrieval rerank off.
+reranker:
+  enabled: false
+  external:
+    url: ""
+  image:
+    repository: jinaai/jina-reranker-v2-base-multilingual
+    tag: latest
+    digest: ""
+  port: 8080
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+# --------------------------------------------------------------------------- #
+# Ingress + TLS                                                               #
+# --------------------------------------------------------------------------- #
+ingress:
+  enabled: true
+  # "ingress" (classic, CI-verified) or "gateway" (HTTPRoute, experimental).
+  api: ingress
+  className: nginx
+  annotations: {}
+  # Read timeout (seconds) for SSE run-trace streams (nginx).
+  sseReadTimeout: 3600
+  tls:
+    enabled: true
+    secretName: ""
+    certManager:
+      # cert-manager-issued TLS by default (requires cert-manager in the cluster).
+      # For a quick eval without cert-manager, set certManager.enabled=false and
+      # provide ingress.tls.secretName (see values.example.yaml).
+      enabled: true
+      clusterIssuer: letsencrypt-prod
+
+# --------------------------------------------------------------------------- #
+# Network segmentation (mirrors the compose `data` internal network).         #
+# Requires a NetworkPolicy-enforcing CNI (Calico/Cilium).                     #
+# --------------------------------------------------------------------------- #
+networkPolicy:
+  enabled: true
+  # Label selector identifying the ingress-controller namespace/pods allowed to
+  # reach web/api. Defaults to the common nginx-ingress namespace label.
+  ingressControllerNamespaceSelector:
+    kubernetes.io/metadata.name: ingress-nginx
+
+# --------------------------------------------------------------------------- #
+# Migration + admin hooks                                                     #
+# --------------------------------------------------------------------------- #
+migrations:
+  enabled: true
+  backoffLimit: 3
+
+createAdmin:
+  enabled: false
+  email: ""
+  # The password is read from the Secret key below via --password-stdin.
+  passwordKey: ADMIN_PASSWORD
+
+# --------------------------------------------------------------------------- #
+# Observability                                                               #
+# --------------------------------------------------------------------------- #
+metrics:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
+# Reserved for the future Temporal slice (F25). No Temporal resources are
+# rendered by this chart.
+temporal:
+  enabled: false

@@ -1,0 +1,146 @@
+# Production profile — managed datastores, HA, digest-pinned images.
+#
+# Usage:
+#   helm install forge deploy/helm/forge -n forge -f values-production.yaml
+#
+# Layered ON TOP of values.yaml. Bundled datastores are OFF; the chart points at
+# managed Postgres (pgvector), Redis and S3 and reads every secret from an
+# operator-managed Secret (secrets.existingSecret). Replace the placeholder image
+# digests below with the released forge-{api,worker,web,mcp-gateway} digests
+# (verify against the release notes / `cosign verify`) before rollout.
+
+forge:
+  domain: forge.example.com
+  logLevel: info
+
+image:
+  registry: ghcr.io/forge-platform
+  pullPolicy: IfNotPresent
+
+# Operator-managed Secret carrying every boot-critical + integration key
+# (SECRET_KEY, AUTH_SECRET, FORGE_VAULT_KEYS, API_KEY_PEPPER,
+# INTERNAL_SERVICE_TOKEN, MODEL_PROVIDER_KEY, FORGE_DATABASE_URL, FORGE_REDIS_URL,
+# object-store creds, GITHUB_*/SLACK_*). The chart renders NO Secret of its own.
+secrets:
+  create: false
+  existingSecret: forge-external
+
+api:
+  replicaCount: 3
+  image:
+    repository: forge-api
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 2
+
+worker:
+  replicaCount: 2
+  image:
+    repository: forge-worker
+    digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "4"
+      memory: 4Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 70
+  keda:
+    enabled: true
+    listName: forge
+    lagThreshold: 20
+    minReplicaCount: 2
+    maxReplicaCount: 12
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+web:
+  replicaCount: 2
+  image:
+    repository: forge-web
+    digest: sha256:3333333333333333333333333333333333333333333333333333333333333333
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+mcpGateway:
+  replicaCount: 2
+  image:
+    repository: forge-mcp-gateway
+    digest: sha256:4444444444444444444444444444444444444444444444444444444444444444
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# Bundled datastores OFF -> no StatefulSet/PVC/bundled Service is rendered.
+postgresql:
+  enabled: false
+redis:
+  enabled: false
+minio:
+  enabled: false
+
+# Managed endpoints. Credentials live in secrets.existingSecret.
+externalDatabase:
+  host: forge-postgres.managed.example.com
+  port: 5432
+  user: forge
+  database: forge
+  existingSecret: forge-external
+  passwordKey: POSTGRES_PASSWORD
+externalRedis:
+  host: forge-redis.managed.example.com
+  port: 6379
+  existingSecret: forge-external
+  passwordKey: REDIS_PASSWORD
+externalObjectStore:
+  endpoint: https://s3.us-east-1.amazonaws.com
+  bucket: forge-prod
+  region: us-east-1
+  existingSecret: forge-external
+
+ingress:
+  enabled: true
+  api: ingress
+  className: nginx
+  tls:
+    enabled: true
+    certManager:
+      enabled: true
+      clusterIssuer: letsencrypt-prod
+
+networkPolicy:
+  enabled: true
+
+metrics:
+  serviceMonitor:
+    enabled: true

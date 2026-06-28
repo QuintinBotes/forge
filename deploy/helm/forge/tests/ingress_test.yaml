@@ -1,0 +1,46 @@
+suite: ingress routing + webhook raw body + TLS (AC13)
+release:
+  name: forge
+  namespace: forge
+templates:
+  - templates/ingress.yaml
+tests:
+  - it: routes api/health/webhook paths to the api service and / to web
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /api
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: forge-api
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.number
+          value: 8000
+      - equal:
+          path: spec.rules[0].http.paths[3].path
+          value: /integrations/github/webhook
+      - equal:
+          path: spec.rules[0].http.paths[3].backend.service.name
+          value: forge-api
+      - equal:
+          path: spec.rules[0].http.paths[4].path
+          value: /
+      - equal:
+          path: spec.rules[0].http.paths[4].backend.service.name
+          value: forge-web
+  - it: preserves the webhook raw body and sets no body-mutating annotation
+    asserts:
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-request-buffering"]
+          value: "off"
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+  - it: renders a cert-manager cluster-issuer annotation when enabled
+    set:
+      ingress.tls.enabled: true
+      ingress.tls.certManager.enabled: true
+      ingress.tls.certManager.clusterIssuer: letsencrypt-prod
+    asserts:
+      - equal:
+          path: metadata.annotations["cert-manager.io/cluster-issuer"]
+          value: letsencrypt-prod

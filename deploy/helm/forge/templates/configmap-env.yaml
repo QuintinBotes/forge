@@ -1,0 +1,62 @@
+{{- /* Run all fail-fast guards once, from this always-rendered object. */ -}}
+{{- include "forge.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "forge.configMapName" . }}
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "config") | nindent 4 }}
+  annotations:
+    # Created as an early hook (-10) so the pre-install/pre-upgrade migrate Job
+    # (-5) can read it; persists for the app pods (before-hook-creation only
+    # deletes right before the next hook run, then immediately recreates).
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  # --- runtime ---
+  FORGE_ENV: "production"
+  LOG_LEVEL: {{ .Values.forge.logLevel | quote }}
+  FORGE_PUBLIC_URL: {{ include "forge.publicUrl" . | quote }}
+  MODEL_PROVIDER: {{ .Values.forge.modelProvider | quote }}
+  MCP_GATEWAY_URL: {{ printf "http://%s-mcp-gateway:%d" (include "forge.fullname" .) (int .Values.mcpGateway.service.port) | quote }}
+  # --- BYOK vault: the ACTIVE key VERSION is non-secret; the key MATERIAL
+  #     (FORGE_VAULT_KEYS) is in the Secret only (F37). ---
+  FORGE_VAULT_ACTIVE_KEY_VERSION: {{ .Values.config.vaultActiveKeyVersion | quote }}
+  # --- Postgres connection components (password is in the Secret) ---
+  POSTGRES_HOST: {{ include "forge.postgresHost" . | quote }}
+  {{- if .Values.postgresql.enabled }}
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: {{ .Values.postgresql.auth.database | quote }}
+  POSTGRES_USER: {{ .Values.postgresql.auth.username | quote }}
+  {{- else }}
+  POSTGRES_PORT: {{ .Values.externalDatabase.port | quote }}
+  POSTGRES_DB: {{ .Values.externalDatabase.database | quote }}
+  POSTGRES_USER: {{ .Values.externalDatabase.user | quote }}
+  {{- end }}
+  # --- Redis connection components (password is in the Secret) ---
+  REDIS_HOST: {{ include "forge.redisHost" . | quote }}
+  {{- if .Values.redis.enabled }}
+  REDIS_PORT: "6379"
+  {{- else }}
+  REDIS_PORT: {{ .Values.externalRedis.port | quote }}
+  {{- end }}
+  # --- Object store (credentials are in the Secret) ---
+  MINIO_ENDPOINT: {{ include "forge.minioEndpoint" . | quote }}
+  {{- if .Values.minio.enabled }}
+  MINIO_BUCKET: {{ .Values.minio.defaultBuckets | quote }}
+  MINIO_REGION: "us-east-1"
+  {{- else }}
+  MINIO_BUCKET: {{ .Values.externalObjectStore.bucket | quote }}
+  MINIO_REGION: {{ .Values.externalObjectStore.region | quote }}
+  {{- end }}
+  # --- retrieval / reranker (F05) ---
+  RERANK_ENABLED: {{ .Values.config.rerankEnabled | quote }}
+  {{- with include "forge.rerankerUrl" . }}
+  JINA_RERANKER_URL: {{ . | quote }}
+  {{- end }}
+  # --- GitHub App (non-secret identifiers; PEM + secrets live in the Secret) ---
+  GITHUB_APP_ID: {{ .Values.config.githubAppId | quote }}
+  GITHUB_APP_SLUG: {{ .Values.config.githubAppSlug | quote }}
+  GITHUB_APP_CLIENT_ID: {{ .Values.config.githubAppClientId | quote }}
+  GITHUB_APP_PRIVATE_KEY_PATH: {{ .Values.config.githubAppPrivateKeyPath | quote }}

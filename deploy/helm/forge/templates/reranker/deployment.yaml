@@ -1,0 +1,54 @@
+{{- if .Values.reranker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "forge.fullname" . }}-reranker
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "reranker") | nindent 4 }}
+spec:
+  replicas: {{ .Values.reranker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "reranker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "forge.componentLabels" (dict "ctx" . "component" "reranker") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "forge.serviceAccountName" . }}
+      {{- include "forge.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: reranker
+          image: {{ include "forge.image" (dict "ctx" . "wl" .Values.reranker) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.reranker.port }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.reranker.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /home/forge/.cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+{{- end }}

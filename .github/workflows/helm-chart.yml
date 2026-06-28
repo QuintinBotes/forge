@@ -1,0 +1,112 @@
+name: helm-chart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/helm/**"
+      - ".github/workflows/helm-chart.yml"
+  pull_request:
+    paths:
+      - "deploy/helm/**"
+      - ".github/workflows/helm-chart.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: helm-chart-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHART: deploy/helm/forge
+
+jobs:
+  # ------------------------------------------------------------------- #
+  # Static: lint + unittest + schema + render-contract + kubeconform     #
+  # ------------------------------------------------------------------- #
+  helm-static:
+    name: helm (lint + unittest + schema + kubeconform)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.1.1
+
+      - name: Install kubeconform
+        run: |
+          curl -sSLo /tmp/kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build chart dependencies
+        run: helm dependency build ${CHART}
+
+      - name: helm lint (defaults + production)
+        run: |
+          helm lint ${CHART}
+          helm lint ${CHART} -f ${CHART}/values-production.yaml
+
+      - name: helm template (three profiles)
+        run: |
+          helm template forge ${CHART} > /dev/null
+          helm template forge ${CHART} -f ${CHART}/values.example.yaml > /dev/null
+          helm template forge ${CHART} -f ${CHART}/values-production.yaml > /dev/null
+
+      - name: helm unittest
+        run: helm unittest ${CHART}
+
+      - name: kubeconform (three profiles)
+        run: |
+          for profile in "" "-f ${CHART}/values.example.yaml" "-f ${CHART}/values-production.yaml"; do
+            helm template forge ${CHART} $profile | \
+              kubeconform -strict -ignore-missing-schemas \
+                -kubernetes-version 1.28.0 -schema-location default -summary
+          done
+
+      - name: Python schema + render-contract tests
+        run: uv run --with jsonschema --with pyyaml pytest deploy/helm/tests -q
+
+  # ------------------------------------------------------------------- #
+  # Integration: kind smoke install + upgrade (required before tagging)  #
+  # ------------------------------------------------------------------- #
+  helm-kind:
+    name: helm (kind smoke install)
+    runs-on: ubuntu-latest
+    # Heavy; gate to main / manual runs (image build+load is the expensive piece).
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: forge-ci
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build the four Forge images and load into kind
+        run: |
+          for svc in api worker web mcp-gateway; do
+            docker build -t ghcr.io/forge-platform/forge-$svc:0.1.0 \
+              -f deploy/docker/$svc.Dockerfile .
+            kind load docker-image ghcr.io/forge-platform/forge-$svc:0.1.0 --name forge-ci
+          done
+
+      - name: Run kind smoke tests
+        run: uv run --with pyyaml pytest deploy/helm/tests/e2e -q -m kind
