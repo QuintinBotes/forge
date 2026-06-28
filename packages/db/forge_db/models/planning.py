@@ -6,7 +6,18 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from forge_db.base import WorkspaceScopedModel, enum_type, json_type
@@ -93,9 +104,27 @@ class SpecDocument(WorkspaceScopedModel):
 
 
 class Sprint(WorkspaceScopedModel):
-    """A time-boxed iteration."""
+    """A time-boxed iteration.
+
+    F26 (sprint-velocity) extends F01's basic sprint with lifecycle/velocity
+    fields: the ``committed_*`` snapshot frozen at start, lifecycle timestamps,
+    ``capacity_points`` (planning only), a lexorank ``position``, a monotonic
+    ``velocity_version`` bumped on each rollup refresh, and ``committed_task_ids``
+    (the per-task committed-scope snapshot used to reconstruct velocity). The
+    partial unique index ``uq_active_sprint_per_project`` enforces at most one
+    ``active`` sprint per project (fail-closed at the DB, not only the service).
+    """
 
     __tablename__ = "sprint"
+    __table_args__ = (
+        Index(
+            "uq_active_sprint_per_project",
+            "project_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("project.id", ondelete="CASCADE"), nullable=False
@@ -105,6 +134,15 @@ class Sprint(WorkspaceScopedModel):
     start_date: Mapped[datetime | None] = mapped_column(nullable=True)
     end_date: Mapped[datetime | None] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="planned", nullable=False)
+    # F26 lifecycle + velocity columns (additive; existing rows stay valid).
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    capacity_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    committed_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    committed_task_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    committed_task_ids: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
+    position: Mapped[str | None] = mapped_column(Text, nullable=True)
+    velocity_version: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="sprints")
     tasks: Mapped[list[Task]] = relationship(back_populates="sprint")

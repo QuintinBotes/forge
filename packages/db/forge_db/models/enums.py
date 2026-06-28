@@ -20,6 +20,16 @@ from forge_contracts.automation import (
     AutomationTriggerType,
 )
 
+# F26 sprint-velocity enums are defined once in the frozen contracts package and
+# re-exported here so the SQLAlchemy column types (enum_type(...)) and the rest
+# of forge_db follow the local ``forge_db.models.enums`` import convention.
+from forge_contracts.enums import (
+    CarryoverTarget,
+    ScopeActorKind,
+    SprintScopeEventType,
+    SprintState,
+)
+
 
 class UserRole(enum.StrEnum):
     """Workspace member roles (spec: admin, member, viewer, agent-runner)."""
@@ -339,6 +349,7 @@ __all__ = [
     "AutomationExecutionStatus",
     "AutomationTriggerSource",
     "AutomationTriggerType",
+    "CarryoverTarget",
     "ChunkType",
     "EngineBackend",
     "ExecutionMode",
@@ -364,7 +375,10 @@ __all__ = [
     "SandboxKind",
     "SandboxNetwork",
     "SandboxStatus",
+    "ScopeActorKind",
     "SpecStatus",
+    "SprintScopeEventType",
+    "SprintState",
     "SyncMode",
     "TaskKind",
     "TaskStatus",

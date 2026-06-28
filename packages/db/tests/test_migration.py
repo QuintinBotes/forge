@@ -324,6 +324,66 @@ def test_f25_temporal_engine_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F26 sprint-velocity tables + sprint columns, owned by 0008_f26_sprint_velocity.
+F26_TABLES = {"sprint_scope_event", "sprint_burndown_snapshot", "sprint_velocity"}
+F26_SPRINT_COLUMNS = {
+    "started_at",
+    "completed_at",
+    "capacity_points",
+    "committed_points",
+    "committed_task_count",
+    "committed_task_ids",
+    "position",
+    "velocity_version",
+}
+
+
+def test_f26_sprint_velocity_migration_up_down(alembic_config: Config) -> None:
+    """F26 AC: 0008 adds the sprint lifecycle columns + partial unique index and
+    the three sprint-velocity tables, and drops them on downgrade, leaving the
+    baseline ``sprint`` table intact."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to F25: F26 tables absent, core present.
+        command.upgrade(alembic_config, "0007_f25_temporal_engine")
+        after_f25 = set(inspect(engine).get_table_names())
+        assert not (F26_TABLES & after_f25), "F25 stage must not create F26 tables"
+        assert after_f25 >= EXPECTED_TABLES
+
+        # Apply the F26 migration: tables + columns + index appear.
+        command.upgrade(alembic_config, "0008_f26_sprint_velocity")
+        inspector = inspect(engine)
+        after_f26 = set(inspector.get_table_names())
+        assert after_f26 >= F26_TABLES, f"missing F26 tables: {sorted(F26_TABLES - after_f26)}"
+
+        sprint_cols = {c["name"] for c in inspector.get_columns("sprint")}
+        assert sprint_cols >= F26_SPRINT_COLUMNS, (
+            f"missing sprint columns: {sorted(F26_SPRINT_COLUMNS - sprint_cols)}"
+        )
+        sprint_indexes = {i["name"] for i in inspector.get_indexes("sprint")}
+        assert "uq_active_sprint_per_project" in sprint_indexes
+
+        velocity_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("sprint_velocity")
+        }
+        assert "uq_sprint_velocity_sprint_id" in velocity_uniques
+
+        # Downgrade one step: F26 tables + columns gone, sprint table intact.
+        command.downgrade(alembic_config, "0007_f25_temporal_engine")
+        inspector = inspect(engine)
+        after_down = set(inspector.get_table_names())
+        assert not (F26_TABLES & after_down), "downgrade left F26 tables"
+        assert "sprint" in after_down
+        cols_after = {c["name"] for c in inspector.get_columns("sprint")}
+        assert not (F26_SPRINT_COLUMNS & cols_after), "downgrade left F26 sprint columns"
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

@@ -79,6 +79,10 @@ EXPECTED_MODELS = [
     # F22 multi-repo execution tables.
     "PRGroup",
     "AgentRepoWorkspace",
+    # F26 sprint-velocity tables.
+    "SprintScopeEvent",
+    "SprintBurndownSnapshot",
+    "SprintVelocity",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

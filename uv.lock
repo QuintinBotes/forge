@@ -600,6 +600,7 @@ version = "0.1.0"
 source = { editable = "packages/board-core" }
 dependencies = [
     { name = "forge-contracts" },
+    { name = "forge-db" },
     { name = "forge-skill" },
     { name = "forge-workflow" },
     { name = "sqlalchemy" },
@@ -608,6 +609,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "forge-db", editable = "packages/db" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "sqlalchemy", specifier = ">=2.0" },

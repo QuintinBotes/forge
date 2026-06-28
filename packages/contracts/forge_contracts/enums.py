@@ -265,11 +265,63 @@ class CIState(enum.StrEnum):
     ERROR = "error"
 
 
+# --------------------------------------------------------------------------- #
+# F26 — sprint management & velocity                                           #
+# --------------------------------------------------------------------------- #
+#
+# Foundation deviation note: the idealized F26 slice assumed an F01 ``sprints``
+# table with a native ``sprint_state`` ENUM and a per-project ``task_statuses``
+# /``StatusCategory`` model. The real foundation stores ``Sprint.status`` as a
+# plain ``VARCHAR`` and ``Task.status`` as the :class:`TaskStatus` enum (no
+# status-category table). So ``SprintState`` below is stored as a string in
+# ``Sprint.status`` (no enum migration needed) and "done" is derived from
+# ``TaskStatus.DONE`` / cancelled from ``TaskStatus.CANCELLED``. See slice notes.
+
+
+class SprintState(enum.StrEnum):
+    """Sprint lifecycle states (stored in ``Sprint.status``)."""
+
+    PLANNED = "planned"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class SprintScopeEventType(enum.StrEnum):
+    """The kinds of append-only scope change recorded for a sprint."""
+
+    SPRINT_STARTED = "sprint_started"  # baseline marker; points_delta=committed
+    TASK_ADDED = "task_added"  # +estimate
+    TASK_REMOVED = "task_removed"  # -estimate
+    TASK_COMPLETED = "task_completed"  # -estimate from remaining
+    TASK_REOPENED = "task_reopened"  # +estimate back to remaining
+    ESTIMATE_CHANGED = "estimate_changed"  # delta = after - before
+    SPRINT_COMPLETED = "sprint_completed"  # finalize marker
+    SPRINT_CANCELLED = "sprint_cancelled"
+
+
+class CarryoverTarget(enum.StrEnum):
+    """Where incomplete tasks go when a sprint is completed."""
+
+    BACKLOG = "backlog"
+    NEXT_SPRINT = "next_sprint"
+    LEAVE = "leave"
+
+
+class ScopeActorKind(enum.StrEnum):
+    """Who triggered a scope event."""
+
+    USER = "user"
+    AGENT = "agent"
+    SYSTEM = "system"
+
+
 __all__ = [
     "APIKeyKind",
     "ApprovalGate",
     "ApprovalStatus",
     "CIState",
+    "CarryoverTarget",
     "ChunkType",
     "DecisionEffect",
     "Direction",
@@ -284,7 +336,10 @@ __all__ = [
     "Priority",
     "RepoProvider",
     "RunStatus",
+    "ScopeActorKind",
     "SpecStatus",
+    "SprintScopeEventType",
+    "SprintState",
     "StepKind",
     "SubAgentRole",
     "SyncMode",
