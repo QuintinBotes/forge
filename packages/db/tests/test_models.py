@@ -88,6 +88,12 @@ EXPECTED_MODELS = [
     "WorkflowDefinitionRevision",
     # F29 advanced-policy-engine audit table.
     "PolicyRuleEvaluation",
+    # F30 multi-team RBAC tables + the shared immutable audit log.
+    "Team",
+    "TeamMember",
+    "ProjectTeamAccess",
+    "RoleGrant",
+    "AuditLog",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

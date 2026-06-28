@@ -35,6 +35,7 @@ celery_app = Celery(
         "forge_worker.tasks.knowledge_mcp",
         "forge_worker.tasks.automations",
         "forge_worker.tasks.sprint_tasks",
+        "forge_worker.tasks.authz",
         "forge_worker.beat",
     ],
 )

@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from forge_api.routers import (
+    access,
     agent,
     alerts,
     approval,
@@ -25,8 +26,10 @@ from forge_api.routers import (
     observability,
     pm,
     policy,
+    project_access,
     spec,
     sprints,
+    teams,
     workflow,
     workflow_editor,
 )
@@ -53,11 +56,15 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     pm.router,
     automations.router,
     sprints.router,
+    teams.router,
+    access.router,
+    project_access.router,
 )
 
 __all__ = [
     "FEATURE_ROUTERS",
     "HEALTH_ROUTER",
+    "access",
     "agent",
     "alerts",
     "approval",
@@ -72,8 +79,10 @@ __all__ = [
     "observability",
     "pm",
     "policy",
+    "project_access",
     "spec",
     "sprints",
+    "teams",
     "workflow",
     "workflow_editor",
 ]

@@ -55,6 +55,12 @@ DEFERRED_TABLES = frozenset(
         "workflow_definition_revision",
         # F29 advanced-policy-engine — created by 0011_f29_policy_rule_evaluation.
         "policy_rule_evaluation",
+        # F30 multi-team RBAC — created by 0012_f30_multi_team_rbac.
+        "team",
+        "team_member",
+        "project_team_access",
+        "role_grant",
+        "audit_log",
     }
 )
 
