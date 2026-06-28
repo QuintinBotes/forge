@@ -16,6 +16,7 @@ members = [
     "forge-contracts",
     "forge-coordinator",
     "forge-db",
+    "forge-deploy",
     "forge-eval",
     "forge-integrations",
     "forge-knowledge",
@@ -486,6 +487,7 @@ dependencies = [
     { name = "forge-contracts" },
     { name = "forge-coordinator" },
     { name = "forge-db" },
+    { name = "forge-deploy" },
     { name = "forge-eval" },
     { name = "forge-integrations" },
     { name = "forge-knowledge" },
@@ -519,6 +521,7 @@ requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-coordinator", editable = "packages/multi-agent-coordinator" },
     { name = "forge-db", editable = "packages/db" },
+    { name = "forge-deploy", editable = "packages/deploy-core" },
     { name = "forge-eval", editable = "packages/evaluation" },
     { name = "forge-integrations", editable = "packages/integration-sdk" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
@@ -571,8 +574,10 @@ dependencies = [
     { name = "forge-board" },
     { name = "forge-contracts" },
     { name = "forge-db" },
+    { name = "forge-deploy" },
     { name = "forge-knowledge" },
     { name = "forge-mcp" },
+    { name = "forge-policy" },
     { name = "forge-workflow" },
     { name = "httpx" },
     { name = "pydantic-settings" },
@@ -588,8 +593,10 @@ requires-dist = [
     { name = "forge-board", editable = "packages/board-core" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
+    { name = "forge-deploy", editable = "packages/deploy-core" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
+    { name = "forge-policy", editable = "packages/policy-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic-settings", specifier = ">=2.2" },
@@ -683,6 +690,29 @@ requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "pgvector", specifier = ">=0.2.5" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+]
+
+[[package]]
+name = "forge-deploy"
+version = "0.1.0"
+source = { editable = "packages/deploy-core" }
+dependencies = [
+    { name = "forge-contracts" },
+    { name = "forge-db" },
+    { name = "forge-policy" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "forge-db", editable = "packages/db" },
+    { name = "forge-policy", editable = "packages/policy-sdk" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
@@ -836,6 +866,7 @@ dependencies = [
     { name = "forge-board" },
     { name = "forge-contracts" },
     { name = "forge-db" },
+    { name = "forge-deploy" },
     { name = "forge-knowledge" },
     { name = "forge-mcp" },
     { name = "forge-skill" },
@@ -850,6 +881,7 @@ requires-dist = [
     { name = "forge-board", editable = "packages/board-core" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
+    { name = "forge-deploy", editable = "packages/deploy-core" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
     { name = "forge-skill", editable = "packages/skill-sdk" },

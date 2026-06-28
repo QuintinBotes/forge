@@ -94,6 +94,13 @@ EXPECTED_MODELS = [
     "ProjectTeamAccess",
     "RoleGrant",
     "AuditLog",
+    # F31 deployment-gates tables.
+    "EnvironmentPipeline",
+    "Environment",
+    "Deployment",
+    "DeploymentTransition",
+    "DeploymentCheckResult",
+    "DeploymentApproval",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
