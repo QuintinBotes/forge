@@ -53,6 +53,8 @@ DEFERRED_TABLES = frozenset(
         # F28 workflow visual editor — created by 0010_f28_workflow_editor.
         "workflow_definition",
         "workflow_definition_revision",
+        # F29 advanced-policy-engine — created by 0011_f29_policy_rule_evaluation.
+        "policy_rule_evaluation",
     }
 )
 

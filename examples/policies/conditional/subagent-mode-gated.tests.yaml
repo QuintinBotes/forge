@@ -1,0 +1,14 @@
+cases:
+  - name: implementer sub-agent in single-agent mode is denied
+    context: { execution_mode: single_agent }
+    tool_call: { tool: spawn_subagent, arguments: { role: implementer } }
+    expect_effect: deny
+    expect_rule: implementer-requires-supervised-mode
+  - name: implementer sub-agent under the supervisor is allowed
+    context: { execution_mode: supervised_multi_agent }
+    tool_call: { tool: spawn_subagent, arguments: { role: implementer } }
+    expect_effect: allow
+  - name: reviewer sub-agent in single-agent mode is allowed
+    context: { execution_mode: single_agent }
+    tool_call: { tool: spawn_subagent, arguments: { role: reviewer } }
+    expect_effect: allow

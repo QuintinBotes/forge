@@ -86,6 +86,8 @@ EXPECTED_MODELS = [
     # F28 workflow visual editor tables.
     "WorkflowDefinition",
     "WorkflowDefinitionRevision",
+    # F29 advanced-policy-engine audit table.
+    "PolicyRuleEvaluation",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

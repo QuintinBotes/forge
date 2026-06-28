@@ -68,3 +68,16 @@ def repo_root(tmp_path: Path) -> Path:
     forge_dir.mkdir()
     (forge_dir / "policy.yaml").write_text(SPEC_POLICY_YAML, encoding="utf-8")
     return tmp_path
+
+
+#: F29 — the canonical ``schema_version: 2`` conditional policy (golden input).
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+CANONICAL_POLICY_PATH = FIXTURES_DIR / "policy_conditional_canonical.yaml"
+
+
+@pytest.fixture
+def canonical_policy() -> Policy:
+    """The §4 canonical conditional (``schema_version: 2``) policy."""
+    from forge_policy import load_policy
+
+    return load_policy(CANONICAL_POLICY_PATH)

@@ -240,6 +240,19 @@ class DecisionEffect(enum.StrEnum):
     REQUIRES_APPROVAL = "requires_approval"
 
 
+class RuleEffect(enum.StrEnum):
+    """Effect a conditional policy rule applies (F29 — advanced policy engine).
+
+    A rule may always *tighten* (``deny`` / ``require_approval``); it may only
+    *loosen* (``allow``) a non-critical base denial and only with
+    ``override_base=True`` (see ``ConditionalRule``).
+    """
+
+    ALLOW = "allow"
+    DENY = "deny"
+    REQUIRE_APPROVAL = "require_approval"
+
+
 class Direction(enum.StrEnum):
     """Mapping direction for the external PM adapter contract."""
 

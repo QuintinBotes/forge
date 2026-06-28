@@ -1,0 +1,14 @@
+cases:
+  - name: terraform apply in dev for an admin is allowed
+    context: { environment: dev, actor_role: admin }
+    tool_call: { tool: run_command, arguments: { command: "terraform apply -auto-approve" } }
+    expect_effect: allow
+    expect_rule: terraform-apply-dev-admin
+  - name: terraform apply in dev for a member is denied
+    context: { environment: dev, actor_role: member }
+    tool_call: { tool: run_command, arguments: { command: "terraform apply -auto-approve" } }
+    expect_effect: deny
+  - name: terraform apply in production for an admin is denied
+    context: { environment: production, actor_role: admin }
+    tool_call: { tool: run_command, arguments: { command: "terraform apply -auto-approve" } }
+    expect_effect: deny
