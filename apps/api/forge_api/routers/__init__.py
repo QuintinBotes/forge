@@ -26,6 +26,7 @@ from forge_api.routers import (
     pm,
     policy,
     spec,
+    sprints,
     workflow,
 )
 
@@ -49,6 +50,7 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     observability.router,
     pm.router,
     automations.router,
+    sprints.router,
 )
 
 __all__ = [
@@ -69,5 +71,6 @@ __all__ = [
     "pm",
     "policy",
     "spec",
+    "sprints",
     "workflow",
 ]

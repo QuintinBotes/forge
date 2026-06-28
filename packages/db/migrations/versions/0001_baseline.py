@@ -46,6 +46,10 @@ DEFERRED_TABLES = frozenset(
         # F22 multi-repo execution — created by 0006_f22_multi_repo.
         "pr_group",
         "agent_repo_workspace",
+        # F26 sprint-velocity — created by 0008_f26_sprint_velocity.
+        "sprint_scope_event",
+        "sprint_burndown_snapshot",
+        "sprint_velocity",
     }
 )
 

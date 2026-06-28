@@ -81,6 +81,11 @@ from forge_db.models.profiles import PolicyProfile, SkillProfile
 from forge_db.models.project import Constitution, Project
 from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
 from forge_db.models.sandbox import SandboxInstance
+from forge_db.models.sprint_velocity import (
+    SprintBurndownSnapshot,
+    SprintScopeEvent,
+    SprintVelocity,
+)
 from forge_db.models.workspace import APIKey, User, Workspace
 
 __all__ = [
@@ -151,6 +156,9 @@ __all__ = [
     "SpecDocument",
     "SpecStatus",
     "Sprint",
+    "SprintBurndownSnapshot",
+    "SprintScopeEvent",
+    "SprintVelocity",
     "SubAgentRun",
     "SyncMode",
     "Task",

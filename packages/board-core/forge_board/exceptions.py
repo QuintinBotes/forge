@@ -33,9 +33,28 @@ class InvalidStatusTransitionError(BoardError):
         super().__init__(f"illegal status transition: {src} -> {dst}")
 
 
+class SprintStateError(BoardError):
+    """Raised when a sprint lifecycle transition is illegal (F26)."""
+
+    def __init__(self, frm: object, to: object) -> None:
+        self.frm = frm
+        self.to = to
+        super().__init__(f"illegal sprint transition: {frm} -> {to}")
+
+
+class ActiveSprintExistsError(BoardError):
+    """Raised when starting a sprint while another is already active (F26)."""
+
+    def __init__(self, sprint_id: object) -> None:
+        self.sprint_id = sprint_id
+        super().__init__(f"an active sprint already exists: {sprint_id}")
+
+
 __all__ = [
+    "ActiveSprintExistsError",
     "BoardError",
     "CycleError",
     "EntityNotFoundError",
     "InvalidStatusTransitionError",
+    "SprintStateError",
 ]

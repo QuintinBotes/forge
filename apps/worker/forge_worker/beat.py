@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import os
 
+from celery.schedules import crontab
+
 from forge_worker.celery_app import celery_app
 
 SANDBOX_REAP_TASK = "sandbox.reap_orphans"
 MCP_REFRESH_TASK = "forge.knowledge.refresh_stale_mcp_sources"
 AUTOMATION_SWEEP_TASK = "forge.automations.sweep_unprocessed_triggers"
+# F26: daily burndown snapshot for every active sprint (workspace-naive UTC).
+SPRINT_SNAPSHOT_TASK = "sprint.snapshot_burndown"
 
 
 def reap_interval_seconds() -> float:
@@ -48,6 +52,11 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": AUTOMATION_SWEEP_TASK,
             "schedule": automation_sweep_seconds(),
         },
+        # F26: snapshot every active sprint's burndown daily at 23:55 UTC.
+        "sprint-snapshot-burndown": {
+            "task": SPRINT_SNAPSHOT_TASK,
+            "schedule": crontab(hour=23, minute=55),
+        },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
     existing.update(schedule)
@@ -62,6 +71,7 @@ __all__ = [
     "BEAT_SCHEDULE",
     "MCP_REFRESH_TASK",
     "SANDBOX_REAP_TASK",
+    "SPRINT_SNAPSHOT_TASK",
     "automation_sweep_seconds",
     "configure_beat",
     "mcp_index_poll_seconds",

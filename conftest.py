@@ -69,36 +69,86 @@ def postgres_url() -> Iterator[str]:
 def pg_engine(postgres_url: str) -> Iterator[Engine]:
     """A SQLAlchemy engine bound to a pgvector-enabled Postgres.
 
-    The shared test database is **reset to an empty ``public`` schema** once at
-    session start, before any test creates tables. The supported test Postgres is
-    a long-lived container (``docker start forge-test-pg``) or a CI service that
-    is reused across runs, so it accumulates leftover schema objects from earlier
-    or interrupted runs (stale tables, orphaned composite/enum types). Those
-    collide non-deterministically with the per-module ``Base.metadata.create_all``
-    that every DB test performs — the same object can be invisible to
-    ``has_table`` yet still block ``CREATE TABLE`` (e.g. an orphaned ``workspace``
-    type). Dropping and recreating ``public`` gives ``create_all`` a guaranteed
-    clean slate, making the whole suite deterministic regardless of prior state.
+    Each test session is isolated in its **own private schema** (``forge_test_*``)
+    rather than sharing ``public``. Every connection this engine opens routes its
+    ``search_path`` to that schema (libpq ``options``), so the per-module
+    ``Base.metadata.create_all``/``drop_all`` every DB test performs lands in the
+    session-private schema and is torn down with it.
 
-    This is safe because every Postgres test owns its schema via
-    ``create_all``/``drop_all`` (or transactional ``pg_connection``); none relies
-    on a pre-existing schema in the shared database, and the configured URL is a
-    disposable test database, never production.
+    Why a private schema instead of resetting ``public``: the supported test
+    Postgres is a long-lived container (``docker start forge-test-pg``) or a CI
+    service reused across runs, and **multiple pytest sessions can run against it
+    concurrently or overlap** (parallel gate invocations, lingering connections
+    from a prior run). The old strategy reset ``public`` once at session start;
+    a concurrent session's reset then wiped another session's tables mid-run, and
+    their per-module ``create_all`` raced on ``public`` — surfacing as
+    ``pg_type_typname_nsp_index`` ``UniqueViolation`` on ``(workspace, ...)`` plus
+    cascading ``relation ... does not exist`` errors (the flaky-RED whole-suite
+    gate). Giving every session its own schema removes all cross-session sharing,
+    so the suite is deterministic regardless of what else touches the database.
+
+    ``public`` is kept on the ``search_path`` only so the shared, database-global
+    ``vector`` extension type resolves; it is created once and never dropped. This
+    is safe because every Postgres test owns its schema via ``create_all``/
+    ``drop_all`` (or transactional ``pg_connection``); none relies on a
+    pre-existing schema, and the configured URL is a disposable test database,
+    never production.
     """
-    from sqlalchemy import create_engine, text
+    import uuid
 
-    engine = create_engine(postgres_url, future=True)
-    with engine.begin() as conn:
-        # Clean slate: wipe any leftover objects (stale tables, orphaned types)
-        # from a reused database so create_all is collision-free and repeatable.
-        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
-        conn.execute(text("CREATE SCHEMA public"))
-        # The vector extension lives in public, so (re)create it after the reset.
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
+
+    schema = f"forge_test_{uuid.uuid4().hex}"
+
+    # Bootstrap on the default search_path to provision the private schema and the
+    # shared pgvector extension, then dispose — the test engine below routes every
+    # connection into the private schema instead.
+    bootstrap = create_engine(postgres_url, future=True)
+    try:
+        # pgvector lives in `public` and is shared by every session (created once,
+        # left in place). Tolerate the rare race where concurrent sessions both
+        # try to create it for the first time.
+        try:
+            with bootstrap.begin() as conn:
+                conn.execute(
+                    text("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public")
+                )
+        except (IntegrityError, OperationalError, ProgrammingError):
+            pass
+        with bootstrap.begin() as conn:
+            # Self-heal: a reused DB may carry leftover Forge tables in `public`
+            # from a pre-isolation or crashed run. No session keeps tables in
+            # public anymore, so drop any stragglers — otherwise they would shadow
+            # a session schema's create_all (has_table sees the whole search_path).
+            conn.execute(
+                text(
+                    "DO $$ DECLARE r record; BEGIN "
+                    "FOR r IN SELECT tablename FROM pg_tables "
+                    "WHERE schemaname = 'public' LOOP "
+                    "EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', "
+                    "r.tablename); END LOOP; END $$;"
+                )
+            )
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+    finally:
+        bootstrap.dispose()
+
+    url = make_url(postgres_url)
+    query = dict(url.query)
+    query["options"] = f"-c search_path={schema},public"
+    engine = create_engine(url.set(query=query), future=True)
     try:
         yield engine
     finally:
         engine.dispose()
+        teardown = create_engine(postgres_url, future=True)
+        try:
+            with teardown.begin() as conn:
+                conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        finally:
+            teardown.dispose()
 
 
 @pytest.fixture
