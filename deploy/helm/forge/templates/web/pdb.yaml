@@ -1,0 +1,13 @@
+{{- if and .Values.web.enabled .Values.web.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "forge.fullname" . }}-web
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "web") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.web.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "web") | nindent 6 }}
+{{- end }}

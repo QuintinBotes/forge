@@ -1,0 +1,214 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Forge Helm chart values",
+  "type": "object",
+  "required": ["forge", "image", "api", "worker", "web", "mcpGateway", "ingress"],
+  "definitions": {
+    "resourceQuantity": {
+      "type": "object",
+      "required": ["cpu", "memory"],
+      "properties": {
+        "cpu": {"type": ["string", "number"]},
+        "memory": {"type": ["string", "number"]}
+      }
+    },
+    "workloadImage": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string", "minLength": 1},
+        "digest": {
+          "type": "string",
+          "pattern": "^(sha256:[0-9a-f]{64})?$"
+        }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "minReplicas": {"type": "integer", "minimum": 1},
+        "maxReplicas": {"type": "integer", "minimum": 1},
+        "targetCPUUtilizationPercentage": {"type": "integer", "minimum": 1, "maximum": 100}
+      }
+    },
+    "pdb": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "minAvailable": {"type": ["integer", "string"]}
+      }
+    },
+    "workload": {
+      "type": "object",
+      "required": ["image", "replicaCount", "resources"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {"$ref": "#/definitions/workloadImage"},
+        "replicaCount": {"type": "integer", "minimum": 1},
+        "resources": {
+          "type": "object",
+          "required": ["requests", "limits"],
+          "properties": {
+            "requests": {"$ref": "#/definitions/resourceQuantity"},
+            "limits": {"$ref": "#/definitions/resourceQuantity"}
+          }
+        },
+        "autoscaling": {"$ref": "#/definitions/autoscaling"},
+        "pdb": {"$ref": "#/definitions/pdb"},
+        "nodeSelector": {"type": "object"},
+        "tolerations": {"type": "array"},
+        "affinity": {"type": "object"},
+        "podAnnotations": {"type": "object"}
+      }
+    }
+  },
+  "properties": {
+    "global": {
+      "type": "object",
+      "properties": {
+        "imageRegistry": {"type": "string"},
+        "imagePullSecrets": {"type": "array", "items": {"type": "object"}},
+        "storageClass": {"type": "string"}
+      }
+    },
+    "forge": {
+      "type": "object",
+      "required": ["domain"],
+      "properties": {
+        "domain": {"type": "string", "minLength": 3},
+        "publicUrl": {"type": "string"},
+        "logLevel": {"enum": ["debug", "info", "warning", "error"]},
+        "modelProvider": {"type": "string"}
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["pullPolicy"],
+      "properties": {
+        "registry": {"type": "string"},
+        "pullPolicy": {"enum": ["IfNotPresent", "Always", "Never"]}
+      }
+    },
+    "api": {"$ref": "#/definitions/workload"},
+    "web": {"$ref": "#/definitions/workload"},
+    "mcpGateway": {"$ref": "#/definitions/workload"},
+    "worker": {
+      "allOf": [{"$ref": "#/definitions/workload"}],
+      "properties": {
+        "keda": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "listName": {"type": "string"},
+            "lagThreshold": {"type": "integer", "minimum": 1},
+            "minReplicaCount": {"type": "integer", "minimum": 0},
+            "maxReplicaCount": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "properties": {
+        "create": {"type": "boolean"},
+        "existingSecret": {"type": "string"},
+        "data": {"type": "object"}
+      }
+    },
+    "config": {"type": "object"},
+    "postgresql": {"type": "object", "properties": {"enabled": {"type": "boolean"}}},
+    "externalDatabase": {
+      "type": "object",
+      "properties": {
+        "host": {"type": "string"},
+        "port": {"type": "integer"},
+        "user": {"type": "string"},
+        "database": {"type": "string"},
+        "existingSecret": {"type": "string"},
+        "passwordKey": {"type": "string"}
+      }
+    },
+    "redis": {"type": "object", "properties": {"enabled": {"type": "boolean"}}},
+    "externalRedis": {
+      "type": "object",
+      "properties": {
+        "host": {"type": "string"},
+        "port": {"type": "integer"},
+        "existingSecret": {"type": "string"},
+        "passwordKey": {"type": "string"}
+      }
+    },
+    "minio": {"type": "object", "properties": {"enabled": {"type": "boolean"}}},
+    "externalObjectStore": {
+      "type": "object",
+      "properties": {
+        "endpoint": {"type": "string"},
+        "bucket": {"type": "string"},
+        "region": {"type": "string"},
+        "existingSecret": {"type": "string"}
+      }
+    },
+    "reranker": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "external": {"type": "object", "properties": {"url": {"type": "string"}}}
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "api": {"enum": ["ingress", "gateway"]},
+        "className": {"type": "string"},
+        "annotations": {"type": "object"},
+        "tls": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "secretName": {"type": "string"},
+            "certManager": {
+              "type": "object",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "clusterIssuer": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {"type": "object", "properties": {"enabled": {"type": "boolean"}}},
+    "migrations": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "backoffLimit": {"type": "integer", "minimum": 0}
+      }
+    },
+    "createAdmin": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "email": {"type": "string"}
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": {"type": "boolean"},
+        "name": {"type": "string"},
+        "annotations": {"type": "object"}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "serviceMonitor": {"type": "object", "properties": {"enabled": {"type": "boolean"}}}
+      }
+    }
+  }
+}

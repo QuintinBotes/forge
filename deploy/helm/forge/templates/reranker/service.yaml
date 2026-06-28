@@ -1,0 +1,17 @@
+{{- if .Values.reranker.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "forge.fullname" . }}-reranker
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "reranker") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.reranker.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "reranker") | nindent 4 }}
+{{- end }}

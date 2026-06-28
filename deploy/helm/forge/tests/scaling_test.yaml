@@ -1,0 +1,53 @@
+suite: HA primitives — HPA / ScaledObject / PDB / anti-affinity (AC8)
+tests:
+  - it: renders an api HPA at defaults
+    template: templates/api/hpa.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: HorizontalPodAutoscaler
+  - it: renders a worker CPU HPA at defaults (keda off)
+    template: templates/worker/hpa.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+  - it: renders a worker KEDA ScaledObject when keda is enabled
+    template: templates/worker/scaledobject.yaml
+    set:
+      worker.keda.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ScaledObject
+      - equal:
+          path: spec.triggers[0].type
+          value: redis
+  - it: suppresses the worker CPU HPA when keda is enabled
+    template: templates/worker/hpa.yaml
+    set:
+      worker.keda.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders a PDB for api
+    template: templates/api/pdb.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PodDisruptionBudget
+  - it: api deployment declares pod anti-affinity
+    template: templates/api/deployment.yaml
+    asserts:
+      - isNotNull:
+          path: spec.template.spec.affinity.podAntiAffinity
+  - it: production profile scales api to >= 2 replicas
+    template: templates/api/hpa.yaml
+    values:
+      - ../values-production.yaml
+    asserts:
+      - equal:
+          path: spec.minReplicas
+          value: 3

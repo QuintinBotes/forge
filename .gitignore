@@ -36,6 +36,11 @@ deploy/docker-compose.override.yml
 .data/
 data/
 
+# Helm: vendored subchart archives are reproducible from Chart.lock
+# (`helm dependency build`); commit Chart.lock, not the pulled tgz blobs.
+deploy/helm/*/charts/
+deploy/helm/*/charts/*.tgz
+
 # OS / editor
 .DS_Store
 .idea/

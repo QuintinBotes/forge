@@ -1,0 +1,101 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "forge.fullname" . }}-worker
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "worker") | nindent 4 }}
+spec:
+  {{- if not (or .Values.worker.autoscaling.enabled .Values.worker.keda.enabled) }}
+  replicas: {{ .Values.worker.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "forge.componentLabels" (dict "ctx" . "component" "worker") | nindent 8 }}
+      {{- with .Values.worker.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "forge.serviceAccountName" . }}
+      {{- include "forge.imagePullSecrets" . | nindent 6 }}
+      # Generous grace + warm preStop so in-flight agent runs can finish before
+      # SIGTERM (best effort; durable survival across evictions is F25/Temporal).
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      affinity:
+        {{- if .Values.worker.affinity }}
+        {{- toYaml .Values.worker.affinity | nindent 8 }}
+        {{- else }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 20 }}
+        {{- end }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "forge.image" (dict "ctx" . "wl" .Values.worker) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          command: ["celery", "-A", "forge_worker", "worker", "--loglevel=info", "-Q", {{ .Values.worker.queues | quote }}]
+          envFrom:
+            {{- include "forge.envFrom" . | nindent 12 }}
+          # No HTTP port -> broker-ping liveness (mirrors F14). No readiness probe
+          # (the worker is not behind a Service).
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "celery -A forge_worker inspect ping"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "celery -A forge_worker control shutdown || true"]
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: worktrees
+              mountPath: /srv/forge/worktrees
+            - name: github-app-key
+              mountPath: /etc/forge/secrets
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: worktrees
+          emptyDir: {}
+        - name: github-app-key
+          secret:
+            secretName: {{ include "forge.secretName" . }}
+            optional: true
+            items:
+              - key: GITHUB_APP_PRIVATE_KEY
+                path: github-app-private-key.pem
+{{- end }}

@@ -1,0 +1,18 @@
+suite: resource requests + limits (AC6)
+templates:
+  - templates/api/deployment.yaml
+  - templates/worker/deployment.yaml
+  - templates/web/deployment.yaml
+  - templates/mcp-gateway/deployment.yaml
+  - templates/job-migrate.yaml
+tests:
+  - it: declares cpu/memory requests and limits on every container
+    asserts:
+      - isNotNull:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+      - isNotNull:
+          path: spec.template.spec.containers[0].resources.requests.memory
+      - isNotNull:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+      - isNotNull:
+          path: spec.template.spec.containers[0].resources.limits.memory
