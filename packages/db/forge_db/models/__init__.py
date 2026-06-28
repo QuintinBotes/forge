@@ -77,6 +77,7 @@ from forge_db.models.planning import (
     Task,
 )
 from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
+from forge_db.models.policy_rule_evaluation import PolicyRuleEvaluation
 from forge_db.models.profiles import PolicyProfile, SkillProfile
 from forge_db.models.project import Constitution, Project
 from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
@@ -145,6 +146,7 @@ __all__ = [
     "PRGroupStatus",
     "PRMergeState",
     "PolicyProfile",
+    "PolicyRuleEvaluation",
     "Postmortem",
     "PostmortemActionItem",
     "Priority",

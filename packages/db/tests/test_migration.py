@@ -487,6 +487,47 @@ def test_f28_workflow_editor_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F29 advanced-policy-engine audit table, owned by 0011_f29_policy_rule_evaluation.
+F29_TABLES = {"policy_rule_evaluation"}
+F29_INDEXES = {
+    "ix_policy_rule_evaluation_agent_run_id",
+    "ix_policy_rule_evaluation_workspace_evaluated",
+}
+
+
+def test_f29_policy_rule_evaluation_migration_up_down(alembic_config: Config) -> None:
+    """F29 AC17: 0011 creates the append-only ``policy_rule_evaluation`` table
+    (with its two indexes) and drops it on downgrade, leaving the baseline tables
+    intact."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to F28: the F29 table is absent, core present.
+        command.upgrade(alembic_config, "0010_f28_workflow_editor")
+        after_f28 = set(inspect(engine).get_table_names())
+        assert not (F29_TABLES & after_f28), "F28 stage must not create the F29 table"
+        assert after_f28 >= EXPECTED_TABLES
+
+        # Apply the F29 migration: the table + its indexes appear.
+        command.upgrade(alembic_config, "0011_f29_policy_rule_evaluation")
+        inspector = inspect(engine)
+        after_f29 = set(inspector.get_table_names())
+        assert after_f29 >= F29_TABLES, f"missing F29 table: {sorted(F29_TABLES - after_f29)}"
+        idx = {i["name"] for i in inspector.get_indexes("policy_rule_evaluation")}
+        assert idx >= F29_INDEXES, f"missing F29 indexes: {sorted(F29_INDEXES - idx)}"
+
+        # Downgrade one step: the F29 table is gone, the baseline intact.
+        command.downgrade(alembic_config, "0010_f28_workflow_editor")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (F29_TABLES & after_down), "downgrade left the F29 table"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

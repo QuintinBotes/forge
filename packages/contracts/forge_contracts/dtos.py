@@ -12,8 +12,9 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from forge_contracts.conditions import ConditionGroup
 from forge_contracts.constants import DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_MAX_RETRIES
 from forge_contracts.enums import (
     ApprovalGate,
@@ -30,6 +31,7 @@ from forge_contracts.enums import (
     Priority,
     PRState,
     RepoProvider,
+    RuleEffect,
     RunStatus,
     SpecStatus,
     StepKind,
@@ -37,6 +39,9 @@ from forge_contracts.enums import (
     TaskKind,
     TaskStatus,
 )
+
+#: Severity attached to a policy decision / conditional rule (F29).
+Severity = Literal["info", "warning", "critical"]
 
 
 class _Model(BaseModel):
@@ -137,14 +142,39 @@ class ToolCall(_Model):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ConditionalMatch(_Model):
+    """One conditional rule that fired during evaluation (F29).
+
+    Recorded on :class:`Decision.conditional_matches` and surfaced in the F36
+    approval UI's "Risks flagged" panel.
+    """
+
+    rule_id: str
+    effect: RuleEffect
+    severity: Severity = "warning"
+    reason: str
+
+
 class Decision(_Model):
-    """The result of evaluating a ``ToolCall`` against a ``Policy``."""
+    """The result of evaluating a ``ToolCall`` against a ``Policy``.
+
+    F29 adds three additive, default-empty fields (the flat F04 shape is
+    otherwise unchanged): ``severity`` classifies the decision (the ``critical``
+    floor can never be loosened by a conditional rule), ``conditional_matches``
+    records every conditional rule that fired, and ``base_effect`` records the
+    flat F04 effect before the conditional layer composed on top (``None`` when
+    no conditional rule contributed — i.e. the pure F04 decision).
+    """
 
     effect: DecisionEffect = DecisionEffect.DENY
     reason: str | None = None
     matched_rule: str | None = None
     requires_approval: bool = False
     approval_gate: ApprovalGate | None = None
+    # --- F29 conditional layer (additive) ---------------------------------- #
+    severity: Severity = "info"
+    conditional_matches: list[ConditionalMatch] = Field(default_factory=list)
+    base_effect: DecisionEffect | None = None
 
     @property
     def allowed(self) -> bool:
@@ -484,10 +514,112 @@ class PolicySandboxBlock(_Model):
     setup_commands: list[str] = Field(default_factory=list)
 
 
+#: Whitelisted condition fields available to a :class:`ConditionalRule` (F29).
+#: ``now`` is the runtime-supplied UTC clock (operand for the ``*_time_window``
+#: ops); ``weekday`` (0=Mon..6=Sun) and ``hour`` (0..23, UTC) are derived from it.
+POLICY_CONDITION_FIELDS: frozenset[str] = frozenset(
+    {
+        "action",
+        "path",
+        "file_ext",
+        "environment",
+        "command",
+        "role",
+        "skill_profile",
+        "branch",
+        "base_branch",
+        "task_kind",
+        "actor_role",
+        "execution_mode",
+        "labels",
+        "repo_id",
+        "now",
+        "weekday",
+        "hour",
+    }
+)
+
+#: Action names a :class:`ConditionalRule.applies_to` entry may reference (or
+#: ``"*"``). Conforms to the tool/action vocabulary the F04 evaluator governs.
+KNOWN_ACTIONS: frozenset[str] = frozenset(
+    {
+        # write / filesystem (forge_policy.WRITE_ACTIONS)
+        "write_code",
+        "write_file",
+        "write",
+        "edit",
+        "edit_file",
+        "create_file",
+        "apply_patch",
+        "modify_file",
+        "move_file",
+        "delete_file",
+        "delete_files",
+        # deploy / promotion
+        "deploy",
+        "promote_environment",
+        # command / test execution
+        "run_command",
+        "run_tests",
+        "run_test",
+        "shell",
+        # repo / VCS
+        "read_repo",
+        "read_file",
+        "open_pr",
+        "create_branch",
+        "merge",
+        "push",
+        # knowledge / mcp
+        "read_knowledge",
+        "query_mcp",
+        # multi-agent
+        "spawn_subagent",
+    }
+)
+
+
+def _condition_fields(group: ConditionGroup) -> list[str]:
+    """Flatten every ``Condition.field`` referenced in a (nested) group."""
+    fields = [c.field for c in group.conditions]
+    for sub in group.groups:
+        fields.extend(_condition_fields(sub))
+    return fields
+
+
+class ConditionalRule(_Model):
+    """A declarative conditional refinement of the flat F04 policy (F29).
+
+    A rule whose ``when`` predicate matches the runtime ``PolicyContext`` applies
+    its ``effect`` under the evaluator's precedence ladder. ``override_base`` is
+    only meaningful for ``effect=allow``: it permits *loosening* a NON-critical
+    base denial (never a critical floor: path traversal, secret files, the merge
+    gate). ``extra="forbid"`` so a typo cannot smuggle an unrecognised field.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=120)
+    description: str | None = None
+    applies_to: list[str] = Field(default_factory=lambda: ["*"])
+    when: ConditionGroup = Field(default_factory=ConditionGroup)
+    effect: RuleEffect
+    severity: Severity = "warning"
+    reason: str = Field(min_length=1)
+    priority: int = 100
+    override_base: bool = False
+    enabled: bool = True
+
+
 class Policy(_Model):
-    """Parsed ``.forge/policy.yaml`` (spec: policy.yaml Schema)."""
+    """Parsed ``.forge/policy.yaml`` (spec: policy.yaml Schema).
+
+    F29 adds the optional, schema-versioned ``rules`` block of conditional rules.
+    A ``schema_version: 1`` policy (no ``rules``) evaluates byte-for-byte like F04.
+    """
 
     repo_id: str
+    schema_version: int = 1
     name: str | None = None
     purpose: str | None = None
     languages: list[str] = Field(default_factory=list)
@@ -502,6 +634,39 @@ class Policy(_Model):
     sandbox: PolicySandboxBlock | None = None
     allowed_actions: list[str] = Field(default_factory=list)
     restricted_actions: list[str] = Field(default_factory=list)
+    rules: list[ConditionalRule] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_rules(self) -> Policy:
+        """Fail-closed validation of the conditional ``rules`` block (F29).
+
+        * non-empty ``rules`` require ``schema_version >= 2``;
+        * rule ``id``s must be unique;
+        * every ``Condition.field`` must be in :data:`POLICY_CONDITION_FIELDS`;
+        * every ``applies_to`` entry must be a known action or ``"*"``.
+        """
+        if not self.rules:
+            return self
+        if self.schema_version < 2:
+            raise ValueError("conditional 'rules' require schema_version >= 2")
+
+        seen: set[str] = set()
+        for rule in self.rules:
+            if rule.id in seen:
+                raise ValueError(f"duplicate conditional rule id {rule.id!r}")
+            seen.add(rule.id)
+            for field in _condition_fields(rule.when):
+                if field not in POLICY_CONDITION_FIELDS:
+                    raise ValueError(
+                        f"rule {rule.id!r}: condition field {field!r} is not a known "
+                        "policy condition field"
+                    )
+            for action in rule.applies_to:
+                if action != "*" and action not in KNOWN_ACTIONS:
+                    raise ValueError(
+                        f"rule {rule.id!r}: applies_to {action!r} is not a known action or '*'"
+                    )
+        return self
 
 
 # --------------------------------------------------------------------------- #

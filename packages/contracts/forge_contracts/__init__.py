@@ -7,6 +7,12 @@ public surface defined in ``__all__`` is frozen — Phase 1 builds against it.
 
 from __future__ import annotations
 
+from forge_contracts.conditions import (
+    Condition,
+    ConditionGroup,
+    ConditionOp,
+    evaluate_condition,
+)
 from forge_contracts.constants import (
     CHUNK_TYPE_WEIGHTS,
     DEFAULT_CONFIDENCE_THRESHOLD,
@@ -29,6 +35,8 @@ from forge_contracts.coordinator import (
 )
 from forge_contracts.dtos import (
     ADR,
+    KNOWN_ACTIONS,
+    POLICY_CONDITION_FIELDS,
     AcceptanceCriterion,
     AgentObjective,
     AgentRunResult,
@@ -39,6 +47,8 @@ from forge_contracts.dtos import (
     CheckResult,
     Chunk,
     CIStatus,
+    ConditionalMatch,
+    ConditionalRule,
     Constitution,
     CrossPRLink,
     Decision,
@@ -125,6 +135,7 @@ from forge_contracts.enums import (
     Priority,
     PRState,
     RepoProvider,
+    RuleEffect,
     RunStatus,
     ScopeActorKind,
     SpecStatus,
@@ -188,6 +199,8 @@ __all__ = [
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_EMBEDDING_DIM",
     "DEFAULT_MAX_RETRIES",
+    "KNOWN_ACTIONS",
+    "POLICY_CONDITION_FIELDS",
     "READ_ONLY_ROLES",
     "ROLE_TOOLS",
     "RRF_K",
@@ -211,6 +224,11 @@ __all__ = [
     "Chunk",
     "ChunkType",
     "CommandOutput",
+    "Condition",
+    "ConditionGroup",
+    "ConditionOp",
+    "ConditionalMatch",
+    "ConditionalRule",
     "Constitution",
     "CoordinationPattern",
     "CrossPRLink",
@@ -289,6 +307,7 @@ __all__ = [
     "Retriever",
     "RetryPolicy",
     "ReviewRules",
+    "RuleEffect",
     "RunStatus",
     "SandboxCommandRunner",
     "SandboxInstanceRead",
@@ -339,4 +358,5 @@ __all__ = [
     "WorkflowState",
     "WorkflowTransition",
     "WriteRules",
+    "evaluate_condition",
 ]

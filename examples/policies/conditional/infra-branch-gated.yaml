@@ -1,0 +1,23 @@
+# F29 conditional policy: infra/** may only be modified on the main branch
+# (a branch-conditional tightening of an otherwise-allowed write path).
+schema_version: 2
+repo_id: github.com/org/platform
+name: Platform Infra
+write_rules:
+  allow: [app/**, tests/**, "infra/**"]
+  deny: [".env*", "secrets/**", "*.pem", "*.key"]
+review_rules:
+  approval_required_for_merge: true
+allowed_actions: [read_repo, open_pr]
+rules:
+  - id: infra-writes-main-only
+    description: infra/** changes are restricted to the main branch.
+    applies_to: [write_file, write_code, delete_file, move_file]
+    when:
+      match: all
+      conditions:
+        - { field: path, op: matches_glob, value: "infra/**" }
+        - { field: branch, op: ne, value: main }
+    effect: deny
+    severity: critical
+    reason: "infra/** may only be modified on the main branch."

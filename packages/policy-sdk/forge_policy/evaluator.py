@@ -53,6 +53,10 @@ WRITE_ACTIONS: frozenset[str] = frozenset(
     }
 )
 
+#: Tool/action names that complete a PR merge — the human-approval-before-merge
+#: gate (Build Prompt #5) the conditional layer can never loosen (F29).
+MERGE_ACTIONS: frozenset[str] = frozenset({"merge", "push"})
+
 #: Environment-name aliases normalised before comparing against deploy rules.
 _ENV_ALIASES: dict[str, str] = {
     "prod": "production",
@@ -91,6 +95,18 @@ def _normalize_path(path: str) -> str:
     return norm
 
 
+def _is_path_traversal(path: str) -> bool:
+    """True if ``path`` is absolute or escapes the repo root via ``..`` segments.
+
+    This is part of F29's immutable critical floor: a conditional rule can never
+    loosen a traversal denial (AC9).
+    """
+    p = path.replace("\\", "/")
+    if p.startswith("/"):  # absolute path — outside the repo root
+        return True
+    return ".." in p.split("/")
+
+
 def _match_glob(path: str, pattern: str) -> bool:
     """True if ``path`` matches ``pattern`` (full path or basename)."""
     norm = _normalize_path(path)
@@ -127,17 +143,30 @@ def _target_environment(call: ToolCall, action: str) -> str | None:
 def _evaluate_write(call: ToolCall, policy: Policy) -> Decision:
     path = _target_path(call)
     if not path:
+        # Cannot verify the target — fail closed at the critical floor.
         return Decision(
             effect=DecisionEffect.DENY,
             reason="write action has no target path; cannot verify against write_rules",
+            severity="critical",
+        )
+
+    if _is_path_traversal(path):
+        return Decision(
+            effect=DecisionEffect.DENY,
+            reason=f"path {path!r} escapes the repo root (path traversal)",
+            matched_rule="path_traversal",
+            severity="critical",
         )
 
     denied = _first_match(path, policy.write_rules.deny)
     if denied is not None:
+        # An explicit author deny (secret files, etc.) is part of the critical
+        # floor: a conditional override_base allow can never reach it (AC8).
         return Decision(
             effect=DecisionEffect.DENY,
             reason=f"path {path!r} matches a write_rules.deny pattern",
             matched_rule=f"write_rules.deny:{denied}",
+            severity="critical",
         )
 
     allowed = _first_match(path, policy.write_rules.allow)
@@ -148,9 +177,11 @@ def _evaluate_write(call: ToolCall, policy: Policy) -> Decision:
             matched_rule=f"write_rules.allow:{allowed}",
         )
 
+    # Unlisted path: a non-critical default-deny a conditional override may loosen.
     return Decision(
         effect=DecisionEffect.DENY,
         reason=f"path {path!r} is not in any write_rules.allow pattern (default deny)",
+        severity="warning",
     )
 
 
@@ -168,6 +199,7 @@ def _evaluate_deploy(call: ToolCall, policy: Policy, action: str) -> Decision:
             matched_rule=f"deploy_rules.restricted_environments:{env}",
             requires_approval=True,
             approval_gate=ApprovalGate.DEPLOY,
+            severity="critical",
         )
 
     if not rules.allow_agent_deploy:
@@ -175,6 +207,7 @@ def _evaluate_deploy(call: ToolCall, policy: Policy, action: str) -> Decision:
             effect=DecisionEffect.DENY,
             reason="agent deploys are disabled (deploy_rules.allow_agent_deploy is false)",
             matched_rule="deploy_rules.allow_agent_deploy",
+            severity="critical",
         )
 
     if env is not None and env in allowed_envs:
@@ -190,6 +223,7 @@ def _evaluate_deploy(call: ToolCall, policy: Policy, action: str) -> Decision:
         matched_rule="deploy_rules",
         requires_approval=True,
         approval_gate=ApprovalGate.DEPLOY,
+        severity="warning",
     )
 
 
@@ -205,6 +239,7 @@ def evaluate(action: ToolCall, policy: Policy) -> Decision:
         return Decision(
             effect=DecisionEffect.DENY,
             reason="tool call has no tool/action name",
+            severity="critical",
         )
 
     if name in policy.restricted_actions:
@@ -212,6 +247,19 @@ def evaluate(action: ToolCall, policy: Policy) -> Decision:
             effect=DecisionEffect.DENY,
             reason=f"action {name!r} is explicitly restricted by policy",
             matched_rule=f"restricted_actions:{name}",
+            severity="critical",
+        )
+
+    if name in MERGE_ACTIONS and policy.review_rules.approval_required_for_merge:
+        # Human approval before PR merge is mandatory (Build Prompt #5); this gate
+        # is the conditional layer's immutable floor (F29 AC21).
+        return Decision(
+            effect=DecisionEffect.REQUIRES_APPROVAL,
+            reason="human approval is required before PR merge",
+            matched_rule="review_rules.approval_required_for_merge",
+            requires_approval=True,
+            approval_gate=ApprovalGate.PR,
+            severity="critical",
         )
 
     if name in WRITE_ACTIONS:
@@ -227,9 +275,11 @@ def evaluate(action: ToolCall, policy: Policy) -> Decision:
             matched_rule=f"allowed_actions:{name}",
         )
 
+    # Unknown action: a non-critical default-deny a conditional override may loosen.
     return Decision(
         effect=DecisionEffect.DENY,
         reason=f"action {name!r} is not permitted by policy (default deny)",
+        severity="warning",
     )
 
 
@@ -297,6 +347,7 @@ class RepoScopedPolicyEvaluator:
 
 
 __all__ = [
+    "MERGE_ACTIONS",
     "WRITE_ACTIONS",
     "RepoPolicyEvaluator",
     "RepoScopedPolicyEvaluator",

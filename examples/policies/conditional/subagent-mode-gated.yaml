@@ -1,0 +1,24 @@
+# F29 conditional policy: spawning an implementer sub-agent is denied unless the
+# run is in supervised multi-agent mode (a mode-conditional tightening).
+schema_version: 2
+repo_id: github.com/org/monorepo
+name: Monorepo
+review_rules:
+  approval_required_for_merge: true
+subagent_rules:
+  allow_subagents: true
+  allowed_roles: [planner, researcher, implementer, tester, reviewer]
+  max_parallel: 3
+allowed_actions: [read_repo, open_pr, spawn_subagent]
+rules:
+  - id: implementer-requires-supervised-mode
+    description: Implementer sub-agents only under the supervisor.
+    applies_to: [spawn_subagent]
+    when:
+      match: all
+      conditions:
+        - { field: role, op: eq, value: implementer }
+        - { field: execution_mode, op: ne, value: supervised_multi_agent }
+    effect: deny
+    severity: warning
+    reason: "Implementer sub-agents require supervised_multi_agent execution mode."

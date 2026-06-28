@@ -138,6 +138,75 @@ def _sprint_velocity(project_id: str, *, as_json: bool) -> int:
     return 0
 
 
+def _policy_context_from_args(args: argparse.Namespace):
+    """Build a :class:`PolicyContext` from the ``policy simulate`` CLI flags."""
+    from datetime import datetime
+
+    from forge_policy import PolicyContext
+
+    now = None
+    if args.now:
+        now = datetime.fromisoformat(args.now.replace("Z", "+00:00"))
+    return PolicyContext(
+        branch=args.branch,
+        base_branch=args.base_branch,
+        environment=args.env,
+        task_kind=args.task_kind,
+        actor_role=args.actor_role,
+        skill_profile=args.skill_profile,
+        execution_mode=args.execution_mode,
+        command=args.run_command,
+        now=now,
+    )
+
+
+def _policy_simulate(args: argparse.Namespace) -> int:
+    """Print the conditional decision + matched rules for one tool call."""
+    from forge_contracts import ToolCall
+    from forge_policy import ConditionalPolicyEvaluator, load_policy
+
+    policy = load_policy(args.repo)
+    arguments: dict[str, str] = {}
+    if args.run_command:
+        arguments["command"] = args.run_command
+    if args.env:
+        arguments["environment"] = args.env
+    call = ToolCall(tool=args.action, action=args.action, path=args.path, arguments=arguments)
+    decision = ConditionalPolicyEvaluator().evaluate_in_context(
+        call, policy, _policy_context_from_args(args)
+    )
+    print(f"action={args.action} effect={decision.effect.value} severity={decision.severity}")
+    print(f"  reason: {decision.reason}")
+    if decision.base_effect is not None:
+        print(f"  base_effect: {decision.base_effect.value}")
+    if decision.requires_approval:
+        print("  requires_approval: true")
+    if decision.conditional_matches:
+        print("  matched rules:")
+        for match in decision.conditional_matches:
+            print(f"    - {match.rule_id} ({match.effect.value}, {match.severity}): {match.reason}")
+    return 0
+
+
+def _policy_test(path: str) -> int:
+    """Run a repo's ``.forge/policy.tests.yaml`` suite; exit 0 (pass) / 1 (fail)."""
+    from forge_policy import load_policy, load_test_suite, run_policy_tests, suite_path_for
+    from forge_policy.loader import resolve_policy_path
+
+    policy = load_policy(path)
+    suite_path = suite_path_for(resolve_policy_path(path))
+    if not suite_path.is_file():
+        print(f"no policy test suite found at {suite_path}")
+        return 1
+    report = run_policy_tests(policy, load_test_suite(suite_path))
+    for failure in report.failures:
+        print(
+            f"FAIL {failure['name']}: expected={failure['expected']} actual={failure['actual']}"
+        )
+    print(f"policy tests: {report.passed}/{report.total} passed")
+    return 0 if report.ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="forge-cli")
     sub = parser.add_subparsers(dest="group", required=True)
@@ -154,6 +223,24 @@ def build_parser() -> argparse.ArgumentParser:
     velocity = ssub.add_parser("velocity", help="print a project's velocity dashboard")
     velocity.add_argument("project_id")
     velocity.add_argument("--json", action="store_true", dest="as_json")
+
+    policy = sub.add_parser("policy", help="Conditional policy commands (F29)")
+    psub = policy.add_subparsers(dest="command", required=True)
+    simulate = psub.add_parser("simulate", help="simulate a tool-call decision in a context")
+    simulate.add_argument("repo", help="repo directory or a policy .yaml file path")
+    simulate.add_argument("--action", required=True, help="tool/action name (e.g. write_file)")
+    simulate.add_argument("--path", default=None)
+    simulate.add_argument("--command", default=None, dest="run_command")
+    simulate.add_argument("--env", default=None, dest="env")
+    simulate.add_argument("--branch", default=None)
+    simulate.add_argument("--base-branch", default=None, dest="base_branch")
+    simulate.add_argument("--task-kind", default=None, dest="task_kind")
+    simulate.add_argument("--actor-role", default=None, dest="actor_role")
+    simulate.add_argument("--skill-profile", default=None, dest="skill_profile")
+    simulate.add_argument("--execution-mode", default=None, dest="execution_mode")
+    simulate.add_argument("--now", default=None, help="UTC ISO-8601 eval clock")
+    test = psub.add_parser("test", help="run .forge/policy.tests.yaml (exit 0/1)")
+    test.add_argument("path", help="repo directory or a policy .yaml file path")
     return parser
 
 
@@ -170,6 +257,11 @@ def main(argv: list[str] | None = None) -> int:
             return _sprint_reconcile(args.sprint_id)
         if args.command == "velocity":
             return _sprint_velocity(args.project_id, as_json=args.as_json)
+    if args.group == "policy":
+        if args.command == "simulate":
+            return _policy_simulate(args)
+        if args.command == "test":
+            return _policy_test(args.path)
     return 2  # pragma: no cover
 
 

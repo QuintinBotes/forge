@@ -1,0 +1,59 @@
+schema_version: 2
+repo_id: github.com/org/api
+name: Core API Service
+purpose: Backend REST API for customer operations.
+languages: [python]
+# review_rules.approval_required_for_merge stays true — the merge gate the
+# conditional layer can never loosen (AC21).
+review_rules:
+  required_reviewers: [team-backend]
+  approval_required_for_merge: true
+  min_approvals: 1
+write_rules:
+  # infra/** is ALLOWED at the flat layer so the infra-writes-main-only rule
+  # TIGHTENS it (base_effect=allow in AC4/AC5).
+  allow: [app/**, tests/**, docs/**, alembic/versions/**, "infra/**"]
+  # secret-like denies stay (critical) so an override_base allow can never reach
+  # them (AC8).
+  deny: [".env*", "secrets/**", "*.pem", "*.key"]
+deploy_rules:
+  # production is PERMITTED at the flat layer so the conditional time-gate is the
+  # operative control (base_effect=allow in AC6).
+  allow_agent_deploy: true
+  environments: [dev, staging, production]
+  restricted_environments: []
+allowed_actions: [read_repo, open_pr, deploy, promote_environment]
+restricted_actions: []
+rules:
+  - id: deploy-prod-business-hours-only
+    applies_to: [deploy, promote_environment]
+    when:
+      match: all
+      conditions:
+        - { field: environment, op: eq, value: production }
+        - field: now
+          op: not_in_time_window
+          value: { days: [0, 1, 2, 3, 4], start: "09:00", end: "17:00", tz: UTC }
+    effect: require_approval
+    severity: warning
+    reason: "Production deploys outside business hours require human approval."
+  - id: infra-writes-main-only
+    applies_to: [write_file, write_code, delete_file, move_file]
+    when:
+      conditions:
+        - { field: path, op: matches_glob, value: "infra/**" }
+        - { field: branch, op: ne, value: main }
+    effect: deny
+    severity: critical
+    reason: "infra/** may only be modified on the main branch."
+  - id: terraform-apply-dev-admin
+    applies_to: [run_command]
+    when:
+      conditions:
+        - { field: command, op: contains, value: "terraform apply" }
+        - { field: environment, op: eq, value: dev }
+        - { field: actor_role, op: eq, value: admin }
+    effect: allow
+    override_base: true
+    severity: warning
+    reason: "terraform apply allowed in dev for admins only."

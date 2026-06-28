@@ -1,21 +1,22 @@
-"""Policy SDK router (Task 1.10 — policy-sdk; wired in Phase 2 Task 2.1).
+"""Policy SDK router (Task 1.10 — policy-sdk; F29 conditional layer).
 
 Serves the repo-policy surface over HTTP:
 
-* ``GET  /policy``          — load the effective ``.forge/policy.yaml`` for a repo
-  (``repo_root`` query param: a repo directory or a direct path to a policy file).
-* ``POST /policy/evaluate`` — evaluate a :class:`~forge_contracts.ToolCall`
-  against a policy. The policy is taken from the request body if supplied, else
-  loaded from ``repo_root``.
+* ``GET  /policy``                 — load the effective ``.forge/policy.yaml``.
+* ``POST /policy/evaluate``        — evaluate a :class:`~forge_contracts.ToolCall`
+  against a policy (optionally with an F29 :class:`PolicyContext`).
+* ``POST /policy/simulate``        — F29 dry-run: the composed decision + a
+  per-rule trace (no persistence). Privileged (admin/member/agent-runner).
+* ``POST /policy/test``            — F29 run a ``.forge/policy.tests.yaml`` suite.
+* ``GET  /policy/rule-evaluations`` — F29 workspace-scoped conditional audit query.
 
-Handlers delegate to a process-wide :class:`~forge_policy.RepoPolicyEvaluator`
-(pure: no I/O beyond reading the policy file, no network). Errors map to HTTP:
-missing policy file -> 404; empty/invalid policy -> 422; a request that supplies
-neither ``policy`` nor ``repo_root`` -> 422.
+Handlers delegate to a process-wide :class:`ConditionalPolicyEvaluator` /
+:class:`PolicyService` (pure beyond reading the policy file + audit reads).
 """
 
 from __future__ import annotations
 
+import uuid
 from functools import lru_cache
 from typing import Annotated
 
@@ -23,10 +24,24 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ValidationError
 
 from forge_api.auth.rbac import Permission
-from forge_api.deps import get_current_principal
+from forge_api.deps import DbSession, Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
+from forge_api.schemas.policy import (
+    PolicyRuleEvaluationOut,
+    PolicyTestRequest,
+    PolicyTestResponse,
+    SimulateRequest,
+    SimulationResult,
+)
+from forge_api.services.policy_service import PolicyService
 from forge_contracts import Decision, Policy, ToolCall
-from forge_policy import RepoPolicyEvaluator
+from forge_policy import (
+    ConditionalPolicyEvaluator,
+    PolicyContext,
+    resolve_policy_path,
+    suite_path_for,
+)
+from forge_policy.tests_runner import load_test_suite
 
 router = APIRouter(
     prefix="/policy",
@@ -34,27 +49,41 @@ router = APIRouter(
     dependencies=[Depends(get_current_principal)],
 )
 
-# Loading and evaluating a policy are read-only; any authenticated role with READ
-# may call them, but unauthenticated callers are still rejected (401) upstream.
+# Loading/evaluating a policy is read-only; simulation/testing reveal decisions
+# and are privileged (a read-only ``viewer`` is denied — F29 AC16).
 ReadGate = Depends(require_permission(Permission.READ))
+SimulateDep = Annotated[Principal, Depends(require_permission(Permission.RUN_AGENT))]
+TestDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
+ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
 
 
 # --------------------------------------------------------------------------- #
-# Evaluator dependency (overridable for tests)                                 #
+# Dependencies (overridable for tests)                                        #
 # --------------------------------------------------------------------------- #
 
 
 @lru_cache(maxsize=1)
-def _policy_evaluator_singleton() -> RepoPolicyEvaluator:
-    return RepoPolicyEvaluator()
+def _policy_evaluator_singleton() -> ConditionalPolicyEvaluator:
+    return ConditionalPolicyEvaluator()
 
 
-def get_policy_evaluator() -> RepoPolicyEvaluator:
-    """Return the process-wide policy evaluator (override in tests via DI)."""
+def get_policy_evaluator() -> ConditionalPolicyEvaluator:
+    """Return the process-wide conditional policy evaluator (override in tests)."""
     return _policy_evaluator_singleton()
 
 
-EvaluatorDep = Annotated[RepoPolicyEvaluator, Depends(get_policy_evaluator)]
+@lru_cache(maxsize=1)
+def _policy_service_singleton() -> PolicyService:
+    return PolicyService(evaluator=_policy_evaluator_singleton())
+
+
+def get_policy_service() -> PolicyService:
+    """Return the process-wide policy service (override in tests via DI)."""
+    return _policy_service_singleton()
+
+
+EvaluatorDep = Annotated[ConditionalPolicyEvaluator, Depends(get_policy_evaluator)]
+ServiceDep = Annotated[PolicyService, Depends(get_policy_service)]
 
 
 # --------------------------------------------------------------------------- #
@@ -68,9 +97,10 @@ class EvaluateRequest(BaseModel):
     action: ToolCall
     policy: Policy | None = None
     repo_root: str | None = None
+    context: PolicyContext | None = None
 
 
-def _load_policy(evaluator: RepoPolicyEvaluator, repo_root: str) -> Policy:
+def _load_policy(evaluator: ConditionalPolicyEvaluator, repo_root: str) -> Policy:
     try:
         return evaluator.load(repo_root)
     except FileNotFoundError as exc:
@@ -81,6 +111,19 @@ def _load_policy(evaluator: RepoPolicyEvaluator, repo_root: str) -> Policy:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
+
+
+def _resolve_policy(
+    evaluator: ConditionalPolicyEvaluator, policy: Policy | None, repo_root: str | None
+) -> Policy:
+    if policy is not None:
+        return policy
+    if not repo_root:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="one of 'policy' or 'repo_root' is required",
+        )
+    return _load_policy(evaluator, repo_root)
 
 
 # --------------------------------------------------------------------------- #
@@ -99,16 +142,91 @@ def load(
 
 @router.post("/evaluate", response_model=Decision, dependencies=[ReadGate])
 def evaluate(evaluator: EvaluatorDep, request: EvaluateRequest) -> Decision:
-    """Evaluate a tool call against the supplied or loaded repo policy."""
-    policy = request.policy
-    if policy is None:
+    """Evaluate a tool call against the supplied or loaded repo policy.
+
+    When an F29 ``context`` is supplied the conditional layer composes on top of
+    the flat F04 decision; otherwise this is the flat F04 decision (unchanged).
+    """
+    policy = _resolve_policy(evaluator, request.policy, request.repo_root)
+    context = request.context or PolicyContext.empty()
+    return evaluator.evaluate_in_context(request.action, policy, context)
+
+
+@router.post("/simulate", response_model=SimulationResult)
+def simulate(
+    evaluator: EvaluatorDep,
+    service: ServiceDep,
+    request: SimulateRequest,
+    _principal: SimulateDep,
+) -> SimulationResult:
+    """Dry-run a decision with a full per-rule trace (no persistence)."""
+    policy = _resolve_policy(evaluator, request.policy, request.repo_root)
+    return service.simulate(request.action, policy, request.context)
+
+
+@router.post("/test", response_model=PolicyTestResponse)
+def test(
+    evaluator: EvaluatorDep,
+    service: ServiceDep,
+    request: PolicyTestRequest,
+    _principal: TestDep,
+) -> PolicyTestResponse:
+    """Run a ``.forge/policy.tests.yaml`` assertion suite against the policy."""
+    policy = _resolve_policy(evaluator, request.policy, request.repo_root)
+    suite = request.suite
+    if suite is None:
         if not request.repo_root:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="one of 'policy' or 'repo_root' is required",
+                detail="one of 'suite' or 'repo_root' is required",
             )
-        policy = _load_policy(evaluator, request.repo_root)
-    return evaluator.evaluate(request.action, policy)
+        suite_path = suite_path_for(resolve_policy_path(request.repo_root))
+        if not suite_path.is_file():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"no policy test suite found at {suite_path}",
+            )
+        try:
+            suite = load_test_suite(suite_path)
+        except (ValueError, ValidationError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+            ) from exc
+    report = service.run_tests(policy, suite)
+    return PolicyTestResponse.model_validate(report.model_dump())
 
 
-__all__ = ["EvaluateRequest", "get_policy_evaluator", "router"]
+@router.get("/rule-evaluations", response_model=list[PolicyRuleEvaluationOut])
+def rule_evaluations(
+    service: ServiceDep,
+    session: DbSession,
+    principal: ReaderDep,
+    agent_run_id: Annotated[uuid.UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+) -> list[PolicyRuleEvaluationOut]:
+    """List conditional-decision audit rows for the caller's workspace."""
+    rows = service.list_rule_evaluations(
+        session,
+        workspace_id=principal.workspace_id,
+        agent_run_id=agent_run_id,
+        limit=limit,
+    )
+    return [
+        PolicyRuleEvaluationOut(
+            id=str(row.id),
+            action=row.action,
+            base_effect=row.base_effect,
+            final_effect=row.final_effect,
+            requires_approval=row.requires_approval,
+            severity=row.severity,
+            matched_rule_ids=list(row.matched_rule_ids),
+            context_redacted=dict(row.context_redacted),
+            agent_run_id=str(row.agent_run_id) if row.agent_run_id else None,
+            step_id=str(row.step_id) if row.step_id else None,
+            evaluated_at=row.evaluated_at,
+        )
+        for row in rows
+    ]
+
+
+__all__ = ["EvaluateRequest", "get_policy_evaluator", "get_policy_service", "router"]
