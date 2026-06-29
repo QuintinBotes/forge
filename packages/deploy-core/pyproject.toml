@@ -3,7 +3,7 @@ name = "forge-deploy"
 version = "0.1.0"
 description = "Deployment gates, environment promotion, and the deployment state machine for Forge (F31)."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
 authors = [{ name = "The Forge Authors" }]
 dependencies = [
