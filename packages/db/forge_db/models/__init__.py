@@ -112,6 +112,10 @@ from forge_db.models.sprint_velocity import (
 )
 from forge_db.models.team import Team
 from forge_db.models.team_member import TeamMember
+from forge_db.models.traceability import (
+    TraceabilityCriterionLink,
+    TraceabilitySpecRollup,
+)
 from forge_db.models.workflow_editor import (
     RevisionStatus,
     RevisionValidationStatus,
@@ -223,6 +227,8 @@ __all__ = [
     "Team",
     "TeamMember",
     "TeamRole",
+    "TraceabilityCriterionLink",
+    "TraceabilitySpecRollup",
     "User",
     "UserRole",
     "WorkflowDefinition",
