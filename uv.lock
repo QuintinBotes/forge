@@ -804,12 +804,14 @@ version = "0.1.0"
 source = { editable = "packages/spec-engine" }
 dependencies = [
     { name = "forge-contracts" },
+    { name = "pydantic" },
     { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 

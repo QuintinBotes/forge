@@ -623,6 +623,56 @@ def test_f30_multi_team_rbac_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F23 spec-validation-dashboard tables, owned by 0014_f23_spec_validation_dashboard.
+F23_TABLES = {"traceability_criterion_link", "traceability_spec_rollup"}
+F23_INDEXES = {
+    "ix_traceability_criterion_link_project_status",
+    "ix_traceability_criterion_link_spec",
+}
+
+
+def test_f23_spec_validation_dashboard_migration_up_down(alembic_config: Config) -> None:
+    """F23 AC: 0014 creates the two projection tables (with their unique
+    constraints + indexes) and drops them on downgrade, leaving the baseline
+    intact (the tables are deferred from the baseline)."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to F31 (0013): F23 tables absent, core present.
+        command.upgrade(alembic_config, "0013_f31_deployment_gates")
+        after_f31 = set(inspect(engine).get_table_names())
+        assert not (F23_TABLES & after_f31), "F31 stage must not create F23 tables"
+        assert after_f31 >= EXPECTED_TABLES
+
+        # Apply the F23 migration: both tables appear with their constraints/indexes.
+        command.upgrade(alembic_config, "0014_f23_spec_validation_dashboard")
+        inspector = inspect(engine)
+        after_f23 = set(inspector.get_table_names())
+        assert after_f23 >= F23_TABLES, f"missing F23 tables: {sorted(F23_TABLES - after_f23)}"
+
+        link_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("traceability_criterion_link")
+        }
+        assert "uq_traceability_criterion_link_spec_criterion" in link_uniques
+        rollup_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("traceability_spec_rollup")
+        }
+        assert "uq_traceability_spec_rollup_spec" in rollup_uniques
+        link_indexes = {i["name"] for i in inspector.get_indexes("traceability_criterion_link")}
+        assert link_indexes >= F23_INDEXES
+
+        # Downgrade one step: F23 tables gone, baseline intact.
+        command.downgrade(alembic_config, "0013_f31_deployment_gates")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (F23_TABLES & after_down), "downgrade left F23 tables"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

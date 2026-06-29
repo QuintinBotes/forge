@@ -101,6 +101,9 @@ EXPECTED_MODELS = [
     "DeploymentTransition",
     "DeploymentCheckResult",
     "DeploymentApproval",
+    # F23 spec-validation-dashboard projection tables.
+    "TraceabilityCriterionLink",
+    "TraceabilitySpecRollup",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
