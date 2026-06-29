@@ -3,7 +3,7 @@ name = "forge-policy"
 version = "0.1.0"
 description = "Repo policy loading and permission evaluation for Forge."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
 authors = [{ name = "The Forge Authors" }]
 dependencies = [
