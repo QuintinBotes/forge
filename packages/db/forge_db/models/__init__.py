@@ -84,6 +84,13 @@ from forge_db.models.knowledge import (
     KnowledgeSource,
     RetrievalChunk,
 )
+from forge_db.models.marketplace import (
+    MarketplaceAuditLog,
+    MarketplaceInstallation,
+    MarketplaceListing,
+    MarketplaceListingVersion,
+    MarketplaceRegistry,
+)
 from forge_db.models.mcp_index import (
     KnowledgeSyncRun,
     MCPIndexedResource,
@@ -175,6 +182,11 @@ __all__ = [
     "MCPIndexStrategy",
     "MCPIndexedResource",
     "MCPTransport",
+    "MarketplaceAuditLog",
+    "MarketplaceInstallation",
+    "MarketplaceListing",
+    "MarketplaceListingVersion",
+    "MarketplaceRegistry",
     "Milestone",
     "PMAuthType",
     "PMConflictPolicy",

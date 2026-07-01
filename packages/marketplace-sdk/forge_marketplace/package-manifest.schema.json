@@ -1,0 +1,167 @@
+{
+  "$defs": {
+    "ArtifactKind": {
+      "description": "The first-class distributable artifact kinds.\n\n``workflow_template`` / ``policy_template`` are *reserved*: the enum values\nexist so a registry can advertise them, but their installers are only\nregistered when F21 / F04 provide the loaders + targets (F32 \u00a712).",
+      "enum": [
+        "mcp_connector",
+        "skill_profile",
+        "workflow_template",
+        "policy_template"
+      ],
+      "title": "ArtifactKind",
+      "type": "string"
+    },
+    "PackageAuthor": {
+      "properties": {
+        "email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "PackageAuthor",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The ``forge-package.yaml`` schema. ``extra='forbid'`` => fail-closed on typos.",
+  "properties": {
+    "artifact": {
+      "additionalProperties": true,
+      "title": "Artifact",
+      "type": "object"
+    },
+    "authors": {
+      "items": {
+        "$ref": "#/$defs/PackageAuthor"
+      },
+      "title": "Authors",
+      "type": "array"
+    },
+    "content_hash": {
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "homepage": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Homepage"
+    },
+    "kind": {
+      "$ref": "#/$defs/ArtifactKind"
+    },
+    "license": {
+      "default": "Apache-2.0",
+      "title": "License",
+      "type": "string"
+    },
+    "min_forge_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Min Forge Version"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "repository": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repository"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "slug": {
+      "title": "Slug",
+      "type": "string"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "slug",
+    "name",
+    "version",
+    "summary",
+    "artifact",
+    "content_hash"
+  ],
+  "title": "PackageManifest",
+  "type": "object"
+}

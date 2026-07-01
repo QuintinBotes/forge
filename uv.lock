@@ -20,6 +20,7 @@ members = [
     "forge-eval",
     "forge-integrations",
     "forge-knowledge",
+    "forge-marketplace",
     "forge-mcp",
     "forge-mcp-gateway",
     "forge-policy",
@@ -448,6 +449,7 @@ dependencies = [
     { name = "forge-eval" },
     { name = "forge-integrations" },
     { name = "forge-knowledge" },
+    { name = "forge-marketplace" },
     { name = "forge-mcp" },
     { name = "forge-mcp-gateway" },
     { name = "forge-policy" },
@@ -482,6 +484,7 @@ requires-dist = [
     { name = "forge-eval", editable = "packages/evaluation" },
     { name = "forge-integrations", editable = "packages/integration-sdk" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
+    { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
     { name = "forge-mcp-gateway", editable = "apps/mcp-gateway" },
     { name = "forge-policy", editable = "packages/policy-sdk" },
@@ -533,8 +536,10 @@ dependencies = [
     { name = "forge-db" },
     { name = "forge-deploy" },
     { name = "forge-knowledge" },
+    { name = "forge-marketplace" },
     { name = "forge-mcp" },
     { name = "forge-policy" },
+    { name = "forge-skill" },
     { name = "forge-workflow" },
     { name = "httpx" },
     { name = "pydantic-settings" },
@@ -552,8 +557,10 @@ requires-dist = [
     { name = "forge-db", editable = "packages/db" },
     { name = "forge-deploy", editable = "packages/deploy-core" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
+    { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
     { name = "forge-policy", editable = "packages/policy-sdk" },
+    { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic-settings", specifier = ">=2.2" },
@@ -735,6 +742,27 @@ requires-dist = [
 ]
 
 [[package]]
+name = "forge-marketplace"
+version = "0.1.0"
+source = { editable = "packages/marketplace-sdk" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "forge-contracts" },
+    { name = "forge-skill" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
+    { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "forge-skill", editable = "packages/skill-sdk" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
 name = "forge-mcp"
 version = "0.1.0"
 source = { editable = "packages/mcp-sdk" }
@@ -822,11 +850,13 @@ source = { editable = "apps/worker" }
 dependencies = [
     { name = "celery" },
     { name = "forge-agent" },
+    { name = "forge-api" },
     { name = "forge-board" },
     { name = "forge-contracts" },
     { name = "forge-db" },
     { name = "forge-deploy" },
     { name = "forge-knowledge" },
+    { name = "forge-marketplace" },
     { name = "forge-mcp" },
     { name = "forge-skill" },
     { name = "forge-workflow" },
@@ -837,11 +867,13 @@ dependencies = [
 requires-dist = [
     { name = "celery", specifier = ">=5.3" },
     { name = "forge-agent", editable = "packages/agent-runtime" },
+    { name = "forge-api", editable = "apps/api" },
     { name = "forge-board", editable = "packages/board-core" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
     { name = "forge-deploy", editable = "packages/deploy-core" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
+    { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },

@@ -22,10 +22,18 @@ SPRINT_SNAPSHOT_TASK = "sprint.snapshot_burndown"
 # F30: purge expired role grants every 5m (hygiene + audit; expiry is
 # authoritative at resolution time, so a missed run never grants stale access).
 AUTHZ_PURGE_TASK = "authz.purge_expired_grants"
+# F32: hourly marketplace catalog sync + update-flag refresh across all workspaces.
+MARKETPLACE_SYNC_TASK = "marketplace.sync_all_registries"
+MARKETPLACE_REFRESH_TASK = "marketplace.refresh_update_flags"
 
 
 def reap_interval_seconds() -> float:
     return float(os.environ.get("FORGE_SANDBOX_REAP_INTERVAL_SECONDS", "300"))
+
+
+def marketplace_sync_seconds() -> float:
+    """Beat cadence for the F32 catalog sync (``MARKETPLACE_SYNC_INTERVAL_MINUTES``)."""
+    return float(os.environ.get("MARKETPLACE_SYNC_INTERVAL_MINUTES", "60")) * 60.0
 
 
 def authz_purge_seconds() -> float:
@@ -70,6 +78,15 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": AUTHZ_PURGE_TASK,
             "schedule": authz_purge_seconds(),
         },
+        # F32: hourly marketplace catalog sync, then recompute update/yank flags.
+        "marketplace-sync-all-registries": {
+            "task": MARKETPLACE_SYNC_TASK,
+            "schedule": marketplace_sync_seconds(),
+        },
+        "marketplace-refresh-update-flags": {
+            "task": MARKETPLACE_REFRESH_TASK,
+            "schedule": marketplace_sync_seconds(),
+        },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
     existing.update(schedule)
@@ -83,12 +100,15 @@ __all__ = [
     "AUTHZ_PURGE_TASK",
     "AUTOMATION_SWEEP_TASK",
     "BEAT_SCHEDULE",
+    "MARKETPLACE_REFRESH_TASK",
+    "MARKETPLACE_SYNC_TASK",
     "MCP_REFRESH_TASK",
     "SANDBOX_REAP_TASK",
     "SPRINT_SNAPSHOT_TASK",
     "authz_purge_seconds",
     "automation_sweep_seconds",
     "configure_beat",
+    "marketplace_sync_seconds",
     "mcp_index_poll_seconds",
     "reap_interval_seconds",
 ]
