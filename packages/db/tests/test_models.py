@@ -104,13 +104,25 @@ EXPECTED_MODELS = [
     # F23 spec-validation-dashboard projection tables.
     "TraceabilityCriterionLink",
     "TraceabilitySpecRollup",
+    # F32 integration-marketplace tables.
+    "MarketplaceRegistry",
+    "MarketplaceListing",
+    "MarketplaceListingVersion",
+    "MarketplaceInstallation",
+    "MarketplaceAuditLog",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
 # ``pm_webhook_delivery`` is an inbound idempotency/audit ledger that must
 # survive connection (and hence workspace) deletion, so it is intentionally not
 # workspace-scoped (mirrors F03's webhook-delivery table).
-NON_WORKSPACE_SCOPED = {"workspace", "pm_webhook_delivery"}
+# ``marketplace_listing_version`` is scoped transitively through its parent
+# ``marketplace_listing`` (F32 §3.1: per-version cache carries no workspace_id).
+NON_WORKSPACE_SCOPED = {
+    "workspace",
+    "pm_webhook_delivery",
+    "marketplace_listing_version",
+}
 
 
 @pytest.fixture

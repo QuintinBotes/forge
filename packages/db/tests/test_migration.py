@@ -673,6 +673,62 @@ def test_f23_spec_validation_dashboard_migration_up_down(alembic_config: Config)
         engine.dispose()
 
 
+# F32 integration-marketplace tables, owned by 0015_f32_integration_marketplace.
+F32_TABLES = {
+    "marketplace_registry",
+    "marketplace_listing",
+    "marketplace_listing_version",
+    "marketplace_installation",
+    "marketplace_audit_log",
+}
+
+
+def test_f32_marketplace_migration_up_down(alembic_config: Config) -> None:
+    """F32 AC1: 0015 creates the five marketplace tables (with their unique/check
+    constraints + btree indexes + the audit immutability trigger) and drops them
+    on downgrade, leaving the baseline (+ F23) tables intact."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to F23 (0014): F32 tables absent, core present.
+        command.upgrade(alembic_config, "0014_f23_spec_validation_dashboard")
+        after_f23 = set(inspect(engine).get_table_names())
+        assert not (F32_TABLES & after_f23), "F23 stage must not create F32 tables"
+        assert after_f23 >= EXPECTED_TABLES
+
+        # Apply the F32 migration: all five tables appear with their constraints.
+        command.upgrade(alembic_config, "0015_f32_integration_marketplace")
+        inspector = inspect(engine)
+        after_f32 = set(inspector.get_table_names())
+        assert after_f32 >= F32_TABLES, f"missing F32 tables: {sorted(F32_TABLES - after_f32)}"
+
+        registry_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("marketplace_registry")
+        }
+        assert "uq_marketplace_registry_slug" in registry_uniques
+        listing_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("marketplace_listing")
+        }
+        assert "uq_marketplace_listing_registry_kind_slug" in listing_uniques
+        install_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("marketplace_installation")
+        }
+        assert "uq_marketplace_installation_pkg" in install_uniques
+        audit_indexes = {i["name"] for i in inspector.get_indexes("marketplace_audit_log")}
+        assert "ix_marketplace_audit_log_ws_op_created" in audit_indexes
+
+        # Downgrade one step: F32 tables gone, baseline (+F23) intact.
+        command.downgrade(alembic_config, "0014_f23_spec_validation_dashboard")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (F32_TABLES & after_down), "downgrade left F32 tables"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

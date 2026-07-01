@@ -14,6 +14,9 @@ dependencies = [
     "forge-mcp",
     "forge-board",
     "forge-skill",
+    # F32 — integration marketplace: catalog-sync + update-flag worker tasks.
+    "forge-marketplace",
+    "forge-api",
     "forge-workflow",
     # F31 — deployment gates: drive promotions/health/rollback on the worker.
     "forge-deploy",

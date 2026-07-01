@@ -65,6 +65,13 @@ DEFERRED_TABLES = frozenset(
         # 0014_f23_spec_validation_dashboard.
         "traceability_criterion_link",
         "traceability_spec_rollup",
+        # F32 integration-marketplace — created by
+        # 0015_f32_integration_marketplace.
+        "marketplace_registry",
+        "marketplace_listing",
+        "marketplace_listing_version",
+        "marketplace_installation",
+        "marketplace_audit_log",
     }
 )
 

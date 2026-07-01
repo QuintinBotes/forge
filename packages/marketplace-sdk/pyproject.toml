@@ -1,0 +1,26 @@
+[project]
+name = "forge-marketplace"
+version = "0.1.0"
+description = "Integration marketplace SDK — federated registries, signed package manifests, supply-chain-safe installer for community MCP connectors & skill profiles."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "Apache-2.0" }
+authors = [{ name = "The Forge Authors" }]
+dependencies = [
+    "forge-contracts",
+    "forge-skill",
+    "cryptography>=43",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+]
+
+[tool.uv.sources]
+forge-contracts = { workspace = true }
+forge-skill = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["forge_marketplace"]
