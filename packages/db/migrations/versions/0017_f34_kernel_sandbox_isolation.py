@@ -10,7 +10,7 @@ The ``sandbox_kind`` enum values (``gvisor``/``microvm``) need no DDL: forge_db
 stores enums as VARCHAR (``enum_type`` uses ``native_enum=False`` without a CHECK
 constraint), so the new members are purely additive at the model layer.
 
-Revision ID: 0017_f34_kernel_sandbox_isolation
+Revision ID: 0017_f34_kernel_sandbox
 Revises: 0016_f33_enterprise_sso
 Create Date: 2026-07-03
 """
@@ -23,7 +23,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "0017_f34_kernel_sandbox_isolation"
+revision: str = "0017_f34_kernel_sandbox"
 down_revision: str | None = "0016_f33_enterprise_sso"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

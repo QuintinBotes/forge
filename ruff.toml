@@ -45,6 +45,7 @@ known-first-party = [
     "forge_skill",
     "forge_eval",
     "forge_marketplace",
+    "forge_approval",
     "forge_api",
     "forge_worker",
     "forge_mcp_gateway",

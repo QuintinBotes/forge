@@ -7,6 +7,7 @@ Alembic's ``env.py`` and by ``Base.metadata.create_all`` in tests).
 from __future__ import annotations
 
 from forge_db.models import enums
+from forge_db.models.approval import ApprovalDecision, PolicyOverrideGrant
 from forge_db.models.audit import AuditLog
 from forge_db.models.automation import AutomationExecution, AutomationRule
 from forge_db.models.benchmark import BenchmarkSubmission, BenchmarkSuite
@@ -153,6 +154,7 @@ __all__ = [
     "AccessLevel",
     "AgentRepoWorkspace",
     "AgentRun",
+    "ApprovalDecision",
     "ApprovalGate",
     "ApprovalRequest",
     "ApprovalStatus",
@@ -218,6 +220,7 @@ __all__ = [
     "PRGroup",
     "PRGroupStatus",
     "PRMergeState",
+    "PolicyOverrideGrant",
     "PolicyProfile",
     "PolicyRuleEvaluation",
     "Postmortem",

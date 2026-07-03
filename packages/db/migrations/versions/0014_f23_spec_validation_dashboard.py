@@ -22,7 +22,7 @@ foundation has no ``spec_validation_reports`` table (F02 validation is
 filesystem-backed); staleness is driven by the plain ``report_spec_version`` /
 ``current_spec_version`` int columns instead.
 
-Revision ID: 0014_f23_spec_validation_dashboard
+Revision ID: 0014_f23_spec_dashboard
 Revises: 0013_f31_deployment_gates
 Create Date: 2026-06-29
 """
@@ -37,7 +37,7 @@ import forge_db.models  # noqa: F401  (registers all models on Base.metadata)
 from forge_db.base import Base
 
 # revision identifiers, used by Alembic.
-revision: str = "0014_f23_spec_validation_dashboard"
+revision: str = "0014_f23_spec_dashboard"
 down_revision: str | None = "0013_f31_deployment_gates"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

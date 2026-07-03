@@ -23,6 +23,7 @@ dependencies = [
     "forge-skill",
     "forge-eval",
     "forge-marketplace",
+    "forge-approval",
     "forge-api",
     "forge-worker",
     "forge-mcp-gateway",
@@ -67,6 +68,7 @@ forge-authz = { workspace = true }
 forge-skill = { workspace = true }
 forge-eval = { workspace = true }
 forge-marketplace = { workspace = true }
+forge-approval = { workspace = true }
 forge-api = { workspace = true }
 forge-worker = { workspace = true }
 forge-mcp-gateway = { workspace = true }

@@ -62,7 +62,7 @@ DEFERRED_TABLES = frozenset(
         "role_grant",
         "audit_log",
         # F23 spec-validation-dashboard — created by
-        # 0014_f23_spec_validation_dashboard.
+        # 0014_f23_spec_dashboard.
         "traceability_criterion_link",
         "traceability_spec_rollup",
         # F32 integration-marketplace — created by

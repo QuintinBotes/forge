@@ -121,6 +121,9 @@ EXPECTED_MODELS = [
     # F35 benchmark-leaderboard tables.
     "BenchmarkSuite",
     "BenchmarkSubmission",
+    # F36 human-approval-system tables.
+    "ApprovalDecision",
+    "PolicyOverrideGrant",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
