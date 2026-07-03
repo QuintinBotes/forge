@@ -194,6 +194,20 @@ class APIKeyStore:
         record.is_active = False
         return True
 
+    def revoke_for_user(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> int:
+        """Revoke every active key bound to ``user_id`` (F33 deprovision hook).
+
+        This is the F37 session-layer ``revoke_all_for_user`` seam the SSO slice
+        calls on SCIM ``active=false`` / ``DELETE`` so a removed employee loses
+        API/agent access immediately. Returns the number of keys revoked.
+        """
+        revoked = 0
+        for record in self._backend.list(workspace_id):
+            if record.user_id == user_id and record.is_active:
+                record.is_active = False
+                revoked += 1
+        return revoked
+
 
 __all__ = [
     "APIKeyBackend",

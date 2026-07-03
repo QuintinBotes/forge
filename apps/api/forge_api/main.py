@@ -7,12 +7,15 @@ here once, in Phase 0, so Phase-1 tasks only ever edit their own router module.
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from forge_api.routers import FEATURE_ROUTERS, HEALTH_ROUTER
 from forge_api.settings import Settings, get_settings
+from forge_api.sso.errors import ScimApiError
+from forge_contracts.sso import ScimError
 
 
 class ServiceInfo(BaseModel):
@@ -54,6 +57,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_credentials=allow_credentials,
             allow_methods=["*"],
             allow_headers=["*"],
+        )
+
+    # F33: SCIM protocol errors must serialize as RFC 7644 Error resources
+    # (top-level ``schemas``/``status``/``scimType``), not FastAPI's
+    # ``{"detail": ...}`` envelope — IdP provisioning engines parse this shape.
+    @app.exception_handler(ScimApiError)
+    async def _scim_error_handler(_request: Request, exc: ScimApiError) -> JSONResponse:
+        body = ScimError(status=str(exc.status), scimType=exc.scim_type, detail=exc.detail)
+        return JSONResponse(
+            status_code=exc.status,
+            content=body.model_dump(exclude_none=True),
+            media_type="application/scim+json",
         )
 
     # Health/liveness at the root; feature routers under the configurable prefix.

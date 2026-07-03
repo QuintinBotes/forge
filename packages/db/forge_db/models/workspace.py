@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import LargeBinary, String, UniqueConstraint
+from sqlalchemy import DateTime, LargeBinary, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from forge_db.base import ForgeModel, WorkspaceScopedModel, enum_type, json_type
@@ -50,6 +50,15 @@ class User(WorkspaceScopedModel):
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     auth_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     auth_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # F33 enterprise SSO: when the user was deprovisioned (SCIM active=false /
+    # DELETE), distinct from is_active so the *when* survives re-activation; and
+    # whether the directory (SCIM) owns this user's lifecycle.
+    deactivated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    external_managed: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false"), nullable=False
+    )
 
     workspace: Mapped[Workspace] = relationship(back_populates="users")
 

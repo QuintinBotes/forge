@@ -110,6 +110,14 @@ EXPECTED_MODELS = [
     "MarketplaceListingVersion",
     "MarketplaceInstallation",
     "MarketplaceAuditLog",
+    # F33 enterprise-SSO tables.
+    "SsoConfiguration",
+    "SsoDomain",
+    "ExternalIdentity",
+    "ScimToken",
+    "ScimGroup",
+    "ScimGroupMember",
+    "SamlReplay",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
@@ -118,10 +126,13 @@ EXPECTED_MODELS = [
 # workspace-scoped (mirrors F03's webhook-delivery table).
 # ``marketplace_listing_version`` is scoped transitively through its parent
 # ``marketplace_listing`` (F32 §3.1: per-version cache carries no workspace_id).
+# ``saml_replay`` is a global one-time-id store (assertion ids are unique per
+# IdP already; the guard is consulted before any workspace is resolved).
 NON_WORKSPACE_SCOPED = {
     "workspace",
     "pm_webhook_delivery",
     "marketplace_listing_version",
+    "saml_replay",
 }
 
 

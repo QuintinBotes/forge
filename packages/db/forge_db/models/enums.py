@@ -362,6 +362,27 @@ class PRMergeState(enum.StrEnum):
     FAILED = "failed"
 
 
+class SsoProtocol(enum.StrEnum):
+    """F33 enterprise SSO sign-in protocols (SCIM is provisioning, not sign-in)."""
+
+    SAML = "saml"
+
+
+class ExternalIdentityProvider(enum.StrEnum):
+    """F33: which channel owns an ``external_identity`` link."""
+
+    SAML = "saml"
+    SCIM = "scim"
+    OAUTH = "oauth"
+
+
+class ScimResourceType(enum.StrEnum):
+    """F33 SCIM 2.0 resource types Forge serves (RFC 7643)."""
+
+    USER = "User"
+    GROUP = "Group"
+
+
 __all__ = [
     "APIKeyKind",
     "AccessLevel",
@@ -380,6 +401,7 @@ __all__ = [
     "DeploymentTrigger",
     "EngineBackend",
     "ExecutionMode",
+    "ExternalIdentityProvider",
     "GateCheckName",
     "GateCheckStatus",
     "HealthStatus",
@@ -407,11 +429,13 @@ __all__ = [
     "SandboxKind",
     "SandboxNetwork",
     "SandboxStatus",
+    "ScimResourceType",
     "ScopeActorKind",
     "ScopeType",
     "SpecStatus",
     "SprintScopeEventType",
     "SprintState",
+    "SsoProtocol",
     "SyncMode",
     "TaskKind",
     "TaskStatus",
