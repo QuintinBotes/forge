@@ -498,11 +498,12 @@ class PolicySandboxBlock(_Model):
     A repo may *strengthen* isolation above the workspace minimum but never
     weaken it (enforced by ``forge_agent.sandbox.selection.resolve_sandbox_kind``).
     ``isolation``/``network`` are stored as plain strings (``worktree``/
-    ``container``, ``none``/``egress``) to keep the contract dependency-free;
-    they are validated when resolved into a ``SandboxSpec``.
+    ``container``/``gvisor``/``microvm``, ``none``/``egress``) to keep the
+    contract dependency-free; they are validated when resolved into a
+    ``SandboxSpec``.
     """
 
-    isolation: str | None = None  # worktree | container (request)
+    isolation: str | None = None  # worktree | container | gvisor | microvm (request)
     image: str | None = None  # optional; must be on the workspace allowlist
     network: str | None = None  # none | egress
     egress_allowlist: list[str] = Field(default_factory=list)
@@ -512,6 +513,10 @@ class PolicySandboxBlock(_Model):
     tmpfs_mb: int | None = None
     exec_timeout_seconds: int | None = None
     setup_commands: list[str] = Field(default_factory=list)
+    # --- F34 kernel-boundary additions (additive) ---
+    gvisor_platform: str | None = None  # systrap | kvm | ptrace (isolation: gvisor)
+    vm_vcpus: int | None = None  # guest vCPUs (isolation: microvm)
+    vm_memory: str | None = None  # guest RAM, e.g. "4g" (isolation: microvm)
 
 
 #: Whitelisted condition fields available to a :class:`ConditionalRule` (F29).

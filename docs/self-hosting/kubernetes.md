@@ -99,6 +99,37 @@ Key blocks:
 | `networkPolicy.enabled` | Data-tier segmentation. |
 | `migrations` / `createAdmin` | Migration hook + opt-in first-admin hook. |
 | `metrics.serviceMonitor.enabled` | Prometheus Operator scraping. |
+| `sandbox` | F34 kernel-boundary isolation: workspace minimum `kind`, runtime names, `RuntimeClass` renderings (below). |
+
+## Stronger sandbox isolation (gVisor / Kata-Firecracker) — F34
+
+The chart can render Kubernetes `RuntimeClass` objects — the K8s analogue of a
+Docker host's `daemon.json` `runtimes` block — for the two kernel-boundary
+sandbox tiers:
+
+```yaml
+sandbox:
+  kind: gvisor            # workspace MINIMUM: worktree | container | gvisor | microvm
+  runtimeClasses:
+    gvisor:
+      enabled: true       # renders RuntimeClass forge-gvisor (handler: runsc)
+    kataFc:
+      enabled: true       # renders RuntimeClass forge-kata-fc (handler: kata-fc)
+```
+
+- The node pools referenced by the `RuntimeClass` `scheduling` block
+  (`forge.dev/sandbox-runtime: gvisor|kata-fc` by default) must have the runtime
+  installed on their container runtime (runsc; Kata + Firecracker with
+  `/dev/kvm` exposed for `kata-fc`). Keep them tainted and separate from
+  control-plane workloads.
+- `sandbox.kind` (plus `gvisorRuntime`/`gvisorPlatform`/`microvmRuntime`/
+  `requireKvm`/`jailerRoot`) sets the worker's `FORGE_SANDBOX_*` env — the
+  workspace minimum a repo policy may strengthen but never weaken. A missing
+  runtime fails loudly (never a silent downgrade); see
+  [security.md](security.md#kernel-boundary-sandboxing-f34).
+- The per-task **launch path** on Kubernetes still goes through the Docker
+  sandbox substrate; a native per-task Pod launcher with `runtimeClassName` is
+  tracked with the Kubernetes sandbox work (F34 §12).
 
 ## Secrets and the BYOK vault
 

@@ -391,3 +391,47 @@ metrics:
 # rendered by this chart.
 temporal:
   enabled: false
+
+# --------------------------------------------------------------------------- #
+# F34 — kernel-boundary sandbox isolation (gVisor / Kata-Firecracker).         #
+# The workspace MINIMUM isolation kind; a repo policy may strengthen but never #
+# weaken it (worktree < container < gvisor < microvm), and a missing runtime   #
+# fails loudly — never a silent downgrade. RuntimeClasses are the K8s analogue #
+# of daemon.json `runtimes`: enable them on clusters with runtime-capable node #
+# pools (runsc installed / kata-fc + /dev/kvm). The worker's FORGE_SANDBOX_*   #
+# env is derived from this block.                                              #
+# --------------------------------------------------------------------------- #
+sandbox:
+  # worktree | container | gvisor | microvm
+  kind: worktree
+  gvisorRuntime: runsc
+  gvisorPlatform: systrap # systrap | kvm | ptrace
+  microvmRuntime: kata-fc
+  requireKvm: true
+  jailerRoot: /var/lib/forge/jailer
+  runtimeClasses:
+    gvisor:
+      enabled: false
+      name: forge-gvisor
+      handler: runsc
+      scheduling:
+        nodeSelector:
+          forge.dev/sandbox-runtime: gvisor
+        tolerations:
+          - key: forge.dev/sandbox-runtime
+            operator: Equal
+            value: gvisor
+            effect: NoSchedule
+    kataFc:
+      enabled: false
+      name: forge-kata-fc
+      handler: kata-fc
+      # microvm nodes must expose /dev/kvm (bare metal or nested virt).
+      scheduling:
+        nodeSelector:
+          forge.dev/sandbox-runtime: kata-fc
+        tolerations:
+          - key: forge.dev/sandbox-runtime
+            operator: Equal
+            value: kata-fc
+            effect: NoSchedule

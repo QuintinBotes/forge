@@ -206,7 +206,7 @@
       "type": "object"
     },
     "PolicySandboxBlock": {
-      "description": "The ``sandbox:`` block of ``.forge/policy.yaml`` (F19).\n\nA repo may *strengthen* isolation above the workspace minimum but never\nweaken it (enforced by ``forge_agent.sandbox.selection.resolve_sandbox_kind``).\n``isolation``/``network`` are stored as plain strings (``worktree``/\n``container``, ``none``/``egress``) to keep the contract dependency-free;\nthey are validated when resolved into a ``SandboxSpec``.",
+      "description": "The ``sandbox:`` block of ``.forge/policy.yaml`` (F19).\n\nA repo may *strengthen* isolation above the workspace minimum but never\nweaken it (enforced by ``forge_agent.sandbox.selection.resolve_sandbox_kind``).\n``isolation``/``network`` are stored as plain strings (``worktree``/\n``container``/``gvisor``/``microvm``, ``none``/``egress``) to keep the\ncontract dependency-free; they are validated when resolved into a\n``SandboxSpec``.",
       "properties": {
         "cpus": {
           "anyOf": [
@@ -238,6 +238,18 @@
           ],
           "default": null,
           "title": "Exec Timeout Seconds"
+        },
+        "gvisor_platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gvisor Platform"
         },
         "image": {
           "anyOf": [
@@ -317,6 +329,30 @@
           ],
           "default": null,
           "title": "Tmpfs Mb"
+        },
+        "vm_memory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vm Memory"
+        },
+        "vm_vcpus": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vm Vcpus"
         }
       },
       "title": "PolicySandboxBlock",

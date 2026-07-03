@@ -729,6 +729,50 @@ def test_f32_marketplace_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# F34 kernel-sandbox-isolation columns, owned by 0017_f34_kernel_sandbox_isolation.
+F34_COLUMNS = {
+    "runtime",
+    "isolation_class",
+    "gvisor_platform",
+    "guest_kernel_version",
+    "vm_vcpus",
+    "vm_memory_mb",
+    "boot_ms",
+}
+
+
+def test_f34_kernel_sandbox_migration_up_down(alembic_config: Config) -> None:
+    """F34 AC16: 0017 owns the sandbox_instance runtime/VM provenance columns +
+    the isolation-class index and drops them on downgrade, leaving the F19
+    ``sandbox_instance`` table intact.
+
+    (forge_db's baseline is metadata-driven, so the columns are provisioned on a
+    fresh chain; this asserts the F34 migration owns a clean, reversible down.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        command.upgrade(alembic_config, "head")
+        inspector = inspect(engine)
+        cols = {c["name"] for c in inspector.get_columns("sandbox_instance")}
+        assert cols >= F34_COLUMNS, f"missing F34 columns: {sorted(F34_COLUMNS - cols)}"
+        idx = {i["name"] for i in inspector.get_indexes("sandbox_instance")}
+        assert "ix_sandbox_instance_isolation_class" in idx
+
+        # Downgrade one step: F34 columns/index gone, sandbox_instance intact.
+        command.downgrade(alembic_config, "0016_f33_enterprise_sso")
+        inspector = inspect(engine)
+        assert "sandbox_instance" in inspector.get_table_names()
+        cols_after = {c["name"] for c in inspector.get_columns("sandbox_instance")}
+        assert not (F34_COLUMNS & cols_after), "downgrade left F34 columns"
+        idx_after = {i["name"] for i in inspector.get_indexes("sandbox_instance")}
+        assert "ix_sandbox_instance_isolation_class" not in idx_after
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # PARKED: applying the baseline migration against a live Postgres (pgvector)
 # container is not runnable in the unit sandbox (no Postgres reachable / no
 # network). The identical migration code path is exercised above on SQLite, and

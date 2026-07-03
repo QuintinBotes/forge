@@ -36,6 +36,12 @@ class SandboxStartupError(SandboxError):
     """
 
 
+class SandboxRuntimeUnavailable(SandboxStartupError):
+    """Resolved kind requires an OCI runtime (runsc/kata-fc) or ``/dev/kvm`` that
+    is not available on the daemon host. Raised by ``provider.preflight()`` /
+    ``create()``; NEVER downgraded to a weaker runtime (F34)."""
+
+
 class SandboxImageNotAllowed(SandboxError):
     """The requested image is not on ``FORGE_SANDBOX_ALLOWED_IMAGES``."""
 
@@ -65,6 +71,7 @@ __all__ = [
     "SandboxNetwork",
     "SandboxProvider",
     "SandboxResourceLimits",
+    "SandboxRuntimeUnavailable",
     "SandboxSession",
     "SandboxSpec",
     "SandboxStartupError",

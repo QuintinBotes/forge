@@ -1,9 +1,9 @@
-"""Sandbox kind/settings precedence — strengthen-only, never downgrade (F19).
+"""Sandbox kind/settings precedence — strengthen-only, never downgrade (F19/F34).
 
 Workspace ``FORGE_SANDBOX_KIND`` is the *minimum* isolation. A repo policy may
-request **stronger** isolation (``container`` over ``worktree``) but never weaker:
-a compromised/careless repo policy cannot opt out of containment the operator
-mandated.
+request **stronger** isolation but never weaker: a compromised/careless repo
+policy cannot opt out of containment the operator mandated. F34 extends the
+lattice to four levels: ``worktree < container < gvisor < microvm``.
 """
 
 from __future__ import annotations
@@ -12,20 +12,17 @@ import re
 import uuid
 
 from forge_agent.sandbox.images import resolve_image
+from forge_agent.sandbox.runtime import DEFAULT_RUNTIMES
 from forge_agent.sandbox.settings import SandboxSettings
 from forge_contracts import (
+    CONTAINER_BACKED_KINDS,
+    SANDBOX_KIND_RANK,
     PolicySandboxBlock,
     SandboxKind,
     SandboxNetwork,
     SandboxResourceLimits,
     SandboxSpec,
 )
-
-# Higher rank == stronger isolation.
-_KIND_RANK: dict[SandboxKind, int] = {
-    SandboxKind.WORKTREE: 0,
-    SandboxKind.CONTAINER: 1,
-}
 
 _MEMORY_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([kmg]?)b?\s*$", re.IGNORECASE)
 
@@ -35,12 +32,14 @@ def resolve_sandbox_kind(
 ) -> SandboxKind:
     """Return the STRONGER of the workspace minimum and the policy request.
 
-    ``container > worktree``. A policy may strengthen but never weaken below the
-    workspace minimum (no downgrade). Default (both ``worktree``) → ``worktree``.
+    ``worktree < container < gvisor < microvm`` (``SANDBOX_KIND_RANK``). A policy
+    may strengthen (workspace ``gvisor`` + policy ``microvm`` → ``microvm``) but
+    never weaken below the workspace minimum (workspace ``gvisor`` + policy
+    ``container`` → ``gvisor``). Default (both ``worktree``) → ``worktree``.
     """
     if policy_request is None:
         return workspace_min
-    return max(workspace_min, policy_request, key=lambda k: _KIND_RANK[k])
+    return max(workspace_min, policy_request, key=lambda k: SANDBOX_KIND_RANK[k])
 
 
 def parse_memory_mb(value: str | None, default_mb: int) -> int:
@@ -121,11 +120,29 @@ def resolve_sandbox_settings(
         else settings.exec_timeout_seconds
     )
 
+    # gvisor/microvm sandboxes are containers under a different OCI runtime, so
+    # they resolve (and allowlist-check) an image exactly like ``container``.
     image = (
         resolve_image(language, policy_block, settings)
-        if kind is SandboxKind.CONTAINER
+        if kind in CONTAINER_BACKED_KINDS
         else None
     )
+
+    runtime = _runtime_for(kind, settings)
+    gvisor_platform = (
+        (policy_block.gvisor_platform if policy_block else None) or settings.gvisor_platform
+        if kind is SandboxKind.GVISOR
+        else None
+    )
+    vm_vcpus, vm_memory_mb = (None, None)
+    if kind is SandboxKind.MICROVM:
+        vm_vcpus = (
+            policy_block.vm_vcpus if policy_block and policy_block.vm_vcpus else None
+        ) or settings.microvm_vcpus
+        policy_vm_memory = policy_block.vm_memory if policy_block else None
+        vm_memory_mb = (
+            parse_memory_mb(policy_vm_memory, 0) if policy_vm_memory else None
+        ) or settings.microvm_memory_mb
 
     return SandboxSpec(
         agent_run_id=agent_run_id,
@@ -142,7 +159,20 @@ def resolve_sandbox_settings(
         exec_timeout_seconds=exec_timeout,
         run_as_uid=settings.run_uid,
         run_as_gid=settings.run_gid,
+        runtime=runtime,
+        gvisor_platform=gvisor_platform,
+        vm_vcpus=vm_vcpus,
+        vm_memory_mb=vm_memory_mb,
     )
+
+
+def _runtime_for(kind: SandboxKind, settings: SandboxSettings) -> str | None:
+    """The OCI runtime realising ``kind`` (settings override the defaults)."""
+    if kind is SandboxKind.GVISOR:
+        return settings.gvisor_runtime
+    if kind is SandboxKind.MICROVM:
+        return settings.microvm_runtime
+    return DEFAULT_RUNTIMES[kind]
 
 
 __all__ = ["parse_memory_mb", "resolve_sandbox_kind", "resolve_sandbox_settings"]

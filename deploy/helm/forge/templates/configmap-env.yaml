@@ -23,6 +23,14 @@ data:
   # --- BYOK vault: the ACTIVE key VERSION is non-secret; the key MATERIAL
   #     (FORGE_VAULT_KEYS) is in the Secret only (F37). ---
   FORGE_VAULT_ACTIVE_KEY_VERSION: {{ .Values.config.vaultActiveKeyVersion | quote }}
+  # --- F34 kernel-boundary sandbox isolation (workspace MINIMUM; a repo policy
+  #     may strengthen but never weaken it — no silent downgrade) ---
+  FORGE_SANDBOX_KIND: {{ .Values.sandbox.kind | quote }}
+  FORGE_SANDBOX_GVISOR_RUNTIME: {{ .Values.sandbox.gvisorRuntime | quote }}
+  FORGE_SANDBOX_GVISOR_PLATFORM: {{ .Values.sandbox.gvisorPlatform | quote }}
+  FORGE_SANDBOX_MICROVM_RUNTIME: {{ .Values.sandbox.microvmRuntime | quote }}
+  FORGE_SANDBOX_REQUIRE_KVM: {{ .Values.sandbox.requireKvm | quote }}
+  FORGE_SANDBOX_JAILER_ROOT: {{ .Values.sandbox.jailerRoot | quote }}
   # --- Postgres connection components (password is in the Secret) ---
   POSTGRES_HOST: {{ include "forge.postgresHost" . | quote }}
   {{- if .Values.postgresql.enabled }}

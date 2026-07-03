@@ -196,6 +196,17 @@ services:
       FORGE_SANDBOX_EGRESS_ALLOWLIST: ${FORGE_SANDBOX_EGRESS_ALLOWLIST:-pypi.org,files.pythonhosted.org,registry.npmjs.org}
       FORGE_SANDBOX_REAP_INTERVAL_SECONDS: ${FORGE_SANDBOX_REAP_INTERVAL_SECONDS:-300}
       FORGE_SANDBOX_MAX_TTL_SECONDS: ${FORGE_SANDBOX_MAX_TTL_SECONDS:-21600}
+      # F34 kernel-boundary sandboxing — gvisor (runsc) / microvm (kata-fc).
+      # Selecting a runtime is part of `POST /containers/create` (no new proxy
+      # verbs); the HOST daemon needs the runtime registered (install-runtimes.sh)
+      # and /dev/kvm for microvm — never a silent downgrade (preflight.sh gates).
+      FORGE_SANDBOX_GVISOR_RUNTIME: ${FORGE_SANDBOX_GVISOR_RUNTIME:-runsc}
+      FORGE_SANDBOX_GVISOR_PLATFORM: ${FORGE_SANDBOX_GVISOR_PLATFORM:-systrap}
+      FORGE_SANDBOX_MICROVM_RUNTIME: ${FORGE_SANDBOX_MICROVM_RUNTIME:-kata-fc}
+      FORGE_SANDBOX_MICROVM_VCPUS: ${FORGE_SANDBOX_MICROVM_VCPUS:-}
+      FORGE_SANDBOX_MICROVM_MEMORY_MB: ${FORGE_SANDBOX_MICROVM_MEMORY_MB:-}
+      FORGE_SANDBOX_REQUIRE_KVM: ${FORGE_SANDBOX_REQUIRE_KVM:-true}
+      FORGE_SANDBOX_JAILER_ROOT: ${FORGE_SANDBOX_JAILER_ROOT:-/var/lib/forge/jailer}
     volumes:
       # Worktrees live on a named volume so sibling sandbox containers can mount
       # only their run's subpath (volume-subpath; Docker Engine >= 26.1).

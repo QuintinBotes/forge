@@ -12,6 +12,16 @@
         "memory": {"type": ["string", "number"]}
       }
     },
+    "sandboxRuntimeClass": {
+      "type": "object",
+      "required": ["enabled", "name", "handler"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "name": {"type": "string", "minLength": 1},
+        "handler": {"type": "string", "minLength": 1},
+        "scheduling": {"type": "object"}
+      }
+    },
     "workloadImage": {
       "type": "object",
       "required": ["repository", "tag"],
@@ -208,6 +218,26 @@
       "type": "object",
       "properties": {
         "serviceMonitor": {"type": "object", "properties": {"enabled": {"type": "boolean"}}}
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "description": "F34 kernel-boundary sandbox isolation: workspace minimum kind, OCI runtime names, and RuntimeClass renderings (the K8s analogue of daemon.json runtimes).",
+      "required": ["kind"],
+      "properties": {
+        "kind": {"type": "string", "enum": ["worktree", "container", "gvisor", "microvm"]},
+        "gvisorRuntime": {"type": "string", "minLength": 1},
+        "gvisorPlatform": {"type": "string", "enum": ["systrap", "kvm", "ptrace"]},
+        "microvmRuntime": {"type": "string", "minLength": 1},
+        "requireKvm": {"type": "boolean"},
+        "jailerRoot": {"type": "string", "minLength": 1},
+        "runtimeClasses": {
+          "type": "object",
+          "properties": {
+            "gvisor": {"$ref": "#/definitions/sandboxRuntimeClass"},
+            "kataFc": {"$ref": "#/definitions/sandboxRuntimeClass"}
+          }
+        }
       }
     }
   }

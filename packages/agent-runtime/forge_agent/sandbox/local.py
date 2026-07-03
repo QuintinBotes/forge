@@ -133,6 +133,10 @@ class LocalSandboxProvider:
         self._artifact_store = artifact_store
         self._output_cap_bytes = output_cap_bytes
 
+    async def preflight(self) -> None:
+        """Host subprocesses need no runtime substrate (no-op)."""
+        return None
+
     async def create(self, spec: SandboxSpec) -> LocalSandboxSession:
         session = LocalSandboxSession(
             spec,

@@ -241,10 +241,21 @@ class RunStatus(enum.StrEnum):
 
 
 class SandboxKind(enum.StrEnum):
-    """Command-execution isolation provider (F19; spec: Sandbox V1/V2)."""
+    """Command-execution isolation provider (F19/F34; spec: Sandbox V1/V2/V3)."""
 
     WORKTREE = "worktree"
     CONTAINER = "container"
+    GVISOR = "gvisor"
+    MICROVM = "microvm"
+
+
+class SandboxIsolationClass(enum.StrEnum):
+    """The auditable trust tier a sandbox executed under (F34)."""
+
+    HOST_PROCESS = "host_process"
+    NAMESPACE = "namespace"
+    USERSPACE_KERNEL = "userspace_kernel"
+    MICROVM = "microvm"
 
 
 class SandboxNetwork(enum.StrEnum):
@@ -426,6 +437,7 @@ __all__ = [
     "RepoProvider",
     "RepoRole",
     "RunStatus",
+    "SandboxIsolationClass",
     "SandboxKind",
     "SandboxNetwork",
     "SandboxStatus",

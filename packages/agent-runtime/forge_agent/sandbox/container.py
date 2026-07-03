@@ -98,8 +98,6 @@ def _build_create_kwargs(spec: SandboxSpec) -> dict[str, Any]:
 class ContainerSandboxSession:
     """A live container bound to one worktree; runs many ``exec``s then tears down."""
 
-    kind = SandboxKind.CONTAINER
-
     def __init__(
         self,
         spec: SandboxSpec,
@@ -114,9 +112,16 @@ class ContainerSandboxSession:
         self._container = container
         self._artifact_store = artifact_store
         self._output_cap_bytes = output_cap_bytes
+        # F34: the same session serves container/gvisor/microvm — the kind (and
+        # the OCI runtime that realises it) travels with the spec.
+        self.kind = spec.kind if spec.kind is not SandboxKind.WORKTREE else SandboxKind.CONTAINER
         self.sandbox_id = str(getattr(container, "id", "") or "")
         self.workspace_dir = "/workspace"
         self.host_worktree_path = spec.host_worktree_path
+        # F34 runtime/VM provenance (populated by the kernel-boundary providers).
+        self.runtime: str | None = spec.runtime
+        self.guest_kernel_version: str | None = None
+        self.boot_ms: int | None = None
 
     async def setup(self) -> None:
         for command in self._spec.setup_commands:
@@ -184,7 +189,7 @@ class ContainerSandboxSession:
             oom_killed=oom_killed,
             stdout_artifact_ref=stdout_ref,
             stderr_artifact_ref=stderr_ref,
-            sandbox_kind=SandboxKind.CONTAINER,
+            sandbox_kind=self.kind,
             container_id=self.sandbox_id or None,
         )
 
@@ -262,11 +267,28 @@ class ContainerSandboxProvider:
             ) from exc
         return self._client
 
+    def preflight_check(self) -> None:
+        """Synchronous runtime-availability check (no-op for plain runc containers).
+
+        The F34 kernel-boundary providers override this to require their OCI
+        runtime (and ``/dev/kvm`` for microvm); the factory runs it at worker
+        boot so misconfiguration fails before any task runs.
+        """
+        return None
+
+    async def preflight(self) -> None:
+        """Raise :class:`SandboxRuntimeUnavailable` if this provider is unusable."""
+        self.preflight_check()
+
+    def _create_kwargs(self, spec: SandboxSpec) -> dict[str, Any]:
+        """The ``containers.create`` kwargs — the single hook F34 providers extend."""
+        return _build_create_kwargs(spec)
+
     async def create(self, spec: SandboxSpec) -> ContainerSandboxSession:
         if spec.image is None:
             raise SandboxStartupError("container sandbox requires an image")
         client = self._ensure_client()
-        kwargs = _build_create_kwargs(spec)
+        kwargs = self._create_kwargs(spec)
 
         def _create_and_start() -> Any:
             container = client.containers.create(**kwargs)
@@ -282,15 +304,21 @@ class ContainerSandboxProvider:
         except Exception as exc:
             raise SandboxStartupError(f"failed to start sandbox container: {exc}") from exc
 
-        session = ContainerSandboxSession(
+        session = self._build_session(spec, client=client, container=container)
+        await session.setup()
+        return session
+
+    def _build_session(
+        self, spec: SandboxSpec, *, client: Any, container: Any
+    ) -> ContainerSandboxSession:
+        """Session construction hook (F34 providers substitute a subclass)."""
+        return ContainerSandboxSession(
             spec,
             client=client,
             container=container,
             artifact_store=self._artifact_store,
             output_cap_bytes=self._output_cap_bytes,
         )
-        await session.setup()
-        return session
 
     def _attach_egress(self, client: Any, container: Any) -> None:
         try:
