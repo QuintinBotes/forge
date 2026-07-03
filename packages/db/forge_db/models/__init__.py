@@ -9,6 +9,7 @@ from __future__ import annotations
 from forge_db.models import enums
 from forge_db.models.audit import AuditLog
 from forge_db.models.automation import AutomationExecution, AutomationRule
+from forge_db.models.benchmark import BenchmarkSubmission, BenchmarkSuite
 from forge_db.models.connections import MCPConnection, RepositoryConnection
 from forge_db.models.deployment import (
     Deployment,
@@ -163,6 +164,8 @@ __all__ = [
     "AutomationRule",
     "AutomationTriggerSource",
     "AutomationTriggerType",
+    "BenchmarkSubmission",
+    "BenchmarkSuite",
     "ChunkType",
     "Constitution",
     "Deployment",

@@ -1,0 +1,22 @@
+slug: fixture
+version: "1.0.0"
+title: "F35 fixture benchmark"
+description: "3-case frozen suite (2 retrieval + 1 agent_task) for the F35 test-suite."
+schema_version: 1
+frozen: true
+content_hash: "sha256:0c0a57194ebf6836c9bf01cde3e9f6bb9e9c4de84a55ed699222a878a66299d1"
+scoring:
+  primary_metric: benchmark.composite
+  metric_weights:
+    retrieval.recall_at_k: 0.5
+    retrieval.mrr: 0.3
+    agent.requirement_satisfaction_rate: 0.2
+  direction:
+    retrieval.recall_at_k: higher_is_better
+    retrieval.mrr: higher_is_better
+    agent.requirement_satisfaction_rate: higher_is_better
+  category_field: tags
+  k: 5
+case_files:
+  - cases/retrieval.yaml
+  - cases/agent_task.yaml

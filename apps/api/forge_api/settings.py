@@ -95,6 +95,21 @@ class Settings(BaseSettings):
     saml_authnrequest_ttl_seconds: int = 600
     scim_token_bytes: int = 32
 
+    # F35 — benchmark suite & public leaderboard. The public, unauthenticated,
+    # read-only ``/public/*`` router is DISABLED by default (self-hosted privacy:
+    # a fresh instance never accidentally publishes internal eval data). Env vars
+    # carry the workspace-wide FORGE_ prefix (deviation from the F35 draft's
+    # bare names, conforming to every other setting here).
+    public_leaderboard_enabled: bool = False
+    # Filesystem root holding <slug>/<version>/manifest.yaml benchmark suites;
+    # None -> the suites packaged inside forge_eval (benchmarks/).
+    benchmark_dir: str | None = None
+    benchmark_verify_epsilon: float = 0.005
+    benchmark_submission_max_bytes: int = 52_428_800
+    # Per-IP request budget per 60s window on the public leaderboard routes.
+    leaderboard_public_rate_limit: int = 60
+    leaderboard_cache_ttl_seconds: int = 60
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

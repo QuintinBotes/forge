@@ -38,6 +38,14 @@
 		reverse_proxy api:8000
 	}
 
+	# Public benchmark leaderboard (F35) — unauthenticated, read-only, and a
+	# no-op unless FORGE_PUBLIC_LEADERBOARD_ENABLED=true (the API returns 404
+	# for every /public/* path when disabled, the self-hosted privacy default).
+	# The API layer rate-limits per IP and sets Cache-Control; pass both through.
+	handle /public/* {
+		reverse_proxy api:8000
+	}
+
 	# MCP gateway surface.
 	handle_path /mcp/* {
 		reverse_proxy mcp-gateway:8001
