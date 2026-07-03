@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     Boolean,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -30,6 +31,7 @@ from forge_db.models.enums import (
 )
 
 if TYPE_CHECKING:
+    from forge_db.models.approval import ApprovalDecision
     from forge_db.models.planning import Task
     from forge_db.models.sandbox import SandboxInstance
 
@@ -157,9 +159,36 @@ class AgentRun(WorkspaceScopedModel):
 
 
 class ApprovalRequest(WorkspaceScopedModel):
-    """A human approval gate (spec: Human Approval System)."""
+    """A human approval gate (spec: Human Approval System).
+
+    F36 generalizes the baseline pr-era shape into the canonical gate frame:
+    a polymorphic subject (``subject_type``/``subject_id``), inbox grouping
+    (``project_id``), risk + SLA (``risk_level``/``expires_at``), and
+    multi-approver forward-compat (``required_approvals``). Foundation
+    deviations from the F36 slice doc (conform-to-foundation): the gate-type
+    column keeps its baseline name ``gate`` (already the six-value
+    ``ApprovalGate`` enum — no ``kind``→``gate_type`` rename is needed), and
+    the resolver columns keep their baseline names (``decided_by_id`` =
+    resolver_user_id, ``decided_at`` = resolved_at, ``decision_reason`` =
+    decision_note, ``payload`` = gate_payload, ``summary`` = title).
+    """
 
     __tablename__ = "approval_request"
+    __table_args__ = (
+        Index("ix_approval_request_workspace_status", "workspace_id", "status"),
+        Index("ix_approval_request_project_status", "project_id", "status"),
+        # At most ONE open gate of a type per subject (generalizes F08's
+        # one-pending-pr-per-run); partial so history rows never collide.
+        Index(
+            "uq_pending_gate",
+            "subject_type",
+            "subject_id",
+            "gate",
+            unique=True,
+            postgresql_where=text("status = 'pending' AND subject_id IS NOT NULL"),
+            sqlite_where=text("status = 'pending' AND subject_id IS NOT NULL"),
+        ),
+    )
 
     agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
@@ -174,20 +203,42 @@ class ApprovalRequest(WorkspaceScopedModel):
     task_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("task.id", ondelete="SET NULL"), nullable=True
     )
+    # F36 — inbox grouping; plain UUID (no DB-level FK) so the column is
+    # cross-dialect addable/droppable in the 0019 migration (mirrors
+    # ``WorkflowRun.definition_revision_id``); integrity is app-enforced.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    # F36 — polymorphic subject key (workflow_run|agent_run|step|incident|deployment).
+    subject_type: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    subject_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     gate: Mapped[ApprovalGate] = mapped_column(enum_type(ApprovalGate), nullable=False)
     status: Mapped[ApprovalStatus] = mapped_column(
         enum_type(ApprovalStatus), default=ApprovalStatus.PENDING, nullable=False
     )
+    # F36 — from review_rules.min_approvals; V1 resolves on a single decisive vote.
+    required_approvals: Mapped[int] = mapped_column(
+        Integer(), default=1, server_default=text("1"), nullable=False
+    )
+    # F36 — info|warning|critical; drives inbox sort + UI emphasis.
+    risk_level: Mapped[str] = mapped_column(
+        String(16), default="info", server_default=text("'info'"), nullable=False
+    )
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    # F36 — optional object-store key for a large pre-rendered context snapshot.
+    context_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     requested_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     decided_by_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
     )
     decided_at: Mapped[datetime | None] = mapped_column(nullable=True)
     decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # F36 — optional SLA; the worker sweeper marks overdue pending gates expired.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     agent_run: Mapped[AgentRun | None] = relationship(back_populates="approval_requests")
+    decisions: Mapped[list[ApprovalDecision]] = relationship(
+        back_populates="approval_request", cascade="all, delete-orphan"
+    )
 
 
 class SubAgentRun(WorkspaceScopedModel):

@@ -623,7 +623,7 @@ def test_f30_multi_team_rbac_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
-# F23 spec-validation-dashboard tables, owned by 0014_f23_spec_validation_dashboard.
+# F23 spec-validation-dashboard tables, owned by 0014_f23_spec_dashboard.
 F23_TABLES = {"traceability_criterion_link", "traceability_spec_rollup"}
 F23_INDEXES = {
     "ix_traceability_criterion_link_project_status",
@@ -646,7 +646,7 @@ def test_f23_spec_validation_dashboard_migration_up_down(alembic_config: Config)
         assert after_f31 >= EXPECTED_TABLES
 
         # Apply the F23 migration: both tables appear with their constraints/indexes.
-        command.upgrade(alembic_config, "0014_f23_spec_validation_dashboard")
+        command.upgrade(alembic_config, "0014_f23_spec_dashboard")
         inspector = inspect(engine)
         after_f23 = set(inspector.get_table_names())
         assert after_f23 >= F23_TABLES, f"missing F23 tables: {sorted(F23_TABLES - after_f23)}"
@@ -692,7 +692,7 @@ def test_f32_marketplace_migration_up_down(alembic_config: Config) -> None:
     engine = create_engine(url)
     try:
         # Up to F23 (0014): F32 tables absent, core present.
-        command.upgrade(alembic_config, "0014_f23_spec_validation_dashboard")
+        command.upgrade(alembic_config, "0014_f23_spec_dashboard")
         after_f23 = set(inspect(engine).get_table_names())
         assert not (F32_TABLES & after_f23), "F23 stage must not create F32 tables"
         assert after_f23 >= EXPECTED_TABLES
@@ -719,7 +719,7 @@ def test_f32_marketplace_migration_up_down(alembic_config: Config) -> None:
         assert "ix_marketplace_audit_log_ws_op_created" in audit_indexes
 
         # Downgrade one step: F32 tables gone, baseline (+F23) intact.
-        command.downgrade(alembic_config, "0014_f23_spec_validation_dashboard")
+        command.downgrade(alembic_config, "0014_f23_spec_dashboard")
         after_down = set(inspect(engine).get_table_names())
         assert not (F32_TABLES & after_down), "downgrade left F32 tables"
         assert after_down >= EXPECTED_TABLES
@@ -729,7 +729,7 @@ def test_f32_marketplace_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
-# F34 kernel-sandbox-isolation columns, owned by 0017_f34_kernel_sandbox_isolation.
+# F34 kernel-sandbox-isolation columns, owned by 0017_f34_kernel_sandbox.
 F34_COLUMNS = {
     "runtime",
     "isolation_class",
@@ -795,7 +795,7 @@ def test_f35_benchmark_migration_up_down(alembic_config: Config) -> None:
     engine = create_engine(url)
     try:
         # Up to F34: F35 tables absent, core present.
-        command.upgrade(alembic_config, "0017_f34_kernel_sandbox_isolation")
+        command.upgrade(alembic_config, "0017_f34_kernel_sandbox")
         after_f34 = set(inspect(engine).get_table_names())
         assert not (F35_TABLES & after_f34), "F34 stage must not create F35 tables"
         assert after_f34 >= EXPECTED_TABLES
@@ -816,10 +816,65 @@ def test_f35_benchmark_migration_up_down(alembic_config: Config) -> None:
         assert "ix_benchmark_submission_leaderboard" in submission_indexes
 
         # Downgrade one step: F35 tables gone, prior chain intact.
-        command.downgrade(alembic_config, "0017_f34_kernel_sandbox_isolation")
+        command.downgrade(alembic_config, "0017_f34_kernel_sandbox")
         after_down = set(inspect(engine).get_table_names())
         assert not (F35_TABLES & after_down), "downgrade left F35 tables"
         assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
+# F36 human-approval-system: generalized approval_request + decision/grant
+# tables, owned by 0019_f36_approval_framework.
+F36_TABLES = {"approval_decision", "policy_override_grant"}
+F36_COLUMNS = {
+    "project_id",
+    "subject_type",
+    "subject_id",
+    "required_approvals",
+    "risk_level",
+    "context_ref",
+    "expires_at",
+}
+
+
+def test_f36_approval_migration_up_down(alembic_config: Config) -> None:
+    """F36: 0019 creates approval_decision + policy_override_grant (with the
+    one-vote-per-approver unique and the uq_pending_gate / uq_active_override
+    partial-unique indexes) and generalizes approval_request additively; the
+    downgrade removes exactly what F36 introduced, leaving the chain intact.
+
+    (forge_db's baseline is metadata-driven, so a fresh chain provisions the
+    columns at 0001; like 0007, the 0019 step is idempotent about that.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        command.upgrade(alembic_config, "head")
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert tables >= F36_TABLES, f"missing F36 tables: {sorted(F36_TABLES - tables)}"
+
+        cols = {c["name"] for c in inspector.get_columns("approval_request")}
+        assert cols >= F36_COLUMNS, f"missing F36 columns: {sorted(F36_COLUMNS - cols)}"
+
+        request_indexes = {i["name"] for i in inspector.get_indexes("approval_request")}
+        assert "uq_pending_gate" in request_indexes
+        decision_indexes = {i["name"] for i in inspector.get_indexes("approval_decision")}
+        assert "uq_approval_decision_approver" in decision_indexes
+        grant_indexes = {i["name"] for i in inspector.get_indexes("policy_override_grant")}
+        assert "uq_active_override" in grant_indexes
+
+        # Downgrade one step: F36 tables/columns gone, approval_request intact.
+        command.downgrade(alembic_config, "0018_f35_benchmark_leaderboard")
+        inspector = inspect(engine)
+        after_down = set(inspector.get_table_names())
+        assert not (F36_TABLES & after_down), "downgrade left F36 tables"
+        assert "approval_request" in after_down
+        cols_after = {c["name"] for c in inspector.get_columns("approval_request")}
+        assert not (F36_COLUMNS & cols_after), "downgrade left F36 columns"
 
         command.downgrade(alembic_config, "base")
     finally:

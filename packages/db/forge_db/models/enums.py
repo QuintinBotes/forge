@@ -291,6 +291,10 @@ class ApprovalStatus(enum.StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     CHANGES_REQUESTED = "changes_requested"
+    # F36 — terminal state stamped by the SLA sweeper when ``expires_at`` passes.
+    # Additive: stored as VARCHAR (no CHECK constraint), so existing rows and the
+    # frozen contracts enum (which keeps the original four values) are unaffected.
+    EXPIRED = "expired"
 
 
 # --------------------------------------------------------------------------- #

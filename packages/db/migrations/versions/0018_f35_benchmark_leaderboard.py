@@ -8,7 +8,7 @@ covering index ``ix_benchmark_submission_leaderboard``.
 ``alembic downgrade`` cleanly drops both tables.
 
 Revision ID: 0018_f35_benchmark_leaderboard
-Revises: 0017_f34_kernel_sandbox_isolation
+Revises: 0017_f34_kernel_sandbox
 Create Date: 2026-07-03
 """
 
@@ -23,7 +23,7 @@ from forge_db.base import Base
 
 # revision identifiers, used by Alembic.
 revision: str = "0018_f35_benchmark_leaderboard"
-down_revision: str | None = "0017_f34_kernel_sandbox_isolation"
+down_revision: str | None = "0017_f34_kernel_sandbox"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

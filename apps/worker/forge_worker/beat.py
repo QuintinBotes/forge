@@ -29,6 +29,8 @@ MARKETPLACE_REFRESH_TASK = "marketplace.refresh_update_flags"
 # of expired saml_replay rows (the no-Redis fallback replay store).
 SSO_METADATA_REFRESH_TASK = "sso.refresh_all_saml_metadata"
 SSO_REPLAY_CLEANUP_TASK = "sso.cleanup_saml_replay"
+# F36: sweep pending approval gates past their expires_at SLA (default 60s).
+APPROVAL_EXPIRE_TASK = "approvals.expire_pending"
 
 
 def reap_interval_seconds() -> float:
@@ -63,6 +65,11 @@ def sso_replay_cleanup_seconds() -> float:
 def automation_sweep_seconds() -> float:
     """Beat cadence for the F21 trigger reconciliation sweep."""
     return float(os.environ.get("FORGE_AUTOMATION_SWEEP_INTERVAL_SECONDS", "60"))
+
+
+def approval_expire_seconds() -> float:
+    """Beat cadence for the F36 approval-SLA sweep (default 60s)."""
+    return float(os.environ.get("FORGE_APPROVAL_EXPIRE_INTERVAL_SECONDS", "60"))
 
 
 def configure_beat(app: object) -> dict[str, object]:
@@ -110,6 +117,11 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": SSO_REPLAY_CLEANUP_TASK,
             "schedule": sso_replay_cleanup_seconds(),
         },
+        # F36: mark pending approval gates past expires_at as expired.
+        "approvals-expire-pending": {
+            "task": APPROVAL_EXPIRE_TASK,
+            "schedule": approval_expire_seconds(),
+        },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
     existing.update(schedule)
@@ -120,6 +132,7 @@ def configure_beat(app: object) -> dict[str, object]:
 BEAT_SCHEDULE = configure_beat(celery_app)
 
 __all__ = [
+    "APPROVAL_EXPIRE_TASK",
     "AUTHZ_PURGE_TASK",
     "AUTOMATION_SWEEP_TASK",
     "BEAT_SCHEDULE",
@@ -130,6 +143,7 @@ __all__ = [
     "SPRINT_SNAPSHOT_TASK",
     "SSO_METADATA_REFRESH_TASK",
     "SSO_REPLAY_CLEANUP_TASK",
+    "approval_expire_seconds",
     "authz_purge_seconds",
     "automation_sweep_seconds",
     "configure_beat",

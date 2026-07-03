@@ -16,7 +16,7 @@ Creates the five workspace-scoped marketplace tables from ``forge_db`` metadata
 ``alembic downgrade`` cleanly drops all five tables (and their trigger/indexes).
 
 Revision ID: 0015_f32_integration_marketplace
-Revises: 0014_f23_spec_validation_dashboard
+Revises: 0014_f23_spec_dashboard
 Create Date: 2026-07-01
 """
 
@@ -31,7 +31,7 @@ from forge_db.base import Base
 
 # revision identifiers, used by Alembic.
 revision: str = "0015_f32_integration_marketplace"
-down_revision: str | None = "0014_f23_spec_validation_dashboard"
+down_revision: str | None = "0014_f23_spec_dashboard"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
