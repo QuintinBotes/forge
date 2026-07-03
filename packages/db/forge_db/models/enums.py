@@ -9,6 +9,14 @@ from __future__ import annotations
 
 import enum
 
+# F37 auth & secrets enums are defined once in the frozen contracts package
+# (``forge_contracts.auth``) and re-exported here so the SQLAlchemy column
+# types (``enum_type(...)``) follow the local ``forge_db.models.enums`` import
+# convention. ``UserRole`` / ``APIKeyKind`` (defined below) are reused verbatim.
+from forge_contracts.auth import (
+    OAuthProvider,
+    PlatformKeyKind,
+)
 from forge_contracts.authz import (
     AccessLevel,
     PrincipalType,
@@ -426,6 +434,7 @@ __all__ = [
     "MCPAuthType",
     "MCPIndexStrategy",
     "MCPTransport",
+    "OAuthProvider",
     "PMAuthType",
     "PMConflictPolicy",
     "PMConnectionStatus",
@@ -435,6 +444,7 @@ __all__ = [
     "PMSyncState",
     "PRGroupStatus",
     "PRMergeState",
+    "PlatformKeyKind",
     "PrincipalType",
     "Priority",
     "ProjectVisibility",

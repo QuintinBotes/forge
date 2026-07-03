@@ -39,6 +39,7 @@ from forge_api.auth.service import (
 )
 from forge_api.auth.vault import SecretInfo, SecretNotFoundError
 from forge_api.deps import Principal
+from forge_auth.rbac import has_at_least
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -128,12 +129,36 @@ def list_api_keys(principal: KeyManager, service: AuthServiceDep) -> list[APIKey
 def create_api_key(
     body: APIKeyCreateRequest, principal: KeyManager, service: AuthServiceDep
 ) -> APIKeyCreated:
+    # F37 AC8: no self-escalation — a key can never carry a role above its
+    # creator's (the audit trail records the denied attempt).
+    if not has_at_least(principal.role, body.role):
+        service.audit.emit(
+            action="apikey.created",
+            principal=principal,
+            target_type="platform_api_key",
+            result="denied",
+            details={"name": body.name, "requested_role": body.role.value},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"escalation: requested role '{body.role.value}' exceeds "
+                f"actor role '{principal.role.value}'"
+            ),
+        )
     info, token = service.api_keys.mint(
         workspace_id=principal.workspace_id,
         name=body.name,
         role=body.role,
         kind=body.kind,
         expires_at=body.expires_at,
+    )
+    service.audit.emit(
+        action="apikey.created",
+        principal=principal,
+        target_type="platform_api_key",
+        target_id=info.id,
+        details={"name": info.name, "role": info.role.value, "kind": info.kind.value},
     )
     return APIKeyCreated(**info.model_dump(), token=token)
 
@@ -148,6 +173,12 @@ def revoke_api_key(
 ) -> Response:
     if not service.api_keys.revoke(principal.workspace_id, key_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
+    service.audit.emit(
+        action="apikey.revoked",
+        principal=principal,
+        target_type="platform_api_key",
+        target_id=key_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -169,7 +200,7 @@ def list_secrets(principal: SecretManager, service: AuthServiceDep) -> list[Secr
 def create_secret(
     body: SecretCreateRequest, principal: SecretManager, service: AuthServiceDep
 ) -> SecretInfo:
-    return service.vault.put_secret(
+    info = service.vault.put_secret(
         workspace_id=principal.workspace_id,
         name=body.name,
         secret=body.secret,
@@ -177,6 +208,17 @@ def create_secret(
         provider=body.provider,
         expires_at=body.expires_at,
     )
+    # Register the stored value with the canonical redactor so it is scrubbed
+    # from any future log/audit text, then audit the mutation (redacted).
+    service.audit.redactor.register_known_secret(body.secret)
+    service.audit.emit(
+        action="secret.created",
+        principal=principal,
+        target_type="api_key",
+        target_id=info.id,
+        details={"name": info.name, "kind": info.kind.value, "provider": info.provider},
+    )
+    return info
 
 
 @router.delete(
@@ -193,4 +235,10 @@ def delete_secret(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="secret not found"
         ) from exc
+    service.audit.emit(
+        action="secret.deleted",
+        principal=principal,
+        target_type="api_key",
+        target_id=secret_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

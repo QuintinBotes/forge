@@ -8,6 +8,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+
 from forge_authz import (
     MAX_TEAM_DEPTH,
     EscalationError,
@@ -18,7 +19,6 @@ from forge_authz import (
     ensure_not_last_admin,
     validate_team_parent,
 )
-
 from forge_contracts.authz import (
     PrincipalRef,
     PrincipalType,

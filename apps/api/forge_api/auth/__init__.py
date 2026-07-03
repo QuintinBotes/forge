@@ -41,7 +41,9 @@ from forge_api.auth.service import (
     AuthService,
     get_auth_service,
     get_authenticated_principal,
+    require_admin,
     require_permission,
+    require_role,
 )
 from forge_api.auth.vault import SecretInfo, SecretNotFoundError, SecretVault
 
@@ -75,5 +77,7 @@ __all__ = [
     "get_auth_service",
     "get_authenticated_principal",
     "permissions_for",
+    "require_admin",
     "require_permission",
+    "require_role",
 ]

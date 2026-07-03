@@ -12,6 +12,7 @@ members = [
     "forge-agent",
     "forge-api",
     "forge-approval",
+    "forge-auth",
     "forge-authz",
     "forge-board",
     "forge-contracts",
@@ -442,6 +443,7 @@ dependencies = [
     { name = "forge-agent" },
     { name = "forge-api" },
     { name = "forge-approval" },
+    { name = "forge-auth" },
     { name = "forge-authz" },
     { name = "forge-board" },
     { name = "forge-contracts" },
@@ -478,6 +480,7 @@ requires-dist = [
     { name = "forge-agent", editable = "packages/agent-runtime" },
     { name = "forge-api", editable = "apps/api" },
     { name = "forge-approval", editable = "packages/approval-sdk" },
+    { name = "forge-auth", editable = "packages/auth-sdk" },
     { name = "forge-authz", editable = "packages/authz-sdk" },
     { name = "forge-board", editable = "packages/board-core" },
     { name = "forge-contracts", editable = "packages/contracts" },
@@ -535,6 +538,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "forge-approval" },
+    { name = "forge-auth" },
     { name = "forge-board" },
     { name = "forge-contracts" },
     { name = "forge-db" },
@@ -561,6 +565,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=43" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "forge-approval", editable = "packages/approval-sdk" },
+    { name = "forge-auth", editable = "packages/auth-sdk" },
     { name = "forge-board", editable = "packages/board-core" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
@@ -594,6 +599,21 @@ dependencies = [
 requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "pydantic", specifier = ">=2.7" },
+]
+
+[[package]]
+name = "forge-auth"
+version = "0.1.0"
+source = { editable = "packages/auth-sdk" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "forge-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
+    { name = "forge-contracts", editable = "packages/contracts" },
 ]
 
 [[package]]

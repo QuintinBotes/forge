@@ -47,6 +47,8 @@ from forge_db.models.enums import (
     MCPAuthType,
     MCPIndexStrategy,
     MCPTransport,
+    OAuthProvider,
+    PlatformKeyKind,
     PMAuthType,
     PMConflictPolicy,
     PMConnectionStatus,
@@ -101,6 +103,7 @@ from forge_db.models.mcp_index import (
     MCPIndexedResource,
 )
 from forge_db.models.multi_repo import AgentRepoWorkspace, PRGroup
+from forge_db.models.oauth_account import OAuthAccount
 from forge_db.models.planning import (
     Epic,
     Incident,
@@ -109,6 +112,7 @@ from forge_db.models.planning import (
     Sprint,
     Task,
 )
+from forge_db.models.platform_api_key import PlatformAPIKey
 from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
 from forge_db.models.policy_rule_evaluation import PolicyRuleEvaluation
 from forge_db.models.profiles import PolicyProfile, SkillProfile
@@ -207,6 +211,8 @@ __all__ = [
     "MarketplaceListingVersion",
     "MarketplaceRegistry",
     "Milestone",
+    "OAuthAccount",
+    "OAuthProvider",
     "PMAuthType",
     "PMConflictPolicy",
     "PMConnection",
@@ -220,6 +226,8 @@ __all__ = [
     "PRGroup",
     "PRGroupStatus",
     "PRMergeState",
+    "PlatformAPIKey",
+    "PlatformKeyKind",
     "PolicyOverrideGrant",
     "PolicyProfile",
     "PolicyRuleEvaluation",

@@ -22,6 +22,9 @@ SPRINT_SNAPSHOT_TASK = "sprint.snapshot_burndown"
 # F30: purge expired role grants every 5m (hygiene + audit; expiry is
 # authoritative at resolution time, so a missed run never grants stale access).
 AUTHZ_PURGE_TASK = "authz.purge_expired_grants"
+# F37: revoke expired platform API keys every 15m (hygiene + audit; expiry is
+# authoritative at verify time — Security "automatic expiry for agent tokens").
+AUTH_PURGE_KEYS_TASK = "auth.purge_expired_keys"
 # F32: hourly marketplace catalog sync + update-flag refresh across all workspaces.
 MARKETPLACE_SYNC_TASK = "marketplace.sync_all_registries"
 MARKETPLACE_REFRESH_TASK = "marketplace.refresh_update_flags"
@@ -45,6 +48,11 @@ def marketplace_sync_seconds() -> float:
 def authz_purge_seconds() -> float:
     """Beat cadence for the F30 expired-grant purge (``FORGE_AUTHZ_PURGE_INTERVAL_SECONDS``)."""
     return float(os.environ.get("FORGE_AUTHZ_PURGE_INTERVAL_SECONDS", "300"))
+
+
+def auth_purge_keys_seconds() -> float:
+    """Beat cadence for the F37 expired-platform-key purge (default 15m)."""
+    return float(os.environ.get("FORGE_AUTH_PURGE_KEYS_INTERVAL_SECONDS", "900"))
 
 
 def mcp_index_poll_seconds() -> float:
@@ -99,6 +107,11 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": AUTHZ_PURGE_TASK,
             "schedule": authz_purge_seconds(),
         },
+        # F37: revoke expired platform API keys (agent tokens) on a fixed cadence.
+        "auth-purge-expired-keys": {
+            "task": AUTH_PURGE_KEYS_TASK,
+            "schedule": auth_purge_keys_seconds(),
+        },
         # F32: hourly marketplace catalog sync, then recompute update/yank flags.
         "marketplace-sync-all-registries": {
             "task": MARKETPLACE_SYNC_TASK,
@@ -134,6 +147,7 @@ BEAT_SCHEDULE = configure_beat(celery_app)
 __all__ = [
     "APPROVAL_EXPIRE_TASK",
     "AUTHZ_PURGE_TASK",
+    "AUTH_PURGE_KEYS_TASK",
     "AUTOMATION_SWEEP_TASK",
     "BEAT_SCHEDULE",
     "MARKETPLACE_REFRESH_TASK",
@@ -144,6 +158,7 @@ __all__ = [
     "SSO_METADATA_REFRESH_TASK",
     "SSO_REPLAY_CLEANUP_TASK",
     "approval_expire_seconds",
+    "auth_purge_keys_seconds",
     "authz_purge_seconds",
     "automation_sweep_seconds",
     "configure_beat",

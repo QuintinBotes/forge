@@ -14,8 +14,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from forge_authz import DefaultPermissionResolver
 
+from forge_authz import DefaultPermissionResolver
 from forge_contracts.authz import (
     AccessLevel,
     Permission,
