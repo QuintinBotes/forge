@@ -25,6 +25,10 @@ AUTHZ_PURGE_TASK = "authz.purge_expired_grants"
 # F32: hourly marketplace catalog sync + update-flag refresh across all workspaces.
 MARKETPLACE_SYNC_TASK = "marketplace.sync_all_registries"
 MARKETPLACE_REFRESH_TASK = "marketplace.refresh_update_flags"
+# F33: 6-hourly SAML IdP metadata refresh (cert rollover) + 15-minute eviction
+# of expired saml_replay rows (the no-Redis fallback replay store).
+SSO_METADATA_REFRESH_TASK = "sso.refresh_all_saml_metadata"
+SSO_REPLAY_CLEANUP_TASK = "sso.cleanup_saml_replay"
 
 
 def reap_interval_seconds() -> float:
@@ -44,6 +48,16 @@ def authz_purge_seconds() -> float:
 def mcp_index_poll_seconds() -> float:
     """Beat cadence for the F20 stale-MCP-source refresh (``MCP_INDEX_POLL_SECONDS``)."""
     return float(os.environ.get("MCP_INDEX_POLL_SECONDS", "300"))
+
+
+def sso_metadata_refresh_seconds() -> float:
+    """Beat cadence for the F33 IdP metadata refresh (default 6h)."""
+    return float(os.environ.get("FORGE_SSO_METADATA_REFRESH_SECONDS", str(6 * 3600)))
+
+
+def sso_replay_cleanup_seconds() -> float:
+    """Beat cadence for the F33 saml_replay eviction (default 15m)."""
+    return float(os.environ.get("FORGE_SSO_REPLAY_CLEANUP_SECONDS", "900"))
 
 
 def automation_sweep_seconds() -> float:
@@ -87,6 +101,15 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": MARKETPLACE_REFRESH_TASK,
             "schedule": marketplace_sync_seconds(),
         },
+        # F33: refresh SAML IdP metadata (cert rollover) + evict expired replay ids.
+        "sso-refresh-saml-metadata": {
+            "task": SSO_METADATA_REFRESH_TASK,
+            "schedule": sso_metadata_refresh_seconds(),
+        },
+        "sso-cleanup-saml-replay": {
+            "task": SSO_REPLAY_CLEANUP_TASK,
+            "schedule": sso_replay_cleanup_seconds(),
+        },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
     existing.update(schedule)
@@ -105,10 +128,14 @@ __all__ = [
     "MCP_REFRESH_TASK",
     "SANDBOX_REAP_TASK",
     "SPRINT_SNAPSHOT_TASK",
+    "SSO_METADATA_REFRESH_TASK",
+    "SSO_REPLAY_CLEANUP_TASK",
     "authz_purge_seconds",
     "automation_sweep_seconds",
     "configure_beat",
     "marketplace_sync_seconds",
     "mcp_index_poll_seconds",
     "reap_interval_seconds",
+    "sso_metadata_refresh_seconds",
+    "sso_replay_cleanup_seconds",
 ]

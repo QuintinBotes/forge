@@ -29,8 +29,11 @@ from forge_api.routers import (
     pm,
     policy,
     project_access,
+    saml,
+    scim,
     spec,
     sprints,
+    sso_admin,
     teams,
     workflow,
     workflow_editor,
@@ -63,6 +66,9 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     teams.router,
     access.router,
     project_access.router,
+    sso_admin.router,
+    saml.router,
+    scim.router,
 )
 
 __all__ = [
@@ -86,8 +92,11 @@ __all__ = [
     "pm",
     "policy",
     "project_access",
+    "saml",
+    "scim",
     "spec",
     "sprints",
+    "sso_admin",
     "teams",
     "workflow",
     "workflow_editor",

@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     # truth shared with both workers + the CLI.
     workflow_engine_backend: str = "postgres_fsm"
 
+    # F33 — enterprise SSO (SAML + SCIM). ``public_url`` must be the externally
+    # reachable HTTPS URL in production: the SP entity id, ACS URL, SP metadata
+    # URL, and SCIM base URL are all derived from it.
+    public_url: str = "http://localhost:8000"
+    saml_clock_skew_seconds: int = 120
+    saml_authnrequest_ttl_seconds: int = 600
+    scim_token_bytes: int = 32
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

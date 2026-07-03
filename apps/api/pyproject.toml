@@ -29,6 +29,9 @@ dependencies = [
     "httpx>=0.27",
     # Enqueue background MCP index syncs onto the worker's Celery queue (F20).
     "celery>=5.3",
+    "signxml>=4",
+    "lxml>=5.3",
+    "python-multipart>=0.0.9",
 ]
 
 [build-system]

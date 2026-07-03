@@ -126,6 +126,32 @@ locked-down Docker container.
 > Future hardening (V3): Sysbox/gVisor runtimes and Firecracker microVMs plug in
 > behind the same `SandboxProvider` seam.
 
+## Enterprise SSO — SAML + SCIM (F33)
+
+- **SAML 2.0 (Forge as SP).** Per-workspace federation with a corporate IdP
+  (Okta / Entra ID / Google Workspace / generic). Responses are validated with
+  mandatory XML-DSig signature checks (toolkit-delegated to `signxml` — pure
+  Python, no native `xmlsec1` needed), audience restriction, bounded clock
+  skew (`FORGE_SAML_CLOCK_SKEW_SECONDS`), one-time `InResponseTo` consumption,
+  and assertion-id replay caching. XML parsing is XXE-hardened (entities, DTD
+  loading, and network access disabled; any DOCTYPE is rejected).
+- **SCIM 2.0 provisioning.** `/scim/v2/*` authenticates with a per-workspace
+  bearer token: CSPRNG-generated, stored only as a SHA-256 hash, constant-time
+  compared, revocable, expirable, and revealed exactly once at mint time.
+  `active=false`/`DELETE` deprovisions the user and revokes their sessions and
+  agent tokens immediately.
+- **HTTPS is mandatory in production.** `FORGE_PUBLIC_URL` must be the
+  externally reachable HTTPS URL — the SP entity id, ACS URL, and SCIM base
+  URL derive from it, and SAML requires TLS on the ACS. Caddy must proxy
+  `POST /auth/saml/*/acs` and `/scim/v2/*` with bodies untouched.
+- **Break-glass.** Disabling SSO (or deprovisioning the last active local
+  admin) is refused while no non-SSO admin remains; keep at least one local
+  admin so a misconfigured IdP can never lock the workspace out.
+- **No privilege escalation via IdP.** Roles are honored only through the
+  admin-configured group→role map; arbitrary asserted `role=admin` attributes
+  are ignored. Every SSO/SCIM action lands in the immutable audit log with
+  secrets redacted.
+
 ## Operational checklist
 
 - [ ] All four core secrets are unique 32-byte random values.
