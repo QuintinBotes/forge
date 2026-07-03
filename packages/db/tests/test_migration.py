@@ -780,3 +780,47 @@ def test_f34_kernel_sandbox_migration_up_down(alembic_config: Config) -> None:
 # CREATE EXTENSION vector step are verified via dialect compilation in
 # test_models.py. Re-run `alembic -c packages/db/alembic.ini upgrade head` with
 # FORGE_DATABASE_URL pointing at Postgres in Phase 2 (docker compose) to close.
+
+
+# F35 benchmark-leaderboard tables, owned by 0018_f35_benchmark_leaderboard.
+F35_TABLES = {"benchmark_suite", "benchmark_submission"}
+
+
+def test_f35_benchmark_migration_up_down(alembic_config: Config) -> None:
+    """F35 AC22: 0018 creates benchmark_suite + benchmark_submission (with the
+    (slug, version) unique constraint and the leaderboard covering index) and
+    drops them on downgrade, leaving the earlier chain intact."""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Up to F34: F35 tables absent, core present.
+        command.upgrade(alembic_config, "0017_f34_kernel_sandbox_isolation")
+        after_f34 = set(inspect(engine).get_table_names())
+        assert not (F35_TABLES & after_f34), "F34 stage must not create F35 tables"
+        assert after_f34 >= EXPECTED_TABLES
+
+        # Apply the F35 migration: both tables + constraints/indexes appear.
+        command.upgrade(alembic_config, "0018_f35_benchmark_leaderboard")
+        inspector = inspect(engine)
+        after_f35 = set(inspector.get_table_names())
+        assert after_f35 >= F35_TABLES, f"missing F35 tables: {sorted(F35_TABLES - after_f35)}"
+
+        suite_uniques = {
+            uc["name"] for uc in inspector.get_unique_constraints("benchmark_suite")
+        }
+        assert "uq_benchmark_suite_slug_version" in suite_uniques
+        submission_indexes = {
+            ix["name"] for ix in inspector.get_indexes("benchmark_submission")
+        }
+        assert "ix_benchmark_submission_leaderboard" in submission_indexes
+
+        # Downgrade one step: F35 tables gone, prior chain intact.
+        command.downgrade(alembic_config, "0017_f34_kernel_sandbox_isolation")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (F35_TABLES & after_down), "downgrade left F35 tables"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()

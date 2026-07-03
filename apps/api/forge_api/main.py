@@ -77,6 +77,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for router in FEATURE_ROUTERS:
         app.include_router(router, prefix=prefix)
 
+    # F35: the public, unauthenticated, read-only leaderboard router mounts at
+    # the app root ONLY when explicitly enabled (self-hosted privacy default:
+    # disabled -> every /public/* path 404s and internal eval data never leaks).
+    if cfg.public_leaderboard_enabled:
+        from forge_api.routers.public_leaderboard import router as public_leaderboard_router
+
+        app.include_router(public_leaderboard_router)
+
     @app.get("/", response_model=ServiceInfo, tags=["health"], summary="Service info")
     def root() -> ServiceInfo:
         return ServiceInfo(

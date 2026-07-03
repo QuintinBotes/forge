@@ -72,6 +72,9 @@ DEFERRED_TABLES = frozenset(
         "marketplace_listing_version",
         "marketplace_installation",
         "marketplace_audit_log",
+        # F35 benchmark-leaderboard — created by 0018_f35_benchmark_leaderboard.
+        "benchmark_suite",
+        "benchmark_submission",
     }
 )
 

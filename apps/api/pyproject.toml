@@ -21,6 +21,9 @@ dependencies = [
     # F31 — deployment gates: engine, gate evaluator, providers, health, rollback.
     "forge-deploy",
     "forge-policy",
+    # F35 — benchmark suite & public leaderboard (frozen suites, deterministic
+    # scoring, replay verification, ranking — the pure core the service wires).
+    "forge-eval",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic-settings>=2.2",

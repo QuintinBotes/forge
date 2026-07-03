@@ -118,6 +118,9 @@ EXPECTED_MODELS = [
     "ScimGroup",
     "ScimGroupMember",
     "SamlReplay",
+    # F35 benchmark-leaderboard tables.
+    "BenchmarkSuite",
+    "BenchmarkSubmission",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
@@ -133,6 +136,9 @@ NON_WORKSPACE_SCOPED = {
     "pm_webhook_delivery",
     "marketplace_listing_version",
     "saml_replay",
+    # A frozen benchmark suite is a global community artifact (F35 §3.1);
+    # submissions carry a *nullable* workspace_id (NULL = official/system).
+    "benchmark_suite",
 }
 
 

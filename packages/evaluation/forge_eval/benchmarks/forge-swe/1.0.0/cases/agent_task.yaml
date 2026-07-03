@@ -1,0 +1,19 @@
+# forge-swe v1 — frozen agent-task set (F35). Every case terminates BEFORE
+# merge (human approval gate, AC24). Do NOT edit: bump the version instead.
+cases:
+  - id: swe-task-add-pagination
+    query: "Add cursor pagination to the customer endpoint"
+    expected_ids: [REQ-PAG-1, REQ-PAG-2, REQ-PAG-3]
+    kind: agent_task
+    tags: [agent_task]
+    metadata:
+      expected_terminal_state: pr_opened
+      spec_ref: forge-swe/specs/add-pagination
+  - id: swe-task-fix-flaky-retry
+    query: "Make the webhook delivery retry idempotent"
+    expected_ids: [REQ-RETRY-1, REQ-RETRY-2]
+    kind: agent_task
+    tags: [agent_task]
+    metadata:
+      expected_terminal_state: awaiting_review
+      spec_ref: forge-swe/specs/idempotent-retry

@@ -1,0 +1,27 @@
+# forge-swe v1.0.0 — the first frozen public Forge benchmark (F35).
+# FROZEN: content_hash below is computed over the canonical sorted case set +
+# scoring rubric by `forge-cli bench freeze`. Editing any case or the scoring
+# invalidates the hash and every benchmark command will reject the suite —
+# author a new version directory (e.g. 1.1.0) instead.
+slug: forge-swe
+version: "1.0.0"
+title: "Forge SWE Benchmark v1"
+description: "Frozen retrieval + single-agent task set for cross-config comparison."
+schema_version: 1
+frozen: true
+content_hash: "sha256:b191405b75132739a99c10d39304d4e7ee300efb759521fac4d18424fb91aa19"
+scoring:
+  primary_metric: benchmark.composite
+  metric_weights:
+    agent.requirement_satisfaction_rate: 0.5
+    retrieval.recall_at_k: 0.3
+    retrieval.mrr: 0.2
+  direction:
+    agent.requirement_satisfaction_rate: higher_is_better
+    retrieval.recall_at_k: higher_is_better
+    retrieval.mrr: higher_is_better
+  category_field: tags
+  k: 10
+case_files:
+  - cases/retrieval.yaml
+  - cases/agent_task.yaml

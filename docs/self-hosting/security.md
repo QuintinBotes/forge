@@ -206,6 +206,28 @@ adds two **kernel-boundary** tiers behind the same `SandboxProvider` seam:
   are ignored. Every SSO/SCIM action lands in the immutable audit log with
   secrets redacted.
 
+## Public benchmark leaderboard (F35)
+
+The public evaluation leaderboard (`/public/leaderboard/...`) is **disabled by
+default**: every `/public/*` route returns `404` until you explicitly set
+`FORGE_PUBLIC_LEADERBOARD_ENABLED=true`, so a fresh self-hosted instance never
+accidentally publishes internal benchmark scores. Before opting in:
+
+- Only submissions an **admin explicitly published** appear (moderation gate);
+  flagged entries are removed from the board immediately.
+- Responses are structurally payload-free: score breakdowns, model *labels*,
+  and submitter display names only. `submitter_contact`, raw run
+  configuration, and BYOK keys are not representable in the public response
+  models, and submission configs are secret-redacted at ingest before they
+  are ever stored.
+- The router is read-only (GET only), per-IP rate-limited
+  (`FORGE_LEADERBOARD_PUBLIC_RATE_LIMIT`, default 60/min), and cache-fronted
+  (`FORGE_LEADERBOARD_CACHE_TTL_SECONDS`).
+- Only **verified** entries carry the badge: verification deterministically
+  replays each submission's content-hashed bundles offline and rejects any
+  claimed score that does not reproduce within
+  `FORGE_BENCHMARK_VERIFY_EPSILON`.
+
 ## Operational checklist
 
 - [ ] All four core secrets are unique 32-byte random values.
