@@ -192,9 +192,12 @@ from forge_contracts.protocols import (
     WorkflowEngine,
 )
 from forge_contracts.sandbox import (
+    CONTAINER_BACKED_KINDS,
+    SANDBOX_KIND_RANK,
     CommandOutput,
     SandboxCommandRunner,
     SandboxInstanceRead,
+    SandboxIsolationClass,
     SandboxKind,
     SandboxNetwork,
     SandboxProvider,
@@ -209,6 +212,7 @@ __all__ = [
     "ADR",
     "CHUNK_TYPE_WEIGHTS",
     "CODE_PRODUCING_ROLES",
+    "CONTAINER_BACKED_KINDS",
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_EMBEDDING_DIM",
     "DEFAULT_MAX_RETRIES",
@@ -217,6 +221,7 @@ __all__ = [
     "READ_ONLY_ROLES",
     "ROLE_TOOLS",
     "RRF_K",
+    "SANDBOX_KIND_RANK",
     # F31 deployment gates
     "TERMINAL_STATES",
     "APIKeyKind",
@@ -336,6 +341,7 @@ __all__ = [
     "RunStatus",
     "SandboxCommandRunner",
     "SandboxInstanceRead",
+    "SandboxIsolationClass",
     "SandboxKind",
     "SandboxNetwork",
     "SandboxProvider",

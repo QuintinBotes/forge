@@ -39,7 +39,32 @@ class SandboxKind(enum.StrEnum):
     """Which isolation provider runs a task's commands."""
 
     WORKTREE = "worktree"  # V1: host subprocess (LocalSandbox)
-    CONTAINER = "container"  # V2: per-task Docker container
+    CONTAINER = "container"  # V2: per-task Docker container (runc, shared host kernel)
+    GVISOR = "gvisor"  # V3: Docker container under gVisor runsc (userspace kernel) — F34
+    MICROVM = "microvm"  # V3: Docker container under Kata+Firecracker (hardware VM) — F34
+
+
+class SandboxIsolationClass(enum.StrEnum):
+    """The auditable trust tier a sandbox kind provides (F34)."""
+
+    HOST_PROCESS = "host_process"  # worktree
+    NAMESPACE = "namespace"  # container (runc)
+    USERSPACE_KERNEL = "userspace_kernel"  # gvisor
+    MICROVM = "microvm"  # microvm (kata-fc / firecracker)
+
+
+#: Isolation lattice (selection precedence; higher = stronger; never downgrade).
+SANDBOX_KIND_RANK: dict[SandboxKind, int] = {
+    SandboxKind.WORKTREE: 0,
+    SandboxKind.CONTAINER: 1,
+    SandboxKind.GVISOR: 2,
+    SandboxKind.MICROVM: 3,
+}
+
+#: Kinds whose sandbox is a Docker container (reaped by label; OCI runtime differs).
+CONTAINER_BACKED_KINDS: frozenset[SandboxKind] = frozenset(
+    {SandboxKind.CONTAINER, SandboxKind.GVISOR, SandboxKind.MICROVM}
+)
 
 
 class SandboxNetwork(enum.StrEnum):
@@ -97,6 +122,11 @@ class SandboxSpec(_Model):
     exec_timeout_seconds: int = 1800
     run_as_uid: int = 10001
     run_as_gid: int = 10001
+    # --- F34 additions (additive; None => derive from kind + settings) ---
+    runtime: str | None = None  # resolved OCI runtime: runc | runsc | kata-fc
+    gvisor_platform: str | None = None  # systrap | kvm | ptrace (gvisor only)
+    vm_vcpus: int | None = None  # microvm guest vCPUs (defaults from limits.cpus)
+    vm_memory_mb: int | None = None  # microvm guest RAM (defaults from limits.memory_mb)
 
 
 # --------------------------------------------------------------------------- #
@@ -116,6 +146,14 @@ class SandboxInstanceRead(_Model):
     container_id: str | None = None
     created_at: datetime | None = None
     removed_at: datetime | None = None
+    # --- F34 additions (additive; runtime/VM provenance for the audit trail) ---
+    runtime: str | None = None  # OCI runtime actually used (null for worktree)
+    isolation_class: SandboxIsolationClass = SandboxIsolationClass.HOST_PROCESS
+    gvisor_platform: str | None = None  # systrap|kvm|ptrace (gvisor only)
+    guest_kernel_version: str | None = None  # microvm: proof of a separate kernel
+    vm_vcpus: int | None = None
+    vm_memory_mb: int | None = None
+    boot_ms: int | None = None  # sandbox/VM start latency
 
 
 # --------------------------------------------------------------------------- #
@@ -164,18 +202,28 @@ class SandboxSession(Protocol):
 
 @runtime_checkable
 class SandboxProvider(Protocol):
-    """Builds sandbox sessions and reaps orphaned ones."""
+    """Builds sandbox sessions and reaps orphaned ones.
+
+    ``preflight`` (F34) raises when the provider's runtime substrate (OCI
+    runtime registration, ``/dev/kvm``) is unusable — a no-op for the F19
+    worktree/container providers. Kernel-boundary kinds are **never** silently
+    downgraded: an unusable runtime fails loudly instead.
+    """
 
     kind: SandboxKind
 
+    async def preflight(self) -> None: ...
     async def create(self, spec: SandboxSpec) -> SandboxSession: ...
     async def reap_orphans(self) -> int: ...
 
 
 __all__ = [
+    "CONTAINER_BACKED_KINDS",
+    "SANDBOX_KIND_RANK",
     "CommandOutput",
     "SandboxCommandRunner",
     "SandboxInstanceRead",
+    "SandboxIsolationClass",
     "SandboxKind",
     "SandboxNetwork",
     "SandboxProvider",

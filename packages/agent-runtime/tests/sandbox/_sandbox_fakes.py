@@ -108,6 +108,8 @@ class FakeDockerClient:
     networks_got: list[_Network] = field(default_factory=list)
     last_exec_result: FakeExecResult | None = None
     pinged: bool = False
+    # F34: scripted `docker info` Runtimes (runc always registered by default).
+    registered_runtimes: tuple[str, ...] = ("runc",)
 
     def __post_init__(self) -> None:
         self.api = _ApiShim(self)
@@ -118,6 +120,12 @@ class FakeDockerClient:
     def ping(self) -> bool:
         self.pinged = True
         return True
+
+    def info(self) -> dict[str, Any]:
+        """Minimal ``docker info`` payload (F34 runtime detection)."""
+        return {
+            "Runtimes": {name: {"path": f"/usr/bin/{name}"} for name in self.registered_runtimes}
+        }
 
     def next_exec(self) -> FakeExecResult:
         if self._exec_idx < len(self.exec_results):

@@ -205,3 +205,167 @@ def test_preflight_rejects_old_engine(tmp_path: Path) -> None:
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_preflight_accepts_new_engine(tmp_path: Path) -> None:
     assert _run_preflight_with_stub_docker(tmp_path, "26.1.4") == 0
+
+
+# --------------------------------------------------------------------------- #
+# F34 — kernel-boundary sandbox runtimes (gVisor / Kata-Firecracker)           #
+# --------------------------------------------------------------------------- #
+
+INSTALL_RUNTIMES = DEPLOY / "scripts" / "install-runtimes.sh"
+
+
+def _stub_docker_with_runtimes(tmp_path: Path, runtimes_json: str) -> dict[str, str]:
+    """A stub ``docker`` handling both `version` and `info` (F34 preflight)."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    stub = bindir / "docker"
+    stub.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            case "$1" in
+              version) echo "26.1.4" ;;
+              info) echo '{runtimes_json}' ;;
+            esac
+            """
+        )
+    )
+    stub.chmod(0o755)
+    return dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}")
+
+
+def _run_preflight(env: dict[str, str]) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", str(PREFLIGHT)], env=env, capture_output=True, text=True)
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_preflight_gvisor_runtime_check(tmp_path: Path) -> None:
+    """AC12 — FORGE_SANDBOX_KIND=gvisor fails without runsc, with the hint."""
+    env = _stub_docker_with_runtimes(tmp_path, '{"runc":{"path":"runc"}}')
+    env["FORGE_SANDBOX_KIND"] = "gvisor"
+    proc = _run_preflight(env)
+    assert proc.returncode != 0
+    assert "runsc" in proc.stderr
+    assert "install-runtimes.sh" in proc.stderr
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_preflight_gvisor_passes_when_registered(tmp_path: Path) -> None:
+    env = _stub_docker_with_runtimes(
+        tmp_path, '{"runc":{"path":"runc"},"runsc":{"path":"/usr/local/bin/runsc"}}'
+    )
+    env["FORGE_SANDBOX_KIND"] = "gvisor"
+    assert _run_preflight(env).returncode == 0
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_preflight_microvm_kvm_check(tmp_path: Path) -> None:
+    """AC13 — FORGE_SANDBOX_KIND=microvm fails when /dev/kvm is absent."""
+    env = _stub_docker_with_runtimes(
+        tmp_path, '{"runc":{"path":"runc"},"kata-fc":{"path":"kata"}}'
+    )
+    env["FORGE_SANDBOX_KIND"] = "microvm"
+    env["FORGE_KVM_DEVICE"] = str(tmp_path / "no-such-kvm")
+    proc = _run_preflight(env)
+    assert proc.returncode != 0
+    assert "kvm" in proc.stderr.lower()
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_preflight_microvm_passes_with_runtime_and_kvm(tmp_path: Path) -> None:
+    env = _stub_docker_with_runtimes(
+        tmp_path, '{"runc":{"path":"runc"},"kata-fc":{"path":"kata"}}'
+    )
+    kvm = tmp_path / "kvm"
+    kvm.write_bytes(b"")
+    env["FORGE_SANDBOX_KIND"] = "microvm"
+    env["FORGE_KVM_DEVICE"] = str(kvm)
+    assert _run_preflight(env).returncode == 0
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_preflight_microvm_missing_runtime_names_installer(tmp_path: Path) -> None:
+    env = _stub_docker_with_runtimes(tmp_path, '{"runc":{"path":"runc"}}')
+    env["FORGE_SANDBOX_KIND"] = "microvm"
+    proc = _run_preflight(env)
+    assert proc.returncode != 0
+    assert "kata-fc" in proc.stderr
+    assert "--firecracker" in proc.stderr
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_install_runtimes_merges_daemon_json(tmp_path: Path) -> None:
+    """F34 — install-runtimes.sh merges the runtimes block idempotently."""
+    import json
+
+    daemon_json = tmp_path / "daemon.json"
+    daemon_json.write_text('{"log-driver": "json-file"}')
+    env = dict(
+        os.environ,
+        FORGE_DAEMON_JSON=str(daemon_json),
+        FORGE_SKIP_INSTALL="1",
+        FORGE_SKIP_RESTART="1",
+        FORGE_SKIP_VERIFY="1",
+    )
+    proc = subprocess.run(
+        ["bash", str(INSTALL_RUNTIMES), "--gvisor", "--firecracker"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    config = json.loads(daemon_json.read_text())
+    assert config["log-driver"] == "json-file"  # pre-existing keys preserved
+    assert config["runtimes"]["runsc"]["path"] == "/usr/local/bin/runsc"
+    assert "kata-fc" in config["runtimes"]
+
+    # Idempotent: a second run leaves the file byte-identical.
+    before = daemon_json.read_text()
+    proc2 = subprocess.run(
+        ["bash", str(INSTALL_RUNTIMES), "--gvisor", "--firecracker"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert proc2.returncode == 0, proc2.stderr
+    assert daemon_json.read_text() == before
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_install_runtimes_requires_a_flag(tmp_path: Path) -> None:
+    proc = subprocess.run(
+        ["bash", str(INSTALL_RUNTIMES)],
+        env=dict(os.environ, FORGE_DAEMON_JSON=str(tmp_path / "d.json")),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+
+
+def test_shipped_daemon_json_documents_runtimes() -> None:
+    """F34 — deploy/docker/daemon.json ships the runsc + kata-fc registrations."""
+    import json
+
+    config = json.loads((DEPLOY / "docker" / "daemon.json").read_text(encoding="utf-8"))
+    assert config["runtimes"]["runsc"]["path"]
+    assert config["runtimes"]["kata-fc"]["path"]
+    # No runtime is the daemon default: HostConfig.Runtime selects it per-container.
+    assert "default-runtime" not in config
+
+
+def test_worker_env_carries_f34_sandbox_settings() -> None:
+    """F34 — compose passes the kernel-runtime settings through to the worker."""
+    env = _service("worker")["environment"]
+    assert "FORGE_SANDBOX_GVISOR_RUNTIME" in env
+    assert "FORGE_SANDBOX_MICROVM_RUNTIME" in env
+    assert "FORGE_SANDBOX_REQUIRE_KVM" in env
+    assert "FORGE_SANDBOX_JAILER_ROOT" in env
+
+
+def test_docker_proxy_verbs_unchanged_by_f34() -> None:
+    """AC15 — runtime selection is a create-body field; no new proxy verbs."""
+    env = _service("docker-proxy")["environment"]
+    expected = {"CONTAINERS", "IMAGES", "POST", "EXEC", "INFO"}
+    assert {verb for verb in expected if env.get(verb) == "1"} == expected
+    for denied in ("NETWORKS", "VOLUMES", "SWARM", "SERVICES", "SECRETS", "BUILD"):
+        assert env[denied] == "0"

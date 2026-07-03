@@ -81,4 +81,6 @@ markers = [
     "integration: test exercises multiple services together (skips if unavailable)",
     "docker: test requires a real Docker daemon + sandbox images (F19; Docker-gated CI job, opt-in via FORGE_SANDBOX_DOCKER_TESTS=1)",
     "kind: test installs the Helm chart on an ephemeral kind cluster (F24; kind+helm+docker-gated, skips if unavailable)",
+    "gvisor: test requires the gVisor runsc OCI runtime registered with the daemon (F34; virtualization-gated CI job)",
+    "firecracker: test requires the Kata+Firecracker kata-fc runtime + /dev/kvm (F34; virtualization-gated CI job)",
 ]

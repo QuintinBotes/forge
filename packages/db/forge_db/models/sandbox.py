@@ -14,11 +14,16 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, Uuid, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from forge_db.base import WorkspaceScopedModel, enum_type, json_type
-from forge_db.models.enums import SandboxKind, SandboxNetwork, SandboxStatus
+from forge_db.models.enums import (
+    SandboxIsolationClass,
+    SandboxKind,
+    SandboxNetwork,
+    SandboxStatus,
+)
 
 if TYPE_CHECKING:
     from forge_db.models.runs import AgentRun
@@ -31,6 +36,7 @@ class SandboxInstance(WorkspaceScopedModel):
     __table_args__ = (
         Index("ix_sandbox_instance_run", "agent_run_id"),
         Index("ix_sandbox_instance_status", "status"),
+        Index("ix_sandbox_instance_isolation_class", "isolation_class"),
         Index(
             "ux_sandbox_instance_container_name",
             "container_name",
@@ -61,6 +67,19 @@ class SandboxInstance(WorkspaceScopedModel):
     host_worktree_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     limits: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # --- F34 kernel-boundary provenance (additive; null for pre-F34 rows) ---
+    runtime: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    isolation_class: Mapped[SandboxIsolationClass] = mapped_column(
+        enum_type(SandboxIsolationClass),
+        default=SandboxIsolationClass.HOST_PROCESS,
+        nullable=False,
+        server_default=SandboxIsolationClass.HOST_PROCESS.value,
+    )
+    gvisor_platform: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    guest_kernel_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    vm_vcpus: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vm_memory_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    boot_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     agent_run: Mapped[AgentRun] = relationship(back_populates="sandbox_instances")
 

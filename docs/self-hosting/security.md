@@ -124,7 +124,61 @@ locked-down Docker container.
   `FORGE_SANDBOX_MAX_TTL_SECONDS`.
 
 > Future hardening (V3): Sysbox/gVisor runtimes and Firecracker microVMs plug in
-> behind the same `SandboxProvider` seam.
+> behind the same `SandboxProvider` seam — shipped as F34, below.
+
+## Kernel-boundary sandboxing (F34)
+
+A Docker container (`runc`) still **shares the host kernel**: its isolation
+rests on namespaces, cgroups and seccomp, so one kernel-level exploit escapes
+every sandbox on the node. For genuinely untrusted, multi-tenant workloads F34
+adds two **kernel-boundary** tiers behind the same `SandboxProvider` seam:
+
+| `FORGE_SANDBOX_KIND` | Runtime | Isolation class | Boundary |
+|---|---|---|---|
+| `worktree` | — | `host_process` | none (V1 default) |
+| `container` | `runc` | `namespace` | shared host kernel |
+| `gvisor` | `runsc` | `userspace_kernel` | gVisor application kernel services the guest's syscalls in userspace |
+| `microvm` | `kata-fc` | `microvm` | Firecracker microVM with its **own guest kernel** (Kata Containers) |
+
+- **Monotonic isolation lattice.** `worktree < container < gvisor < microvm`.
+  `FORGE_SANDBOX_KIND` is the workspace **minimum**; a repo's
+  `.forge/policy.yaml` `sandbox.isolation` may *strengthen* it but never weaken
+  it. An operator mandate of `microvm` cannot be undercut by a repo policy.
+- **No silent downgrade — ever.** If the resolved kind's runtime is not
+  registered (or `/dev/kvm` is missing for `microvm`), worker boot and the run
+  fail loudly with `SandboxRuntimeUnavailable`; `deploy/scripts/preflight.sh`
+  gates the same conditions before `up`. Forge never quietly executes untrusted
+  code under a weaker runtime than the operator asked for.
+- **Enabling gVisor (no special hardware).** Run
+  `deploy/scripts/install-runtimes.sh --gvisor` on the daemon host (installs
+  `runsc`, merges `runtimes.runsc` into `/etc/docker/daemon.json`, restarts the
+  daemon), then set `FORGE_SANDBOX_KIND=gvisor`. The gVisor platform is
+  selectable via `FORGE_SANDBOX_GVISOR_PLATFORM` (`systrap` default; `kvm`
+  fastest but needs `/dev/kvm`; `ptrace` most compatible).
+- **Enabling Firecracker microVMs (KVM required).** On a bare-metal or
+  nested-virt-enabled host, run `install-runtimes.sh --firecracker` (Kata
+  Containers + Firecracker, registers `kata-fc`), verify `/dev/kvm`, then set
+  `FORGE_SANDBOX_KIND=microvm`. Guest sizing defaults derive from the sandbox
+  CPU/memory limits and can be overridden per repo (`vm_vcpus`, `vm_memory`) or
+  workspace-wide (`FORGE_SANDBOX_MICROVM_VCPUS` / `_MEMORY_MB`).
+- **All F19 controls still apply inside the stronger boundary** — single
+  worktree mount, `cap_drop: ALL`, non-root uid, read-only rootfs, limits,
+  no-network default, egress allowlist proxy, curated images, output capping,
+  orphan reaping. The kernel boundary is defense-in-depth on top, not a
+  replacement. Runtime selection is part of `POST /containers/create`, so the
+  socket-proxy verb set is **unchanged** and the worker still never touches the
+  raw socket.
+- **Auditable trust tier.** Every run's `sandbox_instance` row records the
+  `runtime`, `isolation_class`, and (for microVM) the `guest_kernel_version`,
+  vCPU/RAM sizing and boot latency — auditors can query exactly which boundary
+  contained each piece of untrusted execution.
+- **Residual trust.** `microvm` shifts trust to KVM + the Firecracker VMM; on
+  cloud VMs nested virtualization must be enabled. Prefer dedicated bare-metal
+  sandbox nodes for the highest-untrust tenants, and gVisor as the no-KVM tier.
+  On Kubernetes, isolate runtime-capable node pools via the chart's
+  `RuntimeClass` scheduling (see [kubernetes.md](kubernetes.md)).
+- **VM artifact hygiene.** The reaper sweeps any orphaned jailer chroot under
+  `FORGE_SANDBOX_JAILER_ROOT` once a run's sandbox container is gone.
 
 ## Enterprise SSO — SAML + SCIM (F33)
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from forge_contracts import SandboxKind, SandboxProvider
+from forge_contracts import CONTAINER_BACKED_KINDS, SandboxProvider
 
 
 async def reap_orphans(
@@ -25,10 +25,13 @@ async def reap_orphans(
     """Remove orphaned sandbox containers; return the count removed.
 
     For the worktree (local) provider this is always 0 (host subprocesses cannot
-    orphan a container). For the container provider, terminal runs are also reaped.
+    orphan a container). For the container-backed providers (``container``,
+    ``gvisor``, ``microvm`` — F34 kernel sandboxes are ordinary
+    ``forge.sandbox=true`` containers), terminal runs are also reaped; the
+    microvm provider additionally sweeps orphaned VM artifacts (jailer chroots).
     """
     ids = {str(rid) for rid in (terminal_run_ids or [])}
-    if getattr(provider, "kind", None) is SandboxKind.CONTAINER:
+    if getattr(provider, "kind", None) in CONTAINER_BACKED_KINDS:
         return await provider.reap_orphans(terminal_run_ids=ids)  # type: ignore[call-arg]
     return await provider.reap_orphans()
 

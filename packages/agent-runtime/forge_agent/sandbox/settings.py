@@ -62,6 +62,14 @@ class SandboxSettings(BaseModel):
     run_gid: int = 10001
     reap_interval_seconds: int = 300
     max_ttl_seconds: int = 21600
+    # --- F34 kernel-boundary runtimes ---
+    gvisor_runtime: str = "runsc"
+    gvisor_platform: str = "systrap"  # systrap | kvm | ptrace
+    microvm_runtime: str = "kata-fc"
+    microvm_vcpus: int | None = None  # None => derive from limits.cpus
+    microvm_memory_mb: int | None = None  # None => derive from limits.memory_mb
+    require_kvm: bool = True
+    jailer_root: str = "/var/lib/forge/jailer"
 
     def resolved_allowed_images(self) -> tuple[str, ...]:
         """The allowlist, defaulting to the three per-language images."""
@@ -113,6 +121,19 @@ class SandboxSettings(BaseModel):
                 e.get("FORGE_SANDBOX_REAP_INTERVAL_SECONDS", defaults.reap_interval_seconds)
             ),
             max_ttl_seconds=int(e.get("FORGE_SANDBOX_MAX_TTL_SECONDS", defaults.max_ttl_seconds)),
+            gvisor_runtime=e.get("FORGE_SANDBOX_GVISOR_RUNTIME", defaults.gvisor_runtime),
+            gvisor_platform=e.get("FORGE_SANDBOX_GVISOR_PLATFORM", defaults.gvisor_platform),
+            microvm_runtime=e.get("FORGE_SANDBOX_MICROVM_RUNTIME", defaults.microvm_runtime),
+            microvm_vcpus=(
+                int(v) if (v := e.get("FORGE_SANDBOX_MICROVM_VCPUS")) else defaults.microvm_vcpus
+            ),
+            microvm_memory_mb=(
+                int(v)
+                if (v := e.get("FORGE_SANDBOX_MICROVM_MEMORY_MB"))
+                else defaults.microvm_memory_mb
+            ),
+            require_kvm=_env_bool(e.get("FORGE_SANDBOX_REQUIRE_KVM"), defaults.require_kvm),
+            jailer_root=e.get("FORGE_SANDBOX_JAILER_ROOT", defaults.jailer_root),
         )
 
     def to_limits(self) -> dict[str, float | int]:

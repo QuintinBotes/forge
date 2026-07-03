@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_agent.sandbox import SandboxSettings, build_sandbox_provider, reap_orphans
-from forge_contracts import SandboxKind
+from forge_contracts import CONTAINER_BACKED_KINDS
 from forge_db.models import AgentRun, SandboxInstance
 from forge_db.models.enums import RunStatus, SandboxStatus
 from forge_db.session import create_session_factory
@@ -56,7 +56,7 @@ def _collect_terminal_ids(
     settings: SandboxSettings,
     session_factory: sessionmaker[Session] | None,
 ) -> set[str]:
-    if settings.kind is not SandboxKind.CONTAINER:
+    if settings.kind not in CONTAINER_BACKED_KINDS:
         return set()  # the worktree provider never orphans a container; skip the DB
     factory = session_factory or create_session_factory()
     try:
