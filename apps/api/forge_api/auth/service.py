@@ -38,6 +38,11 @@ from forge_api.auth.oauth import OAuthClient, UnsupportedOAuthProviderError
 from forge_api.auth.rbac import Permission, PermissionDeniedError, ensure
 from forge_api.auth.vault import SecretVault
 from forge_api.deps import Principal
+from forge_api.services.auth_audit import AuthAuditEmitter
+from forge_auth.errors import AuthenticationError as SdkAuthenticationError
+from forge_auth.rbac import has_at_least
+from forge_auth.tokens import decode_session_jwt, looks_like_jwt
+from forge_contracts.audit import AuditSink
 from forge_contracts.enums import APIKeyKind, UserRole
 
 
@@ -104,6 +109,8 @@ class AuthService:
         api_keys: APIKeyStore | None = None,
         vault: SecretVault | None = None,
         oauth: OAuthClient | None = None,
+        auth_secret: str | None = None,
+        audit_sink: AuditSink | None = None,
     ) -> None:
         master = _resolve_master_key(secret_key)
         self.api_keys = api_keys or APIKeyStore(secret_key=_subkey(master, b"forge-apikey"))
@@ -113,15 +120,51 @@ class AuthService:
         # Constructs without network access; the IdP is only contacted when an
         # authorization-code exchange is actually requested.
         self.oauth = oauth or OAuthClient.from_env()
+        # F37 web↔API seam: the shared HS256 secret Better Auth signs the
+        # session JWT with. Absent ⇒ the JWT auth path is disabled (API keys
+        # keep working); never silently defaulted.
+        self._auth_secret = auth_secret if auth_secret is not None else os.environ.get(
+            "AUTH_SECRET"
+        )
+        # F37 audit producer: auth-domain events flow through the injected
+        # AuditSink (F39's SqlAuditWriter at DB wire-up; a log-only fallback
+        # otherwise so no event is silently dropped). Metadata is redacted by
+        # the canonical forge_auth SecretRedactor inside the emitter.
+        self.audit = AuthAuditEmitter(audit_sink)
 
     # -- authentication ----------------------------------------------------- #
 
     def authenticate(self, token: str) -> Principal:
-        """Verify an API-key token and return the resolved :class:`Principal`."""
+        """Resolve a credential to a :class:`Principal` or raise.
+
+        Order (spec §3.2 ``get_principal``): a session JWT minted by the web
+        auth layer (HS256 over ``AUTH_SECRET``, ``aud=forge-api``) resolves a
+        ``user`` principal; otherwise the token is verified as a platform API
+        key. Anything else raises :class:`AuthenticationError` (→ 401).
+        """
+        from forge_api.auth.rbac import permissions_for
+
+        if looks_like_jwt(token):
+            if not self._auth_secret:
+                raise AuthenticationError(
+                    "session JWTs are not enabled (AUTH_SECRET is not configured)"
+                )
+            try:
+                claims = decode_session_jwt(token, secret=self._auth_secret)
+            except SdkAuthenticationError as exc:  # TokenExpired / InvalidToken
+                raise AuthenticationError(str(exc)) from exc
+            return Principal(
+                user_id=claims.sub,
+                workspace_id=claims.wsid,
+                role=claims.role,
+                email=claims.email,
+                auth_method="session_jwt",
+                scopes=[p.value for p in sorted(permissions_for(claims.role))],
+            )
+
         record = self.api_keys.verify(token)
         if record is None:
             raise AuthenticationError("invalid or expired API key")
-        from forge_api.auth.rbac import permissions_for
 
         return Principal(
             user_id=record.user_id or record.id,
@@ -287,6 +330,30 @@ def require_permission(permission: Permission) -> Callable[[Principal], Principa
     return _dependency
 
 
+def require_role(min_role: UserRole) -> Callable[[Principal], Principal]:
+    """Flat F37 RBAC dependency: authenticate, then assert role rank.
+
+    ``ROLE_RANK[principal.role] >= ROLE_RANK[min_role]`` else 403. This is the
+    contract ``cross-cutting/F30-multi-team-rbac`` shims onto scoped
+    ``require_permission(...)`` grants; the permission-matrix variant above
+    remains for capability-grained routes.
+    """
+
+    def _dependency(principal: AuthedPrincipal) -> Principal:
+        if not has_at_least(principal.role, min_role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"forbidden: requires role '{min_role.value}' or higher",
+            )
+        return principal
+
+    return _dependency
+
+
+#: Convenience dependency for admin-only routes (spec §3.2).
+require_admin = require_role(UserRole.ADMIN)
+
+
 __all__ = [
     "AuthService",
     "AuthServiceDep",
@@ -294,5 +361,7 @@ __all__ = [
     "AuthenticationError",
     "get_auth_service",
     "get_authenticated_principal",
+    "require_admin",
     "require_permission",
+    "require_role",
 ]

@@ -28,6 +28,28 @@ the encrypted BYOK vault in Postgres.
   traces, and retrieval results by design. Do not defeat this by echoing secrets
   into application logs or by lowering `LOG_LEVEL` to debug in production.
 
+### Envelope-vault key material (F37)
+
+The F37 envelope vault (`forge_auth`) uses AES-256-GCM with a **versioned**
+32-byte master key (KEK) and an HKDF-derived per-workspace data key; the
+workspace id is bound into the GCM AAD, so a ciphertext copied across tenants
+fails authentication. Generate KEKs and peppers with:
+
+```bash
+python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
+```
+
+- `FORGE_VAULT_KEYS` — versioned KEK map, e.g. `1:<base64-32B>`. To rotate,
+  append a new version (`1:<old>,2:<new>`), set
+  `FORGE_VAULT_ACTIVE_KEY_VERSION=2`, and re-encrypt existing blobs
+  (`SecretVault.rotate`); old versions keep decrypting until removed
+  (crypto-shred by deleting a retired version).
+- `API_KEY_PEPPER` — HMAC pepper for platform API-key hashing. Platform keys
+  (`forge_pat_*` / `forge_svc_*` / `forge_agt_*`) are one-way hashed and shown
+  once at mint; a database dump cannot recover a usable token.
+- Startup is **fail-closed**: missing/malformed key material raises
+  immediately rather than falling back to an insecure default.
+
 ## Credential rotation
 
 Rotate on a schedule and immediately after any suspected exposure or staff

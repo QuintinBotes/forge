@@ -15,6 +15,11 @@ from contextlib import contextmanager
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from forge_api.deps import DbSession, Principal, get_current_principal
+from forge_api.services.authz_service import AuthzService, ResourceNotFound
 from forge_authz.errors import (
     AccessDenied,
     EscalationError,
@@ -22,11 +27,6 @@ from forge_authz.errors import (
     TeamCycleError,
     TeamDepthError,
 )
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from forge_api.deps import DbSession, Principal, get_current_principal
-from forge_api.services.authz_service import AuthzService, ResourceNotFound
 from forge_contracts.authz import Permission, PrincipalContext, ResourceRef
 from forge_contracts.enums import UserRole
 from forge_db.models import Project

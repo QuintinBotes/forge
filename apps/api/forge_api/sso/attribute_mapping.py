@@ -13,7 +13,6 @@ self-escalation via IdP).
 from __future__ import annotations
 
 from forge_authz.permissions import ROLE_RANK
-
 from forge_contracts.enums import UserRole
 from forge_contracts.sso import AttributeMapping, MappedIdentity, SamlAssertion
 

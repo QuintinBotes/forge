@@ -124,6 +124,9 @@ EXPECTED_MODELS = [
     # F36 human-approval-system tables.
     "ApprovalDecision",
     "PolicyOverrideGrant",
+    # F37 auth-secrets-byok tables.
+    "PlatformAPIKey",
+    "OAuthAccount",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

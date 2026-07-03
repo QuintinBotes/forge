@@ -42,6 +42,8 @@ known-first-party = [
     "forge_integrations",
     "forge_mcp",
     "forge_policy",
+    "forge_authz",
+    "forge_auth",
     "forge_skill",
     "forge_eval",
     "forge_marketplace",

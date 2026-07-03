@@ -9,7 +9,6 @@ from forge_authz.permissions import (
     WORKSPACE_ONLY_PERMISSIONS,
     scope_narrow,
 )
-
 from forge_contracts.authz import AccessLevel, Permission, Role, ScopeType
 
 P = Permission
