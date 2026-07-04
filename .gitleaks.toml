@@ -20,6 +20,11 @@ paths = [
   '''packages/knowledge-core/tests/test_mcp_redaction\.py''',
   '''packages/mcp-sdk/forge_mcp/testing\.py''',
   '''apps/api/tests/test_obs_redaction\.py''',
+  # HARD-02: fake sk-…/Bearer… shapes that exercise the model-client redactor.
+  '''packages/agent-runtime/tests/test_providers_redaction\.py''',
+  # Fake RFC example RSA key + AWS example key (AKIA…EXAMPLE) seeding the
+  # secret-exclusion/redaction corpus assertions (_FAKE_PEM / _FAKE_AWS_KEY).
+  '''packages/evaluation/tests/test_corpus_eval\.py''',
   '''apps/api/tests/test_obs_otel\.py''',
   '''apps/api/tests/test_obs_router\.py''',
   '''apps/api/tests/test_obs_audit\.py''',

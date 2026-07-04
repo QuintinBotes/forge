@@ -12,6 +12,15 @@ dependencies = [
     "docker>=7.1,<8",
 ]
 
+[project.optional-dependencies]
+# HARD-02: BYOK live-model providers. Optional extra, imported lazily inside the
+# adapter modules so the hermetic default suite needs neither installed. Install
+# with `uv sync --extra providers` to run the `pytest -m live_model` lane.
+providers = [
+    "anthropic>=0.49",
+    "openai>=1.60",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

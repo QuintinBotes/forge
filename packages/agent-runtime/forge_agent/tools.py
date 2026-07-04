@@ -49,6 +49,10 @@ class Tool:
     handler: ToolHandler
     action: str | None = None
     description: str = ""
+    #: Optional JSON Schema for the tool's parameters, advertised to real model
+    #: providers so they emit well-formed tool arguments (HARD-02). ``None`` keeps
+    #: the legacy name+description-only schema shape.
+    input_schema: dict[str, Any] | None = None
 
     @property
     def policy_action(self) -> str:
@@ -78,9 +82,16 @@ class ToolRegistry:
         *,
         action: str | None = None,
         description: str = "",
+        input_schema: dict[str, Any] | None = None,
     ) -> Tool:
         return self.register(
-            Tool(name=name, handler=handler, action=action, description=description)
+            Tool(
+                name=name,
+                handler=handler,
+                action=action,
+                description=description,
+                input_schema=input_schema,
+            )
         )
 
     def get(self, name: str) -> Tool | None:
@@ -96,9 +107,20 @@ class ToolRegistry:
         tool = self._tools.get(name)
         return tool.policy_action if tool is not None else name
 
-    def schemas(self) -> list[dict[str, str]]:
-        """Tool descriptions advertised to the model in a request."""
-        return [{"name": t.name, "description": t.description} for t in self._tools.values()]
+    def schemas(self) -> list[dict[str, Any]]:
+        """Tool schemas advertised to the model in a request.
+
+        ``input_schema`` is included only for tools that declare one, so the
+        legacy ``{name, description}`` shape is preserved for tools that don't
+        (backward-compatible with existing callers/tests).
+        """
+        out: list[dict[str, Any]] = []
+        for t in self._tools.values():
+            schema: dict[str, Any] = {"name": t.name, "description": t.description}
+            if t.input_schema is not None:
+                schema["input_schema"] = t.input_schema
+            out.append(schema)
+        return out
 
     def dispatch(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         tool = self._tools.get(name)
@@ -150,8 +172,39 @@ def default_tool_registry(root: str | Path | None = None) -> ToolRegistry:
             names = sorted(p.name for p in path.iterdir())
             return ToolResult(ok=True, output="\n".join(names), data={"entries": names})
 
-        registry.add("read_file", read_file, action="read_repo", description="Read a repo file")
-        registry.add("write_file", write_file, action="write_code", description="Write a repo file")
-        registry.add("list_dir", list_dir, action="read_repo", description="List a directory")
+        _path_schema = {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Repo-relative path"}},
+            "required": ["path"],
+        }
+        _write_schema = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Repo-relative path"},
+                "content": {"type": "string", "description": "File contents to write"},
+            },
+            "required": ["path", "content"],
+        }
+        registry.add(
+            "read_file",
+            read_file,
+            action="read_repo",
+            description="Read a repo file",
+            input_schema=_path_schema,
+        )
+        registry.add(
+            "write_file",
+            write_file,
+            action="write_code",
+            description="Write a repo file",
+            input_schema=_write_schema,
+        )
+        registry.add(
+            "list_dir",
+            list_dir,
+            action="read_repo",
+            description="List a directory",
+            input_schema=_path_schema,
+        )
 
     return registry
