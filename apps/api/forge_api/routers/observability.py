@@ -10,6 +10,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import PlainTextResponse
 
 from forge_api.deps import CurrentPrincipal, get_current_principal
 from forge_api.observability.audit import AuditCategory, AuditEntry
@@ -19,6 +20,7 @@ from forge_api.observability.service import (
     get_observability_service,
 )
 from forge_api.observability.trace import RunTrace
+from forge_obs.metrics import RecordingMetrics, get_metrics, render_prometheus
 
 router = APIRouter(
     prefix="/observability",
@@ -54,6 +56,27 @@ def list_audit(
         workspace_id=principal.workspace_id,
         limit=limit,
     )
+
+
+@router.get(
+    "/metrics",
+    summary="Prometheus text exposition of the in-process F38 metric registry.",
+    response_class=PlainTextResponse,
+)
+def prometheus_metrics(principal: CurrentPrincipal) -> PlainTextResponse:
+    """Internal scrape surface (F38).
+
+    Deviation from the slice doc, noted: instead of an unauthenticated
+    ``/metrics`` bound to an internal network interface (an infra concern the
+    compose profile owns), the in-app exposition mounts behind the normal
+    authenticated router so it can never leak on a public deployment. With
+    observability disabled (``OBS_ENABLED=false``) the registry is a no-op and
+    the body is empty — no export is attempted (spec AC18).
+    """
+    del principal  # authentication is the gate; metrics carry no tenant data
+    metrics = get_metrics()
+    body = render_prometheus(metrics) if isinstance(metrics, RecordingMetrics) else ""
+    return PlainTextResponse(content=body, media_type="text/plain; version=0.0.4")
 
 
 @router.get(

@@ -16,6 +16,7 @@ from forge_api.routers import FEATURE_ROUTERS, HEALTH_ROUTER
 from forge_api.settings import Settings, get_settings
 from forge_api.sso.errors import ScimApiError
 from forge_contracts.sso import ScimError
+from forge_obs.telemetry import setup_telemetry
 
 
 class ServiceInfo(BaseModel):
@@ -34,6 +35,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     process-wide cached settings.
     """
     cfg = settings or get_settings()
+
+    # F38: one shared telemetry init per service. Env-driven (OBS_ENABLED
+    # defaults false -> no-op providers + JSON logging only), idempotent, and
+    # never raises — the app boots identically with or without the
+    # observability stack (spec AC1/AC18).
+    setup_telemetry("forge-api")
 
     app = FastAPI(
         title=cfg.app_name,

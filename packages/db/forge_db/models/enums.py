@@ -131,6 +131,14 @@ class ChunkType(enum.StrEnum):
     MCP_RESOURCE = "mcp_resource"
 
 
+class CostEventKind(enum.StrEnum):
+    """Priced model-call classes on the F38 cost ledger (``cost_event.kind``)."""
+
+    COMPLETION = "completion"
+    EMBEDDING = "embedding"
+    RERANK = "rerank"
+
+
 class TaskKind(enum.StrEnum):
     """Task kinds (spec: Task Schema ``kind``)."""
 
@@ -418,6 +426,7 @@ __all__ = [
     "AutomationTriggerType",
     "CarryoverTarget",
     "ChunkType",
+    "CostEventKind",
     "DeploymentEventType",
     "DeploymentKind",
     "DeploymentState",

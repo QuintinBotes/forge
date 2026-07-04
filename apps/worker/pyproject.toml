@@ -17,6 +17,9 @@ dependencies = [
     # F32 — integration marketplace: catalog-sync + update-flag worker tasks.
     "forge-marketplace",
     "forge-api",
+    # F38 — cost.reprice + obs.refresh_freshness_gauges tasks and the worker
+    # UsageMeter wiring.
+    "forge-obs",
     "forge-workflow",
     # F31 — deployment gates: drive promotions/health/rollback on the worker.
     "forge-deploy",

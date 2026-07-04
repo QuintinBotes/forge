@@ -9,6 +9,8 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "forge-mcp",
+    # F38 — metrics facade (forge_mcp_* emission) + telemetry init.
+    "forge-obs",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
 ]

@@ -1,0 +1,27 @@
+[project]
+name = "forge-obs"
+version = "0.1.0"
+description = "Observability & cost metrics SDK (F38) — typed Key-Metric facade with bounded cardinality, idempotent UsageMeter cost emission over the durable cost ledger, structured redacted logging, and a no-op degraded mode."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "Apache-2.0" }
+authors = [{ name = "The Forge Authors" }]
+dependencies = [
+    "forge-contracts",
+    "forge-db",
+    "forge-auth",
+    "pydantic>=2.7",
+    "sqlalchemy>=2.0",
+]
+
+[tool.uv.sources]
+forge-contracts = { workspace = true }
+forge-db = { workspace = true }
+forge-auth = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["forge_obs"]

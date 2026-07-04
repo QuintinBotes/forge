@@ -12,6 +12,7 @@ the redacted audit trail. Security errors map to precise HTTP status codes:
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import Depends, FastAPI, Query, Request, status
@@ -36,6 +37,8 @@ from forge_mcp.exceptions import (
 )
 from forge_mcp_gateway import __version__
 from forge_mcp_gateway.manager import MCPConnectionManager
+from forge_obs.metrics import get_metrics
+from forge_obs.telemetry import setup_telemetry
 
 
 class ToolCallRequest(BaseModel):
@@ -82,6 +85,8 @@ def _error_handlers(app: FastAPI) -> None:
 
 def create_gateway_app(manager: MCPConnectionManager | None = None) -> FastAPI:
     """Build the MCP gateway app bound to ``manager`` (a default one if omitted)."""
+    # F38: shared telemetry init (env-driven; defaults to the no-op providers).
+    setup_telemetry("forge-mcp-gateway")
     mgr = manager or MCPConnectionManager()
     app = FastAPI(
         title="Forge MCP Gateway",
@@ -149,7 +154,28 @@ def create_gateway_app(manager: MCPConnectionManager | None = None) -> FastAPI:
         request: ToolCallRequest,
         manager: MCPConnectionManager = ManagerDep,
     ) -> MCPToolResult:
-        return manager.call_tool(connection_id, request.name, request.arguments)
+        # F38: every tool call emits forge_mcp_calls_total + latency through
+        # the facade (no-op when observability is disabled). The label is the
+        # connection *name* (bounded by the cardinality guard), never a
+        # payload; emission never raises.
+        started = time.perf_counter()
+        status_label = "ok"
+        try:
+            return manager.call_tool(connection_id, request.name, request.arguments)
+        except Exception:
+            status_label = "error"
+            raise
+        finally:
+            try:
+                conn = manager.get(connection_id).connection
+                connection_name = conn.name if conn is not None else "unknown"
+            except Exception:
+                connection_name = "unknown"
+            get_metrics().record_mcp_call(
+                connection=connection_name,
+                status=status_label,
+                latency_seconds=time.perf_counter() - started,
+            )
 
     @app.get(
         "/connections/{connection_id}/audit",

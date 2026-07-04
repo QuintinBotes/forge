@@ -17,6 +17,9 @@ dependencies = [
     "forge-marketplace",
     # F36 — Human Approval System SDK (unified gate service, authorizer, registry).
     "forge-approval",
+    # F38 — observability & cost metrics SDK (metrics facade, cost ledger seams,
+    # usage meter, structured logging).
+    "forge-obs",
     # F37 — auth & secrets crypto core (envelope vault, session JWT, flat RBAC,
     # canonical secret redaction).
     "forge-auth",
