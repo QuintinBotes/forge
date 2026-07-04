@@ -44,10 +44,16 @@ from forge_knowledge.mcp_ledger import (
 from forge_knowledge.mcp_retrieval import McpRetrievalRouter, retrieve_with_mcp
 from forge_knowledge.redaction import redact_secrets
 from forge_knowledge.reranker import (
+    DEFAULT_RERANK_TIMEOUT_MS,
     FixtureRerankerClient,
+    GracefulReranker,
     JinaRerankerClient,
+    RerankerUnavailableError,
+    RerankTelemetry,
+    build_reranker,
+    build_reranker_from_settings,
 )
-from forge_knowledge.retriever import HybridRetriever
+from forge_knowledge.retriever import HybridRetriever, RerankDebug
 from forge_knowledge.service import KnowledgeService
 from forge_knowledge.stores import (
     Bm25Store,
@@ -69,12 +75,14 @@ __version__ = "0.1.0"
 
 __all__ = [
     "DEFAULT_MAX_CHARS",
+    "DEFAULT_RERANK_TIMEOUT_MS",
     "DEFAULT_SENTENCE_TRANSFORMERS_MODEL",
     "TREE_SITTER_LANGUAGES",
     "Bm25Store",
     "ChangeSet",
     "DeterministicEmbeddingClient",
     "FixtureRerankerClient",
+    "GracefulReranker",
     "HttpEmbeddingClient",
     "HybridRetriever",
     "JinaRerankerClient",
@@ -87,6 +95,9 @@ __all__ = [
     "McpRetrievalRouter",
     "McpSyncIndexer",
     "PgVectorStore",
+    "RerankDebug",
+    "RerankTelemetry",
+    "RerankerUnavailableError",
     "ResourceLedger",
     "ResourceRef",
     "SentenceTransformerEmbeddingClient",
@@ -95,6 +106,8 @@ __all__ = [
     "SyncDirection",
     "SyncReport",
     "SyncRunRecorder",
+    "build_reranker",
+    "build_reranker_from_settings",
     "chunk_code",
     "chunk_file",
     "chunk_markdown",

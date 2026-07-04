@@ -18,6 +18,10 @@ paths = [
   '''packages/observability/tests/test_telemetry_logging\.py''',
   '''packages/auth-sdk/tests/test_redaction\.py''',
   '''packages/knowledge-core/tests/test_mcp_redaction\.py''',
+  # HARD-03: fake jina-/cohere-secret shapes exercising the reranker redactor
+  # (GracefulReranker / JinaRerankerClient) — no real credential.
+  '''packages/knowledge-core/tests/test_reranker\.py''',
+  '''packages/knowledge-core/tests/test_reranker_live\.py''',
   '''packages/mcp-sdk/forge_mcp/testing\.py''',
   '''apps/api/tests/test_obs_redaction\.py''',
   # HARD-02: fake sk-…/Bearer… shapes that exercise the model-client redactor.
