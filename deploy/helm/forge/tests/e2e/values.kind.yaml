@@ -1,0 +1,70 @@
+# HARD-08 kind/k3d smoke overlay (AC18/AC19). NOT for production.
+#
+# Layered on top of values.yaml. It:
+#   * points every workload at the locally-built forge/{api,worker,web,
+#     mcp-gateway}:0.1.0 images (loaded with `kind load docker-image`), never
+#     pulling from a registry (image.pullPolicy=Never);
+#   * uses the chart's EXTERNAL-datastore path against the in-cluster official
+#     pgvector + redis stood up by datastores.yaml (the bundled Bitnami
+#     subchart images were withdrawn from Docker Hub in Bitnami's 2025 catalog
+#     deprecation — see docs/self-hosting/kubernetes.md);
+#   * disables autoscaling (single replica) and NetworkPolicy (kind's default
+#     CNI does not enforce it) to keep the smoke fast and deterministic.
+#
+#   helm install forge deploy/helm/forge -n forge \
+#     -f deploy/helm/forge/tests/e2e/values.kind.yaml --wait --timeout 10m
+forge:
+  domain: forge.localtest.me
+
+image:
+  registry: forge
+  pullPolicy: Never
+
+api:
+  image: { repository: api, tag: "0.1.0" }
+  autoscaling: { enabled: false }
+worker:
+  image: { repository: worker, tag: "0.1.0" }
+  autoscaling: { enabled: false }
+web:
+  image: { repository: web, tag: "0.1.0" }
+  autoscaling: { enabled: false }
+mcpGateway:
+  image: { repository: mcp-gateway, tag: "0.1.0" }
+  autoscaling: { enabled: false }
+
+ingress:
+  enabled: true
+  className: nginx
+  tls:
+    enabled: true
+    secretName: forge-tls
+    certManager:
+      enabled: false
+
+networkPolicy:
+  enabled: false
+
+# External datastores (in-cluster official images from datastores.yaml).
+postgresql:
+  enabled: false
+externalDatabase:
+  host: forge-ext-postgres
+  port: 5432
+  user: forge
+  database: forge
+redis:
+  enabled: false
+externalRedis:
+  host: forge-ext-redis
+  port: 6379
+minio:
+  enabled: false
+externalObjectStore:
+  endpoint: http://forge-ext-minio:9000
+  bucket: forge
+
+secrets:
+  create: true
+  data:
+    POSTGRES_PASSWORD: forge

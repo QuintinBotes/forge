@@ -9,5 +9,8 @@
 .idea/
 .vscode/
 # helm-unittest specs and the Python/static test harness are dev-only.
-tests/
-ci/
+# NOTE: anchor these to the chart ROOT (leading slash). An unanchored `tests/`
+# also matches templates/tests/, which would drop the `helm test` connection
+# Pod from the packaged chart (so `helm test` finds no suite).
+/tests/
+/ci/
