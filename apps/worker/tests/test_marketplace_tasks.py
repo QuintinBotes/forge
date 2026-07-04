@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import StaticPool, create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+import forge_worker.tasks.marketplace as mkt
 from forge_api.services.marketplace_service import (
     MarketplaceService,
     seed_official_registry,
@@ -36,8 +37,14 @@ from forge_marketplace.models import (
 )
 from forge_marketplace.packaging import build_package
 from forge_worker.tasks.marketplace import (
+    _allowed_hosts,
+    backfill_official,
+    build_service,
+    refresh_update_flags,
     refresh_update_flags_core,
     sync_all_core,
+    sync_all_registries,
+    sync_registry,
     sync_registry_core,
 )
 
@@ -201,3 +208,49 @@ def test_official_registry_seeded(session_factory) -> None:
             )
         ).scalar_one()
         assert count == 1
+
+# --------------------------------------------------------------------------- #
+# HARD-11: cover the thin Celery seams + config helpers (build_service,        #
+# _allowed_hosts, task wrappers, backfill_official).                           #
+# --------------------------------------------------------------------------- #
+
+
+def test_allowed_hosts_parses_env(monkeypatch) -> None:
+    monkeypatch.setenv("MARKETPLACE_ALLOWED_REGISTRY_HOSTS", " a.test , b.test ,")
+    assert _allowed_hosts() == frozenset({"a.test", "b.test"})
+    monkeypatch.delenv("MARKETPLACE_ALLOWED_REGISTRY_HOSTS", raising=False)
+    assert _allowed_hosts() == frozenset()
+
+
+def test_build_service_uses_injected_deps(session_factory) -> None:
+    _priv, pub = _keypair()
+    gw = FakeGateway(pub)
+    service = build_service(session_factory=session_factory, gateway=gw)
+    assert isinstance(service, MarketplaceService)
+
+
+def test_task_seams_delegate_to_core(session_factory, monkeypatch) -> None:
+    priv, pub = _keypair()
+    gw = FakeGateway(pub)
+    gw.add(*_skill_version(priv, slug="pkg-seam"))
+    reg = _registry(session_factory, pub)
+    service = MarketplaceService(session_factory=session_factory, gateway=gw)
+    monkeypatch.setattr(mkt, "build_service", lambda: service)
+
+    report = sync_registry(str(reg.id))
+    assert report["status"] == "ok"
+    assert sync_all_registries() == 1
+    assert refresh_update_flags() == 0  # no installs yet
+
+
+def test_backfill_official_no_url_is_zero(monkeypatch) -> None:
+    monkeypatch.delenv("MARKETPLACE_OFFICIAL_REGISTRY_URL", raising=False)
+    assert backfill_official() == 0
+
+
+def test_backfill_official_seeds_when_configured(session_factory, monkeypatch) -> None:
+    monkeypatch.setenv("MARKETPLACE_OFFICIAL_REGISTRY_URL", "https://official/index.json")
+    monkeypatch.setenv("MARKETPLACE_OFFICIAL_REGISTRY_PUBKEY", "k")
+    monkeypatch.setattr(mkt, "get_session_factory", lambda: session_factory)
+    seeded = backfill_official()
+    assert seeded >= 1

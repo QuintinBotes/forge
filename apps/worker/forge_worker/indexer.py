@@ -26,6 +26,7 @@ from forge_knowledge import (
     chunk_file,
 )
 from forge_worker.celery_app import celery_app
+from forge_worker.reliability import ForgeTask
 
 __all__ = [
     "build_knowledge_service",
@@ -65,8 +66,21 @@ def build_knowledge_service() -> KnowledgeService:
     )
 
 
-@celery_app.task(name="forge.knowledge.index_source")
-def index_source_task(source_id: str, files: dict[str, str]) -> dict[str, Any]:
-    """Celery entrypoint: index ``files`` for ``source_id`` and return the result."""
+@celery_app.task(bind=True, base=ForgeTask, name="forge.knowledge.index_source")
+def index_source_task(
+    self: ForgeTask,
+    source_id: str,
+    files: dict[str, str],
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Celery entrypoint: index ``files`` for ``source_id`` and return the result.
+
+    Indexing is already content-hash idempotent at the store; the optional
+    ``idempotency_key`` adds *enqueue-level* dedup so a re-delivered message does
+    not re-chunk/re-embed the same payload.
+    """
+    if self.is_duplicate(idempotency_key):
+        return {"deduplicated": True, "idempotency_key": idempotency_key}
     service = build_knowledge_service()
     return index_source(service, source_id, files).model_dump()

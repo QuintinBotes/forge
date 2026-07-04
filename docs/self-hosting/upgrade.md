@@ -100,6 +100,50 @@ Prefer **restoring the pre-upgrade backup** over `alembic downgrade`: downgrade
 scripts are best-effort and can lose data written after the upgrade. This is why
 step 2 of "Before you start" is non-negotiable.
 
+## Migration reversibility (verified on real Postgres) — HARD-11
+
+Every revision in `packages/db/migrations/versions` is proven **individually
+reversible on live pgvector** by the migration test-suite, which runs three gates
+against a throwaway database on a real Postgres server (they *skip* cleanly where
+no Postgres is reachable, so the hermetic suite stays green):
+
+```bash
+# Point at a pgvector-enabled Postgres and run the live migration gates.
+export FORGE_TEST_DATABASE_URL=postgresql+psycopg://forge:forge@localhost:5433/forge
+uv run pytest packages/db -m postgres -q
+```
+
+- **Full round-trip** (`test_full_roundtrip_on_postgres`) — `upgrade head →
+  downgrade base → upgrade head` runs clean, including `CREATE EXTENSION vector`,
+  the `VECTOR(1536)` embedding column, and `tsvector` keyword columns that SQLite
+  cannot represent.
+- **Per-revision walk** (`test_stepwise_revision_walk`) — every revision is
+  upgraded to, single-step-downgraded to its parent, and re-upgraded, so *each*
+  down script is exercised on Postgres, not only on the SQLite substrate.
+- **Data preservation** (`test_rollback_is_data_preserving`) — a single-step
+  rollback of the additive head revision preserves seeded `workspace` / `app_user`
+  rows.
+
+### Reversible vs backup-first
+
+The current chain is **additive**: every revision either creates its own tables
+(dropped on downgrade) or adds columns/indexes (removed on downgrade), and none
+drops or rewrites a pre-existing table's data. A single-step `alembic downgrade
+-1` is therefore data-preserving for the schema. **However**, two caveats make
+the pre-upgrade backup the supported rollback path:
+
+- **Rows written after the upgrade** into a table/column that the downgrade drops
+  are lost by definition (e.g. rolling back `0023_envelope_key_version` discards
+  `api_key.key_version`/`rotated_at` written since the upgrade).
+- **Code/schema coupling.** Rows written by the envelope cipher stay decryptable
+  after a downgrade only while the code still understands the envelope blob — a
+  schema downgrade must be paired with a code rollback (see
+  [security.md](security.md)).
+
+If a future release ships an **intentionally destructive** revision (a column
+drop that discards data, a type rewrite), it will be called out here as
+**backup-first** rather than data-preserving, and the release notes will say so.
+
 ## Related
 
 - [backup.md](backup.md) — take one before every upgrade.

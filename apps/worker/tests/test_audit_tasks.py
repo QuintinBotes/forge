@@ -109,3 +109,73 @@ def test_tasks_and_beat_are_registered() -> None:
     assert BEAT_AUDIT_VERIFY_TASK == AUDIT_VERIFY_TASK
     entry = BEAT_SCHEDULE["audit-verify-chain-all"]
     assert entry["task"] == AUDIT_VERIFY_TASK
+
+
+# --------------------------------------------------------------------------- #
+# HARD-11: cover the Celery seams (record_audit_event retry/fail-open,          #
+# verify_chain_all) over an injected session factory.                          #
+# --------------------------------------------------------------------------- #
+
+
+def _memory_factory() -> sessionmaker[Session]:
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory: sessionmaker[Session] = sessionmaker(
+        bind=engine, expire_on_commit=False, class_=Session
+    )
+    with factory() as s:
+        s.add(Workspace(id=WS, name="Acme", slug="acme"))
+        s.commit()
+    return factory
+
+
+def test_record_audit_event_seam_persists(monkeypatch) -> None:
+    import forge_worker.tasks.audit as audit_mod
+    from forge_worker.tasks.audit import record_audit_event
+
+    factory = _memory_factory()
+    monkeypatch.setattr(audit_mod, "create_session_factory", lambda: factory)
+
+    payload = AuditEvent(workspace_id=WS, action="tool.call").model_dump(mode="json")
+    record_audit_event(payload)
+
+    with factory() as s:
+        row = s.scalars(select(AuditLog)).one()
+        assert row.action == "tool.call"
+
+
+def test_record_audit_event_drops_after_max_retries(monkeypatch) -> None:
+    import forge_worker.tasks.audit as audit_mod
+    from forge_worker.tasks.audit import record_audit_event
+
+    factory = _memory_factory()
+    monkeypatch.setattr(audit_mod, "create_session_factory", lambda: factory)
+
+    def _boom(_session, _payload):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(audit_mod, "run_record", _boom)
+
+    def _retry(*_a, **_k):
+        raise record_audit_event.MaxRetriesExceededError
+
+    monkeypatch.setattr(record_audit_event, "retry", _retry)
+    # Fail-open: exhausting retries logs and returns None (never raises).
+    assert record_audit_event({"action": "x"}) is None
+
+
+def test_verify_chain_all_seam(monkeypatch) -> None:
+    import forge_worker.tasks.audit as audit_mod
+    from forge_worker.tasks.audit import verify_chain_all
+
+    factory = _memory_factory()
+    with factory() as s:
+        writer = SqlAuditWriter(s)
+        writer.emit(AuditEvent(workspace_id=WS, action="tool.call"))
+        s.commit()
+    monkeypatch.setattr(audit_mod, "create_session_factory", lambda: factory)
+
+    verdicts = verify_chain_all()
+    assert verdicts[str(WS)] is True

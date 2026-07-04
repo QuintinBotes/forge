@@ -151,8 +151,26 @@ class Settings(BaseSettings):
     ratelimit_enabled: bool = True
     ratelimit_rpm: int = 120
     ratelimit_burst: int = 60
+    # HARD-11: per-route rate-limit overrides for the expensive hot paths, as a
+    # JSON map ``{route: "N/window"}`` (e.g. {"/knowledge/search": "30/minute"}).
+    # Empty by default -> every route uses the default budget above.
+    ratelimit_overrides: dict[str, str] = {}
     # Maximum request body size before 413 (1 MiB default).
     max_body_bytes: int = 1_048_576
+
+    # --- HARD-11 reliability primitives -------------------------------------
+    # Request idempotency: a retry carrying the same ``Idempotency-Key`` returns
+    # the first response and runs the side effect once. Default-on; no-ops when a
+    # request carries no key.
+    idempotency_enabled: bool = True
+    idempotency_ttl_seconds: int = 86_400
+    # Graceful-shutdown request drain grace: on SIGTERM readiness flips to 503 and
+    # the app waits up to this long for in-flight requests before tearing down.
+    shutdown_drain_seconds: int = 30
+    # Promote readiness dependency checks (DB/Redis ping) to a hard gate. Off by
+    # default so a dev/test instance stays ready without live backends; set true
+    # in production so /health/ready reflects real dependency health.
+    readiness_require_deps: bool = False
     # SSRF guard for admin-configured outbound URLs (embedder/reranker/MCP).
     # ``ssrf_allow_private`` opts self-hosted deployments into their own
     # private-network endpoints (loopback + metadata stay blocked);
