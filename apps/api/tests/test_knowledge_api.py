@@ -18,6 +18,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Iterator
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -36,6 +37,8 @@ from forge_db.session import create_session_factory
 from forge_knowledge import (
     DeterministicEmbeddingClient,
     FixtureRerankerClient,
+    GracefulReranker,
+    JinaRerankerClient,
     KnowledgeService,
 )
 
@@ -308,3 +311,63 @@ def test_search_cannot_read_another_workspace(
     returned = default.json()
     assert returned  # caller's own workspace results are present
     assert all(c["source_id"] != str(other_src_id) for c in returned)
+
+
+# --------------------------------------------------------------------------- #
+# HARD-03: /knowledge/search survives a reranker outage (weighted-RRF)         #
+# --------------------------------------------------------------------------- #
+
+
+def _degraded_reranker() -> GracefulReranker:
+    """A GracefulReranker over a Jina client whose upstream always 503s."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": "unavailable"})
+
+    inner = JinaRerankerClient(
+        "jina-reranker-v2",
+        provider="jina",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    return GracefulReranker(inner, timeout_ms=800)
+
+
+def test_search_survives_reranker_outage_with_weighted_rrf(
+    session_factory: sessionmaker[Session],
+    source_id: uuid.UUID,
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    # AC3 (API): a live reranker that always fails must not fail the search — the
+    # route returns 200 with weighted-RRF order and every chunk's rerank_score is
+    # null (the operator-visible degradation signal for the "reranker unavailable"
+    # badge in the web panel).
+    service = KnowledgeService.from_session_factory(
+        session_factory,
+        DeterministicEmbeddingClient(dimension=256),
+        _degraded_reranker(),
+    )
+    app = create_app()
+    authenticate_app(app)
+    app.dependency_overrides[get_knowledge_service] = lambda: service
+    app.dependency_overrides[get_knowledge_session_factory] = lambda: session_factory
+
+    with TestClient(app) as client:
+        indexed = client.post("/knowledge/index", json=_index_payload(source_id))
+        assert indexed.status_code == 200, indexed.text
+
+        resp = client.post(
+            "/knowledge/search",
+            json={
+                "query": "validate an oauth jwt token",
+                "scope": {"workspace_id": WORKSPACE_ID},
+                "k": 3,
+            },
+        )
+
+    assert resp.status_code == 200, resp.text
+    results = resp.json()
+    assert results, "a degraded reranker must still return weighted-RRF results"
+    assert all(c["rerank_score"] is None for c in results)
+    # The server-side telemetry recorded the fallback.
+    assert service.last_rerank is not None
+    assert service.last_rerank.fallback_used is True

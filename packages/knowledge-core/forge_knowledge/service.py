@@ -41,6 +41,10 @@ DEFAULT_CANDIDATE_K: int = 50
 #: How many fused candidates are sent to the (more expensive) reranker.
 DEFAULT_RERANK_CANDIDATES: int = 50
 
+#: Default per-call reranker latency budget (ms) — matches
+#: :data:`forge_knowledge.reranker.DEFAULT_RERANK_TIMEOUT_MS`.
+DEFAULT_RERANK_BUDGET_MS: int = 800
+
 
 class KnowledgeService:
     """Hybrid retrieval service. Implements ``KnowledgeStore``."""
@@ -52,11 +56,15 @@ class KnowledgeService:
         vector_store: PgVectorStore | None = None,
         candidate_k: int = DEFAULT_CANDIDATE_K,
         rerank_candidates: int = DEFAULT_RERANK_CANDIDATES,
+        rerank_enabled: bool = True,
+        rerank_budget_ms: int = DEFAULT_RERANK_BUDGET_MS,
     ) -> None:
         self._retriever = retriever
         self._vector_store = vector_store
         self._candidate_k = candidate_k
         self._rerank_candidates = rerank_candidates
+        self._rerank_enabled = rerank_enabled
+        self._rerank_budget_ms = rerank_budget_ms
 
     @classmethod
     def from_session_factory(
@@ -67,17 +75,33 @@ class KnowledgeService:
         *,
         candidate_k: int = DEFAULT_CANDIDATE_K,
         rerank_candidates: int = DEFAULT_RERANK_CANDIDATES,
+        rerank_enabled: bool = True,
+        rerank_budget_ms: int = DEFAULT_RERANK_BUDGET_MS,
     ) -> KnowledgeService:
         """Build a service from a DB session factory and BYOK clients."""
         vector_store = PgVectorStore(session_factory, embedding_client)
         keyword_store = Bm25Store(session_factory)
-        retriever = HybridRetriever(vector_store, keyword_store, reranker)
+        retriever = HybridRetriever(
+            vector_store, keyword_store, reranker, rerank_enabled=rerank_enabled
+        )
         return cls(
             retriever,
             vector_store=vector_store,
             candidate_k=candidate_k,
             rerank_candidates=rerank_candidates,
+            rerank_enabled=rerank_enabled,
+            rerank_budget_ms=rerank_budget_ms,
         )
+
+    @property
+    def last_rerank(self) -> object | None:
+        """Server-side telemetry for the most recent ``search`` rerank step.
+
+        A :class:`forge_knowledge.retriever.RerankDebug` (provider, latency,
+        ``fallback_used``, rank delta) — redacted, for the debug payload and the
+        observability "reranker delta" metric.
+        """
+        return self._retriever.last_rerank
 
     @property
     def retriever(self) -> HybridRetriever:

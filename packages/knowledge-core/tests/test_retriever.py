@@ -15,9 +15,11 @@ Hermetic: in-memory SQLite, deterministic embedding + fixture reranker.
 
 from __future__ import annotations
 
+import time
 import uuid
 from itertools import pairwise
 
+import httpx
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -29,7 +31,11 @@ from forge_db.base import Base
 from forge_db.models import KnowledgeSource, Workspace
 from forge_db.session import create_session_factory
 from forge_knowledge.embeddings import DeterministicEmbeddingClient
-from forge_knowledge.reranker import FixtureRerankerClient
+from forge_knowledge.reranker import (
+    FixtureRerankerClient,
+    GracefulReranker,
+    JinaRerankerClient,
+)
 from forge_knowledge.retriever import HybridRetriever
 from forge_knowledge.stores import Bm25Store, PgVectorStore
 
@@ -199,3 +205,168 @@ def test_rerank_empty_candidates_returns_empty(
     session_factory: sessionmaker[Session],
 ) -> None:
     assert _retriever(session_factory).rerank("q", [], top_n=5) == []
+
+
+# --------------------------------------------------------------------------- #
+# HARD-03: graceful fallback, latency budget, disabled path, rank delta        #
+# --------------------------------------------------------------------------- #
+
+
+def _cand(cid: str, content: str, score: float, weight: float = 1.0) -> Ranked:
+    return Ranked(
+        chunk_id=cid,
+        score=score,
+        rank=0,
+        chunk=RetrievedChunk(id=cid, content=content, weight=weight),
+    )
+
+
+# Fused-order candidates whose weighted-RRF order (score x weight) is c1, c0, c2.
+def _weighted_candidates() -> list[Ranked]:
+    return [
+        _cand("c0", "alpha", score=0.5, weight=1.0),  # weighted 0.50
+        _cand("c1", "bravo", score=0.4, weight=1.5),  # weighted 0.60
+        _cand("c2", "charlie", score=0.3, weight=1.0),  # weighted 0.30
+    ]
+
+
+def _bare_retriever(reranker, *, rerank_enabled: bool = True) -> HybridRetriever:
+    # rerank() only touches the reranker + candidates, not the stores.
+    return HybridRetriever(None, None, reranker, rerank_enabled=rerank_enabled)  # type: ignore[arg-type]
+
+
+def _mock_503_reranker() -> GracefulReranker:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": "unavailable"})
+
+    inner = JinaRerankerClient(
+        "jina-reranker-v2",
+        provider="jina",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    return GracefulReranker(inner, timeout_ms=800)
+
+
+def test_rerank_falls_back_to_weighted_rrf_on_503() -> None:
+    # AC3: a degraded reranker -> weighted-RRF order, rerank_score None, fallback.
+    retriever = _bare_retriever(_mock_503_reranker())
+    out = retriever.rerank("q", _weighted_candidates(), top_n=3)
+
+    assert [c.id for c in out] == ["c1", "c0", "c2"]
+    assert all(c.rerank_score is None for c in out)
+    assert out[0].score == pytest.approx(0.6)  # 0.4 * 1.5
+    assert retriever.last_rerank is not None
+    assert retriever.last_rerank.fallback_used is True
+    assert retriever.last_rerank.provider == "jina"
+
+
+def test_rerank_falls_back_on_latency_budget() -> None:
+    # AC4: an inner reranker that sleeps past the budget degrades within bounds.
+    def slow(_: httpx.Request) -> httpx.Response:
+        time.sleep(2.0)
+        return httpx.Response(200, json={"model": "m", "results": []})
+
+    inner = JinaRerankerClient(
+        "jina-reranker-v2", client=httpx.Client(transport=httpx.MockTransport(slow))
+    )
+    retriever = _bare_retriever(GracefulReranker(inner, timeout_ms=50))
+
+    start = time.perf_counter()
+    out = retriever.rerank("q", _weighted_candidates(), top_n=3)
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+
+    assert [c.id for c in out] == ["c1", "c0", "c2"]
+    assert all(c.rerank_score is None for c in out)
+    assert elapsed_ms < 800
+    assert retriever.last_rerank is not None
+    assert retriever.last_rerank.fallback_used is True
+
+
+def test_rerank_disabled_equals_weighted_rrf_and_never_calls_reranker() -> None:
+    # AC5: rerank_enabled=False -> weighted-RRF order; the reranker is untouched.
+    class _Boom:
+        provider = "boom"
+        model = None
+
+        def rerank(self, *_a: object, **_k: object) -> list:
+            raise AssertionError("reranker must not be called when disabled")
+
+    retriever = _bare_retriever(_Boom(), rerank_enabled=False)
+    out = retriever.rerank("q", _weighted_candidates(), top_n=3)
+
+    assert [c.id for c in out] == ["c1", "c0", "c2"]
+    assert all(c.rerank_score is None for c in out)
+
+
+def test_rerank_enabled_reorders_and_sets_final_score() -> None:
+    # AC5 (enabled): a fixture that reorders yields an order != fused, and
+    # final score == rerank_score * weight.
+    fixture = FixtureRerankerClient(
+        {"q": {"alpha": 0.1, "bravo": 0.9, "charlie": 0.5}}
+    )
+    retriever = _bare_retriever(fixture)
+    out = retriever.rerank("q", _weighted_candidates(), top_n=3)
+
+    assert [c.id for c in out] == ["c1", "c2", "c0"]  # bravo, charlie, alpha
+    top = out[0]
+    assert top.rerank_score == 0.9
+    assert top.score == 0.9 * 1.5  # weight boost applied
+
+
+def test_rank_delta_positive_on_reorder() -> None:
+    # AC9: a reordering fixture -> mean |Δpos| > 0 and monotonic False.
+    fixture = FixtureRerankerClient(
+        {"q": {"alpha": 0.1, "bravo": 0.9, "charlie": 0.5}}
+    )
+    retriever = _bare_retriever(fixture)
+    candidates = [
+        _cand("c0", "alpha", score=0.9),
+        _cand("c1", "bravo", score=0.8),
+        _cand("c2", "charlie", score=0.7),
+    ]
+    retriever.rerank("q", candidates, top_n=3)
+
+    debug = retriever.last_rerank
+    assert debug is not None
+    assert debug.rank_delta_mean > 0
+    assert debug.monotonic is False
+    assert debug.fallback_used is False
+
+
+def test_rank_delta_zero_on_identity() -> None:
+    # AC9: an order-preserving fixture -> delta 0, monotonic True.
+    fixture = FixtureRerankerClient(
+        {"q": {"alpha": 0.9, "bravo": 0.5, "charlie": 0.1}}
+    )
+    retriever = _bare_retriever(fixture)
+    candidates = [
+        _cand("c0", "alpha", score=0.9),
+        _cand("c1", "bravo", score=0.8),
+        _cand("c2", "charlie", score=0.7),
+    ]
+    retriever.rerank("q", candidates, top_n=3)
+
+    debug = retriever.last_rerank
+    assert debug is not None
+    assert debug.rank_delta_mean == 0.0
+    assert debug.monotonic is True
+
+
+def test_rerank_degrades_on_raw_unavailable_error() -> None:
+    # AC3 (defense-in-depth): a bare client that RAISES RerankerUnavailableError
+    # (no GracefulReranker) is still caught by the retriever -> weighted-RRF.
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "boom"})
+
+    raw = JinaRerankerClient(
+        "jina-reranker-v2",
+        provider="jina",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    retriever = _bare_retriever(raw)
+    out = retriever.rerank("q", _weighted_candidates(), top_n=3)
+
+    assert [c.id for c in out] == ["c1", "c0", "c2"]
+    assert all(c.rerank_score is None for c in out)
+    assert retriever.last_rerank is not None
+    assert retriever.last_rerank.fallback_used is True

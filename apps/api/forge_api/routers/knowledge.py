@@ -18,6 +18,7 @@ swapped in behind the same dependency via ``app.dependency_overrides`` / config)
 
 from __future__ import annotations
 
+import os
 import uuid
 from functools import lru_cache
 from typing import Annotated
@@ -31,6 +32,7 @@ from forge_api.auth.rbac import Permission
 from forge_api.db import get_session_factory
 from forge_api.deps import CurrentPrincipal, Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
+from forge_api.settings import Settings, get_settings
 from forge_contracts import (
     Chunk,
     IndexResult,
@@ -41,8 +43,8 @@ from forge_contracts.enums import SyncMode
 from forge_db.models import KnowledgeSource
 from forge_knowledge import (
     DeterministicEmbeddingClient,
-    FixtureRerankerClient,
     KnowledgeService,
+    build_reranker_from_settings,
     full_sync,
     sync_source,
 )
@@ -67,12 +69,41 @@ WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 # --------------------------------------------------------------------------- #
 
 
+def _resolve_reranker_key(settings: Settings) -> str | None:
+    """Resolve the BYOK reranker key for the configured provider (never logged).
+
+    Read on demand from the process env (the integration lane's
+    ``JINA_API_KEY`` / ``COHERE_API_KEY``) and handed straight to the client;
+    the per-workspace encrypted vault (``SecretVault.get_secret``,
+    ``APIKeyKind.MODEL_PROVIDER``) is the prod resolution behind this same seam.
+    Returns ``None`` for the offline fixture / self-hosted providers so the
+    default lane never requires a credential.
+    """
+    provider = (settings.rerank_provider or "fixture").strip().lower()
+    if provider == "jina":
+        return os.environ.get("JINA_API_KEY")
+    if provider == "cohere":
+        return os.environ.get("COHERE_API_KEY")
+    return None
+
+
 @lru_cache(maxsize=1)
 def _knowledge_service_singleton() -> KnowledgeService:
+    settings = get_settings()
+    # ``build_reranker_from_settings`` returns the offline FixtureRerankerClient
+    # by default (FORGE_RERANK_PROVIDER=fixture), and only builds a budgeted,
+    # SSRF-guarded live client when an operator opts in. The BYOK key is resolved
+    # on demand and never stored on the settings object.
+    reranker = build_reranker_from_settings(
+        settings, api_key=_resolve_reranker_key(settings)
+    )
     return KnowledgeService.from_session_factory(
         get_session_factory(),
         DeterministicEmbeddingClient(),
-        FixtureRerankerClient(),
+        reranker,
+        rerank_candidates=settings.rerank_candidates,
+        rerank_enabled=settings.rerank_enabled,
+        rerank_budget_ms=settings.rerank_timeout_ms,
     )
 
 
