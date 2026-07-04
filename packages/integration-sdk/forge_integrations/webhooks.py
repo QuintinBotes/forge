@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import time
 from typing import Any
 
@@ -120,14 +121,26 @@ def sign_github_payload(secret: str, body: bytes) -> str:
     return f"sha256={digest}"
 
 
-def verify_github_signature(
-    secret: str, body: bytes, signature_header: str | None
-) -> bool:
+def verify_github_signature(secret: str, body: bytes, signature_header: str | None) -> bool:
     """Constant-time verify a GitHub ``X-Hub-Signature-256`` header."""
     if not signature_header or not signature_header.startswith("sha256="):
         return False
     expected = sign_github_payload(secret, body)
     return hmac.compare_digest(expected, signature_header)
+
+
+def sign_slack_payload(secret: str, timestamp: str, body: bytes | str) -> str:
+    """Compute the Slack ``X-Slack-Signature`` (``v0``) header for ``body``.
+
+    Slack signs the base string ``v0:{timestamp}:{body}`` with HMAC-SHA256 keyed
+    on the app *signing secret*. This is the exact value the receiver recomputes
+    in :func:`verify_slack_signature`; exposing it lets tests and clients build a
+    correctly-signed request without hand-rolling the HMAC (and documents the
+    algorithm the verifier expects). No network.
+    """
+    raw = body.decode() if isinstance(body, bytes) else body
+    basestring = f"v0:{timestamp}:{raw}".encode()
+    return "v0=" + hmac.new(secret.encode(), basestring, hashlib.sha256).hexdigest()
 
 
 def verify_slack_signature(
@@ -142,7 +155,8 @@ def verify_slack_signature(
     """Verify a Slack ``v0`` request signature with replay protection.
 
     Slack signs ``v0:{timestamp}:{body}`` with HMAC-SHA256. Requests older than
-    ``max_skew_seconds`` are rejected to defeat replay attacks.
+    ``max_skew_seconds`` are rejected to defeat replay attacks. The comparison is
+    constant-time (:func:`hmac.compare_digest`).
     """
     if not signature:
         return False
@@ -153,15 +167,31 @@ def verify_slack_signature(
     current = time.time() if now is None else now
     if abs(current - ts) > max_skew_seconds:
         return False
-    raw = body.decode() if isinstance(body, bytes) else body
-    basestring = f"v0:{timestamp}:{raw}".encode()
-    expected = "v0=" + hmac.new(secret.encode(), basestring, hashlib.sha256).hexdigest()
+    expected = sign_slack_payload(secret, timestamp, body)
     return hmac.compare_digest(expected, signature)
+
+
+def parse_slack_interaction(form_payload: str) -> dict[str, Any]:
+    """Parse the Block Kit ``payload=<json>`` form field into a dict.
+
+    Slack posts interactive (``block_actions``) payloads as a single
+    ``application/x-www-form-urlencoded`` field named ``payload`` whose value is a
+    JSON document (the form layer has already URL-decoded it). Returns the decoded
+    mapping; raises :class:`ValueError` (via :class:`json.JSONDecodeError`) on
+    malformed JSON, and :class:`ValueError` when the payload is not a JSON object.
+    No network.
+    """
+    decoded = json.loads(form_payload)
+    if not isinstance(decoded, dict):
+        raise ValueError("slack interaction payload is not a JSON object")
+    return decoded
 
 
 __all__ = [
     "parse_github_webhook",
+    "parse_slack_interaction",
     "sign_github_payload",
+    "sign_slack_payload",
     "verify_github_signature",
     "verify_slack_signature",
 ]

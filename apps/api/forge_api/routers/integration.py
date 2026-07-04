@@ -17,19 +17,23 @@ HTTP 502. The webhook parser is fully offline (no network).
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from functools import lru_cache
 from typing import Annotated
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from forge_api.auth.rbac import Permission
-from forge_api.deps import Principal
+from forge_api.deps import Principal, SettingsDep
 from forge_api.observability.audit import AuditCategory, AuditLog
 from forge_api.observability.redaction import redact_mapping, redact_text
 from forge_api.routers._rbac import require_permission
-from forge_api.settings import get_settings
+from forge_api.routers.approval import ApprovalStore, get_approval_store
+from forge_api.settings import Settings, get_settings
 from forge_contracts import (
     CIStatus,
     HealthResult,
@@ -41,6 +45,7 @@ from forge_contracts import (
     SlackMessage,
     WebhookEvent,
 )
+from forge_contracts.enums import ApprovalStatus
 from forge_integrations import (
     AuditSink,
     GitHubAuditEvent,
@@ -50,7 +55,9 @@ from forge_integrations import (
     SlackNotifier,
     load_private_key,
     parse_github_webhook,
+    parse_slack_interaction,
     verify_github_signature,
+    verify_slack_signature,
 )
 
 router = APIRouter(
@@ -120,6 +127,14 @@ def _integration_audit_log() -> AuditLog:
     return AuditLog()
 
 
+def get_integration_audit_log() -> AuditLog:
+    """Return the process-wide integration audit log (override in tests via DI)."""
+    return _integration_audit_log()
+
+
+AuditLogDep = Annotated[AuditLog, Depends(get_integration_audit_log)]
+
+
 def _github_audit_sink(audit_log: AuditLog) -> AuditSink:
     """Adapt a :class:`GitHubAuditEvent` onto the immutable audit log.
 
@@ -179,7 +194,43 @@ def _github_client_singleton() -> GitHubClient | None:
 @lru_cache(maxsize=1)
 def _slack_notifier_singleton() -> SlackNotifier:
     settings = get_settings()
-    return SlackNotifier(token=settings.slack_token, default_channel=settings.slack_default_channel)
+    return SlackNotifier(
+        token=settings.slack_token,
+        default_channel=settings.slack_default_channel,
+        max_retries=settings.slack_max_retries,
+        retry_base_delay=settings.slack_retry_base_delay_seconds,
+    )
+
+
+class SlackApprovalRefStore:
+    """In-memory ``approval_id -> (channel, ts)`` back-reference for Slack posts.
+
+    ``ApprovalRequest`` is a frozen contract (no ``slack_ts`` field), so — exactly
+    as :class:`~forge_api.routers.approval.ApprovalStore` tracks workspace
+    ownership *beside* the item rather than mutating the DTO — the resolved
+    channel + message timestamp of an approval's Slack post are tracked here. The
+    interactivity handler reads them to edit the original message in place
+    (``chat.update``). The DB-backed store swaps in behind the same dependency.
+    """
+
+    def __init__(self) -> None:
+        self._refs: dict[uuid.UUID, tuple[str, str]] = {}
+
+    def record(self, approval_id: uuid.UUID, *, channel: str, ts: str) -> None:
+        self._refs[approval_id] = (channel, ts)
+
+    def get(self, approval_id: uuid.UUID) -> tuple[str, str] | None:
+        return self._refs.get(approval_id)
+
+
+@lru_cache(maxsize=1)
+def _slack_ref_store_singleton() -> SlackApprovalRefStore:
+    return SlackApprovalRefStore()
+
+
+def get_slack_ref_store() -> SlackApprovalRefStore:
+    """Return the process-wide Slack message-ref store (override in tests via DI)."""
+    return _slack_ref_store_singleton()
 
 
 def get_github_client_optional() -> GitHubClient | None:
@@ -213,10 +264,22 @@ def get_github_webhook_secret() -> str | None:
     return get_settings().github_webhook_secret
 
 
+def get_slack_signing_secret() -> str | None:
+    """Return the configured Slack signing secret (overridable in tests).
+
+    ``None`` -> the inbound Slack routes fail closed with ``501 Not Configured``:
+    an unsigned/untrusted Slack callback is never processed.
+    """
+    return get_settings().slack_signing_secret
+
+
 GitHubDep = Annotated[GitHubClient, Depends(get_github_client)]
 GitHubOptionalDep = Annotated[GitHubClient | None, Depends(get_github_client_optional)]
 SlackDep = Annotated[SlackNotifier, Depends(get_slack_notifier)]
 WebhookSecretDep = Annotated[str | None, Depends(get_github_webhook_secret)]
+SlackSigningSecretDep = Annotated[str | None, Depends(get_slack_signing_secret)]
+ApprovalStoreDep = Annotated[ApprovalStore, Depends(get_approval_store)]
+SlackRefStoreDep = Annotated[SlackApprovalRefStore, Depends(get_slack_ref_store)]
 
 
 # --------------------------------------------------------------------------- #
@@ -333,12 +396,249 @@ def slack_notify(notifier: SlackDep, message: SlackMessage) -> SlackDeliveryResu
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+@router.post(
+    "/slack/approvals/{approval_id}/notify",
+    response_model=SlackDeliveryResult,
+)
+def slack_notify_approval(
+    notifier: SlackDep,
+    store: ApprovalStoreDep,
+    refs: SlackRefStoreDep,
+    principal: WriterDep,
+    approval_id: uuid.UUID,
+) -> SlackDeliveryResult:
+    """Post the Block Kit approval message for an existing gate (WRITE-gated).
+
+    The gate is resolved **server-side** from ``approval_id`` scoped to the
+    caller's workspace (never a caller-supplied body), so a caller cannot notify
+    on another tenant's gate. On a successful post the resolved channel + message
+    ``ts`` are stashed so the interactivity handler can edit the message in place.
+    """
+    request = store.get(approval_id, workspace_id=principal.workspace_id)
+    if request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no approval request {approval_id}",
+        )
+    try:
+        result = notifier.notify_approval(request)
+    except SlackError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    if result.ok and result.channel and result.ts:
+        refs.record(approval_id, channel=result.channel, ts=result.ts)
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# Inbound Slack (signature-verified untrusted intake — NO principal dep)       #
+#                                                                             #
+# Mirrors the GitHub-webhook + F17 alert-webhook pattern: the raw body is read #
+# before any parsing, the Slack v0 signature is the ONLY trust boundary, and   #
+# the routes fail closed — 501 when the signing secret is unconfigured, 401 on #
+# a missing/forged/stale signature — with no state change on rejection.        #
+# --------------------------------------------------------------------------- #
+
+# action_id/value verb -> the decision it records.
+_SLACK_ACTION_STATUS: dict[str, ApprovalStatus] = {
+    "approve": ApprovalStatus.APPROVED,
+    "reject": ApprovalStatus.REJECTED,
+    "request_changes": ApprovalStatus.CHANGES_REQUESTED,
+}
+_SLACK_ACTION_LABEL: dict[str, str] = {
+    "approve": "Approved",
+    "reject": "Rejected",
+    "request_changes": "Changes requested",
+}
+
+
+def _verify_slack_request(
+    secret: str | None,
+    settings: Settings,
+    body: bytes,
+    timestamp: str | None,
+    signature: str | None,
+) -> None:
+    """Fail closed on an unconfigured secret (501) or a bad signature (401)."""
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Slack signing secret not configured",
+        )
+    if not verify_slack_signature(
+        secret,
+        timestamp or "",
+        body,
+        signature,
+        max_skew_seconds=settings.slack_signature_max_skew_seconds,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or missing Slack signature",
+        )
+
+
+def _slack_actor(payload: dict[str, object]) -> str:
+    """Map a Slack ``user`` block onto a stable, human-readable decider identity."""
+    user = payload.get("user")
+    if isinstance(user, dict):
+        for key in ("username", "name", "id"):
+            value = user.get(key)
+            if value:
+                return f"slack:{value}"
+    return "slack:unknown"
+
+
+def _command_blocks(text: str) -> dict[str, object]:
+    """Build the ephemeral Block Kit response for a ``/forge`` sub-command."""
+    parts = text.strip().split()
+    sub = parts[0].lower() if parts else "help"
+    if sub == "status" and len(parts) > 1:
+        body = f"*Forge* — status for `{parts[1]}` is not wired to a live task yet."
+    else:
+        body = (
+            "*Forge* commands:\n"
+            "• `/forge help` — show this help\n"
+            "• `/forge status <task-id>` — task status"
+        )
+    return {
+        "response_type": "ephemeral",
+        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": body}}],
+    }
+
+
+@router.post("/slack/commands")
+async def slack_slash_command(
+    request: Request,
+    secret: SlackSigningSecretDep,
+    settings: SettingsDep,
+    x_slack_signature: Annotated[str | None, Header()] = None,
+    x_slack_request_timestamp: Annotated[str | None, Header()] = None,
+) -> JSONResponse:
+    """Handle a signed ``/forge`` slash command (``x-www-form-urlencoded``).
+
+    Verifies the Slack v0 signature over the raw body, then returns an ephemeral
+    Block Kit response within Slack's 3-second budget. Fail-closed: 501 when no
+    signing secret is configured, 401 on a bad/missing/stale signature.
+    """
+    body = await request.body()
+    _verify_slack_request(secret, settings, body, x_slack_request_timestamp, x_slack_signature)
+    form = parse_qs(body.decode("utf-8", errors="replace"))
+    text = (form.get("text") or [""])[0]
+    return JSONResponse(content=_command_blocks(text))
+
+
+@router.post("/slack/interactions")
+async def slack_interaction(
+    request: Request,
+    secret: SlackSigningSecretDep,
+    settings: SettingsDep,
+    store: ApprovalStoreDep,
+    refs: SlackRefStoreDep,
+    notifier: SlackDep,
+    audit: AuditLogDep,
+    x_slack_signature: Annotated[str | None, Header()] = None,
+    x_slack_request_timestamp: Annotated[str | None, Header()] = None,
+) -> JSONResponse:
+    """Handle a signed Block Kit ``block_actions`` payload → an approval decision.
+
+    Verifies the Slack v0 signature over the raw body, resolves the embedded
+    ``{verb}:{approval_id}`` action, maps the Slack actor to a decider identity,
+    and round-trips the decision through the workspace-scoped
+    :class:`ApprovalStore`. An unknown/foreign approval id is a **no-op** (still
+    200 so Slack does not retry) and is audited. Best-effort ``chat.update``
+    renders the outcome on the original message. Never leaks a secret/signature.
+    """
+    body = await request.body()
+    _verify_slack_request(secret, settings, body, x_slack_request_timestamp, x_slack_signature)
+
+    form = parse_qs(body.decode("utf-8", errors="replace"))
+    raw_payload = (form.get("payload") or [""])[0]
+    try:
+        payload = parse_slack_interaction(raw_payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid Slack interaction payload",
+        ) from exc
+
+    actions = payload.get("actions")
+    action = actions[0] if isinstance(actions, list) and actions else {}
+    value = action.get("value") if isinstance(action, dict) else None
+    verb, _, ref = (value or "").partition(":")
+
+    try:
+        approval_id = uuid.UUID(ref)
+    except ValueError:
+        approval_id = None
+
+    if verb not in _SLACK_ACTION_STATUS or approval_id is None:
+        audit.record(
+            category=AuditCategory.INTEGRATION,
+            action="slack.interaction.ignored",
+            target=redact_text(ref) if ref else None,
+            status="ignored",
+            detail="unrecognised Slack action",
+        )
+        return JSONResponse(content={"ok": True})
+
+    actor = _slack_actor(payload)
+    owner = store.owner_of(approval_id)
+    if owner is None:
+        # Unknown or cross-tenant id: no state change, still 200 (AC6).
+        audit.record(
+            category=AuditCategory.INTEGRATION,
+            action="slack.interaction.noop",
+            target=str(approval_id),
+            actor=actor,
+            status="skipped",
+            detail="unknown or cross-tenant approval id",
+        )
+        return JSONResponse(content={"ok": True})
+
+    decided = store.decide(
+        approval_id,
+        workspace_id=owner,
+        status=_SLACK_ACTION_STATUS[verb],
+        decided_by=actor,
+        reason=None,
+    )
+    audit.record(
+        category=AuditCategory.INTEGRATION,
+        action="slack.interaction.decide",
+        target=str(approval_id),
+        actor=actor,
+        status="ok",
+        metadata={"decision": _SLACK_ACTION_STATUS[verb].value},
+    )
+
+    # Best-effort in-place update of the original approval message (AC9). The
+    # notifier never raises; guard anyway so an update failure never 500s Slack.
+    ref_target = refs.get(approval_id)
+    if decided is not None and ref_target is not None:
+        channel, ts = ref_target
+        label = _SLACK_ACTION_LABEL[verb]
+        text = f"{label} by {actor}"
+        with contextlib.suppress(SlackError):
+            notifier.update_message(
+                channel=channel,
+                ts=ts,
+                text=text,
+                blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": text}}],
+            )
+
+    return JSONResponse(content={"ok": True})
+
+
 __all__ = [
     "RepoConnectionStore",
+    "SlackApprovalRefStore",
     "get_github_client",
     "get_github_client_optional",
     "get_github_webhook_secret",
+    "get_integration_audit_log",
     "get_repo_connection_store",
     "get_slack_notifier",
+    "get_slack_ref_store",
+    "get_slack_signing_secret",
     "router",
 ]
