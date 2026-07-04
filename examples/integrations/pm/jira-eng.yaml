@@ -1,0 +1,20 @@
+# OSS connector template — Jira (F18 PMAdapter).
+# Security notes:
+#   * `api_token` is sent to POST /api/v1/integrations/pm/connections once and
+#     stored ENCRYPTED in the F37 vault; it is never returned or logged.
+#   * Jira REST webhooks are not HMAC-signed by Atlassian, so Forge binds a
+#     per-connection secret to the registered webhook and ALWAYS re-fetches the
+#     authoritative issue before any board write (the payload is only a hint).
+pm_connection:
+  provider: jira
+  name: Engineering Jira
+  project_id: <forge-project-uuid>
+  external_base_url: https://acme.atlassian.net
+  external_project_key: ENG
+  auth_type: oauth            # oauth (3LO) | api_token (email + API token, Basic)
+  sync_direction: bidirectional   # bidirectional | inbound_only | outbound_only
+  conflict_policy: newest_wins    # forge_wins | external_wins | newest_wins | manual
+  status_map: {}              # empty -> category-based default resolver
+  priority_map: {}            # empty -> default resolver
+  field_map: {}
+  on_external_delete: unlink  # unlink (default; keeps the Forge task) | archive

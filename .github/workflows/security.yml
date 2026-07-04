@@ -1,0 +1,73 @@
+# Focused OSS security workflow: secret scan (gitleaks) + Python SAST (bandit)
+# + dependency audit (pip-audit). Runs on every push to main and every PR so a
+# regression is caught before merge. Least-privilege by default: this workflow
+# only reads the repository — it publishes nothing and needs no write scopes.
+#
+# Third-party (and official actions/*) actions are pinned to a full commit SHA
+# with a human-readable version comment, so a moved tag cannot alter what runs.
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  # ------------------------------------------------------------------- #
+  # Secret scan: full history via gitleaks, using the repo .gitleaks.toml #
+  # ------------------------------------------------------------------- #
+  secrets:
+    name: secrets (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0        # full history for gitleaks
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  # ------------------------------------------------------------------- #
+  # Python SAST + dependency audit: bandit (high/critical gate) and       #
+  # pip-audit against the frozen, resolved workspace requirements.         #
+  # ------------------------------------------------------------------- #
+  python:
+    name: python (bandit + pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      # SAST: config (exclusions + skips) lives in pyproject.toml. Fails the
+      # build on high-severity findings; accepted risk is triaged elsewhere.
+      - name: Bandit gate (high/critical)
+        run: uv run bandit -c pyproject.toml -r packages apps --severity-level high -q
+
+      # Dependency audit against the fully-resolved, frozen requirements set.
+      - name: pip-audit
+        run: >-
+          uv export --frozen --format requirements-txt --no-emit-workspace
+          | uv run pip-audit -r /dev/stdin --strict

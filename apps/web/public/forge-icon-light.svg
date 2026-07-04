@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" role="img" aria-label="Forge">
+  <title>Forge</title>
+  <!-- Anvil base (cool graphite steel) -->
+  <path d="M15 45 H43 L47 53 H11 Z" fill="#23303D"/>
+  <!-- Monogram F reading as a struck anvil (molten ember) -->
+  <g fill="#F0611A">
+    <rect x="17" y="13" width="10" height="32" rx="1.5"/>
+    <rect x="17" y="13" width="27" height="10" rx="1.5"/>
+    <rect x="17" y="27" width="19" height="9" rx="1.5"/>
+  </g>
+  <!-- Struck spark (bright amber) -->
+  <path d="M48 7 L50.2 10.8 L54 13 L50.2 15.2 L48 19 L45.8 15.2 L42 13 L45.8 10.8 Z" fill="#FFB13D"/>
+</svg>

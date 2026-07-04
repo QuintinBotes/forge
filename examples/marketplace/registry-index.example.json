@@ -1,0 +1,65 @@
+{
+  "entries": [
+    {
+      "homepage": null,
+      "kind": "skill_profile",
+      "latest_version": "1.2.0",
+      "license": "Apache-2.0",
+      "name": "Backend TDD (strict, 95% coverage)",
+      "repository": null,
+      "slug": "backend-tdd-strict",
+      "summary": "Hardened backend-tdd profile requiring 95% coverage and integration tests.",
+      "tags": [
+        "backend",
+        "python",
+        "tdd",
+        "hardened"
+      ],
+      "versions": [
+        {
+          "content_hash": "sha256:1caa1f35e1bad644c979f137c94b5a53462277fad0618db43dfd594b99c5c69c",
+          "manifest_hash": "sha256:dd535042f1a2546bc30422a21790a5898d221c2bf6b8c9dc77c1bd116394831b",
+          "manifest_uri": "skill_profile/backend-tdd-strict/1.2.0/forge-package.yaml",
+          "min_forge_version": "3.0.0",
+          "published_at": "2026-06-20T00:00:00Z",
+          "signature": "/jFM6vFsGW33uUdLqX0cZ7v9ksfq5KvRUmPQUnJyZfZMsgr/35SQkdCp4xPBIBUHLOO5sXfhJMudMLWHAyxyCA==",
+          "version": "1.2.0",
+          "yanked": false,
+          "yanked_reason": null
+        }
+      ]
+    },
+    {
+      "homepage": null,
+      "kind": "mcp_connector",
+      "latest_version": "2.0.0",
+      "license": "Apache-2.0",
+      "name": "Confluence (read-only)",
+      "repository": null,
+      "slug": "confluence-readonly",
+      "summary": "Read-only Confluence MCP connector (installs allow_write=false, pending).",
+      "tags": [
+        "confluence",
+        "docs",
+        "readonly"
+      ],
+      "versions": [
+        {
+          "content_hash": "sha256:20c0edf323d2d687f174f5acbb1064c11f1cac73818f3596d3de098b8df81cf8",
+          "manifest_hash": "sha256:3725ad1ff4279137e6e816b35e6e804c17404946853c17e76ffb3a28509220f0",
+          "manifest_uri": "mcp_connector/confluence-readonly/2.0.0/forge-package.yaml",
+          "min_forge_version": "3.0.0",
+          "published_at": "2026-06-20T00:00:00Z",
+          "signature": "62hFihY0bu0nokOdcK4KlXhC8wcZuukbV4G9MC3cwplV5cKpTk0hD0/ZU9O5g7XAeLAA94q0WuyYwkReOcL9DQ==",
+          "version": "2.0.0",
+          "yanked": false,
+          "yanked_reason": null
+        }
+      ]
+    }
+  ],
+  "generated_at": "2026-06-26T00:00:00Z",
+  "public_key": "AG6LyOLHegaPea9JRTWY0u5XuaQauYACRkw67fKHNoo=",
+  "registry_name": "Forge Official Marketplace",
+  "schema_version": 1
+}

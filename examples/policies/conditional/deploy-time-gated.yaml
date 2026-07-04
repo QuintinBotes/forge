@@ -1,0 +1,28 @@
+# F29 conditional policy: production deploys outside business hours require
+# human approval (a time-conditional escalation). The flat layer PERMITS
+# production deploys, so the conditional time-gate is the operative control.
+schema_version: 2
+repo_id: github.com/org/payments
+name: Payments Service
+purpose: Core payments API.
+review_rules:
+  approval_required_for_merge: true
+deploy_rules:
+  allow_agent_deploy: true
+  environments: [dev, staging, production]
+  restricted_environments: []
+allowed_actions: [read_repo, open_pr, deploy, promote_environment]
+rules:
+  - id: deploy-prod-business-hours-only
+    description: Production deploys outside Mon-Fri 09:00-17:00 UTC need approval.
+    applies_to: [deploy, promote_environment]
+    when:
+      match: all
+      conditions:
+        - { field: environment, op: eq, value: production }
+        - field: now
+          op: not_in_time_window
+          value: { days: [0, 1, 2, 3, 4], start: "09:00", end: "17:00", tz: UTC }
+    effect: require_approval
+    severity: warning
+    reason: "Production deploys outside business hours require human approval."

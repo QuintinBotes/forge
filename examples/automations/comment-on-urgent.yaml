@@ -1,0 +1,18 @@
+# When a task's priority changes to urgent, post a triage comment.
+# (Field-based automation example; comments degrade gracefully where the
+# foundation has no comment store.)
+name: Comment when task becomes urgent
+description: When a task's priority changes to urgent, post a triage comment.
+enabled: true
+trigger:
+  type: task_priority_changed
+  config:
+    to_priority: urgent
+condition:
+  match: all
+  conditions:
+    - { field: priority, op: eq, value: urgent }
+actions:
+  - type: add_comment
+    body_template: "{{task.key}} is now urgent — please triage."
+run_order: 100

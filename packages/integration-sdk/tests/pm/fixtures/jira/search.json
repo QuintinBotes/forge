@@ -1,0 +1,9 @@
+{
+  "total": 2,
+  "startAt": 0,
+  "maxResults": 50,
+  "issues": [
+    {"id": "10001", "key": "ENG-1", "fields": {"summary": "Add pagination", "status": {"name": "In Progress", "statusCategory": {"key": "indeterminate"}}, "priority": {"name": "High"}, "labels": [], "updated": "2026-01-02T10:00:00.000+0000"}},
+    {"id": "10002", "key": "ENG-2", "fields": {"summary": "Fix login", "status": {"name": "To Do", "statusCategory": {"key": "new"}}, "priority": {"name": "Medium"}, "labels": [], "updated": "2026-01-03T10:00:00.000+0000"}}
+  ]
+}

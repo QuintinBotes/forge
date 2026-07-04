@@ -1,0 +1,33 @@
+suite: hardened securityContext (AC5)
+templates:
+  - templates/api/deployment.yaml
+  - templates/worker/deployment.yaml
+  - templates/web/deployment.yaml
+  - templates/mcp-gateway/deployment.yaml
+  - templates/job-migrate.yaml
+tests:
+  - it: pod runs as non-root with a seccomp profile
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+  - it: container is fully hardened
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.seccompProfile.type
+          value: RuntimeDefault

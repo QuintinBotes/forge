@@ -1,0 +1,25 @@
+repo_id: github.com/org/api
+enabled: true
+environments:
+  - name: dev
+    rank: 0
+    requires_approval: false
+    gate_config: { required_checks: [ci_green], auto_promote_on_merge: true }
+    provider_config: { provider: github_actions, workflow_file: deploy.yml, ref: main, inputs: { env: dev } }
+    health_check: { kind: http, url: https://dev.example.com/healthz, expect_status: 200, retries: 3 }
+  - name: staging
+    rank: 1
+    gate_config: { required_checks: [ci_green, spec_validated], min_approvals: 1 }
+    provider_config: { provider: github_actions, workflow_file: deploy.yml, ref: main, inputs: { env: staging } }
+    health_check: { kind: http, url: https://staging.example.com/healthz, expect_status: 200 }
+  - name: production
+    rank: 2
+    gate_config:
+      required_checks: [ci_green, spec_validated, security_clean]
+      approver_team_ids: []
+      min_approvals: 2
+      auto_rollback: true
+      freeze_windows:
+        - { start_day: 4, start_time: "17:00", end_day: 0, end_time: "09:00", reason: weekend freeze }
+    provider_config: { provider: github_deployments, environment: production }
+    health_check: { kind: http, url: https://prod.example.com/healthz, expect_status: 200, retries: 5 }

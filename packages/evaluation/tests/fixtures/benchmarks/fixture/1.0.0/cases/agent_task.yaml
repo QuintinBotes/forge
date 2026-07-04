@@ -1,0 +1,9 @@
+cases:
+  - id: fix-task-pagination
+    query: "Add cursor pagination to the customer endpoint"
+    expected_ids: [REQ-1, REQ-2, REQ-3]
+    kind: agent_task
+    tags: [agent_task]
+    metadata:
+      expected_terminal_state: pr_opened
+      spec_ref: SPEC-42

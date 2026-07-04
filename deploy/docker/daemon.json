@@ -1,0 +1,19 @@
+{
+  "__comment": "Forge host Docker daemon configuration (F14 hardening + F34 kernel-boundary sandbox runtimes). Installed/merged by deploy/scripts/install-runtimes.sh; no runtime is the daemon DEFAULT — the per-container HostConfig.Runtime selects runsc/kata-fc at sandbox create (F34).",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m",
+    "max-file": "5"
+  },
+  "live-restore": true,
+  "no-new-privileges": true,
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/local/bin/runsc"
+    },
+    "kata-fc": {
+      "path": "/usr/bin/containerd-shim-kata-fc-v2",
+      "runtimeArgs": []
+    }
+  }
+}

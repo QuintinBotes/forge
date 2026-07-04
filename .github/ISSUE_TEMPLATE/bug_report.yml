@@ -1,0 +1,119 @@
+name: Bug report
+description: Report a reproducible problem in Forge.
+title: "[bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug!
+
+        **Do not report security vulnerabilities here.** Please follow our
+        [Security Policy](https://github.com/service-hive/forge/security/policy)
+        and report them privately instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checklist
+      options:
+        - label: I searched existing [issues](https://github.com/service-hive/forge/issues) and this is not a duplicate.
+          required: true
+        - label: This is a bug, not a security vulnerability (those go through the [Security Policy](https://github.com/service-hive/forge/security/policy)).
+          required: true
+        - label: I am running a supported version (`main` or the latest `0.x` release).
+          required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug and its impact.
+      placeholder: When I run `make migrate`, the api container exits with ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, deterministic steps. Include config/requests where relevant.
+      placeholder: |
+        1. `cp .env.example .env` and set ...
+        2. `make dev`
+        3. POST /v1/... with body ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      description: Which part of Forge is affected? Pick the closest.
+      options:
+        - api (apps/api — FastAPI backend)
+        - worker (apps/worker — Celery workers)
+        - mcp-gateway (apps/mcp-gateway)
+        - web (apps/web — Next.js frontend)
+        - a package (packages/* — e.g. contracts, knowledge-core, workflow-engine)
+        - deploy / infra (docker-compose, Caddy, Helm)
+        - docs
+        - other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Forge version / commit
+      description: Release tag, or `git rev-parse --short HEAD`.
+      placeholder: "0.1.0 or 49babd7"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running Forge?
+      options:
+        - Self-hosted via docker-compose (deploy/)
+        - Self-hosted via Helm chart
+        - Local dev (make dev)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime versions
+      description: Relevant to your report — e.g. Python (`uv run python --version`), Node/pnpm, Docker, OS.
+      placeholder: "Python 3.14.6, pnpm 10.14.0, Docker 27, Ubuntu 24.04"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / output
+      description: Paste logs, tracebacks, or console output. This is automatically formatted as code, so no backticks needed.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that might help — screenshots, related issues, workarounds.
+    validations:
+      required: false

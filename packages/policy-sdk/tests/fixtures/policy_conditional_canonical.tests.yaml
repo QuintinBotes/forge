@@ -1,0 +1,29 @@
+cases:
+  - name: prod deploy blocked outside business hours
+    context: { environment: production, now: "2026-06-27T23:00:00Z" }  # Saturday night
+    tool_call: { tool: deploy, arguments: { environment: production } }
+    expect_effect: deny
+    expect_requires_approval: true
+    expect_rule: deploy-prod-business-hours-only
+  - name: prod deploy allowed inside business hours
+    context: { environment: production, now: "2026-06-23T12:00:00Z" }  # Tuesday noon
+    tool_call: { tool: deploy, arguments: { environment: production } }
+    expect_effect: allow
+  - name: infra write on feature branch denied
+    context: { branch: feature/x }
+    tool_call: { tool: write_file, path: infra/main.tf }
+    expect_effect: deny
+    expect_rule: infra-writes-main-only
+  - name: infra write on main allowed
+    context: { branch: main }
+    tool_call: { tool: write_file, path: infra/main.tf }
+    expect_effect: allow
+  - name: terraform apply in dev for admin allowed
+    context: { environment: dev, actor_role: admin }
+    tool_call: { tool: run_command, arguments: { command: "terraform apply -auto-approve" } }
+    expect_effect: allow
+    expect_rule: terraform-apply-dev-admin
+  - name: terraform apply in dev for member denied
+    context: { environment: dev, actor_role: member }
+    tool_call: { tool: run_command, arguments: { command: "terraform apply -auto-approve" } }
+    expect_effect: deny

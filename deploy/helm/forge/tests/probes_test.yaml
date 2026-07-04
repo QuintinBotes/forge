@@ -1,0 +1,39 @@
+suite: probes wired to the health-endpoint contract (AC7)
+tests:
+  - it: api has readiness /readyz and liveness /healthz + startup
+    template: templates/api/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - isNotNull:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+  - it: web has liveness + readiness on /healthz
+    template: templates/web/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /healthz
+  - it: mcp-gateway probes hit /health (foundation endpoint)
+    template: templates/mcp-gateway/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /health
+  - it: worker has a celery broker-ping exec liveness and no readiness probe
+    template: templates/worker/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].livenessProbe.exec.command
+          content: "celery -A forge_worker inspect ping"
+      - isNull:
+          path: spec.template.spec.containers[0].readinessProbe

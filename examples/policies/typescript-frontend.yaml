@@ -1,0 +1,41 @@
+# Example .forge/policy.yaml — Next.js / TypeScript frontend application.
+#
+# Frontend repos let agents touch UI code and tests but never CI, infra, or
+# environment files. The default skill profile enforces accessibility checks.
+repo_id: github.com/acme/web-app
+name: Customer Web App
+purpose: Next.js customer-facing web application.
+languages: [typescript, css]
+entrypoints:
+  - app/layout.tsx
+commands:
+  install: pnpm install
+  lint: pnpm lint
+  type_check: pnpm tsc --noEmit
+  test: pnpm test
+  test_coverage: pnpm test -- --coverage
+  build: pnpm build
+write_rules:
+  allow: [app/**, components/**, lib/**, styles/**, public/**, tests/**, "*.test.ts", "*.test.tsx"]
+  deny: [.github/**, infra/**, .env*, secrets/**, next.config.js, "*.pem"]
+review_rules:
+  required_reviewers: [team-frontend]
+  approval_required_for_merge: true
+  min_approvals: 1
+deploy_rules:
+  allow_agent_deploy: false
+  environments: [preview]
+  restricted_environments: [staging, production]
+knowledge_rules:
+  index_paths: [app/**, components/**, lib/**, docs/**]
+  exclude_paths: [node_modules/**, .next/**, "*.lock"]
+  freshness_sla_hours: 12
+skill_profiles:
+  default: frontend-ui
+  allowed: [frontend-ui, chore-fast, security-review]
+subagent_rules:
+  allow_subagents: false
+  allowed_roles: []
+  max_parallel: 0
+allowed_actions: [read_repo, write_code, run_tests, open_pr, read_knowledge]
+restricted_actions: [deploy_prod, delete_files, push_to_main, modify_access_controls]

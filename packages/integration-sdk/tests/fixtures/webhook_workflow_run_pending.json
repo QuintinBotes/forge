@@ -1,0 +1,11 @@
+{
+  "action": "requested",
+  "workflow_run": {
+    "name": "CI",
+    "status": "in_progress",
+    "conclusion": null,
+    "head_sha": "dddddddddddddddddddddddddddddddddddddddd",
+    "html_url": "https://github.com/org/api/actions/runs/12345"
+  },
+  "repository": { "full_name": "org/api" }
+}

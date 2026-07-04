@@ -1,0 +1,122 @@
+# Forge-specific SAST invariants (HARD-09). Any finding from these rules is a
+# build failure — they encode security decisions the codebase has already made,
+# so a hit is a regression, not a style nit. Scope is controlled by
+# .semgrepignore (test trees excluded; fixtures under tests/security/fixtures
+# exercise these rules from a tmp copy).
+rules:
+  - id: forge-no-subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: >
+      subprocess with shell=True is a command-injection vector. Forge runs
+      every external command as an argv list (see forge_agent.sandbox and the
+      git runners). Pass a list and drop shell=True.
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$FUNC(..., shell=True, ...)
+          - pattern: subprocess.Popen(..., shell=True, ...)
+    metadata:
+      cwe: "CWE-78"
+      references: ["https://owasp.org/Top10/A03_2021-Injection/"]
+
+  - id: forge-no-tls-verify-false
+    languages: [python]
+    severity: ERROR
+    message: >
+      Disabling TLS verification (verify=False) allows trivial MITM of BYOK
+      credentials and webhook payloads. Configure a CA bundle instead.
+    patterns:
+      - pattern-either:
+          - pattern: httpx.$FUNC(..., verify=False, ...)
+          - pattern: httpx.Client(..., verify=False, ...)
+          - pattern: httpx.AsyncClient(..., verify=False, ...)
+          - pattern: requests.$FUNC(..., verify=False, ...)
+    metadata:
+      cwe: "CWE-295"
+
+  - id: forge-no-unsafe-yaml-load
+    languages: [python]
+    severity: ERROR
+    message: >
+      yaml.load without SafeLoader can instantiate arbitrary Python objects
+      from untrusted input. Use yaml.safe_load (the codebase standard).
+    patterns:
+      - pattern: yaml.load($DATA)
+      - pattern-not: yaml.load($DATA, Loader=yaml.SafeLoader)
+    metadata:
+      cwe: "CWE-502"
+
+  - id: forge-no-unsafe-yaml-loader-class
+    languages: [python]
+    severity: ERROR
+    message: >
+      yaml.load with an unsafe Loader (Loader/UnsafeLoader/FullLoader) can
+      execute arbitrary constructors. Use yaml.safe_load / SafeLoader.
+    patterns:
+      - pattern-either:
+          - pattern: yaml.load($DATA, Loader=yaml.Loader)
+          - pattern: yaml.load($DATA, Loader=yaml.UnsafeLoader)
+          - pattern: yaml.load($DATA, Loader=yaml.FullLoader)
+          - pattern: yaml.unsafe_load($DATA)
+    metadata:
+      cwe: "CWE-502"
+
+  - id: forge-no-mcp-write-default
+    languages: [python]
+    severity: ERROR
+    message: >
+      MCP connections are read-only by default (spec: MCP Security Rules #1).
+      Never construct a connection with allow_write=True outside an explicit,
+      audited operator opt-in path.
+    pattern: MCPConnection(..., allow_write=True, ...)
+    metadata:
+      spec: "FORGE_SPEC MCP Security Rules"
+
+  - id: forge-no-eval-exec
+    languages: [python]
+    severity: ERROR
+    message: >
+      eval()/exec() on dynamic data is remote code execution waiting to
+      happen. Forge never evaluates request- or model-derived strings.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+    metadata:
+      cwe: "CWE-95"
+
+  - id: forge-no-literal-cipher-key
+    languages: [python]
+    severity: ERROR
+    message: >
+      Ciphers must be keyed from FORGE_SECRET_KEY-derived material, never a
+      hardcoded literal (spec: creds-handling; HARD-10 owns the key seam).
+    pattern-either:
+      - pattern: FernetCipher(b"...")
+      - pattern: HmacAeadCipher(b"...")
+      - pattern: forge_api.auth.crypto.default_cipher(b"...")
+      - pattern: default_cipher(b"...")
+
+  - id: forge-no-secret-logging
+    languages: [python]
+    severity: ERROR
+    message: >
+      A secret-named value is passed to a logger. Secrets must flow through
+      the canonical redaction layer (forge_api.observability.redaction /
+      forge_mcp.security.redact) before any log/trace sink.
+    patterns:
+      - pattern-either:
+          - pattern: $LOG.debug(..., $X, ...)
+          - pattern: $LOG.info(..., $X, ...)
+          - pattern: $LOG.warning(..., $X, ...)
+          - pattern: $LOG.error(..., $X, ...)
+          - pattern: $LOG.critical(..., $X, ...)
+          - pattern: $LOG.exception(..., $X, ...)
+      - metavariable-pattern:
+          metavariable: $X
+          patterns:
+            - pattern: $VAR
+      - metavariable-regex:
+          metavariable: $X
+          regex: (?i)^.*(api_key|apikey|password|passwd|client_secret|access_token|refresh_token|private_key|credential)s?$
+    metadata:
+      cwe: "CWE-532"

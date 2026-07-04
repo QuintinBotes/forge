@@ -1,0 +1,59 @@
+# Built-in Forge skill profiles.
+#
+# These mirror docs/FORGE_SPEC.md ("Skill Profiles") verbatim. Skill profiles
+# enforce engineering quality structurally (not via prompts): the registry loads
+# them and `inject_profile` folds their constraints into an AgentObjective.
+#
+# Each top-level key is the profile name; it is injected as the profile's `name`
+# field by the loader. Community profiles use the same plain-YAML schema.
+skill_profiles:
+
+  backend-tdd:
+    description: Backend feature development with test-driven discipline
+    requires_plan: true
+    requires_tests_before_implementation: true
+    min_test_coverage: 80
+    verification_steps: [lint, type_check, unit_tests, integration_tests]
+    review_required: true
+    forbidden_shortcuts: [skip_tests, no_error_handling, hardcoded_secrets]
+
+  backend-fast:
+    description: Backend changes with a lighter verification bar
+    requires_plan: false
+    min_test_coverage: 60
+    verification_steps: [lint, type_check, unit_tests]
+    review_required: true
+
+  frontend-ui:
+    description: Frontend UI work with accessibility checks
+    requires_plan: true
+    verification_steps: [lint, type_check, unit_tests]
+    accessibility_check: true
+    review_required: true
+
+  incident-response:
+    description: Read-only incident triage requiring human approval to act
+    requires_plan: false
+    requires_human_approval_before_action: true
+    max_blast_radius: low
+    allowed_actions: [read_logs, query_metrics, read_repo, run_diagnostic_scripts]
+    forbidden_actions: [deploy_prod, delete_data, modify_access_controls]
+
+  spec-analyst:
+    description: Produces specification documents for human review
+    output_type: spec_document
+    human_review_required: true
+    allowed_actions: [read_repo, read_knowledge, write_spec, query_mcp]
+
+  security-review:
+    description: Security review producing a SARIF report
+    output_type: security_report
+    tools: [sast, dependency_audit, secrets_scan]
+    human_review_required: true
+    report_format: sarif
+
+  chore-fast:
+    description: Low-risk chores with minimal ceremony
+    requires_plan: false
+    verification_steps: [lint, type_check, unit_tests]
+    review_required: false

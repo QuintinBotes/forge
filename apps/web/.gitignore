@@ -1,0 +1,14 @@
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+
+# Test / coverage
+/coverage/
+
+# Dependencies
+/node_modules/
+
+# Misc
+*.tsbuildinfo
+.DS_Store

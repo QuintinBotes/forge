@@ -1,0 +1,35 @@
+# Example spec manifest — API rate limiting (draft, still clarifying).
+#
+# Shows a spec that is NOT yet approved: open_questions remain, so the spec
+# engine's implementation gate would block an agent run until status=approved.
+id: SPEC-42
+name: API rate limiting
+status: clarifying
+constitution_refs:
+  - engineering/api-principles
+repos:
+  - github.com/acme/payments-api
+requirements:
+  - id: R1
+    text: Apply per-API-key request rate limiting on all public endpoints
+  - id: R2
+    text: Rate-limited responses return HTTP 429 with a Retry-After header
+acceptance_criteria:
+  - id: A1
+    req_refs: [R1]
+    text: A key exceeding its quota is throttled within one limit window
+  - id: A2
+    req_refs: [R2]
+    text: Throttled requests return 429 and a Retry-After header in seconds
+open_questions:
+  - id: Q1
+    text: Is the limiter fixed-window or token-bucket?
+  - id: Q2
+    text: Are limits per-key, per-IP, or both?
+    resolution: Per-key for authenticated traffic; per-IP fallback for anonymous.
+constraints:
+  - Limiter state must survive a single API instance restart
+plan_ref: plan.md
+tasks_ref: tasks.md
+execution_mode: single_agent
+skill_profile: backend-tdd

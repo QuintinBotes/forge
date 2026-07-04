@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="178" height="64" viewBox="0 0 178 64" fill="none" role="img" aria-label="Forge">
+  <title>Forge</title>
+  <!-- Icon -->
+  <path d="M15 45 H43 L47 53 H11 Z" fill="#C2CCD8"/>
+  <g fill="#F86C1E">
+    <rect x="17" y="13" width="10" height="32" rx="1.5"/>
+    <rect x="17" y="13" width="27" height="10" rx="1.5"/>
+    <rect x="17" y="27" width="19" height="9" rx="1.5"/>
+  </g>
+  <path d="M48 7 L50.2 10.8 L54 13 L50.2 15.2 L48 19 L45.8 15.2 L42 13 L45.8 10.8 Z" fill="#FFC061"/>
+  <!-- Wordmark -->
+  <text x="70" y="42" font-family="'Avenir Next','Futura','Century Gothic','Segoe UI',ui-sans-serif,system-ui,sans-serif" font-size="34" font-weight="700" letter-spacing="-1.2" fill="#E9EDF2">Forge</text>
+</svg>

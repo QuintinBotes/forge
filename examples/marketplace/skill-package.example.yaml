@@ -1,0 +1,38 @@
+# Example forge-package.yaml for a skill profile (F32).
+# Build with: forge marketplace package --kind skill_profile skill.yaml --out dist/
+# then sign `manifest_hash` with your Ed25519 key and open a PR to a registry repo.
+artifact:
+  description: Backend feature development with strict TDD discipline
+  forbidden_shortcuts:
+  - skip_tests
+  - no_error_handling
+  - hardcoded_secrets
+  min_test_coverage: 95
+  name: backend-tdd-strict
+  requires_plan: true
+  requires_tests_before_implementation: true
+  review_required: true
+  schema_version: 1
+  verification_steps:
+  - lint
+  - type_check
+  - unit_tests
+  - integration_tests
+authors: []
+content_hash: sha256:1caa1f35e1bad644c979f137c94b5a53462277fad0618db43dfd594b99c5c69c
+description: A stricter variant of the built-in backend-tdd profile.
+homepage: https://github.com/janedev/forge-skills
+kind: skill_profile
+license: Apache-2.0
+min_forge_version: 3.0.0
+name: Backend TDD (strict, 95% coverage)
+repository: https://github.com/janedev/forge-skills
+schema_version: 1
+slug: backend-tdd-strict
+summary: Hardened backend-tdd profile requiring 95% coverage and integration tests.
+tags:
+- backend
+- python
+- tdd
+- hardened
+version: 1.2.0

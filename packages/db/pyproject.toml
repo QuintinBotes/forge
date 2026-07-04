@@ -1,0 +1,22 @@
+[project]
+name = "forge-db"
+version = "0.1.0"
+description = "SQLAlchemy 2.x data model and Alembic migrations for Forge."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "Apache-2.0" }
+authors = [{ name = "The Forge Authors" }]
+dependencies = [
+    "forge-contracts",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "pgvector>=0.2.5",
+    "psycopg[binary]>=3.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["forge_db"]

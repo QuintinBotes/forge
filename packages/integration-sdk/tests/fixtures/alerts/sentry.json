@@ -1,0 +1,13 @@
+{
+  "action": "triggered",
+  "data": {
+    "event": {
+      "id": "evt_abc123",
+      "issue_id": "ISSUE-42",
+      "title": "TypeError: cannot read property 'total' of undefined",
+      "level": "error",
+      "culprit": "checkout.render(app/checkout.tsx)",
+      "project": "storefront"
+    }
+  }
+}

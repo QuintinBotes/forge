@@ -1,0 +1,41 @@
+suite: recommended labels + selector labels (AC17)
+release:
+  name: forge
+  namespace: forge
+tests:
+  - it: api deployment carries the full recommended label set
+    template: templates/api/deployment.yaml
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: forge
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: forge
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: api
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - isNotNull:
+          path: metadata.labels["app.kubernetes.io/instance"]
+      - isNotNull:
+          path: metadata.labels["app.kubernetes.io/version"]
+      - isNotNull:
+          path: metadata.labels["helm.sh/chart"]
+  - it: selector labels are the immutable subset (name/instance/component only)
+    template: templates/api/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: forge
+            app.kubernetes.io/instance: forge
+            app.kubernetes.io/component: api
+  - it: the Service carries recommended labels
+    template: templates/api/service.yaml
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: forge

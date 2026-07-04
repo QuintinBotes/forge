@@ -1,0 +1,34 @@
+# Minimal example profile — bundled datastores, single replica per tier.
+#
+# Used by CI (`helm template`/render-contract) and referenced by
+# docs/self-hosting/kubernetes.md. Layered on top of values.yaml defaults; only
+# the values an evaluator must set are listed here.
+#
+#   helm install forge deploy/helm/forge -n forge -f values.example.yaml \
+#     --set secrets.data.SECRET_KEY="$(openssl rand -hex 32)" \
+#     --set secrets.data.AUTH_SECRET="$(openssl rand -hex 32)"
+
+forge:
+  domain: forge.example.com
+
+# Self-signed/existing TLS for a quick evaluation (no cert-manager required).
+ingress:
+  enabled: true
+  className: nginx
+  tls:
+    enabled: true
+    secretName: forge-tls
+
+# Keep the eval lightweight: no autoscaling, no ServiceMonitor.
+api:
+  autoscaling:
+    enabled: false
+worker:
+  autoscaling:
+    enabled: false
+web:
+  autoscaling:
+    enabled: false
+mcpGateway:
+  autoscaling:
+    enabled: false

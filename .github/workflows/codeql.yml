@@ -1,0 +1,59 @@
+name: CodeQL
+
+# Static analysis (code scanning) for the two source languages in this repo:
+#   * python                 — the uv workspace (packages/*, apps/{api,worker,mcp-gateway})
+#   * javascript-typescript  — the pnpm workspace (apps/web / @forge/web)
+#
+# Runs on pushes to main, on every PR, and on a weekly schedule so the baseline
+# keeps re-scanning even when the tree is quiet.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, Mondays at 03:27 UTC (off-peak, avoids the top-of-hour rush).
+    - cron: "27 3 * * 1"
+
+# Least privilege at the top level: read-only by default. The analyze job
+# opts into exactly the extra scopes CodeQL needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read           # checkout
+      security-events: write   # upload CodeQL results to code scanning
+      actions: read            # read workflow run metadata (private-repo safe)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Both languages are interpreted — no compiled build step required.
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

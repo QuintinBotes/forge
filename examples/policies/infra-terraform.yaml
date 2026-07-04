@@ -1,0 +1,57 @@
+# Example .forge/policy.yaml — Infrastructure-as-Code (Terraform) repo.
+#
+# The most restrictive profile: agents may PLAN and write module/test code, but
+# production state, secrets, and apply/destroy are hard-blocked. Agent deploys
+# are disabled entirely and every environment is restricted, so the evaluator
+# routes any deploy through a human approval gate.
+repo_id: github.com/acme/infrastructure
+name: Cloud Infrastructure
+purpose: Terraform modules and environment definitions for all cloud accounts.
+languages: [hcl]
+entrypoints:
+  - environments/dev/main.tf
+commands:
+  install: terraform init -backend=false
+  lint: terraform fmt -check -recursive && tflint
+  type_check: terraform validate
+  test: go test ./test/...
+  build: terraform plan -no-color
+write_rules:
+  allow: ["modules/**", "environments/dev/**", "test/**", "docs/**"]
+  deny:
+    - "environments/prod/**"
+    - "environments/staging/**"
+    - "*.tfstate"
+    - "*.tfstate.*"
+    - "*.tfvars"
+    - ".env*"
+    - "secrets/**"
+    - "*.pem"
+    - "*.key"
+review_rules:
+  required_reviewers: [team-sre, team-security]
+  approval_required_for_merge: true
+  min_approvals: 2
+deploy_rules:
+  allow_agent_deploy: false
+  environments: []
+  restricted_environments: [dev, staging, production]
+knowledge_rules:
+  index_paths: ["modules/**", "environments/**", "docs/**"]
+  exclude_paths: [".terraform/**", "*.tfstate", "*.tfstate.*"]
+  freshness_sla_hours: 6
+skill_profiles:
+  default: spec-analyst
+  allowed: [spec-analyst, security-review]
+subagent_rules:
+  allow_subagents: false
+  allowed_roles: []
+  max_parallel: 0
+allowed_actions: [read_repo, read_knowledge, write_code, run_tests, open_pr]
+restricted_actions:
+  - deploy_prod
+  - terraform_apply
+  - terraform_destroy
+  - delete_files
+  - push_to_main
+  - modify_access_controls

@@ -1,0 +1,1 @@
+{"webhookEvent": "jira:issue_deleted", "timestamp": 1767348120000, "issue": {"id": "10001", "key": "ENG-1"}}

@@ -1,0 +1,15 @@
+cases:
+  - name: prod deploy blocked on a Saturday night
+    context: { environment: production, now: "2026-06-27T23:00:00Z" }
+    tool_call: { tool: deploy, arguments: { environment: production } }
+    expect_effect: deny
+    expect_requires_approval: true
+    expect_rule: deploy-prod-business-hours-only
+  - name: prod deploy allowed Tuesday noon
+    context: { environment: production, now: "2026-06-23T12:00:00Z" }
+    tool_call: { tool: deploy, arguments: { environment: production } }
+    expect_effect: allow
+  - name: dev deploy unaffected by the time gate
+    context: { environment: dev, now: "2026-06-27T23:00:00Z" }
+    tool_call: { tool: deploy, arguments: { environment: dev } }
+    expect_effect: allow
