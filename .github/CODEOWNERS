@@ -1,0 +1,55 @@
+# CODEOWNERS — automatic review requests for pull requests.
+# https://docs.github.com/articles/about-code-owners
+#
+# Order matters: the LAST matching pattern for a changed file wins.
+# Owners must be GitHub users/teams with write access to this repo.
+# Replace the placeholder teams below with the real ones for your org.
+
+# Default owner for everything in the repo.
+*                                   @service-hive/maintainers
+
+# ---------------------------------------------------------------------------
+# Python backend — apps (FastAPI api, Celery worker, MCP gateway) + packages.
+# ---------------------------------------------------------------------------
+/apps/api/                          @service-hive/backend
+/apps/worker/                       @service-hive/backend
+/apps/mcp-gateway/                  @service-hive/backend
+/packages/                          @service-hive/backend
+
+# ---------------------------------------------------------------------------
+# Web frontend (Next.js) + shared React components.
+# ---------------------------------------------------------------------------
+/apps/web/                          @service-hive/frontend
+/packages/ui-kit/                   @service-hive/frontend
+
+# ---------------------------------------------------------------------------
+# Frozen contracts (Pydantic DTOs + Protocols) — changes ripple across the
+# whole system, so require a maintainer review.
+# ---------------------------------------------------------------------------
+/packages/contracts/                @service-hive/maintainers
+
+# ---------------------------------------------------------------------------
+# Infra, deploy, and CI/security tooling.
+# ---------------------------------------------------------------------------
+/deploy/                            @service-hive/infra
+/.github/                           @service-hive/maintainers
+/scripts/                           @service-hive/infra
+
+# ---------------------------------------------------------------------------
+# Security-sensitive surfaces — always reviewed by the security owners.
+# ---------------------------------------------------------------------------
+/SECURITY.md                        @service-hive/security
+/SECURITY_FINDINGS.md               @service-hive/security
+/.gitleaks.toml                     @service-hive/security
+/.semgrep/                          @service-hive/security
+/security/                          @service-hive/security
+/docs/security/                     @service-hive/security
+/packages/auth-sdk/                 @service-hive/security
+/packages/authz-sdk/                @service-hive/security
+/packages/policy-sdk/               @service-hive/security
+
+# ---------------------------------------------------------------------------
+# Docs.
+# ---------------------------------------------------------------------------
+/docs/                              @service-hive/maintainers
+*.md                                @service-hive/maintainers

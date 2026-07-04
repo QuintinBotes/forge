@@ -1,84 +1,189 @@
 # Forge
 
-> OSS engineering-orchestration platform — spec-driven development, agent runtime,
-> hybrid knowledge retrieval, native project board, and self-hosting first.
+> Self-hostable orchestration for AI engineering work — spec-driven development,
+> a sandboxed agent runtime, hybrid knowledge retrieval, and a native project
+> board, all on one Postgres-backed platform you run yourself.
 
-Forge is a self-hostable platform for orchestrating AI engineering work: it pairs a
-spec-driven development engine with a LangGraph agent runtime, a hybrid (semantic +
-keyword + RRF + rerank) knowledge pipeline, a native project board, repo policy and
-skill profiles, MCP integration, and a Postgres-backed workflow engine.
+<!-- Badge placeholders — replace <org>/forge with your repository slug before publishing. -->
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+[![CI](https://img.shields.io/badge/CI-see%20Actions-lightgrey.svg)](../../actions)
+[![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0%20(active)-orange.svg)](#status)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-3776AB.svg)](./.python-version)
 
-**License:** Apache-2.0 · **Status:** V1 in active development.
+Forge turns a written spec into orchestrated engineering work: a spec engine
+plans and validates the work, a LangGraph agent runtime executes it inside
+isolated sandboxes, a hybrid (semantic + keyword) knowledge pipeline grounds the
+agents in your codebase, and a native board tracks it all. It is designed to be
+**self-hosted first** — every component ships in a single, hardened Docker
+Compose stack (or a Helm chart) that you own end to end.
+
+## Status
+
+Forge is **pre-1.0 and under active development**. The backend platform, its
+HTTP API, the CLI, the workflow/agent runtime, and the self-hosting substrate
+are the mature surface and are exercised by a large test suite (real pgvector
+Postgres in CI). The **web UI (`apps/web`) is early** — the app-router shell,
+board, and command palette exist, but most feature screens are still being
+built out on top of the API. Where a feature below is API/CLI-first with its UI
+still landing, it is marked **(UI in progress)**. We try hard not to advertise
+anything that is only parked; see [`docs/SLICES_PROGRESS.md`](./docs/SLICES_PROGRESS.md)
+for the honest per-feature ledger.
+
+## Key features
+
+- **Spec-driven development** — author a `manifest.yaml` spec; the spec engine
+  validates it and drives the work. Includes a spec-validation dashboard.
+- **Agent runtime** — a LangGraph agent loop that runs work inside sandboxed
+  execution (Docker today; gVisor / Firecracker isolation classes are modelled
+  and mapped, with the real-runtime tiers gated behind a virtualization-enabled
+  CI job).
+- **Multi-agent coordination** — a coordinator for fanning work across agents.
+- **Workflow engine** — a Postgres finite-state-machine workflow layer, with
+  Temporal available in the production stack for durable orchestration.
+- **Hybrid knowledge / RAG** — pgvector cosine search + Postgres full-text
+  (BM25-style) fused with Reciprocal Rank Fusion (k=60) and a reranker.
+- **Native project board** — a board core for tracking runs and work items.
+- **Policy, skill, integration & MCP SDKs** — declarative `.forge/policy.yaml`,
+  skill profiles, integration definitions, and an MCP gateway for tool sources.
+- **Integration marketplace** — publish and install integrations (backend +
+  offline author CLI today; **UI in progress**).
+- **Enterprise SSO / SCIM** — SAML SSO and SCIM provisioning on the API
+  (**UI in progress**).
+- **Human approval system** — gated approvals for sensitive agent actions.
+- **Benchmark leaderboard** — submit, verify, and rank agent benchmark runs
+  (backend; **UI in progress**).
+- **Auth, secrets & BYOK** — envelope-encrypted secrets, a key vault, and
+  bring-your-own-key model-provider credentials.
+- **Observability & cost metrics + audit log** — structured, redaction-aware
+  telemetry and an append-only audit trail.
+- **Self-hosting & security** — a hardened, digest-pinned Compose stack, a Helm
+  chart, per-image SBOMs, backup/restore runbooks, a STRIDE threat model, and a
+  wired enforcement-matrix regression suite enforced in CI.
+
+## Quickstart (self-host, one command)
+
+Requires Docker Engine 24+ and the Docker Compose v2 plugin, plus `make`.
+
+```bash
+git clone https://github.com/<org>/forge.git
+cd forge
+cp .env.example .env     # then set SECRET_KEY, POSTGRES_PASSWORD, DOMAIN, ...
+make dev                 # build + start the full stack, migrate, seed, wait healthy
+```
+
+`make dev` brings up Postgres (pgvector), Redis, MinIO, the API, worker, MCP
+gateway, web UI, and the Caddy edge proxy, then runs migrations and seeds a demo
+workspace. When it reports healthy:
+
+- Web UI: <http://localhost:3000>
+- API + health check: <http://localhost:8000/health>
+
+For a **production** deployment (hardened, digest-pinned images) use the
+production compose file directly:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --remove-orphans
+```
+
+See [`docs/self-hosting/quickstart.md`](./docs/self-hosting/quickstart.md) for
+the full walkthrough, and [`deploy/`](./deploy) for the Compose files, Caddy
+config, and Helm chart.
 
 ## Tech stack
 
-- **Backend:** Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic
-- **Agents/workflow:** LangGraph, Postgres FSM, Redis + Celery
-- **Knowledge/RAG:** pgvector (cosine) + Postgres full-text (BM25), RRF fusion (k=60), Jina reranker
-- **Frontend:** Next.js 15, TypeScript, Tailwind, shadcn/ui, TanStack Query/Table
+- **Backend:** Python 3.14, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic
+- **Agents / workflow:** LangGraph, Postgres FSM, Temporal, Redis + Celery
+- **Knowledge / RAG:** pgvector (cosine) + Postgres full-text, RRF fusion (k=60), reranker
+- **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, shadcn/ui, TanStack Query/Table
 - **Infra:** Docker Compose, Caddy, MinIO
-- **Tooling:** uv + Ruff (Python), pnpm (Node)
+- **Tooling:** uv + Ruff + mypy (Python), pnpm (Node)
 
 ## Repository layout
 
 ```
 forge/
 ├── apps/
-│   ├── api/            # FastAPI backend (forge_api)
-│   ├── worker/         # Celery workers (forge_worker)
-│   ├── mcp-gateway/    # MCP client manager service (forge_mcp_gateway)
-│   └── web/            # Next.js frontend
+│   ├── api/                     # FastAPI backend + CLI (forge_api)
+│   ├── worker/                  # Celery workers (forge_worker)
+│   ├── mcp-gateway/             # MCP client manager service (forge_mcp_gateway)
+│   └── web/                     # Next.js 16 frontend (@forge/web)
 ├── packages/
-│   ├── contracts/      # Frozen Pydantic DTOs + Protocols (forge_contracts)
-│   ├── db/             # SQLAlchemy models + Alembic (forge_db)
-│   ├── workflow-engine/        # forge_workflow
-│   ├── agent-runtime/          # forge_agent
-│   ├── multi-agent-coordinator/# forge_coordinator
-│   ├── spec-engine/            # forge_spec
-│   ├── board-core/             # forge_board
-│   ├── knowledge-core/         # forge_knowledge
-│   ├── integration-sdk/        # forge_integrations
-│   ├── mcp-sdk/                # forge_mcp
-│   ├── policy-sdk/             # forge_policy
-│   ├── skill-sdk/              # forge_skill
-│   ├── evaluation/             # forge_eval
-│   └── ui-kit/         # Shared React components
-├── deploy/             # docker-compose, Caddy, scripts
-├── examples/           # policies, skills, workflows, mcp-connectors, specs
-└── docs/               # spec, self-hosting, architecture
+│   ├── contracts/               # Frozen Pydantic DTOs + Protocols (forge_contracts)
+│   ├── db/                      # SQLAlchemy models + Alembic (forge_db)
+│   ├── workflow-engine/         # forge_workflow
+│   ├── agent-runtime/           # forge_agent
+│   ├── multi-agent-coordinator/ # forge_coordinator
+│   ├── spec-engine/             # forge_spec
+│   ├── board-core/              # forge_board
+│   ├── knowledge-core/          # forge_knowledge
+│   ├── integration-sdk/         # forge_integrations
+│   ├── mcp-sdk/                 # forge_mcp
+│   ├── policy-sdk/              # forge_policy
+│   ├── skill-sdk/               # forge_skill
+│   ├── evaluation/              # forge_eval
+│   ├── auth-sdk/                # forge_auth
+│   ├── authz-sdk/               # forge_authz
+│   ├── approval-sdk/            # forge_approval
+│   ├── marketplace-sdk/         # forge_marketplace
+│   ├── observability/           # forge_obs
+│   └── deploy-core/             # forge_deploy
+├── deploy/                      # docker-compose, Caddy, Helm, scripts, SBOMs
+├── examples/                    # policies, skills, workflows, mcp-connectors, specs (tested fixtures)
+└── docs/                        # spec, self-hosting, architecture, security
 ```
 
 The Python workspace is managed by `uv` (members declared in the root
-`pyproject.toml`). The Node workspace is managed by `pnpm` (`pnpm-workspace.yaml`).
-
-## Quickstart (local)
-
-```bash
-git clone https://github.com/forge-platform/forge
-cd forge
-cp .env.example .env
-make setup    # installs python + node deps
-# start Postgres/Redis/MinIO (see deploy/), then:
-make migrate  # apply database migrations
-make seed     # seed a demo workspace
-make dev      # start all services
-# Web UI: http://localhost:3000 | API: http://localhost:8000
-```
+[`pyproject.toml`](./pyproject.toml)). The web app is a separate `pnpm`
+workspace ([`pnpm-workspace.yaml`](./pnpm-workspace.yaml)) and is excluded from
+the uv workspace.
 
 ## Development
 
-| Command          | Description                                   |
-|------------------|-----------------------------------------------|
-| `make install`   | Install python (uv) + node (pnpm) deps        |
-| `make test`      | Run the python test suite                     |
-| `make lint`      | Ruff lint + format check                      |
+```bash
+make setup      # uv sync + pnpm install
+make dev        # bring up the full local stack (build, migrate, seed, healthcheck)
+make test       # uv run pytest
+make lint       # ruff check + ruff format --check
+```
+
+| Command          | Description                                    |
+|------------------|------------------------------------------------|
+| `make setup`     | Install Python (uv) + Node (pnpm) deps         |
+| `make dev`       | Build + start the full dev stack via Compose   |
+| `make test`      | Run the Python test suite (pytest)             |
+| `make lint`      | Ruff lint + format check                       |
 | `make fmt`       | Ruff auto-format + auto-fix                    |
 | `make typecheck` | mypy static type checking                      |
 | `make migrate`   | Apply Alembic migrations                       |
 | `make seed`      | Seed a demo workspace                          |
 
-TDD is mandatory: write a failing test, implement, then run the green gate
-(`ruff check`, type check, and `pytest`) before a unit is considered done.
+Web-app checks run through pnpm:
+
+```bash
+pnpm --filter @forge/web lint
+pnpm --filter @forge/web build
+pnpm --filter @forge/web test
+```
+
+TDD is the norm and CI is the source of truth: `ruff check`, `ruff format
+--check`, `mypy`, and `pytest` (against a real pgvector Postgres) must be green,
+and the web job must lint + build. See [CONTRIBUTING.md](./CONTRIBUTING.md) for
+the full workflow.
+
+## Documentation
+
+- [Self-hosting](./docs/self-hosting/quickstart.md) — quickstart, Docker Compose,
+  Kubernetes/Helm, backup, restore, upgrade, security, troubleshooting.
+- [Architecture & spec](./docs/FORGE_SPEC.md) — the platform specification.
+- [Security policy](./SECURITY.md) and the
+  [threat model](./docs/security/threat-model.md).
+- [Examples](./examples/README.md) — copy-paste, schema-validated configuration.
+
+## Contributing
+
+Contributions are welcome — please read [CONTRIBUTING.md](./CONTRIBUTING.md) and
+our [Code of Conduct](./CODE_OF_CONDUCT.md). To report a vulnerability, follow
+[SECURITY.md](./SECURITY.md) (do not open a public issue).
 
 ## License
 
