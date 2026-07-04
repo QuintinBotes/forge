@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ForgeMark } from "@/components/forge-logo";
 import { cn } from "@/lib/utils";
 
 export interface NavItem {
@@ -44,13 +45,8 @@ export function AppShell({ children, actions }: AppShellProps): ReactNode {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-card md:flex">
-        <div className="flex h-14 items-center gap-2 px-5 text-lg font-semibold tracking-tight">
-          <span
-            aria-hidden
-            className="inline-flex h-6 w-6 items-center justify-center rounded bg-primary text-primary-foreground text-sm"
-          >
-            F
-          </span>
+        <div className="flex h-14 items-center gap-2 px-5 font-display text-lg font-semibold tracking-tight">
+          <ForgeMark className="h-7 w-7" />
           Forge
         </div>
         <nav aria-label="Primary" className="flex flex-1 flex-col gap-1 px-3 py-2">
