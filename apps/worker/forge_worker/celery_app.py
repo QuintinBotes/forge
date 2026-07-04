@@ -41,6 +41,7 @@ celery_app = Celery(
         "forge_worker.tasks.marketplace",
         "forge_worker.tasks.observability",
         "forge_worker.tasks.sso",
+        "forge_worker.tasks.audit",
         "forge_worker.beat",
     ],
 )

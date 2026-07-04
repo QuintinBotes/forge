@@ -36,6 +36,9 @@ SSO_REPLAY_CLEANUP_TASK = "sso.cleanup_saml_replay"
 APPROVAL_EXPIRE_TASK = "approvals.expire_pending"
 # F38: sample the MCP freshness-lag gauge per connection (default 60s).
 OBS_FRESHNESS_TASK = "obs.refresh_freshness_gauges"
+# F39: daily re-walk of every workspace's audit hash chain (tamper detection;
+# a break records a critical ``audit.chain_broken`` event).
+AUDIT_VERIFY_TASK = "audit.verify_chain_all"
 
 
 def reap_interval_seconds() -> float:
@@ -85,6 +88,11 @@ def approval_expire_seconds() -> float:
 def obs_freshness_seconds() -> float:
     """Beat cadence for the F38 MCP freshness-lag gauge sample (default 60s)."""
     return float(os.environ.get("FORGE_OBS_FRESHNESS_INTERVAL_SECONDS", "60"))
+
+
+def audit_verify_seconds() -> float:
+    """Beat cadence for the F39 audit chain verifier (default daily)."""
+    return float(os.environ.get("FORGE_AUDIT_VERIFY_INTERVAL_SECONDS", str(24 * 3600)))
 
 
 def configure_beat(app: object) -> dict[str, object]:
@@ -147,6 +155,11 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": OBS_FRESHNESS_TASK,
             "schedule": obs_freshness_seconds(),
         },
+        # F39: daily audit hash-chain integrity re-walk (tamper detection).
+        "audit-verify-chain-all": {
+            "task": AUDIT_VERIFY_TASK,
+            "schedule": audit_verify_seconds(),
+        },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
     existing.update(schedule)
@@ -158,6 +171,7 @@ BEAT_SCHEDULE = configure_beat(celery_app)
 
 __all__ = [
     "APPROVAL_EXPIRE_TASK",
+    "AUDIT_VERIFY_TASK",
     "AUTHZ_PURGE_TASK",
     "AUTH_PURGE_KEYS_TASK",
     "AUTOMATION_SWEEP_TASK",
@@ -171,6 +185,7 @@ __all__ = [
     "SSO_METADATA_REFRESH_TASK",
     "SSO_REPLAY_CLEANUP_TASK",
     "approval_expire_seconds",
+    "audit_verify_seconds",
     "auth_purge_keys_seconds",
     "authz_purge_seconds",
     "automation_sweep_seconds",

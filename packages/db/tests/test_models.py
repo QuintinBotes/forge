@@ -130,6 +130,8 @@ EXPECTED_MODELS = [
     # F38 observability-cost-metrics tables (durable cost ledger + price book).
     "CostEvent",
     "ModelPrice",
+    # F39 audit-log: per-workspace hash-chain cursor (audit_log itself is F30's).
+    "AuditChainHead",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

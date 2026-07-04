@@ -6,8 +6,9 @@ never grants stale access. Each run deletes grants whose ``expires_at`` has
 passed and writes one ``role_grant.expired`` audit event per deleted grant. A
 re-run is idempotent — already-purged grants are gone, so no second event.
 
-The worker writes :class:`AuditLog` rows directly (it must not import
-``forge_api``); the row schema matches the shared append-only ``audit_log`` table.
+The worker writes through ``forge_db.audit``'s chained ``SqlAuditWriter``
+directly (it must not import ``forge_api``), so every purge event lands in the
+F39 per-workspace hash chain of the shared append-only ``audit_log`` table.
 """
 
 from __future__ import annotations
@@ -18,7 +19,9 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.models import AuditLog, RoleGrant
+from forge_contracts.audit import AuditEvent
+from forge_db.audit.writer import SqlAuditWriter
+from forge_db.models import RoleGrant
 from forge_db.session import create_session_factory
 from forge_worker.celery_app import celery_app
 
@@ -41,12 +44,14 @@ def run_purge(session: Session, *, now: datetime | None = None) -> int:
     expired = session.scalars(
         select(RoleGrant).where(RoleGrant.expires_at.is_not(None), RoleGrant.expires_at < now)
     ).all()
+    writer = SqlAuditWriter(session)
     for grant in expired:
-        session.add(
-            AuditLog(
+        writer.emit(
+            AuditEvent(
                 workspace_id=grant.workspace_id,
                 action="role_grant.expired",
                 actor_type="system",
+                actor_label="system:authz_purge",
                 target_type="role_grant",
                 target_id=grant.id,
                 scope_type=_enum_value(grant.scope_type),
