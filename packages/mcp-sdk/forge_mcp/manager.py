@@ -93,21 +93,15 @@ class MCPConnectionManager:
             self._owners[conn.id] = workspace_id
         return conn
 
-    def list_connections(
-        self, *, workspace_id: uuid.UUID | None = None
-    ) -> list[MCPConnection]:
+    def list_connections(self, *, workspace_id: uuid.UUID | None = None) -> list[MCPConnection]:
         """List registered connections, scoped to ``workspace_id`` when given."""
         if workspace_id is None:
             return list(self._connections.values())
         return [
-            conn
-            for cid, conn in self._connections.items()
-            if self._owners.get(cid) == workspace_id
+            conn for cid, conn in self._connections.items() if self._owners.get(cid) == workspace_id
         ]
 
-    def get(
-        self, connection_id: str, *, workspace_id: uuid.UUID | None = None
-    ) -> MCPGatewayClient:
+    def get(self, connection_id: str, *, workspace_id: uuid.UUID | None = None) -> MCPGatewayClient:
         """Resolve a connection's client, enforcing tenant ownership.
 
         A connection that is missing *or* owned by a different workspace raises

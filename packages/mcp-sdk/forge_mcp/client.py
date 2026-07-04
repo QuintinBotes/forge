@@ -116,18 +116,46 @@ class MCPGatewayClient:
 
     def list_resources(self, namespace: str | None = None) -> list[MCPResource]:
         conn = self._require_connection()
-        resources = self._transport.list_resources()
+        # Rule 4: every live list is audited (redacted; secret-free payload hash).
+        start = time.perf_counter()
+        try:
+            resources = self._transport.list_resources()
+        except Exception:
+            self._record(
+                conn.id,
+                "resources/list",
+                {"namespace": namespace},
+                "error",
+                self._elapsed_ms(start),
+            )
+            raise
+        self._record(
+            conn.id,
+            "resources/list",
+            {"namespace": namespace},
+            "ok",
+            self._elapsed_ms(start),
+        )
         return filter_resources(resources, conn.allowed_namespaces, requested=namespace)
 
     def read_resource(self, uri: str) -> MCPResourceContent:
         conn = self._require_connection()
         ns = namespace_of(uri)
         if not resource_in_scope(ns, conn.allowed_namespaces):
+            # Rule 5: an out-of-scope read is refused *before* any byte reaches the
+            # server, and the refusal is itself audited (spec MCP rules 4 & 5).
+            self._record(conn.id, "resources/read", {"uri": uri}, "forbidden", None)
             raise MCPNamespaceError(
                 f"resource {uri!r} (namespace {ns!r}) is outside the allowed "
                 f"namespaces {conn.allowed_namespaces} for connection {conn.id!r}"
             )
-        content = self._transport.read_resource(uri)
+        start = time.perf_counter()
+        try:
+            content = self._transport.read_resource(uri)
+        except Exception:
+            self._record(conn.id, "resources/read", {"uri": uri}, "error", self._elapsed_ms(start))
+            raise
+        self._record(conn.id, "resources/read", {"uri": uri}, "ok", self._elapsed_ms(start))
         return content.model_copy(update={"content": redact(content.content)})
 
     # ------------------------------------------------------------------ #
@@ -205,14 +233,10 @@ class MCPGatewayClient:
         decision = self._evaluator.evaluate(call, self._policy)
         if decision.requires_approval:
             self._record(conn.id, name, arguments, "needs_approval", None)
-            raise ApprovalRequiredError(
-                decision.reason or f"tool {name!r} requires approval"
-            )
+            raise ApprovalRequiredError(decision.reason or f"tool {name!r} requires approval")
         if not decision.allowed:
             self._record(conn.id, name, arguments, "denied", None)
-            raise PolicyViolationError(
-                decision.reason or f"tool {name!r} denied by policy"
-            )
+            raise PolicyViolationError(decision.reason or f"tool {name!r} denied by policy")
 
     def _record(
         self, connection_id: str, tool: str, arguments: Any, status: str, latency_ms: int | None

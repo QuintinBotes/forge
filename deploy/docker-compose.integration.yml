@@ -1,0 +1,45 @@
+# HARD-05 integration overlay: the self-hosted reference MCP server.
+#
+# This is the integration substrate for the live MCP lane — NO external SaaS or
+# credential. It stands up the reference server on a real socket so the
+# `forge_mcp` transports can be driven over REAL HTTP end-to-end.
+#
+#   docker compose -f deploy/docker-compose.integration.yml up -d mcp-reference
+#   export MCP_LIVE_TRANSPORT=true MCP_SERVER_URL=http://localhost:8901/mcp
+#   uv run pytest -m live_mcp -q
+#
+# See docs/runbooks/live-mcp.md.
+services:
+  mcp-reference:
+    build:
+      context: ..
+      dockerfile: deploy/mcp-reference/Dockerfile
+    image: forge/mcp-reference:${FORGE_VERSION:-0.1.0}
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "127.0.0.1:8901:8901"
+    healthcheck:
+      # stdlib probe: the uv slim runtime image ships no curl/wget (HARD-07).
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8901/health')\" || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+        max-file: "3"

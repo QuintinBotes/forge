@@ -19,6 +19,7 @@ MCP security rules map to HTTP status codes:
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -46,7 +47,7 @@ from forge_contracts import (
     PolicyViolationError,
 )
 from forge_contracts.enums import MCPIndexStrategy
-from forge_mcp import MCPConnectionManager
+from forge_mcp import MCPConnectionManager, TeeAuditLog, live_transport_factory
 from forge_mcp.exceptions import (
     MCPConnectionNotFoundError,
     MCPInputError,
@@ -89,11 +90,57 @@ SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_mcp_session_fac
 # --------------------------------------------------------------------------- #
 
 
+def _env_true(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _mcp_token_resolver(conn: MCPConnection) -> str | None:
+    """Resolve a connection's bearer token for the live transport.
+
+    Production resolves ``conn.auth.token_ref`` (``secret://mcp/<slug>``) from the
+    per-workspace vault (``APIKeyKind.mcp_token``); the integration lane falls
+    back to ``MCP_TOKEN``. The value is read on demand and never held in a module
+    global or logged. ``None`` for an unauthenticated connection.
+    """
+    from forge_contracts import MCPAuthType
+
+    if conn.auth.type is MCPAuthType.NONE:
+        return None
+    return os.environ.get("MCP_TOKEN")
+
+
+def _mcp_audit_sink() -> object | None:
+    """Build the durable MCP audit bridge when ``FORGE_MCP_AUDIT_BACKEND=db``.
+
+    The bridge forwards every ``MCPAuditEntry`` to the platform
+    :class:`~forge_api.observability.AuditLog` (redacted, hash-chained). When the
+    backend is ``memory`` (default) the manager keeps only its in-memory trail.
+    """
+    if os.environ.get("FORGE_MCP_AUDIT_BACKEND", "memory").strip().lower() != "db":
+        return None
+    from forge_api.observability import AuditLog, MCPAuditSink
+
+    return MCPAuditSink(AuditLog())
+
+
 @lru_cache(maxsize=1)
 def _mcp_manager_singleton() -> MCPConnectionManager:
-    # Default: NullTransport — registration + metadata work, but any operation
-    # needing a live server raises (no real external calls in Phase 1).
-    return MCPConnectionManager()
+    # ALPHA default: NullTransport — registration + metadata work, but any
+    # operation needing a live server raises 503 (no real external calls). The
+    # live transport is opt-in behind MCP_LIVE_TRANSPORT so it is never implicit.
+    if not _env_true("MCP_LIVE_TRANSPORT"):
+        return MCPConnectionManager()
+
+    factory = live_transport_factory(
+        token_resolver=_mcp_token_resolver,
+        timeout_s=float(os.environ.get("MCP_HTTP_TIMEOUT_S", "30")),
+        protocol_version=os.environ.get("MCP_PROTOCOL_VERSION", "2025-06-18"),
+    )
+    sink = _mcp_audit_sink()
+    # TeeAuditLog keeps the in-memory trail (so GET …/audit reads back) while
+    # forwarding to the durable platform sink when configured.
+    audit_log = TeeAuditLog(sink) if sink is not None else None
+    return MCPConnectionManager(transport_factory=factory, audit_log=audit_log)
 
 
 def get_mcp_manager() -> MCPConnectionManager:
@@ -179,9 +226,7 @@ def list_resources(
     namespace: str | None = Query(default=None),
 ) -> list[MCPResource]:
     with _mcp_errors():
-        return manager.list_resources(
-            connection_id, namespace, workspace_id=principal.workspace_id
-        )
+        return manager.list_resources(connection_id, namespace, workspace_id=principal.workspace_id)
 
 
 @router.get(
