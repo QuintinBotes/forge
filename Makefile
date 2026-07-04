@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test lint fmt typecheck migrate seed build clean
+.PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test lint fmt typecheck migrate seed build clean \
+	compose-build build-images pin-digests sbom smoke
 
 # Every typed first-party package/app, one mypy module each. mypy runs in
 # *module mode* (``-p``) so each ``forge_*`` package resolves to its single
@@ -61,6 +62,20 @@ seed: ## Seed a demo workspace
 build: ## Build web assets and python wheels
 	pnpm -r build
 	uv build --all-packages
+
+compose-build: ## Build all 4 first-party production images (docker compose build)
+	docker compose -f deploy/docker-compose.yml build
+
+build-images: compose-build ## Alias of compose-build (HARD-07 G-BUILD)
+
+pin-digests: ## Resolve + rewrite @sha256 digests, write deploy/build-manifest.json
+	deploy/scripts/pin-digests.sh
+
+sbom: ## Generate a CycloneDX SBOM per built image (deploy/sbom/<image>.cdx.json)
+	deploy/scripts/sbom.sh
+
+smoke: ## Production-compose smoke: up -> healthy -> /health -> down -v
+	deploy/scripts/smoke.sh
 
 clean: ## Remove python caches and build artifacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
