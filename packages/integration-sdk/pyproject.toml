@@ -9,6 +9,9 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "httpx>=0.27",
+    # HARD-01: RS256 App JWT signing for the live GitHub App auth flow. The
+    # ``crypto`` extra pulls in ``cryptography`` (already an apps/api dep).
+    "pyjwt[crypto]>=2.8",
 ]
 
 [build-system]
