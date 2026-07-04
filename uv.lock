@@ -1062,12 +1062,14 @@ source = { editable = "packages/integration-sdk" }
 dependencies = [
     { name = "forge-contracts" },
     { name = "httpx" },
+    { name = "pyjwt", extra = ["crypto"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8" },
 ]
 
 [[package]]

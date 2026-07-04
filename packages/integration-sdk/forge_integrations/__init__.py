@@ -11,8 +11,14 @@ tests) and make no live external calls. Public surface:
 
 from __future__ import annotations
 
+from .audit import AuditSink, GitHubAuditEvent
 from .errors import GitHubError, IntegrationError, SlackError
-from .github import GitHubClient
+from .github import GitHubClient, RetryPolicy, Review, ReviewComment
+from .github_auth import (
+    InstallationTokenProvider,
+    build_app_jwt,
+    load_private_key,
+)
 from .pm_adapter import BasePMAdapter, GenericPMAdapter
 from .slack import SlackNotifier
 from .webhooks import (
@@ -25,13 +31,21 @@ from .webhooks import (
 __version__ = "0.1.0"
 
 __all__ = [
+    "AuditSink",
     "BasePMAdapter",
     "GenericPMAdapter",
+    "GitHubAuditEvent",
     "GitHubClient",
     "GitHubError",
+    "InstallationTokenProvider",
     "IntegrationError",
+    "RetryPolicy",
+    "Review",
+    "ReviewComment",
     "SlackError",
     "SlackNotifier",
+    "build_app_jwt",
+    "load_private_key",
     "parse_github_webhook",
     "sign_github_payload",
     "verify_github_signature",

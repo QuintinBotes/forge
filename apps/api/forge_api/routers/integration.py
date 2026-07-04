@@ -26,10 +26,13 @@ from pydantic import ValidationError
 
 from forge_api.auth.rbac import Permission
 from forge_api.deps import Principal
+from forge_api.observability.audit import AuditCategory, AuditLog
+from forge_api.observability.redaction import redact_mapping, redact_text
 from forge_api.routers._rbac import require_permission
 from forge_api.settings import get_settings
 from forge_contracts import (
     CIStatus,
+    HealthResult,
     PullRequest,
     PullRequestRequest,
     RepositoryConnection,
@@ -39,10 +42,13 @@ from forge_contracts import (
     WebhookEvent,
 )
 from forge_integrations import (
+    AuditSink,
+    GitHubAuditEvent,
     GitHubClient,
     GitHubError,
     SlackError,
     SlackNotifier,
+    load_private_key,
     parse_github_webhook,
     verify_github_signature,
 )
@@ -57,6 +63,7 @@ router = APIRouter(
 # deliberately ungated by RBAC — it is authenticated by HMAC signature instead.
 WriteGate = Depends(require_permission(Permission.WRITE))
 WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
+ReadGate = Depends(require_permission(Permission.READ))
 
 
 # --------------------------------------------------------------------------- #
@@ -85,9 +92,7 @@ class RepoConnectionStore:
         self._by_ws.setdefault(workspace_id, {})[connection.id] = connection
         return connection
 
-    def get(
-        self, workspace_id: uuid.UUID, connection_id: uuid.UUID
-    ) -> RepositoryConnection | None:
+    def get(self, workspace_id: uuid.UUID, connection_id: uuid.UUID) -> RepositoryConnection | None:
         return self._by_ws.get(workspace_id, {}).get(connection_id)
 
 
@@ -110,22 +115,92 @@ RepoConnStoreDep = Annotated[RepoConnectionStore, Depends(get_repo_connection_st
 
 
 @lru_cache(maxsize=1)
-def _github_client_singleton() -> GitHubClient:
+def _integration_audit_log() -> AuditLog:
+    """Process-wide audit log for integration operations (swappable in tests)."""
+    return AuditLog()
+
+
+def _github_audit_sink(audit_log: AuditLog) -> AuditSink:
+    """Adapt a :class:`GitHubAuditEvent` onto the immutable audit log.
+
+    Redaction is the single source of truth here (HARD-01 §8): ``detail`` runs
+    through :func:`redact_text` and the metadata mapping through
+    :func:`redact_mapping` so a token/JWT/PEM that ever slipped into a message is
+    scrubbed before it can reach an audit row.
+    """
+
+    def _sink(event: GitHubAuditEvent) -> None:
+        audit_log.record(
+            category=AuditCategory.INTEGRATION,
+            action=f"github.{event.action}",
+            target=event.repo,
+            status=event.status,
+            payload_hash=event.payload_hash,
+            latency_ms=event.latency_ms,
+            detail=redact_text(event.detail) if event.detail else None,
+            metadata=redact_mapping(
+                {"status_code": event.status_code} if event.status_code else {}
+            ),
+        )
+
+    return _sink
+
+
+@lru_cache(maxsize=1)
+def _github_client_singleton() -> GitHubClient | None:
+    """Build the process-wide GitHub client from configuration.
+
+    Prefers real GitHub App auth (JWT + minted installation tokens) when
+    ``github_app_id`` + ``github_installation_id`` are configured; falls back to
+    a static ``github_token`` for dev/back-compat. Returns ``None`` when neither
+    is configured so write routes fail closed with ``501 Not Configured`` rather
+    than silently faking a client.
+    """
     settings = get_settings()
-    return GitHubClient(token=settings.github_token, base_url=settings.github_api_url)
+    if settings.github_app_id and settings.github_installation_id:
+        try:
+            private_key_pem = load_private_key(settings.github_app_private_key_path)
+        except GitHubError:
+            # Missing/unreadable key -> treat as not-configured (fail closed). The
+            # error deliberately carries only the path, never the key (AC7).
+            return None
+        return GitHubClient.from_app(
+            app_id=settings.github_app_id,
+            private_key_pem=private_key_pem,
+            installation_id=settings.github_installation_id,
+            base_url=settings.github_api_url,
+            audit_sink=_github_audit_sink(_integration_audit_log()),
+        )
+    if settings.github_token:
+        return GitHubClient(token=settings.github_token, base_url=settings.github_api_url)
+    return None
 
 
 @lru_cache(maxsize=1)
 def _slack_notifier_singleton() -> SlackNotifier:
     settings = get_settings()
-    return SlackNotifier(
-        token=settings.slack_token, default_channel=settings.slack_default_channel
-    )
+    return SlackNotifier(token=settings.slack_token, default_channel=settings.slack_default_channel)
 
 
-def get_github_client() -> GitHubClient:
-    """Return the process-wide GitHub client (override in tests via DI)."""
+def get_github_client_optional() -> GitHubClient | None:
+    """Return the GitHub client, or ``None`` when GitHub is not configured."""
     return _github_client_singleton()
+
+
+def get_github_client(
+    client: Annotated[GitHubClient | None, Depends(get_github_client_optional)],
+) -> GitHubClient:
+    """Return the process-wide GitHub client, failing closed when unconfigured.
+
+    Overridable in tests via DI. Unconfigured write routes get ``501`` rather
+    than a silent no-auth client.
+    """
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="GitHub integration is not configured",
+        )
+    return client
 
 
 def get_slack_notifier() -> SlackNotifier:
@@ -139,6 +214,7 @@ def get_github_webhook_secret() -> str | None:
 
 
 GitHubDep = Annotated[GitHubClient, Depends(get_github_client)]
+GitHubOptionalDep = Annotated[GitHubClient | None, Depends(get_github_client_optional)]
 SlackDep = Annotated[SlackNotifier, Depends(get_slack_notifier)]
 WebhookSecretDep = Annotated[str | None, Depends(get_github_webhook_secret)]
 
@@ -174,9 +250,7 @@ def sync_repo(
     try:
         return client.sync_repo(connection)
     except GitHubError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @router.post(
@@ -190,9 +264,29 @@ def open_pr(client: GitHubDep, request: PullRequestRequest) -> PullRequest:
     try:
         return client.open_pr(request)
     except GitHubError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.get(
+    "/github/health",
+    response_model=HealthResult,
+    dependencies=[ReadGate],
+)
+def github_health(client: GitHubOptionalDep) -> HealthResult:
+    """Live GitHub reachability probe (HARD-01 J2).
+
+    With App creds configured this mints an installation token and hits
+    ``/rate_limit``, turning the previously-mocked check into a real probe. When
+    GitHub is not configured it reports ``healthy:false`` with a redacted reason
+    (never the key). ``READ`` permission is required.
+    """
+    if client is None:
+        return HealthResult(
+            healthy=False,
+            status="not_configured",
+            message="GitHub integration is not configured",
+        )
+    return client.health()
 
 
 @router.post("/github/webhooks", response_model=CIStatus)
@@ -236,14 +330,13 @@ def slack_notify(notifier: SlackDep, message: SlackMessage) -> SlackDeliveryResu
     try:
         return notifier.notify(message)
     except SlackError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 __all__ = [
     "RepoConnectionStore",
     "get_github_client",
+    "get_github_client_optional",
     "get_github_webhook_secret",
     "get_repo_connection_store",
     "get_slack_notifier",

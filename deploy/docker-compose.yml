@@ -145,6 +145,13 @@ services:
       FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
       FORGE_SENTRY_WEBHOOK_SECRET: ${FORGE_SENTRY_WEBHOOK_SECRET:-}
       FORGE_GRAFANA_WEBHOOK_SECRET: ${FORGE_GRAFANA_WEBHOOK_SECRET:-}
+      # HARD-01 live GitHub App auth. The private key is a FILE MOUNT (below),
+      # never an env value; unset ids -> integration routes fail closed.
+      FORGE_GITHUB_APP_ID: ${FORGE_GITHUB_APP_ID:-}
+      FORGE_GITHUB_INSTALLATION_ID: ${FORGE_GITHUB_INSTALLATION_ID:-}
+      FORGE_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+      FORGE_GITHUB_WEBHOOK_SECRET: ${FORGE_GITHUB_WEBHOOK_SECRET:-}
+      FORGE_GITHUB_API_URL: ${FORGE_GITHUB_API_URL:-https://api.github.com}
       # F35 public benchmark leaderboard — DISABLED by default (self-hosted
       # privacy: /public/* 404s until an operator explicitly opts in).
       FORGE_PUBLIC_LEADERBOARD_ENABLED: ${FORGE_PUBLIC_LEADERBOARD_ENABLED:-false}
@@ -152,6 +159,11 @@ services:
       FORGE_LEADERBOARD_PUBLIC_RATE_LIMIT: ${FORGE_LEADERBOARD_PUBLIC_RATE_LIMIT:-60}
       FORGE_LEADERBOARD_CACHE_TTL_SECONDS: ${FORGE_LEADERBOARD_CACHE_TTL_SECONDS:-60}
       FORGE_BENCHMARK_SUBMISSION_MAX_BYTES: ${FORGE_BENCHMARK_SUBMISSION_MAX_BYTES:-52428800}
+    volumes:
+      # HARD-01: the GitHub App private key is a read-only FILE MOUNT, never an
+      # env value. The dir (deploy/secrets/) is tracked only via its README; the
+      # .pem is operator-provided + gitignored. Absent key -> routes fail closed.
+      - ./secrets:/run/secrets:ro
     depends_on:
       db:
         condition: service_healthy
@@ -224,6 +236,13 @@ services:
       FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
       FORGE_SENTRY_WEBHOOK_SECRET: ${FORGE_SENTRY_WEBHOOK_SECRET:-}
       FORGE_GRAFANA_WEBHOOK_SECRET: ${FORGE_GRAFANA_WEBHOOK_SECRET:-}
+      # HARD-01 live GitHub App auth (same file mount + env as the api service);
+      # the worker's PR-open / knowledge-sync flows inherit App auth transparently.
+      FORGE_GITHUB_APP_ID: ${FORGE_GITHUB_APP_ID:-}
+      FORGE_GITHUB_INSTALLATION_ID: ${FORGE_GITHUB_INSTALLATION_ID:-}
+      FORGE_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+      FORGE_GITHUB_WEBHOOK_SECRET: ${FORGE_GITHUB_WEBHOOK_SECRET:-}
+      FORGE_GITHUB_API_URL: ${FORGE_GITHUB_API_URL:-https://api.github.com}
       # F19 container sandboxing — the worker reaches the daemon ONLY via the
       # socket-proxy (never the raw socket); a per-task container mounts only the
       # run's subpath of the worktree volume.
@@ -255,6 +274,8 @@ services:
       # Worktrees live on a named volume so sibling sandbox containers can mount
       # only their run's subpath (volume-subpath; Docker Engine >= 26.1).
       - forge_repos:/srv/forge/worktrees
+      # HARD-01: read-only GitHub App private key mount (see the api service).
+      - ./secrets:/run/secrets:ro
     depends_on:
       db:
         condition: service_healthy

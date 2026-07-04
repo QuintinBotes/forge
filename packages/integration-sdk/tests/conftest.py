@@ -52,3 +52,26 @@ class RequestRecorder:
 
     def by_path(self, fragment: str) -> list[httpx.Request]:
         return [r for r in self.requests if fragment in r.url.path]
+
+
+@pytest.fixture(autouse=True)
+def _no_real_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prove the hermetic lane makes zero real network calls (HARD-01 AC14).
+
+    Every unit test here drives ``httpx`` through an injected ``MockTransport``,
+    so the real ``HTTPTransport`` must never be reached. We monkeypatch its
+    request handlers to raise, turning any accidental live call into a loud test
+    failure. The creds-gated ``live_github`` tests opt out (they DO hit the
+    network on purpose).
+    """
+    if request.node.get_closest_marker("live_github"):
+        return
+
+    def _blocked(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError(
+            "network access is disabled in the hermetic test lane "
+            "(use httpx.MockTransport); a real HTTP call was attempted"
+        )
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _blocked, raising=True)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _blocked, raising=True)

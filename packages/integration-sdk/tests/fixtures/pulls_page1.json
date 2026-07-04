@@ -1,0 +1,4 @@
+[
+  { "id": 1, "state": "COMMENTED", "body": "first", "user": { "login": "octocat" } },
+  { "id": 2, "state": "APPROVED", "body": "second", "user": { "login": "hubot" } }
+]

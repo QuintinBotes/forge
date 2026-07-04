@@ -45,6 +45,9 @@ class AuditCategory(enum.StrEnum):
     MCP_CALL = "mcp_call"
     APPROVAL = "approval"
     POLICY_DECISION = "policy_decision"
+    # HARD-01: outbound integration operations (GitHub/Slack/PM). Stored as a
+    # ``str`` enum (``native_enum=False``) so adding a value needs no migration.
+    INTEGRATION = "integration"
     SYSTEM = "system"
 
 
