@@ -189,6 +189,24 @@ class Settings(BaseSettings):
     ssrf_allow_private: bool = False
     outbound_allowlist: list[str] = []
 
+    # --- HARD-03 live cross-encoder reranker --------------------------------
+    # Process-level reranker selection (BYOK keys are NOT stored here — they are
+    # read on demand from the vault/env so they never land in a logged Settings
+    # field). ``fixture`` (default) keeps the offline, deterministic, network-free
+    # reranker; ``jina``/``cohere``/``selfhosted`` build a budgeted, SSRF-guarded
+    # live client. ``FORGE_RERANK_ENABLED=false`` -> weighted-RRF only, no client.
+    rerank_enabled: bool = True
+    rerank_provider: str = "fixture"
+    rerank_model: str | None = None
+    # SSRF-validated base_url override; self-hosted also honours JINA_RERANKER_URL.
+    rerank_base_url: str | None = None
+    # Per-call latency budget (ms); exceeding it degrades to weighted-RRF.
+    rerank_timeout_ms: int = 800
+    # Max documents sent to the reranker per call (DoS bound).
+    rerank_candidates: int = 50
+    # Required to point a self-hosted reranker at a non-private (public) host.
+    rerank_allow_insecure_url: bool = False
+
     @property
     def docs_effectively_enabled(self) -> bool:
         """Whether the OpenAPI doc pages should be served.

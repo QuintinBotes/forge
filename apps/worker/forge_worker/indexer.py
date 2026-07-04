@@ -21,8 +21,8 @@ from forge_contracts import Chunk, IndexResult
 from forge_contracts.protocols import KnowledgeStore
 from forge_knowledge import (
     DeterministicEmbeddingClient,
-    FixtureRerankerClient,
     KnowledgeService,
+    build_reranker_from_settings,
     chunk_file,
 )
 from forge_worker.celery_app import celery_app
@@ -54,15 +54,32 @@ def index_source(
 def build_knowledge_service() -> KnowledgeService:
     """Build the default knowledge service from configuration.
 
-    Uses the offline-safe deterministic embedding client and fixture reranker; a
-    real BYOK embedding client / Jina reranker is configured per workspace.
+    Uses the offline-safe deterministic embedding client. The reranker is
+    resolved by the shared :func:`build_reranker_from_settings` factory (HARD-03)
+    so a worker-side ``search`` uses the same budgeted, SSRF-guarded live reranker
+    the API does when ``FORGE_RERANK_PROVIDER`` is set — and the offline fixture
+    otherwise. Reranking is query-time only, so indexing throughput is unaffected.
     """
+    import os
+
+    from forge_api.settings import get_settings
     from forge_db import create_session_factory
+
+    settings = get_settings()
+    provider = (settings.rerank_provider or "fixture").strip().lower()
+    api_key = None
+    if provider == "jina":
+        api_key = os.environ.get("JINA_API_KEY")
+    elif provider == "cohere":
+        api_key = os.environ.get("COHERE_API_KEY")
 
     return KnowledgeService.from_session_factory(
         create_session_factory(),
         DeterministicEmbeddingClient(),
-        FixtureRerankerClient(),
+        build_reranker_from_settings(settings, api_key=api_key),
+        rerank_candidates=settings.rerank_candidates,
+        rerank_enabled=settings.rerank_enabled,
+        rerank_budget_ms=settings.rerank_timeout_ms,
     )
 
 
