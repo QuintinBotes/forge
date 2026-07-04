@@ -441,3 +441,69 @@ jobs:
 
       - name: k6 smoke (few VUs, seconds)
         run: k6 run -e SMOKE=1 -e BASE_URL=http://127.0.0.1:8000 deploy/load/k6/api_hotpaths.js
+
+  # ------------------------------------------------------------------- #
+  # HARD-12: conventional-commit lint over the PR range. Keeps the       #
+  # changelog + SemVer bump derivable; a non-conforming commit message   #
+  # (e.g. "wip stuff") blocks the PR.                                     #
+  # ------------------------------------------------------------------- #
+  commitlint:
+    name: commitlint (conventional commits)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0   # full range so cz can see every PR commit
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync (dev group brings commitizen)
+        run: uv sync
+
+      - name: Lint PR commit messages (cz check)
+        run: >-
+          uv run cz check
+          --rev-range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+
+  # ------------------------------------------------------------------- #
+  # HARD-12: render RELEASE_READINESS.md on every PR (non-blocking — the  #
+  # offline gates inside it are already blocking via the suite; this job  #
+  # publishes the honest dated report as an artifact).                    #
+  # ------------------------------------------------------------------- #
+  readiness:
+    name: readiness (RELEASE_READINESS.md, non-blocking)
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_READINESS_BAR: beta
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - name: Render readiness report (report-only, never fails the PR)
+        run: >-
+          uv run forge-release-readiness --bar "${RELEASE_READINESS_BAR}"
+          --report-only --out RELEASE_READINESS.md
+
+      - name: Upload readiness report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-readiness
+          path: RELEASE_READINESS.md

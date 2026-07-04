@@ -26,6 +26,8 @@ from forge_obs.settings import ObsSettings
 from forge_obs.telemetry import Telemetry, setup_telemetry, shutdown_telemetry
 from forge_obs.tracing import current_span_id, current_trace_id, get_span_store, traced
 
+__version__ = "0.1.0"
+
 __all__ = [
     "FORBIDDEN_LABELS",
     "INSTRUMENT_CATALOG",

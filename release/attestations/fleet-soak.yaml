@@ -1,0 +1,11 @@
+# Human/real-fleet-only gate G-SOAK-FLEET. Flip `signed_off` to true ONLY after a
+# real multi-week, multi-tenant production fleet soak has run and its results are
+# filed. HARD-13 delivers a bounded in-sandbox soak (G-SOAK); a true multi-week
+# fleet soak is not reproducible in-sandbox and stays MANUAL_PENDING until a human
+# files this attestation. PRODUCTION reports NOT MET while it is pending, by design.
+gate: G-SOAK-FLEET
+signed_off: false
+by: ""            # name + org of the human attester
+date: ""          # ISO-8601 date the soak concluded
+link: ""          # URL to the soak report / dashboards
+notes: ""
