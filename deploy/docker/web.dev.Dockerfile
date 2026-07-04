@@ -5,7 +5,7 @@
 # image installs the workspace deps and runs the Next dev server, so the single
 # `docker compose -f deploy/docker-compose.dev.yml up` command serves the UI
 # reliably without a brittle production prerender step.
-FROM node:22-bookworm-slim
+FROM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4
 
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \

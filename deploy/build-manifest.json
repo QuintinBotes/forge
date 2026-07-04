@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-07-04T01:51:50Z",
+  "forge_version": "0.1.0",
+  "images": {
+    "caddy:2.8-alpine": {
+      "digest": "sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17",
+      "kind": "pulled"
+    },
+    "forge/api:0.1.0": {
+      "digest": "sha256:ebfd594e3e34e44153591cf73e81235f1329fe588e42ef0a63ca85fdac96f9ac",
+      "kind": "built",
+      "sbom": "deploy/sbom/api.cdx.json"
+    },
+    "forge/mcp-gateway:0.1.0": {
+      "digest": "sha256:8a21b9a3d1b391a0da336cfcc907ae5483ddca60aaaa6f180fadb141e5003b0a",
+      "kind": "built",
+      "sbom": "deploy/sbom/mcp-gateway.cdx.json"
+    },
+    "forge/web:0.1.0": {
+      "digest": "sha256:27ea06d748dbbcf0ce4267d89547bc3f33a10443e96bcd99b23d0844b73a9d68",
+      "kind": "built",
+      "sbom": "deploy/sbom/web.cdx.json"
+    },
+    "forge/worker:0.1.0": {
+      "digest": "sha256:dd3a8e0e46fe1cd7598f6d3e2dd0fb97d02342362d9ac3c010cc34b11a6f8e98",
+      "kind": "built",
+      "sbom": "deploy/sbom/worker.cdx.json"
+    },
+    "ghcr.io/astral-sh/uv:python3.14-bookworm-slim": {
+      "digest": "sha256:7cf77f594be8042dab6daa9fe326f90962252268b4f120a7f5dccce4d947e6c1",
+      "kind": "base"
+    },
+    "minio/minio:RELEASE.2024-10-13T13-34-11Z": {
+      "digest": "sha256:9535594ad4122b7a78c6632788a989b96d9199b483d3bd71a5ceae73a922cdfa",
+      "kind": "pulled"
+    },
+    "node:22-bookworm-slim": {
+      "digest": "sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4",
+      "kind": "base"
+    },
+    "pgvector/pgvector:pg16": {
+      "digest": "sha256:ad2e18408bf447f62092a8a5259e7df10505c5a0360bd1a1853ac8b8b0763da2",
+      "kind": "pulled"
+    },
+    "redis:7.4-alpine": {
+      "digest": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+      "kind": "pulled"
+    },
+    "tecnativa/docker-socket-proxy:0.3.0": {
+      "digest": "sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2",
+      "kind": "pulled"
+    },
+    "temporalio/auto-setup:1.25.2": {
+      "digest": "sha256:b1edc1e20002d958c8182f2ae08dee877a125083683a627a44917683419ba6a8",
+      "kind": "pulled"
+    },
+    "temporalio/ui:2.34.0": {
+      "digest": "sha256:cb17ea423d76a8a19a269d0bcd81fc12eee1f6365acd2a56b590dafb35696a95",
+      "kind": "pulled"
+    },
+    "ubuntu/squid:6.6-24.04_edge": {
+      "digest": "sha256:8a3baed477e2c282ab8aa5edad442f69873246964f225c5c2ae8364b6610963c",
+      "kind": "pulled"
+    },
+    "willfarrell/autoheal:1.2.0": {
+      "digest": "sha256:31f580ef0279eaced5b38d631b08c474d70d8403c1c2fdd6ddcf2e879d5f3f7c",
+      "kind": "pulled"
+    }
+  }
+}

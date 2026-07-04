@@ -44,7 +44,7 @@ services:
   # Data tier — internal only (no published host ports)                   #
   # --------------------------------------------------------------------- #
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16@sha256:ad2e18408bf447f62092a8a5259e7df10505c5a0360bd1a1853ac8b8b0763da2
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-forge}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forge}
@@ -59,7 +59,7 @@ services:
       start_period: 10s
 
   redis:
-    image: redis:7.4-alpine
+    image: redis:7.4-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - dev-redis-data:/data
@@ -70,7 +70,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z@sha256:9535594ad4122b7a78c6632788a989b96d9199b483d3bd71a5ceae73a922cdfa
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-forge}
@@ -213,7 +213,7 @@ services:
   # Edge proxy — single entrypoint at http://localhost:8080               #
   # --------------------------------------------------------------------- #
   caddy:
-    image: caddy:2.8-alpine
+    image: caddy:2.8-alpine@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17
     command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     volumes:
       - ./caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro

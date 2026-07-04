@@ -1,0 +1,35 @@
+# HARD-07 — the Dockerfiles build from the repo-root context (`context: ..`),
+# so keep heavy artifacts and anything secret-shaped OUT of the build context.
+# Patterns are relative to the context root (repo root).
+
+# VCS + caches
+.git
+.venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+htmlcov
+
+# Node / Next.js build artifacts (rebuilt inside the image)
+node_modules
+**/node_modules
+apps/web/.next
+apps/web/tsconfig.tsbuildinfo
+
+# Python build artifacts
+dist
+build
+**/*.egg-info
+
+# Secrets — env files, keys, and the deploy secrets dir must NEVER reach a layer
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+deploy/secrets
+
+# Build evidence (generated; not needed inside images)
+deploy/sbom

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Forge Celery worker image (plan Task 0.6 substrate; built + verified in Phase 2 Task 2.1).
-FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim@sha256:7cf77f594be8042dab6daa9fe326f90962252268b4f120a7f5dccce4d947e6c1
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
