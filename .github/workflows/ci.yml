@@ -152,7 +152,7 @@ jobs:
           uv export --frozen --format requirements-txt --no-emit-workspace
           | uv run pip-audit -r /dev/stdin --strict
       - name: osv-scanner (lockfiles)
-        uses: google/osv-scanner-action@764c91816374ff2d8fc2095dab36eecd42d61638 # v1.9.2
+        uses: google/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
         continue-on-error: true
         with:
           scan-args: "--lockfile=uv.lock --lockfile=apps/web/pnpm-lock.yaml"
