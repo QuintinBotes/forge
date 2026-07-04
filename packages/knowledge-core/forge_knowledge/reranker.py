@@ -23,6 +23,8 @@ and the top-n survive. Two implementations of the frozen
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import httpx
 
 from forge_contracts.dtos import RerankResult
@@ -48,15 +50,11 @@ class FixtureRerankerClient:
     def __init__(self, fixture: RerankFixture | None = None) -> None:
         self._fixture = fixture or {}
 
-    def rerank(
-        self, query: str, documents: list[str], top_n: int
-    ) -> list[RerankResult]:
+    def rerank(self, query: str, documents: list[str], top_n: int) -> list[RerankResult]:
         if not documents:
             return []
         scores = self._score(query, documents)
-        ranked = sorted(
-            enumerate(scores), key=lambda item: (item[1], -item[0]), reverse=True
-        )
+        ranked = sorted(enumerate(scores), key=lambda item: (item[1], -item[0]), reverse=True)
         return [
             RerankResult(index=index, score=score, document=documents[index])
             for index, score in ranked[: max(top_n, 0)]
@@ -101,6 +99,7 @@ class JinaRerankerClient:
         path: str = "/rerank",
         timeout: float = 30.0,
         client: httpx.Client | None = None,
+        url_validator: Callable[[str], object] | None = None,
     ) -> None:
         self._model = model
         self._api_key = api_key
@@ -108,6 +107,12 @@ class JinaRerankerClient:
         self._timeout = timeout
         self._client = client
         self._owns_client = client is None
+        # HARD-09 SSRF seam: the api/worker inject forge_api.security.ssrf.
+        # assert_safe_url here so an admin-configured base_url can never target
+        # the cloud metadata service or internal hosts. Default: no validation
+        # (backwards compatible; this package stays decoupled from forge_api).
+        if url_validator is not None:
+            url_validator(self._url)
 
     def _http(self) -> httpx.Client:
         if self._client is None:
@@ -120,9 +125,7 @@ class JinaRerankerClient:
             headers["authorization"] = f"Bearer {self._api_key}"
         return headers
 
-    def rerank(
-        self, query: str, documents: list[str], top_n: int
-    ) -> list[RerankResult]:
+    def rerank(self, query: str, documents: list[str], top_n: int) -> list[RerankResult]:
         if not documents:
             return []
         response = self._http().post(

@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections import Counter
+from collections.abc import Callable
 
 import httpx
 import numpy as np
@@ -59,7 +60,9 @@ class DeterministicEmbeddingClient:
         vector = np.zeros(self._dimension, dtype=np.float64)
         counts = Counter(tokenize(text))
         for token, count in counts.items():
-            digest = hashlib.sha1(token.encode("utf-8")).digest()
+            # Feature hashing, not cryptography: SHA-1 here only buckets tokens
+            # deterministically (bandit B324 — usedforsecurity=False).
+            digest = hashlib.sha1(token.encode("utf-8"), usedforsecurity=False).digest()
             bucket = int.from_bytes(digest[:8], "big") % self._dimension
             sign = 1.0 if digest[8] & 1 else -1.0
             # Sub-linear term frequency damps the effect of repeated tokens.
@@ -94,6 +97,7 @@ class HttpEmbeddingClient:
         path: str = "/embeddings",
         timeout: float = 30.0,
         client: httpx.Client | None = None,
+        url_validator: Callable[[str], object] | None = None,
     ) -> None:
         self._model = model
         self._api_key = api_key
@@ -102,6 +106,12 @@ class HttpEmbeddingClient:
         self._timeout = timeout
         self._client = client
         self._owns_client = client is None
+        # HARD-09 SSRF seam: the api/worker inject forge_api.security.ssrf.
+        # assert_safe_url here so an admin-configured base_url can never target
+        # the cloud metadata service or internal hosts. Default: no validation
+        # (backwards compatible; this package stays decoupled from forge_api).
+        if url_validator is not None:
+            url_validator(self._url)
 
     @property
     def dimension(self) -> int:

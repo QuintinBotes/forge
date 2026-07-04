@@ -42,6 +42,10 @@ dev = [
     # Validates the Helm chart values files against deploy/helm/forge/values.schema.json (F24).
     "jsonschema>=4.0",
     "pyyaml>=6.0",
+    "bandit>=1.9.4",
+    "pip-audit>=2.10.1",
+    "cyclonedx-bom>=7.3.0",
+    "semgrep>=1.168.0",
 ]
 
 # The workspace root is a virtual project: its dependencies (every member) are
@@ -89,4 +93,22 @@ markers = [
     "kind: test installs the Helm chart on an ephemeral kind cluster (F24; kind+helm+docker-gated, skips if unavailable)",
     "gvisor: test requires the gVisor runsc OCI runtime registered with the daemon (F34; virtualization-gated CI job)",
     "firecracker: test requires the Kata+Firecracker kata-fc runtime + /dev/kvm (F34; virtualization-gated CI job)",
+    "security: enforcement-matrix + security regression tests (HARD-09; run offline, no external creds)",
 ]
+
+# --------------------------------------------------------------------------- #
+# HARD-09 — SAST configuration (bandit). Scope: first-party source only; test
+# trees are excluded (fixture secrets + asserts are deliberate there). B101
+# (assert_used) is skipped globally: Forge's production images never run
+# `python -O`, so asserts are not stripped, and the flagged asserts are internal
+# invariants, not auth checks (triage: SECURITY_FINDINGS.md).
+# --------------------------------------------------------------------------- #
+[tool.bandit]
+exclude_dirs = [
+    "tests",
+    ".venv",
+    "node_modules",
+    "__pycache__",
+    ".git",
+]
+skips = ["B101"]

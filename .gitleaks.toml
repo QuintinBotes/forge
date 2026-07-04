@@ -1,0 +1,33 @@
+# Gitleaks configuration (HARD-09). Extends the built-in default ruleset.
+#
+# Allowlist policy: entries must be NARROW (a named file, not a directory glob
+# wildcard-ing the whole tree) and each must say WHY the match is not a secret.
+# A new fake credential in a new test file is EXPECTED to trip the scan — the
+# author either uses an obviously-fake value or consciously extends this list.
+
+title = "forge gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Reviewed non-secrets (HARD-09 baseline, 2026-07-04)"
+paths = [
+  # Fake secrets deliberately embedded to exercise the redaction layer.
+  '''packages/observability/tests/test_tracing\.py''',
+  '''packages/observability/tests/test_telemetry_logging\.py''',
+  '''packages/auth-sdk/tests/test_redaction\.py''',
+  '''packages/knowledge-core/tests/test_mcp_redaction\.py''',
+  '''packages/mcp-sdk/forge_mcp/testing\.py''',
+  '''apps/api/tests/test_obs_redaction\.py''',
+  '''apps/api/tests/test_obs_otel\.py''',
+  '''apps/api/tests/test_obs_router\.py''',
+  '''apps/api/tests/test_obs_audit\.py''',
+  '''tests/security/fixtures/.*''',
+  # Spec/docs prose that pattern-matches generic-api-key (no real values).
+  '''docs/implementation-slices/.*\.md''',
+  # Documented DEV-ONLY compose defaults (header says NOT for production);
+  # committed so `docker compose -f deploy/docker-compose.dev.yml up` works
+  # with zero setup. Waiver W-005 in security/waivers.yaml.
+  '''deploy/\.env\.dev''',
+]

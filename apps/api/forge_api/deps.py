@@ -31,7 +31,10 @@ class Principal(BaseModel):
 
     user_id: uuid.UUID
     workspace_id: uuid.UUID
-    role: UserRole = UserRole.ADMIN
+    # Least-privileged default (HARD-09): a partially-constructed principal can
+    # never silently be an admin. The real ``get_current_principal`` always sets
+    # the role from the verified key, so this only hardens the failure mode.
+    role: UserRole = UserRole.VIEWER
     email: str | None = None
     auth_method: str = "stub"
     scopes: list[str] = Field(default_factory=list)

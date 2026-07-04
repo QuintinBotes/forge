@@ -71,6 +71,81 @@ values:
 docker compose -f deploy/docker-compose.yml up -d --force-recreate api worker
 ```
 
+### Rotation runbook — step by step
+
+The order matters for `SECRET_KEY` (it keys the BYOK vault): rotate the key
+*and* re-encrypt the vault in one maintenance window, or existing secrets become
+undecryptable.
+
+1. **`SECRET_KEY` (`FORGE_SECRET_KEY`)** — the vault master key.
+   1. Generate: `python -c 'import secrets; print(secrets.token_urlsafe(32))'`.
+   2. Prefer the **envelope** path (F37): add the new key as a new version in
+      `FORGE_VAULT_KEYS` (e.g. `2:<new-b64>,1:<old-b64>`), set the new version as
+      active, run `SecretVault.rotate` to re-wrap DEKs, then drop the old version
+      once `rotate` completes. Old versions keep decrypting until removed, so
+      there is no downtime.
+   3. Recreate `api` + `worker`. Verify a known BYOK secret still decrypts
+      through the API before removing the old key version.
+   4. **Never** run production without `FORGE_SECRET_KEY` — the API refuses to
+      boot outside `development` rather than fall back to an ephemeral key.
+2. **`AUTH_SECRET`** — recreate `api` + `web`; all sessions are invalidated
+   (users re-log-in). API keys are unaffected.
+3. **API keys / BYOK provider keys** — rotate in the per-workspace vault via the
+   UI/API; the old value stops being used immediately and the change is audited.
+4. **`POSTGRES_PASSWORD` / `MINIO_ROOT_PASSWORD`** — change at the service, then
+   `.env`, then recreate the dependent app containers.
+5. **Webhook signing secrets** (GitHub/Slack/PM/alert providers) — rotate at the
+   provider, update `.env`, recreate dependents. Until the new secret is set the
+   webhook route fails **closed** (rejects deliveries) rather than trusting an
+   unsigned payload.
+
+After any rotation, confirm the health of the enforcement controls with
+`uv run pytest -m security` (offline) against the deployed revision.
+
+## HARD-09 edge controls (SSRF / rate limit / body limit / docs / headers)
+
+These operator knobs default to the safe value; tune only with intent.
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `FORGE_RATELIMIT_ENABLED` | `true` | per-caller request rate limiting (429 + `Retry-After`) |
+| `FORGE_RATELIMIT_RPM` | `120` | requests/minute per principal (or client IP) |
+| `FORGE_RATELIMIT_BURST` | `60` | token-bucket burst allowance |
+| `FORGE_MAX_BODY_BYTES` | `1048576` | max request body (1 MiB) before 413 |
+| `FORGE_SSRF_ALLOW_PRIVATE` | `false` | allow private/RFC1918 outbound targets (self-hosted embedder/reranker on an internal network) — loopback and the cloud metadata endpoint stay blocked even when `true` |
+| `FORGE_OUTBOUND_ALLOWLIST` | `[]` | JSON list of exact hostnames always permitted outbound |
+| `FORGE_DOCS_ENABLED` | `true` | OpenAPI docs; forced **off** when `FORGE_ENVIRONMENT=production` unless explicitly set |
+
+Notes:
+
+- The **rate limiter is per-process** (in-memory token bucket). In a
+  multi-replica deployment the effective limit is `RPM × replicas`; treat it as a
+  coarse per-instance guard and put a shared limiter / WAF at the edge for hard
+  global limits. `/health` is always exempt so liveness probes are unaffected.
+- The **SSRF guard** is defense-in-depth, **not** a replacement for the `data`/
+  `mcp` network segmentation below. If your embedder/reranker/MCP endpoints live
+  on a private network, add their hostnames to `FORGE_OUTBOUND_ALLOWLIST` (narrow)
+  or set `FORGE_SSRF_ALLOW_PRIVATE=true` (broad) — do not disable the guard.
+- **Security headers** (HSTS, `X-Content-Type-Options`, `X-Frame-Options: DENY`,
+  `Referrer-Policy`, a deny-all CSP on JSON) are added at the API edge and
+  mirrored for the web app in `apps/web/next.config`.
+
+## Enforcement matrix (what is verified, continuously)
+
+Every security control Forge claims is asserted on the **wired request path** by
+a regression suite (`uv run pytest -m security`) and re-run on every CI push by
+a blocking `security` job (SAST via bandit + custom semgrep rules, dependency
+CVE audit via pip-audit/osv, secret scan via gitleaks, and a CycloneDX SBOM).
+The full control list and the test that proves each is in
+[`../security/evidence/enforcement-matrix.md`](../security/evidence/enforcement-matrix.md);
+the threat model is in [`../security/threat-model.md`](../security/threat-model.md).
+Run the whole local audit with `make security`.
+
+Accepted-risk waivers are dated, owned, and **expire** (an expired waiver fails
+the gate closed) in [`../../security/waivers.yaml`](../../security/waivers.yaml);
+the triage of every automated finding is in
+[`../../SECURITY_FINDINGS.md`](../../SECURITY_FINDINGS.md).
+
 ## Network policy
 
 The production compose file segments traffic into `edge`, `backend`, `data`, and
