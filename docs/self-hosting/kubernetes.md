@@ -59,8 +59,20 @@ helm install forge deploy/helm/forge -n forge \
 kubectl -n forge rollout status deploy/forge-api
 ```
 
-The pre-install hook runs `forge-cli db migrate` to completion before any app pod
-serves traffic; readiness is gated on `/readyz`.
+The pre-install hook runs the Alembic chain (`alembic -c packages/db/alembic.ini
+upgrade head`, the same command as `make migrate`) to completion before any app
+pod serves traffic; readiness is gated on `/readyz`. Override `migrations.command`
+to drop in a different entrypoint (e.g. a future `forge-cli db migrate`) without
+re-templating.
+
+> **Bundled subchart images.** The bundled `postgresql`/`redis`/`minio`
+> subcharts are Bitnami charts. Bitnami withdrew its versioned public Docker Hub
+> images in its 2025 catalog deprecation, so a bundled install may need the image
+> overridden to the retained `docker.io/bitnamilegacy/*` repo (e.g.
+> `--set postgresql.image.repository=bitnamilegacy/postgresql`), or — recommended
+> — use managed/external datastores (below). The local kind smoke
+> (`deploy/helm/forge/tests/e2e/`) runs the **external** path against in-cluster
+> official `pgvector`/`redis` images for exactly this reason.
 
 ## Production install (managed datastores)
 
@@ -169,9 +181,9 @@ kubectl get hpa -n forge
 helm upgrade forge deploy/helm/forge -n forge -f values-production.yaml
 ```
 
-`helm upgrade` runs the **pre-upgrade** `forge-cli db migrate` hook first; only
+`helm upgrade` runs the **pre-upgrade** Alembic migration hook first; only
 after it succeeds do the workloads roll. If the hook fails, the release does not
-roll — run `helm rollback forge`. Verify and bump image digests against the
+roll — run `helm rollback forge <rev>`. Verify and bump image digests against the
 release notes before upgrading; see [upgrade.md](upgrade.md).
 
 ## Verification

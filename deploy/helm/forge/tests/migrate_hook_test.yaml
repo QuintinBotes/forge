@@ -12,11 +12,19 @@ tests:
       - equal:
           path: metadata.annotations["helm.sh/hook-weight"]
           value: "-5"
-  - it: runs forge-cli db migrate on the api image
+  - it: runs `alembic upgrade head` on the api image by default
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["sh", "-c", "alembic -c packages/db/alembic.ini upgrade head"]
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "forge-api"
+  - it: honours an overridden migrations.command (e.g. a future forge-cli)
+    set:
+      migrations:
+        command: ["forge-cli", "db", "migrate"]
     asserts:
       - equal:
           path: spec.template.spec.containers[0].command
           value: ["forge-cli", "db", "migrate"]
-      - matchRegex:
-          path: spec.template.spec.containers[0].image
-          pattern: "forge-api"

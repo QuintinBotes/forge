@@ -11,15 +11,15 @@ tests:
           value: /healthz
       - isNotNull:
           path: spec.template.spec.containers[0].startupProbe.httpGet.path
-  - it: web has liveness + readiness on /healthz
+  - it: web has liveness + readiness on the Next.js root `/`
     template: templates/web/deployment.yaml
     asserts:
       - equal:
           path: spec.template.spec.containers[0].livenessProbe.httpGet.path
-          value: /healthz
+          value: /
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.path
-          value: /healthz
+          value: /
   - it: mcp-gateway probes hit /health (foundation endpoint)
     template: templates/mcp-gateway/deployment.yaml
     asserts:

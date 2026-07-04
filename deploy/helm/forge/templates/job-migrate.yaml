@@ -27,12 +27,15 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: migrate
-          # The api image carries forge-cli.
+          # The api image carries packages/db + alembic.ini (alembic on PATH),
+          # so the hook runs the SAME chain as `make migrate` / HARD-01. The
+          # command is overridable via migrations.command (e.g. to drop in a
+          # future `forge-cli db migrate`) without re-templating.
           image: {{ include "forge.image" (dict "ctx" . "wl" .Values.api) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          command: ["forge-cli", "db", "migrate"]
+          command: {{ .Values.migrations.command | default (list "sh" "-c" "alembic -c packages/db/alembic.ini upgrade head") | toJson }}
           envFrom:
             {{- include "forge.envFrom" . | nindent 12 }}
           resources:

@@ -56,7 +56,7 @@ retrieval (F05) has the `vector` extension.
 | `ingress.tls.certManager.enabled` | `true` | cert-manager-issued TLS. |
 | `ingress.tls.secretName` | `""` | Existing TLS secret (alternative to cert-manager). |
 | `networkPolicy.enabled` | `true` | Default-deny + data-tier allowlist. |
-| `migrations.enabled` | `true` | Pre-install/pre-upgrade `forge-cli db migrate` hook. |
+| `migrations.enabled` | `true` | Pre-install/pre-upgrade `alembic upgrade head` hook (override via `migrations.command`). |
 | `createAdmin.enabled` | `false` | Opt-in post-install first-admin hook. |
 | `metrics.serviceMonitor.enabled` | `false` | Prometheus Operator `ServiceMonitor`. |
 

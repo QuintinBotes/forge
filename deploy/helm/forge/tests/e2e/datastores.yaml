@@ -1,0 +1,98 @@
+# In-cluster datastores for the HARD-08 kind/k3d smoke (external-datastore path).
+#
+# These are NOT part of the Forge chart — they stand in for managed
+# Postgres+pgvector / Redis / S3 so the chart's `external*` path (Journey B) can
+# be exercised end-to-end on a laptop cluster WITHOUT the deprecated Bitnami
+# subchart images. The official `pgvector/pgvector` image creates the
+# POSTGRES_USER as a SUPERUSER, so the baseline migration's
+# `CREATE EXTENSION vector` succeeds with no extra grants.
+#
+#   kubectl -n forge apply -f datastores.yaml
+#   kubectl -n forge rollout status deploy/forge-ext-postgres deploy/forge-ext-redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forge-ext-postgres
+  labels: { app: forge-ext-postgres }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: forge-ext-postgres }
+  template:
+    metadata:
+      labels: { app: forge-ext-postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16
+          imagePullPolicy: Never
+          env:
+            - { name: POSTGRES_USER, value: forge }
+            - { name: POSTGRES_PASSWORD, value: forge }
+            - { name: POSTGRES_DB, value: forge }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "forge", "-d", "forge"]
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: forge-ext-postgres
+  labels: { app: forge-ext-postgres }
+spec:
+  selector: { app: forge-ext-postgres }
+  ports:
+    - { port: 5432, targetPort: 5432 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forge-ext-redis
+  labels: { app: forge-ext-redis }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: forge-ext-redis }
+  template:
+    metadata:
+      labels: { app: forge-ext-redis }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: Never
+          args: ["redis-server", "--save", "", "--appendonly", "no"]
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: forge-ext-redis
+  labels: { app: forge-ext-redis }
+spec:
+  selector: { app: forge-ext-redis }
+  ports:
+    - { port: 6379, targetPort: 6379 }

@@ -100,13 +100,18 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
 
-      - name: Build the four Forge images and load into kind
+      # Build the four Forge images under the `forge/<svc>:<appVersion>` tags the
+      # kind smoke overlay (deploy/helm/forge/tests/e2e/values.kind.yaml) expects.
+      # The test fixture loads these + the datastore/test images into the cluster
+      # and stands up the in-cluster external pgvector/redis (datastores.yaml), so
+      # no bundled Bitnami subchart images are pulled.
+      - name: Build the four Forge images
         run: |
           for svc in api worker web mcp-gateway; do
-            docker build -t ghcr.io/forge-platform/forge-$svc:0.1.0 \
-              -f deploy/docker/$svc.Dockerfile .
-            kind load docker-image ghcr.io/forge-platform/forge-$svc:0.1.0 --name forge-ci
+            docker build -t forge/$svc:0.1.0 -f deploy/docker/$svc.Dockerfile .
           done
 
-      - name: Run kind smoke tests
+      - name: Run kind smoke tests (install + helm test + upgrade/rollback)
+        env:
+          FORGE_KIND_CLUSTER: forge-ci   # reuse the kind-action cluster
         run: uv run --with pyyaml pytest deploy/helm/tests/e2e -q -m kind

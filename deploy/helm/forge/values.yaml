@@ -159,8 +159,11 @@ web:
   service:
     port: 3000
   probes:
-    liveness: /healthz
-    readiness: /healthz
+    # The Next.js app serves no /healthz route (verified against the real web
+    # image); the root `GET /` returns 200 (mirrors the compose web healthcheck),
+    # so probes target `/`.
+    liveness: /
+    readiness: /
   autoscaling:
     enabled: true
     minReplicas: 1
@@ -371,6 +374,11 @@ networkPolicy:
 migrations:
   enabled: true
   backoffLimit: 3
+  # Migration command run by the pre-install/pre-upgrade hook (job-migrate.yaml).
+  # Empty -> the chart default `alembic -c packages/db/alembic.ini upgrade head`
+  # (the api image carries packages/db + alembic; same chain as `make migrate`).
+  # Override to swap in a future `forge-cli db migrate` without a chart change.
+  command: []
 
 createAdmin:
   enabled: false
