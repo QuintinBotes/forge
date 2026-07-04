@@ -127,6 +127,9 @@ EXPECTED_MODELS = [
     # F37 auth-secrets-byok tables.
     "PlatformAPIKey",
     "OAuthAccount",
+    # F38 observability-cost-metrics tables (durable cost ledger + price book).
+    "CostEvent",
+    "ModelPrice",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

@@ -25,6 +25,7 @@ members = [
     "forge-marketplace",
     "forge-mcp",
     "forge-mcp-gateway",
+    "forge-obs",
     "forge-policy",
     "forge-skill",
     "forge-spec",
@@ -456,6 +457,7 @@ dependencies = [
     { name = "forge-marketplace" },
     { name = "forge-mcp" },
     { name = "forge-mcp-gateway" },
+    { name = "forge-obs" },
     { name = "forge-policy" },
     { name = "forge-skill" },
     { name = "forge-spec" },
@@ -493,6 +495,7 @@ requires-dist = [
     { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
     { name = "forge-mcp-gateway", editable = "apps/mcp-gateway" },
+    { name = "forge-obs", editable = "packages/observability" },
     { name = "forge-policy", editable = "packages/policy-sdk" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-spec", editable = "packages/spec-engine" },
@@ -547,6 +550,7 @@ dependencies = [
     { name = "forge-knowledge" },
     { name = "forge-marketplace" },
     { name = "forge-mcp" },
+    { name = "forge-obs" },
     { name = "forge-policy" },
     { name = "forge-skill" },
     { name = "forge-workflow" },
@@ -574,6 +578,7 @@ requires-dist = [
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
     { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
+    { name = "forge-obs", editable = "packages/observability" },
     { name = "forge-policy", editable = "packages/policy-sdk" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
@@ -833,6 +838,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "forge-contracts" },
     { name = "forge-mcp" },
+    { name = "forge-obs" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -841,7 +847,29 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
+    { name = "forge-obs", editable = "packages/observability" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
+]
+
+[[package]]
+name = "forge-obs"
+version = "0.1.0"
+source = { editable = "packages/observability" }
+dependencies = [
+    { name = "forge-auth" },
+    { name = "forge-contracts" },
+    { name = "forge-db" },
+    { name = "pydantic" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "forge-auth", editable = "packages/auth-sdk" },
+    { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "forge-db", editable = "packages/db" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
 [[package]]
@@ -906,6 +934,7 @@ dependencies = [
     { name = "forge-knowledge" },
     { name = "forge-marketplace" },
     { name = "forge-mcp" },
+    { name = "forge-obs" },
     { name = "forge-skill" },
     { name = "forge-workflow" },
     { name = "redis" },
@@ -923,6 +952,7 @@ requires-dist = [
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
     { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
+    { name = "forge-obs", editable = "packages/observability" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "redis", specifier = ">=5.0" },

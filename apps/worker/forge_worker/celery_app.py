@@ -39,10 +39,27 @@ celery_app = Celery(
         "forge_worker.tasks.authz",
         "forge_worker.tasks.approvals",
         "forge_worker.tasks.marketplace",
+        "forge_worker.tasks.observability",
         "forge_worker.tasks.sso",
         "forge_worker.beat",
     ],
 )
 celery_app.conf.task_default_queue = "forge"
+
+
+# F38: one shared telemetry init per worker process (env-driven; the lean
+# default installs no-op providers and never opens a connection).
+def _init_worker_telemetry(**_kwargs: object) -> None:  # pragma: no cover - worker boot
+    from forge_obs.telemetry import setup_telemetry
+
+    setup_telemetry("forge-worker")
+
+
+try:  # connecting the signal is safe at import; it fires only in real workers
+    from celery.signals import worker_process_init
+
+    worker_process_init.connect(_init_worker_telemetry, weak=False)
+except Exception:  # pragma: no cover - celery signal API unavailable
+    pass
 
 __all__ = ["celery_app", "get_broker_url"]

@@ -12,6 +12,7 @@ from forge_db.models.audit import AuditLog
 from forge_db.models.automation import AutomationExecution, AutomationRule
 from forge_db.models.benchmark import BenchmarkSubmission, BenchmarkSuite
 from forge_db.models.connections import MCPConnection, RepositoryConnection
+from forge_db.models.cost import CostEvent, ModelPrice
 from forge_db.models.deployment import (
     Deployment,
     DeploymentApproval,
@@ -31,6 +32,7 @@ from forge_db.models.enums import (
     AutomationTriggerSource,
     AutomationTriggerType,
     ChunkType,
+    CostEventKind,
     DeploymentEventType,
     DeploymentKind,
     DeploymentState,
@@ -174,6 +176,8 @@ __all__ = [
     "BenchmarkSuite",
     "ChunkType",
     "Constitution",
+    "CostEvent",
+    "CostEventKind",
     "Deployment",
     "DeploymentApproval",
     "DeploymentCheckResult",
@@ -211,6 +215,7 @@ __all__ = [
     "MarketplaceListingVersion",
     "MarketplaceRegistry",
     "Milestone",
+    "ModelPrice",
     "OAuthAccount",
     "OAuthProvider",
     "PMAuthType",

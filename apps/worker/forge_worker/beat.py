@@ -34,6 +34,8 @@ SSO_METADATA_REFRESH_TASK = "sso.refresh_all_saml_metadata"
 SSO_REPLAY_CLEANUP_TASK = "sso.cleanup_saml_replay"
 # F36: sweep pending approval gates past their expires_at SLA (default 60s).
 APPROVAL_EXPIRE_TASK = "approvals.expire_pending"
+# F38: sample the MCP freshness-lag gauge per connection (default 60s).
+OBS_FRESHNESS_TASK = "obs.refresh_freshness_gauges"
 
 
 def reap_interval_seconds() -> float:
@@ -78,6 +80,11 @@ def automation_sweep_seconds() -> float:
 def approval_expire_seconds() -> float:
     """Beat cadence for the F36 approval-SLA sweep (default 60s)."""
     return float(os.environ.get("FORGE_APPROVAL_EXPIRE_INTERVAL_SECONDS", "60"))
+
+
+def obs_freshness_seconds() -> float:
+    """Beat cadence for the F38 MCP freshness-lag gauge sample (default 60s)."""
+    return float(os.environ.get("FORGE_OBS_FRESHNESS_INTERVAL_SECONDS", "60"))
 
 
 def configure_beat(app: object) -> dict[str, object]:
@@ -135,6 +142,11 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": APPROVAL_EXPIRE_TASK,
             "schedule": approval_expire_seconds(),
         },
+        # F38: sample forge_mcp_freshness_lag_seconds per MCP connection.
+        "obs-refresh-freshness-gauges": {
+            "task": OBS_FRESHNESS_TASK,
+            "schedule": obs_freshness_seconds(),
+        },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
     existing.update(schedule)
@@ -153,6 +165,7 @@ __all__ = [
     "MARKETPLACE_REFRESH_TASK",
     "MARKETPLACE_SYNC_TASK",
     "MCP_REFRESH_TASK",
+    "OBS_FRESHNESS_TASK",
     "SANDBOX_REAP_TASK",
     "SPRINT_SNAPSHOT_TASK",
     "SSO_METADATA_REFRESH_TASK",
@@ -164,6 +177,7 @@ __all__ = [
     "configure_beat",
     "marketplace_sync_seconds",
     "mcp_index_poll_seconds",
+    "obs_freshness_seconds",
     "reap_interval_seconds",
     "sso_metadata_refresh_seconds",
     "sso_replay_cleanup_seconds",
