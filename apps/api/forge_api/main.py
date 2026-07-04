@@ -13,6 +13,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from forge_api.routers import FEATURE_ROUTERS, HEALTH_ROUTER
+from forge_api.security import (
+    BodySizeLimitMiddleware,
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 from forge_api.settings import Settings, get_settings
 from forge_api.sso.errors import ScimApiError
 from forge_contracts.sso import ScimError
@@ -42,13 +47,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # observability stack (spec AC1/AC18).
     setup_telemetry("forge-api")
 
+    # HARD-09: OpenAPI docs are forced off in production unless the operator
+    # explicitly sets FORGE_DOCS_ENABLED (info-disclosure reduction). The
+    # openapi.json document itself is gated too, not just the UI pages.
+    docs_on = cfg.docs_effectively_enabled
     app = FastAPI(
         title=cfg.app_name,
         version=cfg.version,
         description="Forge — OSS engineering orchestration platform API.",
-        docs_url="/docs" if cfg.docs_enabled else None,
-        redoc_url="/redoc" if cfg.docs_enabled else None,
+        docs_url="/docs" if docs_on else None,
+        redoc_url="/redoc" if docs_on else None,
+        openapi_url="/openapi.json" if docs_on else None,
     )
+
+    # HARD-09 edge controls. ``add_middleware`` wraps outside-in (the last one
+    # added runs first), so adding headers -> rate limit -> body limit yields
+    # the required order: body limit outermost, then rate limit, then headers.
+    app.add_middleware(SecurityHeadersMiddleware)
+    if cfg.ratelimit_enabled:
+        app.add_middleware(
+            RateLimitMiddleware,
+            rate_per_min=cfg.ratelimit_rpm,
+            burst=cfg.ratelimit_burst,
+        )
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=cfg.max_body_bytes)
 
     if cfg.cors_origins:
         allow_credentials = cfg.cors_allow_credentials
@@ -98,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             name=cfg.app_name,
             version=cfg.version,
             environment=cfg.environment,
-            docs_url="/docs" if cfg.docs_enabled else None,
+            docs_url="/docs" if docs_on else None,
         )
 
     return app

@@ -33,6 +33,8 @@ pnpm-debug.log*
 !deploy/.env.dev
 *.pem
 *.key
+# Operator-provided production secret material (HARD-09 creds rule 1).
+deploy/secrets/
 
 # Docker / local data
 deploy/docker-compose.override.yml

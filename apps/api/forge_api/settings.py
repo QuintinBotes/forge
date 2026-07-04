@@ -77,7 +77,37 @@ class Settings(BaseSettings):
     cors_origins: list[str] = []
     cors_allow_credentials: bool = True
 
+    # OpenAPI docs (/docs, /redoc, /openapi.json). In production the pages are
+    # forced OFF unless FORGE_DOCS_ENABLED is *explicitly* set (info-disclosure
+    # reduction, HARD-09); see ``docs_effectively_enabled``.
     docs_enabled: bool = True
+
+    # --- HARD-09 edge security controls -------------------------------------
+    # Per-caller request rate limit (token bucket, per-process). Keyed by the
+    # presented API credential, falling back to client IP; /health is exempt.
+    ratelimit_enabled: bool = True
+    ratelimit_rpm: int = 120
+    ratelimit_burst: int = 60
+    # Maximum request body size before 413 (1 MiB default).
+    max_body_bytes: int = 1_048_576
+    # SSRF guard for admin-configured outbound URLs (embedder/reranker/MCP).
+    # ``ssrf_allow_private`` opts self-hosted deployments into their own
+    # private-network endpoints (loopback + metadata stay blocked);
+    # ``outbound_allowlist`` names exact hostnames always permitted.
+    ssrf_allow_private: bool = False
+    outbound_allowlist: list[str] = []
+
+    @property
+    def docs_effectively_enabled(self) -> bool:
+        """Whether the OpenAPI doc pages should be served.
+
+        Production forces docs off unless the operator explicitly set
+        ``FORGE_DOCS_ENABLED`` (the field appearing in ``model_fields_set``);
+        every other environment honours the plain flag.
+        """
+        if self.environment == "production" and "docs_enabled" not in self.model_fields_set:
+            return False
+        return self.docs_enabled
 
     # F25 — workflow engine selection. ``postgres_fsm`` (default) keeps the V1
     # in-process FSM; ``temporal`` wires the V2 durable Temporal engine. The

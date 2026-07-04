@@ -94,6 +94,84 @@ jobs:
       - name: Build
         run: pnpm -r build
 
+      # HARD-09: web dependency CVE scan (high/critical fails the build;
+      # waivable via pnpm overrides documented in security/waivers.yaml).
+      - name: Audit (pnpm)
+        working-directory: apps/web
+        run: pnpm audit --audit-level=high
+
+  # ------------------------------------------------------------------- #
+  # Security (HARD-09, G-SEC-AUTOMATED): SAST + deps + secrets + SBOM +   #
+  # the wired enforcement-matrix regression suite. Blocking on            #
+  # high/critical; accepted risk is dated in security/waivers.yaml.       #
+  # ------------------------------------------------------------------- #
+  security:
+    name: security (sast + deps + secrets + sbom + matrix)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history for gitleaks
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - name: Validate waivers (fails closed on expiry)
+        run: uv run python scripts/security/check_waivers.py security/waivers.yaml
+
+      # --- SAST --- #
+      - name: Bandit (SARIF)
+        run: uv run bandit -c pyproject.toml -r packages apps -f sarif -o bandit.sarif
+        continue-on-error: true
+      - name: Bandit gate (high/critical)
+        run: uv run bandit -c pyproject.toml -r packages apps --severity-level high -q
+      - name: Semgrep (custom Forge rules, SARIF)
+        run: >-
+          uv run semgrep --config .semgrep/forge.yml --config p/python
+          --error --metrics=off --sarif -o semgrep.sarif .
+
+      # --- Dependency audit --- #
+      - name: pip-audit
+        run: >-
+          uv export --frozen --format requirements-txt --no-emit-workspace
+          | uv run pip-audit -r /dev/stdin --strict
+      - name: osv-scanner (lockfiles)
+        uses: google/osv-scanner-action@v1
+        continue-on-error: true
+        with:
+          scan-args: "--lockfile=uv.lock --lockfile=apps/web/pnpm-lock.yaml"
+
+      # --- Secret scan (full history) --- #
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+      # --- SBOM --- #
+      - name: SBOM (CycloneDX)
+        run: uv run cyclonedx-py environment -o sbom.cdx.json
+
+      # --- Enforcement-matrix regression suite (wired path) --- #
+      - name: Enforcement matrix
+        run: uv run pytest -m security -q
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: "."
+
   # ------------------------------------------------------------------- #
   # Deploy: validate compose files build cleanly                         #
   # ------------------------------------------------------------------- #

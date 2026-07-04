@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test lint fmt typecheck migrate seed build clean \
-	compose-build build-images pin-digests sbom smoke
+	compose-build build-images pin-digests sbom smoke security
 
 # Every typed first-party package/app, one mypy module each. mypy runs in
 # *module mode* (``-p``) so each ``forge_*`` package resolves to its single
@@ -76,6 +76,9 @@ sbom: ## Generate a CycloneDX SBOM per built image (deploy/sbom/<image>.cdx.json
 
 smoke: ## Production-compose smoke: up -> healthy -> /health -> down -v
 	deploy/scripts/smoke.sh
+
+security: ## HARD-09 security audit roll-up (SAST + deps + secrets + SBOM + matrix)
+	scripts/security/run.sh
 
 clean: ## Remove python caches and build artifacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

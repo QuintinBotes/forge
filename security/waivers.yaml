@@ -1,0 +1,94 @@
+# HARD-09 — accepted-risk waivers for the automated security gate.
+#
+# Every entry MUST carry: id, tool, rule, location, finding, justification,
+# owner, created, expires. scripts/security/check_waivers.py validates the
+# schema and FAILS CLOSED on any waiver past its `expires` date — an accepted
+# risk is re-reviewed at least every 6 months, never silently forever.
+#
+# The gate only consults this file for HIGH/CRITICAL findings; the entries
+# below are MEDIUM/LOW and are recorded for auditability (full triage:
+# SECURITY_FINDINGS.md).
+
+waivers:
+  - id: W-001
+    tool: bandit
+    rule: B108
+    location: packages/agent-runtime/forge_agent/sandbox/container.py:84
+    finding: 'Probable insecure usage of temp file/directory ("/tmp" literal).'
+    justification: >
+      False positive: the "/tmp" string is a tmpfs MOUNT TARGET inside the
+      sandbox container spec (size-capped, non-persistent), not host temp-file
+      usage. No host path is created or raced.
+    owner: forge-security
+    created: 2026-07-04
+    expires: 2027-01-04
+
+  - id: W-002
+    tool: bandit
+    rule: B608
+    location: packages/db/migrations/versions/0019_f36_approval_framework.py:131
+    finding: Possible SQL injection via string-based query construction.
+    justification: >
+      False positive: the interpolated value is the module-level `_TABLE`
+      constant inside a one-shot Alembic data migration; no request- or
+      user-derived input can reach it.
+    owner: forge-security
+    created: 2026-07-04
+    expires: 2027-01-04
+
+  - id: W-003
+    tool: bandit
+    rule: B608
+    location: packages/db/migrations/versions/0022_f39_audit_chain.py:84
+    finding: Possible SQL injection via string-based query construction.
+    justification: >
+      False positive: static DO-block DDL installing the audit-immutability
+      trigger; the string contains no interpolated runtime input.
+    owner: forge-security
+    created: 2026-07-04
+    expires: 2027-01-04
+
+  - id: W-004
+    tool: bandit
+    rule: B310
+    location: packages/marketplace-sdk/forge_marketplace/registry_client.py:110
+    finding: urllib.request.urlopen audit (scheme/redirect concerns).
+    justification: >
+      Mitigated by design: the registry client resolves and validates every
+      host against its own SSRF blocklist (metadata/loopback/private ranges)
+      and an operator allowlist before fetching, and `file://` support is an
+      explicit local-registry feature that bypasses urlopen. Residual risk
+      (HTTP redirect from an allowed host to an internal host) is item PT-07
+      on docs/security/pentest-punch-list.md.
+    owner: forge-security
+    created: 2026-07-04
+    expires: 2027-01-04
+
+  - id: W-005
+    tool: gitleaks
+    rule: generic-api-key
+    location: deploy/.env.dev:22
+    finding: FORGE_SECRET_KEY committed in the dev compose env file.
+    justification: >
+      Deliberate DEV-ONLY default so the one-command dev bring-up works with
+      zero setup; the file header states it must never be used in production
+      and the production compose/helm paths require an operator-provided
+      secret (the API refuses to boot in non-development environments without
+      FORGE_SECRET_KEY — see tests/security/test_crypto_defaults.py).
+    owner: forge-security
+    created: 2026-07-04
+    expires: 2027-01-04
+
+  - id: W-006
+    tool: bandit
+    rule: B101
+    location: "global (skips list in [tool.bandit], root pyproject.toml)"
+    finding: assert_used in first-party source (26 sites outside tests).
+    justification: >
+      Forge's production images run CPython without -O, so asserts are never
+      stripped; the flagged asserts are internal invariants (workflow/temporal
+      state machines, coordinator graph wiring), not authentication or
+      authorization checks (reviewed 2026-07-04, SECURITY_FINDINGS.md §bandit).
+    owner: forge-security
+    created: 2026-07-04
+    expires: 2027-01-04

@@ -1,4 +1,27 @@
 /** @type {import('next').NextConfig} */
+
+// HARD-09: security response headers, mirroring the API edge
+// (forge_api.security.headers) and src/lib/security-headers.ts. Kept in JS here
+// because next.config.mjs is loaded by Node (cannot import the .ts module); a
+// Vitest parity test (src/lib/security-headers.test.ts) asserts the two agree.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "img-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  "form-action 'self'",
+].join("; ");
+
+export const securityHeaders = [
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },
+];
+
 const nextConfig = {
   reactStrictMode: true,
   // HARD-07: emit a self-contained production server (.next/standalone) so the
@@ -10,6 +33,10 @@ const nextConfig = {
   // Surface the API base URL to the typed client at build time when provided.
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000",
+  },
+  // HARD-09: apply the hardening headers to every route.
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders }];
   },
 };
 
