@@ -24,6 +24,10 @@ paths = [
   '''apps/api/tests/test_obs_router\.py''',
   '''apps/api/tests/test_obs_audit\.py''',
   '''tests/security/fixtures/.*''',
+  # Enforcement-matrix redaction samples (canonical FAKE shapes: sk-…, AKIA…EXAMPLE).
+  '''tests/security/matrix_checks\.py''',
+  # Integration ENV TEMPLATE — key names only, all values empty. "Never commit values."
+  '''\.env\.integration\.example''',
   # Spec/docs prose that pattern-matches generic-api-key (no real values).
   '''docs/implementation-slices/.*\.md''',
   # Documented DEV-ONLY compose defaults (header says NOT for production);
