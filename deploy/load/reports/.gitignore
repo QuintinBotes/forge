@@ -1,0 +1,4 @@
+# HARD-11 load/perf/soak report outputs are generated artifacts, not source.
+# Ignore everything in this directory except this file itself.
+*
+!.gitignore

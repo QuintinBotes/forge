@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from forge_api.auth.vault import SecretExpiredError
+from forge_api.middleware import install_middleware, lifespan
 from forge_api.observability.redaction import install_log_redaction
 from forge_api.routers import FEATURE_ROUTERS, HEALTH_ROUTER
 from forge_api.security import (
@@ -65,6 +66,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url="/docs" if docs_on else None,
         redoc_url="/redoc" if docs_on else None,
         openapi_url="/openapi.json" if docs_on else None,
+        # HARD-11: graceful shutdown — startup marks the process serving; SIGTERM
+        # flips readiness to 503, drains in-flight requests, then disposes the DB
+        # engine / Redis pool / telemetry exporters.
+        lifespan=lifespan,
     )
 
     # HARD-09 edge controls. ``add_middleware`` wraps outside-in (the last one
@@ -76,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             RateLimitMiddleware,
             rate_per_min=cfg.ratelimit_rpm,
             burst=cfg.ratelimit_burst,
+            overrides=cfg.ratelimit_overrides,
         )
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=cfg.max_body_bytes)
 
@@ -119,6 +125,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content={"detail": "secret has expired; rotate this credential"},
         )
 
+    # Expose the resolved settings on app.state so dependency-free routes (e.g.
+    # the drain-aware readiness probe) can read this app's config rather than the
+    # process-wide cached instance.
+    app.state.settings = cfg
+
     # Health/liveness at the root; feature routers under the configurable prefix.
     app.include_router(HEALTH_ROUTER)
     prefix = cfg.api_prefix.rstrip("/")
@@ -141,6 +152,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             environment=cfg.environment,
             docs_url="/docs" if docs_on else None,
         )
+
+    # HARD-11: mount the reliability layer last so it wraps outermost — a replayed
+    # idempotent request short-circuits before rate-limit consumption, and the
+    # in-flight counter feeds the lifespan drain.
+    install_middleware(app, cfg)
 
     return app
 

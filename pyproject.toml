@@ -94,6 +94,8 @@ markers = [
     "gvisor: test requires the gVisor runsc OCI runtime registered with the daemon (F34; virtualization-gated CI job)",
     "firecracker: test requires the Kata+Firecracker kata-fc runtime + /dev/kvm (F34; virtualization-gated CI job)",
     "security: enforcement-matrix + security regression tests (HARD-09; run offline, no external creds)",
+    "perf: resource-heavy latency/throughput benchmark (HARD-11; skips without a runner + live PG)",
+    "soak: long-running multi-tenant isolation/resource-stability run (HARD-11; skips by default)",
 ]
 
 # --------------------------------------------------------------------------- #
