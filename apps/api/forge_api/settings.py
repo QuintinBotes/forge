@@ -117,6 +117,17 @@ class Settings(BaseSettings):
     # Unset by default: the webhook ingest route rejects every delivery until a
     # secret is configured (fail-closed — an unsigned webhook is never trusted).
     github_webhook_secret: str | None = None
+    # --- HARD-01 live GitHub App auth ---------------------------------------
+    # When ``github_app_id`` + ``github_installation_id`` are set the integration
+    # router mints its own short-lived installation tokens from the App private
+    # key (loaded at call time from ``github_app_private_key_path``, never stored)
+    # instead of using a static ``github_token``. The ``.pem`` is a file mount, a
+    # PATH — its value is never an env var, never logged, never persisted.
+    github_app_id: str | None = None
+    github_app_private_key_path: str = "deploy/secrets/github-app.pem"
+    github_installation_id: str | None = None
+    # ``owner/repo`` used ONLY by the creds-gated live integration lane.
+    github_test_repo: str | None = None
     slack_token: str | None = None
     slack_default_channel: str | None = None
 

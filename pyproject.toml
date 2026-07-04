@@ -93,6 +93,7 @@ asyncio_mode = "auto"
 markers = [
     "postgres: test requires a live pgvector-enabled Postgres (skips if none; Phase 2)",
     "integration: test exercises multiple services together (skips if unavailable)",
+    "live_github: live GitHub App round-trip against api.github.com (HARD-01; requires FORGE_GITHUB_* creds + network, skips otherwise so the default lane stays hermetic)",
     "realeval: honest real-corpus retrieval eval on a learned local sentence-transformers embedder (HARD-04; opt-in via FORGE_RUN_REALEVAL=1 + the 'eval' extra; skips otherwise so the default suite stays hermetic/fast)",
     "docker: test requires a real Docker daemon + sandbox images (F19; Docker-gated CI job, opt-in via FORGE_SANDBOX_DOCKER_TESTS=1)",
     "kind: test installs the Helm chart on an ephemeral kind cluster (F24; kind+helm+docker-gated, skips if unavailable)",

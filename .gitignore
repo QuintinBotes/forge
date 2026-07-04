@@ -36,8 +36,11 @@ pnpm-debug.log*
 !deploy/.env.dev
 *.pem
 *.key
-# Operator-provided production secret material (HARD-09 creds rule 1).
-deploy/secrets/
+# Operator-provided production secret material (HARD-09 creds rule 1 / HARD-01).
+# Ignore everything under deploy/secrets/ EXCEPT the tracked, no-secret README so
+# operators know which files to drop in (e.g. github-app.pem).
+deploy/secrets/*
+!deploy/secrets/README.md
 
 # Docker / local data
 deploy/docker-compose.override.yml

@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from forge_api.main import create_app
 from forge_api.routers.integration import (
     get_github_client,
+    get_github_client_optional,
     get_github_webhook_secret,
     get_slack_notifier,
 )
@@ -93,9 +94,7 @@ def _webhook_body() -> bytes:
     ).encode()
 
 
-def _post_webhook(
-    client: TestClient, body: bytes, signature: str | None
-) -> httpx.Response:
+def _post_webhook(client: TestClient, body: bytes, signature: str | None) -> httpx.Response:
     headers = {"Content-Type": "application/json"}
     if signature is not None:
         headers["X-Hub-Signature-256"] = signature
@@ -132,3 +131,132 @@ def test_github_webhook_rejects_tampered_body(client: TestClient) -> None:
     tampered = _webhook_body().replace(b"success", b"failure")
     resp = _post_webhook(client, tampered, signature)
     assert resp.status_code == 401
+
+
+# --------------------------------------------------------------------------- #
+# HARD-01: App-auth wiring, fail-closed writes, health route, audit redaction  #
+# --------------------------------------------------------------------------- #
+
+
+def test_github_client_dep_uses_app_creds_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """When App creds are configured, the DI builds an App-auth client."""
+    import forge_api.routers.integration as integ
+    from forge_api.settings import Settings
+
+    pem = tmp_path / "app.pem"
+    # A syntactically-valid throwaway RSA key so from_app constructs cleanly.
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem.write_bytes(
+        key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+
+    fake = Settings(
+        github_app_id="123",
+        github_installation_id="456",
+        github_app_private_key_path=str(pem),
+    )
+    monkeypatch.setattr(integ, "get_settings", lambda: fake)
+    integ._github_client_singleton.cache_clear()
+    try:
+        client = integ._github_client_singleton()
+        assert client is not None
+        # The App path installs a per-request token provider (no static bearer).
+        assert client._token_provider is not None
+        assert "Authorization" not in client._client.headers
+    finally:
+        integ._github_client_singleton.cache_clear()
+
+
+def test_write_route_501_when_no_github_creds(
+    authenticate_app: Callable[..., FastAPI],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With neither App creds nor a token, write routes fail closed (501)."""
+    import forge_api.routers.integration as integ
+    from forge_api.settings import Settings
+
+    monkeypatch.setattr(integ, "get_settings", lambda: Settings())
+    integ._github_client_singleton.cache_clear()
+    app = create_app()
+    authenticate_app(app)
+    try:
+        with TestClient(app) as c:
+            resp = c.post(
+                "/integration/github/pull-requests",
+                json={"repo": "org/api", "title": "t", "head": "f", "base": "main"},
+            )
+        assert resp.status_code == 501, resp.text
+    finally:
+        integ._github_client_singleton.cache_clear()
+
+
+def test_health_route_returns_healthresult(
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    app = create_app()
+    authenticate_app(app)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"resources": {}})
+
+    gh = GitHubClient(token="t", transport=httpx.MockTransport(handler))
+    app.dependency_overrides[get_github_client_optional] = lambda: gh
+    with TestClient(app) as c:
+        resp = c.get("/integration/github/health")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["healthy"] is True
+
+
+def test_health_route_not_configured(
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    app = create_app()
+    authenticate_app(app)
+    app.dependency_overrides[get_github_client_optional] = lambda: None
+    with TestClient(app) as c:
+        resp = c.get("/integration/github/health")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["healthy"] is False
+    assert body["status"] == "not_configured"
+
+
+def test_audit_sink_redacts_detail() -> None:
+    """The API audit sink scrubs any token-shaped substring before recording."""
+    from forge_api.observability.audit import AuditCategory, AuditLog
+    from forge_api.routers.integration import _github_audit_sink
+    from forge_integrations import GitHubAuditEvent
+
+    log = AuditLog()
+    sink = _github_audit_sink(log)
+    leaked = "ghs_abcdefghijklmnopqrstuvwxyz0123456789"
+    sink(
+        GitHubAuditEvent(
+            action="open_pr",
+            repo="org/api",
+            status="error",
+            status_code=500,
+            latency_ms=12,
+            payload_hash="deadbeef",
+            detail=f"boom with token {leaked}",
+        )
+    )
+    entries = log.query(category=AuditCategory.INTEGRATION)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.action == "github.open_pr"
+    assert entry.target == "org/api"
+    assert entry.payload_hash == "deadbeef"
+    # The token-shaped substring is redacted out of the detail.
+    assert leaked not in (entry.detail or "")
+    assert "[REDACTED]" in (entry.detail or "")

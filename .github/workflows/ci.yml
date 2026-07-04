@@ -133,9 +133,52 @@ jobs:
           path: docs/EVAL_RESULTS.md
 
   # ------------------------------------------------------------------- #
-  # Web: lint + build                                                    #
+  # HARD-01 (G-GH): live GitHub App round-trip against api.github.com.    #
+  # OPT-IN — runs only where the FORGE_GITHUB_* secrets exist (a          #
+  # protected CI context); forks / secret-less PRs skip it entirely and   #
+  # the default `python` job stays network-free. The App private key is   #
+  # written at runtime with add-mask (no `set -x`) and never echoed.      #
   # ------------------------------------------------------------------- #
-  web:
+  integration-github:
+    name: integration-github (live GitHub App, creds-gated)
+    runs-on: ubuntu-latest
+    # Only attempt when the App id secret is present (all five travel together).
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    env:
+      FORGE_GITHUB_APP_ID: ${{ secrets.FORGE_GITHUB_APP_ID }}
+      FORGE_GITHUB_INSTALLATION_ID: ${{ secrets.FORGE_GITHUB_INSTALLATION_ID }}
+      FORGE_GITHUB_WEBHOOK_SECRET: ${{ secrets.FORGE_GITHUB_WEBHOOK_SECRET }}
+      FORGE_GITHUB_TEST_REPO: ${{ secrets.FORGE_GITHUB_TEST_REPO }}
+      FORGE_GITHUB_APP_PRIVATE_KEY_PATH: deploy/secrets/github-app.pem
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      # Write the App private key to a gitignored path. The secret is passed via
+      # env (never interpolated into the script body) and written with printf; no
+      # `set -x` around the write so it is never echoed.
+      - name: Materialise GitHub App private key
+        if: ${{ secrets.FORGE_GITHUB_APP_ID != '' }}
+        env:
+          APP_PRIVATE_KEY: ${{ secrets.FORGE_GITHUB_APP_PRIVATE_KEY }}
+        run: |
+          mkdir -p deploy/secrets
+          printf '%s' "$APP_PRIVATE_KEY" > deploy/secrets/github-app.pem
+          chmod 600 deploy/secrets/github-app.pem
+
+      - name: Live GitHub lane (skips cleanly if creds absent)
+        run: uv run pytest -m live_github -q
+
     name: web (lint + build)
     runs-on: ubuntu-latest
     steps:
