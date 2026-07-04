@@ -21,6 +21,13 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+# HARD-13: the auth service fails closed without a master key (no silent
+# ephemeral fallback in any environment). Provide a stable, obviously-fake test
+# key process-wide so the default ``AuthService()`` constructs deterministically
+# across the whole suite; tests that exercise the missing-key / dev-insecure /
+# rotation paths override this per-test via ``monkeypatch``.
+os.environ.setdefault("FORGE_SECRET_KEY", "test-forge-master-secret-0123456789")
+
 if TYPE_CHECKING:
     from sqlalchemy import Connection, Engine
 

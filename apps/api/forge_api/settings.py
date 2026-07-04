@@ -8,8 +8,12 @@ single resolved instance.
 
 from __future__ import annotations
 
+import os
+import warnings
 from functools import lru_cache
+from typing import Any
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from forge_api import __version__
@@ -35,6 +39,65 @@ class Settings(BaseSettings):
     version: str = __version__
     environment: str = "development"
     debug: bool = False
+
+    # --- HARD-13 secrets & config hardening ---------------------------------
+    # The instance master KEK. Required in production (the auth service refuses
+    # to boot without it); ``FORGE_SECRET_KEY_FILE`` may point at a mounted
+    # Docker/K8s secret instead (the ``_FILE`` convention, honoured by the
+    # secret provider). ``SECRET_KEY``/``FORGE_ENV`` remain as one-release
+    # deprecated aliases (see the model validator below).
+    secret_key: str | None = None
+    secret_key_version: int | None = None
+    # Secret-provider backend: ``env`` (default), ``file`` (/run/secrets), or
+    # ``vault`` (HashiCorp Vault KV-v2, integration-only).
+    secret_provider: str = "env"
+    secret_file_root: str = "/run/secrets"
+    # Two-tier envelope encryption for BYOK secrets. Unset -> on in production,
+    # off elsewhere (single-tier); an explicit value always wins.
+    envelope_encryption: bool | None = None
+    # Explicit opt-in to the dev-only process-ephemeral master key. NEVER set in
+    # production — a missing FORGE_SECRET_KEY otherwise fails closed.
+    dev_insecure: bool = False
+    # Default lifetime (seconds) for minted agent-runner tokens (auto-expiry).
+    agent_token_ttl: int = 86_400
+    # HashiCorp Vault KV-v2 knobs (integration-only; secret_provider=vault).
+    vault_addr: str | None = None
+    vault_token: str | None = None
+    vault_mount: str = "secret"
+    vault_path: str = "forge"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_legacy_aliases(cls, data: Any) -> Any:
+        """Map the deprecated ``SECRET_KEY``/``FORGE_ENV`` names (one release).
+
+        These are the names the shipped compose files set. They are honoured for
+        one release with a loud deprecation warning so an existing operator's
+        deployment keeps booting while they migrate to ``FORGE_SECRET_KEY`` /
+        ``FORGE_ENVIRONMENT``; the canonical name always wins when both are set.
+        """
+        if not isinstance(data, dict):
+            return data
+        provided = {k.lower() for k in data}
+
+        legacy_env = os.environ.get("FORGE_ENV")
+        if legacy_env and "environment" not in provided and "FORGE_ENVIRONMENT" not in os.environ:
+            warnings.warn(
+                "FORGE_ENV is deprecated; set FORGE_ENVIRONMENT instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            data["environment"] = legacy_env
+
+        legacy_secret = os.environ.get("SECRET_KEY")
+        if legacy_secret and "secret_key" not in provided and "FORGE_SECRET_KEY" not in os.environ:
+            warnings.warn(
+                "SECRET_KEY is deprecated; set FORGE_SECRET_KEY instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            data["secret_key"] = legacy_secret
+        return data
 
     # Mounted prefix for every *feature* router. ``/health`` and ``/`` stay at
     # the root so liveness probes are stable regardless of this value.

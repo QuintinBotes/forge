@@ -55,6 +55,16 @@ def _init_worker_telemetry(**_kwargs: object) -> None:  # pragma: no cover - wor
 
     setup_telemetry("forge-worker")
 
+    # HARD-13: scrub secrets from worker logs at the sink, identically to the API
+    # (structural redaction, not call-site discipline). Imported lazily so the
+    # module stays import-light for hermetic task inspection.
+    try:
+        from forge_api.observability.redaction import install_log_redaction
+
+        install_log_redaction()
+    except Exception:
+        pass
+
 
 try:  # connecting the signal is safe at import; it fires only in real workers
     from celery.signals import worker_process_init

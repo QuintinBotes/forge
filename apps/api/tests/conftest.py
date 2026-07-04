@@ -10,11 +10,18 @@ the idiomatic FastAPI way to bypass authentication in handler-focused tests.
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Callable
 
 import pytest
 from fastapi import FastAPI
+
+# HARD-13: the auth service fails closed without a master key (no silent
+# ephemeral fallback). Provide a stable, obviously-fake test key so the default
+# ``AuthService()`` constructs deterministically; tests that exercise the
+# missing-key / dev-insecure paths override this via ``monkeypatch``.
+os.environ.setdefault("FORGE_SECRET_KEY", "test-forge-master-secret-0123456789")
 
 from forge_api.deps import Principal, get_current_principal
 from forge_contracts import UserRole

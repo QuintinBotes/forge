@@ -16,6 +16,7 @@ substrate so later phases (and self-hosters) can rely on them:
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -225,11 +226,15 @@ def test_ci_workflow_parses_and_has_core_jobs() -> None:
 def test_docker_compose_config_validates() -> None:
     if shutil.which("docker") is None:
         pytest.skip("PARKED: docker CLI unavailable in this sandbox")
+    # HARD-13: FORGE_SECRET_KEY is fail-closed (${...:?...}) in the production
+    # compose, so a valid render must supply it — mirror an operator's .env.
+    env = {**os.environ, "FORGE_SECRET_KEY": "compose-config-validation-key-000"}
     result = subprocess.run(
         ["docker", "compose", "-f", str(COMPOSE), "config"],
         capture_output=True,
         text=True,
         cwd=str(REPO_ROOT),
+        env=env,
     )
     assert result.returncode == 0, f"docker compose config failed:\n{result.stderr}"
 

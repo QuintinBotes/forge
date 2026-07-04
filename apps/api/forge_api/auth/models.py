@@ -35,6 +35,18 @@ class SecretCreateRequest(BaseModel):
     expires_at: datetime | None = None
 
 
+class SecretRotateRequest(BaseModel):
+    """Body for rotating a BYOK secret's *value* (HARD-13, admin-only).
+
+    Credential rotation: the operator supplies a new plaintext value which is
+    re-encrypted in place, preserving the secret's id/name/kind. Distinct from
+    KEK rotation (``forge-cli secrets rotate-kek``), which never sees plaintext.
+    """
+
+    secret: str = Field(min_length=1)
+    expires_at: datetime | None = None
+
+
 class LoginRequest(BaseModel):
     """Body for beginning an OAuth sign-in flow."""
 
@@ -104,4 +116,5 @@ __all__ = [
     "OAuthTokens",
     "OAuthUser",
     "SecretCreateRequest",
+    "SecretRotateRequest",
 ]

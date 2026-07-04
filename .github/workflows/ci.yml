@@ -173,6 +173,62 @@ jobs:
           sarif_file: "."
 
   # ------------------------------------------------------------------- #
+  # HARD-13: secrets & config preflight + hermetic crypto/vault/provider #
+  # unit suite. Fails closed on a missing key / deprecated alias /       #
+  # envelope-off-in-prod, so a misconfigured deploy cannot merge.        #
+  # ------------------------------------------------------------------- #
+  secrets-config:
+    name: secrets-config (fail-closed preflight)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      # A valid prod-like env must pass the fail-closed preflight.
+      - name: check-config (valid prod env passes)
+        env:
+          FORGE_ENVIRONMENT: production
+        run: |
+          export FORGE_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          uv run python -m forge_api.cli_secrets check-config
+
+      # A missing key must fail closed (exit non-zero) — assert it does.
+      - name: check-config (missing key fails closed)
+        env:
+          FORGE_ENVIRONMENT: production
+        run: |
+          if uv run python -m forge_api.cli_secrets check-config; then
+            echo "::error::check-config passed with no FORGE_SECRET_KEY (should fail closed)"
+            exit 1
+          fi
+          echo "check-config correctly failed closed on a missing key"
+
+      # Hermetic crypto / vault / provider / redaction unit suite.
+      - name: Secret subsystem unit suite
+        run: >-
+          uv run pytest -q
+          apps/api/tests/test_auth_crypto_envelope.py
+          apps/api/tests/test_auth_keyring.py
+          apps/api/tests/test_auth_providers.py
+          apps/api/tests/test_auth_vault_expiry.py
+          apps/api/tests/test_auth_agent_token_ttl.py
+          apps/api/tests/test_auth_service_key.py
+          apps/api/tests/test_obs_log_redaction.py
+          apps/api/tests/test_obs_span_redaction.py
+          apps/api/tests/test_cli_secrets.py
+          apps/api/tests/test_auth_secrets_rotate.py
+
+  # ------------------------------------------------------------------- #
   # Deploy: validate compose files build cleanly                         #
   # ------------------------------------------------------------------- #
   compose:

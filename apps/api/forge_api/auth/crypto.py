@@ -35,7 +35,8 @@ import hmac
 import os
 import secrets
 import struct
-from typing import Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 #: Wire format version (first byte of every blob) — lets the format evolve.
 VERSION = 1
@@ -188,11 +189,148 @@ def default_cipher(key: bytes) -> SecretCipher:
     return FernetCipher(key)
 
 
+# --------------------------------------------------------------------------- #
+# Envelope encryption (HARD-13): a per-secret data key (DEK) encrypts the
+# plaintext; the DEK is wrapped under a versioned key-encryption key (KEK). This
+# bounds blast radius (one DEK != all secrets) and makes KEK rotation an O(rows)
+# re-wrap of small DEKs instead of a full re-encryption of every secret.
+# --------------------------------------------------------------------------- #
+
+#: Envelope wire-format version (first byte). ``0x01`` legacy single-tier blobs
+#: (HmacAead ``\x01`` or Fernet ``gAAAA…``) are still decryptable via the wrapped
+#: legacy cipher — neither ever begins with ``0x02``, so detection is unambiguous.
+ENVELOPE_VERSION = 2
+_ENVELOPE_HEADER = 4  # version(1) + kek_version(1) + wrapped_dek_len(2, big-endian)
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from forge_api.auth.keyring import KeyRing
+
+
+class EnvelopeCipher:
+    """Two-tier envelope cipher implementing :class:`SecretCipher`.
+
+    ``encrypt`` mints a fresh DEK, encrypts the plaintext under it, wraps the DEK
+    under the keyring's current KEK, and emits the versioned ``\\x02`` blob.
+    ``decrypt`` reads the blob's KEK version, unwraps the DEK, and decrypts —
+    transparently falling back to the wrapped legacy cipher for pre-envelope
+    (``\\x01``) rows so an upgrade is zero-downtime. ``rewrap`` re-wraps only the
+    DEK under a new KEK version, never touching the data ciphertext.
+    """
+
+    def __init__(
+        self,
+        keyring: KeyRing,
+        *,
+        wrap: Callable[[bytes], SecretCipher] = default_cipher,
+        legacy: SecretCipher | None = None,
+    ) -> None:
+        self._keyring = keyring
+        self._wrap = wrap
+        # Legacy single-tier rows were encrypted directly under the master key
+        # material; decrypt them under the current KEK by default.
+        self._legacy = legacy if legacy is not None else wrap(keyring.current_kek())
+
+    def encrypt(self, plaintext: str) -> bytes:
+        dek = generate_key()
+        version = self._keyring.current_version
+        inner = self._wrap(dek).encrypt(plaintext)
+        wrapped_dek = self._wrap(self._keyring.kek(version)).encrypt(
+            base64.urlsafe_b64encode(dek).decode("ascii")
+        )
+        return self._frame(version, wrapped_dek, inner)
+
+    def decrypt(self, blob: bytes) -> str:
+        if not blob:
+            raise InvalidTokenError("empty secret blob")
+        if blob[0] != ENVELOPE_VERSION:
+            # Pre-envelope single-tier row (Fernet / HmacAead).
+            return self._legacy.decrypt(blob)
+        version, wrapped_dek, inner = self._parse(blob)
+        dek = self._unwrap_dek(version, wrapped_dek)
+        return self._wrap(dek).decrypt(inner)
+
+    def rewrap(self, blob: bytes, *, to_version: int | None = None) -> tuple[bytes, int]:
+        """Re-wrap a row's DEK under ``to_version`` (default current KEK).
+
+        For a ``\\x02`` blob the inner data ciphertext is left byte-identical —
+        only the wrapped DEK is re-encrypted, so no BYOK plaintext is decrypted.
+        A legacy ``\\x01`` blob has no wrapped DEK, so it is upgraded in place
+        (decrypt-then-encrypt) to the envelope format.
+        """
+        target = self._keyring.current_version if to_version is None else to_version
+        if not blob:
+            raise InvalidTokenError("empty secret blob")
+        if blob[0] != ENVELOPE_VERSION:
+            # Legacy upgrade: mint a fresh envelope under the target version.
+            plaintext = self._legacy.decrypt(blob)
+            dek = generate_key()
+            inner = self._wrap(dek).encrypt(plaintext)
+            wrapped_dek = self._wrap(self._keyring.kek(target)).encrypt(
+                base64.urlsafe_b64encode(dek).decode("ascii")
+            )
+            return self._frame(target, wrapped_dek, inner), target
+        version, wrapped_dek, inner = self._parse(blob)
+        dek = self._unwrap_dek(version, wrapped_dek)
+        new_wrapped = self._wrap(self._keyring.kek(target)).encrypt(
+            base64.urlsafe_b64encode(dek).decode("ascii")
+        )
+        return self._frame(target, new_wrapped, inner), target
+
+    @staticmethod
+    def kek_version(blob: bytes) -> int | None:
+        """Return the KEK version of a ``\\x02`` blob, or ``None`` if legacy."""
+        if not blob or blob[0] != ENVELOPE_VERSION:
+            return None
+        return blob[1]
+
+    # -- internals ---------------------------------------------------------- #
+
+    @staticmethod
+    def _frame(version: int, wrapped_dek: bytes, inner: bytes) -> bytes:
+        return (
+            bytes([ENVELOPE_VERSION, version])
+            + struct.pack(">H", len(wrapped_dek))
+            + wrapped_dek
+            + inner
+        )
+
+    @staticmethod
+    def _parse(blob: bytes) -> tuple[int, bytes, bytes]:
+        if len(blob) < _ENVELOPE_HEADER:
+            raise InvalidTokenError("truncated envelope header")
+        version = blob[1]
+        wrapped_len = struct.unpack(">H", blob[2:4])[0]
+        end = _ENVELOPE_HEADER + wrapped_len
+        if len(blob) < end:
+            raise InvalidTokenError("truncated wrapped data key")
+        return version, blob[_ENVELOPE_HEADER:end], blob[end:]
+
+    def _unwrap_dek(self, version: int, wrapped_dek: bytes) -> bytes:
+        try:
+            kek = self._keyring.kek(version)
+        except KeyError as exc:
+            raise InvalidTokenError(str(exc)) from exc
+        dek_b64 = self._wrap(kek).decrypt(wrapped_dek)
+        try:
+            # binascii.Error is a ValueError subclass, so this covers bad base64.
+            return base64.urlsafe_b64decode(dek_b64)
+        except ValueError as exc:
+            raise InvalidTokenError("corrupt wrapped data key") from exc
+
+
+def envelope_cipher(keyring: KeyRing) -> SecretCipher:
+    """Construct the two-tier :class:`EnvelopeCipher` for ``keyring``."""
+    return EnvelopeCipher(keyring)
+
+
 __all__ = [
+    "ENVELOPE_VERSION",
+    "EnvelopeCipher",
     "FernetCipher",
     "HmacAeadCipher",
     "InvalidTokenError",
     "SecretCipher",
     "default_cipher",
+    "envelope_cipher",
     "generate_key",
 ]
