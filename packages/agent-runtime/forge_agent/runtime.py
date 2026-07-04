@@ -153,6 +153,16 @@ class AgentRunner:
             tools=self._tools.schemas(),
         )
         response: ModelResponse = self._model.complete(request)
+        # HARD-02: fold per-turn token usage and remember the real model id the
+        # provider reported (used to price the run in ``_to_result``).
+        state.usage.add(response.usage)
+        if response.model:
+            state.model_name = response.model
+        # HARD-02: a provider safety stop escalates to a human and stops — no
+        # blind retry of a flagged prompt.
+        if _is_refusal(response.stop_reason):
+            self._apply_refusal(state, response.stop_reason)
+            return state
         state.last_content = response.content or ""
         state.messages.append(
             ModelMessage(role="assistant", content=response.content or "")
@@ -283,6 +293,18 @@ class AgentRunner:
             return "finalize"
         return "act"
 
+    def _apply_refusal(self, state: AgentState, stop_reason: str | None) -> None:
+        """Handle a provider ``refusal`` stop: escalate, no blind retry."""
+        category = None
+        if stop_reason and ":" in stop_reason:
+            category = stop_reason.split(":", 1)[1].strip() or None
+        risk = f"model refused: {category}" if category else "model refused"
+        state.finished = True
+        state.needs_human = True
+        state.pending = []
+        state.risks.append(risk)
+        state.add_step(Step(kind=StepKind.OBSERVATION, observation=risk))
+
     def _apply_finish(self, state: AgentState, arguments: dict[str, Any]) -> None:
         output = arguments.get("output") or arguments.get("summary")
         if output is not None:
@@ -315,6 +337,10 @@ class AgentRunner:
         artifacts["iterations"] = state.iteration
         if state.risks:
             artifacts["risks"] = list(state.risks)
+        # HARD-02: per-run token + derived cost, priced by the real model id the
+        # provider reported (falls back to the objective's model, else "unknown").
+        model = state.model_name or state.objective.model or "unknown"
+        artifacts["model_usage"] = state.usage.to_artifact(model)
         return AgentRunResult(
             run_id=uuid.uuid4(),
             task_id=state.objective.task_id,
@@ -332,6 +358,11 @@ class AgentRunner:
 
 def _opt_str(value: object) -> str | None:
     return None if value is None else str(value)
+
+
+def _is_refusal(stop_reason: str | None) -> bool:
+    """True for a provider safety stop (``"refusal"`` or ``"refusal:<category>"``)."""
+    return bool(stop_reason) and str(stop_reason).split(":", 1)[0] == "refusal"
 
 
 def _wants_worktree(objective: AgentObjective) -> bool:
