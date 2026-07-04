@@ -36,6 +36,8 @@ from forge_auth.tokens import (
 )
 from forge_auth.vault import EnvKeyProvider, SecretVault, StaticKeyProvider
 
+__version__ = "0.1.0"
+
 __all__ = [
     "REDACTED",
     "ROLE_RANK",

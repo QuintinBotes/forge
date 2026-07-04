@@ -46,6 +46,10 @@ dev = [
     "pip-audit>=2.10.1",
     "cyclonedx-bom>=7.3.0",
     "semgrep>=1.168.0",
+    # HARD-12: single-source-of-truth versioning + conventional-commit lint +
+    # SemVer bump + CHANGELOG generation. `uv run cz …` works with no global
+    # install. Drives `make bump` / `make changelog` / the CI commit-lint step.
+    "commitizen>=3.29",
 ]
 
 # The workspace root is a virtual project: its dependencies (every member) are
@@ -115,3 +119,87 @@ exclude_dirs = [
     ".git",
 ]
 skips = ["B101"]
+
+# --------------------------------------------------------------------------- #
+# HARD-12 — Release engineering: single-source-of-truth versioning.
+#
+# The root ``[project].version`` above is the ONE true version (``pep621``
+# provider). ``cz bump`` reads the conventional-commit history since the last
+# ``v$version`` tag, computes the next SemVer, and rewrites the version in EVERY
+# file listed in ``version_files`` in lockstep (all 22 member ``pyproject.toml``,
+# all 22 package ``__init__.__version__``, both ``package.json``, and the compose
+# ``FORGE_VERSION`` default), regenerates ``CHANGELOG.md``, commits, and tags.
+#
+# ``major_version_zero = true``: we are pre-1.0, so ``feat`` bumps the minor and a
+# breaking change bumps the minor (not to 1.0) within the ``0.x`` line.
+#
+# The ``tests/test_versioning.py`` guard scans the tree for every version-bearing
+# file and fails if any is missing from ``version_files`` (no silent desync).
+# --------------------------------------------------------------------------- #
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "pep621"
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_incremental = true
+major_version_zero = true
+version_files = [
+    "packages/agent-runtime/pyproject.toml:^version",
+    "packages/approval-sdk/pyproject.toml:^version",
+    "packages/auth-sdk/pyproject.toml:^version",
+    "packages/authz-sdk/pyproject.toml:^version",
+    "packages/board-core/pyproject.toml:^version",
+    "packages/contracts/pyproject.toml:^version",
+    "packages/db/pyproject.toml:^version",
+    "packages/deploy-core/pyproject.toml:^version",
+    "packages/evaluation/pyproject.toml:^version",
+    "packages/integration-sdk/pyproject.toml:^version",
+    "packages/knowledge-core/pyproject.toml:^version",
+    "packages/marketplace-sdk/pyproject.toml:^version",
+    "packages/mcp-sdk/pyproject.toml:^version",
+    "packages/multi-agent-coordinator/pyproject.toml:^version",
+    "packages/observability/pyproject.toml:^version",
+    "packages/policy-sdk/pyproject.toml:^version",
+    "packages/skill-sdk/pyproject.toml:^version",
+    "packages/spec-engine/pyproject.toml:^version",
+    "packages/workflow-engine/pyproject.toml:^version",
+    "apps/api/pyproject.toml:^version",
+    "apps/worker/pyproject.toml:^version",
+    "apps/mcp-gateway/pyproject.toml:^version",
+    "packages/agent-runtime/forge_agent/__init__.py:__version__",
+    "packages/approval-sdk/forge_approval/__init__.py:__version__",
+    "packages/auth-sdk/forge_auth/__init__.py:__version__",
+    "packages/authz-sdk/forge_authz/__init__.py:__version__",
+    "packages/board-core/forge_board/__init__.py:__version__",
+    "packages/contracts/forge_contracts/__init__.py:__version__",
+    "packages/db/forge_db/__init__.py:__version__",
+    "packages/deploy-core/forge_deploy/__init__.py:__version__",
+    "packages/evaluation/forge_eval/__init__.py:__version__",
+    "packages/integration-sdk/forge_integrations/__init__.py:__version__",
+    "packages/knowledge-core/forge_knowledge/__init__.py:__version__",
+    "packages/marketplace-sdk/forge_marketplace/__init__.py:__version__",
+    "packages/mcp-sdk/forge_mcp/__init__.py:__version__",
+    "packages/multi-agent-coordinator/forge_coordinator/__init__.py:__version__",
+    "packages/observability/forge_obs/__init__.py:__version__",
+    "packages/policy-sdk/forge_policy/__init__.py:__version__",
+    "packages/skill-sdk/forge_skill/__init__.py:__version__",
+    "packages/spec-engine/forge_spec/__init__.py:__version__",
+    "packages/workflow-engine/forge_workflow/__init__.py:__version__",
+    "apps/api/forge_api/__init__.py:__version__",
+    "apps/worker/forge_worker/__init__.py:__version__",
+    "apps/mcp-gateway/forge_mcp_gateway/__init__.py:__version__",
+    "package.json:version",
+    "apps/web/package.json:version",
+    "deploy/docker-compose.yml:FORGE_VERSION",
+]
+
+# Keep-a-Changelog section headings: render the conventional-commit types under
+# human-facing groupings (feat -> Added, fix -> Fixed, …).
+[tool.commitizen.change_type_map]
+feat = "Added"
+fix = "Fixed"
+refactor = "Changed"
+perf = "Changed"
+docs = "Documentation"
+build = "Build"
+ci = "CI"

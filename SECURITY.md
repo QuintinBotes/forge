@@ -45,8 +45,11 @@ with you.
 
 ## Supported Versions
 
-Forge is pre-1.0; security fixes land on `main` and in the most recent tagged
-release line.
+Forge follows [Semantic Versioning](https://semver.org/) (SemVer): the single
+source-of-truth version is bumped in lockstep across every package by
+`cz bump` (see [`CONTRIBUTING.md`](CONTRIBUTING.md) and the release tooling under
+`release/`). Forge is pre-1.0; security fixes land on `main` and in the most
+recent tagged `vX.Y.Z` release line.
 
 | Version | Supported |
 |---|---|

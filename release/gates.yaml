@@ -1,0 +1,237 @@
+# --------------------------------------------------------------------------- #
+# release/gates.yaml — machine encoding of SPEC-PRODUCTION-HARDENING.md's
+# release-readiness model (HARD-12). Consumed by `forge-release-readiness`.
+#
+# Bars are cumulative: production ⊇ beta ⊇ alpha. A bar is MET iff every gate
+# at-or-below it resolves GREEN or MANUAL_ATTESTED. Everything else — RED,
+# SKIPPED_NO_CREDS (a required cred is absent), MISSING_EVIDENCE (an artifact an
+# upstream workstream owns has not landed), STALE, MANUAL_PENDING — is NOT MET.
+#
+# check.kind:
+#   command  — run a shell command; if any required_env is unset it is NOT run
+#              (SKIPPED_NO_CREDS). exit 0 ⇒ GREEN.
+#   evidence — stat an artifact (+ optional max_age_days freshness) and run a
+#              predicate (exists | json_all | json_path_eq | regex |
+#              cyclonedx_components_min | coverage_min).
+#   manual   — read a signed attestation YAML; never auto-green.
+#
+# This manifest enumerates all 18 spec gates plus the two named human-only items
+# (G-PENTEST, G-SOAK-FLEET). tests/release/test_gate_coverage.py keeps it in sync
+# with the spec.
+# --------------------------------------------------------------------------- #
+gates:
+  # ----------------------------- BETA gates ------------------------------- #
+  - id: G-DB
+    bar: beta
+    blocker: 6
+    workstream: HARD-01
+    title: Real Postgres + pgvector exercised (migrations + -m postgres suite)
+    check:
+      kind: command
+      run: "uv run pytest -m postgres -q packages/db"
+      required_env: [FORGE_TEST_DATABASE_URL]
+
+  - id: G-MODEL
+    bar: beta
+    blocker: 1
+    workstream: HARD-02
+    title: One real BYOK model provider completes a live agent run (redaction verified)
+    check:
+      kind: command
+      run: "uv run pytest -m integration -q apps/api -k model_provider"
+      required_env: [ANTHROPIC_API_KEY]
+
+  - id: G-RAG-REAL
+    bar: beta
+    blocker: 2
+    workstream: HARD-04
+    title: RAG eval on a learned local embedder — honest recall@k / MRR / nDCG (not 1.000)
+    check:
+      kind: command
+      run: "uv run pytest -m realeval -q"
+      required_env: [FORGE_RUN_REALEVAL]
+
+  - id: G-GH
+    bar: beta
+    blocker: 1
+    workstream: HARD-05
+    title: Real GitHub App — installation-token mint + PR open + verified webhook
+    check:
+      kind: command
+      run: "uv run pytest -m integration -q -k github_app"
+      required_env: [GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY]
+
+  - id: G-MCP
+    bar: beta
+    blocker: 1
+    workstream: HARD-06
+    title: Real MCP server over HTTP — write-default-deny, token binding, redacted audit
+    check:
+      kind: command
+      run: "uv run pytest -m integration -q -k mcp_live"
+      required_env: [FORGE_MCP_INTEGRATION_URL]
+
+  - id: G-SLACK
+    bar: beta
+    blocker: 1
+    workstream: HARD-07
+    title: Real Slack workspace — message post + slash-command signature verification
+    check:
+      kind: command
+      run: "uv run pytest -m integration -q -k slack_live"
+      required_env: [SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET]
+
+  - id: G-BUILD
+    bar: beta
+    blocker: 3
+    workstream: HARD-08
+    title: docker compose build (4 images) + next build succeed for real
+    check:
+      kind: evidence
+      # HARD-07 writes deploy/build-manifest.json only after a real
+      # `docker compose build` of all 4 images + digest resolution; its presence
+      # (fresh) is the build evidence. G-IMG-PINNED asserts the digests below.
+      artifact: deploy/build-manifest.json
+      predicate: { type: exists }
+      max_age_days: 30
+
+  - id: G-TYPES
+    bar: beta
+    blocker: 6
+    workstream: HARD-12
+    title: Whole-workspace mypy is one green command
+    check:
+      kind: command
+      run: "make typecheck"
+
+  - id: G-SEC-AUTOMATED
+    bar: beta
+    blocker: 4
+    workstream: HARD-09
+    title: Wired enforcement-matrix / security regression suite green
+    check:
+      kind: command
+      run: "uv run pytest -m security -q"
+
+  - id: G-CRYPTO
+    bar: beta
+    blocker: 5
+    workstream: HARD-10
+    title: Production crypto seam active (FernetCipher default, FORGE_SECRET_KEY required)
+    check:
+      kind: command
+      run: "uv run pytest -q apps/api/tests/test_auth_crypto_envelope.py apps/api/tests/test_cli_secrets.py"
+
+  # -------------------------- PRODUCTION gates ---------------------------- #
+  - id: G-IMG-PINNED
+    bar: production
+    blocker: 3
+    workstream: HARD-08
+    title: Every built/pulled image pinned by immutable @sha256 digest
+    check:
+      kind: evidence
+      artifact: deploy/build-manifest.json
+      predicate:
+        type: json_all
+        path: "images.*.digest"
+        matches: "^sha256:[0-9a-f]{64}$"
+      max_age_days: 30
+
+  - id: G-PARKED-CLOSED
+    bar: production
+    blocker: 5
+    workstream: HARD-11
+    title: Every MORNING_REPORT §5 PARKED item closed or has a dated owned deferral
+    check:
+      kind: evidence
+      artifact: release/evidence/parked-closed.md
+      predicate: { type: exists }
+      max_age_days: 90
+
+  - id: G-PERF
+    bar: production
+    blocker: 6
+    workstream: HARD-13
+    title: Retrieval p50/p95/p99 + API load test meet documented budgets
+    check:
+      kind: command
+      run: "uv run pytest -m perf -q packages/evaluation"
+      required_env: [FORGE_RUN_PERF]
+
+  - id: G-MIGRATE
+    bar: production
+    blocker: 6
+    workstream: HARD-13
+    title: Populated-DB upgrade→rollback→re-upgrade is data-preserving
+    check:
+      kind: command
+      run: "uv run pytest -m postgres -q -k migrat"
+      required_env: [FORGE_TEST_DATABASE_URL]
+
+  - id: G-SOAK
+    bar: production
+    blocker: 6
+    workstream: HARD-13
+    title: Bounded multi-tenant soak — no cross-leak, bounded memory/connections/FDs
+    check:
+      kind: command
+      run: "uv run pytest -m soak -q packages/evaluation"
+      required_env: [FORGE_RUN_SOAK]
+
+  - id: G-COVERAGE
+    bar: production
+    blocker: 6
+    workstream: HARD-12
+    title: worker + agent-runtime ≥ 90% each; overall ≥ 93%
+    check:
+      kind: evidence
+      artifact: release/evidence/coverage.json
+      predicate: { type: coverage_min, min: 93 }
+      max_age_days: 30
+
+  - id: G-SEC-EVIDENCE
+    bar: production
+    blocker: 4
+    workstream: HARD-09
+    title: Security evidence pack (source SBOM + rotation runbook + pentest punch-list)
+    check:
+      kind: evidence
+      all_of:
+        - artifact: release/sbom/forge-source.cdx.json
+          predicate: { type: cyclonedx_components_min, min: 1 }
+          max_age_days: 90
+        - artifact: docs/self-hosting/security.md
+          predicate: { type: exists }
+        - artifact: docs/security/pentest-punch-list.md
+          predicate: { type: exists }
+
+  - id: G-FWD-COMPAT
+    bar: production
+    blocker: 7
+    workstream: HARD-14
+    title: Toolchain forward-compatible (Python 3.14 workspace; eslint go/no-go recorded)
+    check:
+      kind: evidence
+      artifact: pyproject.toml
+      predicate: { type: regex, pattern: 'requires-python = ">=3\.14"' }
+
+  # ---------------------- Human-only honest asterisks --------------------- #
+  - id: G-PENTEST
+    bar: production
+    blocker: 4
+    workstream: external
+    title: 3rd-party human penetration test (NAMED HONEST ASTERISK — never auto-green)
+    check:
+      kind: manual
+      attestation: release/attestations/pentest.yaml
+      max_age_days: 365
+
+  - id: G-SOAK-FLEET
+    bar: production
+    blocker: 6
+    workstream: external
+    title: Real multi-week multi-tenant fleet soak (NAMED HONEST ASTERISK — never auto-green)
+    check:
+      kind: manual
+      attestation: release/attestations/fleet-soak.yaml
+      max_age_days: 365

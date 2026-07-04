@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test lint fmt typecheck migrate seed build clean \
-	compose-build build-images pin-digests sbom smoke security load-smoke perf soak
+	compose-build build-images pin-digests sbom smoke security load-smoke perf soak \
+	bump changelog hooks release-readiness source-sbom
 
 # Every typed first-party package/app, one mypy module each. mypy runs in
 # *module mode* (``-p``) so each ``forge_*`` package resolves to its single
@@ -94,3 +95,24 @@ clean: ## Remove python caches and build artifacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	find . -type d -name '*.egg-info' -prune -exec rm -rf {} +
 	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build
+
+# --------------------------------------------------------------------------- #
+# HARD-12 — Release engineering                                               #
+# --------------------------------------------------------------------------- #
+bump: ## Cut a release: compute next SemVer, bump every version file, changelog + tag
+	uv run cz bump
+
+changelog: ## (Re)generate CHANGELOG.md from the conventional-commit history
+	uv run cz changelog
+
+hooks: ## Install the commit-msg hook that enforces Conventional Commits (cz check)
+	@mkdir -p .git/hooks
+	@printf '#!/usr/bin/env sh\nexec uv run cz check --commit-msg-file "$$1"\n' > .git/hooks/commit-msg
+	@chmod +x .git/hooks/commit-msg
+	@echo "Installed .git/hooks/commit-msg (uv run cz check)."
+
+release-readiness: ## Run the automated RELEASE_READINESS gate at the PRODUCTION bar
+	uv run forge-release-readiness --bar production
+
+source-sbom: ## Generate the source-tree CycloneDX SBOM (release/sbom/forge-source.cdx.json)
+	release/scripts/source-sbom.sh

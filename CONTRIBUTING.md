@@ -173,6 +173,20 @@ fix(api): reject expired agent tokens on the wired path
 docs: polish the self-host quickstart
 ```
 
+The conventional-commit format is **enforced**, not just recommended: the
+changelog and the SemVer bump are derived from it. Install the local guard once:
+
+```bash
+make hooks        # installs a commit-msg hook running `uv run cz check`
+```
+
+You can validate a message by hand with `uv run cz check --commit-msg-file <file>`,
+and CI runs `cz check` over the PR commit range. Cutting a release is a single
+command for maintainers — `make bump` (`uv run cz bump`) computes the next SemVer
+from the commit history, rewrites the version in every package in lockstep, and
+regenerates [`CHANGELOG.md`](./CHANGELOG.md). See `release/` and
+[`.github/workflows/release.yml`](.github/workflows/release.yml).
+
 ## Developer Certificate of Origin (DCO)
 
 Forge uses the [Developer Certificate of Origin](https://developercertificate.org/)

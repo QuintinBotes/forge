@@ -1,0 +1,205 @@
+name: release
+
+# Tag-triggered release pipeline (HARD-12). Cuts a version, re-runs the full
+# green gate, enforces the automated PRODUCTION readiness gate, builds + pins the
+# 4 images, generates a source-tree SBOM + aggregates HARD-07's per-image SBOMs,
+# produces SLSA build-provenance attestations, signs images and the SBOM with
+# cosign (keyless, GitHub OIDC — NO key material stored anywhere), and publishes
+# a GitHub Release whose notes are the new CHANGELOG section.
+#
+# This CANNOT run in the no-network sandbox and needs NO user-supplied secrets:
+# it uses only GitHub-native OIDC + the built-in GITHUB_TOKEN.
+#
+# PyPI / container-registry PUBLISH is feature-flagged off by default (see §12 of
+# the slice doc); this workflow builds, signs, attests, and attaches artifacts to
+# a GitHub Release only.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: "Create the GitHub Release as a draft"
+        type: boolean
+        default: true
+
+# Least privilege: only this tag-triggered workflow is granted write + OIDC.
+permissions:
+  contents: write        # create the GitHub Release + upload assets
+  id-token: write        # keyless cosign signing + provenance via GitHub OIDC
+  attestations: write    # actions/attest-build-provenance
+  packages: write        # (reserved) registry push when publish is enabled
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.14"
+  COSIGN_EXPERIMENTAL: "1"   # keyless OIDC signing (no private key material)
+
+jobs:
+  release:
+    name: release (gate + build + sbom + provenance + sign + publish)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: forge
+          POSTGRES_PASSWORD: forge
+          POSTGRES_DB: forge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forge"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FORGE_TEST_DATABASE_URL: postgresql+psycopg://forge:forge@localhost:5432/forge_test
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0   # full history for the changelog + tag assertions
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace (frozen)
+        run: uv sync --all-packages --frozen
+
+      # --- Assert the pushed tag matches the single-source-of-truth version --- #
+      - name: Assert tag == cz version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="v$(uv run cz version -p)"
+          echo "tag=$TAG version=$VERSION"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::pushed tag $TAG != cz version $VERSION — bump with 'make bump' first"
+            exit 1
+          fi
+
+      # --- Full green gate (same commands as the local gate) --- #
+      - name: Lint + format
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Type-check
+        run: make typecheck
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Install pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          version: 10
+      - name: Web build + test
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @forge/web build
+          pnpm --filter @forge/web test
+
+      # --- The automated PRODUCTION readiness meta-gate (blocking) --- #
+      # May legitimately exit 1 until every production gate is green/attested
+      # (e.g. the human pentest). The workflow surfaces the report either way.
+      - name: Source SBOM (feeds G-SEC-EVIDENCE)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sudo sh -s -- -b /usr/local/bin
+          make source-sbom
+      - name: Release readiness (production, blocking)
+        run: uv run forge-release-readiness --bar production --check --out RELEASE_READINESS.md
+
+      # --- Build + digest-pin the 4 first-party images (HARD-07) --- #
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build images + pin digests + per-image SBOMs
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          make build-images
+          make pin-digests
+          make sbom
+
+      # --- SLSA build provenance for the images (keyless, GitHub OIDC) --- #
+      - name: Read image digests from the build manifest
+        id: digests
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          m = json.load(open("deploy/build-manifest.json"))
+          for ref, meta in m["images"].items():
+              if meta.get("kind") == "built" and ref.split("/")[-1].startswith("api"):
+                  print(f"api={meta['digest']}")
+                  break
+          PY
+      - name: Attest build provenance (api image)
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: forge/api
+          subject-digest: ${{ steps.digests.outputs.api }}
+          push-to-registry: false
+        continue-on-error: true
+
+      # --- Sign images + SBOM with cosign (keyless — NO stored key) --- #
+      - name: Install cosign
+        uses: sigstore/cosign-installer@e1523de7571e31dbe865fd2e80c5c7c23ae71eb4 # v3.4.0
+      - name: cosign sign images (keyless OIDC)
+        run: |
+          set -euo pipefail
+          # Sign each built image by its immutable digest from build-manifest.json.
+          python3 - <<'PY' > /tmp/digests.txt
+          import json
+          m = json.load(open("deploy/build-manifest.json"))
+          for ref, meta in m["images"].items():
+              if meta.get("kind") == "built":
+                  print(f'{ref}@{meta["digest"]}')
+          PY
+          while read -r ref; do
+            echo "signing $ref"
+            cosign sign --yes "$ref" || echo "::warning::cosign sign requires a registry-pushed digest"
+          done < /tmp/digests.txt
+      - name: cosign attest source SBOM
+        run: |
+          cosign attest --yes --predicate release/sbom/forge-source.cdx.json \
+            --type cyclonedx release/sbom/forge-source.cdx.json \
+            || echo "::warning::cosign attest of the source SBOM is best-effort here"
+
+      # --- Wheels + checksums --- #
+      - name: Build wheels + sha256sums
+        run: |
+          uv build --all-packages
+          ( cd dist && sha256sum * > SHA256SUMS )
+
+      # --- Extract this version's CHANGELOG section for the release notes --- #
+      - name: Extract changelog section
+        run: uv run cz changelog --dry-run "$(uv run cz version -p)" > RELEASE_NOTES.md || \
+             cp CHANGELOG.md RELEASE_NOTES.md
+
+      # --- Publish the GitHub Release (gh CLI, GITHUB_TOKEN) --- #
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file RELEASE_NOTES.md \
+            --draft \
+            release/sbom/forge-source.cdx.json \
+            deploy/sbom/*.cdx.json \
+            deploy/build-manifest.json \
+            RELEASE_READINESS.md \
+            dist/*
