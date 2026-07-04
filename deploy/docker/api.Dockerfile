@@ -9,10 +9,10 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Workspace metadata first for layer caching, then sources.
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock README.md ./
 COPY packages ./packages
 COPY apps ./apps
-RUN uv sync --no-dev --no-editable
+RUN uv sync --frozen --no-dev --no-editable
 
 # Run as a non-root user (uid/gid 1000 matches the compose `user:` directive).
 RUN groupadd -g 1000 forge && useradd -u 1000 -g forge -m forge \

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup install dev test lint fmt typecheck migrate seed build clean
+.PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test lint fmt typecheck migrate seed build clean
 
 # Every typed first-party package/app, one mypy module each. mypy runs in
 # *module mode* (``-p``) so each ``forge_*`` package resolves to its single
@@ -24,8 +24,19 @@ install: ## Resolve and install python (uv) and node (pnpm) dependencies
 	uv sync
 	pnpm install
 
-dev: ## Start all services for local development (docker compose)
-	docker compose -f deploy/docker-compose.dev.yml up --remove-orphans
+dev: dev-up ## Bring up the whole dev stack (alias for dev-up)
+
+dev-up: ## Build + start the whole dev stack, migrate, seed, wait for healthy
+	scripts/dev.sh up
+
+dev-down: ## Stop and remove the dev stack (named volumes are kept)
+	scripts/dev.sh down
+
+dev-logs: ## Follow logs for the dev stack (make dev-logs svc=api -> one service)
+	scripts/dev.sh logs $(svc)
+
+dev-seed: ## Re-run the idempotent demo-workspace seed against the dev stack
+	scripts/dev.sh seed
 
 test: ## Run the python test suite
 	uv run pytest
