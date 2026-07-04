@@ -879,3 +879,111 @@ def test_f36_approval_migration_up_down(alembic_config: Config) -> None:
         command.downgrade(alembic_config, "base")
     finally:
         engine.dispose()
+
+
+# F39 audit-log: chain columns on audit_log + audit_chain_head cursor, owned by
+# 0022_f39_audit_chain.
+F39_COLUMNS = {
+    "seq",
+    "actor_label",
+    "severity",
+    "reason",
+    "payload_hash",
+    "prev_hash",
+    "entry_hash",
+    "detail_ref",
+    "request_id",
+}
+
+
+def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) -> None:
+    """F39 AC1/AC20: 0022 extends ``audit_log`` with the chain columns, creates
+    ``audit_chain_head``, and backfills a gap-free, verifiable chain over
+    pre-F39 rows; the downgrade removes exactly what F39 introduced.
+
+    (forge_db's baseline chain is metadata-driven, so a fresh chain provisions
+    the columns at 0012; like 0019/0021, the 0022 step is idempotent about that
+    and the backfill is exercised by seeding unchained rows first.)"""
+    import uuid
+
+    from sqlalchemy import text
+    from sqlalchemy.orm import Session
+
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        # Stop just before F39 and seed pre-F39-style (unchained) audit rows.
+        command.upgrade(alembic_config, "0021_f38_cost_ledger")
+        ws_id = uuid.uuid4()
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO workspace (id, name, slug, settings, created_at, updated_at) "
+                    "VALUES (:id, 'Acme', 'acme', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {"id": str(ws_id)},
+            )
+            for i in range(3):
+                conn.execute(
+                    text(
+                        "INSERT INTO audit_log (id, workspace_id, action, actor_type, "
+                        "result, severity, details, created_at, updated_at) VALUES "
+                        "(:id, :ws, :action, 'user', 'success', 'info', '{}', "
+                        ":ts, :ts)"
+                    ),
+                    {
+                        # ORM-written rows store undashed hex on SQLite; seed the
+                        # same storage form so typed queries see the legacy rows.
+                        "id": uuid.uuid4().hex,
+                        "ws": ws_id.hex,
+                        "action": f"legacy.event_{i}",
+                        "ts": f"2026-07-0{i + 1} 12:00:00.000000",
+                    },
+                )
+
+        # Apply F39: columns + cursor table + backfilled, verifiable chain.
+        command.upgrade(alembic_config, "0022_f39_audit_chain")
+        inspector = inspect(engine)
+        assert "audit_chain_head" in set(inspector.get_table_names())
+        cols = {c["name"] for c in inspector.get_columns("audit_log")}
+        assert cols >= F39_COLUMNS, f"missing F39 columns: {sorted(F39_COLUMNS - cols)}"
+        audit_indexes = {i["name"] for i in inspector.get_indexes("audit_log")}
+        assert "uq_audit_log_workspace_seq" in audit_indexes
+
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT seq, action FROM audit_log ORDER BY seq")
+            ).fetchall()
+            assert [r[0] for r in rows] == [1, 2, 3], "backfill must assign gap-free seq"
+            head = conn.execute(
+                text("SELECT last_seq FROM audit_chain_head")
+            ).fetchone()
+            assert head is not None and head[0] == 3
+
+        # The backfilled prefix verifies, and stays ok after a live append.
+        from forge_contracts.audit import AuditEvent
+        from forge_db.audit.chain import verify_chain
+        from forge_db.audit.writer import SqlAuditWriter
+
+        with Session(engine) as session:
+            assert verify_chain(session, ws_id).ok is True
+            SqlAuditWriter(session).emit(
+                AuditEvent(workspace_id=ws_id, action="tool.call")
+            )
+            session.commit()
+            live = verify_chain(session, ws_id)
+            assert live.ok is True
+            assert live.entries_checked == 4
+
+        # Downgrade one step: F39 columns + cursor table gone, audit_log intact.
+        command.downgrade(alembic_config, "0021_f38_cost_ledger")
+        inspector = inspect(engine)
+        assert "audit_chain_head" not in set(inspector.get_table_names())
+        assert "audit_log" in set(inspector.get_table_names())
+        cols_after = {c["name"] for c in inspector.get_columns("audit_log")}
+        assert not (F39_COLUMNS & cols_after), "downgrade left F39 columns"
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()

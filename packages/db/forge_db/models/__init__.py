@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from forge_db.models import enums
 from forge_db.models.approval import ApprovalDecision, PolicyOverrideGrant
-from forge_db.models.audit import AuditLog
+from forge_db.models.audit import AuditChainHead, AuditLog, AuditLogImmutableError
 from forge_db.models.automation import AutomationExecution, AutomationRule
 from forge_db.models.benchmark import BenchmarkSubmission, BenchmarkSuite
 from forge_db.models.connections import MCPConnection, RepositoryConnection
@@ -164,7 +164,9 @@ __all__ = [
     "ApprovalGate",
     "ApprovalRequest",
     "ApprovalStatus",
+    "AuditChainHead",
     "AuditLog",
+    "AuditLogImmutableError",
     "AutomationActionType",
     "AutomationEntityType",
     "AutomationExecution",

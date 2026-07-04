@@ -57,7 +57,8 @@ def _cmd_reprice(args: argparse.Namespace) -> int:
     factory = _session_factory(args.database_url)
     if factory is None:
         return 3
-    from forge_db.models import AuditLog
+    from forge_contracts.audit import AuditEvent
+    from forge_db.audit.writer import SqlAuditWriter
     from forge_obs.cost.pricing import DbPriceBook
     from forge_obs.cost.repository import SqlCostLedger
 
@@ -70,13 +71,14 @@ def _cmd_reprice(args: argparse.Namespace) -> int:
         model=args.model,
         price_book=DbPriceBook(factory),
     )
-    # Immutable audit record (F39 contract) — same shape the worker task writes.
+    # Immutable audit record (F39 contract) — chained like every producer.
     with factory() as session:
-        session.add(
-            AuditLog(
+        SqlAuditWriter(session).emit(
+            AuditEvent(
                 workspace_id=workspace_id,
                 action="cost.repriced",
                 actor_type="system",
+                actor_label="system:cost_cli",
                 target_type="cost_event",
                 details={
                     "since": since.isoformat(),
