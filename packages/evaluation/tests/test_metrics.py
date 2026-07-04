@@ -12,6 +12,7 @@ import math
 
 from forge_eval.metrics import (
     hit_at_k,
+    ndcg_at_k,
     precision_at_k,
     recall_at_k,
     reciprocal_rank,
@@ -62,6 +63,49 @@ def test_reciprocal_rank_no_hit() -> None:
 def test_hit_at_k() -> None:
     assert hit_at_k(["x", "a", "y"], {"a"}, k=2) is True
     assert hit_at_k(["x", "y", "a"], {"a"}, k=2) is False
+
+
+def test_ndcg_single_relevant_rank_one_is_perfect() -> None:
+    # One relevant id at rank 1: DCG = 1/log2(2) = 1; IDCG = 1 → nDCG = 1.0.
+    assert ndcg_at_k(["a", "b", "c"], {"a"}, k=5) == 1.0
+
+
+def test_ndcg_single_relevant_rank_three_matches_hand_computed() -> None:
+    # Relevant id at rank 3, k=5: nDCG = 1/log2(4) = 0.5 (IDCG places it at rank 1).
+    assert math.isclose(ndcg_at_k(["x", "y", "a"], {"a"}, k=5), 1.0 / math.log2(4))
+    assert math.isclose(ndcg_at_k(["x", "y", "a"], {"a"}, k=5), 0.5)
+
+
+def test_ndcg_relevant_beyond_k_is_zero() -> None:
+    # The only relevant id is at rank 4, outside the k=3 window → 0.0.
+    assert ndcg_at_k(["x", "y", "z", "a"], {"a"}, k=3) == 0.0
+
+
+def test_ndcg_empty_relevant_is_vacuously_one() -> None:
+    assert ndcg_at_k(["a", "b"], set(), k=2) == 1.0
+
+
+def test_ndcg_no_hit_in_window_is_zero() -> None:
+    assert ndcg_at_k(["x", "y"], {"a"}, k=2) == 0.0
+
+
+def test_ndcg_graded_gains_change_the_score() -> None:
+    # Two relevant ids; the higher-gain one is ranked *second*, so nDCG < 1.0 and
+    # differs from the binary case. Ideal ordering puts gain 3 first, gain 1 second.
+    retrieved = ["a", "b", "c"]
+    relevant = {"a", "b"}
+    gains = {"a": 1.0, "b": 3.0}
+    dcg = 1.0 / math.log2(2) + 3.0 / math.log2(3)
+    idcg = 3.0 / math.log2(2) + 1.0 / math.log2(3)
+    assert math.isclose(ndcg_at_k(retrieved, relevant, 3, gains=gains), dcg / idcg)
+    # Binary (default gains) scores this ordering as perfect (both in top-2).
+    assert ndcg_at_k(retrieved, relevant, 3) == 1.0
+
+
+def test_ndcg_perfect_ordering_with_gains_is_one() -> None:
+    retrieved = ["b", "a", "c"]
+    gains = {"a": 1.0, "b": 3.0}
+    assert math.isclose(ndcg_at_k(retrieved, {"a", "b"}, 3, gains=gains), 1.0)
 
 
 def test_requirement_satisfaction_full() -> None:

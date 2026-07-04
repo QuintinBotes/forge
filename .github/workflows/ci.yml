@@ -80,6 +80,59 @@ jobs:
           uv run pytest packages/agent-runtime --cov=forge_agent --cov-report= --cov-fail-under=90 -q
 
   # ------------------------------------------------------------------- #
+  # Honest real-corpus retrieval eval (HARD-04): learned local embedder #
+  # over the real repo, regression-gated on the committed baseline. No   #
+  # DB service (SQLite path); model restored from cache, offline at call #
+  # time after warm cache.                                               #
+  # ------------------------------------------------------------------- #
+  realeval:
+    name: realeval (honest retrieval quality)
+    runs-on: ubuntu-latest
+    env:
+      SENTENCE_TRANSFORMERS_MODEL: sentence-transformers/all-MiniLM-L6-v2
+      HF_HOME: ${{ github.workspace }}/.hf-cache
+      FORGE_RUN_REALEVAL: "1"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      # The learned embedder is the optional `eval` extra (sentence-transformers);
+      # it is not part of the default sync so the main lane stays fast. Install it
+      # explicitly into the synced env (workspace-member extras are opt-in).
+      - name: Sync workspace + install eval extra
+        run: |
+          uv sync --all-packages
+          uv pip install "sentence-transformers>=3.0"
+
+      - name: Restore sentence-transformers model cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ${{ env.HF_HOME }}
+          key: st-model-${{ env.SENTENCE_TRANSFORMERS_MODEL }}
+
+      - name: Real-corpus eval tests (regression-gated)
+        run: uv run pytest -m realeval -q
+
+      - name: Write EVAL_RESULTS.md + enforce regression floor
+        # Non-zero exit (below the committed FORGE_EVAL_RECALL_FLOOR /
+        # FORGE_EVAL_NDCG_FLOOR) fails the job.
+        run: uv run python -m forge_eval.corpus_eval --write-report
+
+      - name: Upload eval report artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: eval-results
+          path: docs/EVAL_RESULTS.md
+
+  # ------------------------------------------------------------------- #
   # Web: lint + build                                                    #
   # ------------------------------------------------------------------- #
   web:

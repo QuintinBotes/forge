@@ -13,11 +13,14 @@ from __future__ import annotations
 
 import pytest
 
+import forge_eval.retrieval_eval as retrieval_eval
 from forge_eval.report import format_scorecard
 from forge_eval.retrieval_eval import (
     DEFAULT_K,
     DEFAULT_RECALL_THRESHOLD,
     SAMPLE_CORPUS,
+    TRACK_1_4_RESOLUTION,
+    WIRING_CHECK_ONLY,
     build_indexed_service,
     load_golden_retrieval,
     make_retrieve_fn,
@@ -72,8 +75,7 @@ def test_exact_identifier_queries_are_recovered() -> None:
             top = list(retrieve(case))
             assert top, f"{case.id} returned nothing"
             assert top[0] in case.expected_ids, (
-                f"{case.id} ({case.query!r}) expected {case.expected_ids} at rank 1, "
-                f"got {top[:3]}"
+                f"{case.id} ({case.query!r}) expected {case.expected_ids} at rank 1, got {top[:3]}"
             )
 
 
@@ -83,3 +85,24 @@ def test_regression_gate_trips_below_threshold() -> None:
     assert not card.passed
     with pytest.raises(AssertionError):
         card.assert_threshold()
+
+
+def test_deterministic_eval_unchanged_and_relabelled() -> None:
+    """AC12: the wiring-check eval still passes; the wiring-check relabel is present."""
+    # The deterministic eval is preserved (perfect-by-construction wiring check).
+    card = run_retrieval_eval(k=DEFAULT_K, recall_threshold=DEFAULT_RECALL_THRESHOLD)
+    assert card.passed
+    assert card.mean_recall_at_k >= DEFAULT_RECALL_THRESHOLD
+    # The module is explicitly relabelled and points at the honest real eval.
+    assert WIRING_CHECK_ONLY is True
+    assert retrieval_eval.__doc__ is not None
+    assert "WIRING CHECK ONLY" in retrieval_eval.__doc__
+    assert "corpus_eval" in retrieval_eval.__doc__
+
+
+def test_track_1_4_resolution_recorded() -> None:
+    """AC10: the Track 1.4 refutation has a dated resolution note in this module."""
+    assert "2026-07-04" in TRACK_1_4_RESOLUTION
+    assert TRACK_1_4_RESOLUTION.startswith("invalid/superseded")
+    assert retrieval_eval.__doc__ is not None
+    assert "Track 1.4" in retrieval_eval.__doc__

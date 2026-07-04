@@ -13,6 +13,12 @@ dependencies = [
     "forge-db",
 ]
 
+[project.optional-dependencies]
+# The learned local embedder for the honest real-corpus eval (HARD-04). Optional
+# so the base package and default test suite never require torch. uv lock owned
+# by HARD-14.
+eval = ["sentence-transformers>=3.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -163,17 +163,25 @@ End-to-end spine smoke (`tests/test_spine_smoke.py`, real pipeline over `example
 - Exact identifier `verify_token` recovered at **rank 1** (proves the BM25 keyword leg).
 - Pipeline confirmed: semantic (cosine) + keyword (BM25) → **RRF (k=60)** → cross-encoder rerank + chunk-type weight boost → attributed top-k (path / source_id / source_uri / line span).
 
-Golden retrieval eval (`packages/evaluation`, 22 cases, k=5):
+**Honest headline (HARD-04, real corpus + learned local embedder — supersedes the 1.000s below).** The production hybrid pipeline was re-run with a **learned local `sentence-transformers` embedder** (`all-MiniLM-L6-v2`, 384-dim, no API key) over the **real Forge monorepo** (982 files, 14,291 chunks), scored against a curated 36-case golden set authored *against the real repo*:
 
 ```
-mean recall@5 = 1.000   MRR = 1.000   hit_rate = 1.000   passed = 22/22
-gate (recall@5 >= 0.850): PASS
+recall@5 = 0.778   recall@10 = 0.861   MRR = 0.597   nDCG@10 = 0.660   (36 cases)
+regression gate: recall@5 >= 0.70 AND nDCG@10 >= 0.60 → PASS
+```
+
+These are **honest** numbers — not perfect by construction — and a mean recall@5 of 1.000 on the real corpus is treated as a *red flag*, not a pass. Full scorecard, ablation (fusion vs single legs), regression baseline, and the Track 1.4 resolution live in [`docs/EVAL_RESULTS.md`](EVAL_RESULTS.md). Reproduce: `uv run --with sentence-transformers python -m forge_eval.corpus_eval --write-report` (or the CI `realeval` lane). The optional hosted-reranker (Jina/Cohere) delta is BYOK/creds-gated (PARKED until `.env.integration` exists).
+
+Golden retrieval eval (`packages/evaluation`, 22 cases, k=5) — **WIRING CHECK ONLY**, not a quality headline:
+
+```
+mean recall@5 = 1.000   MRR = 1.000   hit_rate = 1.000   passed = 22/22   (deterministic wiring check)
 ```
 
 In-package retrieval eval (`packages/knowledge-core/tests/test_eval_recall.py`): ≥15 query→expected-path pairs over a synthetic indexed repo, asserts conservative recall@k / MRR thresholds — green.
 Golden task harness (`packages/evaluation`): **36** tasks (≥30 required), scorecard + regression gate green.
 
-> **Honesty caveat — read this before trusting the 1.000s.** These scores are perfect because the eval runs on a **deterministic offline pipeline** (signed feature-hashing embeddings + a fixture token-overlap reranker) over **small, curated golden sets** built alongside the code, with an **in-memory SQLite** backend computing cosine/BM25 in Python (no live pgvector). This proves the *wiring and ranking logic* are correct end-to-end; it does **not** measure real-world retrieval quality with a learned embedding model on a large heterogeneous corpus. Re-run against a real BYOK embedder + Jina reranker + pgvector on a realistic corpus before quoting these numbers externally.
+> **Honesty caveat — the 1.000s above are a WIRING CHECK ONLY.** Those perfect scores come from the **deterministic offline pipeline** (signed feature-hashing embeddings + a fixture token-overlap reranker) over **small, curated golden sets** built alongside the code, on **in-memory SQLite**. They prove the *wiring and ranking logic* are correct end-to-end; they do **not** measure real-world retrieval quality. HARD-04 closed that gap: the honest real-corpus numbers above (learned embedder, real repo, `docs/EVAL_RESULTS.md`) are the figures to quote. The hosted BYOK reranker (Jina) delta and live pgvector variant remain the only creds/DB-gated follow-ons.
 
 ---
 
