@@ -12,6 +12,10 @@ dependencies = [
     "forge-auth",
     "pydantic>=2.7",
     "sqlalchemy>=2.0",
+    # HARD-10: real OTLP export path (retires F38's in-memory-only asterisk).
+    # Framework auto-instrumentors are optional (wired best-effort at runtime).
+    "opentelemetry-sdk>=1.29",
+    "opentelemetry-exporter-otlp-proto-http>=1.29",
 ]
 
 [tool.uv.sources]

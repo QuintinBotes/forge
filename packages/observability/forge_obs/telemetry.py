@@ -6,11 +6,14 @@
   the no-op providers are installed (``get_metrics()`` returns ``NoopMetrics``)
   and no export of any kind is attempted (spec AC1/AC18).
 - enabled -> the in-process :class:`~forge_obs.metrics.RecordingMetrics`
-  registry is installed and backs the internal Prometheus scrape surface.
-  Real OTLP push + auto-instrumentation (FastAPI/SQLAlchemy/httpx/Celery/Redis)
-  is PARKED until the OpenTelemetry SDK dependency can be added (no third-party
-  network in this build environment); when it lands it slots in behind this
-  same handle without changing any caller.
+  registry is installed and backs the internal Prometheus scrape surface. When
+  an ``otlp_endpoint`` also resolves and the OpenTelemetry SDK is importable,
+  :func:`~forge_obs.otel_export.install_otel` additionally stands up the real
+  ``TracerProvider``/``MeterProvider``/``LoggerProvider`` with OTLP/HTTP
+  exporters + W3C propagation + best-effort auto-instrumentation (FastAPI/
+  SQLAlchemy/httpx/Celery/Redis) behind this same handle — no caller changes.
+  With ``enabled`` but no endpoint (or no SDK), only the in-process recorder is
+  installed and no export of any kind is attempted.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from forge_obs.metrics import (
     RecordingMetrics,
     set_metrics,
 )
+from forge_obs.otel_export import OtelProviders, install_otel, shutdown_otel
 from forge_obs.settings import ObsSettings
 
 __all__ = ["Telemetry", "setup_telemetry", "shutdown_telemetry"]
@@ -38,10 +42,18 @@ class Telemetry:
     settings: ObsSettings
     metrics: ForgeMetrics
     enabled: bool = False
+    otel: OtelProviders | None = None
     _shutdown: bool = field(default=False, repr=False)
 
+    @property
+    def exporting(self) -> bool:
+        """True when real OTLP providers are installed (not just the recorder)."""
+        return self.otel is not None
+
     def shutdown(self) -> None:
-        """Flush + close exporters (no-op for the in-process registry)."""
+        """Flush + close the real exporters (no-op for the in-process registry)."""
+        shutdown_otel(self.otel)
+        self.otel = None
         self._shutdown = True
 
 
@@ -66,17 +78,29 @@ def setup_telemetry(service_name: str, settings: ObsSettings | None = None) -> T
         ):
             return _current
 
+        # A prior handle for a different config: flush its exporters first.
+        if _current is not None:
+            _current.shutdown()
+
         exportable = bool(cfg.otlp_endpoint) or cfg.prometheus_scrape_enabled
+        otel: OtelProviders | None = None
         if cfg.enabled and exportable:
             metrics: ForgeMetrics = RecordingMetrics(service=service_name)
             enabled = True
+            # Real OTLP export is wired only when an endpoint resolves and the
+            # SDK is present; otherwise the recorder alone backs /metrics.
+            otel = install_otel(cfg)
         else:
             metrics = NoopMetrics()
             enabled = False
         set_metrics(metrics)
         configure_logging(service_name=service_name, settings=cfg)
         _current = Telemetry(
-            service_name=service_name, settings=cfg, metrics=metrics, enabled=enabled
+            service_name=service_name,
+            settings=cfg,
+            metrics=metrics,
+            enabled=enabled,
+            otel=otel,
         )
         return _current
 

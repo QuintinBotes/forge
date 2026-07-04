@@ -1,0 +1,196 @@
+{
+  "uid": "forge-agent-quality",
+  "title": "Forge \u2014 Agent Quality",
+  "tags": [
+    "forge",
+    "agent"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 0,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "refresh": "30s",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Agent runs by status",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "forge:agent_runs:rate5m",
+          "legendFormat": "{{status}} / {{skill_profile}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "Agent failure ratio",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "forge:agent_failure_ratio:rate5m",
+          "legendFormat": "failure ratio",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Agent retries",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "sum by (skill_profile) (rate(forge_agent_retries_total[5m]))",
+          "legendFormat": "{{skill_profile}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "Agent confidence p50",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "forge:agent_confidence_seconds:p50",
+          "legendFormat": "{{skill_profile}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 5,
+      "title": "Requirement satisfaction p50",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(forge_requirement_satisfaction_ratio_bucket[30m])))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

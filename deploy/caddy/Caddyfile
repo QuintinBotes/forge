@@ -62,6 +62,20 @@
 		reverse_proxy temporal-ui:8080
 	}
 
+	# Grafana ops dashboards (HARD-10) — opt-in `observability` profile. Grafana
+	# is NEVER published on a host port; it is reached ONLY through this route,
+	# behind HTTP basic-auth (in addition to Grafana's own admin login). Set
+	# GRAFANA_BASIC_AUTH to a `caddy hash-password` bcrypt hash to enable; unset
+	# leaves the route present but locked (no credentials accepted). Grafana is
+	# configured with GF_SERVER_SERVE_FROM_SUB_PATH so /grafana is preserved
+	# (use `handle`, not `handle_path`, so the /grafana prefix reaches Grafana).
+	handle /grafana/* {
+		basic_auth {
+			admin {$GRAFANA_BASIC_AUTH:$2a$14$disabledbydefaultdisabledbydefaultdisabledbydefaultdisabledby}
+		}
+		reverse_proxy grafana:3000
+	}
+
 	# Everything else is the web frontend.
 	handle {
 		reverse_proxy web:3000
