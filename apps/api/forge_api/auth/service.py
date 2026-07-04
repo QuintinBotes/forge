@@ -25,16 +25,18 @@ import secrets
 import uuid
 import warnings
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from urllib.parse import urlencode
 
 from fastapi import Depends, Header, HTTPException, status
 
 from forge_api.auth.apikeys import APIKeyInfo, APIKeyStore
-from forge_api.auth.crypto import default_cipher
+from forge_api.auth.crypto import EnvelopeCipher, default_cipher
+from forge_api.auth.keyring import KeyRing
 from forge_api.auth.models import OAuthChallenge, OAuthResult
 from forge_api.auth.oauth import OAuthClient, UnsupportedOAuthProviderError
+from forge_api.auth.providers import get_default_provider, resolve_secret
 from forge_api.auth.rbac import Permission, PermissionDeniedError, ensure
 from forge_api.auth.vault import SecretVault
 from forge_api.deps import Principal
@@ -54,49 +56,144 @@ class AuthenticationError(Exception):
 #: ``forge_api.settings.Settings.environment`` (default ``"development"``).
 _DEV_ENVIRONMENTS = frozenset({"development", "dev", "local", "test", "testing"})
 
+#: Truthy string values for boolean env flags.
+_TRUE = frozenset({"1", "true", "yes", "on"})
+
+#: Default agent-runner token lifetime (seconds) — spec "automatic expiry".
+_DEFAULT_AGENT_TOKEN_TTL = 86_400
+
 
 def _subkey(master: bytes, label: bytes) -> bytes:
     """Derive a 32-byte subkey from the master secret (key separation)."""
     return hmac.new(master, label, hashlib.sha256).digest()
 
 
+def _resolve_environment() -> str:
+    """Resolve the canonical environment name (with the ``FORGE_ENV`` alias shim).
+
+    ``FORGE_ENVIRONMENT`` is authoritative; the deprecated ``FORGE_ENV`` (shipped
+    in the compose files) is honoured for one release with a loud warning, which
+    is the concrete fix for the config-drift bug that mis-classified production
+    as development.
+    """
+    env = resolve_secret("FORGE_ENVIRONMENT")
+    if env:
+        return env.strip().lower()
+    legacy = resolve_secret("FORGE_ENV")
+    if legacy:
+        warnings.warn(
+            "FORGE_ENV is deprecated and will be removed; set FORGE_ENVIRONMENT "
+            "instead (the canonical name across api/worker/mcp-gateway).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return legacy.strip().lower()
+    return "development"
+
+
 def _is_development_environment() -> bool:
     """Whether the running environment is a development one (key optional)."""
-    env = os.environ.get("FORGE_ENVIRONMENT", "development").strip().lower()
-    return env in _DEV_ENVIRONMENTS
+    return _resolve_environment() in _DEV_ENVIRONMENTS
+
+
+def _dev_insecure_enabled() -> bool:
+    """Whether the explicit ``FORGE_DEV_INSECURE`` ephemeral-key opt-in is set."""
+    val = resolve_secret("FORGE_DEV_INSECURE")
+    return val is not None and val.strip().lower() in _TRUE
+
+
+def _envelope_enabled() -> bool:
+    """Whether envelope encryption is active (default: on in prod, off elsewhere)."""
+    val = resolve_secret("FORGE_ENVELOPE_ENCRYPTION")
+    if val is not None:
+        return val.strip().lower() in _TRUE
+    return _resolve_environment() == "production"
+
+
+def _agent_token_ttl_seconds() -> int:
+    """Default minted-agent-token lifetime from ``FORGE_AGENT_TOKEN_TTL``."""
+    val = resolve_secret("FORGE_AGENT_TOKEN_TTL")
+    if val:
+        try:
+            return int(val)
+        except ValueError:
+            return _DEFAULT_AGENT_TOKEN_TTL
+    return _DEFAULT_AGENT_TOKEN_TTL
 
 
 def _resolve_master_key(secret_key: bytes | None) -> bytes:
-    """Return the instance master key from the arg or ``FORGE_SECRET_KEY``.
+    """Return the instance master key from the arg or the secret provider.
 
     Resolution order:
 
     1. An explicit ``secret_key`` (injected by tests / embedders).
-    2. The ``FORGE_SECRET_KEY`` environment variable.
-    3. Development only: a process-ephemeral random key, with a loud warning.
+    2. ``FORGE_SECRET_KEY`` via the secret provider (env / file / Vault), with a
+       one-release ``SECRET_KEY`` alias shim.
+    3. Only when ``FORGE_DEV_INSECURE`` is explicitly enabled: a process-ephemeral
+       random key, with a loud warning.
 
-    In any non-development environment a missing ``FORGE_SECRET_KEY`` is a hard
-    error — there is no silent ephemeral fallback in production.
+    A missing key with ``FORGE_DEV_INSECURE`` unset is a hard error *regardless of
+    environment* — no environment string can accidentally land on the ephemeral
+    path (HARD-13 fail-closed guarantee).
     """
     if secret_key is not None:
         return bytes(secret_key)
-    env = os.environ.get("FORGE_SECRET_KEY")
-    if env:
-        return env.encode("utf-8")
-    if _is_development_environment():
+    val = resolve_secret("FORGE_SECRET_KEY")
+    if val:
+        return val.encode("utf-8")
+    legacy = resolve_secret("SECRET_KEY")
+    if legacy:
         warnings.warn(
-            "FORGE_SECRET_KEY is not set; falling back to a process-ephemeral "
+            "SECRET_KEY is deprecated and will be removed; set FORGE_SECRET_KEY "
+            "instead (the canonical name across api/worker/mcp-gateway).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return legacy.encode("utf-8")
+    if _dev_insecure_enabled():
+        warnings.warn(
+            "FORGE_DEV_INSECURE is set: falling back to a process-ephemeral "
             "dev-only key. Encrypted secrets and minted API keys will NOT survive "
-            "a restart. Set FORGE_SECRET_KEY to a stable value before deploying.",
+            "a restart. NEVER set FORGE_DEV_INSECURE in production.",
             stacklevel=2,
         )
         return secrets.token_bytes(32)
     raise RuntimeError(
-        "FORGE_SECRET_KEY must be set in a non-development environment "
-        f"(FORGE_ENVIRONMENT={os.environ.get('FORGE_ENVIRONMENT')!r}); refusing "
-        "to start with an ephemeral key. Generate one with "
-        "`python -c 'import secrets; print(secrets.token_urlsafe(32))'`."
+        "FORGE_SECRET_KEY must be set; refusing to start with an ephemeral key "
+        f"(FORGE_ENVIRONMENT={_resolve_environment()!r}). For a throwaway local "
+        "dev server set FORGE_DEV_INSECURE=1 (never in production). Generate a key "
+        "with `python -c 'import secrets; print(secrets.token_urlsafe(32))'`."
     )
+
+
+def _keyring_for_master(master: bytes) -> KeyRing:
+    """Build a :class:`KeyRing` whose current KEK is the resolved ``master`` key.
+
+    Older KEK versions (``FORGE_SECRET_KEY_V<n>``, retained during a rotation
+    window) are read from the secret provider; ``FORGE_SECRET_KEY_VERSION`` (or
+    the highest configured version, else 1) selects the current version, which
+    the resolved ``master`` always occupies.
+    """
+    provider = get_default_provider()
+    keys: dict[int, bytes] = {}
+    for version in range(1, 256):
+        material = provider.get(f"FORGE_SECRET_KEY_V{version}")
+        if material:
+            keys[version] = material.encode("utf-8")
+    declared = provider.get("FORGE_SECRET_KEY_VERSION")
+    current_version = int(declared) if declared else (max(keys) if keys else 1)
+    keys[current_version] = master
+    return KeyRing(keys, current_version)
+
+
+def _build_vault(master: bytes) -> SecretVault:
+    """Construct the vault, selecting envelope vs single-tier cipher via config."""
+    cipher_subkey = _subkey(master, b"forge-cipher")
+    if _envelope_enabled():
+        keyring = _keyring_for_master(master)
+        cipher = EnvelopeCipher(keyring, legacy=default_cipher(cipher_subkey))
+        return SecretVault(cipher=cipher)
+    return SecretVault(cipher=default_cipher(cipher_subkey))
 
 
 class AuthService:
@@ -114,9 +211,7 @@ class AuthService:
     ) -> None:
         master = _resolve_master_key(secret_key)
         self.api_keys = api_keys or APIKeyStore(secret_key=_subkey(master, b"forge-apikey"))
-        self.vault = vault or SecretVault(
-            cipher=default_cipher(_subkey(master, b"forge-cipher"))
-        )
+        self.vault = vault or _build_vault(master)
         # Constructs without network access; the IdP is only contacted when an
         # authorization-code exchange is actually requested.
         self.oauth = oauth or OAuthClient.from_env()
@@ -193,6 +288,34 @@ class AuthService:
             kind=kind,
             user_id=user_id,
             expires_at=expires_at,
+        )
+
+    def mint_agent_token(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        name: str,
+        role: UserRole,
+        user_id: uuid.UUID | None = None,
+        ttl_seconds: int | None = None,
+        now: datetime | None = None,
+    ) -> tuple[APIKeyInfo, str]:
+        """Mint a run-scoped agent-runner token with automatic expiry.
+
+        Satisfies the spec's "automatic expiry for agent tokens": every minted
+        agent token carries ``expires_at = now + FORGE_AGENT_TOKEN_TTL`` (default
+        24h) so a dormant token cannot outlive its run. ``apikeys.verify`` rejects
+        it once expired.
+        """
+        seconds = ttl_seconds if ttl_seconds is not None else _agent_token_ttl_seconds()
+        reference = now or datetime.now(UTC)
+        return self.api_keys.mint(
+            workspace_id=workspace_id,
+            name=name,
+            role=role,
+            kind=APIKeyKind.SYSTEM,
+            user_id=user_id,
+            expires_at=reference + timedelta(seconds=seconds),
         )
 
     # -- OAuth descriptor --------------------------------------------------- #

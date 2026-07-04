@@ -24,6 +24,7 @@ from forge_api.auth.models import (
     OAuthChallenge,
     OAuthResult,
     SecretCreateRequest,
+    SecretRotateRequest,
 )
 from forge_api.auth.oauth import (
     OAuthConfigError,
@@ -37,7 +38,7 @@ from forge_api.auth.service import (
     AuthServiceDep,
     require_permission,
 )
-from forge_api.auth.vault import SecretInfo, SecretNotFoundError
+from forge_api.auth.vault import SecretExpiredError, SecretInfo, SecretNotFoundError
 from forge_api.deps import Principal
 from forge_auth.rbac import has_at_least
 
@@ -213,6 +214,74 @@ def create_secret(
     service.audit.redactor.register_known_secret(body.secret)
     service.audit.emit(
         action="secret.created",
+        principal=principal,
+        target_type="api_key",
+        target_id=info.id,
+        details={"name": info.name, "kind": info.kind.value, "provider": info.provider},
+    )
+    return info
+
+
+@router.post(
+    "/secrets/{secret_id}/check",
+    summary="Verify a BYOK secret decrypts and is not expired (no plaintext returned).",
+)
+def check_secret(
+    secret_id: uuid.UUID, principal: SecretManager, service: AuthServiceDep
+) -> dict[str, bool]:
+    """Resolve a stored credential server-side to confirm it is usable.
+
+    Returns ``{"ok": true}`` when the secret decrypts and is unexpired; an expired
+    credential yields HTTP 409 ("rotate this credential"), a missing one 404. The
+    plaintext is never returned — only the usability verdict (HARD-13 AC8).
+    """
+    try:
+        service.vault.get_secret(principal.workspace_id, secret_id)
+    except SecretExpiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="secret has expired; rotate this credential",
+        ) from exc
+    except SecretNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="secret not found"
+        ) from exc
+    return {"ok": True}
+
+
+@router.post(
+    "/secrets/{secret_id}/rotate",
+    response_model=SecretInfo,
+    summary="Rotate a BYOK secret's value (admin-only). Returns redacted metadata.",
+)
+def rotate_secret(
+    secret_id: uuid.UUID,
+    body: SecretRotateRequest,
+    principal: SecretManager,
+    service: AuthServiceDep,
+) -> SecretInfo:
+    try:
+        info = service.vault.rotate_secret(
+            workspace_id=principal.workspace_id,
+            secret_id=secret_id,
+            new_secret=body.secret,
+            expires_at=body.expires_at,
+        )
+    except SecretExpiredError as exc:
+        # An expired credential can still be rotated; this maps the read-time
+        # expiry error uniformly should a resolve happen inside rotation.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="secret has expired; rotate this credential",
+        ) from exc
+    except SecretNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="secret not found"
+        ) from exc
+    # Register the new value with the canonical redactor and audit the rotation.
+    service.audit.redactor.register_known_secret(body.secret)
+    service.audit.emit(
+        action="secret.rotated",
         principal=principal,
         target_type="api_key",
         target_id=info.id,

@@ -50,6 +50,65 @@ python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
 - Startup is **fail-closed**: missing/malformed key material raises
   immediately rather than falling back to an insecure default.
 
+### Envelope encryption + KEK rotation (HARD-13)
+
+The BYOK vault (the `api_key` table) is protected by **two-tier envelope
+encryption**: every secret is encrypted under a fresh per-secret **data key
+(DEK)**, and the DEK is wrapped under a versioned **key-encryption key (KEK)**.
+The KEK is `FORGE_SECRET_KEY`; the wrapped DEK and its KEK version travel inside
+the stored blob. This bounds blast radius (one leaked DEK ≠ all secrets) and
+makes KEK rotation an O(rows) re-wrap of small DEKs — **no BYOK plaintext is ever
+decrypted during rotation**.
+
+Canonical config (12-factor; any key may instead be supplied as `<KEY>_FILE`):
+
+| Env var | Meaning |
+|---|---|
+| `FORGE_ENVIRONMENT` | canonical env; `production` requires a real key (replaces `FORGE_ENV`). |
+| `FORGE_SECRET_KEY` | current master KEK, ≥ 16 bytes (replaces `SECRET_KEY`). |
+| `FORGE_SECRET_KEY_FILE` | path to a mounted Docker/K8s secret holding the KEK. |
+| `FORGE_SECRET_KEY_VERSION` | current KEK version (int). |
+| `FORGE_SECRET_KEY_V<n>` | previous KEK version, kept only during a rotation window. |
+| `FORGE_ENVELOPE_ENCRYPTION` | `true` in prod — envelope vs single-tier cipher. |
+| `FORGE_DEV_INSECURE` | dev-only explicit opt-in to an ephemeral key. **Never in prod.** |
+
+Preflight your config before every deploy (blocking CI `secrets-config` gate):
+
+```bash
+python -m forge_api.cli_secrets check-config   # exits non-zero on any violation
+```
+
+**KEK rotation drill (zero-downtime).** Back up the database first.
+
+1. Generate a new key: `python -c 'import secrets; print(secrets.token_urlsafe(32))'`.
+2. Set `FORGE_SECRET_KEY` = the **new** key, `FORGE_SECRET_KEY_V1` = the **old**
+   key, and `FORGE_SECRET_KEY_VERSION=2`.
+3. Re-wrap every stored DEK under the new KEK:
+   ```bash
+   python -m forge_api.cli_secrets rotate-kek   # prints {"rewrapped": N, "skipped": M}
+   ```
+   Reads during the window transparently unwrap under whichever KEK version each
+   row carries, so there is no downtime.
+4. Verify a known BYOK secret still decrypts (`POST /auth/secrets/{id}/check`
+   returns `{"ok": true}`), then **remove `FORGE_SECRET_KEY_V1`** from the env and
+   recreate `api` + `worker`.
+
+> **Downgrade note:** the additive migration `0023_envelope_key_version` is
+> reversible, but rows written by the envelope cipher only remain decryptable
+> while the code understands the envelope blob format — pair any schema downgrade
+> with a matching code rollback.
+
+**Value rotation vs KEK rotation.** Rotating a *credential value* (an operator
+supplies a new secret) is `POST /auth/secrets/{id}/rotate`; rotating the *KEK*
+(re-wrapping DEKs, no plaintext) is `secrets rotate-kek`. They are distinct and
+separately audited (`secret.rotated` vs the `rotated_at`/`key_version` trail).
+
+**Automatic expiry.** Stored BYOK secrets honour `expires_at` at read time (an
+expired credential yields HTTP 409 "rotate this credential", not stale
+plaintext), and minted agent-runner tokens auto-expire after
+`FORGE_AGENT_TOKEN_TTL` (default 24h). A 15-minute sweep flags/purges expired
+rows (`secrets sweep-expired`).
+
 ## Credential rotation
 
 Rotate on a schedule and immediately after any suspected exposure or staff

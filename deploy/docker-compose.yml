@@ -118,12 +118,19 @@ services:
     restart: unless-stopped
     user: "1000:1000"
     environment:
-      FORGE_ENV: production
+      FORGE_ENVIRONMENT: production
       FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
       FORGE_REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: http://minio:9000
       MCP_GATEWAY_URL: http://mcp-gateway:8001
-      SECRET_KEY: ${SECRET_KEY:-change-me}
+      # HARD-13: the instance master KEK. ``:?`` fails the ``up`` when unset, so a
+      # production stack can never boot with an ephemeral key (fail-closed at the
+      # orchestration layer, mirroring the app + CI check-config gate). Prefer the
+      # mounted Docker secret below (FORGE_SECRET_KEY_FILE) over an inline value.
+      FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
+      FORGE_SECRET_KEY_FILE: /run/secrets/forge_secret_key
+      # Two-tier envelope encryption for BYOK secrets (rotatable, versioned KEK).
+      FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
       # Incident alert webhook signing secrets (F17); absent -> 501 fail-closed.
       FORGE_PAGERDUTY_WEBHOOK_SECRET: ${FORGE_PAGERDUTY_WEBHOOK_SECRET:-}
       FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
@@ -180,11 +187,15 @@ services:
     # feature/verification/indexing work on the default queue.
     command: ["celery", "-A", "forge_worker", "worker", "--loglevel=info", "-Q", "forge,incident"]
     environment:
-      FORGE_ENV: production
+      FORGE_ENVIRONMENT: production
       FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
       FORGE_REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: http://minio:9000
       MCP_GATEWAY_URL: http://mcp-gateway:8001
+      # HARD-13: the worker resolves BYOK secrets through the same master KEK as
+      # the API; fail-closed if unset (no ephemeral key in production).
+      FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
+      FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
       FORGE_PAGERDUTY_WEBHOOK_SECRET: ${FORGE_PAGERDUTY_WEBHOOK_SECRET:-}
       FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
       FORGE_SENTRY_WEBHOOK_SECRET: ${FORGE_SENTRY_WEBHOOK_SECRET:-}
@@ -259,8 +270,11 @@ services:
     restart: unless-stopped
     user: "1000:1000"
     environment:
-      FORGE_ENV: production
+      FORGE_ENVIRONMENT: production
       FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
+      # HARD-13: fail-closed master KEK (same key as api/worker).
+      FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
+      FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
     depends_on:
       db:
         condition: service_healthy
@@ -563,7 +577,7 @@ services:
     user: "1000:1000"
     command: ["python", "-m", "forge_worker.temporal_main"]
     environment:
-      FORGE_ENV: production
+      FORGE_ENVIRONMENT: production
       FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
       FORGE_REDIS_URL: redis://redis:6379/0
       MCP_GATEWAY_URL: http://mcp-gateway:8001

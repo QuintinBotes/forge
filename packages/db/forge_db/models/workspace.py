@@ -5,7 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, LargeBinary, String, UniqueConstraint, text
+from sqlalchemy import (
+    DateTime,
+    LargeBinary,
+    SmallInteger,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from forge_db.base import ForgeModel, WorkspaceScopedModel, enum_type, json_type
@@ -78,6 +85,16 @@ class APIKey(WorkspaceScopedModel):
     encrypted_secret: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # HARD-13 envelope encryption: the KEK version the row's data key is wrapped
+    # under (lets KEK rotation target ``WHERE key_version < :current`` cheaply),
+    # and when the DEK was last re-wrapped (rotation audit). The wrapped DEK
+    # itself travels inside ``encrypted_secret`` (self-describing envelope blob).
+    key_version: Mapped[int] = mapped_column(
+        SmallInteger, default=1, server_default=text("1"), nullable=False
+    )
+    rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - trivial, secret-safe
         return (

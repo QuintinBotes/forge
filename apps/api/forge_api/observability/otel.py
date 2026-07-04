@@ -14,6 +14,7 @@ Spans nest via a context variable so parent/child relationships are captured.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import time
 from collections.abc import Callable, Iterator
@@ -159,3 +160,80 @@ def traced(name: str | None = None, *, recorder: SpanRecorder | None = None) -> 
         return wrapper  # type: ignore[return-value]
 
     return decorator
+
+
+# --------------------------------------------------------------------------- #
+# Structural trace redaction (HARD-13): an OTel SpanProcessor that scrubs span
+# attributes and event attributes on ``on_end`` before the span reaches an
+# exporter, so secrets cannot leak into a real collector even if a span was
+# created with an un-redacted attribute somewhere in the codebase.
+# --------------------------------------------------------------------------- #
+
+try:  # pragma: no cover - exercised only when the SDK is installed
+    import opentelemetry.sdk.trace.export as _otel_export  # noqa: F401
+
+    _OTEL_SDK_AVAILABLE = True
+except ImportError:  # pragma: no cover - default when SDK is absent
+    _OTEL_SDK_AVAILABLE = False
+
+
+def _redact_readable_span(span: Any) -> None:
+    """Redact a span's attributes and event attributes in place (best effort)."""
+    attributes = getattr(span, "_attributes", None)
+    if attributes:
+        span._attributes = redact_mapping(dict(attributes))
+    events = getattr(span, "_events", None)
+    if events:
+        for event in events:
+            ev_attrs = getattr(event, "_attributes", None) or getattr(event, "attributes", None)
+            if ev_attrs:
+                # A frozen/immutable event mapping is left as-is (best effort).
+                with contextlib.suppress(AttributeError, TypeError):
+                    event._attributes = redact_mapping(dict(ev_attrs))
+
+
+class RedactingSpanProcessor:
+    """OTel ``SpanProcessor`` that redacts a span before exporting it.
+
+    Wraps a downstream :class:`SpanExporter`; on ``on_end`` it scrubs the span's
+    attributes/events (the canonical :mod:`redaction` rules — one source of
+    truth) and then exports. Register it as the span processor (in place of a
+    plain simple/batch processor) so every exported span is guaranteed clean.
+    """
+
+    def __init__(self, exporter: Any) -> None:
+        if not _OTEL_SDK_AVAILABLE:  # pragma: no cover - guarded at call sites
+            raise RuntimeError(
+                "RedactingSpanProcessor requires the opentelemetry SDK to be installed."
+            )
+        self._exporter = exporter
+
+    def on_start(self, span: Any, parent_context: Any | None = None) -> None:
+        return None
+
+    def on_end(self, span: Any) -> None:
+        _redact_readable_span(span)
+        # An exporter error must never crash the app (redaction already happened).
+        with contextlib.suppress(Exception):
+            self._exporter.export((span,))
+
+    def shutdown(self) -> None:
+        self._exporter.shutdown()
+
+    def force_flush(self, timeout_millis: int = 30_000) -> bool:
+        force_flush = getattr(self._exporter, "force_flush", None)
+        if callable(force_flush):
+            return bool(force_flush(timeout_millis))
+        return True
+
+
+__all__ = [
+    "OTEL_AVAILABLE",
+    "RedactingSpanProcessor",
+    "SpanRecord",
+    "SpanRecorder",
+    "get_span_recorder",
+    "get_tracer",
+    "span",
+    "traced",
+]

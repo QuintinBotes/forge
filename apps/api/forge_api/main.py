@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from forge_api.auth.vault import SecretExpiredError
+from forge_api.observability.redaction import install_log_redaction
 from forge_api.routers import FEATURE_ROUTERS, HEALTH_ROUTER
 from forge_api.security import (
     BodySizeLimitMiddleware,
@@ -46,6 +48,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # never raises — the app boots identically with or without the
     # observability stack (spec AC1/AC18).
     setup_telemetry("forge-api")
+
+    # HARD-13: install the structural log-redaction filter on the root + ASGI
+    # loggers so an accidental ``logger.info(secret)`` anywhere is scrubbed at
+    # the sink, not left to call-site discipline. Idempotent across app builds.
+    install_log_redaction()
 
     # HARD-09: OpenAPI docs are forced off in production unless the operator
     # explicitly sets FORGE_DOCS_ENABLED (info-disclosure reduction). The
@@ -98,6 +105,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code=exc.status,
             content=body.model_dump(exclude_none=True),
             media_type="application/scim+json",
+        )
+
+    # HARD-13: a BYOK secret resolved past its ``expires_at`` surfaces as
+    # HTTP 409 ("rotate this credential") wherever it is used, not a 500 —
+    # the spec's automatic-expiry guarantee for stored credentials.
+    @app.exception_handler(SecretExpiredError)
+    async def _secret_expired_handler(
+        _request: Request, _exc: SecretExpiredError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "secret has expired; rotate this credential"},
         )
 
     # Health/liveness at the root; feature routers under the configurable prefix.

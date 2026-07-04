@@ -28,6 +28,9 @@ pnpm-debug.log*
 .env.*
 !.env.example
 !.env.production.example
+# HARD-13: names-only integration credentials template (no real values) — safe
+# to track so operators know which vars the live-integration tests require.
+!.env.integration.example
 # deploy/.env.dev holds SAFE, DEV-ONLY defaults for the local dev stack (no real
 # secrets) so `docker compose -f deploy/docker-compose.dev.yml up` needs zero setup.
 !deploy/.env.dev
