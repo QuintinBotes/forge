@@ -9,7 +9,7 @@ transport is pluggable; tests and the gateway inject
 
 from __future__ import annotations
 
-from forge_mcp.audit import AuditSink, InMemoryAuditLog, build_audit_entry
+from forge_mcp.audit import AuditSink, InMemoryAuditLog, TeeAuditLog, build_audit_entry
 from forge_mcp.client import MCPGatewayClient
 from forge_mcp.connection import load_connection, load_connection_file
 from forge_mcp.exceptions import (
@@ -34,6 +34,13 @@ from forge_mcp.security import (
     token_binding,
 )
 from forge_mcp.transport import NullTransport, ToolSpec, Transport
+from forge_mcp.transports import (
+    HttpMcpTransport,
+    JsonRpcError,
+    StdioMcpTransport,
+    TokenResolver,
+    live_transport_factory,
+)
 
 __version__ = "0.1.0"
 
@@ -41,7 +48,9 @@ __all__ = [
     "SENSITIVE_KEYS",
     "WRITE_KEYWORDS",
     "AuditSink",
+    "HttpMcpTransport",
     "InMemoryAuditLog",
+    "JsonRpcError",
     "MCPConnectionManager",
     "MCPConnectionNotFoundError",
     "MCPError",
@@ -51,12 +60,16 @@ __all__ = [
     "MCPSecurityError",
     "MCPTransportUnavailableError",
     "NullTransport",
+    "StdioMcpTransport",
+    "TeeAuditLog",
+    "TokenResolver",
     "ToolSpec",
     "Transport",
     "TransportFactory",
     "build_audit_entry",
     "filter_resources",
     "is_write_tool",
+    "live_transport_factory",
     "load_connection",
     "load_connection_file",
     "namespace_of",

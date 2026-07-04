@@ -23,6 +23,12 @@ paths = [
   '''packages/knowledge-core/tests/test_reranker\.py''',
   '''packages/knowledge-core/tests/test_reranker_live\.py''',
   '''packages/mcp-sdk/forge_mcp/testing\.py''',
+  # HARD-05: fake bearer/sk-… shapes exercising the live MCP transport redaction
+  # + a planted FAKE secret in the reference server's fixture corpus. No real cred.
+  '''packages/mcp-sdk/forge_mcp/reference_server\.py''',
+  '''packages/mcp-sdk/tests/test_transports_jsonrpc\.py''',
+  '''packages/mcp-sdk/tests/test_transports_http\.py''',
+  '''packages/mcp-sdk/tests/test_live_mcp_integration\.py''',
   '''apps/api/tests/test_obs_redaction\.py''',
   # HARD-02: fake sk-…/Bearer… shapes that exercise the model-client redactor.
   '''packages/agent-runtime/tests/test_providers_redaction\.py''',

@@ -12,6 +12,7 @@ the redacted audit trail. Security errors map to precise HTTP status codes:
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -82,12 +83,43 @@ def _error_handlers(app: FastAPI) -> None:
         return _json(status.HTTP_503_SERVICE_UNAVAILABLE, exc)
 
 
+def _env_true(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_manager() -> MCPConnectionManager:
+    """Build the process-wide manager from the environment (HARD-05).
+
+    ALPHA default: ``NullTransport`` — registration + metadata work, live ops
+    return 503. With ``MCP_LIVE_TRANSPORT`` truthy the gateway wires the live
+    transport factory so it drives real MCP servers over real HTTP/stdio. The
+    live path is opt-in and never implicit.
+    """
+    if not _env_true("MCP_LIVE_TRANSPORT"):
+        return MCPConnectionManager()
+
+    from forge_contracts import MCPAuthType
+    from forge_mcp import live_transport_factory
+
+    def _token_resolver(conn: Any) -> str | None:
+        if conn.auth.type is MCPAuthType.NONE:
+            return None
+        return os.environ.get("MCP_TOKEN")
+
+    factory = live_transport_factory(
+        token_resolver=_token_resolver,
+        timeout_s=float(os.environ.get("MCP_HTTP_TIMEOUT_S", "30")),
+        protocol_version=os.environ.get("MCP_PROTOCOL_VERSION", "2025-06-18"),
+    )
+    return MCPConnectionManager(transport_factory=factory)
+
+
 def create_gateway_app(manager: MCPConnectionManager | None = None) -> FastAPI:
     """Build the MCP gateway app bound to ``manager`` (a default one if omitted)."""
     # F38 + HARD-10: shared telemetry init (env-driven; no-op by default, real
     # OTLP export + inbound W3C trace-context continuation when enabled).
     setup_gateway_telemetry()
-    mgr = manager or MCPConnectionManager()
+    mgr = manager if manager is not None else _default_manager()
     app = FastAPI(
         title="Forge MCP Gateway",
         version=__version__,

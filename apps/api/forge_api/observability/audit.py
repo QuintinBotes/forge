@@ -334,3 +334,40 @@ class AuditLog:
 
     def verify_integrity(self) -> bool:
         return self._store.verify_integrity()
+
+
+class MCPAuditSink:
+    """Bridge a :class:`~forge_contracts.MCPAuditEntry` onto the platform audit log.
+
+    HARD-05 §3.2: the MCP SDK emits ``MCPAuditEntry`` records through its
+    ``forge_mcp.audit.AuditSink`` protocol (``record(entry)``); this adapter
+    forwards each one to :meth:`AuditLog.record_mcp_call` so every live MCP
+    list/read/call lands in the durable, redacted, hash-chained platform audit
+    trail (``AuditCategory.MCP_CALL``) — the same store the observability
+    ``/audit`` surface reads. Only the secret-free ``payload_hash`` crosses the
+    bridge; the raw arguments never do.
+    """
+
+    def __init__(
+        self,
+        audit_log: AuditLog,
+        *,
+        actor: str | None = None,
+        workspace_id: uuid.UUID | None = None,
+    ) -> None:
+        self._log = audit_log
+        self._actor = actor
+        self._workspace_id = workspace_id
+
+    def record(self, entry: MCPAuditEntry) -> None:
+        self._log.record(
+            category=AuditCategory.MCP_CALL,
+            action=entry.tool,
+            actor=self._actor,
+            workspace_id=self._workspace_id,
+            target=entry.tool,
+            connection_id=entry.connection_id,
+            status=entry.status,
+            payload_hash=entry.payload_hash,
+            latency_ms=entry.latency_ms,
+        )

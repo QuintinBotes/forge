@@ -122,9 +122,7 @@ def test_audit_entry_recorded_with_redacted_secrets() -> None:
 
 
 def test_tool_result_content_is_redacted() -> None:
-    tr = sample_transport(
-        tool_results={"search_pages": {"answer": "ok", "api_key": "leak-me-123"}}
-    )
+    tr = sample_transport(tool_results={"search_pages": {"answer": "ok", "api_key": "leak-me-123"}})
     client, _ = _connect(transport=tr)
     result = client.call_tool("search_pages", {"q": "x"})
     assert "leak-me-123" not in result.model_dump_json()
@@ -195,9 +193,7 @@ def test_connect_binds_token_to_resource() -> None:
 
 
 def test_authenticated_connection_without_binding_is_rejected() -> None:
-    conn = MCPConnection(
-        id="c", name="c", endpoint=None, auth=MCPAuth(type=MCPAuthType.OAUTH)
-    )
+    conn = MCPConnection(id="c", name="c", endpoint=None, auth=MCPAuth(type=MCPAuthType.OAUTH))
     client = MCPGatewayClient(transport=sample_transport())
     with pytest.raises(MCPSecurityError):
         client.connect(conn)
