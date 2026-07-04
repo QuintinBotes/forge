@@ -1,0 +1,18 @@
+# HARD-11 performance budgets. These are the p95/error thresholds the load and
+# retrieval-latency harnesses assert against. Numbers are the *initial* targets
+# for the documented reference runner (see docs/self-hosting/performance.md);
+# promote them to a blocking CI gate only once a stable runner class is fixed.
+
+[retrieval]
+# Retrieval micro-bench (forge_eval.perf.retrieval_latency), milliseconds.
+embed_p95_ms = 50.0
+total_p95_ms = 400.0
+
+[api]
+# k6/Locust API hot-path load (deploy/load/k6/api_hotpaths.js), milliseconds.
+health_p95_ms = 50.0
+board_p95_ms = 300.0
+knowledge_search_p95_ms = 800.0
+agent_enqueue_p95_ms = 500.0
+# Max acceptable request-failure rate across the run.
+http_req_failed_rate = 0.01

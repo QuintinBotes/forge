@@ -19,6 +19,7 @@ from forge_agent import AgentRunner
 from forge_agent.testing import ScriptedModelClient, finish_response
 from forge_contracts import AgentObjective, AgentRunResult
 from forge_worker.celery_app import celery_app
+from forge_worker.reliability import ForgeTask
 
 __all__ = [
     "build_agent_runner",
@@ -49,9 +50,35 @@ def build_agent_runner() -> AgentRunner:
     return AgentRunner(model)
 
 
-@celery_app.task(name="forge.agent.run")
-def run_agent_task(objective: dict[str, Any]) -> dict[str, Any]:
-    """Celery entrypoint: run an agent objective and return its result."""
+@celery_app.task(bind=True, base=ForgeTask, name="forge.agent.run")
+def run_agent_task(
+    self: ForgeTask,
+    objective: dict[str, Any],
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Celery entrypoint: run an agent objective and return its result.
+
+    ``idempotency_key`` (defaulting to the objective's ``task_id``) guards against
+    a re-delivered / retried enqueue starting a second run: the duplicate returns
+    a ``{"deduplicated": True}`` marker instead of re-invoking the model loop.
+    """
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    dedup_key = idempotency_key or objective.get("task_id")
+    if self.is_duplicate(dedup_key):
+        return {"deduplicated": True, "idempotency_key": dedup_key}
     runner = build_agent_runner()
-    result = run_objective(runner, AgentObjective.model_validate(objective))
+    try:
+        result = run_objective(runner, AgentObjective.model_validate(objective))
+    except SoftTimeLimitExceeded:
+        # A runaway loop tripped the soft time limit: escalate gracefully with a
+        # structured marker instead of letting the hard kill drop the run
+        # silently. ``acks_late`` means the message is not acked, so an operator
+        # can re-drive it (dedup-guarded) after raising the budget.
+        return {
+            "escalated": True,
+            "reason": "soft_time_limit_exceeded",
+            "idempotency_key": dedup_key,
+        }
     return result.model_dump(mode="json")

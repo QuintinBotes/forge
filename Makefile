@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test lint fmt typecheck migrate seed build clean \
-	compose-build build-images pin-digests sbom smoke security
+	compose-build build-images pin-digests sbom smoke security load-smoke perf soak
 
 # Every typed first-party package/app, one mypy module each. mypy runs in
 # *module mode* (``-p``) so each ``forge_*`` package resolves to its single
@@ -79,6 +79,16 @@ smoke: ## Production-compose smoke: up -> healthy -> /health -> down -v
 
 security: ## HARD-09 security audit roll-up (SAST + deps + secrets + SBOM + matrix)
 	scripts/security/run.sh
+
+load-smoke: ## HARD-11 non-blocking k6 API load smoke (needs k6 + a running API)
+	@command -v k6 >/dev/null 2>&1 || { echo "k6 not installed — see docs/self-hosting/performance.md"; exit 0; }
+	k6 run -e SMOKE=1 -e BASE_URL=$${FORGE_LOAD_BASE_URL:-http://localhost:8000} deploy/load/k6/api_hotpaths.js
+
+perf: ## HARD-11 retrieval-latency bench (resourced runner; writes deploy/load/reports)
+	FORGE_RUN_PERF=1 uv run pytest -m perf packages/evaluation -q
+
+soak: ## HARD-11 bounded multi-tenant soak (resourced runner)
+	FORGE_RUN_SOAK=1 uv run pytest -m soak packages/evaluation -q
 
 clean: ## Remove python caches and build artifacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

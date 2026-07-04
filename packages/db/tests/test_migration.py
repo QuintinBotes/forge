@@ -10,15 +10,24 @@ code path runs here on SQLite.
 
 from __future__ import annotations
 
+import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine import make_url
 
 import forge_db.models as models
+from forge_db.migration_utils import (
+    build_alembic_config,
+    head_revision,
+    iter_revisions,
+    revision_pairs,
+)
 
 DB_ROOT = Path(__file__).resolve().parent.parent
 ALEMBIC_INI = DB_ROOT / "alembic.ini"
@@ -985,5 +994,183 @@ def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) 
         assert not (F39_COLUMNS & cols_after), "downgrade left F39 columns"
 
         command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
+# --------------------------------------------------------------------------- #
+# HARD-11 — live-Postgres migration round-trip, per-revision walk, and         #
+# data-preservation. These run only against a real pgvector Postgres (the      #
+# baseline's ``CREATE EXTENSION vector`` + VECTOR/TSVECTOR columns cannot be    #
+# represented on SQLite) and skip cleanly otherwise, keeping the hermetic       #
+# suite green and network-free. Each test operates on its own throwaway         #
+# database so it never clobbers the schema-scoped DB tests sharing the server.  #
+# --------------------------------------------------------------------------- #
+
+# The workspace + audit tables that must survive an additive-revision rollback.
+_CORE_PG_TABLES = {"workspace", "app_user", "api_key"}
+
+
+@pytest.fixture
+def scratch_pg_config(postgres_url: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Config]:
+    """Provision a throwaway Postgres database and yield an Alembic ``Config``.
+
+    A fresh, empty database (public schema, no Forge tables) is created on the
+    same server the ``postgres_url`` fixture resolves, so ``alembic upgrade`` runs
+    against a clean slate and the ``CREATE EXTENSION vector`` + full drop on
+    ``downgrade base`` are exercised end-to-end without touching any other test's
+    data. The database is dropped on teardown. ``FORGE_DATABASE_URL`` is pointed
+    at the scratch DB for the duration so Alembic's ``env.py`` targets it.
+    """
+    base_url = make_url(postgres_url)
+    scratch_name = f"forge_mig_{uuid.uuid4().hex[:12]}"
+
+    admin = create_engine(base_url, isolation_level="AUTOCOMMIT", future=True)
+    try:
+        with admin.connect() as conn:
+            conn.execute(text(f'CREATE DATABASE "{scratch_name}"'))
+    finally:
+        admin.dispose()
+
+    scratch_url = base_url.set(database=scratch_name)
+    url_str = scratch_url.render_as_string(hide_password=False)
+    # env.py reads FORGE_DATABASE_URL first, then the config's sqlalchemy.url;
+    # set both to the scratch DB so nothing external can redirect the migration.
+    monkeypatch.setenv("FORGE_DATABASE_URL", url_str)
+    cfg = build_alembic_config(url_str)
+    try:
+        yield cfg
+    finally:
+        teardown = create_engine(base_url, isolation_level="AUTOCOMMIT", future=True)
+        try:
+            with teardown.connect() as conn:
+                conn.execute(
+                    text(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = :n AND pid <> pg_backend_pid()"
+                    ),
+                    {"n": scratch_name},
+                )
+                conn.execute(text(f'DROP DATABASE IF EXISTS "{scratch_name}"'))
+        finally:
+            teardown.dispose()
+
+
+@pytest.mark.postgres
+def test_full_roundtrip_on_postgres(scratch_pg_config: Config) -> None:
+    """AC3: ``upgrade head → downgrade base → upgrade head`` clean on pgvector.
+
+    Exercises the Postgres-only paths SQLite cannot: ``CREATE EXTENSION vector``,
+    the ``VECTOR(1536)`` embedding column, and ``tsvector`` keyword columns.
+    """
+    url = scratch_pg_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url, future=True)
+    try:
+        command.upgrade(scratch_pg_config, "head")
+        tables = set(inspect(engine).get_table_names())
+        missing = EXPECTED_TABLES - tables
+        assert not missing, f"upgrade head did not create: {sorted(missing)}"
+        assert tables >= PM_TABLES
+
+        # The pgvector extension is installed and the embedding column is VECTOR.
+        with engine.connect() as conn:
+            ext = conn.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+            ).fetchone()
+            assert ext is not None, "vector extension missing after upgrade"
+
+        command.downgrade(scratch_pg_config, "base")
+        remaining = set(inspect(engine).get_table_names()) & EXPECTED_TABLES
+        assert not remaining, f"downgrade base left tables: {sorted(remaining)}"
+
+        # Re-upgrade must succeed on the just-downgraded database.
+        command.upgrade(scratch_pg_config, "head")
+        tables_again = set(inspect(engine).get_table_names())
+        assert tables_again >= EXPECTED_TABLES
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.postgres
+def test_stepwise_revision_walk(scratch_pg_config: Config) -> None:
+    """AC3: every revision is *individually* reversible on live Postgres.
+
+    Walks base → head; at each revision it downgrades one step to the revision's
+    ``down_revision`` and re-upgrades, proving each down script runs clean on PG
+    (not only on the SQLite metadata substrate the per-feature tests use).
+    """
+    revisions = iter_revisions(scratch_pg_config)
+    assert len(revisions) >= 20, "expected the full revision chain"
+
+    for rev, down in revision_pairs(scratch_pg_config):
+        command.upgrade(scratch_pg_config, rev)
+        # Prove the single down-step for this revision, then restore it.
+        command.downgrade(scratch_pg_config, down or "base")
+        command.upgrade(scratch_pg_config, rev)
+
+    # Land on head and confirm the full schema is present.
+    command.upgrade(scratch_pg_config, "head")
+    url = scratch_pg_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url, future=True)
+    try:
+        assert set(inspect(engine).get_table_names()) >= EXPECTED_TABLES
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.postgres
+def test_rollback_is_data_preserving(scratch_pg_config: Config) -> None:
+    """AC4: a single-step rollback of the additive head revision preserves data.
+
+    Seeds a workspace + user + api_key, downgrades one step (0023 drops only the
+    additive ``api_key.key_version``/``rotated_at`` columns), re-upgrades to head,
+    and asserts the seeded rows survive — the guarantee ``docs/self-hosting/
+    upgrade.md`` documents for additive revisions.
+    """
+    head = head_revision(scratch_pg_config)
+    pairs = dict(revision_pairs(scratch_pg_config))
+    prev = pairs[head]
+    assert prev is not None, "head must have a parent for a single-step rollback"
+
+    command.upgrade(scratch_pg_config, "head")
+
+    url = scratch_pg_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url, future=True)
+    ws_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO workspace (id, name, slug, settings, created_at, "
+                    "updated_at) VALUES (:id, 'Acme', 'acme', '{}', now(), now())"
+                ),
+                {"id": str(ws_id)},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO app_user (id, workspace_id, email, role, is_active, "
+                    "created_at, updated_at) VALUES (:id, :ws, 'a@acme.test', 'admin', "
+                    "true, now(), now())"
+                ),
+                {"id": str(user_id), "ws": str(ws_id)},
+            )
+
+        # Single-step rollback of the additive head revision, then re-upgrade.
+        command.downgrade(scratch_pg_config, prev)
+        command.upgrade(scratch_pg_config, "head")
+
+        with engine.connect() as conn:
+            ws_rows = conn.execute(
+                text("SELECT name FROM workspace WHERE id = :id"), {"id": str(ws_id)}
+            ).fetchall()
+            user_rows = conn.execute(
+                text("SELECT email FROM app_user WHERE id = :id"), {"id": str(user_id)}
+            ).fetchall()
+        assert [r[0] for r in ws_rows] == ["Acme"], "workspace row not preserved"
+        assert [r[0] for r in user_rows] == ["a@acme.test"], "user row not preserved"
     finally:
         engine.dispose()

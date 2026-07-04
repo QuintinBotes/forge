@@ -21,6 +21,7 @@ from forge_contracts.enums import SyncMode
 from forge_knowledge import KnowledgeService, full_sync, sync_source
 from forge_worker.celery_app import celery_app
 from forge_worker.indexer import build_knowledge_service
+from forge_worker.reliability import ForgeTask
 
 __all__ = [
     "sync_files",
@@ -62,8 +63,9 @@ def sync_repo(
     )
 
 
-@celery_app.task(name="forge.knowledge.sync_source")
+@celery_app.task(bind=True, base=ForgeTask, name="forge.knowledge.sync_source")
 def sync_source_task(
+    self: ForgeTask,
     source_id: str,
     *,
     files: dict[str, str] | None = None,
@@ -72,12 +74,16 @@ def sync_source_task(
     base_ref: str | None = None,
     head_ref: str | None = None,
     prune: bool = True,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """Celery entrypoint: full / incremental sync for ``source_id``.
 
     Provide either ``files`` (full sync of inline content) or ``root`` (sync a
-    checked-out tree; incremental requires ``base_ref``).
+    checked-out tree; incremental requires ``base_ref``). The optional
+    ``idempotency_key`` collapses a re-delivered enqueue to a single run.
     """
+    if self.is_duplicate(idempotency_key):
+        return {"deduplicated": True, "idempotency_key": idempotency_key}
     service = build_knowledge_service()
     sync_mode = SyncMode(mode)
     if files is not None:

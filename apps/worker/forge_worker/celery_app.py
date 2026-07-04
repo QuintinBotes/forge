@@ -47,6 +47,14 @@ celery_app = Celery(
 )
 celery_app.conf.task_default_queue = "forge"
 
+# HARD-11: apply the env-driven reliability knobs (acks_late + reject-on-lost so
+# an interrupted task re-queues, fair prefetch, per-child task cap bounding
+# memory, soft/hard time limits for runaway tasks). Default-on with safe
+# defaults so dev/test are unaffected; overridden via FORGE_* env vars.
+from forge_worker.reliability import configure_reliability  # noqa: E402
+
+configure_reliability(celery_app)
+
 
 # F38: one shared telemetry init per worker process (env-driven; the lean
 # default installs no-op providers and never opens a connection).

@@ -117,10 +117,19 @@ services:
     image: forge/api:${FORGE_VERSION:-0.1.0}
     restart: unless-stopped
     user: "1000:1000"
+    # HARD-11: give the API time to drain in-flight requests on SIGTERM before
+    # Docker sends SIGKILL. Must be >= FORGE_SHUTDOWN_DRAIN_SECONDS + slack so the
+    # lifespan can flip readiness to 503, drain, and dispose pools cleanly.
+    stop_grace_period: 45s
     environment:
       FORGE_ENVIRONMENT: production
       FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
       FORGE_REDIS_URL: redis://redis:6379/0
+      # HARD-11 reliability primitives (defaults shown; tune per deployment).
+      FORGE_SHUTDOWN_DRAIN_SECONDS: ${FORGE_SHUTDOWN_DRAIN_SECONDS:-30}
+      FORGE_RATE_LIMIT_ENABLED: ${FORGE_RATE_LIMIT_ENABLED:-true}
+      FORGE_IDEMPOTENCY_ENABLED: ${FORGE_IDEMPOTENCY_ENABLED:-true}
+      FORGE_READINESS_REQUIRE_DEPS: ${FORGE_READINESS_REQUIRE_DEPS:-true}
       MINIO_ENDPOINT: http://minio:9000
       MCP_GATEWAY_URL: http://mcp-gateway:8001
       # HARD-13: the instance master KEK. ``:?`` fails the ``up`` when unset, so a
@@ -156,8 +165,10 @@ services:
     healthcheck:
       # stdlib probe: the uv slim runtime image ships no curl/wget (HARD-07).
       test:
+        # HARD-11: probe the drain-aware readiness endpoint so a draining
+        # instance (SIGTERM received) is taken out of rotation before it exits.
         - "CMD-SHELL"
-        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')\" || exit 1"
       interval: 15s
       timeout: 5s
       retries: 5
@@ -182,6 +193,12 @@ services:
     image: forge/worker:${FORGE_VERSION:-0.1.0}
     restart: unless-stopped
     user: "1000:1000"
+    # HARD-11: warm (graceful) shutdown. Celery traps SIGTERM, stops prefetching,
+    # and finishes in-flight tasks before exiting; give it a generous grace so a
+    # long-running task can complete (or, with acks_late, be re-queued) rather
+    # than being SIGKILLed mid-run.
+    stop_grace_period: 120s
+    stop_signal: SIGTERM
     # Consume the default queue plus the dedicated F17 `incident` queue, so
     # long-running incident diagnosis / recovery monitoring does not starve the
     # feature/verification/indexing work on the default queue.
@@ -192,6 +209,13 @@ services:
       FORGE_REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: http://minio:9000
       MCP_GATEWAY_URL: http://mcp-gateway:8001
+      # HARD-11 worker reliability (acks_late re-queues an interrupted task; fair
+      # prefetch + per-child cap bound memory; soft/hard limits stop runaways).
+      FORGE_WORKER_PREFETCH_MULTIPLIER: ${FORGE_WORKER_PREFETCH_MULTIPLIER:-1}
+      FORGE_WORKER_MAX_TASKS_PER_CHILD: ${FORGE_WORKER_MAX_TASKS_PER_CHILD:-200}
+      FORGE_TASK_SOFT_TIME_LIMIT: ${FORGE_TASK_SOFT_TIME_LIMIT:-300}
+      FORGE_TASK_TIME_LIMIT: ${FORGE_TASK_TIME_LIMIT:-360}
+      FORGE_TASK_MAX_RETRIES: ${FORGE_TASK_MAX_RETRIES:-3}
       # HARD-13: the worker resolves BYOK secrets through the same master KEK as
       # the API; fail-closed if unset (no ephemeral key in production).
       FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}

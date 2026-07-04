@@ -70,6 +70,15 @@ jobs:
       - name: Test (pytest)
         run: uv run pytest -q
 
+      # HARD-11 (G-COVERAGE): the two most side-effecty units — the Celery tasks
+      # and the agent runtime — must stay >= 90% so untested error/retry/cleanup
+      # branches cannot creep back in. The whole-repo suite above stays the
+      # overall gate; these enforce the per-package floors.
+      - name: Coverage floor (worker + agent-runtime >= 90%)
+        run: |
+          uv run pytest apps/worker --cov=forge_worker --cov-report= --cov-fail-under=90 -q
+          uv run pytest packages/agent-runtime --cov=forge_agent --cov-report= --cov-fail-under=90 -q
+
   # ------------------------------------------------------------------- #
   # Web: lint + build                                                    #
   # ------------------------------------------------------------------- #
@@ -307,3 +316,75 @@ jobs:
           path: |
             deploy/sbom/*.cdx.json
             deploy/build-manifest.json
+
+  # ------------------------------------------------------------------- #
+  # HARD-11 (G-PERF): non-blocking API load smoke. Visible, not gating   #
+  # (continue-on-error), so the k6 harness is exercised on every PR      #
+  # without flaking the required checks. The budgeted perf bench + soak  #
+  # are manual/nightly (see docs/self-hosting/performance.md).           #
+  # ------------------------------------------------------------------- #
+  load-smoke:
+    name: load-smoke (k6, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: forge
+          POSTGRES_PASSWORD: forge
+          POSTGRES_DB: forge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forge"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FORGE_DATABASE_URL: postgresql+psycopg://forge:forge@localhost:5432/forge_test
+      FORGE_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - name: Migrate + start API
+        run: |
+          export FORGE_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          uv run alembic -c packages/db/alembic.ini upgrade head
+          uv run uvicorn forge_api.main:app --host 127.0.0.1 --port 8000 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update && sudo apt-get install -y k6
+
+      - name: k6 smoke (few VUs, seconds)
+        run: k6 run -e SMOKE=1 -e BASE_URL=http://127.0.0.1:8000 deploy/load/k6/api_hotpaths.js
