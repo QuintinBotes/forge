@@ -1,0 +1,54 @@
+Forge {{ .Chart.AppVersion }} has been installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+The pre-install/pre-upgrade hook ran the database migrations to completion before
+the application pods started.
+
+1. Watch the rollout:
+
+     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "forge.fullname" . }}-api
+     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "forge.fullname" . }}-web
+
+2. Open Forge:
+
+     {{ include "forge.publicUrl" . }}
+
+{{- if .Values.ingress.enabled }}
+{{- if and .Values.ingress.tls.enabled .Values.ingress.tls.certManager.enabled }}
+
+   cert-manager is issuing a TLS certificate via ClusterIssuer
+   "{{ .Values.ingress.tls.certManager.clusterIssuer }}". Check it with:
+
+     kubectl -n {{ .Release.Namespace }} get certificate
+{{- end }}
+{{- end }}
+
+3. Verify readiness from inside the cluster:
+
+     helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+{{- if .Values.secrets.create }}
+
+WARNING: this release rendered an in-chart Secret (secrets.create=true). For
+production, store secrets in an operator-managed Secret and set
+secrets.existingSecret instead. Never commit populated secret values to git.
+{{- end }}
+
+Datastores:
+{{- if .Values.postgresql.enabled }}
+  - Postgres:    bundled (pgvector) — for production use a managed Postgres with the `vector` extension.
+{{- else }}
+  - Postgres:    external ({{ .Values.externalDatabase.host }})
+{{- end }}
+{{- if .Values.redis.enabled }}
+  - Redis:       bundled
+{{- else }}
+  - Redis:       external ({{ .Values.externalRedis.host }})
+{{- end }}
+{{- if .Values.minio.enabled }}
+  - Object store: bundled (MinIO)
+{{- else }}
+  - Object store: external ({{ .Values.externalObjectStore.endpoint }})
+{{- end }}
+
+See docs/self-hosting/kubernetes.md for the full values reference, external
+datastore setup, upgrade/rollback and the security model.

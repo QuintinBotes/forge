@@ -1,0 +1,23 @@
+# Example retrieval golden set (Task 0.6 scaffold).
+#
+# This is a tiny illustrative set that proves the eval runner works end to end.
+# The real golden retrieval set (>=15 query->expected-chunk pairs) is produced by
+# Task 1.4, and the >=30-case golden task set by Task 1.16; both load through
+# forge_eval.golden.load_golden_set, exactly like this file.
+cases:
+  - id: Q1
+    query: "where is the auth middleware?"
+    expected_ids: ["app/middleware/auth.py::require_bearer", "app/middleware/auth.py::AuthMiddleware"]
+    tags: ["code", "auth"]
+  - id: Q2
+    query: "how is cursor pagination implemented for the customer endpoint?"
+    expected_ids: ["app/api/customers.py::list_customers"]
+    tags: ["code", "pagination"]
+  - id: Q3
+    query: "what does the repo policy allow agents to write?"
+    expected_ids: [".forge/policy.yaml::write_rules"]
+    tags: ["policy"]
+  - id: Q4
+    query: "RRF fusion constant used for hybrid retrieval"
+    expected_ids: ["docs/FORGE_SPEC.md::knowledge-architecture"]
+    tags: ["doc", "retrieval"]

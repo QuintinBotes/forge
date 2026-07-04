@@ -1,0 +1,575 @@
+{
+  "$defs": {
+    "Condition": {
+      "description": "A single ``field <op> value`` predicate.",
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "op": {
+          "$ref": "#/$defs/ConditionOp"
+        },
+        "value": {
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "field",
+        "op"
+      ],
+      "title": "Condition",
+      "type": "object"
+    },
+    "ConditionGroup": {
+      "description": "A nested all/any tree of conditions. An empty group is always ``True``.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/Condition"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/ConditionGroup"
+          },
+          "title": "Groups",
+          "type": "array"
+        },
+        "match": {
+          "default": "all",
+          "enum": [
+            "all",
+            "any"
+          ],
+          "title": "Match",
+          "type": "string"
+        }
+      },
+      "title": "ConditionGroup",
+      "type": "object"
+    },
+    "ConditionOp": {
+      "description": "The whitelisted predicate operators (evaluated in-memory; never SQL).",
+      "enum": [
+        "eq",
+        "ne",
+        "in",
+        "not_in",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "contains",
+        "not_contains",
+        "is_null",
+        "is_not_null",
+        "matches_glob",
+        "in_time_window",
+        "not_in_time_window"
+      ],
+      "title": "ConditionOp",
+      "type": "string"
+    },
+    "ConditionalRule": {
+      "additionalProperties": false,
+      "description": "A declarative conditional refinement of the flat F04 policy (F29).\n\nA rule whose ``when`` predicate matches the runtime ``PolicyContext`` applies\nits ``effect`` under the evaluator's precedence ladder. ``override_base`` is\nonly meaningful for ``effect=allow``: it permits *loosening* a NON-critical\nbase denial (never a critical floor: path traversal, secret files, the merge\ngate). ``extra=\"forbid\"`` so a typo cannot smuggle an unrecognised field.",
+      "properties": {
+        "applies_to": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Applies To",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "effect": {
+          "$ref": "#/$defs/RuleEffect"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "id": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "override_base": {
+          "default": false,
+          "title": "Override Base",
+          "type": "boolean"
+        },
+        "priority": {
+          "default": 100,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "severity": {
+          "default": "warning",
+          "enum": [
+            "info",
+            "warning",
+            "critical"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "when": {
+          "$ref": "#/$defs/ConditionGroup"
+        }
+      },
+      "required": [
+        "id",
+        "effect",
+        "reason"
+      ],
+      "title": "ConditionalRule",
+      "type": "object"
+    },
+    "DeployRules": {
+      "properties": {
+        "allow_agent_deploy": {
+          "default": false,
+          "title": "Allow Agent Deploy",
+          "type": "boolean"
+        },
+        "environments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Environments",
+          "type": "array"
+        },
+        "restricted_environments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Restricted Environments",
+          "type": "array"
+        }
+      },
+      "title": "DeployRules",
+      "type": "object"
+    },
+    "KnowledgeRules": {
+      "properties": {
+        "exclude_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclude Paths",
+          "type": "array"
+        },
+        "freshness_sla_hours": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Freshness Sla Hours"
+        },
+        "index_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Index Paths",
+          "type": "array"
+        }
+      },
+      "title": "KnowledgeRules",
+      "type": "object"
+    },
+    "PolicySandboxBlock": {
+      "description": "The ``sandbox:`` block of ``.forge/policy.yaml`` (F19).\n\nA repo may *strengthen* isolation above the workspace minimum but never\nweaken it (enforced by ``forge_agent.sandbox.selection.resolve_sandbox_kind``).\n``isolation``/``network`` are stored as plain strings (``worktree``/\n``container``/``gvisor``/``microvm``, ``none``/``egress``) to keep the\ncontract dependency-free; they are validated when resolved into a\n``SandboxSpec``.",
+      "properties": {
+        "cpus": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpus"
+        },
+        "egress_allowlist": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Egress Allowlist",
+          "type": "array"
+        },
+        "exec_timeout_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exec Timeout Seconds"
+        },
+        "gvisor_platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gvisor Platform"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
+        },
+        "isolation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Isolation"
+        },
+        "memory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory"
+        },
+        "network": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Network"
+        },
+        "pids_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pids Limit"
+        },
+        "setup_commands": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Setup Commands",
+          "type": "array"
+        },
+        "tmpfs_mb": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tmpfs Mb"
+        },
+        "vm_memory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vm Memory"
+        },
+        "vm_vcpus": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vm Vcpus"
+        }
+      },
+      "title": "PolicySandboxBlock",
+      "type": "object"
+    },
+    "PolicySkillProfiles": {
+      "properties": {
+        "allowed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed",
+          "type": "array"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        }
+      },
+      "title": "PolicySkillProfiles",
+      "type": "object"
+    },
+    "ReviewRules": {
+      "properties": {
+        "approval_required_for_merge": {
+          "default": true,
+          "title": "Approval Required For Merge",
+          "type": "boolean"
+        },
+        "min_approvals": {
+          "default": 1,
+          "title": "Min Approvals",
+          "type": "integer"
+        },
+        "required_reviewers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Reviewers",
+          "type": "array"
+        }
+      },
+      "title": "ReviewRules",
+      "type": "object"
+    },
+    "RuleEffect": {
+      "description": "Effect a conditional policy rule applies (F29 \u2014 advanced policy engine).\n\nA rule may always *tighten* (``deny`` / ``require_approval``); it may only\n*loosen* (``allow``) a non-critical base denial and only with\n``override_base=True`` (see ``ConditionalRule``).",
+      "enum": [
+        "allow",
+        "deny",
+        "require_approval"
+      ],
+      "title": "RuleEffect",
+      "type": "string"
+    },
+    "SubagentRules": {
+      "properties": {
+        "allow_subagents": {
+          "default": false,
+          "title": "Allow Subagents",
+          "type": "boolean"
+        },
+        "allowed_roles": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Roles",
+          "type": "array"
+        },
+        "max_parallel": {
+          "default": 0,
+          "title": "Max Parallel",
+          "type": "integer"
+        }
+      },
+      "title": "SubagentRules",
+      "type": "object"
+    },
+    "WriteRules": {
+      "properties": {
+        "allow": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allow",
+          "type": "array"
+        },
+        "deny": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Deny",
+          "type": "array"
+        }
+      },
+      "title": "WriteRules",
+      "type": "object"
+    }
+  },
+  "description": "Parsed ``.forge/policy.yaml`` (spec: policy.yaml Schema).\n\nF29 adds the optional, schema-versioned ``rules`` block of conditional rules.\nA ``schema_version: 1`` policy (no ``rules``) evaluates byte-for-byte like F04.",
+  "properties": {
+    "allowed_actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Allowed Actions",
+      "type": "array"
+    },
+    "commands": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Commands",
+      "type": "object"
+    },
+    "deploy_rules": {
+      "$ref": "#/$defs/DeployRules"
+    },
+    "entrypoints": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Entrypoints",
+      "type": "array"
+    },
+    "knowledge_rules": {
+      "$ref": "#/$defs/KnowledgeRules"
+    },
+    "languages": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Languages",
+      "type": "array"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Name"
+    },
+    "purpose": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Purpose"
+    },
+    "repo_id": {
+      "title": "Repo Id",
+      "type": "string"
+    },
+    "restricted_actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Restricted Actions",
+      "type": "array"
+    },
+    "review_rules": {
+      "$ref": "#/$defs/ReviewRules"
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/ConditionalRule"
+      },
+      "title": "Rules",
+      "type": "array"
+    },
+    "sandbox": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PolicySandboxBlock"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "skill_profiles": {
+      "$ref": "#/$defs/PolicySkillProfiles"
+    },
+    "subagent_rules": {
+      "$ref": "#/$defs/SubagentRules"
+    },
+    "write_rules": {
+      "$ref": "#/$defs/WriteRules"
+    }
+  },
+  "required": [
+    "repo_id"
+  ],
+  "title": "Policy",
+  "type": "object"
+}

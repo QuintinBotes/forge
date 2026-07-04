@@ -1,0 +1,87 @@
+{{- if .Values.mcpGateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "forge.fullname" . }}-mcp-gateway
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 4 }}
+spec:
+  {{- if not .Values.mcpGateway.autoscaling.enabled }}
+  replicas: {{ .Values.mcpGateway.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "forge.componentLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 8 }}
+      {{- with .Values.mcpGateway.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "forge.serviceAccountName" . }}
+      {{- include "forge.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      affinity:
+        {{- if .Values.mcpGateway.affinity }}
+        {{- toYaml .Values.mcpGateway.affinity | nindent 8 }}
+        {{- else }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 20 }}
+        {{- end }}
+      {{- with .Values.mcpGateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mcpGateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mcp-gateway
+          image: {{ include "forge.image" (dict "ctx" . "wl" .Values.mcpGateway) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mcpGateway.service.port }}
+          envFrom:
+            {{- include "forge.envFrom" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.mcpGateway.probes.liveness }}
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.mcpGateway.probes.readiness }}
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.mcpGateway.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

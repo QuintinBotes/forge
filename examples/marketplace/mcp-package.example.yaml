@@ -1,0 +1,28 @@
+# Example forge-package.yaml for an MCP connector (F32).
+# Installs read-only + pending: an admin must connect + supply credentials via F09.
+# transport: stdio is rejected by the install security floor.
+artifact:
+  allow_write: false
+  allowed_namespaces:
+  - confluence
+  endpoint: https://mcp.example.com/confluence
+  id: confluence-readonly
+  name: Confluence (read-only)
+  transport: http
+authors: []
+content_hash: sha256:20c0edf323d2d687f174f5acbb1064c11f1cac73818f3596d3de098b8df81cf8
+description: null
+homepage: null
+kind: mcp_connector
+license: Apache-2.0
+min_forge_version: 3.0.0
+name: Confluence (read-only)
+repository: null
+schema_version: 1
+slug: confluence-readonly
+summary: Read-only Confluence MCP connector (installs allow_write=false, pending).
+tags:
+- confluence
+- docs
+- readonly
+version: 2.0.0

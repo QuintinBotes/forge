@@ -1,0 +1,101 @@
+# Example workflow DSL — the default feature lifecycle.
+#
+# Parsed by `forge_workflow.load_definition`, which validates the transition
+# graph at parse time (no orphan or duplicate edges). States and the retry /
+# escalation policy mirror docs/FORGE_SPEC.md ("Default Feature Workflow").
+workflow: default_feature
+version: "1"
+modes:
+  default: single_agent
+  optional: [supervised_multi_agent]
+
+transitions:
+  - from: created
+    to: spec_drafting
+    action: generate_spec_draft
+    skill: spec-analyst
+
+  - from: spec_drafting
+    to: clarification
+    action: raise_clarifications
+
+  - from: clarification
+    to: spec_review
+    action: finalize_spec
+
+  - from: spec_review
+    to: spec_approved
+    when: spec_approved_by_human
+    record: approval_event
+
+  - from: spec_review
+    to: clarification
+    when: changes_requested
+
+  - from: spec_approved
+    to: plan_drafting
+    action: generate_plan
+
+  - from: plan_drafting
+    to: plan_review
+    action: submit_plan
+
+  - from: plan_review
+    to: task_generation
+    when: plan_approved_by_human
+    record: approval_event
+
+  - from: task_generation
+    to: task_ready
+    action: generate_tasks
+
+  - from: task_ready
+    to: executing
+    action: start_agent_run
+    preconditions: [repo_target_set, policy_loaded, skill_profile_set, knowledge_synced]
+
+  - from: executing
+    to: verifying
+    action: run_checks
+    checks: [lint, type_check, tests, coverage]
+
+  - from: verifying
+    to: pr_opened
+    when: all_checks_passed
+    action: open_pr_with_spec_traceability
+
+  - from: verifying
+    to: executing
+    when: checks_failed
+    condition: retry_budget_remaining
+
+  - from: verifying
+    to: needs_human_input
+    when: checks_failed
+    condition: retry_budget_exhausted
+
+  - from: pr_opened
+    to: awaiting_review
+    action: request_review
+
+  - from: awaiting_review
+    to: merged
+    when: [review_approved_by_human, ci_status_green, spec_validated]
+
+  - from: awaiting_review
+    to: executing
+    when: changes_requested
+
+  - from: merged
+    to: closed
+    action: close_task
+
+retry_policy:
+  max_retries: 3
+  backoff: exponential
+  initial_delay_seconds: 30
+
+escalation_policy:
+  confidence_threshold: 0.72
+  on_low_confidence: pause_and_notify
+  on_policy_conflict: escalate_to_admin

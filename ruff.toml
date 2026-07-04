@@ -1,0 +1,65 @@
+# Ruff configuration for the Forge workspace.
+target-version = "py312"
+line-length = 100
+src = ["packages", "apps", "tests"]
+
+extend-exclude = [
+    ".venv",
+    "node_modules",
+    "apps/web",
+    "packages/ui-kit",
+    "**/migrations/versions",
+    # HARD-09 SAST fixtures deliberately contain rule-triggering constructs.
+    "tests/security/fixtures",
+]
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+    "RUF",  # ruff-specific
+]
+ignore = []
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**" = ["S101"]
+# F38 cost tests import their fixtures from a uniquely-named support module
+# (a second package-less conftest.py would collide with the marketplace tests'
+# `from conftest import ...`); fixture params legitimately shadow those imports.
+"apps/api/tests/cost/*" = ["F811"]
+
+[lint.isort]
+known-first-party = [
+    "forge_contracts",
+    "forge_db",
+    "forge_workflow",
+    "forge_deploy",
+    "forge_agent",
+    "forge_coordinator",
+    "forge_spec",
+    "forge_board",
+    "forge_knowledge",
+    "forge_integrations",
+    "forge_mcp",
+    "forge_policy",
+    "forge_authz",
+    "forge_auth",
+    "forge_skill",
+    "forge_eval",
+    "forge_marketplace",
+    "forge_approval",
+    "forge_obs",
+    "forge_api",
+    "forge_worker",
+    "forge_mcp_gateway",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"

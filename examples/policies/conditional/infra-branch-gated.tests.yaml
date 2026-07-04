@@ -1,0 +1,18 @@
+cases:
+  - name: infra write on a feature branch is denied
+    context: { branch: feature/networking }
+    tool_call: { tool: write_file, path: infra/vpc.tf }
+    expect_effect: deny
+    expect_rule: infra-writes-main-only
+  - name: infra write on main is allowed
+    context: { branch: main }
+    tool_call: { tool: write_file, path: infra/vpc.tf }
+    expect_effect: allow
+  - name: app write on a feature branch is allowed
+    context: { branch: feature/networking }
+    tool_call: { tool: write_file, path: app/main.py }
+    expect_effect: allow
+  - name: secret write is denied regardless of branch
+    context: { branch: main }
+    tool_call: { tool: write_file, path: secrets/db.pem }
+    expect_effect: deny

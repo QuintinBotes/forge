@@ -1,0 +1,309 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least-privilege default for every job: read-only checkout. Jobs that need more
+# (e.g. `security` uploads SARIF) opt in explicitly with their own permissions block.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  # ------------------------------------------------------------------- #
+  # Python: lint + type-check + tests (against a real pgvector Postgres) #
+  # ------------------------------------------------------------------- #
+  python:
+    name: python (lint + types + tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: forge
+          POSTGRES_PASSWORD: forge
+          POSTGRES_DB: forge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forge"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FORGE_TEST_DATABASE_URL: postgresql+psycopg://forge:forge@localhost:5432/forge_test
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+
+      - name: Format check (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Type-check (mypy)
+        # Single source of truth: the package list + module-mode invocation live
+        # in the Makefile (module mode avoids the dual source-root ambiguity of
+        # `mypy packages apps`). CI and local stay in lockstep this way.
+        run: make typecheck
+
+      - name: Test (pytest)
+        run: uv run pytest -q
+
+  # ------------------------------------------------------------------- #
+  # Web: lint + build                                                    #
+  # ------------------------------------------------------------------- #
+  web:
+    name: web (lint + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm -r lint
+
+      - name: Build
+        run: pnpm -r build
+
+      # HARD-09: web dependency CVE scan (high/critical fails the build;
+      # waivable via pnpm overrides documented in security/waivers.yaml).
+      - name: Audit (pnpm)
+        working-directory: apps/web
+        run: pnpm audit --audit-level=high
+
+  # ------------------------------------------------------------------- #
+  # Security (HARD-09, G-SEC-AUTOMATED): SAST + deps + secrets + SBOM +   #
+  # the wired enforcement-matrix regression suite. Blocking on            #
+  # high/critical; accepted risk is dated in security/waivers.yaml.       #
+  # ------------------------------------------------------------------- #
+  security:
+    name: security (sast + deps + secrets + sbom + matrix)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0        # full history for gitleaks
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - name: Validate waivers (fails closed on expiry)
+        run: uv run python scripts/security/check_waivers.py security/waivers.yaml
+
+      # --- SAST --- #
+      - name: Bandit (SARIF)
+        run: uv run bandit -c pyproject.toml -r packages apps -f sarif -o bandit.sarif
+        continue-on-error: true
+      - name: Bandit gate (high/critical)
+        run: uv run bandit -c pyproject.toml -r packages apps --severity-level high -q
+      - name: Semgrep (custom Forge rules, SARIF)
+        run: >-
+          uv run semgrep --config .semgrep/forge.yml --config p/python
+          --error --metrics=off --sarif -o semgrep.sarif .
+
+      # --- Dependency audit --- #
+      - name: pip-audit
+        run: >-
+          uv export --frozen --format requirements-txt --no-emit-workspace
+          | uv run pip-audit -r /dev/stdin --strict
+      - name: osv-scanner (lockfiles)
+        uses: google/osv-scanner-action@764c91816374ff2d8fc2095dab36eecd42d61638 # v1.9.2
+        continue-on-error: true
+        with:
+          scan-args: "--lockfile=uv.lock --lockfile=apps/web/pnpm-lock.yaml"
+
+      # --- Secret scan (full history) --- #
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+      # --- SBOM --- #
+      - name: SBOM (CycloneDX)
+        run: uv run cyclonedx-py environment -o sbom.cdx.json
+
+      # --- Enforcement-matrix regression suite (wired path) --- #
+      - name: Enforcement matrix
+        run: uv run pytest -m security -q
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@ce28f5bb42b7a9f2c824e633a3f6ee835bab6858 # v3.29.0
+        with:
+          sarif_file: "."
+
+  # ------------------------------------------------------------------- #
+  # HARD-13: secrets & config preflight + hermetic crypto/vault/provider #
+  # unit suite. Fails closed on a missing key / deprecated alias /       #
+  # envelope-off-in-prod, so a misconfigured deploy cannot merge.        #
+  # ------------------------------------------------------------------- #
+  secrets-config:
+    name: secrets-config (fail-closed preflight)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      # A valid prod-like env must pass the fail-closed preflight.
+      - name: check-config (valid prod env passes)
+        env:
+          FORGE_ENVIRONMENT: production
+        run: |
+          export FORGE_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          uv run python -m forge_api.cli_secrets check-config
+
+      # A missing key must fail closed (exit non-zero) — assert it does.
+      - name: check-config (missing key fails closed)
+        env:
+          FORGE_ENVIRONMENT: production
+        run: |
+          if uv run python -m forge_api.cli_secrets check-config; then
+            echo "::error::check-config passed with no FORGE_SECRET_KEY (should fail closed)"
+            exit 1
+          fi
+          echo "check-config correctly failed closed on a missing key"
+
+      # Hermetic crypto / vault / provider / redaction unit suite.
+      - name: Secret subsystem unit suite
+        run: >-
+          uv run pytest -q
+          apps/api/tests/test_auth_crypto_envelope.py
+          apps/api/tests/test_auth_keyring.py
+          apps/api/tests/test_auth_providers.py
+          apps/api/tests/test_auth_vault_expiry.py
+          apps/api/tests/test_auth_agent_token_ttl.py
+          apps/api/tests/test_auth_service_key.py
+          apps/api/tests/test_obs_log_redaction.py
+          apps/api/tests/test_obs_span_redaction.py
+          apps/api/tests/test_cli_secrets.py
+          apps/api/tests/test_auth_secrets_rotate.py
+
+  # ------------------------------------------------------------------- #
+  # Deploy: validate compose files build cleanly                         #
+  # ------------------------------------------------------------------- #
+  compose:
+    name: compose (config validation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate production compose
+        run: docker compose -f deploy/docker-compose.yml config --quiet
+
+      - name: Validate dev compose
+        run: docker compose -f deploy/docker-compose.dev.yml config --quiet
+
+  # ------------------------------------------------------------------- #
+  # Build (HARD-07, G-BUILD + G-IMG-PINNED): real image builds on a      #
+  # networked runner — digest-pin lint, shellcheck, compose build of all #
+  # 4 first-party images, per-image CycloneDX SBOMs, and an up -> healthy #
+  # -> /health -> down -v smoke of the production compose.               #
+  # ------------------------------------------------------------------- #
+  build:
+    name: build (images + sbom + smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Check image digest pins (offline lint)
+        run: deploy/scripts/pin-digests.sh --check
+
+      - name: shellcheck deploy scripts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck deploy/scripts/*.sh
+
+      - name: Build images (docker compose build)
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker compose -f deploy/docker-compose.yml build
+
+      - name: Install syft
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      # Runs the full networked evidence chain: smoke.sh (up -> healthy ->
+      # /health -> down -v), runtime docker-inspect (non-root / healthcheck /
+      # memory limit), and per-image CycloneDX SBOM generation via sbom.sh.
+      - name: Integration tests (build + smoke + inspect + sbom)
+        env:
+          FORGE_BUILD_INTEGRATION_TESTS: "1"
+        run: uv run pytest -m integration tests/test_build_integration.py -q
+
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-evidence
+          path: |
+            deploy/sbom/*.cdx.json
+            deploy/build-manifest.json

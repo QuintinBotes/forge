@@ -1,0 +1,11 @@
+cases:
+  - id: fix-retrieval-auth
+    query: "Where is the expired-token refresh handled?"
+    expected_ids: [auth.py::refresh, auth.py::expiry]
+    kind: retrieval
+    tags: [retrieval]
+  - id: fix-retrieval-pagination
+    query: "How is cursor pagination implemented for the board API?"
+    expected_ids: [board.py::cursor]
+    kind: retrieval
+    tags: [retrieval]

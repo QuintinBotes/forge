@@ -1,0 +1,77 @@
+name: Feature request
+description: Suggest an enhancement or new capability for Forge.
+title: "[feat]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an idea! For open-ended discussion or questions,
+        consider starting a [Discussion](https://github.com/service-hive/forge/discussions)
+        first — feature requests here should describe a concrete, actionable change.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checklist
+      options:
+        - label: I searched existing [issues](https://github.com/service-hive/forge/issues) and [discussions](https://github.com/service-hive/forge/discussions) and this is not a duplicate.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What problem does this solve? Who is affected and when?
+      placeholder: As a self-hoster, when I ... I can't ... because ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior or API you'd like. Concrete is better than abstract.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you evaluated and why you set them aside.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected area
+      description: Which part of Forge would this touch? Pick the closest.
+      options:
+        - api (apps/api — FastAPI backend)
+        - worker (apps/worker — Celery workers)
+        - mcp-gateway (apps/mcp-gateway)
+        - web (apps/web — Next.js frontend)
+        - a package (packages/* — e.g. spec-engine, knowledge-core, agent-runtime)
+        - deploy / infra (docker-compose, Caddy, Helm)
+        - docs
+        - other / cross-cutting
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, links, prior art, or references that help explain the request.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I'm willing to help implement this change.
+          required: false

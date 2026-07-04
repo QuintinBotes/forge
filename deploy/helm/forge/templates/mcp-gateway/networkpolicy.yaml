@@ -1,0 +1,32 @@
+{{- if and .Values.mcpGateway.enabled .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "forge.fullname" . }}-mcp-gateway
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only api / worker reach the gateway (INTERNAL_SERVICE_TOKEN authenticated).
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values: [{{ .Release.Name }}]
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [api, worker]
+      ports:
+        - protocol: TCP
+          port: {{ .Values.mcpGateway.service.port }}
+  # mcp-egress lane: the gateway calls external MCP servers (F09).
+  egress:
+    - {}
+{{- end }}

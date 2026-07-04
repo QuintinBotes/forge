@@ -1,0 +1,18 @@
+# forge-swe v1 — frozen retrieval task set (F35). Do NOT edit: the suite is
+# frozen; changing any case requires a new benchmark version directory.
+cases:
+  - id: swe-retrieval-expired-token
+    query: "Where do we refresh an expired OAuth access token?"
+    expected_ids: [forge_api/auth/oauth.py::refresh_token, forge_api/auth/oauth.py::TokenExpiredError]
+    kind: retrieval
+    tags: [retrieval]
+  - id: swe-retrieval-hybrid-rrf
+    query: "How are semantic and BM25 result lists fused?"
+    expected_ids: [forge_knowledge/hybrid.py::reciprocal_rank_fusion]
+    kind: retrieval
+    tags: [retrieval]
+  - id: swe-retrieval-webhook-signature
+    query: "Where is the GitHub webhook signature verified?"
+    expected_ids: [forge_api/routers/integration.py::verify_signature]
+    kind: retrieval
+    tags: [retrieval]

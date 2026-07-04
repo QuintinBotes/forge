@@ -1,0 +1,48 @@
+apiVersion: v2
+name: forge
+description: |
+  Forge — OSS engineering-orchestration platform. A single Helm chart that
+  installs a horizontally-scalable, highly-available Forge (api / worker / web /
+  mcp-gateway) onto any conformant Kubernetes >= 1.28 cluster, with optional
+  bundled datastores (pgvector / redis / minio) or external/managed Postgres,
+  Redis and S3.
+type: application
+
+# Chart SemVer (independent of the Forge release).
+version: 0.1.0
+# The Forge application release this chart is co-versioned with. Used as the
+# default image tag when a per-workload image.tag is not set.
+appVersion: "0.1.0"
+
+home: https://github.com/forge-platform/forge
+sources:
+  - https://github.com/forge-platform/forge
+keywords:
+  - forge
+  - engineering-orchestration
+  - ai-agents
+  - self-hosting
+
+kubeVersion: ">=1.28.0-0"
+
+maintainers:
+  - name: The Forge Authors
+
+# Conditional subchart dependencies. Each is rendered ONLY when its `*.enabled`
+# value is true (bundled mode); production points at managed datastores and sets
+# these to false (external mode). The bundled Postgres uses a pgvector-enabled
+# image (see values.yaml -> postgresql.image) because stock Postgres lacks the
+# `vector` extension required by hybrid retrieval (F05).
+dependencies:
+  - name: postgresql
+    version: "18.7.8"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: "27.0.12"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+  - name: minio
+    version: "17.0.21"
+    repository: https://charts.bitnami.com/bitnami
+    condition: minio.enabled

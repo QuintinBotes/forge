@@ -1,0 +1,35 @@
+[project]
+name = "forge-worker"
+version = "0.1.0"
+description = "Celery worker application: indexer, syncer, and agent-runner tasks."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "Apache-2.0" }
+authors = [{ name = "The Forge Authors" }]
+dependencies = [
+    "forge-contracts",
+    "forge-db",
+    "forge-agent",
+    "forge-knowledge",
+    "forge-mcp",
+    "forge-board",
+    "forge-skill",
+    # F32 — integration marketplace: catalog-sync + update-flag worker tasks.
+    "forge-marketplace",
+    "forge-api",
+    # F38 — cost.reprice + obs.refresh_freshness_gauges tasks and the worker
+    # UsageMeter wiring.
+    "forge-obs",
+    "forge-workflow",
+    # F31 — deployment gates: drive promotions/health/rollback on the worker.
+    "forge-deploy",
+    "celery>=5.3",
+    "redis>=5.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["forge_worker"]

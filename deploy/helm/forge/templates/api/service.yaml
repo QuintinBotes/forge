@@ -1,0 +1,17 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "forge.fullname" . }}-api
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+{{- end }}

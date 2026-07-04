@@ -1,0 +1,28 @@
+[project]
+name = "forge-knowledge"
+version = "0.1.0"
+description = "Chunking, embeddings, hybrid retrieval, RRF fusion, and reranking."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "Apache-2.0" }
+authors = [{ name = "The Forge Authors" }]
+dependencies = [
+    "forge-contracts",
+    "forge-db",
+    "numpy>=1.26",
+    "httpx>=0.27",
+    # Tree-sitter multi-language code chunking backend (Task H2). The stdlib
+    # ``ast`` path remains the Python fallback when these are unavailable.
+    "tree-sitter>=0.23",
+    "tree-sitter-python>=0.23",
+    "tree-sitter-javascript>=0.23",
+    "tree-sitter-typescript>=0.23",
+    "tree-sitter-go>=0.23",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["forge_knowledge"]

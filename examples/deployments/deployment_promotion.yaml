@@ -1,0 +1,17 @@
+name: deployment_promotion
+version: "1"
+transitions:
+  - {from: requested,         "on": request,                to: gate_evaluating,   effects: [evaluate_gate]}
+  - {from: gate_evaluating,   "on": gate_passed,            to: approved,          guards: [gate_clear, no_approval_required], effects: [trigger_deploy], priority: 1}
+  - {from: gate_evaluating,   "on": gate_requires_approval, to: awaiting_approval, guards: [gate_clear], effects: [create_deploy_approval, notify_approval_requested]}
+  - {from: gate_evaluating,   "on": gate_failed,            to: gate_rejected,     effects: [notify_gate_failed]}
+  - {from: awaiting_approval, "on": approve,                to: approved,          guards: ["approval_granted:deploy", gate_clear], effects: [trigger_deploy], record: approval_event}
+  - {from: awaiting_approval, "on": reject,                 to: gate_rejected,     record: approval_event, effects: [notify_rejected]}
+  - {from: approved,          "on": deploy_started,         to: deploying}
+  - {from: deploying,         "on": deploy_succeeded,       to: verifying,         effects: [run_health_check]}
+  - {from: deploying,         "on": deploy_failed,          to: failed,            effects: [maybe_rollback, notify_failed]}
+  - {from: verifying,         "on": health_passed,          to: succeeded,         effects: [record_environment_state, notify_succeeded]}
+  - {from: verifying,         "on": health_failed,          to: rolling_back,      guards: [auto_rollback_enabled], effects: [start_rollback], priority: 1}
+  - {from: verifying,         "on": health_failed,          to: failed,            guards: [auto_rollback_disabled], effects: [notify_failed]}
+  - {from: rolling_back,      "on": rollback_succeeded,     to: rolled_back,       effects: [record_environment_state, notify_rolled_back]}
+  - {from: rolling_back,      "on": rollback_failed,        to: failed,            effects: [notify_failed]}

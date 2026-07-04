@@ -1,0 +1,48 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default-deny ingress baseline for the whole release namespace. Per-workload
+# policies (api/web/worker/mcp-gateway) and the datastore allowlist below open the
+# specific lanes. Requires a NetworkPolicy-enforcing CNI (Calico/Cilium).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "forge.fullname" . }}-default-deny
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "network") | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress: []
+{{- if or .Values.postgresql.enabled .Values.redis.enabled .Values.minio.enabled }}
+---
+# Bundled data tier: ingress only from api / worker pods (mirrors the compose
+# `data` internal network — db is never on the edge).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "forge.fullname" . }}-datastores
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "datastore") | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [postgresql, redis, minio]
+      - key: app.kubernetes.io/instance
+        operator: In
+        values: [{{ .Release.Name }}]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values: [{{ .Release.Name }}]
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [api, worker]
+{{- end }}
+{{- end }}

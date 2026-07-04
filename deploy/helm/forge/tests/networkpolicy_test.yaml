@@ -1,0 +1,34 @@
+suite: NetworkPolicy segmentation (AC14)
+tests:
+  - it: renders a default-deny baseline + a datastore allowlist
+    template: templates/networkpolicy-datastores.yaml
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: NetworkPolicy
+        documentIndex: 0
+      - equal:
+          path: spec.podSelector
+          value: {}
+        documentIndex: 0
+  - it: datastore ingress is allowed only from api/worker pods
+    template: templates/networkpolicy-datastores.yaml
+    documentIndex: 1
+    asserts:
+      - contains:
+          path: spec.ingress[0].from[0].podSelector.matchExpressions
+          content:
+            key: app.kubernetes.io/component
+            operator: In
+            values: [api, worker]
+  - it: api accepts ingress from the ingress controller namespace
+    template: templates/api/networkpolicy.yaml
+    asserts:
+      - isNotNull:
+          path: spec.ingress[0].from[0].namespaceSelector
+  - it: web accepts ingress only from the ingress controller
+    template: templates/web/networkpolicy.yaml
+    asserts:
+      - isNotNull:
+          path: spec.ingress[0].from[0].namespaceSelector

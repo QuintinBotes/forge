@@ -1,0 +1,9 @@
+{
+  "number": 42,
+  "html_url": "https://github.com/org/api/pull/42",
+  "state": "open",
+  "title": "Add customer search endpoint",
+  "draft": false,
+  "head": { "ref": "forge/TASK-123", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  "base": { "ref": "main" }
+}

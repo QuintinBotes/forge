@@ -1,0 +1,20 @@
+# Canonical F21 automation: when a task's workflow reaches `merged`, close the
+# sibling tasks linked to the same spec. Parses to an AutomationRuleSpec and
+# validates with the same validator the API uses.
+name: Close spec tasks on merge
+description: When a task's workflow reaches merged, close sibling tasks linked to the same spec.
+enabled: true
+trigger:
+  type: workflow_state_changed
+  config:
+    to_state: merged
+condition:
+  match: all
+  conditions:
+    - { field: has_spec, op: eq, value: true }
+actions:
+  - type: close_linked_spec_tasks
+    scope: project
+    target_status: done
+    exclude_trigger_task: true
+run_order: 100

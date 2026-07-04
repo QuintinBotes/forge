@@ -1,0 +1,74 @@
+# Dependabot configuration for the Forge monorepo.
+#
+# Ecosystems in this repo:
+#   * uv             — the Python uv workspace. A single root uv.lock +
+#                      pyproject.toml drive every member (packages/* and
+#                      apps/{api,worker,mcp-gateway}); the "uv" ecosystem
+#                      resolves the whole workspace from the root.
+#   * npm            — the pnpm workspace. A single root pnpm-lock.yaml +
+#                      pnpm-workspace.yaml drive the one JS member,
+#                      apps/web (@forge/web); Dependabot updates workspace
+#                      members from the pnpm root, so the entry lives at "/".
+#   * github-actions — the first-party workflows under .github/workflows.
+#
+# Every ecosystem runs weekly and groups non-major (minor + patch) bumps into
+# one PR to cut review noise; major bumps still open individually.
+version: 2
+
+updates:
+  # ---------------------------------------------------------------- #
+  # Python — uv workspace (single root uv.lock)                       #
+  # ---------------------------------------------------------------- #
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      python-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------------------------- #
+  # JavaScript — pnpm workspace root (covers apps/web / @forge/web)   #
+  # ---------------------------------------------------------------- #
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "web"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------------------------- #
+  # GitHub Actions — first-party workflows                            #
+  # ---------------------------------------------------------------- #
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"

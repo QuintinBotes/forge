@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+*.cover
+dist/
+build/
+
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+pnpm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+# HARD-13: names-only integration credentials template (no real values) — safe
+# to track so operators know which vars the live-integration tests require.
+!.env.integration.example
+# deploy/.env.dev holds SAFE, DEV-ONLY defaults for the local dev stack (no real
+# secrets) so `docker compose -f deploy/docker-compose.dev.yml up` needs zero setup.
+!deploy/.env.dev
+*.pem
+*.key
+# Operator-provided production secret material (HARD-09 creds rule 1).
+deploy/secrets/
+
+# Docker / local data
+deploy/docker-compose.override.yml
+.data/
+data/
+
+# Helm: vendored subchart archives are reproducible from Chart.lock
+# (`helm dependency build`); commit Chart.lock, not the pulled tgz blobs.
+deploy/helm/*/charts/
+deploy/helm/*/charts/*.tgz
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Forge runtime artifacts
+.forge/cache/
+worktrees/
+*.log

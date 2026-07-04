@@ -1,0 +1,36 @@
+{{- if and .Values.api.enabled .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "forge.fullname" . }}-api
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "forge.componentSelectorLabels" (dict "ctx" . "component" "api") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Ingress controller reaches the api.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressControllerNamespaceSelector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.service.port }}
+    # web / worker / mcp-gateway reach the api.
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values: [{{ .Release.Name }}]
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [web, worker, mcp-gateway]
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.service.port }}
+{{- end }}

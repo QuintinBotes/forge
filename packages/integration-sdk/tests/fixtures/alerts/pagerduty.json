@@ -1,0 +1,15 @@
+{
+  "event": {
+    "id": "01DF4Z2K6E",
+    "event_type": "incident.triggered",
+    "data": {
+      "id": "PINC123",
+      "type": "incident",
+      "title": "Checkout API 5xx spike",
+      "dedup_key": "checkout-api:5xx",
+      "severity": "critical",
+      "description": "Error rate above threshold for checkout-api",
+      "service": {"summary": "checkout-api"}
+    }
+  }
+}

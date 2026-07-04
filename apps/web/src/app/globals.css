@@ -1,0 +1,148 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Self-hosted display + mono faces (woff2 bundled by @fontsource — no runtime
+   CDN/network dependency, offline-safe). */
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* Keep the existing JS design-token config (colors, radius, container,
+   keyframes, fonts) working under Tailwind v4 via the @config directive. */
+@config "../../tailwind.config.ts";
+
+/*
+  Forge design tokens.
+  ---------------------------------------------------------------------------
+  Identity: metalworking / craftsmanship. A warm molten-ember accent on cool
+  graphite-steel neutrals, with a bright "spark" highlight for focus + active.
+  Deliberately NOT Linear's indigo/gray.
+
+  Colours are stored as bare `H S% L%` triples so existing components keep
+  consuming them via `hsl(var(--token))`. Both light ("cooled steel") and dark
+  ("forge at night") themes are fully defined.
+*/
+@layer base {
+  :root {
+    /* Type — self-hosted via @fontsource (no runtime CDN/network dependency).
+       Display: Bricolage Grotesque, a distinctive OFL geometric grotesk, with
+       geometric system fallbacks. Sans: clean + readable system body.
+       Mono: self-hosted JetBrains Mono for code + keys. */
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, "Noto Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-display: "Bricolage Grotesque Variable", "Avenir Next", "Avenir",
+      "Futura", "Century Gothic", "Trebuchet MS", "Segoe UI", ui-sans-serif,
+      system-ui, sans-serif;
+    --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "SFMono-Regular",
+      "SF Mono", Menlo, "Cascadia Code", Consolas, "Liberation Mono",
+      ui-monospace, monospace;
+
+    /* Surfaces + text (cool graphite steel) */
+    --background: 210 20% 98%;
+    --foreground: 215 32% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 32% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 32% 15%;
+
+    /* Ember — the Forge primary */
+    --primary: 20 88% 52%;
+    --primary-foreground: 24 45% 12%;
+
+    /* Neutral steel surfaces */
+    --secondary: 214 20% 94%;
+    --secondary-foreground: 215 30% 22%;
+    --muted: 214 20% 94%;
+    --muted-foreground: 215 16% 42%;
+
+    /* Accent = warm faint hover surface (metal warming up), NOT the brand hero */
+    --accent: 26 60% 94%;
+    --accent-foreground: 18 65% 32%;
+
+    /* Semantic status */
+    --success: 150 58% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 48%;
+    --warning-foreground: 30 45% 12%;
+    --danger: 2 78% 52%;
+    --danger-foreground: 0 0% 100%;
+    /* `destructive` kept as an alias for existing shadcn components */
+    --destructive: 2 78% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Lines + focus */
+    --border: 214 22% 88%;
+    --input: 214 22% 88%;
+    --ring: 36 100% 55%;
+
+    /* Spark — the bright struck highlight (focus glow, logo spark, active) */
+    --spark: 36 100% 62%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Surfaces + text (forge at night — deep graphite) */
+    --background: 220 26% 8%;
+    --foreground: 210 18% 90%;
+    --card: 220 22% 11%;
+    --card-foreground: 210 18% 90%;
+    --popover: 220 24% 10%;
+    --popover-foreground: 210 18% 90%;
+
+    /* Ember pops a touch brighter on charcoal */
+    --primary: 22 90% 55%;
+    --primary-foreground: 24 45% 10%;
+
+    --secondary: 217 16% 18%;
+    --secondary-foreground: 210 18% 90%;
+    --muted: 217 16% 16%;
+    --muted-foreground: 214 15% 62%;
+
+    /* Accent glows amber on hover in the dark */
+    --accent: 22 45% 16%;
+    --accent-foreground: 30 90% 72%;
+
+    --success: 150 52% 46%;
+    --success-foreground: 150 45% 8%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 30 45% 10%;
+    --danger: 2 74% 55%;
+    --danger-foreground: 0 0% 100%;
+    --destructive: 2 74% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 216 16% 22%;
+    --input: 216 16% 24%;
+    --ring: 36 100% 58%;
+
+    --spark: 38 100% 66%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Display voice for headings — geometric, tight, engineered. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
+}

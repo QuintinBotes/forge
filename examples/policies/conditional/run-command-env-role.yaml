@@ -1,0 +1,23 @@
+# F29 conditional policy: `terraform apply` is allowed only in dev and only for
+# an admin actor — a bounded, explicit loosening (override_base) of the base
+# run_command allowlist denial.
+schema_version: 2
+repo_id: github.com/org/infra
+name: Infra Automation
+review_rules:
+  approval_required_for_merge: true
+allowed_actions: [read_repo, open_pr]
+rules:
+  - id: terraform-apply-dev-admin
+    description: terraform apply only in dev, only for admins.
+    applies_to: [run_command]
+    when:
+      match: all
+      conditions:
+        - { field: command, op: contains, value: "terraform apply" }
+        - { field: environment, op: eq, value: dev }
+        - { field: actor_role, op: eq, value: admin }
+    effect: allow
+    override_base: true
+    severity: warning
+    reason: "terraform apply allowed in dev for admins only."

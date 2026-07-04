@@ -1,0 +1,40 @@
+suite: datastore bundled-XOR-external guard (AC10, AC11)
+tests:
+  - it: fails when both bundled and external postgres are configured
+    template: templates/configmap-env.yaml
+    set:
+      postgresql.enabled: true
+      externalDatabase.host: db.managed.example.com
+    asserts:
+      - failedTemplate:
+          errorMessage: "Configure either bundled or external postgres, not both: set postgresql.enabled=false when externalDatabase.host is set."
+  - it: fails when neither bundled nor external postgres is configured
+    template: templates/configmap-env.yaml
+    set:
+      postgresql.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "Configure either bundled or external postgres, not neither: set postgresql.enabled=true or externalDatabase.host."
+  - it: fails when both bundled and external redis are configured
+    template: templates/configmap-env.yaml
+    set:
+      externalRedis.host: redis.managed.example.com
+    asserts:
+      - failedTemplate:
+          errorMessage: "Configure either bundled or external redis, not both: set redis.enabled=false when externalRedis.host is set."
+  - it: fails when both bundled and external object store are configured
+    template: templates/configmap-env.yaml
+    set:
+      externalObjectStore.endpoint: https://s3.example.com
+    asserts:
+      - failedTemplate:
+          errorMessage: "Configure either bundled or external object store, not both: set minio.enabled=false when externalObjectStore.endpoint is set."
+  - it: production (external) profile renders without the guard firing
+    template: templates/configmap-env.yaml
+    values:
+      - ../values-production.yaml
+    asserts:
+      - notFailedTemplate: {}
+      - equal:
+          path: data.POSTGRES_HOST
+          value: forge-postgres.managed.example.com

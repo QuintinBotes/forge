@@ -1,0 +1,24 @@
+{{- /* CPU HPA is the no-extra-operator fallback; when worker.keda.enabled the
+       ScaledObject (Redis queue length) governs scaling instead. */ -}}
+{{- if and .Values.worker.enabled .Values.worker.autoscaling.enabled (not .Values.worker.keda.enabled) }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "forge.fullname" . }}-worker
+  labels:
+    {{- include "forge.componentLabels" (dict "ctx" . "component" "worker") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "forge.fullname" . }}-worker
+  minReplicas: {{ .Values.worker.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.worker.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.worker.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

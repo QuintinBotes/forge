@@ -1,0 +1,35 @@
+# Example MCP connection — Engineering Confluence in SYNC-AND-INDEX mode (F20).
+#
+# With `index_strategy: sync_and_index`, Forge auto-provisions a linked
+# `mcp_resource` KnowledgeSource and a background worker periodically pulls this
+# connection's namespace-scoped resources through the read-only F09 gateway,
+# chunks/redacts/embeds them, and upserts them into the local `retrieval_chunk`
+# (pgvector + BM25) index. Subsequent retrieval is served entirely from the local
+# index with ZERO live MCP calls — fast hybrid search over external data.
+#
+# Trade-off vs. query-through: indexed data is at most `freshness_sla_minutes`
+# stale (the beat refreshes stale sources), in exchange for fast reranked search.
+# Prefer `query_through` for high-volatility sources that must be always-fresh.
+#
+# Security (inherited unchanged from F09): `allow_write` MUST stay false; only
+# `resources/list` + `resources/read` are used; reads are namespace-scoped,
+# redacted, and audited. Indexed content is persisted at rest, so it is redacted
+# a second time before persistence and PURGED when you switch away or disconnect.
+mcp_connection:
+  id: confluence-engineering
+  name: Engineering Confluence
+  transport: http
+  endpoint: https://mcp.company.internal/confluence
+  auth:
+    type: oauth
+    token_ref: secret://mcp/confluence-engineering
+    resource: https://mcp.company.internal/confluence   # RFC 8707 token binding (F09)
+  capabilities:
+    resources: true
+    tools: true
+    prompts: false
+  sync_mode: incremental                 # advisory: drives incremental vs full poll behavior
+  index_strategy: sync_and_index         # F20: pull resources into the local index
+  freshness_sla_minutes: 30              # poll/refresh target for the background indexer
+  allow_write: false                     # inherited read-only guarantee (F09)
+  allowed_namespaces: [engineering, architecture]

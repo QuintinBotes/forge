@@ -1,0 +1,60 @@
+# Example workflow DSL — lean hotfix / bugfix flow.
+#
+# Skips the spec/plan gates for small, well-understood fixes but keeps the
+# verify -> retry -> escalate loop and the human review gate before merge.
+workflow: hotfix
+version: "1"
+modes:
+  default: single_agent
+
+transitions:
+  - from: created
+    to: executing
+    action: start_agent_run
+    preconditions: [repo_target_set, policy_loaded, skill_profile_set]
+
+  - from: executing
+    to: verifying
+    action: run_checks
+    checks: [lint, tests]
+
+  - from: verifying
+    to: pr_opened
+    when: all_checks_passed
+    action: open_pr
+
+  - from: verifying
+    to: executing
+    when: checks_failed
+    condition: retry_budget_remaining
+
+  - from: verifying
+    to: needs_human_input
+    when: checks_failed
+    condition: retry_budget_exhausted
+
+  - from: pr_opened
+    to: awaiting_review
+    action: request_review
+
+  - from: awaiting_review
+    to: merged
+    when: [review_approved_by_human, ci_status_green]
+
+  - from: awaiting_review
+    to: executing
+    when: changes_requested
+
+  - from: merged
+    to: closed
+    action: close_task
+
+retry_policy:
+  max_retries: 2
+  backoff: exponential
+  initial_delay_seconds: 15
+
+escalation_policy:
+  confidence_threshold: 0.72
+  on_low_confidence: pause_and_notify
+  on_policy_conflict: escalate_to_admin

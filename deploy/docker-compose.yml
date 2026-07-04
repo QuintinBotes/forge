@@ -1,0 +1,647 @@
+# Forge — production single-node Docker Compose (plan Task 0.6; HARD-07 pinned).
+#
+# Hardened per the spec's "Production Docker Compose Requirements":
+#   - every pulled image pinned name:tag@sha256:<digest> (immutable; see
+#     deploy/build-manifest.json — roll forward with deploy/scripts/pin-digests.sh)
+#   - willfarrell/autoheal sidecar restarts containers labelled autoheal=true
+#   - named volumes for stateful data (never bind mounts in production)
+#   - CPU + memory resource limits on every container
+#   - healthchecks on every long-running service (stdlib probes — the slim
+#     runtime images ship no curl/wget, so api/mcp-gateway probe via python
+#     urllib and web via node fetch)
+#   - segmented networks (edge / backend / data / mcp) — db is not on the edge
+#   - app containers run as a non-root user
+#   - per-container log rotation (max-size 100m, max-file 5)
+#
+# Bring it up with:  docker compose -f deploy/docker-compose.yml up -d --remove-orphans
+# Smoke-test it with: deploy/scripts/smoke.sh  (up -> healthy -> /health -> down -v)
+
+services:
+  # --------------------------------------------------------------------- #
+  # Data tier                                                             #
+  # --------------------------------------------------------------------- #
+  db:
+    image: pgvector/pgvector:pg16@sha256:ad2e18408bf447f62092a8a5259e7df10505c5a0360bd1a1853ac8b8b0763da2
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-forge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forge}
+      POSTGRES_DB: ${POSTGRES_DB:-forge}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forge} -d ${POSTGRES_DB:-forge}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+        reservations:
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  redis:
+    image: redis:7.4-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z@sha256:9535594ad4122b7a78c6632788a989b96d9199b483d3bd71a5ceae73a922cdfa
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-forge}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-forge-change-me}
+    volumes:
+      - minio-data:/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  # --------------------------------------------------------------------- #
+  # Application tier                                                      #
+  # --------------------------------------------------------------------- #
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/docker/api.Dockerfile
+    image: forge/api:${FORGE_VERSION:-0.1.0}
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      FORGE_ENVIRONMENT: production
+      FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
+      FORGE_REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: http://minio:9000
+      MCP_GATEWAY_URL: http://mcp-gateway:8001
+      # HARD-13: the instance master KEK. ``:?`` fails the ``up`` when unset, so a
+      # production stack can never boot with an ephemeral key (fail-closed at the
+      # orchestration layer, mirroring the app + CI check-config gate). Prefer the
+      # mounted Docker secret below (FORGE_SECRET_KEY_FILE) over an inline value.
+      FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
+      FORGE_SECRET_KEY_FILE: /run/secrets/forge_secret_key
+      # Two-tier envelope encryption for BYOK secrets (rotatable, versioned KEK).
+      FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
+      # Incident alert webhook signing secrets (F17); absent -> 501 fail-closed.
+      FORGE_PAGERDUTY_WEBHOOK_SECRET: ${FORGE_PAGERDUTY_WEBHOOK_SECRET:-}
+      FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
+      FORGE_SENTRY_WEBHOOK_SECRET: ${FORGE_SENTRY_WEBHOOK_SECRET:-}
+      FORGE_GRAFANA_WEBHOOK_SECRET: ${FORGE_GRAFANA_WEBHOOK_SECRET:-}
+      # F35 public benchmark leaderboard — DISABLED by default (self-hosted
+      # privacy: /public/* 404s until an operator explicitly opts in).
+      FORGE_PUBLIC_LEADERBOARD_ENABLED: ${FORGE_PUBLIC_LEADERBOARD_ENABLED:-false}
+      FORGE_BENCHMARK_VERIFY_EPSILON: ${FORGE_BENCHMARK_VERIFY_EPSILON:-0.005}
+      FORGE_LEADERBOARD_PUBLIC_RATE_LIMIT: ${FORGE_LEADERBOARD_PUBLIC_RATE_LIMIT:-60}
+      FORGE_LEADERBOARD_CACHE_TTL_SECONDS: ${FORGE_LEADERBOARD_CACHE_TTL_SECONDS:-60}
+      FORGE_BENCHMARK_SUBMISSION_MAX_BYTES: ${FORGE_BENCHMARK_SUBMISSION_MAX_BYTES:-52428800}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - edge
+      - backend
+      - data
+      - mcp
+    healthcheck:
+      # stdlib probe: the uv slim runtime image ships no curl/wget (HARD-07).
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/docker/worker.Dockerfile
+    image: forge/worker:${FORGE_VERSION:-0.1.0}
+    restart: unless-stopped
+    user: "1000:1000"
+    # Consume the default queue plus the dedicated F17 `incident` queue, so
+    # long-running incident diagnosis / recovery monitoring does not starve the
+    # feature/verification/indexing work on the default queue.
+    command: ["celery", "-A", "forge_worker", "worker", "--loglevel=info", "-Q", "forge,incident"]
+    environment:
+      FORGE_ENVIRONMENT: production
+      FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
+      FORGE_REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: http://minio:9000
+      MCP_GATEWAY_URL: http://mcp-gateway:8001
+      # HARD-13: the worker resolves BYOK secrets through the same master KEK as
+      # the API; fail-closed if unset (no ephemeral key in production).
+      FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
+      FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
+      FORGE_PAGERDUTY_WEBHOOK_SECRET: ${FORGE_PAGERDUTY_WEBHOOK_SECRET:-}
+      FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
+      FORGE_SENTRY_WEBHOOK_SECRET: ${FORGE_SENTRY_WEBHOOK_SECRET:-}
+      FORGE_GRAFANA_WEBHOOK_SECRET: ${FORGE_GRAFANA_WEBHOOK_SECRET:-}
+      # F19 container sandboxing — the worker reaches the daemon ONLY via the
+      # socket-proxy (never the raw socket); a per-task container mounts only the
+      # run's subpath of the worktree volume.
+      FORGE_SANDBOX_KIND: ${FORGE_SANDBOX_KIND:-worktree}
+      DOCKER_HOST: tcp://docker-proxy:2375
+      FORGE_SANDBOX_DOCKER_HOST: tcp://docker-proxy:2375
+      FORGE_SANDBOX_WORKTREE_VOLUME: ${FORGE_WORKTREE_VOLUME:-forge_repos}
+      FORGE_SANDBOX_IMAGE_PYTHON: ${FORGE_SANDBOX_IMAGE_PYTHON:-ghcr.io/forge-platform/forge-sandbox-python:0.1.0}
+      FORGE_SANDBOX_IMAGE_NODE: ${FORGE_SANDBOX_IMAGE_NODE:-ghcr.io/forge-platform/forge-sandbox-node:0.1.0}
+      FORGE_SANDBOX_IMAGE_GO: ${FORGE_SANDBOX_IMAGE_GO:-ghcr.io/forge-platform/forge-sandbox-go:0.1.0}
+      FORGE_SANDBOX_ALLOWED_IMAGES: ${FORGE_SANDBOX_ALLOWED_IMAGES:-}
+      FORGE_SANDBOX_NETWORK: ${FORGE_SANDBOX_NETWORK:-none}
+      FORGE_SANDBOX_EGRESS_NETWORK: forge_sandbox_egress
+      FORGE_SANDBOX_EGRESS_ALLOWLIST: ${FORGE_SANDBOX_EGRESS_ALLOWLIST:-pypi.org,files.pythonhosted.org,registry.npmjs.org}
+      FORGE_SANDBOX_REAP_INTERVAL_SECONDS: ${FORGE_SANDBOX_REAP_INTERVAL_SECONDS:-300}
+      FORGE_SANDBOX_MAX_TTL_SECONDS: ${FORGE_SANDBOX_MAX_TTL_SECONDS:-21600}
+      # F34 kernel-boundary sandboxing — gvisor (runsc) / microvm (kata-fc).
+      # Selecting a runtime is part of `POST /containers/create` (no new proxy
+      # verbs); the HOST daemon needs the runtime registered (install-runtimes.sh)
+      # and /dev/kvm for microvm — never a silent downgrade (preflight.sh gates).
+      FORGE_SANDBOX_GVISOR_RUNTIME: ${FORGE_SANDBOX_GVISOR_RUNTIME:-runsc}
+      FORGE_SANDBOX_GVISOR_PLATFORM: ${FORGE_SANDBOX_GVISOR_PLATFORM:-systrap}
+      FORGE_SANDBOX_MICROVM_RUNTIME: ${FORGE_SANDBOX_MICROVM_RUNTIME:-kata-fc}
+      FORGE_SANDBOX_MICROVM_VCPUS: ${FORGE_SANDBOX_MICROVM_VCPUS:-}
+      FORGE_SANDBOX_MICROVM_MEMORY_MB: ${FORGE_SANDBOX_MICROVM_MEMORY_MB:-}
+      FORGE_SANDBOX_REQUIRE_KVM: ${FORGE_SANDBOX_REQUIRE_KVM:-true}
+      FORGE_SANDBOX_JAILER_ROOT: ${FORGE_SANDBOX_JAILER_ROOT:-/var/lib/forge/jailer}
+    volumes:
+      # Worktrees live on a named volume so sibling sandbox containers can mount
+      # only their run's subpath (volume-subpath; Docker Engine >= 26.1).
+      - forge_repos:/srv/forge/worktrees
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      docker-proxy:
+        condition: service_started
+    networks:
+      - backend
+      - data
+      - mcp
+      - sandbox_ctl
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A forge_worker inspect ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  mcp-gateway:
+    build:
+      context: ..
+      dockerfile: deploy/docker/mcp-gateway.Dockerfile
+    image: forge/mcp-gateway:${FORGE_VERSION:-0.1.0}
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      FORGE_ENVIRONMENT: production
+      FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
+      # HARD-13: fail-closed master KEK (same key as api/worker).
+      FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
+      FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+      - mcp
+    healthcheck:
+      # stdlib probe: the uv slim runtime image ships no curl/wget (HARD-07).
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/docker/web.Dockerfile
+    image: forge/web:${FORGE_VERSION:-0.1.0}
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - edge
+      - backend
+    healthcheck:
+      # node fetch probe: node:*-slim ships no wget/curl (HARD-07).
+      test:
+        - "CMD-SHELL"
+        - "node -e \"fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\" || exit 1"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  # --------------------------------------------------------------------- #
+  # Edge + ops                                                            #
+  # --------------------------------------------------------------------- #
+  caddy:
+    image: caddy:2.8-alpine@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17
+    restart: unless-stopped
+    ports:
+      # Env-overridable so a smoke/staging bring-up can avoid clobbering a host
+      # that already serves 80/443; production defaults are unchanged.
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+      - web
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  autoheal:
+    image: willfarrell/autoheal:1.2.0@sha256:31f580ef0279eaced5b38d631b08c474d70d8403c1c2fdd6ddcf2e879d5f3f7c
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: "10"
+      AUTOHEAL_START_PERIOD: "60"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  # --------------------------------------------------------------------- #
+  # F19 container sandboxing — socket-proxy + egress-proxy                #
+  # --------------------------------------------------------------------- #
+  # The ONLY component near the raw Docker socket (read-only, documented
+  # exception like `autoheal`). Restricted to the minimal verbs the worker
+  # needs to create/exec/inspect per-task sandbox containers — no NETWORKS
+  # create, no VOLUMES delete, no swarm, no privileged.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      IMAGES: "1"
+      POST: "1"
+      EXEC: "1"
+      INFO: "1"
+      # everything else denied
+      NETWORKS: "0"
+      VOLUMES: "0"
+      SWARM: "0"
+      SERVICES: "0"
+      TASKS: "0"
+      SECRETS: "0"
+      CONFIGS: "0"
+      NODES: "0"
+      PLUGINS: "0"
+      SYSTEM: "0"
+      AUTH: "0"
+      BUILD: "0"
+      COMMIT: "0"
+      DISTRIBUTION: "0"
+      SESSION: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - sandbox_ctl
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2375/_ping >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  # Allow-listing forward proxy for `network: egress` sandboxes. Dual-homed:
+  # the internal `sandbox_egress` network (sandbox containers' ONLY route out)
+  # plus `backend` for the bridge to the registry hosts on the allowlist.
+  sandbox-proxy:
+    image: ubuntu/squid:6.6-24.04_edge@sha256:8a3baed477e2c282ab8aa5edad442f69873246964f225c5c2ae8364b6610963c
+    restart: unless-stopped
+    volumes:
+      - ./sandbox/squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      - sandbox_egress
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "squid -k check >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  # --------------------------------------------------------------------- #
+  # F25 — Temporal durable workflow engine (V2, opt-in via the `temporal`  #
+  # profile + WORKFLOW_ENGINE_BACKEND=temporal). Inherits F14's hardening  #
+  # matrix: pinned images, healthchecks, resource limits, capped logs,     #
+  # autoheal, internal-only networks, no host ports (the Web UI is reached #
+  # only via Caddy's admin-gated /_temporal route).                        #
+  # --------------------------------------------------------------------- #
+  temporal:
+    image: temporalio/auto-setup:1.25.2@sha256:b1edc1e20002d958c8182f2ae08dee877a125083683a627a44917683419ba6a8
+    profiles: [temporal]
+    restart: unless-stopped
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-forge}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-forge}
+      POSTGRES_SEEDS: db
+      # auto-setup creates the `temporal` / `temporal_visibility` logical DBs.
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      NUM_HISTORY_SHARDS: "4"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "tctl --address temporal:7233 cluster health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  temporal-ui:
+    image: temporalio/ui:2.34.0@sha256:cb17ea423d76a8a19a269d0bcd81fc12eee1f6365acd2a56b590dafb35696a95
+    profiles: [temporal]
+    restart: unless-stopped
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost
+      # Served only behind Caddy's admin-gated /_temporal route (no host port).
+      TEMPORAL_UI_PUBLIC_PATH: /_temporal
+    depends_on:
+      - temporal
+    networks:
+      - backend
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+  temporal-worker:
+    build:
+      context: ..
+      dockerfile: deploy/docker/worker.Dockerfile
+    image: forge/worker:${FORGE_VERSION:-0.1.0}
+    profiles: [temporal]
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["python", "-m", "forge_worker.temporal_main"]
+    environment:
+      FORGE_ENVIRONMENT: production
+      FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
+      FORGE_REDIS_URL: redis://redis:6379/0
+      MCP_GATEWAY_URL: http://mcp-gateway:8001
+      WORKFLOW_ENGINE_BACKEND: temporal
+      TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-forge}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-forge-feature}
+      TEMPORAL_CODEC_KEY: ${TEMPORAL_CODEC_KEY:-}
+      AGENT_ACTIVITY_TIMEOUT: ${AGENT_ACTIVITY_TIMEOUT:-7200}
+      FORGE_SANDBOX_WORKTREE_VOLUME: ${FORGE_WORKTREE_VOLUME:-forge_repos}
+    volumes:
+      - forge_repos:/srv/forge/worktrees
+    depends_on:
+      db:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    networks:
+      - backend
+      - data
+      - mcp
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import forge_worker.temporal_main' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    labels:
+      - autoheal=true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+
+networks:
+  edge:
+    driver: bridge
+  backend:
+    driver: bridge
+  data:
+    driver: bridge
+    internal: true
+  mcp:
+    driver: bridge
+  # Worker <-> docker-proxy only; no route to the internet.
+  sandbox_ctl:
+    driver: bridge
+    internal: true
+  # Sandbox containers <-> sandbox-proxy only; the proxy bridges out.
+  sandbox_egress:
+    driver: bridge
+    internal: true
+
+volumes:
+  db-data:
+  redis-data:
+  minio-data:
+  caddy-data:
+  caddy-config:
+  # Worktrees, mounted by the worker and (subpath) by sandbox containers.
+  forge_repos:
