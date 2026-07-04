@@ -1,15 +1,31 @@
-"""Golden retrieval eval over the *real* hybrid pipeline (plan Task 1.4, spine).
+"""Golden retrieval eval over the real hybrid pipeline — WIRING CHECK ONLY.
 
-This is the spine's quality proof in ``forge_eval``: it indexes a fixed sample
-repository through the genuine :class:`~forge_knowledge.KnowledgeService`
-(semantic pgvector leg + BM25 keyword leg -> RRF fusion -> cross-encoder rerank)
-and scores the golden retrieval set (``data/golden_retrieval.json``) with
-:mod:`forge_eval.runner`, producing recall@k / MRR and a regression gate.
+This indexes a fixed *synthetic* sample repository through the genuine
+:class:`~forge_knowledge.KnowledgeService` (semantic pgvector leg + BM25 keyword
+leg -> RRF fusion -> cross-encoder rerank) and scores the golden retrieval set
+(``data/golden_retrieval.json``) with :mod:`forge_eval.runner`, producing
+recall@k / MRR and a regression gate.
 
-It uses the offline, deterministic clients (hashing embedding + token-overlap
-reranker) so it runs with **no network and no model provider** — the pipeline and
-the metrics are real; only the learned models are stood in for. A production run
-swaps in a BYOK embedding client + Jina reranker behind the same interfaces.
+**What this proves and what it does NOT.** It uses the offline, deterministic
+clients (signed feature-hashing embedding + token-overlap reranker) over a small
+corpus whose answers were authored next to the questions, so it scores a perfect
+``recall@5 = 1.000`` **by construction**. That validates the *wiring and ranking
+logic* end-to-end — it is a **wiring check**, not a measurement of real retrieval
+quality. For the HONEST numbers (a learned local ``sentence-transformers``
+embedder over the real Forge monorepo corpus, reporting recall@5/recall@10/MRR/
+nDCG@10 + an ablation), see :mod:`forge_eval.corpus_eval` and
+``docs/EVAL_RESULTS.md``. A production run swaps in a BYOK embedding client +
+Jina reranker behind the same frozen interfaces.
+
+Track 1.4 adversarial-refutation resolution (re-reviewed HARD-04, 2026-07-04):
+  INVALID / SUPERSEDED. The refutation recorded in ``MORNING_REPORT.md`` §6 ("1
+  refutation, repaired=false") was that these deterministic 1.000 scores did not
+  prove real-world retrieval quality — an eval *realism* gap, not a defect in
+  ``forge_knowledge.sync`` or this module. HARD-04 closes that gap by measuring
+  the same pipeline on a real, heterogeneous corpus with a learned embedder
+  (:mod:`forge_eval.corpus_eval`, ``docs/EVAL_RESULTS.md``). The sync ingestion
+  path is unchanged and green; no code defect was surfaced, so nothing to repair
+  here beyond this relabel + the honest real-corpus eval alongside it.
 
 This module is imported on demand (it pulls in ``forge_knowledge`` /
 ``forge_db``); the base :mod:`forge_eval` package stays dependency-light.
@@ -42,11 +58,26 @@ __all__ = [
     "DEFAULT_SEARCH_K",
     "GOLDEN_RETRIEVAL_PATH",
     "SAMPLE_CORPUS",
+    "TRACK_1_4_RESOLUTION",
+    "WIRING_CHECK_ONLY",
     "build_indexed_service",
     "load_golden_retrieval",
     "make_retrieve_fn",
     "run_retrieval_eval",
 ]
+
+#: This eval is a wiring check (perfect 1.000 by construction), not the honest
+#: real-corpus quality headline. See :mod:`forge_eval.corpus_eval`.
+WIRING_CHECK_ONLY = True
+
+#: Dated resolution of the Track 1.4 adversarial refutation (HARD-04 AC10).
+TRACK_1_4_RESOLUTION = (
+    "invalid/superseded (2026-07-04): the refutation was an eval-realism gap "
+    "(deterministic 1.000s do not prove real retrieval quality), not a defect in "
+    "forge_knowledge.sync or forge_eval.retrieval_eval; closed by the honest "
+    "real-corpus eval in forge_eval.corpus_eval (docs/EVAL_RESULTS.md). Sync path "
+    "unchanged and green; no code defect surfaced."
+)
 
 #: Path to the on-disk golden retrieval set (the source of truth for queries).
 GOLDEN_RETRIEVAL_PATH = Path(__file__).resolve().parent / "data" / "golden_retrieval.json"
@@ -151,8 +182,7 @@ SAMPLE_CORPUS: dict[str, str] = {
         "    return graph.invoke(objective)\n"
     ),
     "docs/README.md": (
-        "# Forge\n\n"
-        "Forge is an open source engineering orchestration platform for AI agents.\n"
+        "# Forge\n\nForge is an open source engineering orchestration platform for AI agents.\n"
     ),
 }
 

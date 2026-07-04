@@ -79,6 +79,12 @@ class KnowledgeService:
             rerank_candidates=rerank_candidates,
         )
 
+    @property
+    def retriever(self) -> HybridRetriever:
+        """The underlying hybrid retriever (used by the eval ablation to score a
+        single leg — ``semantic`` / ``keyword`` — against the full pipeline)."""
+        return self._retriever
+
     def index(self, source_id: str, chunks: list[Chunk]) -> IndexResult:
         """Embed and persist ``chunks`` for ``source_id`` (idempotent by hash)."""
         return self._require_store().index(source_id, chunks)
@@ -101,9 +107,7 @@ class KnowledgeService:
             )
         return self._vector_store
 
-    def search(
-        self, query: str, scope: KnowledgeScope, k: int = 10
-    ) -> list[RetrievedChunk]:
+    def search(self, query: str, scope: KnowledgeScope, k: int = 10) -> list[RetrievedChunk]:
         """Hybrid search: semantic + keyword -> RRF -> rerank -> attributed top-k."""
         semantic = self._retriever.semantic(query, scope, self._candidate_k)
         keyword = self._retriever.keyword(query, scope, self._candidate_k)

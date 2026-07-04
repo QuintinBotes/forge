@@ -13,8 +13,10 @@ from forge_knowledge.chunking import (
     weight_for,
 )
 from forge_knowledge.embeddings import (
+    DEFAULT_SENTENCE_TRANSFORMERS_MODEL,
     DeterministicEmbeddingClient,
     HttpEmbeddingClient,
+    SentenceTransformerEmbeddingClient,
 )
 from forge_knowledge.fusion import fuse
 from forge_knowledge.mcp_chunking import (
@@ -67,6 +69,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "DEFAULT_MAX_CHARS",
+    "DEFAULT_SENTENCE_TRANSFORMERS_MODEL",
     "TREE_SITTER_LANGUAGES",
     "Bm25Store",
     "ChangeSet",
@@ -86,6 +89,7 @@ __all__ = [
     "PgVectorStore",
     "ResourceLedger",
     "ResourceRef",
+    "SentenceTransformerEmbeddingClient",
     "SqlResourceLedger",
     "SqlSyncRunRecorder",
     "SyncDirection",
