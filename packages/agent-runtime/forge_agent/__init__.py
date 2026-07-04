@@ -18,6 +18,18 @@ from forge_agent.graph import END, CompiledGraph, GraphError, StateGraph
 from forge_agent.multi_repo import MultiRepoWorkspace, WorktreeHandle
 from forge_agent.policy_gate import ActionPolicyGate, PolicyEvaluatorGate, PolicyGate
 from forge_agent.policy_guard import MultiRepoPolicyGuard
+from forge_agent.providers import (
+    MODEL_PRICING,
+    AnthropicModelClient,
+    ModelClientConfig,
+    ModelClientError,
+    ModelClientUnavailable,
+    OpenAIModelClient,
+    ProviderName,
+    UsageAccumulator,
+    build_model_client,
+    cost_usd,
+)
 from forge_agent.runtime import AgentRunner
 from forge_agent.sandbox import SandboxError, WorktreeSandbox, load_agents_md
 from forge_agent.state import AgentState
@@ -35,24 +47,34 @@ __version__ = "0.1.0"
 __all__ = [
     "END",
     "FINISH_TOOL",
+    "MODEL_PRICING",
     "ActionPolicyGate",
     "AgentRunner",
     "AgentState",
+    "AnthropicModelClient",
     "CompiledGraph",
     "GraphError",
+    "ModelClientConfig",
+    "ModelClientError",
+    "ModelClientUnavailable",
     "MultiRepoPolicyGuard",
     "MultiRepoWorkspace",
+    "OpenAIModelClient",
     "PolicyEvaluatorGate",
     "PolicyGate",
+    "ProviderName",
     "SandboxError",
     "StateGraph",
     "Tool",
     "ToolHandler",
     "ToolRegistry",
     "ToolResult",
+    "UsageAccumulator",
     "WorktreeHandle",
     "WorktreeSandbox",
+    "build_model_client",
     "build_system_prompt",
+    "cost_usd",
     "default_tool_registry",
     "load_agents_md",
     "skill_profile_directives",

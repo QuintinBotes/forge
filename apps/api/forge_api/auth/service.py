@@ -40,10 +40,12 @@ from forge_api.auth.providers import get_default_provider, resolve_secret
 from forge_api.auth.rbac import Permission, PermissionDeniedError, ensure
 from forge_api.auth.vault import SecretVault
 from forge_api.deps import Principal
+from forge_api.observability.redaction import redact_text
 from forge_api.services.auth_audit import AuthAuditEmitter
 from forge_auth.errors import AuthenticationError as SdkAuthenticationError
 from forge_auth.rbac import has_at_least
 from forge_auth.tokens import decode_session_jwt, looks_like_jwt
+from forge_contracts import ModelClient
 from forge_contracts.audit import AuditSink
 from forge_contracts.enums import APIKeyKind, UserRole
 
@@ -317,6 +319,49 @@ class AuthService:
             user_id=user_id,
             expires_at=reference + timedelta(seconds=seconds),
         )
+
+    # -- BYOK model client (HARD-02) ---------------------------------------- #
+
+    def resolve_model_client(
+        self,
+        workspace_id: uuid.UUID,
+        *,
+        secret_id: uuid.UUID | None = None,
+        redactor: Callable[[str], str] = redact_text,
+    ) -> ModelClient:
+        """Resolve a provider-agnostic BYOK :class:`ModelClient` for a workspace.
+
+        The provider / model / limits come from the ``FORGE_MODEL_*`` environment;
+        the BYOK key comes from the per-workspace vault when ``secret_id`` is given
+        (``APIKeyKind.MODEL_PROVIDER``), else from the env key. The key is read per
+        call and handed straight to the SDK client — never held in a module global,
+        never logged. The injected ``redactor`` scrubs any provider exception before
+        it is re-raised as ``ModelClientError``.
+
+        Raises ``ModelClientError`` when no provider is configured, and
+        ``ModelClientUnavailable`` when the provider SDK extra is not installed.
+        """
+        from forge_agent.providers import ModelClientConfig, ModelClientError, build_model_client
+
+        if secret_id is not None:
+            # The BYOK value comes from the per-workspace vault; provider / model /
+            # limits still come from env. Inject the vault key via FORGE_MODEL_API_KEY
+            # (dropping any env-provided key) so the vaulted secret always wins.
+            key = self.vault.get_secret(workspace_id, secret_id)
+            env = dict(os.environ)
+            for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "FORGE_MODEL_API_KEY"):
+                env.pop(var, None)
+            env["FORGE_MODEL_API_KEY"] = key
+            config = ModelClientConfig.from_env(env)
+        else:
+            config = ModelClientConfig.from_env()
+
+        if config is None:
+            raise ModelClientError(
+                "no model provider configured; set FORGE_MODEL_PROVIDER and a BYOK "
+                "key (env or vault under MODEL_PROVIDER, + FORGE_MODEL_NAME for OpenAI)"
+            )
+        return build_model_client(config, redactor=redactor)
 
     # -- OAuth descriptor --------------------------------------------------- #
 

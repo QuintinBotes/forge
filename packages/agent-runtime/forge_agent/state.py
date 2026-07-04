@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from forge_agent.providers.usage import UsageAccumulator
 from forge_contracts import AgentObjective, ModelMessage, ModelToolCall, Step
 
 __all__ = ["AgentState"]
@@ -36,6 +37,12 @@ class AgentState:
     policy_denied: bool = False
     tool_failures: dict[str, int] = field(default_factory=dict)
     artifacts: dict[str, object] = field(default_factory=dict)
+
+    #: Per-run token/cost aggregation (HARD-02) and the real model id the
+    #: provider reported (used to price the run); ``None`` until a response
+    #: carries a model.
+    usage: UsageAccumulator = field(default_factory=UsageAccumulator)
+    model_name: str | None = None
 
     def add_step(self, step: Step) -> Step:
         step.index = len(self.steps)
