@@ -1,0 +1,51 @@
+# Forge Grafana datasource provisioning (HARD-10 §3.5). Three provisioned
+# datasources — Prometheus (metrics), Loki (logs), Tempo (traces) — wired for
+# trace<->log<->metric correlation: a Tempo trace links to its Loki logs by
+# trace_id, and Loki log lines link back to the Tempo trace. All on the internal
+# `observability` network; Grafana itself is reached only via Caddy /grafana.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: forge-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      manageAlerts: false
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: forge-tempo
+
+  - name: Loki
+    uid: forge-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:
+        - name: trace_id
+          matcherRegex: '"trace_id":"(\w+)"'
+          url: "$${__value.raw}"
+          datasourceUid: forge-tempo
+
+  - name: Tempo
+    uid: forge-tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: forge-loki
+        filterByTraceID: true
+        spanStartTimeShift: "-1h"
+        spanEndTimeShift: "1h"
+      tracesToMetrics:
+        datasourceUid: forge-prometheus
+      serviceMap:
+        datasourceUid: forge-prometheus
+      nodeGraph:
+        enabled: true

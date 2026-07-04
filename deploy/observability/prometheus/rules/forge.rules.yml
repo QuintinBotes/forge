@@ -1,0 +1,56 @@
+# Forge Prometheus recording rules (HARD-10 §3.5).
+#
+# Pre-aggregate the load-bearing rollups the Grafana dashboards read so panels
+# stay cheap and percentiles are computed once. Every expression references only
+# instruments from the frozen §4 catalog (asserted by deploy/tests).
+
+groups:
+  - name: forge_cost
+    interval: 30s
+    rules:
+      - record: forge:model_cost_usd:rate5m
+        expr: sum by (provider, model, phase) (rate(forge_model_cost_usd_total[5m]))
+      - record: forge:model_tokens:rate5m
+        expr: sum by (provider, model, token_kind) (rate(forge_model_tokens_total[5m]))
+      - record: forge:cost_emit_failures:rate5m
+        expr: sum by (service, reason) (rate(forge_cost_emit_failures_total[5m]))
+      - record: forge:unpriced_model:rate1h
+        expr: sum by (provider, model) (rate(forge_unpriced_model_total[1h]))
+
+  - name: forge_retrieval
+    interval: 30s
+    rules:
+      - record: forge:retrieval_latency_seconds:p50
+        expr: histogram_quantile(0.50, sum by (le, stage) (rate(forge_retrieval_latency_seconds_bucket[5m])))
+      - record: forge:retrieval_latency_seconds:p95
+        expr: histogram_quantile(0.95, sum by (le, stage) (rate(forge_retrieval_latency_seconds_bucket[5m])))
+      - record: forge:retrieval_latency_seconds:p99
+        expr: histogram_quantile(0.99, sum by (le, stage) (rate(forge_retrieval_latency_seconds_bucket[5m])))
+      - record: forge:retrieval_hit_ratio:rate5m
+        expr: |
+          sum(rate(forge_retrieval_requests_total{hit="true"}[5m]))
+          /
+          clamp_min(sum(rate(forge_retrieval_requests_total[5m])), 1)
+
+  - name: forge_agent
+    interval: 30s
+    rules:
+      - record: forge:agent_runs:rate5m
+        expr: sum by (status, skill_profile) (rate(forge_agent_runs_total[5m]))
+      - record: forge:agent_failure_ratio:rate5m
+        expr: |
+          sum(rate(forge_agent_runs_total{status="failed"}[5m]))
+          /
+          clamp_min(sum(rate(forge_agent_runs_total[5m])), 1)
+      - record: forge:agent_confidence_seconds:p50
+        expr: histogram_quantile(0.50, sum by (le, skill_profile) (rate(forge_agent_confidence_bucket[5m])))
+
+  - name: forge_workflow
+    interval: 30s
+    rules:
+      - record: forge:workflow_runs:rate5m
+        expr: sum by (workflow, terminal_state) (rate(forge_workflow_runs_total[5m]))
+      - record: forge:task_completions:rate5m
+        expr: sum by (status) (rate(forge_task_completions_total[5m]))
+      - record: forge:mcp_call_latency_seconds:p99
+        expr: histogram_quantile(0.99, sum by (le, connection) (rate(forge_mcp_call_latency_seconds_bucket[5m])))

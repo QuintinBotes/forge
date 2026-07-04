@@ -1,0 +1,55 @@
+# Forge Prometheus config (HARD-10, observability profile).
+#
+# Scrapes the OTel collector's Prometheus exposition (the app metrics fan in
+# through the collector over OTLP) plus each app's internal /metrics endpoint
+# (the in-process RecordingMetrics scrape surface — bound to the internal
+# `observability` network, never routed through Caddy). Recording + alerting
+# rules load from ./rules; every rule references only the frozen §4 catalog.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: forge
+    monitor: forge-observability
+
+rule_files:
+  - /etc/prometheus/rules/forge.rules.yml
+  - /etc/prometheus/rules/forge.alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Metrics fanned in from every app over OTLP, re-exposed by the collector.
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # Direct in-process scrape of each app's internal RecordingMetrics endpoint.
+  - job_name: forge-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: forge-api
+
+  - job_name: forge-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["worker:9100"]
+        labels:
+          service: forge-worker
+
+  - job_name: forge-mcp-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["mcp-gateway:8001"]
+        labels:
+          service: forge-mcp-gateway

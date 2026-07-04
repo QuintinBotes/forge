@@ -1107,6 +1107,8 @@ dependencies = [
     { name = "forge-auth" },
     { name = "forge-contracts" },
     { name = "forge-db" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
     { name = "pydantic" },
     { name = "sqlalchemy" },
 ]
@@ -1116,6 +1118,8 @@ requires-dist = [
     { name = "forge-auth", editable = "packages/auth-sdk" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.29" },
+    { name = "opentelemetry-sdk", specifier = ">=1.29" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "sqlalchemy", specifier = ">=2.0" },
 ]

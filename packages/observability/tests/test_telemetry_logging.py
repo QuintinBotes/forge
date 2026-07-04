@@ -95,6 +95,29 @@ def test_log_secret_redaction_runs_last_nested() -> None:
     assert "[REDACTED]" in text
 
 
+def test_structural_trace_fields_survive_redaction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A trace_id the entropy heuristic WOULD scrub still survives (HARD-10 AC17).
+
+    trace_id/span_id are W3C correlation ids, not secrets; they must reach the
+    sink verbatim so an operator can pivot Grafana panel -> Tempo trace -> Loki
+    logs. User content in the same record is still redacted.
+    """
+    from forge_obs import logging as obs_logging
+    from forge_obs.redaction import redact_text
+
+    redactable = "5b9b4f4ffda7d63cce99145c08c243e0"
+    assert redact_text(redactable) != redactable  # confirms the heuristic scrubs it bare
+    monkeypatch.setattr(obs_logging, "current_trace_id", lambda: redactable)
+    monkeypatch.setattr(obs_logging, "current_span_id", lambda: "b7ad6b7169203331")
+
+    payload = _fmt(_record("calling provider with API_KEY=sk-anthropic123456789012345"))
+    assert payload["trace_id"] == redactable  # correlation id survived redaction
+    assert payload["span_id"] == "b7ad6b7169203331"
+    # ...while the secret in the message is still gone.
+    assert "sk-anthropic123456789012345" not in json.dumps(payload)
+    assert "[REDACTED]" in json.dumps(payload)
+
+
 def test_configure_logging_idempotent() -> None:
     root = logging.getLogger()
     before = list(root.handlers)
