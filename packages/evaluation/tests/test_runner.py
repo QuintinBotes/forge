@@ -128,4 +128,48 @@ def test_format_scorecard_is_readable() -> None:
     report = format_scorecard(card)
     assert "recall@" in report
     assert "MRR" in report
+    assert "nDCG@" in report
     assert "PASS" in report
+
+
+# --------------------------------------------------------------------------- #
+# nDCG mean + dual gate (HARD-04)                                              #
+# --------------------------------------------------------------------------- #
+
+
+def test_scorecard_reports_ndcg_mean() -> None:
+    cases = load_golden_set(EXAMPLE)
+    card = evaluate_retrieval(cases, _perfect_retriever, k=10, recall_threshold=0.9)
+    # A pipeline that returns exactly the expected ids (first positions) is a
+    # perfect ranking, so mean nDCG is 1.0.
+    assert card.mean_ndcg_at_k == 1.0
+
+
+def test_scorecard_backcompat_ndcg_gate_disabled_by_default() -> None:
+    cases = load_golden_set(EXAMPLE)
+    # ndcg_threshold defaults to 0.0, so the gate is recall-only (as it always was).
+    card = evaluate_retrieval(cases, _useless_retriever, k=10, recall_threshold=0.0)
+    assert card.ndcg_threshold == 0.0
+    assert card.passed is True  # recall floor 0.0 met; nDCG leg inert
+
+
+def test_scorecard_dual_gate_fails_when_ndcg_below_floor() -> None:
+    cases = load_golden_set(EXAMPLE)
+    # Recall is perfect but demand an impossible nDCG floor > 1.0 → gate fails on
+    # the nDCG leg specifically.
+    card = evaluate_retrieval(
+        cases, _perfect_retriever, k=10, recall_threshold=0.9, ndcg_threshold=1.01
+    )
+    assert card.mean_recall_at_k >= 0.9
+    assert card.passed is False
+    with pytest.raises(AssertionError, match="nDCG"):
+        card.assert_threshold()
+
+
+def test_scorecard_dual_gate_passes_when_both_met() -> None:
+    cases = load_golden_set(EXAMPLE)
+    card = evaluate_retrieval(
+        cases, _perfect_retriever, k=10, recall_threshold=0.9, ndcg_threshold=0.9
+    )
+    assert card.passed is True
+    card.assert_threshold()  # should not raise

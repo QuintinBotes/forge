@@ -8,11 +8,13 @@ task harness (Task 1.16) build on. ``retrieved`` is an *ordered* sequence of ids
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+import math
+from collections.abc import Collection, Mapping, Sequence
 
 __all__ = [
     "average_precision",
     "hit_at_k",
+    "ndcg_at_k",
     "precision_at_k",
     "recall_at_k",
     "reciprocal_rank",
@@ -77,9 +79,43 @@ def average_precision(retrieved: Sequence[str], relevant: Collection[str]) -> fl
     return score / len(relevant_set)
 
 
-def requirement_satisfaction(
-    satisfied: Collection[str], expected: Collection[str]
+def ndcg_at_k(
+    retrieved: Sequence[str],
+    relevant: Collection[str],
+    k: int,
+    *,
+    gains: Mapping[str, float] | None = None,
 ) -> float:
+    """Normalised Discounted Cumulative Gain over the top-``k`` retrieved ids.
+
+    ``DCG@k = Σ gain_i / log2(rank_i + 1)`` over the top-``k`` (rank is 1-indexed),
+    where ``gain_i`` is ``gains[id]`` (default ``1.0``) when the id is relevant and
+    ``0.0`` otherwise. ``IDCG@k`` is the same sum over the *ideal* ordering (the
+    relevant ids sorted by gain, descending). Returns ``DCG/IDCG``.
+
+    Edge cases mirror :func:`recall_at_k`: an empty ``relevant`` set returns
+    ``1.0`` (nothing to rank, vacuously perfect); when none of the top-``k`` ids
+    are relevant the numerator is ``0.0`` so the score is ``0.0``.
+    """
+    relevant_set = set(relevant)
+    if not relevant_set:
+        return 1.0
+    gain_map = dict(gains or {})
+
+    def gain(cid: str) -> float:
+        return float(gain_map.get(cid, 1.0)) if cid in relevant_set else 0.0
+
+    window = _top_k(retrieved, k)
+    dcg = sum(gain(cid) / math.log2(rank + 1) for rank, cid in enumerate(window, start=1))
+
+    ideal_gains = sorted((float(gain_map.get(cid, 1.0)) for cid in relevant_set), reverse=True)[:k]
+    idcg = sum(g / math.log2(rank + 1) for rank, g in enumerate(ideal_gains, start=1))
+    if idcg <= 0.0:
+        return 0.0
+    return dcg / idcg
+
+
+def requirement_satisfaction(satisfied: Collection[str], expected: Collection[str]) -> float:
     """Fraction of expected requirement ids that were satisfied.
 
     This is the *spec-requirement satisfaction rate* (spec: Observability and

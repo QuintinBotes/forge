@@ -18,6 +18,16 @@ Two implementations of the frozen
   Voyage, or any self-hosted gateway by changing ``base_url``/``model``. It opens
   no connection at construction and is fully testable by injecting an
   ``httpx.Client`` backed by a mock transport — never a real overnight call.
+
+* :class:`SentenceTransformerEmbeddingClient` — the *learned, local, no-key*
+  embedder. It loads an open-weight ``sentence-transformers`` model (default
+  ``all-MiniLM-L6-v2``, 384-dim) from the local Hugging Face cache and computes
+  embeddings on-device — genuine semantic recall with **zero API spend and zero
+  network at call time** once the model is cached. ``sentence-transformers`` is
+  an *optional* dependency (the ``eval`` extra): the import is lazy, so the base
+  package and the default hermetic test suite never require torch. This is the
+  BETA-critical embedder for the honest real-corpus eval (HARD-04); the provider
+  :class:`HttpEmbeddingClient` remains the BYOK path for hosted models.
 """
 
 from __future__ import annotations
@@ -26,6 +36,7 @@ import hashlib
 import math
 from collections import Counter
 from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import numpy as np
@@ -33,10 +44,18 @@ import numpy as np
 from forge_contracts.constants import DEFAULT_EMBEDDING_DIM
 from forge_knowledge.text import tokenize
 
+if TYPE_CHECKING:  # pragma: no cover - typing only, no runtime import of torch
+    from sentence_transformers import SentenceTransformer
+
 __all__ = [
+    "DEFAULT_SENTENCE_TRANSFORMERS_MODEL",
     "DeterministicEmbeddingClient",
     "HttpEmbeddingClient",
+    "SentenceTransformerEmbeddingClient",
 ]
+
+#: Default open-weight local model: small, fast, 384-dim, permissive licence.
+DEFAULT_SENTENCE_TRANSFORMERS_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 class DeterministicEmbeddingClient:
@@ -150,3 +169,80 @@ class HttpEmbeddingClient:
         if self._owns_client and self._client is not None:
             self._client.close()
             self._client = None
+
+
+class SentenceTransformerEmbeddingClient:
+    """Learned, local, no-key embedder over an open-weight sentence-transformer.
+
+    Implements :class:`forge_contracts.protocols.EmbeddingClient`. The model is
+    loaded lazily from the local Hugging Face cache on first use; with a warm
+    cache no network I/O happens at call time (set ``HF_HUB_OFFLINE=1`` to prove
+    it). Embeddings are L2-normalised so cosine similarity matches the store's
+    dot-product ranking. ``sentence-transformers`` is an optional dependency; a
+    clear ``RuntimeError`` is raised if it (or the model) cannot be loaded, so the
+    eval *skips* rather than silently falling back to a fake embedder.
+    """
+
+    def __init__(
+        self,
+        model_name: str = DEFAULT_SENTENCE_TRANSFORMERS_MODEL,
+        *,
+        device: str | None = None,
+        normalize: bool = True,
+        batch_size: int = 32,
+        model: SentenceTransformer | None = None,
+    ) -> None:
+        self._model_name = model_name
+        self._device = device
+        self._normalize = normalize
+        self._batch_size = batch_size
+        self._model = model
+        self._dimension: int | None = None
+        if model is not None:
+            self._dimension = int(model.get_sentence_embedding_dimension() or 0) or None
+
+    def _load(self) -> SentenceTransformer:
+        if self._model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError as exc:  # pragma: no cover - exercised only w/o the extra
+                raise RuntimeError(
+                    "sentence-transformers is not installed; install the 'eval' "
+                    "extra (pip install 'sentence-transformers>=3.0') to use the "
+                    "local learned embedder."
+                ) from exc
+            try:
+                self._model = SentenceTransformer(self._model_name, device=self._device)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"could not load sentence-transformers model {self._model_name!r} "
+                    f"(is it cached? set HF_HUB_OFFLINE=0 for the first download): {exc}"
+                ) from exc
+            self._dimension = int(self._model.get_sentence_embedding_dimension() or 0) or None
+        return self._model
+
+    @property
+    def dimension(self) -> int:
+        if self._dimension is None:
+            self._load()
+        assert self._dimension is not None
+        return self._dimension
+
+    def _encode(self, texts: list[str]) -> list[list[float]]:
+        model = self._load()
+        vectors: Any = model.encode(
+            texts,
+            batch_size=self._batch_size,
+            normalize_embeddings=self._normalize,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+        return [[float(x) for x in row] for row in np.asarray(vectors, dtype=np.float64)]
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        return self._encode(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._encode([text])[0]

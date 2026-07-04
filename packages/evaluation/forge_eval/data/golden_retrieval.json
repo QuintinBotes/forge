@@ -1,0 +1,28 @@
+{
+  "name": "forge-golden-retrieval-v1",
+  "description": "Golden retrieval set for the Forge Knowledge/RAG spine (plan Task 1.4). Each case pairs a query with the file path of the chunk a correct hybrid retrieval must surface. The corpus lives in forge_eval.retrieval_eval.SAMPLE_CORPUS. Queries deliberately mix natural-language semantic phrasing (exercises the pgvector leg) and exact identifiers (exercises the BM25 keyword leg) so the set proves hybrid retrieval, not one leg alone.",
+  "cases": [
+    {"id": "ret-001", "query": "pooled postgres database connection", "expected_ids": ["db/pool.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-002", "query": "apply alembic schema migrations upgrade head", "expected_ids": ["db/migrate.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-003", "query": "verify an oauth jwt token signature and expiry", "expected_ids": ["auth/jwt.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-004", "query": "validate_jwt", "expected_ids": ["auth/jwt.py"], "tags": ["identifier", "code"]},
+    {"id": "ret-005", "query": "bcrypt salted password hashing and verification", "expected_ids": ["auth/password.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-006", "query": "role based access control admin member viewer permissions", "expected_ids": ["auth/rbac.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-007", "query": "react dashboard charts useState useEffect hooks", "expected_ids": ["ui/dashboard.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-008", "query": "sortable filterable paginated data table grid", "expected_ids": ["ui/table.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-009", "query": "create a github pull request and request reviewers", "expected_ids": ["vcs/github.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-010", "query": "parse a github ci check run status webhook", "expected_ids": ["vcs/webhook.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-011", "query": "send a slack notification message to a channel", "expected_ids": ["notify/slack.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-012", "query": "kubernetes pod scheduling autoscaling node affinity", "expected_ids": ["infra/k8s.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-013", "query": "redis cache celery task queue broker", "expected_ids": ["infra/cache.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-014", "query": "reciprocal rank fusion combine rankings", "expected_ids": ["search/rrf.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-015", "query": "compute_rrf_score", "expected_ids": ["search/rrf.py"], "tags": ["identifier", "code"]},
+    {"id": "ret-016", "query": "cross encoder reranker reorders candidate documents", "expected_ids": ["search/rerank.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-017", "query": "dense vector embeddings for semantic similarity search", "expected_ids": ["search/embed.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-018", "query": "okapi bm25 keyword lexical ranking tsvector", "expected_ids": ["search/bm25.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-019", "query": "evaluate a policy tool call allow or deny write rules", "expected_ids": ["policy/evaluator.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-020", "query": "serialize the spec manifest yaml requirements acceptance", "expected_ids": ["spec/manifest.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-021", "query": "langgraph state graph plan act observe agent loop", "expected_ids": ["agent/loop.py"], "tags": ["semantic", "code"]},
+    {"id": "ret-022", "query": "what is forge engineering orchestration platform", "expected_ids": ["docs/README.md"], "tags": ["semantic", "doc"]}
+  ]
+}

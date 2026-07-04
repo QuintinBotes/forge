@@ -44,6 +44,12 @@ deploy/docker-compose.override.yml
 .data/
 data/
 
+# ...but the eval golden sets under forge_eval/data/ are SOURCE (curated
+# query→path labels), not local runtime data — they must be tracked so the
+# retrieval eval works in a fresh clone / CI (HARD-04). Re-include that dir only.
+!packages/evaluation/forge_eval/data/
+!packages/evaluation/forge_eval/data/**
+
 # Helm: vendored subchart archives are reproducible from Chart.lock
 # (`helm dependency build`); commit Chart.lock, not the pulled tgz blobs.
 deploy/helm/*/charts/
