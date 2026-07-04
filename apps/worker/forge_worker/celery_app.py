@@ -56,22 +56,14 @@ from forge_worker.reliability import configure_reliability  # noqa: E402
 configure_reliability(celery_app)
 
 
-# F38: one shared telemetry init per worker process (env-driven; the lean
-# default installs no-op providers and never opens a connection).
+# F38 + HARD-10: one shared telemetry init per worker process (env-driven; the
+# lean default installs no-op providers and never opens a connection, while
+# OBS_ENABLED=true + an OTLP endpoint stands up the real exporters). Delegates
+# to the worker observability module (which also owns the process UsageMeter).
 def _init_worker_telemetry(**_kwargs: object) -> None:  # pragma: no cover - worker boot
-    from forge_obs.telemetry import setup_telemetry
+    from forge_worker.observability import setup_worker_telemetry
 
-    setup_telemetry("forge-worker")
-
-    # HARD-13: scrub secrets from worker logs at the sink, identically to the API
-    # (structural redaction, not call-site discipline). Imported lazily so the
-    # module stays import-light for hermetic task inspection.
-    try:
-        from forge_api.observability.redaction import install_log_redaction
-
-        install_log_redaction()
-    except Exception:
-        pass
+    setup_worker_telemetry()
 
 
 try:  # connecting the signal is safe at import; it fires only in real workers

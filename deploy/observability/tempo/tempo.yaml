@@ -1,0 +1,39 @@
+# Forge Tempo config (HARD-10, observability profile). Self-hosted trace sink
+# (the ADR default over LangSmith, which stays an optional extra). Receives OTLP
+# from the collector; filesystem backend for the single-node self-host. No host
+# port — reached only by the collector (ingest) and Grafana (query), both on the
+# internal `observability` network.
+
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 168h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+usage_report:
+  reporting_enabled: false

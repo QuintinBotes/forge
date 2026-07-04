@@ -1,0 +1,94 @@
+# Forge Prometheus alerting rules (HARD-10 §1.4 — new vs F38, which deferred
+# alerting to V2). Each alert covers a production-maturity signal and carries a
+# runbook annotation that links to docs/self-hosting/observability.md. Every
+# expression references only instruments from the frozen §4 catalog + the
+# recording rules in forge.rules.yml (asserted by deploy/tests).
+
+groups:
+  - name: forge_pipeline_health
+    rules:
+      - alert: ForgeOtlpExporterDown
+        # The collector stops exposing its Prometheus target: the telemetry
+        # pipeline is blind. Fires fast so an operator notices the eyes are shut.
+        expr: up{job="otel-collector"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: observability
+        annotations:
+          summary: "OTel collector scrape target is down"
+          description: "Prometheus cannot scrape otel-collector:8889 for >2m; traces/metrics/logs are not flowing."
+          runbook: "docs/self-hosting/observability.md#otlp-exporter-down"
+
+      - alert: ForgeApiScrapeDown
+        expr: up{job="forge-api"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "forge-api /metrics scrape target is down"
+          description: "Prometheus cannot scrape the forge-api metrics endpoint for >5m."
+          runbook: "docs/self-hosting/observability.md#app-scrape-down"
+
+  - name: forge_cost_integrity
+    rules:
+      - alert: ForgeCostEmitFailures
+        # A failed ledger write is a billing gap — it must be loud, never silent.
+        expr: sum(rate(forge_cost_emit_failures_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: cost
+        annotations:
+          summary: "Cost ledger emission is failing"
+          description: "forge_cost_emit_failures_total is incrementing: cost_event rows are being dropped."
+          runbook: "docs/self-hosting/observability.md#cost-emit-failures"
+
+      - alert: ForgeUnpricedModelSpend
+        # An unknown (provider, model) is priced at $0 — real spend hiding as free.
+        expr: sum(increase(forge_unpriced_model_total[1h])) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: cost
+        annotations:
+          summary: "Unpriced model calls detected"
+          description: "forge_unpriced_model_total is incrementing: add a model_price row so spend is not undercounted."
+          runbook: "docs/self-hosting/observability.md#unpriced-model"
+
+  - name: forge_quality
+    rules:
+      - alert: ForgeAgentFailureRateHigh
+        expr: forge:agent_failure_ratio:rate5m > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          component: agent
+        annotations:
+          summary: "Agent run failure rate above 25%"
+          description: "More than a quarter of agent runs are failing over the last 5m."
+          runbook: "docs/self-hosting/observability.md#agent-failure-rate"
+
+      - alert: ForgeRetrievalLatencyP99High
+        # Retrieval p99 over the HARD-13 budget (2s end-to-end).
+        expr: max(forge:retrieval_latency_seconds:p99{stage="total"}) > 2
+        for: 10m
+        labels:
+          severity: warning
+          component: retrieval
+        annotations:
+          summary: "Retrieval p99 latency over budget"
+          description: "End-to-end retrieval p99 latency has exceeded 2s for >10m."
+          runbook: "docs/self-hosting/observability.md#retrieval-latency"
+
+      - alert: ForgeMcpFreshnessLagHigh
+        expr: max by (connection) (forge_mcp_freshness_lag_seconds) > 86400
+        for: 30m
+        labels:
+          severity: warning
+          component: mcp
+        annotations:
+          summary: "MCP knowledge source is stale"
+          description: "An MCP connection has not synced in over 24h ({{ $labels.connection }})."
+          runbook: "docs/self-hosting/observability.md#mcp-freshness"

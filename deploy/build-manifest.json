@@ -65,6 +65,30 @@
     "willfarrell/autoheal:1.2.0": {
       "digest": "sha256:31f580ef0279eaced5b38d631b08c474d70d8403c1c2fdd6ddcf2e879d5f3f7c",
       "kind": "pulled"
+    },
+    "otel/opentelemetry-collector-contrib:0.115.1": {
+      "digest": "sha256:d2da12c4336a79758826700be9e21ecf4a9f7d945b7f8a58ba55ee3fa45427c8",
+      "kind": "pulled"
+    },
+    "prom/prometheus:v3.1.0": {
+      "digest": "sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218",
+      "kind": "pulled"
+    },
+    "grafana/grafana:11.4.0": {
+      "digest": "sha256:d8ea37798ccc41061a62ab080f2676dda6bf7815558499f901bdb0f533a456fb",
+      "kind": "pulled"
+    },
+    "grafana/loki:3.3.2": {
+      "digest": "sha256:8af2de1abbdd7aa92b27c9bcc96f0f4140c9096b507c77921ffddf1c6ad6c48f",
+      "kind": "pulled"
+    },
+    "grafana/tempo:2.6.1": {
+      "digest": "sha256:ef4384fce6e8ad22b95b243d8fc165628cda655376fd50e7850536ad89d71d50",
+      "kind": "pulled"
+    },
+    "prom/alertmanager:v0.28.0": {
+      "digest": "sha256:d5155cfac40a6d9250ffc97c19db2c5e190c7bc57c6b67125c94903358f8c7d8",
+      "kind": "pulled"
     }
   }
 }

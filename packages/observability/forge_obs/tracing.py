@@ -1,11 +1,15 @@
 """Lightweight spans with W3C-shaped ids for log/trace correlation (F38).
 
-Real OTLP span export is PARKED until the OpenTelemetry SDK dependency lands
-(no third-party network in this build environment); the frozen surface here —
-``traced()``, ``current_trace_id()``, ``current_span_id()`` — is what producers
-and the logging pipeline consume, so swapping the backend for the OTel SDK
-later changes no caller. Ids follow the W3C trace-context shape (32/16 hex) so
-exported spans will correlate with these logs unchanged.
+Real OTLP export is now wired in :mod:`forge_obs.otel_export` (installed by
+:func:`~forge_obs.telemetry.setup_telemetry`): a genuine ``TracerProvider`` +
+OTLP/HTTP exporter carry framework/app spans to Tempo, and W3C trace-context
+propagation stitches the ``api -> Celery worker -> mcp-gateway`` boundary into
+one trace. This in-memory store stays **always on** as the offline correlation
+surface (the logging pipeline reads :func:`current_trace_id`) and the run-trace
+debug source, independent of whether an exporter is installed. The frozen
+surface here — ``traced()``, ``current_trace_id()``, ``current_span_id()`` — is
+unchanged. Ids follow the W3C trace-context shape (32/16 hex) so these logs
+correlate with exported spans.
 
 Span attributes are redacted before recording (secrets never reach a sink) and
 may legitimately carry high-cardinality dimensions (task/run/workspace ids) —

@@ -1,0 +1,39 @@
+# Forge Alertmanager config (HARD-10 §3.5). Routes Prometheus alerts; the
+# default receiver is a webhook that can reuse the existing
+# FORGE_GRAFANA_WEBHOOK_SECRET seam. Critical alerts page faster and repeat more
+# often than warnings. No host port — internal `observability` network only.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: forge-default
+  group_by: ["alertname", "component"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: forge-critical
+      group_wait: 10s
+      repeat_interval: 1h
+
+receivers:
+  - name: forge-default
+    webhook_configs:
+      - url: "http://api:8000/observability/alerts/webhook"
+        send_resolved: true
+
+  - name: forge-critical
+    webhook_configs:
+      - url: "http://api:8000/observability/alerts/webhook"
+        send_resolved: true
+
+inhibit_rules:
+  # A down collector makes the app-scrape alerts noise; suppress them.
+  - source_matchers:
+      - alertname="ForgeOtlpExporterDown"
+    target_matchers:
+      - component=~"api|cost|agent|retrieval|mcp"
+    equal: ["cluster"]

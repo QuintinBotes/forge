@@ -37,8 +37,7 @@ from forge_mcp.exceptions import (
 )
 from forge_mcp_gateway import __version__
 from forge_mcp_gateway.manager import MCPConnectionManager
-from forge_obs.metrics import get_metrics
-from forge_obs.telemetry import setup_telemetry
+from forge_mcp_gateway.observability import record_tool_call, setup_gateway_telemetry
 
 
 class ToolCallRequest(BaseModel):
@@ -85,8 +84,9 @@ def _error_handlers(app: FastAPI) -> None:
 
 def create_gateway_app(manager: MCPConnectionManager | None = None) -> FastAPI:
     """Build the MCP gateway app bound to ``manager`` (a default one if omitted)."""
-    # F38: shared telemetry init (env-driven; defaults to the no-op providers).
-    setup_telemetry("forge-mcp-gateway")
+    # F38 + HARD-10: shared telemetry init (env-driven; no-op by default, real
+    # OTLP export + inbound W3C trace-context continuation when enabled).
+    setup_gateway_telemetry()
     mgr = manager or MCPConnectionManager()
     app = FastAPI(
         title="Forge MCP Gateway",
@@ -171,7 +171,7 @@ def create_gateway_app(manager: MCPConnectionManager | None = None) -> FastAPI:
                 connection_name = conn.name if conn is not None else "unknown"
             except Exception:
                 connection_name = "unknown"
-            get_metrics().record_mcp_call(
+            record_tool_call(
                 connection=connection_name,
                 status=status_label,
                 latency_seconds=time.perf_counter() - started,

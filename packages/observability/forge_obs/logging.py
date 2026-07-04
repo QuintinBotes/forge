@@ -25,13 +25,21 @@ __all__ = ["JsonLogFormatter", "bind_context", "clear_context", "configure_loggi
 
 _CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar("forge_obs_log_context", default=None)
 
+#: Framework-generated structural fields that are never user secrets and MUST
+#: survive redaction so trace<->log correlation holds (spec §8 / HARD-10 AC17).
+_STRUCTURAL_FIELDS: frozenset[str] = frozenset(
+    {"ts", "level", "service", "logger", "trace_id", "span_id"}
+)
+
 #: Marker attribute so reconfiguration never stacks duplicate handlers.
 _HANDLER_FLAG = "_forge_obs_json_handler"
 
 #: LogRecord attributes that are not user-supplied extras.
-_RESERVED = frozenset(
-    logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()
-) | {"message", "asctime", "taskName"}
+_RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()) | {
+    "message",
+    "asctime",
+    "taskName",
+}
 
 
 def bind_context(**kv: Any) -> None:
@@ -72,8 +80,17 @@ class JsonLogFormatter(logging.Formatter):
                 payload[key] = value
         if record.exc_info and record.exc_info[0] is not None:
             payload["exc"] = self.formatException(record.exc_info)
-        # Redaction runs LAST so secrets never reach any sink (spec AC12).
-        return json.dumps(redact_value(payload), default=str, separators=(",", ":"))
+        # Redaction runs LAST so secrets never reach any sink (spec AC12) — but
+        # the framework-generated structural fields (W3C trace_id/span_id, ts,
+        # level, service, logger) are NOT user content and MUST survive so
+        # trace<->log correlation holds (spec §8/AC17); otherwise the entropy
+        # heuristic would occasionally scrub a legitimate 32-hex trace_id and
+        # break the pivot from a Grafana panel to the exact request's logs.
+        redacted = redact_value(payload)
+        for key in _STRUCTURAL_FIELDS:
+            if key in payload:
+                redacted[key] = payload[key]
+        return json.dumps(redacted, default=str, separators=(",", ":"))
 
 
 def configure_logging(*, service_name: str, settings: ObsSettings | None = None) -> None:

@@ -1,0 +1,230 @@
+{
+  "uid": "forge-workflow-quality",
+  "title": "Forge \u2014 Workflow Quality",
+  "tags": [
+    "forge",
+    "workflow"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 0,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "refresh": "30s",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Workflow runs by terminal state",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "forge:workflow_runs:rate5m",
+          "legendFormat": "{{workflow}} / {{terminal_state}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "Task completions by status",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "forge:task_completions:rate5m",
+          "legendFormat": "{{status}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Approval decisions",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "sum by (gate, decision) (rate(forge_approval_decisions_total[5m]))",
+          "legendFormat": "{{gate}} / {{decision}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "PR outcomes",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "sum by (outcome) (rate(forge_pr_outcomes_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 5,
+      "title": "Time to merge p50 (s)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le, workflow) (rate(forge_time_to_merge_seconds_bucket[30m])))",
+          "legendFormat": "{{workflow}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 6,
+      "title": "Spec completeness p50",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "forge-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "forge-prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(forge_spec_completeness_bucket[30m])))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

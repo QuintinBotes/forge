@@ -20,6 +20,7 @@ from forge_obs.metrics import (
     reset_metrics,
     set_metrics,
 )
+from forge_obs.otel_export import otel_sdk_available
 from forge_obs.redaction import REDACTED, get_redactor, redact_text, redact_value
 from forge_obs.settings import ObsSettings
 from forge_obs.telemetry import Telemetry, setup_telemetry, shutdown_telemetry
@@ -43,6 +44,7 @@ __all__ = [
     "get_metrics",
     "get_redactor",
     "get_span_store",
+    "otel_sdk_available",
     "redact_text",
     "redact_value",
     "render_prometheus",
