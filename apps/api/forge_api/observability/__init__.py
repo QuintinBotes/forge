@@ -17,6 +17,7 @@ from forge_api.observability.audit import (
     AuditLog,
     AuditStore,
     InMemoryAuditStore,
+    MCPAuditSink,
     compute_payload_hash,
     verify_chain,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "AuditLog",
     "AuditStore",
     "InMemoryAuditStore",
+    "MCPAuditSink",
     "ObservabilityService",
     "RunNotFoundError",
     "RunTrace",

@@ -96,6 +96,7 @@ markers = [
     "live_github: live GitHub App round-trip against api.github.com (HARD-01; requires FORGE_GITHUB_* creds + network, skips otherwise so the default lane stays hermetic)",
     "live_model: live BYOK model-provider round-trip (HARD-02; requires FORGE_MODEL_PROVIDER + a real key + the 'providers' extra, skips otherwise so the default lane stays hermetic)",
     "live_rerank: live BYOK cross-encoder reranker round-trip (HARD-03; requires JINA_API_KEY or COHERE_API_KEY or a reachable JINA_RERANKER_URL + network, skips otherwise so the default lane stays hermetic)",
+    "live_mcp: live MCP transport round-trip over real HTTP/stdio against the self-hosted reference server (HARD-05; enabled by MCP_LIVE_TRANSPORT=true — no external SaaS/cred, self-hosts a loopback server; skips otherwise so the default lane stays hermetic)",
     "realeval: honest real-corpus retrieval eval on a learned local sentence-transformers embedder (HARD-04; opt-in via FORGE_RUN_REALEVAL=1 + the 'eval' extra; skips otherwise so the default suite stays hermetic/fast)",
     "docker: test requires a real Docker daemon + sandbox images (F19; Docker-gated CI job, opt-in via FORGE_SANDBOX_DOCKER_TESTS=1)",
     "kind: test installs the Helm chart on an ephemeral kind cluster (F24; kind+helm+docker-gated, skips if unavailable)",

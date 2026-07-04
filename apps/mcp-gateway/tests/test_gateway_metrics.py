@@ -31,9 +31,7 @@ def metrics(registered: TestClient) -> RecordingMetrics:
     reset_metrics()
 
 
-def test_tool_call_records_mcp_metrics(
-    registered: TestClient, metrics: RecordingMetrics
-) -> None:
+def test_tool_call_records_mcp_metrics(registered: TestClient, metrics: RecordingMetrics) -> None:
     resp = registered.post(
         "/connections/confluence-engineering/tools/call",
         json={"name": "search_pages", "arguments": {"query": "auth"}},
@@ -53,6 +51,4 @@ def test_failed_tool_call_records_error_status(
     )
     assert resp.status_code == 403  # write tool on a read-only connection
     name = sample_connection().name
-    assert (
-        metrics.counter_value("forge_mcp_calls_total", connection=name, status="error") == 1
-    )
+    assert metrics.counter_value("forge_mcp_calls_total", connection=name, status="error") == 1

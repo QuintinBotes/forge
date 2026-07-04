@@ -24,10 +24,14 @@ from forge_mcp.transport import ToolSpec
 _SECRET_IN_CONTENT = "Authorization: Bearer sk-fixture-secret-123"
 
 _DEFAULT_RESOURCES = [
-    MCPResource(uri="confluence://engineering/page-1", name="Vault Rotation Runbook",
-                namespace="engineering"),
-    MCPResource(uri="confluence://engineering/page-2", name="Service Page",
-                namespace="engineering"),
+    MCPResource(
+        uri="confluence://engineering/page-1",
+        name="Vault Rotation Runbook",
+        namespace="engineering",
+    ),
+    MCPResource(
+        uri="confluence://engineering/page-2", name="Service Page", namespace="engineering"
+    ),
     MCPResource(uri="confluence://architecture/adr-7", name="ADR 7", namespace="architecture"),
     MCPResource(uri="confluence://finance/budget", name="Budget", namespace="finance"),
 ]

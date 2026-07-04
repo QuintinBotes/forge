@@ -320,6 +320,14 @@ services:
       # HARD-13: fail-closed master KEK (same key as api/worker).
       FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
       FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
+      # HARD-05: live MCP transport is opt-in. Unset/false -> NullTransport (503
+      # on any live op). Set true to drive real MCP servers over real HTTP/stdio.
+      MCP_LIVE_TRANSPORT: ${MCP_LIVE_TRANSPORT:-false}
+      MCP_HTTP_TIMEOUT_S: ${MCP_HTTP_TIMEOUT_S:-30}
+      MCP_PROTOCOL_VERSION: ${MCP_PROTOCOL_VERSION:-2025-06-18}
+      # Per-connection token is resolved from the vault (secret://mcp/<slug>);
+      # MCP_TOKEN is a dev/integration fallback only. Never commit a real value.
+      MCP_TOKEN: ${MCP_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy

@@ -25,9 +25,7 @@ def _tokens(text: str) -> set[str]:
 
 
 def _score(query_tokens: set[str], resource: MCPResource) -> int:
-    haystack = " ".join(
-        filter(None, [resource.name, resource.uri, resource.namespace])
-    )
+    haystack = " ".join(filter(None, [resource.name, resource.uri, resource.namespace]))
     return len(query_tokens & _tokens(haystack))
 
 

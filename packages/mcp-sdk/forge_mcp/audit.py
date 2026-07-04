@@ -8,6 +8,7 @@ DB-backed :class:`AuditSink` without changing the client.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
@@ -66,4 +67,27 @@ class InMemoryAuditLog:
         return len(self._entries)
 
 
-__all__ = ["AuditSink", "InMemoryAuditLog", "build_audit_entry"]
+class TeeAuditLog(InMemoryAuditLog):
+    """An :class:`InMemoryAuditLog` that also fans each entry out to more sinks.
+
+    Used by the live gateway/API wiring (HARD-05): the manager keeps an
+    in-memory trail (so ``GET …/audit`` still reads back) *while* every entry is
+    forwarded to a durable platform sink (Postgres ``AuditStore`` via the
+    ``forge_api`` bridge). Subclassing :class:`InMemoryAuditLog` preserves the
+    ``isinstance`` the manager uses to expose the trail. A downstream sink that
+    raises never corrupts the in-memory record — the entry is appended first and
+    forwarding failures are swallowed so auditing can never break a live call.
+    """
+
+    def __init__(self, *sinks: AuditSink) -> None:
+        super().__init__()
+        self._sinks: tuple[AuditSink, ...] = sinks
+
+    def record(self, entry: MCPAuditEntry) -> None:
+        super().record(entry)
+        for sink in self._sinks:
+            with contextlib.suppress(Exception):  # pragma: no cover - durability best-effort
+                sink.record(entry)
+
+
+__all__ = ["AuditSink", "InMemoryAuditLog", "TeeAuditLog", "build_audit_entry"]
