@@ -63,9 +63,7 @@ class ApprovalStore:
         self._items: dict[uuid.UUID, ApprovalRequest] = {}
         self._owner: dict[uuid.UUID, uuid.UUID] = {}
 
-    def create(
-        self, request: ApprovalRequest, *, workspace_id: uuid.UUID
-    ) -> ApprovalRequest:
+    def create(self, request: ApprovalRequest, *, workspace_id: uuid.UUID) -> ApprovalRequest:
         if request.id is None:
             request.id = uuid.uuid4()
         if request.created_at is None:
@@ -77,21 +75,27 @@ class ApprovalStore:
     def list(
         self, *, workspace_id: uuid.UUID, status: ApprovalStatus | None = None
     ) -> list[ApprovalRequest]:
-        items = [
-            req
-            for key, req in self._items.items()
-            if self._owner.get(key) == workspace_id
-        ]
+        items = [req for key, req in self._items.items() if self._owner.get(key) == workspace_id]
         if status is not None:
             items = [i for i in items if i.status == status]
         return items
 
-    def get(
-        self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID
-    ) -> ApprovalRequest | None:
+    def get(self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID) -> ApprovalRequest | None:
         if self._owner.get(approval_id) != workspace_id:
             return None
         return self._items.get(approval_id)
+
+    def owner_of(self, approval_id: uuid.UUID) -> uuid.UUID | None:
+        """Return the workspace that owns ``approval_id``, or ``None`` if unknown.
+
+        Read-only, cross-tenant-safe resolution used by the Slack interactivity
+        handler: a Slack ``block_actions`` callback is unauthenticated (it carries
+        no Forge principal) and embeds only the approval id, so the handler must
+        resolve the owning workspace before applying the decision through the
+        normal workspace-scoped :meth:`decide` path. An unknown id yields
+        ``None`` -> the handler no-ops (never leaks another tenant's gate).
+        """
+        return self._owner.get(approval_id)
 
     def decide(
         self,
@@ -179,13 +183,9 @@ def list_requests(
 
 
 @router.get("/requests/{approval_id}", response_model=ApprovalRequest)
-def get_request(
-    store: StoreDep, principal: ReaderDep, approval_id: uuid.UUID
-) -> ApprovalRequest:
+def get_request(store: StoreDep, principal: ReaderDep, approval_id: uuid.UUID) -> ApprovalRequest:
     """Fetch one approval request (only within the caller's workspace)."""
-    return _require(
-        store.get(approval_id, workspace_id=principal.workspace_id), approval_id
-    )
+    return _require(store.get(approval_id, workspace_id=principal.workspace_id), approval_id)
 
 
 @router.post("/requests/{approval_id}/decision", response_model=ApprovalRequest)
