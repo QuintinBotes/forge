@@ -32,6 +32,10 @@ paths = [
   '''apps/api/tests/test_obs_redaction\.py''',
   # HARD-02: fake sk-…/Bearer… shapes that exercise the model-client redactor.
   '''packages/agent-runtime/tests/test_providers_redaction\.py''',
+  # HARD-06: fake xoxb-… bot token + fake Slack signing-secret shapes exercising
+  # the notifier redaction / repr and the inbound v0 signature verifier. No real cred.
+  '''packages/integration-sdk/tests/test_slack\.py''',
+  '''apps/api/tests/test_slack_inbound\.py''',
   # Fake RFC example RSA key + AWS example key (AKIA…EXAMPLE) seeding the
   # secret-exclusion/redaction corpus assertions (_FAKE_PEM / _FAKE_AWS_KEY).
   '''packages/evaluation/tests/test_corpus_eval\.py''',

@@ -79,6 +79,80 @@ def test_slack_notify(client: TestClient) -> None:
     assert resp.json()["ok"] is True
 
 
+def _slack_principal(ws_id):
+    """A self-contained authenticated principal (avoids the shadowed bare
+    ``conftest`` name under the full-suite run)."""
+    import uuid as _uuid
+
+    from forge_api.deps import Principal
+    from forge_contracts import UserRole
+
+    return Principal(
+        user_id=_uuid.UUID("00000000-0000-0000-0000-0000000000e8"),
+        workspace_id=ws_id,
+        role=UserRole.ADMIN,
+        email="slack-router-test@forge.local",
+        auth_method="test",
+        scopes=["*"],
+    )
+
+
+def test_slack_notify_approval_records_ts(authenticate_app: Callable[..., FastAPI]) -> None:
+    """POST /slack/approvals/{id}/notify posts the gate + stashes channel/ts (AC)."""
+    import uuid
+
+    from forge_api.routers.approval import ApprovalStore, get_approval_store
+    from forge_api.routers.integration import (
+        SlackApprovalRefStore,
+        get_slack_notifier,
+        get_slack_ref_store,
+    )
+    from forge_contracts import ApprovalGate, ApprovalRequest
+
+    ws_id = uuid.UUID("00000000-0000-0000-0000-0000000000f9")
+    store = ApprovalStore()
+    req = ApprovalRequest(id=uuid.uuid4(), gate=ApprovalGate.PR, title="Ship it")
+    store.create(req, workspace_id=ws_id)
+    refs = SlackApprovalRefStore()
+
+    def slack_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True, "channel": "C42", "ts": "1700.500"})
+
+    slack = SlackNotifier(token="t", transport=httpx.MockTransport(slack_handler))
+
+    app = create_app()
+    authenticate_app(app, _slack_principal(ws_id))
+    app.dependency_overrides[get_approval_store] = lambda: store
+    app.dependency_overrides[get_slack_notifier] = lambda: slack
+    app.dependency_overrides[get_slack_ref_store] = lambda: refs
+    with TestClient(app) as c:
+        resp = c.post(f"/integration/slack/approvals/{req.id}/notify")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True
+    assert refs.get(req.id) == ("C42", "1700.500")
+
+
+def test_slack_notify_approval_404_for_unknown_gate(
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    import uuid
+
+    from forge_api.routers.approval import ApprovalStore, get_approval_store
+    from forge_api.routers.integration import get_slack_notifier
+
+    store = ApprovalStore()
+    slack = SlackNotifier(
+        token="t", transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"ok": True}))
+    )
+    app = create_app()
+    authenticate_app(app)
+    app.dependency_overrides[get_approval_store] = lambda: store
+    app.dependency_overrides[get_slack_notifier] = lambda: slack
+    with TestClient(app) as c:
+        resp = c.post(f"/integration/slack/approvals/{uuid.uuid4()}/notify")
+    assert resp.status_code == 404, resp.text
+
+
 def _webhook_body() -> bytes:
     return json.dumps(
         {

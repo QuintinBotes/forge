@@ -26,9 +26,7 @@ from forge_integrations import SlackNotifier
 def _ok_handler(rec: RequestRecorder):
     def handler(request: httpx.Request) -> httpx.Response:
         rec.record(request)
-        return httpx.Response(
-            200, json={"ok": True, "channel": "C123", "ts": "1700000000.000100"}
-        )
+        return httpx.Response(200, json={"ok": True, "channel": "C123", "ts": "1700000000.000100"})
 
     return handler
 
@@ -165,3 +163,178 @@ def test_notify_approval_without_channel_falls_back() -> None:
     notifier.notify_approval(request)
     # A deterministic fallback channel is used rather than crashing.
     assert json.loads(rec.last.content)["channel"]
+
+
+# --------------------------------------------------------------------------- #
+# HARD-06: bounded, rate-limit-aware retries (AC7)                             #
+# --------------------------------------------------------------------------- #
+
+
+class _SleepSpy:
+    """Records every delay passed to the injected ``sleep`` (no real wait)."""
+
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    def __call__(self, seconds: float) -> None:
+        self.delays.append(seconds)
+
+
+def _sequence_handler(responses: list[httpx.Response], rec: RequestRecorder):
+    """Return each queued response in order (last one repeats if exhausted)."""
+    box = {"i": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        rec.record(request)
+        idx = min(box["i"], len(responses) - 1)
+        box["i"] += 1
+        return responses[idx]
+
+    return handler
+
+
+def test_notify_retries_on_429_then_succeeds() -> None:
+    rec = RequestRecorder()
+    sleep = _SleepSpy()
+    responses = [
+        httpx.Response(429, headers={"Retry-After": "1"}, json={"ok": False}),
+        httpx.Response(200, json={"ok": True, "channel": "C1", "ts": "1.2"}),
+    ]
+    notifier = SlackNotifier(
+        token="t", transport=make_transport(_sequence_handler(responses, rec)), sleep=sleep
+    )
+    result = notifier.notify(SlackMessage(channel="#c", text="hi"))
+    assert result.ok is True
+    assert len(rec.requests) == 2  # exactly one retry
+    assert sleep.delays == [1.0]  # honoured Retry-After
+
+
+def test_notify_respects_retry_after_header_capped() -> None:
+    rec = RequestRecorder()
+    sleep = _SleepSpy()
+    responses = [
+        httpx.Response(429, headers={"Retry-After": "999"}, json={"ok": False}),
+        httpx.Response(200, json={"ok": True, "channel": "C1", "ts": "1.2"}),
+    ]
+    notifier = SlackNotifier(
+        token="t",
+        transport=make_transport(_sequence_handler(responses, rec)),
+        sleep=sleep,
+        retry_cap_seconds=5.0,
+    )
+    notifier.notify(SlackMessage(channel="#c", text="hi"))
+    assert sleep.delays == [5.0]  # Retry-After capped at retry_cap_seconds
+
+
+def test_notify_gives_up_after_max_retries_returns_ok_false() -> None:
+    rec = RequestRecorder()
+    sleep = _SleepSpy()
+    responses = [httpx.Response(429, headers={"Retry-After": "0"}, json={"ok": False})]
+    notifier = SlackNotifier(
+        token="t",
+        transport=make_transport(_sequence_handler(responses, rec)),
+        sleep=sleep,
+        max_retries=2,
+    )
+    result = notifier.notify(SlackMessage(channel="#c", text="hi"))
+    assert result.ok is False  # never raises
+    assert result.error == "http 429"
+    assert len(rec.requests) == 3  # initial + 2 retries
+
+
+def test_notify_retries_on_5xx_then_gives_up() -> None:
+    rec = RequestRecorder()
+    sleep = _SleepSpy()
+    responses = [httpx.Response(503, text="unavailable")]
+    notifier = SlackNotifier(
+        token="t",
+        transport=make_transport(_sequence_handler(responses, rec)),
+        sleep=sleep,
+        max_retries=1,
+        retry_base_delay=0.5,
+    )
+    result = notifier.notify(SlackMessage(channel="#c", text="hi"))
+    assert result.ok is False
+    assert result.error == "http 503"
+    assert len(rec.requests) == 2  # initial + 1 retry
+    assert sleep.delays == [0.5]  # base * 2**0
+
+
+def test_notify_treats_200_rate_limited_body_like_429() -> None:
+    rec = RequestRecorder()
+    sleep = _SleepSpy()
+    responses = [
+        httpx.Response(
+            200, headers={"Retry-After": "2"}, json={"ok": False, "error": "rate_limited"}
+        ),
+        httpx.Response(200, json={"ok": True, "channel": "C1", "ts": "9.9"}),
+    ]
+    notifier = SlackNotifier(
+        token="t", transport=make_transport(_sequence_handler(responses, rec)), sleep=sleep
+    )
+    result = notifier.notify(SlackMessage(channel="#c", text="hi"))
+    assert result.ok is True
+    assert sleep.delays == [2.0]
+    assert len(rec.requests) == 2
+
+
+def test_notify_does_not_retry_terminal_4xx() -> None:
+    rec = RequestRecorder()
+    sleep = _SleepSpy()
+    responses = [httpx.Response(200, json={"ok": False, "error": "channel_not_found"})]
+    notifier = SlackNotifier(
+        token="t", transport=make_transport(_sequence_handler(responses, rec)), sleep=sleep
+    )
+    result = notifier.notify(SlackMessage(channel="#nope", text="hi"))
+    assert result.ok is False
+    assert result.error == "channel_not_found"
+    assert len(rec.requests) == 1  # a non-rate-limit error is not retried
+    assert sleep.delays == []
+
+
+# --------------------------------------------------------------------------- #
+# HARD-06: chat.update (AC9)                                                    #
+# --------------------------------------------------------------------------- #
+
+
+def test_update_message_calls_chat_update_with_ts() -> None:
+    rec = RequestRecorder()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        rec.record(request)
+        return httpx.Response(200, json={"ok": True, "channel": "C1", "ts": "1700.1"})
+
+    notifier = SlackNotifier(token="t", transport=make_transport(handler))
+    result = notifier.update_message(
+        channel="C1",
+        ts="1700.1",
+        text="Approved by @reviewer",
+        blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": "Approved"}}],
+    )
+    assert result.ok is True
+    assert rec.last.url.path.endswith("/chat.update")
+    body = json.loads(rec.last.content)
+    assert body["channel"] == "C1"
+    assert body["ts"] == "1700.1"
+    assert body["text"] == "Approved by @reviewer"
+    assert body["blocks"]
+
+
+# --------------------------------------------------------------------------- #
+# HARD-06: secret hygiene + frozen-protocol conformance (AC8, AC10)            #
+# --------------------------------------------------------------------------- #
+
+
+def test_secret_never_in_repr_or_str() -> None:
+    notifier = SlackNotifier(token="xoxb-super-secret-token", default_channel="#a")
+    for rendered in (repr(notifier), str(notifier)):
+        assert "xoxb-super-secret-token" not in rendered
+    assert "configured=True" in repr(notifier)
+
+
+def test_slacknotifier_satisfies_frozen_protocol() -> None:
+    from forge_contracts import SlackNotifier as SlackNotifierProtocol
+
+    notifier = SlackNotifier(token="t")
+    # The concrete client still structurally satisfies the frozen Protocol.
+    assert isinstance(notifier, SlackNotifierProtocol)

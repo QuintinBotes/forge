@@ -37,6 +37,35 @@ def make_transport(
     return httpx.MockTransport(handler)
 
 
+def signed_slack_request(
+    secret: str,
+    body: bytes | str,
+    *,
+    skew: int = 0,
+    now: int | None = None,
+) -> tuple[dict[str, str], bytes]:
+    """Build ``(headers, body)`` for a correctly Slack-v0-signed inbound request.
+
+    ``now`` defaults to the real wall clock so a request built here verifies
+    against a route that uses ``time.time()``; ``skew`` shifts the signed
+    timestamp (negative -> the past) so tests can exercise the anti-replay
+    window. No network.
+    """
+    import time as _time
+
+    from forge_integrations import sign_slack_payload
+
+    raw = body.encode() if isinstance(body, str) else body
+    base = int(_time.time()) if now is None else now
+    ts = str(base + skew)
+    headers = {
+        "X-Slack-Request-Timestamp": ts,
+        "X-Slack-Signature": sign_slack_payload(secret, ts, raw),
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    return headers, raw
+
+
 class RequestRecorder:
     """Captures every request a client makes so tests can assert on payloads."""
 
@@ -61,10 +90,12 @@ def _no_real_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyP
     Every unit test here drives ``httpx`` through an injected ``MockTransport``,
     so the real ``HTTPTransport`` must never be reached. We monkeypatch its
     request handlers to raise, turning any accidental live call into a loud test
-    failure. The creds-gated ``live_github`` tests opt out (they DO hit the
-    network on purpose).
+    failure. The creds-gated ``live_github`` / ``live_slack`` tests opt out (they
+    DO hit the network on purpose).
     """
-    if request.node.get_closest_marker("live_github"):
+    if request.node.get_closest_marker("live_github") or request.node.get_closest_marker(
+        "live_slack"
+    ):
         return
 
     def _blocked(*_args: object, **_kwargs: object) -> None:

@@ -23,7 +23,9 @@ from .pm_adapter import BasePMAdapter, GenericPMAdapter
 from .slack import SlackNotifier
 from .webhooks import (
     parse_github_webhook,
+    parse_slack_interaction,
     sign_github_payload,
+    sign_slack_payload,
     verify_github_signature,
     verify_slack_signature,
 )
@@ -47,7 +49,9 @@ __all__ = [
     "build_app_jwt",
     "load_private_key",
     "parse_github_webhook",
+    "parse_slack_interaction",
     "sign_github_payload",
+    "sign_slack_payload",
     "verify_github_signature",
     "verify_slack_signature",
 ]

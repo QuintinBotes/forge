@@ -152,6 +152,12 @@ services:
       FORGE_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
       FORGE_GITHUB_WEBHOOK_SECRET: ${FORGE_GITHUB_WEBHOOK_SECRET:-}
       FORGE_GITHUB_API_URL: ${FORGE_GITHUB_API_URL:-https://api.github.com}
+      # HARD-06 live Slack integration. The bot token + signing secret are
+      # secrets (never committed). Unset signing secret -> the inbound
+      # /integration/slack/{commands,interactions} routes fail closed (501).
+      FORGE_SLACK_TOKEN: ${FORGE_SLACK_TOKEN:-}
+      FORGE_SLACK_SIGNING_SECRET: ${FORGE_SLACK_SIGNING_SECRET:-}
+      FORGE_SLACK_DEFAULT_CHANNEL: ${FORGE_SLACK_DEFAULT_CHANNEL:-}
       # F35 public benchmark leaderboard — DISABLED by default (self-hosted
       # privacy: /public/* 404s until an operator explicitly opts in).
       FORGE_PUBLIC_LEADERBOARD_ENABLED: ${FORGE_PUBLIC_LEADERBOARD_ENABLED:-false}

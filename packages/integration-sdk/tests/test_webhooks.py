@@ -16,16 +16,16 @@ from conftest import load_fixture
 from forge_contracts import CIState, CIStatus, WebhookEvent
 from forge_integrations import (
     parse_github_webhook,
+    parse_slack_interaction,
     sign_github_payload,
+    sign_slack_payload,
     verify_github_signature,
     verify_slack_signature,
 )
 
 
 def _event(event_type: str, fixture: str) -> WebhookEvent:
-    return WebhookEvent(
-        source="github", event_type=event_type, payload=load_fixture(fixture)
-    )
+    return WebhookEvent(source="github", event_type=event_type, payload=load_fixture(fixture))
 
 
 def test_parse_status_event_success() -> None:
@@ -171,3 +171,63 @@ def test_signatures_are_constant_time_comparable() -> None:
     body = json.dumps({"a": 1}).encode()
     sig = sign_github_payload(secret, body)
     assert verify_github_signature(secret, body, sig[:-1] + "0") is False
+
+
+# --------------------------------------------------------------------------- #
+# HARD-06: Slack v0 sign/verify round-trip + interaction parsing (AC3)         #
+# --------------------------------------------------------------------------- #
+
+
+def test_sign_then_verify_roundtrips() -> None:
+    secret = "slack-signing-secret"
+    ts = "1700000000"
+    body = b"token=abc&command=%2Fforge&text=help"
+    sig = sign_slack_payload(secret, ts, body)
+    assert sig.startswith("v0=")
+    assert verify_slack_signature(secret, ts, body, sig, now=1700000010) is True
+    # str body signs identically to the equivalent bytes body.
+    assert sign_slack_payload(secret, ts, body.decode()) == sig
+
+
+def test_verify_rejects_wrong_secret_tampered_missing_and_stale() -> None:
+    secret = "right-secret"
+    ts = "1700000000"
+    body = b"payload=%7B%22a%22%3A1%7D"
+    good = sign_slack_payload(secret, ts, body)
+
+    # (a) wrong secret
+    wrong = sign_slack_payload("wrong-secret", ts, body)
+    assert verify_slack_signature(secret, ts, body, wrong, now=1700000010) is False
+    # (b) tampered body
+    assert verify_slack_signature(secret, ts, b"payload=tampered", good, now=1700000010) is False
+    # (c) missing signature
+    assert verify_slack_signature(secret, ts, body, None, now=1700000010) is False
+    assert verify_slack_signature(secret, ts, body, "", now=1700000010) is False
+    # (d) stale timestamp (older than the 300s replay window)
+    assert verify_slack_signature(secret, ts, body, good, now=1700000000 + 301) is False
+    # ... and a valid, in-window request still verifies.
+    assert verify_slack_signature(secret, ts, body, good, now=1700000000 + 299) is True
+
+
+def test_verify_rejects_future_skew() -> None:
+    secret = "s"
+    ts = "1700000000"
+    body = b"x"
+    sig = sign_slack_payload(secret, ts, body)
+    # A timestamp far in the future is also rejected (symmetric skew guard).
+    assert verify_slack_signature(secret, ts, body, sig, now=1700000000 - 400) is False
+
+
+def test_parse_slack_interaction_decodes_payload() -> None:
+    payload = json.dumps({"type": "block_actions", "actions": [{"value": "approve:abc"}]})
+    parsed = parse_slack_interaction(payload)
+    assert parsed["type"] == "block_actions"
+    assert parsed["actions"][0]["value"] == "approve:abc"
+
+
+def test_parse_slack_interaction_raises_on_garbage() -> None:
+    with pytest.raises(ValueError):
+        parse_slack_interaction("}{not json")
+    # A JSON scalar (not an object) is also rejected.
+    with pytest.raises(ValueError):
+        parse_slack_interaction("42")

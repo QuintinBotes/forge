@@ -130,6 +130,17 @@ class Settings(BaseSettings):
     github_test_repo: str | None = None
     slack_token: str | None = None
     slack_default_channel: str | None = None
+    # --- HARD-06 live Slack integration -------------------------------------
+    # Shared secret Slack signs inbound slash-command / interactivity requests
+    # with (``X-Slack-Signature`` v0). Unset by default: the two inbound routes
+    # return ``501 Not Configured`` until it is set (fail-closed — an unsigned
+    # Slack callback is never trusted). Its value is never logged.
+    slack_signing_secret: str | None = None
+    # Bounded, rate-limit-aware outbound retries (honour Retry-After / 5xx backoff).
+    slack_max_retries: int = 3
+    slack_retry_base_delay_seconds: float = 0.5
+    # Anti-replay window for inbound Slack signatures (Slack's guidance: 5 min).
+    slack_signature_max_skew_seconds: int = 300
 
     # Per-provider alert webhook signing secrets (F17). Unset by default so the
     # corresponding webhook returns 501 Not Configured (fail-closed): an alert is
