@@ -234,6 +234,19 @@ class ApprovalRequest(WorkspaceScopedModel):
     decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     # F36 — optional SLA; the worker sweeper marks overdue pending gates expired.
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # F36-persist — the requesting actor reference ("system" | "<kind>:<id>").
+    # Distinct from ``requested_by`` (the resolvable user id): it is what the inbox
+    # shows and ``approval.requested`` carries, so the DB-backed repository must
+    # round-trip it verbatim. Server-defaulted so pre-existing rows read "system".
+    requested_actor: Mapped[str] = mapped_column(
+        String(64), default="system", server_default=text("'system'"), nullable=False
+    )
+    # F36-persist — escalation raises the resolving bar to admin. Persisted on the
+    # parent row so the single authorizer re-enforces the admin-only rule on every
+    # subsequent resolve attempt *after a reload* (not just in-process).
+    escalated: Mapped[bool] = mapped_column(
+        Boolean(), default=False, server_default=text("false"), nullable=False
+    )
 
     agent_run: Mapped[AgentRun | None] = relationship(back_populates="approval_requests")
     decisions: Mapped[list[ApprovalDecision]] = relationship(
