@@ -1360,3 +1360,130 @@ export interface HrdDiscoverResponse {
   sso: boolean;
   redirect?: string | null;
 }
+
+// --- Multi-team & RBAC (F30) ---------------------------------------------- //
+// Mirrors `forge_contracts.authz` + the `/teams`, `/access` and
+// `/projects/{id}/access` router schemas. Enum string values match the Python
+// StrEnum members verbatim (note the HYPHEN in "agent-runner").
+
+/** A workspace-scoped role. Order = descending capability (drives the census). */
+export const WORKSPACE_ROLES = [
+  "admin",
+  "member",
+  "viewer",
+  "agent-runner",
+] as const;
+export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
+
+/** A member's role within a team (`lead` confers team-member management). */
+export const TEAM_ROLES = ["lead", "member"] as const;
+export type TeamRole = (typeof TEAM_ROLES)[number];
+
+/** The scope at which a role grant applies. */
+export const SCOPE_TYPES = ["workspace", "team", "project"] as const;
+export type ScopeType = (typeof SCOPE_TYPES)[number];
+
+/** The kind of identity a grant binds to. */
+export const PRINCIPAL_TYPES = ["user", "api_key", "service"] as const;
+export type PrincipalType = (typeof PRINCIPAL_TYPES)[number];
+
+/** A team's access level on a project. */
+export const ACCESS_LEVELS = ["read", "write", "admin"] as const;
+export type AccessLevel = (typeof ACCESS_LEVELS)[number];
+
+/** Whether a project is visible workspace-wide or walled off to teams. */
+export const PROJECT_VISIBILITIES = ["workspace", "team_restricted"] as const;
+export type ProjectVisibility = (typeof PROJECT_VISIBILITIES)[number];
+
+export interface PrincipalRef {
+  type: PrincipalType;
+  id: string;
+}
+
+export interface ScopeRef {
+  type: ScopeType;
+  id: string;
+}
+
+/** A single `(principal, scope, role)` grant, optionally time-bounded. */
+export interface RoleGrant {
+  id: string;
+  workspace_id: string;
+  principal: PrincipalRef;
+  scope: ScopeRef;
+  role: WorkspaceRole;
+  granted_by?: string | null;
+  expires_at?: string | null;
+  created_at?: string | null;
+}
+
+/** Body for `POST /access/grants`. */
+export interface RoleGrantInput {
+  principal: PrincipalRef;
+  scope: ScopeRef;
+  role: WorkspaceRole;
+  expires_at?: string | null;
+}
+
+/** Query filters for `GET /access/grants`. */
+export interface RoleGrantQuery {
+  principal_id?: string;
+  scope_type?: ScopeType;
+  scope_id?: string;
+}
+
+export interface Team {
+  id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+  parent_team_id?: string | null;
+  archived_at?: string | null;
+  created_at: string;
+}
+
+/** Body for `POST /teams`. */
+export interface TeamInput {
+  key: string;
+  name: string;
+  description?: string | null;
+  parent_team_id?: string | null;
+}
+
+export interface TeamMember {
+  user_id: string;
+  team_role: TeamRole;
+  created_at: string;
+}
+
+/** Body for `POST /teams/{id}/members`. */
+export interface TeamMemberInput {
+  user_id: string;
+  team_role?: TeamRole;
+}
+
+export interface ProjectTeamAccess {
+  project_id: string;
+  team_id: string;
+  access_level: AccessLevel;
+}
+
+/** Body for `POST /projects/{id}/team-access`. */
+export interface ProjectTeamAccessInput {
+  team_id: string;
+  access_level: AccessLevel;
+}
+
+/** Body for `PUT /projects/{id}/visibility`. */
+export interface ProjectVisibilityInput {
+  visibility: ProjectVisibility;
+  owner_team_id?: string | null;
+}
+
+/** The visibility + per-team access for one project (`GET /projects/{id}/access`). */
+export interface ProjectAccess {
+  project_id: string;
+  visibility: ProjectVisibility;
+  owner_team_id?: string | null;
+  team_access: ProjectTeamAccess[];
+}

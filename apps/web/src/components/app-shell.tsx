@@ -15,6 +15,7 @@ import {
   Store,
   TrendingUp,
   KeyRound,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -47,6 +48,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Observability", href: "/observability", icon: Gauge },
   { label: "Audit", href: "/audit", icon: ScrollText },
   { label: "Marketplace", href: "/marketplace", icon: Store },
+  { label: "Access", href: "/settings/rbac", icon: Users },
   { label: "SSO", href: "/settings/sso", icon: KeyRound },
 ];
 
