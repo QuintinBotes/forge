@@ -1033,6 +1033,42 @@ def test_approval_repository_columns_migration_up_down(alembic_config: Config) -
         engine.dispose()
 
 
+# HARD-11-persist HTTP idempotency-store table, owned by 0028_idempotency_store.
+IDEMPOTENCY_TABLES = {"idempotency_key"}
+
+
+def test_idempotency_store_migration_up_down(alembic_config: Config) -> None:
+    """0028 owns the ``idempotency_key`` response-cache table (with its ``key``
+    UNIQUE index + ``expires_at`` index) and drops exactly it on downgrade, leaving
+    the prior chain intact.
+
+    (forge_db's baseline is metadata-driven, so a fresh chain provisions the table
+    at 0001; like 0025/0027, the 0028 step is idempotent about that and owns a
+    clean, reversible down.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        command.upgrade(alembic_config, "head")
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert tables >= IDEMPOTENCY_TABLES, "missing idempotency_key table"
+        indexes = {i["name"] for i in inspector.get_indexes("idempotency_key")}
+        assert "ix_idempotency_key_expires_at" in indexes
+        uniques = {uc["name"] for uc in inspector.get_unique_constraints("idempotency_key")}
+        assert "uq_idempotency_key_key" in uniques
+
+        # Downgrade one step: the idempotency table is gone, the chain intact.
+        command.downgrade(alembic_config, "0027_secret_vault_store")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (IDEMPOTENCY_TABLES & after_down), "downgrade left idempotency_key"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # --------------------------------------------------------------------------- #
 # HARD-11 — live-Postgres migration round-trip, per-revision walk, and         #
 # data-preservation. These run only against a real pgvector Postgres (the      #

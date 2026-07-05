@@ -257,6 +257,13 @@ class Settings(BaseSettings):
     # request carries no key.
     idempotency_enabled: bool = True
     idempotency_ttl_seconds: int = 86_400
+    # HTTP idempotency-store backend selection. ``memory`` (default) keeps the
+    # hermetic, process-memory ``InMemoryIdempotencyStore`` (unit-test default, no
+    # Postgres); ``db`` wires the Postgres-backed ``DbIdempotencyStore`` behind the
+    # same ``IdempotencyStore`` protocol so the cached idempotency-key responses
+    # survive a restart and dedup across processes. Read via
+    # ``FORGE_IDEMPOTENCY_BACKEND``.
+    idempotency_backend: str = "memory"
     # Graceful-shutdown request drain grace: on SIGTERM readiness flips to 503 and
     # the app waits up to this long for in-flight requests before tearing down.
     shutdown_drain_seconds: int = 30
