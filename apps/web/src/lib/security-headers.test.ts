@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-// @ts-expect-error - next.config.mjs is plain JS with no type declarations.
+// next.config.mjs is plain JS; the TS 6 toolchain now resolves it without a
+// directive (the prior @ts-expect-error became unused → TS2578).
 import { securityHeaders as configHeaders } from "../../next.config.mjs";
 import { CONTENT_SECURITY_POLICY, SECURITY_HEADERS } from "./security-headers";
 

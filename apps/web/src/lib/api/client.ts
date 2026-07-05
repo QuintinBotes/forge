@@ -8,6 +8,13 @@
  */
 
 import type {
+  ApprovalContext,
+  ApprovalCount,
+  ApprovalDecisionRecord,
+  ApprovalDecisionRequest,
+  ApprovalRequest,
+  ApprovalResolution,
+  ApprovalSummary,
   BulkUpdate,
   EpicDTO,
   HealthResponse,
@@ -190,6 +197,45 @@ export class ForgeApiClient {
     return this.request<RetrievedChunk[]>("/knowledge/search", {
       method: "POST",
       body: req,
+    });
+  }
+
+  // --- Approvals (F36 unified /approvals router) -------------------------- //
+
+  /** The approval inbox: workspace-scoped, critical risk first. */
+  listApprovals(query?: RequestOptions["query"]): Promise<ApprovalSummary[]> {
+    return this.request<ApprovalSummary[]>("/approvals", { query });
+  }
+
+  /** Pending-count badge; matches the inbox length by construction. */
+  approvalCount(query?: RequestOptions["query"]): Promise<ApprovalCount> {
+    return this.request<ApprovalCount>("/approvals/count", { query });
+  }
+
+  getApproval(approvalId: string): Promise<ApprovalRequest> {
+    return this.request<ApprovalRequest>(`/approvals/${approvalId}`);
+  }
+
+  /** The nine "must-show" review items, built by the gate's provider. */
+  getApprovalContext(approvalId: string): Promise<ApprovalContext> {
+    return this.request<ApprovalContext>(`/approvals/${approvalId}/context`);
+  }
+
+  /** The immutable per-approver decision trail. */
+  listApprovalDecisions(approvalId: string): Promise<ApprovalDecisionRecord[]> {
+    return this.request<ApprovalDecisionRecord[]>(
+      `/approvals/${approvalId}/decisions`,
+    );
+  }
+
+  /** Approve / reject / request changes / escalate a gate. */
+  decideApproval(
+    approvalId: string,
+    body: ApprovalDecisionRequest,
+  ): Promise<ApprovalResolution> {
+    return this.request<ApprovalResolution>(`/approvals/${approvalId}/decision`, {
+      method: "POST",
+      body,
     });
   }
 }
