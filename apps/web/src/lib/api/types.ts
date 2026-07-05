@@ -784,3 +784,65 @@ export interface IncidentEventRequest {
   context?: Record<string, boolean>;
   note?: string | null;
 }
+
+// --- Observability & cost (F38) ------------------------------------------- //
+// Mirrors `forge_obs.cost.models` (Pydantic v2). Money is a `Decimal` on the
+// server and serialises to a JSON **string** (e.g. "0.43"); token counts are
+// integers. Consumers coerce with `toNum` before arithmetic.
+
+/** Aggregation scope for a cost query. */
+export type CostScope = "workspace" | "project" | "task";
+/** Breakdown dimension for a summary/timeseries. */
+export type CostGroupBy = "phase" | "provider" | "model" | "none";
+/** Time-bucket granularity for a timeseries. */
+export type CostBucketSize = "hour" | "day" | "week";
+
+/** One breakdown bucket (keyed by phase | provider | model, per `group_by`). */
+export interface CostBucket {
+  key: string;
+  cost_usd: string | number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+/** Aggregate spend for a scope, with a grouped breakdown (GET /cost/summary). */
+export interface CostSummary {
+  scope: string;
+  scope_id: string;
+  total_cost_usd: string | number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  group_by: string;
+  buckets: CostBucket[];
+  from?: string | null;
+  to?: string | null;
+}
+
+/** Bucketed spend over time, one series per group key (GET /cost/timeseries). */
+export interface CostTimeseries {
+  scope: string;
+  scope_id: string;
+  bucket: string;
+  group_by: string;
+  /** `{ "<key>": [[iso_timestamp, cost_usd_string], …] }`. */
+  series: Record<string, [string, string | number][]>;
+}
+
+/** Query params for GET /cost/summary. */
+export interface CostSummaryQuery {
+  scope?: CostScope;
+  scope_id?: string;
+  group_by?: CostGroupBy;
+  from?: string;
+  to?: string;
+}
+
+/** Query params for GET /cost/timeseries. */
+export interface CostTimeseriesQuery {
+  scope?: CostScope;
+  scope_id?: string;
+  bucket?: CostBucketSize;
+  group_by?: CostGroupBy;
+  from?: string;
+  to?: string;
+}
