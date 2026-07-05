@@ -23,6 +23,7 @@ import type {
   MilestoneDTO,
   Principal,
   RetrievedChunk,
+  RunTrace,
   ServiceInfo,
   SprintDTO,
   TaskDTO,
@@ -237,6 +238,15 @@ export class ForgeApiClient {
       method: "POST",
       body,
     });
+  }
+
+  // --- Observability (run-trace viewer) ----------------------------------- //
+
+  /** Assemble a step-level trace for one agent run (redacted, ordered). */
+  getRunTrace(runId: string): Promise<RunTrace> {
+    return this.request<RunTrace>(
+      `/observability/runs/${encodeURIComponent(runId)}/trace`,
+    );
   }
 }
 
