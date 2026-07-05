@@ -18,7 +18,12 @@ import type {
   BulkUpdate,
   EpicDTO,
   HealthResponse,
+  IncidentDeclareRequest,
+  IncidentDetailView,
   IncidentDTO,
+  IncidentEventRequest,
+  IncidentEventView,
+  IncidentView,
   Installation,
   InstallPlan,
   InstallRequest,
@@ -27,7 +32,9 @@ import type {
   Listing,
   ListingDetail,
   MilestoneDTO,
+  PostmortemView,
   Principal,
+  RemediationPlanView,
   RetrievedChunk,
   RunTrace,
   ServiceInfo,
@@ -198,6 +205,65 @@ export class ForgeApiClient {
 
   listIncidents(query?: RequestOptions["query"]): Promise<IncidentDTO[]> {
     return this.request<IncidentDTO[]>("/board/incidents", { query });
+  }
+
+  // --- Incidents (F17 /incidents workflow surface) ------------------------ //
+
+  /** Declare a manual incident (FSM starts at `incident_created`). */
+  declareIncident(body: IncidentDeclareRequest): Promise<IncidentView> {
+    return this.request<IncidentView>("/incidents", { method: "POST", body });
+  }
+
+  /** The incident queue (workspace-scoped; filter by project/state/severity). */
+  listIncidentRecords(query?: RequestOptions["query"]): Promise<IncidentView[]> {
+    return this.request<IncidentView[]>("/incidents", { query });
+  }
+
+  /** One incident's detail: summary + latest plan + event count. */
+  getIncident(incidentId: string): Promise<IncidentDetailView> {
+    return this.request<IncidentDetailView>(
+      `/incidents/${encodeURIComponent(incidentId)}`,
+    );
+  }
+
+  /** The ordered incident timeline (state changes, notes, remediation). */
+  getIncidentTimeline(incidentId: string): Promise<IncidentEventView[]> {
+    return this.request<IncidentEventView[]>(
+      `/incidents/${encodeURIComponent(incidentId)}/timeline`,
+    );
+  }
+
+  /** Drive the incident FSM with an event (WRITE-gated: human-in-the-loop). */
+  sendIncidentEvent(
+    incidentId: string,
+    body: IncidentEventRequest,
+  ): Promise<IncidentDetailView> {
+    return this.request<IncidentDetailView>(
+      `/incidents/${encodeURIComponent(incidentId)}/events`,
+      { method: "POST", body },
+    );
+  }
+
+  /** The latest proposed remediation runbook (404 when none proposed yet). */
+  getRemediationPlan(incidentId: string): Promise<RemediationPlanView> {
+    return this.request<RemediationPlanView>(
+      `/incidents/${encodeURIComponent(incidentId)}/remediation`,
+    );
+  }
+
+  /** The rendered postmortem + action items (404 until one is generated). */
+  getPostmortem(incidentId: string): Promise<PostmortemView> {
+    return this.request<PostmortemView>(
+      `/incidents/${encodeURIComponent(incidentId)}/postmortem`,
+    );
+  }
+
+  /** Publish the incident's postmortem (advances its status to published). */
+  publishPostmortem(incidentId: string): Promise<PostmortemView> {
+    return this.request<PostmortemView>(
+      `/incidents/${encodeURIComponent(incidentId)}/postmortem/publish`,
+      { method: "POST" },
+    );
   }
 
   // --- Knowledge ---------------------------------------------------------- //
