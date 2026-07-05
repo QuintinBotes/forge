@@ -507,3 +507,158 @@ export interface RunTrace {
   has_subagents: boolean;
   summary?: string | null;
 }
+
+// --- Marketplace (F32 integration marketplace) ---------------------------- //
+// Hand-maintained mirror of `forge_marketplace.models` + the marketplace router
+// DTOs (Pydantic v2). Enum string values match the Python `StrEnum` verbatim.
+
+/** The distributable artifact kinds a registry can advertise (ArtifactKind). */
+export const ARTIFACT_KINDS = [
+  "mcp_connector",
+  "skill_profile",
+  "workflow_template",
+  "policy_template",
+] as const;
+export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
+
+/** Registry provenance, most-trusted first (TrustLevel). */
+export const TRUST_LEVELS = [
+  "official",
+  "trusted",
+  "community",
+  "unverified",
+] as const;
+export type TrustLevel = (typeof TRUST_LEVELS)[number];
+
+/**
+ * The cryptographic verification outcome for a version/installation.
+ * `signature_invalid` / `hash_mismatch` are hard blocks; `unsigned` /
+ * `untrusted_registry` are soft-gated (require an explicit admin acknowledgement).
+ */
+export const VERIFICATION_STATUSES = [
+  "verified",
+  "unsigned",
+  "untrusted_registry",
+  "signature_invalid",
+  "hash_mismatch",
+] as const;
+export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number];
+
+/** Installation lifecycle (InstallStatus). */
+export const INSTALL_STATUSES = [
+  "pending",
+  "installed",
+  "update_available",
+  "failed",
+  "uninstalled",
+] as const;
+export type InstallStatus = (typeof INSTALL_STATUSES)[number];
+
+export type RegistryType = "git" | "http_index";
+
+/** One published version of a listing (GET /marketplace/listings/.../...). */
+export interface ListingVersion {
+  version: string;
+  content_hash: string;
+  signed: boolean;
+  min_forge_version?: string | null;
+  published_at: string;
+  yanked?: boolean;
+  yanked_reason?: string | null;
+}
+
+/** One catalog row (GET /marketplace/listings). */
+export interface Listing {
+  id: string;
+  registry_id: string;
+  registry_slug: string;
+  trust_level: TrustLevel;
+  kind: ArtifactKind;
+  slug: string;
+  name: string;
+  summary: string;
+  tags: string[];
+  latest_version: string;
+  homepage?: string | null;
+  repository?: string | null;
+  license: string;
+  cached_at: string;
+}
+
+/** A listing enriched with its full version history (package detail). */
+export interface ListingDetail extends Listing {
+  versions: ListingVersion[];
+}
+
+/** One installed package (GET /marketplace/installations). */
+export interface Installation {
+  id: string;
+  registry_slug: string;
+  listing_slug: string;
+  kind: string;
+  installed_version: string;
+  pinned: boolean;
+  target_kind: string;
+  target_object_id?: string | null;
+  content_hash: string;
+  verification_status: VerificationStatus;
+  status: InstallStatus;
+  available_version?: string | null;
+  yanked_reason?: string | null;
+  created_at: string;
+}
+
+/** The result of verifying a version's content hash + signature. */
+export interface VerificationResult {
+  status: VerificationStatus;
+  content_hash_ok: boolean;
+  signature_ok?: boolean | null;
+  detail?: string | null;
+}
+
+/** Body of POST /marketplace/preview and /marketplace/install. */
+export interface InstallRequest {
+  registry_id: string;
+  kind: ArtifactKind;
+  slug: string;
+  version?: string | null;
+  /** Required to install an unsigned / untrusted-registry package. */
+  acknowledge_unverified?: boolean;
+  override_name?: string | null;
+}
+
+/** The dry-run plan a preview returns (POST /marketplace/preview). */
+export interface InstallPlan {
+  registry_id?: string | null;
+  kind: ArtifactKind;
+  slug: string;
+  version: string;
+  verification: VerificationResult;
+  resolved_config: Record<string, unknown>;
+  warnings: string[];
+  requires_admin_followup: string[];
+  overrides_builtin: boolean;
+  blocked: boolean;
+  block_reason?: string | null;
+}
+
+/** The outcome of a completed install/update (POST /marketplace/install). */
+export interface InstallResult {
+  installation_id: string;
+  target_kind: string;
+  target_object_id: string;
+  status: InstallStatus;
+  version: string;
+  verification: VerificationResult;
+  warnings: string[];
+}
+
+/** Catalog query params (GET /marketplace/listings). */
+export interface MarketplaceListingQuery {
+  kind?: ArtifactKind;
+  tag?: string;
+  registry_id?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}

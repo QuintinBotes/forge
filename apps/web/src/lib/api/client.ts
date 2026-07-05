@@ -19,7 +19,13 @@ import type {
   EpicDTO,
   HealthResponse,
   IncidentDTO,
+  Installation,
+  InstallPlan,
+  InstallRequest,
+  InstallResult,
   KnowledgeSearchRequest,
+  Listing,
+  ListingDetail,
   MilestoneDTO,
   Principal,
   RetrievedChunk,
@@ -276,6 +282,52 @@ export class ForgeApiClient {
   getRunTrace(runId: string): Promise<RunTrace> {
     return this.request<RunTrace>(
       `/observability/runs/${encodeURIComponent(runId)}/trace`,
+    );
+  }
+
+  // --- Marketplace (F32 integration marketplace) -------------------------- //
+
+  /** The catalog: community skill profiles + MCP connectors (workspace-scoped). */
+  listListings(query?: RequestOptions["query"]): Promise<Listing[]> {
+    return this.request<Listing[]>("/marketplace/listings", { query });
+  }
+
+  /** One package with its full version history (manifest + provenance). */
+  getListing(registrySlug: string, slug: string): Promise<ListingDetail> {
+    return this.request<ListingDetail>(
+      `/marketplace/listings/${encodeURIComponent(registrySlug)}/${encodeURIComponent(slug)}`,
+    );
+  }
+
+  /** Dry-run an install: verification result, warnings, admin follow-ups. */
+  previewInstall(body: InstallRequest): Promise<InstallPlan> {
+    return this.request<InstallPlan>("/marketplace/preview", {
+      method: "POST",
+      body,
+    });
+  }
+
+  /** Install a package into the workspace (admin). */
+  installPackage(body: InstallRequest): Promise<InstallResult> {
+    return this.request<InstallResult>("/marketplace/install", {
+      method: "POST",
+      body,
+    });
+  }
+
+  /** Installed packages, with any available update surfaced per row. */
+  listInstallations(): Promise<Installation[]> {
+    return this.request<Installation[]>("/marketplace/installations");
+  }
+
+  /** Update an installation to `version` (or the latest compatible). */
+  updateInstallation(
+    installationId: string,
+    version?: string,
+  ): Promise<InstallResult> {
+    return this.request<InstallResult>(
+      `/marketplace/installations/${encodeURIComponent(installationId)}/update`,
+      { method: "POST", query: version ? { version } : undefined },
     );
   }
 }
