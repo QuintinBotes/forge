@@ -10,6 +10,7 @@ import {
   Search,
   ShieldCheck,
   Store,
+  TrendingUp,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
@@ -101,6 +102,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <Layers />,
     run: (router) => router.push("/depth"),
+  },
+  {
+    id: "go-sprints",
+    label: "Go to Sprints",
+    group: "Navigate",
+    icon: <TrendingUp />,
+    run: (router) => router.push("/sprints"),
   },
   {
     id: "go-incidents",
