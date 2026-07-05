@@ -1487,3 +1487,141 @@ export interface ProjectAccess {
   owner_team_id?: string | null;
   team_access: ProjectTeamAccess[];
 }
+
+// --- External PM adapters (F18 `/integrations/pm` routers) ----------------- //
+
+export const PM_PROVIDERS = ["jira", "linear"] as const;
+export type PmProvider = (typeof PM_PROVIDERS)[number];
+
+export const PM_AUTH_TYPES = ["oauth", "api_token"] as const;
+export type PmAuthType = (typeof PM_AUTH_TYPES)[number];
+
+export const PM_SYNC_DIRECTIONS = [
+  "bidirectional",
+  "inbound_only",
+  "outbound_only",
+] as const;
+export type PmSyncDirection = (typeof PM_SYNC_DIRECTIONS)[number];
+
+export const PM_CONFLICT_POLICIES = [
+  "forge_wins",
+  "external_wins",
+  "newest_wins",
+  "manual",
+] as const;
+export type PmConflictPolicy = (typeof PM_CONFLICT_POLICIES)[number];
+
+export const PM_CONNECTION_STATUSES = [
+  "pending",
+  "connected",
+  "error",
+  "disabled",
+] as const;
+export type PmConnectionStatus = (typeof PM_CONNECTION_STATUSES)[number];
+
+/** Ordered so the health strip reads healthy → degraded left to right. */
+export const PM_SYNC_STATES = [
+  "synced",
+  "pending_out",
+  "pending_in",
+  "conflict",
+  "error",
+] as const;
+export type PmSyncState = (typeof PM_SYNC_STATES)[number];
+
+/** Normalized status categories a mapping row can target (board grain). */
+export const PM_STATUS_CATEGORIES = [
+  "backlog",
+  "unstarted",
+  "started",
+  "completed",
+  "canceled",
+] as const;
+export type PmStatusCategory = (typeof PM_STATUS_CATEGORIES)[number];
+
+/**
+ * Redaction-safe view of a `pm_connection` row. Secrets are never returned —
+ * only the `has_credential` / `has_webhook_secret` booleans and the connected
+ * account label.
+ */
+export interface PmConnection {
+  id: string;
+  provider: PmProvider;
+  name: string;
+  project_id: string;
+  external_base_url?: string | null;
+  external_project_key: string;
+  external_project_id: string;
+  auth_type: PmAuthType;
+  account_label?: string | null;
+  granted_scopes: string[];
+  sync_direction: PmSyncDirection;
+  conflict_policy: PmConflictPolicy;
+  status_map: Record<string, string>;
+  priority_map: Record<string, string>;
+  field_map: Record<string, unknown>;
+  status: PmConnectionStatus;
+  last_health_at?: string | null;
+  last_full_sync_at?: string | null;
+  has_credential: boolean;
+  has_webhook_secret: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A connection plus its per-state link tallies (keyed by {@link PmSyncState}). */
+export interface PmConnectionDetail extends PmConnection {
+  link_counts: Partial<Record<PmSyncState, number>>;
+}
+
+/** Request body for `POST /connections` (the connect form). */
+export interface PmConnectionConfigInput {
+  provider: PmProvider;
+  name: string;
+  project_id: string;
+  external_base_url?: string | null;
+  external_project_key: string;
+  auth_type?: PmAuthType;
+  api_token?: string | null;
+  api_token_email?: string | null;
+  sync_direction?: PmSyncDirection;
+  conflict_policy?: PmConflictPolicy;
+  status_map?: Record<string, string>;
+  priority_map?: Record<string, string>;
+  field_map?: Record<string, unknown>;
+  on_external_delete?: "unlink" | "archive";
+}
+
+/** Partial update for `PATCH /connections/{id}`. */
+export interface PmConnectionPatch {
+  name?: string | null;
+  status_map?: Record<string, string> | null;
+  priority_map?: Record<string, string> | null;
+  field_map?: Record<string, unknown> | null;
+  sync_direction?: PmSyncDirection | null;
+  conflict_policy?: PmConflictPolicy | null;
+  enabled?: boolean | null;
+}
+
+/** A durable Forge-task ↔ external-issue link. */
+export interface PmLink {
+  id: string;
+  forge_task_id: string;
+  provider: PmProvider;
+  external_id: string;
+  external_key: string;
+  external_url: string;
+  sync_state: PmSyncState;
+  last_synced_at?: string | null;
+  conflict_detail?: Record<string, unknown> | null;
+}
+
+/** Result of `POST /connections/{id}/test` (the health probe). */
+export interface PmHealthResult {
+  status: "connected" | "error";
+  provider: PmProvider;
+  latency_ms: number;
+  account?: string | null;
+  granted_scopes: string[];
+  error?: string | null;
+}
