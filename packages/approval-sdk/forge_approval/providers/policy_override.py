@@ -53,6 +53,33 @@ class PolicyOverrideGate(Protocol):
         ...
 
 
+@runtime_checkable
+class GrantStore(Protocol):
+    """The full ``mint`` / ``consume`` / ``all`` grant-store seam.
+
+    Superset of :class:`PolicyOverrideGate` (the consume-only resume contract):
+    the resolution hook mints grants and the composition root/inspection reads
+    them all. :class:`InMemoryGrantStore` is the hermetic default; a Postgres
+    adapter satisfies this *same* Protocol, so the store is swappable behind an
+    env flag with no behaviour change.
+    """
+
+    def mint(self, grant: PolicyOverrideGrant) -> PolicyOverrideGrant:
+        """Store a grant; at most one active per (agent_run_id, fingerprint).
+
+        Idempotent while an active grant exists: returns the existing one
+        rather than a duplicate."""
+        ...
+
+    async def consume(self, *, agent_run_id: uuid.UUID, action_fingerprint: str) -> bool:
+        """Atomically check-and-consume a non-expired grant (single-use)."""
+        ...
+
+    def all(self) -> list[PolicyOverrideGrant]:
+        """Every stored grant (active, consumed, or expired)."""
+        ...
+
+
 class InMemoryGrantStore:
     """Grant store honouring the single-active + single-use DB invariants."""
 
@@ -159,7 +186,7 @@ class PolicyOverrideResolutionHook:
     gate_type: ClassVar[GateType] = GateType.POLICY_OVERRIDE
 
     def __init__(
-        self, grants: InMemoryGrantStore, *, ttl: timedelta = DEFAULT_GRANT_TTL
+        self, grants: GrantStore, *, ttl: timedelta = DEFAULT_GRANT_TTL
     ) -> None:
         self._grants = grants
         self._ttl = ttl
@@ -216,6 +243,7 @@ class PolicyOverrideResolutionHook:
 __all__ = [
     "DEFAULT_GRANT_TTL",
     "POLICY_OVERRIDE_GRANTED_SIGNAL",
+    "GrantStore",
     "InMemoryGrantStore",
     "PolicyOverrideGate",
     "PolicyOverrideGateProvider",
