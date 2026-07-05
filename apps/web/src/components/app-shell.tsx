@@ -17,6 +17,7 @@ import {
   TrendingUp,
   KeyRound,
   Users,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -43,6 +44,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Sprints", href: "/sprints", icon: TrendingUp },
   { label: "Incidents", href: "/incidents", icon: AlertTriangle },
   { label: "Specs", href: "/specs", icon: Route },
+  { label: "Workflows", href: "/workflow", icon: Workflow },
   { label: "Approvals", href: "/approvals", icon: ShieldCheck },
   { label: "Deployments", href: "/deployments", icon: Rocket },
   { label: "Runs", href: "/runs", icon: Activity },
