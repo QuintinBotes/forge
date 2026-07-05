@@ -16,6 +16,10 @@ import type {
   ApprovalResolution,
   ApprovalSummary,
   BulkUpdate,
+  CostSummary,
+  CostSummaryQuery,
+  CostTimeseries,
+  CostTimeseriesQuery,
   EpicDTO,
   HealthResponse,
   IncidentDeclareRequest,
@@ -349,6 +353,31 @@ export class ForgeApiClient {
     return this.request<RunTrace>(
       `/observability/runs/${encodeURIComponent(runId)}/trace`,
     );
+  }
+
+  // --- Cost & observability metrics (F38) --------------------------------- //
+
+  /** Aggregate spend for a scope with a grouped breakdown (phase/provider/model). */
+  getCostSummary(query?: CostSummaryQuery): Promise<CostSummary> {
+    return this.request<CostSummary>("/cost/summary", {
+      query: query as RequestOptions["query"],
+    });
+  }
+
+  /** Bucketed spend over time, one series per group key. */
+  getCostTimeseries(query?: CostTimeseriesQuery): Promise<CostTimeseries> {
+    return this.request<CostTimeseries>("/cost/timeseries", {
+      query: query as RequestOptions["query"],
+    });
+  }
+
+  /**
+   * The in-process F38 metric registry as Prometheus text exposition. Returns
+   * an empty string when observability is disabled (the registry is a no-op).
+   * The caller parses it (see `observability-metrics.ts`).
+   */
+  getMetricsExposition(): Promise<string> {
+    return this.request<string>("/observability/metrics");
   }
 
   // --- Marketplace (F32 integration marketplace) -------------------------- //

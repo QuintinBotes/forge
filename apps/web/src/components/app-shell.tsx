@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CalendarRange,
   Flag,
+  Gauge,
   KanbanSquare,
   LayoutList,
   Layers,
@@ -37,6 +38,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Specs", href: "/specs", icon: Route },
   { label: "Approvals", href: "/approvals", icon: ShieldCheck },
   { label: "Runs", href: "/runs", icon: Activity },
+  { label: "Observability", href: "/observability", icon: Gauge },
   { label: "Marketplace", href: "/marketplace", icon: Store },
 ];
 
