@@ -15,7 +15,12 @@ import type {
   ApprovalRequest,
   ApprovalResolution,
   ApprovalSummary,
+  AuditEntry,
+  AuditListResponse,
+  AuditQuery,
+  AuditVocabulary,
   BulkUpdate,
+  ChainVerifyResult,
   BurndownSeries,
   CompleteSprintRequest,
   CostSummary,
@@ -429,6 +434,46 @@ export class ForgeApiClient {
       `/marketplace/installations/${encodeURIComponent(installationId)}/update`,
       { method: "POST", query: version ? { version } : undefined },
     );
+  }
+
+  // --- Audit log (F39 canonical /audit query surface) --------------------- //
+
+  /** A cursor-paginated, redacted page of the immutable audit log. */
+  listAudit(query?: AuditQuery): Promise<AuditListResponse> {
+    return this.request<AuditListResponse>("/audit", {
+      query: query as RequestOptions["query"],
+    });
+  }
+
+  /** The filter vocabulary (actions / actor types / resources / outcomes). */
+  getAuditVocabulary(): Promise<AuditVocabulary> {
+    return this.request<AuditVocabulary>("/audit/actions");
+  }
+
+  /** One audit entry by id (workspace-isolated; foreign ids 404). */
+  getAuditEntry(entryId: string): Promise<AuditEntry> {
+    return this.request<AuditEntry>(`/audit/${encodeURIComponent(entryId)}`);
+  }
+
+  /** Re-walk the workspace's audit hash chain and return the integrity verdict. */
+  verifyAuditChain(body?: {
+    from_seq?: number;
+    to_seq?: number;
+  }): Promise<ChainVerifyResult> {
+    return this.request<ChainVerifyResult>("/audit/verify", {
+      method: "POST",
+      body: body ?? {},
+    });
+  }
+
+  /**
+   * Stream the audit log as NDJSON (chain hashes included; re-verifiable
+   * offline). Returns the raw body text — each line is one JSON entry.
+   */
+  exportAuditNdjson(query?: { from?: string; to?: string }): Promise<string> {
+    return this.request<string>("/audit/export", {
+      query: query as RequestOptions["query"],
+    });
   }
 
   // --- Sprints & velocity (F26 sprint router) ----------------------------- //
