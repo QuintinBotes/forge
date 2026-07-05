@@ -7,6 +7,7 @@ import {
   Gauge,
   KanbanSquare,
   LayoutList,
+  Cable,
   Layers,
   Route,
   Rocket,
@@ -50,6 +51,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Marketplace", href: "/marketplace", icon: Store },
   { label: "Access", href: "/settings/rbac", icon: Users },
   { label: "SSO", href: "/settings/sso", icon: KeyRound },
+  { label: "Integrations", href: "/settings/integrations", icon: Cable },
 ];
 
 export interface AppShellProps {

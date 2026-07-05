@@ -50,6 +50,13 @@ import type {
   MilestoneDTO,
   PipelineRead,
   PostmortemView,
+  PmConnection,
+  PmConnectionConfigInput,
+  PmConnectionDetail,
+  PmConnectionPatch,
+  PmHealthResult,
+  PmLink,
+  PmSyncState,
   Principal,
   ProjectAccess,
   ProjectTeamAccess,
@@ -708,6 +715,63 @@ export class ForgeApiClient {
       method: "POST",
       body,
     });
+  }
+
+  // --- External PM adapters (F18 /integrations/pm router) ----------------- //
+
+  /** Every external PM connection in the workspace (redaction-safe). */
+  listPmConnections(): Promise<PmConnection[]> {
+    return this.request<PmConnection[]>("/integrations/pm/connections");
+  }
+
+  /** One connection with its per-state link tallies. */
+  getPmConnection(connectionId: string): Promise<PmConnectionDetail> {
+    return this.request<PmConnectionDetail>(
+      `/integrations/pm/connections/${encodeURIComponent(connectionId)}`,
+    );
+  }
+
+  /** Create (connect) an external PM adapter (admin-only). */
+  createPmConnection(body: PmConnectionConfigInput): Promise<PmConnection> {
+    return this.request<PmConnection>("/integrations/pm/connections", {
+      method: "POST",
+      body,
+    });
+  }
+
+  /** Patch a connection's mapping / policy / enabled flag (admin-only). */
+  patchPmConnection(
+    connectionId: string,
+    body: PmConnectionPatch,
+  ): Promise<PmConnection> {
+    return this.request<PmConnection>(
+      `/integrations/pm/connections/${encodeURIComponent(connectionId)}`,
+      { method: "PATCH", body },
+    );
+  }
+
+  /** Disconnect (disable + best-effort webhook unregister); links are retained. */
+  disconnectPmConnection(connectionId: string): Promise<PmConnection> {
+    return this.request<PmConnection>(
+      `/integrations/pm/connections/${encodeURIComponent(connectionId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** Live health probe against the provider (admin-only). */
+  testPmConnection(connectionId: string): Promise<PmHealthResult> {
+    return this.request<PmHealthResult>(
+      `/integrations/pm/connections/${encodeURIComponent(connectionId)}/test`,
+      { method: "POST" },
+    );
+  }
+
+  /** Durable task ↔ issue links, optionally filtered to a sync state. */
+  listPmLinks(connectionId: string, state?: PmSyncState): Promise<PmLink[]> {
+    return this.request<PmLink[]>(
+      `/integrations/pm/connections/${encodeURIComponent(connectionId)}/links`,
+      { query: state ? { state } : undefined },
+    );
   }
 
   // --- Multi-team & RBAC (F30 authz routers) ------------------------------ //
