@@ -53,4 +53,11 @@ paths = [
   # committed so `docker compose -f deploy/docker-compose.dev.yml up` works
   # with zero setup. Waiver W-005 in security/waivers.yaml.
   '''deploy/\.env\.dev''',
+  # Frontend walkthrough: `WALKTHROUGH_STORAGE_KEY = "forge.walkthrough.v1"` is a
+  # localStorage KEY NAME (a `*_KEY` constant), not a credential — false positive.
+  '''apps/web/src/components/walkthrough/tour-context\.tsx''',
+  # Fake `forge_scim_SECRET123` SCIM token in a Vitest mock (SSO settings view).
+  '''apps/web/src/components/sso/sso-settings-view\.test\.tsx''',
+  # Fake `sk-…` fixture whose test asserts the Postgres audit store REDACTS it.
+  '''apps/api/tests/test_audit_store_db\.py''',
 ]

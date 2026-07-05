@@ -168,7 +168,7 @@ jobs:
       # env (never interpolated into the script body) and written with printf; no
       # `set -x` around the write so it is never echoed.
       - name: Materialise GitHub App private key
-        if: ${{ secrets.FORGE_GITHUB_APP_ID != '' }}
+        if: ${{ env.FORGE_GITHUB_APP_ID != '' }}
         env:
           APP_PRIVATE_KEY: ${{ secrets.FORGE_GITHUB_APP_PRIVATE_KEY }}
         run: |
@@ -325,10 +325,14 @@ jobs:
           scan-args: "--lockfile=uv.lock --lockfile=apps/web/pnpm-lock.yaml"
 
       # --- Secret scan (full history) --- #
-      - name: gitleaks
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
-        env:
-          GITLEAKS_CONFIG: .gitleaks.toml
+      # The gitleaks GitHub Action requires a paid license for ORGANIZATION
+      # repos; run the pinned binary directly instead (MIT, no license needed).
+      # `gitleaks detect` scans the full git history and exits non-zero on a hit.
+      - name: gitleaks (binary, no org license)
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --config .gitleaks.toml --redact --no-banner
 
       # --- SBOM --- #
       - name: SBOM (CycloneDX)
@@ -338,8 +342,12 @@ jobs:
       - name: Enforcement matrix
         run: uv run pytest -m security -q
 
+      # SARIF upload needs code scanning (GitHub Advanced Security), which is
+      # unavailable on a PRIVATE repo — skip it there so the gate stays green;
+      # it activates automatically once the repo is public. The SAST steps above
+      # still run and gate on high/critical regardless.
       - name: Upload SARIF
-        if: always()
+        if: ${{ always() && github.event.repository.private == false }}
         uses: github/codeql-action/upload-sarif@ce28f5bb42b7a9f2c824e633a3f6ee835bab6858 # v3.29.0
         with:
           sarif_file: "."
