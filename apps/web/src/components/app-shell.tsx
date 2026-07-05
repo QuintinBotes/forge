@@ -9,6 +9,7 @@ import {
   LayoutList,
   Layers,
   Route,
+  ScrollText,
   ShieldCheck,
   Store,
   TrendingUp,
@@ -41,6 +42,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Approvals", href: "/approvals", icon: ShieldCheck },
   { label: "Runs", href: "/runs", icon: Activity },
   { label: "Observability", href: "/observability", icon: Gauge },
+  { label: "Audit", href: "/audit", icon: ScrollText },
   { label: "Marketplace", href: "/marketplace", icon: Store },
 ];
 

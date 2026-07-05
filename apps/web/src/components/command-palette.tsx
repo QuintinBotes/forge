@@ -7,6 +7,7 @@ import {
   LayoutList,
   Plus,
   Route,
+  ScrollText,
   Search,
   ShieldCheck,
   Store,
@@ -130,6 +131,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <ShieldCheck />,
     run: (router) => router.push("/approvals"),
+  },
+  {
+    id: "go-audit",
+    label: "Go to Audit log",
+    group: "Navigate",
+    icon: <ScrollText />,
+    run: (router) => router.push("/audit"),
   },
   {
     id: "go-marketplace",
