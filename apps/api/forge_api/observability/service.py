@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 from forge_api.observability.audit import AuditCategory, AuditEntry, AuditLog
+from forge_api.observability.audit_db import default_audit_log
 from forge_api.observability.otel import SpanRecorder, get_span_recorder
 from forge_api.observability.trace import RunTrace, RunTraceAssembler
 from forge_contracts import AgentRunResult, Step
@@ -32,7 +33,10 @@ class ObservabilityService:
         assembler: RunTraceAssembler | None = None,
         recorder: SpanRecorder | None = None,
     ) -> None:
-        self.audit = audit_log or AuditLog()
+        # Backend chosen by ``FORGE_AUDIT_BACKEND`` (default ``memory`` → the
+        # hermetic in-memory store, so existing tests stay green untouched; ``db``
+        # → the durable Postgres-backed store behind the same protocol).
+        self.audit = audit_log or default_audit_log()
         self.assembler = assembler or RunTraceAssembler()
         self.recorder = recorder or get_span_recorder()
         self._runs: dict[uuid.UUID, RunTrace] = {}

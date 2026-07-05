@@ -118,9 +118,12 @@ def _mcp_audit_sink() -> object | None:
     """
     if os.environ.get("FORGE_MCP_AUDIT_BACKEND", "memory").strip().lower() != "db":
         return None
-    from forge_api.observability import AuditLog, MCPAuditSink
+    from forge_api.observability import MCPAuditSink
+    from forge_api.observability.audit_db import default_audit_log
 
-    return MCPAuditSink(AuditLog())
+    # ``default_audit_log`` selects the store via ``FORGE_AUDIT_BACKEND`` (default
+    # ``memory``); set it to ``db`` for the entries to land in durable Postgres.
+    return MCPAuditSink(default_audit_log())
 
 
 @lru_cache(maxsize=1)

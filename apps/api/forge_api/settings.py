@@ -112,6 +112,13 @@ class Settings(BaseSettings):
     # frozen ``BoardService`` protocol. Read via ``FORGE_BOARD_BACKEND``.
     board_backend: str = "memory"
 
+    # Observability audit-store backend selection. ``memory`` (default) keeps the
+    # hermetic, process-memory ``InMemoryAuditStore`` (unit-test default, no
+    # Postgres); ``db`` wires the Postgres-backed ``DbAuditStore`` behind the same
+    # frozen ``AuditStore`` protocol so the platform audit trail (and the MCP
+    # db-path sink) is durably persisted. Read via ``FORGE_AUDIT_BACKEND``.
+    audit_backend: str = "memory"
+
     # Filesystem root for the spec engine's SDD artifacts (manifests, plans).
     spec_root: str = "specs"
 

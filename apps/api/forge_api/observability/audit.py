@@ -187,7 +187,10 @@ class AuditLog:
     """Writer facade over an :class:`AuditStore` with redaction + hashing."""
 
     def __init__(self, store: AuditStore | None = None) -> None:
-        self._store: AuditStore = store or InMemoryAuditStore()
+        # Select the passed store by identity (``is not None``), not truthiness:
+        # a durable store that is merely *empty* must never be mistaken for "no
+        # store" and silently replaced with an in-memory one.
+        self._store: AuditStore = store if store is not None else InMemoryAuditStore()
 
     @property
     def store(self) -> AuditStore:
