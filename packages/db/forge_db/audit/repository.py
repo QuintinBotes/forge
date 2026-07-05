@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections.abc import Iterator
 from datetime import datetime
 from uuid import UUID
 
@@ -121,7 +122,7 @@ class AuditQueryRepository:
         to_time: datetime | None = None,
         to_seq: int | None = None,
         batch_size: int = 500,
-    ):
+    ) -> Iterator[AuditLog]:
         """Yield rows oldest-first for NDJSON export (chain-order, streamed)."""
         after_seq = 0
         while True:

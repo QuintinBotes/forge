@@ -227,13 +227,19 @@ class Task(WorkspaceScopedModel):
     requires_approval: Mapped[dict[str, Any]] = mapped_column(
         json_type(), default=dict, nullable=False
     )
-    knowledge_scope: Mapped[dict[str, Any]] = mapped_column(
+    # ``None`` round-trips faithfully: JSON columns store Python ``None`` as the
+    # JSON literal ``null`` (``none_as_null`` defaults to False), a non-SQL-NULL
+    # value that satisfies ``nullable=False`` and reads back as ``None`` — distinct
+    # from an all-defaults empty object. The Mapped type therefore includes None.
+    knowledge_scope: Mapped[dict[str, Any] | None] = mapped_column(
         json_type(), default=dict, nullable=False
     )
     subagent_policy: Mapped[dict[str, Any]] = mapped_column(
         json_type(), default=dict, nullable=False
     )
-    handoff_rules: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    handoff_rules: Mapped[dict[str, Any] | None] = mapped_column(
+        json_type(), default=dict, nullable=False
+    )
     acceptance_criteria: Mapped[list[Any]] = mapped_column(
         json_type(), default=list, nullable=False
     )

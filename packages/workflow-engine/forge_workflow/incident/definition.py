@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from functools import lru_cache
 from importlib import resources
+from typing import TYPE_CHECKING
 
 from forge_contracts import WorkflowDefinition
+
+if TYPE_CHECKING:
+    from forge_workflow.fsm import TransitionGraph
 
 INCIDENT_DEFINITION_NAME = "incident"
 
@@ -84,7 +88,7 @@ def default_incident_definition() -> WorkflowDefinition:
 
 
 @lru_cache(maxsize=1)
-def incident_graph():
+def incident_graph() -> TransitionGraph:
     """Return the validated :class:`TransitionGraph` for the incident workflow."""
     from forge_workflow.fsm import TransitionGraph
 

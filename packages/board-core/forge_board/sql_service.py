@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import delete, select
 
@@ -68,6 +68,7 @@ from forge_contracts import (
     TaskStatus,
 )
 from forge_contracts import enums as ce
+from forge_db.base import WorkspaceScopedModel
 from forge_db.models import Epic, Incident, Milestone, Sprint, Task, TaskDependency
 from forge_db.models import enums as dbe
 
@@ -115,13 +116,17 @@ class SqlAlchemyBoardService:
     # Shared internals                                                    #
     # ------------------------------------------------------------------ #
 
-    def _get(self, session: Session, model: type, entity_id: uuid.UUID, entity: str):
+    def _get[M: WorkspaceScopedModel](
+        self, session: Session, model: type[M], entity_id: uuid.UUID, entity: str
+    ) -> M:
         row = session.get(model, entity_id)
         if row is None or row.workspace_id != self._ws:
             raise EntityNotFoundError(entity, entity_id)
         return row
 
-    def _next_key(self, session: Session, model: type, prefix: str) -> str:
+    def _next_key(
+        self, session: Session, model: type[Epic] | type[Task] | type[Incident], prefix: str
+    ) -> str:
         keys = (
             session.execute(
                 select(model.key).where(
@@ -159,8 +164,8 @@ class SqlAlchemyBoardService:
             .scalars()
             .all()
         )
-        rows.sort(key=lambda r: (r.created_at, r.id))
-        return [r.depends_on_id for r in rows]
+        ordered = sorted(rows, key=lambda r: (r.created_at, r.id))
+        return [r.depends_on_id for r in ordered]
 
     def _set_edges(self, session: Session, task_id: uuid.UUID, depends_on: list[uuid.UUID]) -> None:
         session.execute(
@@ -226,7 +231,8 @@ class SqlAlchemyBoardService:
     def update_epic(self, epic_id: uuid.UUID, data: EpicDTO) -> EpicDTO:
         with self._sf() as session:
             row = self._get(session, Epic, epic_id, "epic")
-            row.project_id = data.project_id
+            # Required FK; DTO id is loosely Optional (see _apply_task_fields).
+            row.project_id = cast(uuid.UUID, data.project_id)
             row.title = data.title
             row.description = data.description
             row.status = data.status
@@ -260,7 +266,10 @@ class SqlAlchemyBoardService:
     # ------------------------------------------------------------------ #
 
     def _apply_task_fields(self, row: Task, data: TaskDTO) -> None:
-        row.project_id = data.project_id
+        # ``TaskDTO.project_id`` is loosely Optional, but ``task.project_id`` is a
+        # required FK (a task always belongs to a project); a missing value is a
+        # NOT NULL violation at flush, exactly as before. Narrow at this boundary.
+        row.project_id = cast(uuid.UUID, data.project_id)
         row.epic_id = data.epic_id
         row.spec_id = data.spec_id
         row.sprint_id = data.sprint_id
@@ -436,7 +445,8 @@ class SqlAlchemyBoardService:
     def update_sprint(self, sprint_id: uuid.UUID, data: SprintDTO) -> SprintDTO:
         with self._sf() as session:
             row = self._get(session, Sprint, sprint_id, "sprint")
-            row.project_id = data.project_id
+            # Required FK; DTO id is loosely Optional (see _apply_task_fields).
+            row.project_id = cast(uuid.UUID, data.project_id)
             row.name = data.name
             row.goal = data.goal
             row.start_date = _naive(data.starts_at)
@@ -505,7 +515,8 @@ class SqlAlchemyBoardService:
     def update_milestone(self, milestone_id: uuid.UUID, data: MilestoneDTO) -> MilestoneDTO:
         with self._sf() as session:
             row = self._get(session, Milestone, milestone_id, "milestone")
-            row.project_id = data.project_id
+            # Required FK; DTO id is loosely Optional (see _apply_task_fields).
+            row.project_id = cast(uuid.UUID, data.project_id)
             row.name = data.name
             row.description = data.description
             row.due_date = _naive(data.due_at)
@@ -578,7 +589,8 @@ class SqlAlchemyBoardService:
     def update_incident(self, incident_id: uuid.UUID, data: IncidentDTO) -> IncidentDTO:
         with self._sf() as session:
             row = self._get(session, Incident, incident_id, "incident")
-            row.project_id = data.project_id
+            # Required FK; DTO id is loosely Optional (see _apply_task_fields).
+            row.project_id = cast(uuid.UUID, data.project_id)
             row.title = data.title
             row.description = data.description
             row.severity = dbe.IncidentSeverity(data.severity.value)
@@ -656,7 +668,7 @@ class SqlAlchemyBoardService:
 
     def dependency_add(self, task_id: uuid.UUID, depends_on_id: uuid.UUID) -> None:
         with self._sf() as session:
-            self._get(session, Task, task_id, "task")
+            task = self._get(session, Task, task_id, "task")
             self._get(session, Task, depends_on_id, "task")
             if would_create_cycle(self._task_edges(session), task_id, depends_on_id):
                 raise CycleError(
@@ -678,7 +690,6 @@ class SqlAlchemyBoardService:
                         created_at=_now(),
                     )
                 )
-                task = session.get(Task, task_id)
                 task.updated_at = _now()
                 session.commit()
 

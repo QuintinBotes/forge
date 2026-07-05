@@ -11,6 +11,7 @@ structured timeline, not free-form parsing.
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 
 from forge_contracts.incident import (
     ActionItem,
@@ -69,9 +70,7 @@ class TemplatePostmortemComposer:
         )
 
 
-def _epoch():
-    from datetime import UTC, datetime
-
+def _epoch() -> datetime:
     return datetime(1970, 1, 1, tzinfo=UTC)
 
 
