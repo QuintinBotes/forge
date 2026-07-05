@@ -6,6 +6,7 @@ import {
   Layers,
   LayoutList,
   Plus,
+  Rocket,
   Route,
   ScrollText,
   Search,
@@ -131,6 +132,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <ShieldCheck />,
     run: (router) => router.push("/approvals"),
+  },
+  {
+    id: "go-deployments",
+    label: "Go to Deployments",
+    group: "Navigate",
+    icon: <Rocket />,
+    run: (router) => router.push("/deployments"),
   },
   {
     id: "go-audit",

@@ -1081,3 +1081,174 @@ export interface AuditQuery {
   cursor?: string;
   limit?: number;
 }
+
+// --- Deployments / gates (F31 deployment-gates) --------------------------- //
+
+/** The 12 states of the deployment promotion FSM (forge_contracts.DeploymentState). */
+export const DEPLOYMENT_STATES = [
+  "requested",
+  "gate_evaluating",
+  "awaiting_approval",
+  "approved",
+  "deploying",
+  "verifying",
+  "succeeded",
+  "failed",
+  "gate_rejected",
+  "rolling_back",
+  "rolled_back",
+  "cancelled",
+] as const;
+export type DeploymentState = (typeof DEPLOYMENT_STATES)[number];
+
+/** Terminal states — no further transitions possible. */
+export const TERMINAL_DEPLOYMENT_STATES = [
+  "succeeded",
+  "failed",
+  "gate_rejected",
+  "rolled_back",
+  "cancelled",
+] as const satisfies readonly DeploymentState[];
+
+export const DEPLOYMENT_KINDS = ["promotion", "rollback", "redeploy"] as const;
+export type DeploymentKind = (typeof DEPLOYMENT_KINDS)[number];
+
+export const DEPLOYMENT_TRIGGERS = [
+  "manual",
+  "auto_promote",
+  "agent",
+  "automation",
+  "rollback",
+] as const;
+export type DeploymentTrigger = (typeof DEPLOYMENT_TRIGGERS)[number];
+
+export const GATE_CHECK_NAMES = [
+  "policy_allows",
+  "predecessor_succeeded",
+  "ci_green",
+  "spec_validated",
+  "security_clean",
+  "not_frozen",
+] as const;
+export type GateCheckName = (typeof GATE_CHECK_NAMES)[number];
+
+export const GATE_CHECK_STATUSES = [
+  "passed",
+  "failed",
+  "pending",
+  "skipped",
+] as const;
+export type GateCheckStatus = (typeof GATE_CHECK_STATUSES)[number];
+
+export const HEALTH_STATUSES = ["passing", "failing", "unknown"] as const;
+export type HealthStatus = (typeof HEALTH_STATUSES)[number];
+
+/** A read-model of a single deployment run (forge_contracts.DeploymentDTO). */
+export interface DeploymentRead {
+  id: string;
+  project_id: string;
+  environment_name: string;
+  repo_id: string;
+  commit_sha: string;
+  artifact_ref?: string | null;
+  from_environment_name?: string | null;
+  kind: DeploymentKind;
+  rollback_of?: string | null;
+  state: DeploymentState;
+  trigger: DeploymentTrigger;
+  initiated_by: string;
+  provider_name?: string | null;
+  provider_url?: string | null;
+  health_status?: HealthStatus | null;
+  failure_reason?: string | null;
+  requested_at: string;
+  finished_at?: string | null;
+}
+
+/** One pipeline stage (environment) with what is currently deployed to it. */
+export interface EnvironmentRead {
+  id: string;
+  name: string;
+  rank: number;
+  is_restricted: boolean;
+  requires_approval: boolean;
+  gate_config: Record<string, unknown>;
+  provider_config: Record<string, unknown>;
+  health_check: Record<string, unknown>;
+  currently_deployed?: DeploymentRead | null;
+}
+
+/** A project's promotion pipeline (ranked dev -> staging -> prod stages). */
+export interface PipelineRead {
+  id: string;
+  project_id: string;
+  repo_id: string;
+  enabled: boolean;
+  version: number;
+  environments: EnvironmentRead[];
+}
+
+/** One gate check's verdict (name + status + detail). */
+export interface GateCheckResult {
+  name: GateCheckName;
+  status: GateCheckStatus;
+  detail: string;
+  metrics: Record<string, string>;
+}
+
+/** A deployment's gate evaluation: can it proceed, and why not. */
+export interface GateEvaluation {
+  deployment_id: string;
+  environment: string;
+  can_proceed: boolean;
+  requires_human_approval: boolean;
+  checks: GateCheckResult[];
+  blocking_reasons: string[];
+}
+
+/** One recorded FSM transition (state change) for a deployment. */
+export interface DeploymentTransition {
+  sequence: number;
+  from_state: string;
+  to_state: string;
+  event: string;
+  actor: string;
+  created_at?: string | null;
+}
+
+/** A deployment plus its gate evaluation, checks and transition history. */
+export interface DeploymentDetail extends DeploymentRead {
+  gate?: GateEvaluation | null;
+  checks: GateCheckResult[];
+  transitions: DeploymentTransition[];
+  diff_since?: Record<string, unknown> | null;
+}
+
+/** Approve / reject / request-changes on a gated deployment. */
+export const DEPLOYMENT_DECISIONS = [
+  "approve",
+  "reject",
+  "changes_requested",
+] as const;
+export type DeploymentDecision = (typeof DEPLOYMENT_DECISIONS)[number];
+
+export interface DeploymentDecisionRequest {
+  decision: DeploymentDecision;
+  note?: string | null;
+}
+
+/** Request a promotion of an artifact to an environment. */
+export interface DeploymentRequestBody {
+  environment: string;
+  commit_sha: string;
+  artifact_ref?: string | null;
+  kind?: DeploymentKind;
+  trigger?: DeploymentTrigger;
+}
+
+/** Optional filters accepted by GET /projects/{id}/deployments. */
+export interface DeploymentListQuery {
+  environment?: string;
+  state?: DeploymentState;
+  limit?: number;
+}
