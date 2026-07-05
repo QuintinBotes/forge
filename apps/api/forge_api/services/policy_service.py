@@ -21,7 +21,7 @@ append-only ``policy_rule_evaluation`` row (DB-level immutability trigger).
 from __future__ import annotations
 
 import uuid
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -53,6 +53,7 @@ class PolicyDecisionEvent(BaseModel):
     step_id: uuid.UUID | None = None
 
 
+@runtime_checkable
 class PolicyAuditSink(Protocol):
     """The audit seam F29 emits ``policy.decision`` events through."""
 
