@@ -9,7 +9,7 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "forge-db",
-    "numpy>=1.26",
+    "numpy>=2.5.1",
     "httpx>=0.27",
     # Tree-sitter multi-language code chunking backend (Task H2). The stdlib
     # ``ast`` path remains the Python fallback when these are unavailable.
