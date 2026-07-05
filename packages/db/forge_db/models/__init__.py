@@ -106,6 +106,10 @@ from forge_db.models.mcp_index import (
 )
 from forge_db.models.multi_repo import AgentRepoWorkspace, PRGroup
 from forge_db.models.oauth_account import OAuthAccount
+from forge_db.models.observability_audit import (
+    ObservabilityAuditChainHead,
+    ObservabilityAuditEntry,
+)
 from forge_db.models.planning import (
     Epic,
     Incident,
@@ -221,6 +225,8 @@ __all__ = [
     "ModelPrice",
     "OAuthAccount",
     "OAuthProvider",
+    "ObservabilityAuditChainHead",
+    "ObservabilityAuditEntry",
     "PMAuthType",
     "PMConflictPolicy",
     "PMConnection",

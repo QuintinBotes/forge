@@ -135,6 +135,11 @@ EXPECTED_MODELS = [
     # F01 board persistence: task-dependency adjacency (depends_on edges) backing
     # the DB-backed SqlAlchemyBoardService.
     "TaskDependency",
+    # audit-store persistence: durable backing for the observability audit store
+    # (global hash chain + its single cursor row). Not tenant-scoped — the entry's
+    # optional workspace tag is a free UUID (``workspace_ref``), never the FK.
+    "ObservabilityAuditEntry",
+    "ObservabilityAuditChainHead",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
@@ -153,6 +158,11 @@ NON_WORKSPACE_SCOPED = {
     # A frozen benchmark suite is a global community artifact (F35 §3.1);
     # submissions carry a *nullable* workspace_id (NULL = official/system).
     "benchmark_suite",
+    # The observability audit store is a *global* (cross-workspace) hash chain,
+    # mirroring the in-memory store: the entry carries only an optional, un-FK'd
+    # ``workspace_ref`` tag, and the cursor row no workspace column at all.
+    "observability_audit_entry",
+    "observability_audit_chain_head",
 }
 
 
