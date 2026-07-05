@@ -134,6 +134,14 @@ class Settings(BaseSettings):
     # survive a restart. Read via ``FORGE_APIKEY_BACKEND``.
     apikey_backend: str = "memory"
 
+    # F29 policy-audit sink backend selection. ``memory`` (default) keeps the
+    # hermetic, process-memory ``InMemoryPolicyAuditSink`` (unit-test default, no
+    # Postgres); ``db`` wires the Postgres-backed ``DbPolicyAuditSink`` behind the
+    # same ``PolicyAuditSink`` seam so each emitted ``policy.decision`` event lands
+    # durably as an append-only ``policy_rule_evaluation`` row. Read via
+    # ``FORGE_POLICY_AUDIT_BACKEND``.
+    policy_audit_backend: str = "memory"
+
     # F36 policy-override grant-store backend selection (J5). ``memory`` (default)
     # keeps the hermetic, process-memory ``InMemoryGrantStore`` (unit-test default,
     # no Postgres); ``db`` wires the Postgres-backed ``DbGrantStore`` behind the

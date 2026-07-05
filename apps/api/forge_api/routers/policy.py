@@ -33,6 +33,7 @@ from forge_api.schemas.policy import (
     SimulateRequest,
     SimulationResult,
 )
+from forge_api.services.policy_audit_sink_db import build_policy_audit_sink
 from forge_api.services.policy_service import PolicyService
 from forge_contracts import Decision, Policy, ToolCall
 from forge_policy import (
@@ -74,7 +75,14 @@ def get_policy_evaluator() -> ConditionalPolicyEvaluator:
 
 @lru_cache(maxsize=1)
 def _policy_service_singleton() -> PolicyService:
-    return PolicyService(evaluator=_policy_evaluator_singleton())
+    # The audit sink is env-selected (``FORGE_POLICY_AUDIT_BACKEND``): ``memory``
+    # (default) keeps the hermetic in-memory sink; ``db`` durably persists each
+    # emitted ``policy.decision`` event to ``policy_rule_evaluation``. Both satisfy
+    # the same ``PolicyAuditSink`` seam, so the service is agnostic.
+    return PolicyService(
+        evaluator=_policy_evaluator_singleton(),
+        audit_sink=build_policy_audit_sink(),
+    )
 
 
 def get_policy_service() -> PolicyService:
