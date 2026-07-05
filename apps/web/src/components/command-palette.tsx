@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  Compass,
   KanbanSquare,
   KeyRound,
   Layers,
@@ -169,6 +170,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <KeyRound />,
     run: (router) => router.push("/settings/sso"),
+  },
+  {
+    id: "go-walkthrough",
+    label: "Open guided walkthrough",
+    group: "Navigate",
+    icon: <Compass />,
+    run: (router) => router.push("/walkthrough"),
   },
 ];
 
