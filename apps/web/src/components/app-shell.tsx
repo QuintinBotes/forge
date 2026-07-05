@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  Activity,
   AlertTriangle,
   CalendarRange,
   Flag,
@@ -32,6 +33,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Milestones", href: "/milestones", icon: Flag },
   { label: "Incidents", href: "/incidents", icon: AlertTriangle },
   { label: "Approvals", href: "/approvals", icon: ShieldCheck },
+  { label: "Runs", href: "/runs", icon: Activity },
 ];
 
 export interface AppShellProps {

@@ -309,3 +309,83 @@ export interface ApprovalResolution {
 export interface ApprovalCount {
   count: number;
 }
+
+// --- Observability: run traces -------------------------------------------- //
+// Mirrors forge_api.observability.trace.RunTrace + forge_contracts.Step, the
+// response shape of GET /observability/runs/{run_id}/trace.
+
+export const STEP_KINDS = [
+  "plan",
+  "tool_call",
+  "observation",
+  "decision",
+  "message",
+  "output",
+  "error",
+  "handoff",
+] as const;
+export type StepKind = (typeof STEP_KINDS)[number];
+
+export const RUN_STATUSES = [
+  "pending",
+  "running",
+  "succeeded",
+  "failed",
+  "escalated",
+  "cancelled",
+] as const;
+export type RunStatus = (typeof RUN_STATUSES)[number];
+
+export type DecisionEffect = "allow" | "deny" | "requires_approval";
+
+/** A request to invoke a tool — the unit a step's policy evaluation acts on. */
+export interface TraceToolCall {
+  tool: string;
+  action?: string | null;
+  arguments?: Record<string, unknown>;
+  path?: string | null;
+  resource?: string | null;
+  connection_id?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+/** The result of evaluating a {@link TraceToolCall} against policy. */
+export interface TraceDecision {
+  effect: DecisionEffect;
+  reason?: string | null;
+  matched_rule?: string | null;
+  requires_approval?: boolean;
+  approval_gate?: GateType | null;
+  severity?: string;
+}
+
+/** One step in an agent run trace (plan / tool call / observation / …). */
+export interface TraceStep {
+  index?: number | null;
+  kind: StepKind;
+  thought?: string | null;
+  tool_call?: TraceToolCall | null;
+  observation?: string | null;
+  output?: string | null;
+  decision?: TraceDecision | null;
+  confidence?: number | null;
+  duration_ms?: number | null;
+  timestamp?: string | null;
+  /** Free-form; token/cost/model live here (input_tokens, cost_usd, …). */
+  metadata?: Record<string, unknown>;
+}
+
+/** An ordered, redacted, summarised view of a single run's steps. */
+export interface RunTrace {
+  run_id?: string | null;
+  status?: RunStatus | null;
+  steps: TraceStep[];
+  total_steps: number;
+  step_counts: Partial<Record<StepKind, number>>;
+  total_duration_ms: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+  confidence?: number | null;
+  has_subagents: boolean;
+  summary?: string | null;
+}
