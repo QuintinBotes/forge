@@ -31,7 +31,7 @@ from urllib.parse import urlencode
 
 from fastapi import Depends, Header, HTTPException, status
 
-from forge_api.auth.apikeys import APIKeyInfo, APIKeyStore
+from forge_api.auth.apikeys import APIKeyBackend, APIKeyInfo, APIKeyStore
 from forge_api.auth.crypto import EnvelopeCipher, default_cipher
 from forge_api.auth.keyring import KeyRing
 from forge_api.auth.models import OAuthChallenge, OAuthResult
@@ -168,6 +168,26 @@ def _resolve_master_key(secret_key: bytes | None) -> bytes:
     )
 
 
+def _build_apikey_backend() -> APIKeyBackend | None:
+    """Return the API-key backend selected by ``FORGE_APIKEY_BACKEND``.
+
+    ``memory`` (default) → ``None``, so :class:`APIKeyStore` falls back to the
+    hermetic :class:`~forge_api.auth.apikeys.InMemoryAPIKeyBackend` (unit-test
+    default, no Postgres); ``db`` → the durable
+    :class:`~forge_api.auth.apikeys_db.DbAPIKeyBackend` bound to the shared
+    session factory. Both satisfy the same ``APIKeyBackend`` seam, so the swap is
+    behaviour-preserving (mint / verify / list / revoke).
+    """
+    from forge_api.settings import get_settings
+
+    if get_settings().apikey_backend == "db":
+        from forge_api.auth.apikeys_db import DbAPIKeyBackend
+        from forge_api.db import get_session_factory
+
+        return DbAPIKeyBackend(get_session_factory())
+    return None
+
+
 def _keyring_for_master(master: bytes) -> KeyRing:
     """Build a :class:`KeyRing` whose current KEK is the resolved ``master`` key.
 
@@ -212,7 +232,10 @@ class AuthService:
         audit_sink: AuditSink | None = None,
     ) -> None:
         master = _resolve_master_key(secret_key)
-        self.api_keys = api_keys or APIKeyStore(secret_key=_subkey(master, b"forge-apikey"))
+        self.api_keys = api_keys or APIKeyStore(
+            secret_key=_subkey(master, b"forge-apikey"),
+            backend=_build_apikey_backend(),
+        )
         self.vault = vault or _build_vault(master)
         # Constructs without network access; the IdP is only contacted when an
         # authorization-code exchange is actually requested.

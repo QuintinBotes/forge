@@ -126,6 +126,14 @@ class Settings(BaseSettings):
     # are durably persisted. Read via ``FORGE_APPROVAL_BACKEND``.
     approval_backend: str = "memory"
 
+    # Platform API-key backend selection. ``memory`` (default) keeps the hermetic,
+    # process-memory ``InMemoryAPIKeyBackend`` (unit-test default, no Postgres);
+    # ``db`` wires the Postgres-backed ``DbAPIKeyBackend`` behind the same
+    # ``APIKeyBackend`` seam (``add`` / ``by_prefix`` / ``list`` / ``get``) onto the
+    # ``platform_api_key`` table so minted keys, revocations, and last-used stamps
+    # survive a restart. Read via ``FORGE_APIKEY_BACKEND``.
+    apikey_backend: str = "memory"
+
     # F36 policy-override grant-store backend selection (J5). ``memory`` (default)
     # keeps the hermetic, process-memory ``InMemoryGrantStore`` (unit-test default,
     # no Postgres); ``db`` wires the Postgres-backed ``DbGrantStore`` behind the
