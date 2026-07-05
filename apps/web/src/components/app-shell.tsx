@@ -11,6 +11,7 @@ import {
   Route,
   ShieldCheck,
   Store,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -34,6 +35,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Board depth", href: "/depth", icon: Layers },
   { label: "Roadmap", href: "/roadmap", icon: CalendarRange },
   { label: "Milestones", href: "/milestones", icon: Flag },
+  { label: "Sprints", href: "/sprints", icon: TrendingUp },
   { label: "Incidents", href: "/incidents", icon: AlertTriangle },
   { label: "Specs", href: "/specs", icon: Route },
   { label: "Approvals", href: "/approvals", icon: ShieldCheck },

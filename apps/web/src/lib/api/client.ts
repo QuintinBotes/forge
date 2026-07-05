@@ -16,6 +16,8 @@ import type {
   ApprovalResolution,
   ApprovalSummary,
   BulkUpdate,
+  BurndownSeries,
+  CompleteSprintRequest,
   CostSummary,
   CostSummaryQuery,
   CostTimeseries,
@@ -44,9 +46,12 @@ import type {
   ServiceInfo,
   SpecDashboard,
   SpecManifest,
+  Sprint,
   SprintDTO,
+  SprintReport,
   TaskDTO,
   TaskStatus,
+  VelocityDashboard,
 } from "./types";
 
 export const DEFAULT_API_BASE_URL =
@@ -423,6 +428,63 @@ export class ForgeApiClient {
     return this.request<InstallResult>(
       `/marketplace/installations/${encodeURIComponent(installationId)}/update`,
       { method: "POST", query: version ? { version } : undefined },
+    );
+  }
+
+  // --- Sprints & velocity (F26 sprint router) ----------------------------- //
+
+  /** Every sprint for a project, newest scope first (GET /projects/{id}/sprints). */
+  listProjectSprints(
+    projectId: string,
+    query?: RequestOptions["query"],
+  ): Promise<Sprint[]> {
+    return this.request<Sprint[]>(
+      `/projects/${encodeURIComponent(projectId)}/sprints`,
+      { query },
+    );
+  }
+
+  /** Committed-vs-completed velocity + forecast over the last `n` sprints. */
+  getVelocityDashboard(
+    projectId: string,
+    last?: number,
+  ): Promise<VelocityDashboard> {
+    return this.request<VelocityDashboard>(
+      `/projects/${encodeURIComponent(projectId)}/velocity`,
+      { query: last ? { last } : undefined },
+    );
+  }
+
+  /** A sprint's day-by-day burndown (remaining vs ideal). */
+  getSprintBurndown(sprintId: string): Promise<BurndownSeries> {
+    return this.request<BurndownSeries>(
+      `/sprints/${encodeURIComponent(sprintId)}/burndown`,
+    );
+  }
+
+  /** The sprint report: velocity rollup + tasks bucketed by outcome. */
+  getSprintReport(sprintId: string): Promise<SprintReport> {
+    return this.request<SprintReport>(
+      `/sprints/${encodeURIComponent(sprintId)}/report`,
+    );
+  }
+
+  /** Start a planned sprint (baselines committed scope). WRITE-gated. */
+  startSprint(sprintId: string): Promise<Sprint> {
+    return this.request<Sprint>(
+      `/sprints/${encodeURIComponent(sprintId)}/start`,
+      { method: "POST" },
+    );
+  }
+
+  /** Complete an active sprint, routing carryover. Returns its report. */
+  completeSprint(
+    sprintId: string,
+    body: CompleteSprintRequest = {},
+  ): Promise<SprintReport> {
+    return this.request<SprintReport>(
+      `/sprints/${encodeURIComponent(sprintId)}/complete`,
+      { method: "POST", body },
     );
   }
 }

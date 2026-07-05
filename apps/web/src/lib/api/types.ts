@@ -846,3 +846,136 @@ export interface CostTimeseriesQuery {
   from?: string;
   to?: string;
 }
+
+// --- Sprints & velocity (F26 sprint router) ------------------------------- //
+// Hand-maintained mirror of `forge_board.sprint_service` view models (Pydantic
+// v2). These back the /projects/{id}/sprints, /velocity, /sprints/{id}/burndown
+// and /report routes. Distinct from the Phase-0 board `SprintDTO` above.
+
+/** Sprint lifecycle states (forge_contracts.enums.SprintState), in order. */
+export const SPRINT_STATES = [
+  "planned",
+  "active",
+  "completed",
+  "cancelled",
+] as const;
+export type SprintState = (typeof SPRINT_STATES)[number];
+
+/** Where incomplete tasks go when a sprint is completed (CarryoverTarget). */
+export const CARRYOVER_TARGETS = ["backlog", "next_sprint", "leave"] as const;
+export type CarryoverTarget = (typeof CARRYOVER_TARGETS)[number];
+
+/** One sprint with its rolled-up velocity metrics (GET /sprints/{id}). */
+export interface Sprint {
+  id: string;
+  project_id: string;
+  workspace_id: string;
+  name: string;
+  goal?: string | null;
+  state: SprintState;
+  start_date?: string | null;
+  end_date?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  capacity_points?: number | null;
+  committed_points: number;
+  committed_task_count: number;
+  completed_points: number;
+  added_points: number;
+  removed_points: number;
+  carryover_points: number;
+  remaining_points: number;
+  /** completed / committed, 0..1 (0 when nothing committed). */
+  predictability: number;
+  /** (added + removed) / committed, 0..1. */
+  scope_change_ratio: number;
+  velocity_version: number;
+}
+
+/** One task in a sprint report, bucketed by outcome. */
+export interface SprintReportTask {
+  task_id: string;
+  key: string;
+  title: string;
+  points: number;
+  bucket: string;
+}
+
+/** The per-sprint velocity rollup (report.velocity). */
+export interface VelocityResult {
+  committed_points: number;
+  completed_points: number;
+  added_points: number;
+  removed_points: number;
+  carryover_points: number;
+  committed_task_count: number;
+  completed_task_count: number;
+  carryover_task_count: number;
+  predictability: number;
+  scope_change_ratio: number;
+}
+
+/** A completed sprint's report (GET /sprints/{id}/report, POST .../complete). */
+export interface SprintReport {
+  sprint: Sprint;
+  velocity: VelocityResult;
+  completed: SprintReportTask[];
+  carryover: SprintReportTask[];
+  added: SprintReportTask[];
+  removed: SprintReportTask[];
+}
+
+/** One calendar day of a sprint's burndown (GET /sprints/{id}/burndown). */
+export interface BurndownPoint {
+  snapshot_date: string;
+  scope_points: number;
+  remaining_points: number;
+  completed_points: number;
+  ideal_points: number;
+  completed_task_count: number;
+  remaining_task_count: number;
+}
+
+/** A sprint's burndown series (GET /sprints/{id}/burndown). */
+export interface BurndownSeries {
+  sprint_id: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  committed_points: number;
+  points: BurndownPoint[];
+}
+
+/** One bar in the velocity dashboard (committed vs completed per sprint). */
+export interface VelocitySprintBar {
+  sprint_id: string;
+  name: string;
+  end_date?: string | null;
+  committed_points: number;
+  completed_points: number;
+  predictability: number;
+}
+
+/** Aggregate velocity over a window of completed sprints. */
+export interface VelocitySummary {
+  sprint_count: number;
+  average_velocity: number;
+  rolling_3_velocity: number;
+  predictability_avg: number;
+  scope_change_avg: number;
+  forecast_low: number;
+  forecast_avg: number;
+  forecast_high: number;
+}
+
+/** The velocity dashboard for a project (GET /projects/{id}/velocity). */
+export interface VelocityDashboard {
+  project_id: string;
+  sprints: VelocitySprintBar[];
+  summary: VelocitySummary;
+}
+
+/** Body of POST /sprints/{id}/complete. */
+export interface CompleteSprintRequest {
+  carryover?: CarryoverTarget;
+  next_sprint_id?: string | null;
+}
