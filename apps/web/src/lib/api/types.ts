@@ -979,3 +979,105 @@ export interface CompleteSprintRequest {
   carryover?: CarryoverTarget;
   next_sprint_id?: string | null;
 }
+
+// --- Audit log (F39 — immutable, hash-chained audit trail) --------------- //
+
+export const AUDIT_OUTCOMES = [
+  "success",
+  "denied",
+  "error",
+  "blocked",
+] as const;
+export type AuditOutcome = (typeof AUDIT_OUTCOMES)[number];
+
+export const AUDIT_SEVERITIES = [
+  "info",
+  "notice",
+  "warning",
+  "critical",
+] as const;
+export type AuditSeverity = (typeof AUDIT_SEVERITIES)[number];
+
+export const AUDIT_ACTOR_TYPES = [
+  "user",
+  "agent_runner",
+  "system",
+  "integration",
+  "api_key",
+] as const;
+export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];
+
+/**
+ * One persisted, redacted audit row (GET /audit) including its hash-chain
+ * fields. Mirrors `forge_contracts.audit.AuditEntry`. The server redacts
+ * secrets before persisting; the viewer redacts again defensively on render.
+ */
+export interface AuditEntry {
+  id: string;
+  workspace_id: string;
+  seq?: number | null;
+  action: string;
+  actor_id?: string | null;
+  actor_type: string;
+  actor_label?: string | null;
+  target_type?: string | null;
+  target_id?: string | null;
+  scope_type?: string | null;
+  scope_id?: string | null;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  result: string;
+  severity: string;
+  reason?: string | null;
+  details: Record<string, unknown>;
+  detail_ref?: Record<string, unknown> | null;
+  request_id?: string | null;
+  payload_hash?: string | null;
+  prev_hash?: string | null;
+  entry_hash?: string | null;
+  created_at: string;
+}
+
+/** Cursor-paginated audit page (GET /audit). */
+export interface AuditListResponse {
+  items: AuditEntry[];
+  next_cursor?: string | null;
+}
+
+/** Filter vocabulary for the audit viewer (GET /audit/actions). */
+export interface AuditVocabulary {
+  actions: string[];
+  actor_types: string[];
+  resource_types: string[];
+  outcomes: string[];
+  severities: string[];
+}
+
+/** Verdict of re-walking the workspace's audit hash chain (POST /audit/verify). */
+export interface ChainVerifyResult {
+  workspace_id: string;
+  ok: boolean;
+  entries_checked: number;
+  broken_at_seq?: number | null;
+  detail?: string | null;
+}
+
+/** Query parameters accepted by GET /audit (all optional). */
+export interface AuditQuery {
+  actor_id?: string;
+  actor_type?: string;
+  /** Single action value (FastAPI accepts one member of its `list[str]`). */
+  action?: string;
+  target_type?: string;
+  target_id?: string;
+  outcome?: string;
+  severity?: string;
+  /** ISO-8601 lower bound (sent as the `from` query alias). */
+  from?: string;
+  /** ISO-8601 upper bound. */
+  to?: string;
+  /** Free-text search across actor label / reason / details. */
+  q?: string;
+  cursor?: string;
+  limit?: number;
+}
