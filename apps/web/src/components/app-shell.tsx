@@ -5,6 +5,7 @@ import {
   Flag,
   KanbanSquare,
   LayoutList,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -25,6 +26,7 @@ export interface NavItem {
 export const BOARD_NAV: NavItem[] = [
   { label: "List", href: "/", icon: LayoutList },
   { label: "Board", href: "/board", icon: KanbanSquare },
+  { label: "Board depth", href: "/depth", icon: Layers },
   { label: "Roadmap", href: "/roadmap", icon: CalendarRange },
   { label: "Milestones", href: "/milestones", icon: Flag },
   { label: "Incidents", href: "/incidents", icon: AlertTriangle },

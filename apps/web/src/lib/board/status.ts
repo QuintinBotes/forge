@@ -74,3 +74,76 @@ export const PRIORITY_ORDER: Record<Priority, number> = {
 
 /** Priorities exported for callers that need the canonical ordering. */
 export const PRIORITIES = TASK_PRIORITIES;
+
+/**
+ * Default task-status workflow transitions — a verbatim TypeScript mirror of
+ * `forge_board.workflow.TASK_STATUS_TRANSITIONS` (the backend's authoritative
+ * policy). The Kanban consults it so a drag can only *land* on a column the
+ * server would accept, and so the move buttons only ever produce legal edges.
+ * Keep in lockstep with the Python table.
+ */
+export const TASK_STATUS_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
+  backlog: ["ready", "ready_for_agent", "blocked", "cancelled"],
+  ready: ["ready_for_agent", "in_progress", "backlog", "blocked", "cancelled"],
+  ready_for_agent: ["in_progress", "ready", "blocked", "cancelled"],
+  in_progress: ["in_review", "blocked", "ready", "done", "cancelled"],
+  in_review: ["done", "in_progress", "blocked", "cancelled"],
+  blocked: ["ready", "ready_for_agent", "in_progress", "backlog", "cancelled"],
+  // Terminal states may only be reopened.
+  done: ["in_progress"],
+  cancelled: ["backlog"],
+};
+
+/**
+ * True when moving `src` → `dst` is a legal workflow edge. A same-status move is
+ * an idempotent no-op (allowed), matching the backend's `can_transition`.
+ */
+export function canTransition(src: TaskStatus, dst: TaskStatus): boolean {
+  if (src === dst) {
+    return true;
+  }
+  return TASK_STATUS_TRANSITIONS[src]?.includes(dst) ?? false;
+}
+
+/** Legal *move* targets from `src` (excludes the no-op same-status), in column order. */
+export function legalTargets(src: TaskStatus): TaskStatus[] {
+  return STATUS_COLUMNS.filter((s) => s !== src && canTransition(src, s));
+}
+
+/**
+ * Nearest legal target to the *right* of `src` within `columns` (the "advance"
+ * button destination), or null when there is none — so the button matches the
+ * column status rules rather than blindly stepping to the adjacent column.
+ */
+export function forwardTarget(
+  src: TaskStatus,
+  columns: readonly TaskStatus[] = STATUS_COLUMNS,
+): TaskStatus | null {
+  const from = columns.indexOf(src);
+  if (from < 0) {
+    return null;
+  }
+  for (let i = from + 1; i < columns.length; i += 1) {
+    if (canTransition(src, columns[i])) {
+      return columns[i];
+    }
+  }
+  return null;
+}
+
+/** Nearest legal target to the *left* of `src` within `columns`, or null. */
+export function backwardTarget(
+  src: TaskStatus,
+  columns: readonly TaskStatus[] = STATUS_COLUMNS,
+): TaskStatus | null {
+  const from = columns.indexOf(src);
+  if (from < 0) {
+    return null;
+  }
+  for (let i = from - 1; i >= 0; i -= 1) {
+    if (canTransition(src, columns[i])) {
+      return columns[i];
+    }
+  }
+  return null;
+}
