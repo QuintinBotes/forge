@@ -75,7 +75,5 @@ def test_get_unknown_is_404(client: TestClient) -> None:
 
 
 def test_decide_unknown_is_404(client: TestClient) -> None:
-    resp = client.post(
-        f"/approval/requests/{uuid.uuid4()}/decision", json={"status": "approved"}
-    )
+    resp = client.post(f"/approval/requests/{uuid.uuid4()}/decision", json={"status": "approved"})
     assert resp.status_code == 404

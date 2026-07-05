@@ -109,9 +109,7 @@ def test_publish_requires_verified_unless_forced(make_client) -> None:
     denied = admin.post(f"/benchmarks/submissions/{submission['id']}/publish", json={})
     assert denied.status_code == 409
 
-    forced = admin.post(
-        f"/benchmarks/submissions/{submission['id']}/publish", json={"force": True}
-    )
+    forced = admin.post(f"/benchmarks/submissions/{submission['id']}/publish", json={"force": True})
     assert forced.status_code == 200
     assert forced.json()["visibility"] == "public"
 
@@ -160,9 +158,7 @@ def test_config_secret_redacted_on_ingest(make_client, service) -> None:
     """AC15: an injected key is redacted in the stored row itself."""
     member = make_client(UserRole.MEMBER)
     submission = _submit(member)
-    row, _suite = service.get_submission(
-        uuid.UUID(submission["id"]), workspace_id=None
-    )
+    row, _suite = service.get_submission(uuid.UUID(submission["id"]), workspace_id=None)
     stored = str(row.config)
     assert "sk-ant-SECRETSECRET123" not in stored
     assert row.config["api_key"] == "[REDACTED]"
@@ -199,9 +195,7 @@ def test_cross_workspace_submission_is_404(make_client) -> None:
 def test_unknown_suite_404(make_client) -> None:
     client = make_client(UserRole.MEMBER)
     assert client.get("/benchmarks/nope/9.9.9").status_code == 404
-    response = client.post(
-        "/benchmarks/nope/9.9.9/submissions", json=faithful_submission()
-    )
+    response = client.post("/benchmarks/nope/9.9.9/submissions", json=faithful_submission())
     assert response.status_code == 404
 
 

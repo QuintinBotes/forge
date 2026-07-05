@@ -37,9 +37,7 @@ def test_normalize_from_fixture(adapter, fixture: str, severity, dedup: str) -> 
 
 
 @pytest.mark.parametrize(("adapter", "fixture", "severity", "dedup"), CASES)
-def test_verify_good_bad_and_missing_signature(
-    adapter, fixture: str, severity, dedup: str
-) -> None:
+def test_verify_good_bad_and_missing_signature(adapter, fixture: str, severity, dedup: str) -> None:
     body = (FIXTURES / fixture).read_bytes()
     secret = "shh-secret"
     good = adapter.sign(secret, body)
@@ -47,9 +45,12 @@ def test_verify_good_bad_and_missing_signature(
     # Good signature.
     assert adapter.verify(secret=secret, body=body, headers={header_name: good}) is True
     # Bad signature.
-    assert adapter.verify(
-        secret=secret, body=body, headers={header_name: adapter.signature_prefix + "deadbeef"}
-    ) is False
+    assert (
+        adapter.verify(
+            secret=secret, body=body, headers={header_name: adapter.signature_prefix + "deadbeef"}
+        )
+        is False
+    )
     # Missing signature.
     assert adapter.verify(secret=secret, body=body, headers={}) is False
     # Empty secret -> fail closed.

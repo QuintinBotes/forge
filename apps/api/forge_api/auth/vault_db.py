@@ -141,9 +141,7 @@ class DbSecretStore:
                 )
             session.commit()
 
-    def get(
-        self, workspace_id: uuid.UUID, secret_id: uuid.UUID
-    ) -> StoredSecret | None:
+    def get(self, workspace_id: uuid.UUID, secret_id: uuid.UUID) -> StoredSecret | None:
         """The record with ``secret_id`` in ``workspace_id``, else ``None``.
 
         Returns ``None`` (never raises) for a missing *or* cross-workspace id, so

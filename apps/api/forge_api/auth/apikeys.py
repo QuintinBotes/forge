@@ -131,9 +131,7 @@ class InMemoryAPIKeyBackend:
 class APIKeyStore:
     """Mint, verify, list, and revoke Forge API keys."""
 
-    def __init__(
-        self, *, secret_key: bytes, backend: APIKeyBackend | None = None
-    ) -> None:
+    def __init__(self, *, secret_key: bytes, backend: APIKeyBackend | None = None) -> None:
         if len(secret_key) < 16:
             raise ValueError("secret_key must be at least 16 bytes")
         self._secret = bytes(secret_key)

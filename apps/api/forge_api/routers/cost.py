@@ -81,9 +81,7 @@ def _guard(call):
     summary="Per-task spend (grouped by workflow phase).",
 )
 def task_cost(task_id: uuid.UUID, principal: ReaderDep, service: ServiceDep) -> CostSummary:
-    return _guard(
-        lambda: service.task_cost(workspace_id=principal.workspace_id, task_id=task_id)
-    )
+    return _guard(lambda: service.task_cost(workspace_id=principal.workspace_id, task_id=task_id))
 
 
 @router.get(
@@ -153,9 +151,7 @@ def list_prices(
     provider: str | None = Query(default=None),
     model: str | None = Query(default=None),
 ) -> ModelPriceListResponse:
-    items = service.list_prices(
-        workspace_id=principal.workspace_id, provider=provider, model=model
-    )
+    items = service.list_prices(workspace_id=principal.workspace_id, provider=provider, model=model)
     return ModelPriceListResponse(items=items)
 
 
@@ -165,9 +161,7 @@ def list_prices(
     status_code=status.HTTP_201_CREATED,
     summary="Add a workspace price override (admin; audited as cost.price_set).",
 )
-def set_price(
-    body: PriceCreateRequest, principal: AdminDep, service: ServiceDep
-) -> ModelPrice:
+def set_price(body: PriceCreateRequest, principal: AdminDep, service: ServiceDep) -> ModelPrice:
     return _guard(
         lambda: service.set_price(
             workspace_id=principal.workspace_id,
@@ -182,9 +176,7 @@ def set_price(
     response_model=RepriceResponse,
     summary="Re-price historical cost events (admin; audited as cost.repriced).",
 )
-def reprice(
-    body: RepriceRequest, principal: AdminDep, service: ServiceDep
-) -> RepriceResponse:
+def reprice(body: RepriceRequest, principal: AdminDep, service: ServiceDep) -> RepriceResponse:
     updated = _guard(
         lambda: service.reprice(
             workspace_id=principal.workspace_id,

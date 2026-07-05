@@ -108,17 +108,13 @@ def test_no_self_approval_author_only_when_flag() -> None:
 
 def test_pr_review_rules_enforced() -> None:
     """AC#8: a member outside required_reviewers is refused on pr gates."""
-    reader = FakePolicyReader(
-        review_rules=ReviewRules(required_reviewers=[str(uuid.uuid4())])
-    )
+    reader = FakePolicyReader(review_rules=ReviewRules(required_reviewers=[str(uuid.uuid4())]))
     authorizer = ApprovalAuthorizer(reader)
     with pytest.raises(AuthorizationError):
         authorizer.check(make_principal(), make_request(GateType.PR), APPROVE)
 
     # A listed reviewer passes.
-    listed = FakePolicyReader(
-        review_rules=ReviewRules(required_reviewers=[str(MEMBER_ID)])
-    )
+    listed = FakePolicyReader(review_rules=ReviewRules(required_reviewers=[str(MEMBER_ID)]))
     ApprovalAuthorizer(listed).check(make_principal(), make_request(GateType.PR), APPROVE)
 
 

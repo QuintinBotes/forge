@@ -161,8 +161,7 @@ class DbGrantStore:
                     select(PolicyOverrideGrantRow)
                     .where(
                         PolicyOverrideGrantRow.agent_run_id == grant.agent_run_id,
-                        PolicyOverrideGrantRow.action_fingerprint
-                        == grant.action_fingerprint,
+                        PolicyOverrideGrantRow.action_fingerprint == grant.action_fingerprint,
                         PolicyOverrideGrantRow.consumed.is_(False),
                     )
                     .with_for_update()
@@ -172,9 +171,7 @@ class DbGrantStore:
                 raise
             return self._to_domain(row)
 
-    async def consume(
-        self, *, agent_run_id: uuid.UUID, action_fingerprint: str
-    ) -> bool:
+    async def consume(self, *, agent_run_id: uuid.UUID, action_fingerprint: str) -> bool:
         """Atomically consume the active grant for this exact action, if any.
 
         Returns ``True`` only when a matching unconsumed, unexpired grant was

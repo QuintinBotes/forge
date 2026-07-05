@@ -136,9 +136,7 @@ def list_registries(service: ServiceDep, principal: ReaderDep) -> list[RegistryR
     return [_registry_dto(r) for r in rows]
 
 
-@router.post(
-    "/registries", response_model=RegistryResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/registries", response_model=RegistryResponse, status_code=status.HTTP_201_CREATED)
 def add_registry(
     service: ServiceDep, principal: AdminDep, body: RegistrySourceIn
 ) -> RegistryResponse:
@@ -184,9 +182,7 @@ def update_registry(
 
 
 @router.delete("/registries/{registry_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_registry(
-    service: ServiceDep, principal: AdminDep, registry_id: uuid.UUID
-) -> None:
+def delete_registry(service: ServiceDep, principal: AdminDep, registry_id: uuid.UUID) -> None:
     try:
         service.remove_registry(
             workspace_id=principal.workspace_id,
@@ -198,9 +194,7 @@ def delete_registry(
 
 
 @router.post("/registries/{registry_id}/sync")
-def sync_registry(
-    service: ServiceDep, principal: AdminDep, registry_id: uuid.UUID
-) -> dict:
+def sync_registry(service: ServiceDep, principal: AdminDep, registry_id: uuid.UUID) -> dict:
     try:
         report = service.sync_registry(
             workspace_id=principal.workspace_id,
@@ -240,9 +234,7 @@ def list_listings(
     return [_listing_dto(listing, registry) for listing, registry in rows]
 
 
-@router.get(
-    "/listings/{registry_slug}/{slug}", response_model=ListingDetailResponse
-)
+@router.get("/listings/{registry_slug}/{slug}", response_model=ListingDetailResponse)
 def get_listing(
     service: ServiceDep, principal: ReaderDep, registry_slug: str, slug: str
 ) -> ListingDetailResponse:
@@ -276,9 +268,7 @@ def get_listing(
 
 
 @router.post("/preview", response_model=InstallPlan)
-def preview_install(
-    service: ServiceDep, principal: AdminDep, body: InstallRequest
-) -> InstallPlan:
+def preview_install(service: ServiceDep, principal: AdminDep, body: InstallRequest) -> InstallPlan:
     try:
         return service.preview(workspace_id=principal.workspace_id, request=body)
     except RegistryNotFoundError as exc:
@@ -294,9 +284,7 @@ def preview_install(
 
 
 @router.post("/install", response_model=InstallResult)
-def install(
-    service: ServiceDep, principal: AdminDep, body: InstallRequest
-) -> InstallResult:
+def install(service: ServiceDep, principal: AdminDep, body: InstallRequest) -> InstallResult:
     try:
         return service.install(
             workspace_id=principal.workspace_id,
@@ -323,9 +311,7 @@ def install(
 
 
 @router.get("/installations", response_model=list[InstallationResponse])
-def list_installations(
-    service: ServiceDep, principal: ReaderDep
-) -> list[InstallationResponse]:
+def list_installations(service: ServiceDep, principal: ReaderDep) -> list[InstallationResponse]:
     rows = service.list_installations(workspace_id=principal.workspace_id)
     return [_installation_dto(r) for r in rows]
 
@@ -373,12 +359,8 @@ def patch_installation(
     return _installation_dto(row)
 
 
-@router.delete(
-    "/installations/{installation_id}", status_code=status.HTTP_204_NO_CONTENT
-)
-def uninstall(
-    service: ServiceDep, principal: AdminDep, installation_id: uuid.UUID
-) -> None:
+@router.delete("/installations/{installation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def uninstall(service: ServiceDep, principal: AdminDep, installation_id: uuid.UUID) -> None:
     try:
         service.uninstall(
             workspace_id=principal.workspace_id,
@@ -401,9 +383,7 @@ def list_audit(
     limit: Annotated[int, Query(le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[MarketplaceAuditResponse]:
-    rows = service.list_audit(
-        workspace_id=principal.workspace_id, limit=limit, offset=offset
-    )
+    rows = service.list_audit(workspace_id=principal.workspace_id, limit=limit, offset=offset)
     return [
         MarketplaceAuditResponse(
             id=r.id,

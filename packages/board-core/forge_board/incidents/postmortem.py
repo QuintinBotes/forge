@@ -103,8 +103,7 @@ def _action_items(
         ActionItem(
             title=f"Postmortem follow-up: {incident.title}",
             description=(
-                f"Address the root cause of incident {incident.key or incident.id}: "
-                f"{root_cause}"
+                f"Address the root cause of incident {incident.key or incident.id}: {root_cause}"
             ),
             kind="bug",
             priority="high",
@@ -167,9 +166,7 @@ def render_postmortem_md(postmortem: Postmortem) -> str:
     lines += ["## Action Items", ""]
     for item in postmortem.action_items:
         owner = f" (owner: {item.owner_hint})" if item.owner_hint else ""
-        lines.append(
-            f"- [{item.kind}/{item.priority}] {item.title}{owner} — {item.description}"
-        )
+        lines.append(f"- [{item.kind}/{item.priority}] {item.title}{owner} — {item.description}")
     lines.append("")
     return "\n".join(lines)
 

@@ -59,9 +59,12 @@ DEPLOYMENTS = ["forge-api", "forge-worker", "forge-web", "forge-mcp-gateway"]
 
 
 def _image_present(image: str) -> bool:
-    return subprocess.run(
-        [DOCKER, "image", "inspect", image], capture_output=True, check=False
-    ).returncode == 0
+    return (
+        subprocess.run(
+            [DOCKER, "image", "inspect", image], capture_output=True, check=False
+        ).returncode
+        == 0
+    )
 
 
 def _tooling_ready() -> bool:
@@ -114,9 +117,7 @@ def cluster() -> Iterator[str]:
             load = _run([KIND, "load", "docker-image", "--name", name, img])
             assert load.returncode == 0, load.stderr
         _kubectl(ctx, "create", "namespace", NAMESPACE)  # ignore "already exists"
-        apply = _run(
-            [KUBECTL, "--context", ctx, "-n", NAMESPACE, "apply", "-f", str(DATASTORES)]
-        )
+        apply = _run([KUBECTL, "--context", ctx, "-n", NAMESPACE, "apply", "-f", str(DATASTORES)])
         assert apply.returncode == 0, apply.stderr
         for dep in ("forge-ext-postgres", "forge-ext-redis"):
             wait = _kubectl(ctx, "rollout", "status", f"deploy/{dep}", "--timeout=180s")
@@ -138,8 +139,15 @@ def test_bundled_install_reaches_ready(cluster: str) -> None:
         _kubectl(ctx, "delete", kind_, obj, "--ignore-not-found")
 
     install = _helm(
-        ctx, "install", RELEASE, str(CHART_DIR),
-        "-f", str(VALUES_KIND), "--wait", "--timeout", "10m",
+        ctx,
+        "install",
+        RELEASE,
+        str(CHART_DIR),
+        "-f",
+        str(VALUES_KIND),
+        "--wait",
+        "--timeout",
+        "10m",
     )
     # helm only returns 0 here if the pre-install migrate hook Completed AND every
     # Deployment reached Available under --wait.
@@ -147,18 +155,36 @@ def test_bundled_install_reaches_ready(cluster: str) -> None:
 
     for dep in DEPLOYMENTS:
         avail = _kubectl(
-            ctx, "get", "deploy", dep,
-            "-o", "jsonpath={.status.availableReplicas}",
+            ctx,
+            "get",
+            "deploy",
+            dep,
+            "-o",
+            "jsonpath={.status.availableReplicas}",
         )
         assert avail.stdout.strip() and int(avail.stdout) >= 1, f"{dep} not Available"
 
     # The vector extension + alembic head really applied on the in-cluster pgvector.
     pgpod = _kubectl(
-        ctx, "get", "pod", "-l", "app=forge-ext-postgres",
-        "-o", "jsonpath={.items[0].metadata.name}",
+        ctx,
+        "get",
+        "pod",
+        "-l",
+        "app=forge-ext-postgres",
+        "-o",
+        "jsonpath={.items[0].metadata.name}",
     ).stdout.strip()
     ext = _kubectl(
-        ctx, "exec", pgpod, "--", "psql", "-U", "forge", "-d", "forge", "-tAc",
+        ctx,
+        "exec",
+        pgpod,
+        "--",
+        "psql",
+        "-U",
+        "forge",
+        "-d",
+        "forge",
+        "-tAc",
         "SELECT extname FROM pg_extension WHERE extname='vector';",
     )
     assert ext.stdout.strip() == "vector", ext.stdout + ext.stderr
@@ -174,16 +200,28 @@ def test_upgrade_runs_migration_and_rollback(cluster: str) -> None:
     preservation is HARD-13/G-MIGRATE)."""
     ctx = cluster
     upgrade = _helm(
-        ctx, "upgrade", RELEASE, str(CHART_DIR),
-        "-f", str(VALUES_KIND), "--set", "forge.logLevel=debug",
-        "--wait", "--timeout", "10m",
+        ctx,
+        "upgrade",
+        RELEASE,
+        str(CHART_DIR),
+        "-f",
+        str(VALUES_KIND),
+        "--set",
+        "forge.logLevel=debug",
+        "--wait",
+        "--timeout",
+        "10m",
     )
     assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
 
     for dep in DEPLOYMENTS:
         avail = _kubectl(
-            ctx, "get", "deploy", dep,
-            "-o", "jsonpath={.status.availableReplicas}",
+            ctx,
+            "get",
+            "deploy",
+            dep,
+            "-o",
+            "jsonpath={.status.availableReplicas}",
         )
         assert avail.stdout.strip() and int(avail.stdout) >= 1, f"{dep} not Available after upgrade"
 

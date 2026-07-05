@@ -24,9 +24,7 @@ from forge_contracts.incident import (
 
 
 def test_derive_dedup_key_uses_explicit_key() -> None:
-    alert = IncidentAlert(
-        provider=AlertProvider.DATADOG, dedup_key="svc-x:cpu", title="CPU"
-    )
+    alert = IncidentAlert(provider=AlertProvider.DATADOG, dedup_key="svc-x:cpu", title="CPU")
     assert derive_dedup_key(alert) == "svc-x:cpu"
 
 

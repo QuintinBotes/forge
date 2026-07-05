@@ -85,9 +85,7 @@ def seed(factory: sessionmaker[Session]) -> dict[str, uuid.UUID]:
 
 
 @pytest.fixture
-def svc(
-    factory: sessionmaker[Session], seed: dict[str, uuid.UUID]
-) -> SqlAlchemyBoardService:
+def svc(factory: sessionmaker[Session], seed: dict[str, uuid.UUID]) -> SqlAlchemyBoardService:
     return SqlAlchemyBoardService(factory, seed["ws"])
 
 
@@ -131,9 +129,7 @@ def test_keys_increment_per_creation(
     assert t2.key == "TASK-2"
 
 
-def test_task_full_round_trip(
-    svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]
-) -> None:
+def test_task_full_round_trip(svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]) -> None:
     """Every DTO field — including nested models + None-able scopes — survives."""
     created = _task(
         svc,
@@ -319,9 +315,7 @@ def test_dependency_add_is_idempotent(
     assert svc.get_task(a.id).depends_on == [b.id]
 
 
-def test_dependency_cycle_raises(
-    svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]
-) -> None:
+def test_dependency_cycle_raises(svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]) -> None:
     a = _task(svc, seed["proj_a"], "a")
     b = _task(svc, seed["proj_a"], "b")
     assert a.id is not None and b.id is not None
@@ -343,9 +337,7 @@ def test_transitive_dependency_cycle_raises(
         svc.dependency_add(c.id, a.id)
 
 
-def test_self_dependency_raises(
-    svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]
-) -> None:
+def test_self_dependency_raises(svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]) -> None:
     a = _task(svc, seed["proj_a"], "a")
     assert a.id is not None
     with pytest.raises(CycleError):
@@ -414,9 +406,7 @@ def test_list_tasks_filter_by_project(
     assert only_b[0].project_id == seed["proj_b"]
 
 
-def test_list_tasks_filter_by_text(
-    svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]
-) -> None:
+def test_list_tasks_filter_by_text(svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]) -> None:
     _task(svc, seed["proj_a"], "Implement OAuth login")
     _task(svc, seed["proj_a"], "Fix flaky test")
     hits = svc.list_tasks(BoardFilter(text="oauth"))
@@ -442,9 +432,7 @@ def test_list_tasks_ordering_is_creation_order(
     assert [t.id for t in listed] == [t.id for t in created]
 
 
-def test_list_tasks_pagination(
-    svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]
-) -> None:
+def test_list_tasks_pagination(svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]) -> None:
     created = [_task(svc, seed["proj_a"], f"t{i}") for i in range(5)]
     page = svc.list_tasks(BoardFilter(limit=2, offset=1))
     assert [t.id for t in page] == [created[1].id, created[2].id]
@@ -525,9 +513,7 @@ def test_milestone_crud(svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID])
         svc.get_milestone(ms.id)
 
 
-def test_incident_crud_and_key(
-    svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]
-) -> None:
+def test_incident_crud_and_key(svc: SqlAlchemyBoardService, seed: dict[str, uuid.UUID]) -> None:
     inc = svc.create_incident(
         IncidentDTO(
             title="DB down",

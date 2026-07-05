@@ -144,9 +144,7 @@ class ForgeMetrics(Protocol):
 
     def record_approval_decision(self, *, gate: str, decision: str) -> None: ...
 
-    def record_pr_outcome(
-        self, *, outcome: str, time_to_merge_seconds: float | None
-    ) -> None: ...
+    def record_pr_outcome(self, *, outcome: str, time_to_merge_seconds: float | None) -> None: ...
 
     def observe_spec_completeness(self, *, score: float) -> None: ...
 
@@ -287,9 +285,7 @@ class RecordingMetrics:
         return all(as_dict.get(k) == v for k, v in subset.items())
 
     def counter_value(self, name: str, **labels: str) -> float:
-        return sum(
-            v for ls, v in self.counters.get(name, {}).items() if self._match(ls, labels)
-        )
+        return sum(v for ls, v in self.counters.get(name, {}).items() if self._match(ls, labels))
 
     def histogram_values(self, name: str, **labels: str) -> list[float]:
         out: list[float] = []

@@ -64,14 +64,20 @@ def test_price_resolution_prefers_workspace_override() -> None:
     book.add(global_price)
     book.add(override)
     resolved = book.resolve(
-        workspace_id=WS, provider="anthropic", model="claude-sonnet-4-5",
-        kind="completion", at=NOW,
+        workspace_id=WS,
+        provider="anthropic",
+        model="claude-sonnet-4-5",
+        kind="completion",
+        at=NOW,
     )
     assert resolved is not None and resolved.id == override.id
 
     other_ws = book.resolve(
-        workspace_id=uuid.uuid4(), provider="anthropic", model="claude-sonnet-4-5",
-        kind="completion", at=NOW,
+        workspace_id=uuid.uuid4(),
+        provider="anthropic",
+        model="claude-sonnet-4-5",
+        kind="completion",
+        at=NOW,
     )
     assert other_ws is not None and other_ws.id == global_price.id
 
@@ -86,14 +92,20 @@ def test_price_resolution_uses_price_in_force_at_occurred_at() -> None:
         book.add(p)
 
     at_now = book.resolve(
-        workspace_id=WS, provider="anthropic", model="claude-sonnet-4-5",
-        kind="completion", at=NOW,
+        workspace_id=WS,
+        provider="anthropic",
+        model="claude-sonnet-4-5",
+        kind="completion",
+        at=NOW,
     )
     assert at_now is not None and at_now.id == new.id
 
     back_then = book.resolve(
-        workspace_id=WS, provider="anthropic", model="claude-sonnet-4-5",
-        kind="completion", at=NOW - timedelta(days=30),
+        workspace_id=WS,
+        provider="anthropic",
+        model="claude-sonnet-4-5",
+        kind="completion",
+        at=NOW - timedelta(days=30),
     )
     assert back_then is not None and back_then.id == old.id
 
@@ -102,8 +114,11 @@ def test_price_resolution_unknown_model_is_none() -> None:
     book = InMemoryPriceBook([_price("0.003", "0.015")])
     assert (
         book.resolve(
-            workspace_id=WS, provider="anthropic", model="unknown-model",
-            kind="completion", at=NOW,
+            workspace_id=WS,
+            provider="anthropic",
+            model="unknown-model",
+            kind="completion",
+            at=NOW,
         )
         is None
     )

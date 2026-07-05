@@ -40,9 +40,7 @@ def forge_content_hash(task: ForgeTask) -> str:
         else str(task.status_category)
     )
     priority = (
-        task.priority.value
-        if isinstance(task.priority, ForgePriority)
-        else str(task.priority)
+        task.priority.value if isinstance(task.priority, ForgePriority) else str(task.priority)
     )
     return _digest(
         {

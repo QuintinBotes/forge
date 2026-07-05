@@ -277,9 +277,7 @@ def test_f22_multi_repo_migration_up_down(alembic_config: Config) -> None:
         after_f22 = set(inspector.get_table_names())
         assert after_f22 >= F22_TABLES, f"missing F22 tables: {sorted(F22_TABLES - after_f22)}"
 
-        pr_group_uniques = {
-            uc["name"] for uc in inspector.get_unique_constraints("pr_group")
-        }
+        pr_group_uniques = {uc["name"] for uc in inspector.get_unique_constraints("pr_group")}
         assert "uq_pr_group_workflow_run_id" in pr_group_uniques
         arw_uniques = {
             uc["name"] for uc in inspector.get_unique_constraints("agent_repo_workspace")
@@ -815,13 +813,9 @@ def test_f35_benchmark_migration_up_down(alembic_config: Config) -> None:
         after_f35 = set(inspector.get_table_names())
         assert after_f35 >= F35_TABLES, f"missing F35 tables: {sorted(F35_TABLES - after_f35)}"
 
-        suite_uniques = {
-            uc["name"] for uc in inspector.get_unique_constraints("benchmark_suite")
-        }
+        suite_uniques = {uc["name"] for uc in inspector.get_unique_constraints("benchmark_suite")}
         assert "uq_benchmark_suite_slug_version" in suite_uniques
-        submission_indexes = {
-            ix["name"] for ix in inspector.get_indexes("benchmark_submission")
-        }
+        submission_indexes = {ix["name"] for ix in inspector.get_indexes("benchmark_submission")}
         assert "ix_benchmark_submission_leaderboard" in submission_indexes
 
         # Downgrade one step: F35 tables gone, prior chain intact.
@@ -961,13 +955,9 @@ def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) 
         assert "uq_audit_log_workspace_seq" in audit_indexes
 
         with engine.connect() as conn:
-            rows = conn.execute(
-                text("SELECT seq, action FROM audit_log ORDER BY seq")
-            ).fetchall()
+            rows = conn.execute(text("SELECT seq, action FROM audit_log ORDER BY seq")).fetchall()
             assert [r[0] for r in rows] == [1, 2, 3], "backfill must assign gap-free seq"
-            head = conn.execute(
-                text("SELECT last_seq FROM audit_chain_head")
-            ).fetchone()
+            head = conn.execute(text("SELECT last_seq FROM audit_chain_head")).fetchone()
             assert head is not None and head[0] == 3
 
         # The backfilled prefix verifies, and stays ok after a live append.
@@ -977,9 +967,7 @@ def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) 
 
         with Session(engine) as session:
             assert verify_chain(session, ws_id).ok is True
-            SqlAuditWriter(session).emit(
-                AuditEvent(workspace_id=ws_id, action="tool.call")
-            )
+            SqlAuditWriter(session).emit(AuditEvent(workspace_id=ws_id, action="tool.call"))
             session.commit()
             live = verify_chain(session, ws_id)
             assert live.ok is True

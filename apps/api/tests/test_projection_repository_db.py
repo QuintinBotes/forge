@@ -88,14 +88,10 @@ class _Ids:
 def ids(factory: sessionmaker[Session]) -> _Ids:
     seeded = _Ids()
     with factory() as session:
-        session.add(
-            Workspace(id=seeded.ws, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}")
-        )
+        session.add(Workspace(id=seeded.ws, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}"))
         session.flush()
         for pid, key in ((seeded.proj_a, "PA"), (seeded.proj_b, "PB")):
-            session.add(
-                Project(id=pid, workspace_id=seeded.ws, name=f"Project {key}", key=key)
-            )
+            session.add(Project(id=pid, workspace_id=seeded.ws, name=f"Project {key}", key=key))
         session.flush()
         specs = (
             (seeded.spec_a1, seeded.proj_a, "SPEC-A1"),
@@ -199,9 +195,7 @@ def test_repo_satisfies_projection_repository_protocol(
 # --------------------------------------------------------------------------- #
 
 
-def test_replace_and_get_links_roundtrip(
-    repo: SqlAlchemyProjectionRepository, ids: _Ids
-) -> None:
+def test_replace_and_get_links_roundtrip(repo: SqlAlchemyProjectionRepository, ids: _Ids) -> None:
     link = _link(
         ids,
         spec_id=ids.spec_a1,
@@ -226,27 +220,18 @@ def test_replace_and_get_links_roundtrip(
     assert got[0] == link
 
 
-def test_replace_spec_links_is_wholesale(
-    repo: SqlAlchemyProjectionRepository, ids: _Ids
-) -> None:
-    first = [
-        _lk(ids, ids.spec_a1, ids.proj_a, "SPEC-A1", c)
-        for c in ("A1", "A2")
-    ]
+def test_replace_spec_links_is_wholesale(repo: SqlAlchemyProjectionRepository, ids: _Ids) -> None:
+    first = [_lk(ids, ids.spec_a1, ids.proj_a, "SPEC-A1", c) for c in ("A1", "A2")]
     repo.replace_spec_links(str(ids.spec_a1), first)
     assert [link_.criterion_ext_id for link_ in repo.get_links(str(ids.spec_a1))] == ["A1", "A2"]
 
     # Wholesale replace: the old set is gone, only the new row remains.
-    second = [
-        _lk(ids, ids.spec_a1, ids.proj_a, "SPEC-A1", "A3")
-    ]
+    second = [_lk(ids, ids.spec_a1, ids.proj_a, "SPEC-A1", "A3")]
     repo.replace_spec_links(str(ids.spec_a1), second)
     assert [link_.criterion_ext_id for link_ in repo.get_links(str(ids.spec_a1))] == ["A3"]
 
 
-def test_replace_with_empty_clears_links(
-    repo: SqlAlchemyProjectionRepository, ids: _Ids
-) -> None:
+def test_replace_with_empty_clears_links(repo: SqlAlchemyProjectionRepository, ids: _Ids) -> None:
     repo.replace_spec_links(
         str(ids.spec_a1),
         [_lk(ids, ids.spec_a1, ids.proj_a, "SPEC-A1", "A1")],
@@ -255,13 +240,8 @@ def test_replace_with_empty_clears_links(
     assert repo.get_links(str(ids.spec_a1)) == []
 
 
-def test_get_links_ordered_by_criterion(
-    repo: SqlAlchemyProjectionRepository, ids: _Ids
-) -> None:
-    unordered = [
-        _lk(ids, ids.spec_a1, ids.proj_a, "SPEC-A1", c)
-        for c in ("A3", "A1", "A2")
-    ]
+def test_get_links_ordered_by_criterion(repo: SqlAlchemyProjectionRepository, ids: _Ids) -> None:
+    unordered = [_lk(ids, ids.spec_a1, ids.proj_a, "SPEC-A1", c) for c in ("A3", "A1", "A2")]
     repo.replace_spec_links(str(ids.spec_a1), unordered)
     assert [link_.criterion_ext_id for link_ in repo.get_links(str(ids.spec_a1))] == [
         "A1",
@@ -307,9 +287,7 @@ def test_upsert_rollup_keeps_single_row(
     assert count == 1
 
 
-def test_rollup_full_field_roundtrip(
-    repo: SqlAlchemyProjectionRepository, ids: _Ids
-) -> None:
+def test_rollup_full_field_roundtrip(repo: SqlAlchemyProjectionRepository, ids: _Ids) -> None:
     epic_id = str(uuid.uuid4())
     rollup = _rollup(
         ids,
@@ -340,9 +318,7 @@ def test_get_rollup_and_version_absent(repo: SqlAlchemyProjectionRepository) -> 
     assert repo.get_projection_version("not-a-uuid") == 0
 
 
-def test_upsert_updates_row_data(
-    repo: SqlAlchemyProjectionRepository, ids: _Ids
-) -> None:
+def test_upsert_updates_row_data(repo: SqlAlchemyProjectionRepository, ids: _Ids) -> None:
     repo.upsert_rollup(
         _rollup(ids, spec_id=ids.spec_a1, project_id=ids.proj_a, spec_key="SPEC-A1", gap_count=2)
     )
@@ -371,15 +347,9 @@ def test_list_rollups_filters_by_project_and_orders(
     repo: SqlAlchemyProjectionRepository, ids: _Ids
 ) -> None:
     # proj_a has two specs (seeded out of key order), proj_b has one.
-    repo.upsert_rollup(
-        _rollup(ids, spec_id=ids.spec_a2, project_id=ids.proj_a, spec_key="SPEC-A2")
-    )
-    repo.upsert_rollup(
-        _rollup(ids, spec_id=ids.spec_a1, project_id=ids.proj_a, spec_key="SPEC-A1")
-    )
-    repo.upsert_rollup(
-        _rollup(ids, spec_id=ids.spec_b1, project_id=ids.proj_b, spec_key="SPEC-B1")
-    )
+    repo.upsert_rollup(_rollup(ids, spec_id=ids.spec_a2, project_id=ids.proj_a, spec_key="SPEC-A2"))
+    repo.upsert_rollup(_rollup(ids, spec_id=ids.spec_a1, project_id=ids.proj_a, spec_key="SPEC-A1"))
+    repo.upsert_rollup(_rollup(ids, spec_id=ids.spec_b1, project_id=ids.proj_b, spec_key="SPEC-B1"))
 
     rollups_a = repo.list_rollups(str(ids.proj_a))
     assert [r.spec_key for r in rollups_a] == ["SPEC-A1", "SPEC-A2"]  # ordered by spec_key
@@ -429,9 +399,7 @@ def test_list_links_filters_by_project_and_orders(
 # --------------------------------------------------------------------------- #
 
 
-def test_durable_across_repository_instances(
-    factory: sessionmaker[Session], ids: _Ids
-) -> None:
+def test_durable_across_repository_instances(factory: sessionmaker[Session], ids: _Ids) -> None:
     writer = SqlAlchemyProjectionRepository(factory)
     writer.replace_spec_links(
         str(ids.spec_a1),
@@ -447,9 +415,7 @@ def test_durable_across_repository_instances(
     assert [link_.criterion_ext_id for link_ in reader.get_links(str(ids.spec_a1))] == ["A1"]
 
 
-def test_parity_with_in_memory_store(
-    repo: SqlAlchemyProjectionRepository, ids: _Ids
-) -> None:
+def test_parity_with_in_memory_store(repo: SqlAlchemyProjectionRepository, ids: _Ids) -> None:
     mem: ProjectionRepository = InMemoryProjectionRepository()
     links = [
         _link(

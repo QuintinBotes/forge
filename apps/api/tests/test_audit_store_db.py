@@ -131,9 +131,7 @@ def test_query_filters_by_category_and_run_id(store: DbAuditStore) -> None:
     run = uuid.uuid4()
     store.append(AuditEntry(category=AuditCategory.AGENT_ACTION, action="plan", run_id=run))
     store.append(AuditEntry(category=AuditCategory.TOOL_CALL, action="write", run_id=run))
-    store.append(
-        AuditEntry(category=AuditCategory.TOOL_CALL, action="write", run_id=uuid.uuid4())
-    )
+    store.append(AuditEntry(category=AuditCategory.TOOL_CALL, action="write", run_id=uuid.uuid4()))
 
     assert len(store.query(run_id=run)) == 2
     assert len(store.query(category=AuditCategory.TOOL_CALL)) == 2
@@ -209,9 +207,7 @@ def test_out_of_band_tampering_breaks_verification(
 # --------------------------------------------------------------------------- #
 
 
-def test_duplicate_seq_is_rejected(
-    store: DbAuditStore, factory: sessionmaker[Session]
-) -> None:
+def test_duplicate_seq_is_rejected(store: DbAuditStore, factory: sessionmaker[Session]) -> None:
     store.append(_entry("only"))  # seq 0
     with factory() as session:  # noqa: SIM117 - explicit raises block
         with pytest.raises(IntegrityError):

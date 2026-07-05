@@ -178,9 +178,9 @@ def test_reconcile_from_empty_equals_event_driven() -> None:
     TraceabilityProjector(source, NoOpEvidencePort(), event_repo).refresh_spec("spec-uuid")
 
     reconcile_repo = InMemoryProjectionRepository()
-    count = TraceabilityProjector(
-        source, NoOpEvidencePort(), reconcile_repo
-    ).reconcile_project("proj-1")
+    count = TraceabilityProjector(source, NoOpEvidencePort(), reconcile_repo).reconcile_project(
+        "proj-1"
+    )
 
     assert count == 1
     assert event_repo.get_rollup("spec-uuid") == reconcile_repo.get_rollup("spec-uuid")

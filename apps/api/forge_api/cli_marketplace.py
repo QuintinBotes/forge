@@ -76,9 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     pkg = sub.add_parser("package", help="build a signed-ready forge-package.yaml")
     pkg.add_argument("artifact", help="path to the F09/F11 artifact YAML")
-    pkg.add_argument(
-        "--kind", required=True, choices=[k.value for k in ArtifactKind]
-    )
+    pkg.add_argument("--kind", required=True, choices=[k.value for k in ArtifactKind])
     pkg.add_argument("--slug", required=True)
     pkg.add_argument("--name", required=True)
     pkg.add_argument("--version", required=True)

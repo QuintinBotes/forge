@@ -86,21 +86,15 @@ class Secret(WorkspaceScopedModel):
     #: The opaque envelope-encrypted credential blob (no plaintext, ever).
     ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     #: Refreshed when the plaintext is decrypted for use (optional).
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: NULL = no expiry; a past value ⇒ the vault raises ``SecretExpiredError``.
-    expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: HARD-13 envelope bookkeeping: the KEK version the row's DEK is wrapped under.
     key_version: Mapped[int] = mapped_column(
         SmallInteger, default=1, server_default=text("1"), nullable=False
     )
     #: When the DEK was last re-wrapped under a newer KEK (KEK-rotation audit).
-    rotated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Reserved forward-compat annotation bag (JSONB on Postgres); currently ``{}``.
     secret_metadata: Mapped[dict[str, Any]] = mapped_column(
         json_type(), default=dict, nullable=False

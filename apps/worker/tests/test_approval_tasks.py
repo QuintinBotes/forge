@@ -115,9 +115,7 @@ def test_sweep_expires_only_overdue_pending(session: Session) -> None:
     assert session.get(ApprovalRequest, no_sla.id).status is ApprovalStatus.PENDING
     assert session.get(ApprovalRequest, resolved.id).status is ApprovalStatus.APPROVED
 
-    events = session.scalars(
-        select(AuditLog).where(AuditLog.action == "approval.expired")
-    ).all()
+    events = session.scalars(select(AuditLog).where(AuditLog.action == "approval.expired")).all()
     assert len(events) == 1
     assert events[0].target_id == overdue.id
     assert events[0].details["follow_up_state"] == "needs_human_input"
@@ -129,9 +127,7 @@ def test_sweep_is_idempotent(session: Session) -> None:
     session.commit()
     assert run_expire_sweep(session, now=now) == 1
     assert run_expire_sweep(session, now=now) == 0
-    events = session.scalars(
-        select(AuditLog).where(AuditLog.action == "approval.expired")
-    ).all()
+    events = session.scalars(select(AuditLog).where(AuditLog.action == "approval.expired")).all()
     assert len(events) == 1
 
 
@@ -159,25 +155,15 @@ def test_consume_expired_grant_denies(session: Session) -> None:
 
 def test_consume_fingerprint_mismatch_denies(session: Session) -> None:
     run_id, grant = _grant(session, fingerprint="fp-real")
-    assert (
-        run_consume_grant(session, agent_run_id=run_id, action_fingerprint="fp-other")
-        is False
-    )
+    assert run_consume_grant(session, agent_run_id=run_id, action_fingerprint="fp-other") is False
     # The real grant is untouched by the mismatch and still consumable once.
     assert session.get(PolicyOverrideGrant, grant.id).consumed is False
-    assert (
-        run_consume_grant(session, agent_run_id=run_id, action_fingerprint="fp-real") is True
-    )
+    assert run_consume_grant(session, agent_run_id=run_id, action_fingerprint="fp-real") is True
 
 
 def test_consume_unknown_run_denies(session: Session) -> None:
     _grant(session)
-    assert (
-        run_consume_grant(
-            session, agent_run_id=uuid.uuid4(), action_fingerprint="fp-1"
-        )
-        is False
-    )
+    assert run_consume_grant(session, agent_run_id=uuid.uuid4(), action_fingerprint="fp-1") is False
 
 
 # --------------------------------------------------------------------------- #

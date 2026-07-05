@@ -72,9 +72,7 @@ class ConditionalPolicyEvaluator:
 
         matched.sort(key=lambda r: (r.priority, policy.rules.index(r)))
         cm = [
-            ConditionalMatch(
-                rule_id=r.id, effect=r.effect, severity=r.severity, reason=r.reason
-            )
+            ConditionalMatch(rule_id=r.id, effect=r.effect, severity=r.severity, reason=r.reason)
             for r in matched
         ]
 

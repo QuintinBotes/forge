@@ -127,9 +127,7 @@ def _coerce_task(raw: Any) -> GoldenTask:
         id=task_id,
         objective=str(raw["objective"]),
         kind=kind,
-        skill_profile=(
-            str(raw["skill_profile"]) if raw.get("skill_profile") is not None else None
-        ),
+        skill_profile=(str(raw["skill_profile"]) if raw.get("skill_profile") is not None else None),
         requirements=requirements,
         expected_status=str(raw.get("expected_status", "done")),
         expected_checks=[str(c) for c in raw.get("expected_checks", [])],

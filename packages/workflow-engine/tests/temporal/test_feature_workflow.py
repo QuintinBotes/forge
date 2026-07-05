@@ -173,9 +173,12 @@ async def test_agent_awaiting_input_then_resume(harness: Any) -> None:
             agent_run_id=uuid.uuid4(), status="succeeded", confidence=1.0, checks=_passing_checks()
         )
 
-    h = harness(run_agent_fn=agent, resume_agent_fn=lambda _: AgentRunResultDTO(
-        agent_run_id=uuid.uuid4(), status="succeeded", confidence=1.0, checks=_passing_checks()
-    ))
+    h = harness(
+        run_agent_fn=agent,
+        resume_agent_fn=lambda _: AgentRunResultDTO(
+            agent_run_id=uuid.uuid4(), status="succeeded", confidence=1.0, checks=_passing_checks()
+        ),
+    )
     async with h.worker():
         run = await h.start()
         await h.wait_awaiting(run, {"spec_approved_by_human"})

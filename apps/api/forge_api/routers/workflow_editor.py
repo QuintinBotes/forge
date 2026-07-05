@@ -126,9 +126,7 @@ def _editor_errors() -> Iterator[None]:
     except (BundledReadOnlyError, DefinitionNameConflictError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except WorkflowDefinitionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 # --------------------------------------------------------------------------- #
@@ -147,9 +145,7 @@ def list_definitions(service: ServiceDep, principal: ReaderDep) -> list[Definiti
 
 
 @router.get("/definitions/{name}", response_model=DefinitionDetail)
-def get_definition(
-    service: ServiceDep, principal: ReaderDep, name: str
-) -> DefinitionDetail:
+def get_definition(service: ServiceDep, principal: ReaderDep, name: str) -> DefinitionDetail:
     with _editor_errors():
         return service.get_definition(principal.workspace_id, name)
 
@@ -171,9 +167,7 @@ def create_definition(
     response_model=DefinitionDetail,
     status_code=status.HTTP_201_CREATED,
 )
-def fork_bundled(
-    service: ServiceDep, principal: AdminDep, name: str
-) -> DefinitionDetail:
+def fork_bundled(service: ServiceDep, principal: AdminDep, name: str) -> DefinitionDetail:
     with _editor_errors():
         return service.fork_bundled(principal.workspace_id, name, actor=principal.user_id)
 
@@ -191,12 +185,8 @@ def save_draft(
         return service.save_draft(principal.workspace_id, name, body, actor=principal.user_id)
 
 
-@router.post(
-    "/definitions/{name}/draft/validate", response_model=list[ValidationIssue]
-)
-def validate_draft(
-    service: ServiceDep, principal: WriterDep, name: str
-) -> list[ValidationIssue]:
+@router.post("/definitions/{name}/draft/validate", response_model=list[ValidationIssue])
+def validate_draft(service: ServiceDep, principal: WriterDep, name: str) -> list[ValidationIssue]:
     with _editor_errors():
         return service.validate_draft(principal.workspace_id, name)
 
@@ -213,16 +203,12 @@ def publish(service: ServiceDep, principal: AdminDep, name: str) -> RevisionDeta
 
 
 @router.get("/definitions/{name}/revisions", response_model=list[RevisionSummary])
-def list_revisions(
-    service: ServiceDep, principal: ReaderDep, name: str
-) -> list[RevisionSummary]:
+def list_revisions(service: ServiceDep, principal: ReaderDep, name: str) -> list[RevisionSummary]:
     with _editor_errors():
         return service.list_revisions(principal.workspace_id, name)
 
 
-@router.get(
-    "/definitions/{name}/revisions/{revision}", response_model=RevisionDetail
-)
+@router.get("/definitions/{name}/revisions/{revision}", response_model=RevisionDetail)
 def get_revision(
     service: ServiceDep, principal: ReaderDep, name: str, revision: int
 ) -> RevisionDetail:
@@ -277,12 +263,8 @@ def export_definition(
     return Response(content=yaml_text, media_type="text/yaml")
 
 
-@router.post(
-    "/import", response_model=DefinitionDetail, status_code=status.HTTP_201_CREATED
-)
-def import_yaml(
-    service: ServiceDep, principal: AdminDep, body: ImportRequest
-) -> DefinitionDetail:
+@router.post("/import", response_model=DefinitionDetail, status_code=status.HTTP_201_CREATED)
+def import_yaml(service: ServiceDep, principal: AdminDep, body: ImportRequest) -> DefinitionDetail:
     with _editor_errors():
         return service.import_yaml(principal.workspace_id, body, actor=principal.user_id)
 

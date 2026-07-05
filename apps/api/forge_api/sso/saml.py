@@ -79,9 +79,7 @@ class SamlSpService:
         """
         request_id = new_request_id()
         samlp, saml = NS["samlp"], NS["saml"]
-        root = etree.Element(
-            f"{{{samlp}}}AuthnRequest", nsmap={"samlp": samlp, "saml": saml}
-        )
+        root = etree.Element(f"{{{samlp}}}AuthnRequest", nsmap={"samlp": samlp, "saml": saml})
         root.set("ID", request_id)
         root.set("Version", "2.0")
         root.set("IssueInstant", _saml_instant(datetime.now(UTC)))
@@ -241,8 +239,7 @@ class SamlSpService:
 
         # SubjectConfirmationData: InResponseTo + NotOnOrAfter (bearer).
         scd = assertion.find(
-            f"{{{saml}}}Subject/{{{saml}}}SubjectConfirmation/"
-            f"{{{saml}}}SubjectConfirmationData"
+            f"{{{saml}}}Subject/{{{saml}}}SubjectConfirmation/{{{saml}}}SubjectConfirmationData"
         )
         in_response_to = scd.get("InResponseTo") if scd is not None else None
 
@@ -265,9 +262,7 @@ class SamlSpService:
         # AudienceRestriction must name this SP.
         audiences = [
             (el.text or "").strip()
-            for el in conditions.findall(
-                f"{{{saml}}}AudienceRestriction/{{{saml}}}Audience"
-            )
+            for el in conditions.findall(f"{{{saml}}}AudienceRestriction/{{{saml}}}Audience")
         ]
         if not audiences or sp_entity_id not in audiences:
             raise SamlValidationError("audience_mismatch", ", ".join(audiences) or "none")
@@ -277,21 +272,14 @@ class SamlSpService:
             raise SamlValidationError("in_response_to_mismatch", in_response_to or "none")
 
         authn_statement = assertion.find(f"{{{saml}}}AuthnStatement")
-        session_index = (
-            authn_statement.get("SessionIndex") if authn_statement is not None else None
-        )
+        session_index = authn_statement.get("SessionIndex") if authn_statement is not None else None
 
         attributes: dict[str, list[str]] = {}
-        for attr in assertion.findall(
-            f"{{{saml}}}AttributeStatement/{{{saml}}}Attribute"
-        ):
+        for attr in assertion.findall(f"{{{saml}}}AttributeStatement/{{{saml}}}Attribute"):
             attr_name = attr.get("Name")
             if not attr_name:
                 continue
-            values = [
-                (v.text or "").strip()
-                for v in attr.findall(f"{{{saml}}}AttributeValue")
-            ]
+            values = [(v.text or "").strip() for v in attr.findall(f"{{{saml}}}AttributeValue")]
             attributes[attr_name] = [v for v in values if v]
 
         return SamlAssertion(

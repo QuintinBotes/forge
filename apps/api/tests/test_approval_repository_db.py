@@ -66,16 +66,12 @@ def seed(factory: sessionmaker[Session]) -> dict[str, uuid.UUID]:
     bob = uuid.uuid4()
     with factory() as session:
         session.add(Workspace(id=ws, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}"))
-        session.add(
-            Workspace(id=other_ws, name="Other", slug=f"other-{uuid.uuid4().hex[:8]}")
-        )
+        session.add(Workspace(id=other_ws, name="Other", slug=f"other-{uuid.uuid4().hex[:8]}"))
         session.flush()
         session.add(
             User(id=alice, workspace_id=ws, email=f"a-{alice.hex[:6]}@acme.dev", name="Alice")
         )
-        session.add(
-            User(id=bob, workspace_id=ws, email=f"b-{bob.hex[:6]}@acme.dev", name="Bob")
-        )
+        session.add(User(id=bob, workspace_id=ws, email=f"b-{bob.hex[:6]}@acme.dev", name="Bob"))
         session.commit()
     return {"ws": ws, "other_ws": other_ws, "alice": alice, "bob": bob}
 
@@ -280,12 +276,8 @@ async def test_list_filters_and_orders_by_requested_at(
     proj = uuid.uuid4()
     base = datetime(2026, 7, 5, 9, 0, 0, tzinfo=UTC)
     r1 = _request(ws, gate=GateType.PR, project_id=proj, requested_at=base)
-    r2 = _request(
-        ws, gate=GateType.SPEC, requested_at=base + timedelta(minutes=1)
-    )
-    r3 = _request(
-        ws, gate=GateType.PR, project_id=proj, requested_at=base + timedelta(minutes=2)
-    )
+    r2 = _request(ws, gate=GateType.SPEC, requested_at=base + timedelta(minutes=1))
+    r3 = _request(ws, gate=GateType.PR, project_id=proj, requested_at=base + timedelta(minutes=2))
     r3.status = GateStatus.APPROVED
     for r in (r2, r3, r1):  # insert out of order; list must sort by requested_at
         await repo.add(r)
@@ -307,9 +299,9 @@ async def test_list_filters_and_orders_by_requested_at(
         r1.id,
         r3.id,
     ]
-    assert (
-        await repo.list(workspace_id=ws, gate_type=GateType.PR, status=GateStatus.PENDING)
-    )[0].id == r1.id
+    assert (await repo.list(workspace_id=ws, gate_type=GateType.PR, status=GateStatus.PENDING))[
+        0
+    ].id == r1.id
     assert await repo.list(workspace_id=uuid.uuid4()) == []
 
 

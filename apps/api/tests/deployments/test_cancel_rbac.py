@@ -51,9 +51,7 @@ def test_cancel_terminal_409(
     assert resp.status_code == 409
 
 
-def test_viewer_read_only(
-    client_factory: Callable[..., TestClient], project_id: uuid.UUID
-) -> None:
+def test_viewer_read_only(client_factory: Callable[..., TestClient], project_id: uuid.UUID) -> None:
     _setup(client_factory, project_id)
     viewer = client_factory(UserRole.VIEWER)
     assert viewer.get(f"/projects/{project_id}/pipeline").status_code == 200

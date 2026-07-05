@@ -88,12 +88,8 @@ def ensure_not_last_admin(session: Session, workspace_id: uuid.UUID, user_id: uu
     user = session.get(User, user_id)
     if user is None or user.workspace_id != workspace_id:
         return
-    is_local_admin = (
-        user.role == UserRole.ADMIN and user.is_active and not user.external_managed
-    )
-    if is_local_admin and count_local_active_admins(
-        session, workspace_id, excluding=user_id
-    ) == 0:
+    is_local_admin = user.role == UserRole.ADMIN and user.is_active and not user.external_managed
+    if is_local_admin and count_local_active_admins(session, workspace_id, excluding=user_id) == 0:
         raise LastAdminError(
             "cannot deprovision the last active local admin (break-glass protection)"
         )

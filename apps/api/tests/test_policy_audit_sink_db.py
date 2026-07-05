@@ -54,9 +54,7 @@ def seed(factory: sessionmaker[Session]) -> dict[str, uuid.UUID]:
     other_run = uuid.uuid4()
     with factory() as session:
         session.add(Workspace(id=ws, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}"))
-        session.add(
-            Workspace(id=other_ws, name="Other", slug=f"other-{uuid.uuid4().hex[:8]}")
-        )
+        session.add(Workspace(id=other_ws, name="Other", slug=f"other-{uuid.uuid4().hex[:8]}"))
         session.flush()
         session.add(AgentRun(id=run, workspace_id=ws))
         session.add(AgentRun(id=other_run, workspace_id=other_ws))
@@ -100,9 +98,7 @@ def _rows(factory: sessionmaker[Session]) -> list[PolicyRuleEvaluation]:
     with factory() as session:
         return list(
             session.execute(
-                select(PolicyRuleEvaluation).order_by(
-                    PolicyRuleEvaluation.evaluated_at.asc()
-                )
+                select(PolicyRuleEvaluation).order_by(PolicyRuleEvaluation.evaluated_at.asc())
             )
             .scalars()
             .all()

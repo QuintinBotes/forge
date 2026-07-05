@@ -41,9 +41,7 @@ def require_permission(permission: Permission) -> Callable[[Principal], Principa
         try:
             ensure(principal.role, permission)
         except PermissionDeniedError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
         return principal
 
     return _dependency

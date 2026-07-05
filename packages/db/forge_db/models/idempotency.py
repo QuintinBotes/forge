@@ -72,15 +72,10 @@ class IdempotencyKey(ForgeModel):
     #: ``content_type`` / base64 ``body_b64``); the body is opaque bytes.
     response: Mapped[dict[str, Any]] = mapped_column(json_type(), nullable=False)
     #: Wall-clock TTL horizon; a read past it is absent, the reserve path overwrites.
-    expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     def __repr__(self) -> str:  # pragma: no cover - trivial
-        return (
-            f"IdempotencyKey(id={self.id!r}, key={self.key!r}, "
-            f"expires_at={self.expires_at!r})"
-        )
+        return f"IdempotencyKey(id={self.id!r}, key={self.key!r}, expires_at={self.expires_at!r})"
 
 
 __all__ = ["IdempotencyKey"]

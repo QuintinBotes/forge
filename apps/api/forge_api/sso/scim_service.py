@@ -87,9 +87,7 @@ class ScimUserService:
             displayName=user.name,
             emails=[ScimEmail(value=user.email)],
             active=user.is_active,
-            groups=[
-                ScimGroupRef(value=g.scim_id, display=g.display_name) for g in groups
-            ],
+            groups=[ScimGroupRef(value=g.scim_id, display=g.display_name) for g in groups],
             meta=ScimMeta(
                 resourceType="User",
                 created=user.created_at,
@@ -110,9 +108,7 @@ class ScimUserService:
             raise _not_found("User")
         return link
 
-    def _get_pair(
-        self, workspace_id: uuid.UUID, scim_id: str
-    ) -> tuple[User, ExternalIdentity]:
+    def _get_pair(self, workspace_id: uuid.UUID, scim_id: str) -> tuple[User, ExternalIdentity]:
         link = self._get_link(workspace_id, scim_id)
         user = self._session.get(User, link.user_id)
         if user is None or user.workspace_id != workspace_id:
@@ -155,9 +151,7 @@ class ScimUserService:
     def create(self, workspace_id: uuid.UUID, payload: ScimUser) -> ScimUser:
         email = self._resolve_email(payload)
         existing = self._session.execute(
-            select(User).where(
-                User.workspace_id == workspace_id, func.lower(User.email) == email
-            )
+            select(User).where(User.workspace_id == workspace_id, func.lower(User.email) == email)
         ).scalar_one_or_none()
         if existing is not None:
             raise ScimApiError(409, f"userName {email!r} already exists", "uniqueness")
@@ -232,9 +226,7 @@ class ScimUserService:
             ],
         )
 
-    def replace(
-        self, workspace_id: uuid.UUID, scim_id: str, payload: ScimUser
-    ) -> ScimUser:
+    def replace(self, workspace_id: uuid.UUID, scim_id: str, payload: ScimUser) -> ScimUser:
         user, link = self._get_pair(workspace_id, scim_id)
         email = self._resolve_email(payload)
         if email != user.email.lower():
@@ -264,9 +256,7 @@ class ScimUserService:
         )
         return self._to_resource(user, link)
 
-    def patch(
-        self, workspace_id: uuid.UUID, scim_id: str, req: ScimPatchRequest
-    ) -> ScimUser:
+    def patch(self, workspace_id: uuid.UUID, scim_id: str, req: ScimPatchRequest) -> ScimUser:
         user, link = self._get_pair(workspace_id, scim_id)
         for operation in req.Operations:
             op = operation.op.lower()
@@ -386,8 +376,7 @@ class ScimGroupService:
             externalId=group.external_id,
             displayName=group.display_name,
             members=[
-                ScimMember(value=link.scim_resource_id or "")
-                for _member, link in member_rows
+                ScimMember(value=link.scim_resource_id or "") for _member, link in member_rows
             ],
             meta=ScimMeta(
                 resourceType="Group",
@@ -440,9 +429,7 @@ class ScimGroupService:
                 .where(ScimGroupMember.user_id == user_id)
             ).all()
         ]
-        resolved = resolve_role(
-            group_names, config.group_role_map or {}, config.default_role.value
-        )
+        resolved = resolve_role(group_names, config.group_role_map or {}, config.default_role.value)
         if user.role != UserRole(resolved):
             user.role = UserRole(resolved)
             self._session.flush()
@@ -457,9 +444,7 @@ class ScimGroupService:
             )
         ).scalar_one_or_none()
         if clash is not None:
-            raise ScimApiError(
-                409, f"group {payload.displayName!r} already exists", "uniqueness"
-            )
+            raise ScimApiError(409, f"group {payload.displayName!r} already exists", "uniqueness")
         group = ScimGroup(
             workspace_id=workspace_id,
             scim_id=_new_scim_id(),
@@ -505,8 +490,7 @@ class ScimGroupService:
             startIndex=start,
             itemsPerPage=len(page),
             Resources=[
-                self._to_resource(g).model_dump(mode="json", exclude_none=True)
-                for g in page
+                self._to_resource(g).model_dump(mode="json", exclude_none=True) for g in page
             ],
         )
 
@@ -595,9 +579,7 @@ class ScimGroupService:
         ).scalar_one_or_none()
         if exists is None:
             self._session.add(
-                ScimGroupMember(
-                    workspace_id=workspace_id, group_id=group.id, user_id=user.id
-                )
+                ScimGroupMember(workspace_id=workspace_id, group_id=group.id, user_id=user.id)
             )
             self._session.flush()
         return user.id

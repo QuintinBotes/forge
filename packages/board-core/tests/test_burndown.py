@@ -47,9 +47,7 @@ def test_compute_burndown_per_day_remaining() -> None:
         _ev(4, ET.TASK_COMPLETED, 25, 12),  # -8 completed
     ]
     points = compute_burndown(WINDOW, 20, events, committed_task_count=4)
-    assert [p.snapshot_date for p in points] == [
-        date(2026, 6, d) for d in range(1, 6)
-    ]
+    assert [p.snapshot_date for p in points] == [date(2026, 6, d) for d in range(1, 6)]
     remaining = [p.remaining_points for p in points]
     assert remaining == [20, 15, 20, 12, 12]  # day-5 carries day-4 state
     # completed_points = scope - remaining

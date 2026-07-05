@@ -158,12 +158,8 @@ class DbActionExecutor:
 
     def _close_linked(self, task: Task, action: CloseLinkedSpecTasksAction) -> ActionResult:
         if task.spec_id is None:
-            return ActionResult(
-                type=action.type, status="no_op", detail={"reason": "no_spec_link"}
-            )
-        q = select(Task).where(
-            Task.workspace_id == task.workspace_id, Task.spec_id == task.spec_id
-        )
+            return ActionResult(type=action.type, status="no_op", detail={"reason": "no_spec_link"})
+        q = select(Task).where(Task.workspace_id == task.workspace_id, Task.spec_id == task.spec_id)
         if action.scope == "project":
             q = q.where(Task.project_id == task.project_id)
         closed: list[str] = []
@@ -179,9 +175,7 @@ class DbActionExecutor:
             sibling.status = action.target_status
             closed.append(str(sibling.id))
         status = "ok" if closed else "no_op"
-        return ActionResult(
-            type=action.type, status=status, detail={"closed_task_ids": closed}
-        )
+        return ActionResult(type=action.type, status=status, detail={"closed_task_ids": closed})
 
     def _create_task(
         self, task: Task, action: CreateTaskAction, ctx: ActionContext
@@ -243,9 +237,7 @@ def _matching_rules(session: Session, env: AutomationTriggerEnvelope) -> list[Au
     )
     rows = list(session.execute(q).scalars())
     # project_id NULL = workspace-wide; otherwise must match the envelope project.
-    return [
-        r for r in rows if r.project_id is None or r.project_id == env.project_id
-    ]
+    return [r for r in rows if r.project_id is None or r.project_id == env.project_id]
 
 
 def evaluate_envelope(
@@ -269,9 +261,7 @@ def evaluate_envelope(
         for row in rule_rows:
             key = f"{row.id}:{envelope.trigger_event_id}"
             exists = session.scalar(
-                select(AutomationExecution.id).where(
-                    AutomationExecution.idempotency_key == key
-                )
+                select(AutomationExecution.id).where(AutomationExecution.idempotency_key == key)
             )
             if exists is None:
                 pending.append(row)
@@ -358,9 +348,7 @@ def sweep_unprocessed_triggers(
             for row in rule_rows:
                 key = f"{row.id}:{env.trigger_event_id}"
                 exists = session.scalar(
-                    select(AutomationExecution.id).where(
-                        AutomationExecution.idempotency_key == key
-                    )
+                    select(AutomationExecution.id).where(AutomationExecution.idempotency_key == key)
                 )
                 if exists is None:
                     has_unprocessed = True

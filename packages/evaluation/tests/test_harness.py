@@ -24,9 +24,7 @@ from forge_eval.harness import (
 from forge_eval.report import format_task_scorecard
 from forge_eval.tasks import GoldenRequirement, GoldenTask, load_golden_tasks
 
-V1_SET = (
-    Path(__file__).resolve().parent.parent / "forge_eval" / "golden" / "v1_task_set.yaml"
-)
+V1_SET = Path(__file__).resolve().parent.parent / "forge_eval" / "golden" / "v1_task_set.yaml"
 
 
 # --------------------------------------------------------------------------- #
@@ -192,9 +190,7 @@ def test_missing_check_fails_task() -> None:
     )
 
     def solver(_: GoldenTask) -> TaskOutput:
-        return TaskOutput(
-            satisfied_requirements=["R1"], status="done", checks_passed=["lint"]
-        )
+        return TaskOutput(satisfied_requirements=["R1"], status="done", checks_passed=["lint"])
 
     card = evaluate_tasks([task], solver, min_requirement_satisfaction=1.0)
     assert card.results[0].checks_satisfied is False

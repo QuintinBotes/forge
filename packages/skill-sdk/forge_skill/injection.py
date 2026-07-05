@@ -41,17 +41,13 @@ def _directives(profile: SkillProfile) -> dict[str, object]:
     return {
         "profile": profile.name,
         "requires_plan": profile.requires_plan,
-        "requires_tests_before_implementation": (
-            profile.requires_tests_before_implementation
-        ),
+        "requires_tests_before_implementation": (profile.requires_tests_before_implementation),
         "min_test_coverage": profile.min_test_coverage,
         "verification_steps": list(profile.verification_steps),
         "review_required": profile.review_required,
         "forbidden_shortcuts": list(profile.forbidden_shortcuts),
         "accessibility_check": profile.accessibility_check,
-        "requires_human_approval_before_action": (
-            profile.requires_human_approval_before_action
-        ),
+        "requires_human_approval_before_action": (profile.requires_human_approval_before_action),
         "human_review_required": profile.human_review_required,
         "max_blast_radius": profile.max_blast_radius,
         "output_type": profile.output_type,
@@ -65,9 +61,7 @@ def inject_profile(profile: SkillProfile, context: AgentObjective) -> AgentObjec
     objective = context.model_copy(deep=True)
 
     objective.skill_profile = profile.model_copy(deep=True)
-    objective.allowed_actions = _ordered_union(
-        context.allowed_actions, profile.allowed_actions
-    )
+    objective.allowed_actions = _ordered_union(context.allowed_actions, profile.allowed_actions)
     objective.restricted_actions = _ordered_union(
         context.restricted_actions, profile.forbidden_actions
     )

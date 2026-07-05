@@ -34,11 +34,7 @@ def test_restricted_creates_pending_approval(
     client_factory: Callable[..., TestClient], project_id: uuid.UUID
 ) -> None:
     _member, dep_id = _staging_awaiting(client_factory, project_id)
-    gate = (
-        client_factory(UserRole.MEMBER)
-        .get(f"/deployments/{dep_id}/gate")
-        .json()
-    )
+    gate = client_factory(UserRole.MEMBER).get(f"/deployments/{dep_id}/gate").json()
     assert gate["requires_human_approval"] is True
 
 
@@ -47,9 +43,7 @@ def test_approve_drives_deploy(
 ) -> None:
     _member, dep_id = _staging_awaiting(client_factory, project_id)
     approver = client_factory(UserRole.MEMBER, user_id=APPROVER_ID)
-    resp = approver.post(
-        f"/deployments/{dep_id}/decision", json={"decision": "approve"}
-    )
+    resp = approver.post(f"/deployments/{dep_id}/decision", json={"decision": "approve"})
     assert resp.status_code == 200, resp.text
     assert resp.json()["state"] == "succeeded"
 
@@ -59,9 +53,7 @@ def test_reject_blocks_deploy(
 ) -> None:
     _member, dep_id = _staging_awaiting(client_factory, project_id)
     approver = client_factory(UserRole.MEMBER, user_id=APPROVER_ID)
-    resp = approver.post(
-        f"/deployments/{dep_id}/decision", json={"decision": "reject"}
-    )
+    resp = approver.post(f"/deployments/{dep_id}/decision", json={"decision": "reject"})
     assert resp.status_code == 200
     assert resp.json()["state"] == "gate_rejected"
 

@@ -40,9 +40,7 @@ class FreezeWindow(BaseModel):
 class GateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    required_checks: list[GateCheckName] = Field(
-        default_factory=lambda: [GateCheckName.CI_GREEN]
-    )
+    required_checks: list[GateCheckName] = Field(default_factory=lambda: [GateCheckName.CI_GREEN])
     approver_user_ids: list[uuid.UUID] = Field(default_factory=list)
     approver_team_ids: list[uuid.UUID] = Field(default_factory=list)
     min_approvals: int = 1
@@ -92,9 +90,7 @@ class PipelineSpec(BaseModel):
 
     @field_validator("environments")
     @classmethod
-    def _unique_names_and_ranks(
-        cls, value: list[EnvironmentSpec]
-    ) -> list[EnvironmentSpec]:
+    def _unique_names_and_ranks(cls, value: list[EnvironmentSpec]) -> list[EnvironmentSpec]:
         names = [e.name for e in value]
         ranks = [e.rank for e in value]
         if len(set(names)) != len(names):

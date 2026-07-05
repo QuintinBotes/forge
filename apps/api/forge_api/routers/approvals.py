@@ -192,9 +192,7 @@ async def decide_approval(
     except ApprovalNotFoundError:
         raise _not_found(approval_id) from None
     except AuthorizationError as err:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=err.reason
-        ) from None
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=err.reason) from None
     except AlreadyResolvedError as err:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -117,9 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # HTTP 409 ("rotate this credential") wherever it is used, not a 500 —
     # the spec's automatic-expiry guarantee for stored credentials.
     @app.exception_handler(SecretExpiredError)
-    async def _secret_expired_handler(
-        _request: Request, _exc: SecretExpiredError
-    ) -> JSONResponse:
+    async def _secret_expired_handler(_request: Request, _exc: SecretExpiredError) -> JSONResponse:
         return JSONResponse(
             status_code=409,
             content={"detail": "secret has expired; rotate this credential"},

@@ -96,13 +96,10 @@ class ApprovalAuthorizer:
     ) -> None:
         """Raise :class:`AuthorizationError` unless every rule holds."""
         if actor.kind != "user":
-            raise AuthorizationError(
-                f"{actor.kind} principals can never resolve approval gates"
-            )
+            raise AuthorizationError(f"{actor.kind} principals can never resolve approval gates")
         if actor.role is None or _ROLE_RANK.get(actor.role, 0) < 1:
             raise AuthorizationError(
-                f"role '{actor.role.value if actor.role else 'none'}' cannot resolve"
-                " approval gates"
+                f"role '{actor.role.value if actor.role else 'none'}' cannot resolve approval gates"
             )
 
         required = GATE_MIN_ROLE[request.gate_type]

@@ -164,16 +164,12 @@ class BenchmarkService:
         for manifest_path in sorted(self._root.glob("*/*/manifest.yaml")):
             manifest, cases = load_manifest(manifest_path.parent)
             if manifest.frozen:
-                registered.append(
-                    self.register_suite(manifest, cases, published=published)
-                )
+                registered.append(self.register_suite(manifest, cases, published=published))
         return registered
 
     def list_suites(self, *, published_only: bool = False) -> list[BenchmarkSuite]:
         with self._session_factory() as session:
-            stmt = select(BenchmarkSuite).order_by(
-                BenchmarkSuite.slug, BenchmarkSuite.version
-            )
+            stmt = select(BenchmarkSuite).order_by(BenchmarkSuite.slug, BenchmarkSuite.version)
             if published_only:
                 stmt = stmt.where(BenchmarkSuite.published.is_(True))
             return list(session.scalars(stmt).all())
@@ -242,9 +238,7 @@ class BenchmarkService:
                 suite_content_hash=suite.content_hash,
                 workspace_id=workspace_id,
                 submitter_name=redact_text(request.submitter_name),
-                submitter_org=redact_text(request.submitter_org)
-                if request.submitter_org
-                else None,
+                submitter_org=redact_text(request.submitter_org) if request.submitter_org else None,
                 submitter_contact=request.submitter_contact,
                 model_label=redact_text(request.model_label),
                 agent_mode=request.agent_mode,
@@ -286,9 +280,7 @@ class BenchmarkService:
                 )
             scoring, cases = self.load_suite_cases(suite)
 
-            bundles = [
-                ReplayBundle.model_validate(raw) for raw in submission.replay_bundles
-            ]
+            bundles = [ReplayBundle.model_validate(raw) for raw in submission.replay_bundles]
             claimed = BenchmarkScore.model_validate(submission.scores)
             report = replay_bundles(bundles, cases, scoring)
             result = verify_submission(
@@ -424,9 +416,7 @@ class BenchmarkService:
                     BenchmarkSubmission.status.in_(PUBLIC_RANKABLE_STATUSES),
                 )
             else:
-                stmt = stmt.where(
-                    BenchmarkSubmission.status != SubmissionStatus.flagged.value
-                )
+                stmt = stmt.where(BenchmarkSubmission.status != SubmissionStatus.flagged.value)
             rows = session.scalars(stmt).all()
             unranked = [self._to_row(row) for row in rows]
         return suite, rank_submissions(unranked)

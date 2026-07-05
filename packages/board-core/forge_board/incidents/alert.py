@@ -35,6 +35,4 @@ class AlertNormalizer:
     def normalize(self, alert: IncidentAlert) -> IncidentAlert:
         """Return a copy of ``alert`` with a guaranteed dedup key + severity."""
         severity = alert.severity or IncidentSeverity.MEDIUM
-        return alert.model_copy(
-            update={"dedup_key": derive_dedup_key(alert), "severity": severity}
-        )
+        return alert.model_copy(update={"dedup_key": derive_dedup_key(alert), "severity": severity})

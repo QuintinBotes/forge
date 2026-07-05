@@ -63,9 +63,7 @@ def test_first_login_provisions_workspace_admin(
     assert _actions(session) == ["auth.user_provisioned"]
 
 
-def test_provisioning_is_idempotent(
-    session: Session, service: OAuthProvisioningService
-) -> None:
+def test_provisioning_is_idempotent(session: Session, service: OAuthProvisioningService) -> None:
     first = service.provision_from_oauth(
         provider=OAuthProvider.GITHUB, subject="gh-1", email="alice@acme.dev"
     )

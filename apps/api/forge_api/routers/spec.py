@@ -169,36 +169,28 @@ def write_manifest(engine: EngineDep, spec_id: uuid.UUID, manifest: SpecManifest
         return engine.write_manifest(manifest)
 
 
-@router.post(
-    "/specs/{spec_id}/clarify", response_model=SpecManifest, dependencies=[WriteGate]
-)
+@router.post("/specs/{spec_id}/clarify", response_model=SpecManifest, dependencies=[WriteGate])
 def spec_clarify(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
     """Run the clarification pass."""
     with _spec_errors():
         return engine.spec_clarify(spec_id)
 
 
-@router.post(
-    "/specs/{spec_id}/plan", response_model=SpecManifest, dependencies=[WriteGate]
-)
+@router.post("/specs/{spec_id}/plan", response_model=SpecManifest, dependencies=[WriteGate])
 def spec_plan(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
     """Generate the technical plan + ADRs."""
     with _spec_errors():
         return engine.spec_plan(spec_id)
 
 
-@router.post(
-    "/specs/{spec_id}/approve", response_model=SpecManifest, dependencies=[WriteGate]
-)
+@router.post("/specs/{spec_id}/approve", response_model=SpecManifest, dependencies=[WriteGate])
 def approve_spec(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
     """Approve a spec (the human gate); moves it to ``approved``."""
     with _spec_errors():
         return engine.approve_spec(spec_id)
 
 
-@router.post(
-    "/specs/{spec_id}/tasks", response_model=list[TaskDTO], dependencies=[WriteGate]
-)
+@router.post("/specs/{spec_id}/tasks", response_model=list[TaskDTO], dependencies=[WriteGate])
 def spec_tasks(engine: EngineDep, spec_id: uuid.UUID) -> list[TaskDTO]:
     """Generate implementation tasks from an approved spec (gated)."""
     with _spec_errors():

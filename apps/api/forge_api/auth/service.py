@@ -264,8 +264,8 @@ class AuthService:
         # F37 web↔API seam: the shared HS256 secret Better Auth signs the
         # session JWT with. Absent ⇒ the JWT auth path is disabled (API keys
         # keep working); never silently defaulted.
-        self._auth_secret = auth_secret if auth_secret is not None else os.environ.get(
-            "AUTH_SECRET"
+        self._auth_secret = (
+            auth_secret if auth_secret is not None else os.environ.get("AUTH_SECRET")
         )
         # F37 audit producer: auth-domain events flow through the injected
         # AuditSink (F39's SqlAuditWriter at DB wire-up; a log-only fallback
@@ -409,9 +409,7 @@ class AuthService:
 
     # -- OAuth descriptor --------------------------------------------------- #
 
-    def oauth_challenge(
-        self, provider: str, redirect_uri: str | None = None
-    ) -> OAuthChallenge:
+    def oauth_challenge(self, provider: str, redirect_uri: str | None = None) -> OAuthChallenge:
         """Build an OAuth authorization-code descriptor (no external call).
 
         Returns the provider authorize URL (with ``client_id`` and requested

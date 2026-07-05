@@ -91,9 +91,7 @@ async def test_wrong_secret_jwt_is_401(client: httpx.AsyncClient, service: AuthS
     assert resp.status_code == 401
 
 
-async def test_wrong_audience_jwt_is_401(
-    client: httpx.AsyncClient, service: AuthService
-) -> None:
+async def test_wrong_audience_jwt_is_401(client: httpx.AsyncClient, service: AuthService) -> None:
     resp = await client.get("/auth/me", headers=_auth(_jwt(aud="somewhere-else")))
     assert resp.status_code == 401
 
@@ -118,9 +116,7 @@ async def test_jwt_role_gates_rbac(client: httpx.AsyncClient, service: AuthServi
     assert admin.status_code == 200
 
 
-async def test_api_key_auth_still_works(
-    client: httpx.AsyncClient, service: AuthService
-) -> None:
+async def test_api_key_auth_still_works(client: httpx.AsyncClient, service: AuthService) -> None:
     _, token = service.bootstrap_key(workspace_id=WS, name="ci", role=UserRole.MEMBER)
     resp = await client.get("/auth/me", headers=_auth(token))
     assert resp.status_code == 200

@@ -12,9 +12,7 @@ from forge_marketplace.index import parse_index
 from forge_marketplace.models import PackageManifest
 
 _SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "forge_marketplace"
-    / "package-manifest.schema.json"
+    Path(__file__).resolve().parent.parent / "forge_marketplace" / "package-manifest.schema.json"
 )
 
 

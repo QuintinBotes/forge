@@ -94,9 +94,7 @@ FEATURE_INVARIANTS: list[ProtectedInvariant] = [
     ),
     ProtectedInvariant(
         id="spec_gate",
-        description=(
-            "Leaving spec_review to spec_approved must require spec_approved_by_human."
-        ),
+        description=("Leaving spec_review to spec_approved must require spec_approved_by_human."),
         applies_when_base_in=["default_feature"],
         from_state="spec_review",
         to_state="spec_approved",
@@ -190,9 +188,7 @@ def collect_validation_issues(
                 )
             )
         # when signals (events or guard signals)
-        when_tokens = (
-            [edge.when] if isinstance(edge.when, str) else list(edge.when or [])
-        )
+        when_tokens = [edge.when] if isinstance(edge.when, str) else list(edge.when or [])
         known = vocabulary.events | vocabulary.guards
         for token in when_tokens:
             if token not in known:
@@ -235,8 +231,7 @@ def collect_validation_issues(
                     code=IssueCode.DUPLICATE_EDGE,
                     severity=Severity.ERROR,
                     message=(
-                        f"duplicate transition from {edge.from_state!r} "
-                        f"on {sorted(triggers)!r}"
+                        f"duplicate transition from {edge.from_state!r} on {sorted(triggers)!r}"
                     ),
                     edge_id=edge.id,
                 )
@@ -315,8 +310,7 @@ def collect_validation_issues(
                     code=IssueCode.PROTECTED_INVARIANT_VIOLATION,
                     severity=Severity.ERROR,
                     message=(
-                        f"{inv.description} (no matching edge "
-                        f"{inv.from_state} -> {inv.to_state})"
+                        f"{inv.description} (no matching edge {inv.from_state} -> {inv.to_state})"
                     ),
                     invariant_id=inv.id,
                     node_id=inv.from_state,
@@ -329,10 +323,7 @@ def collect_validation_issues(
                     ValidationIssue(
                         code=IssueCode.PROTECTED_INVARIANT_VIOLATION,
                         severity=Severity.ERROR,
-                        message=(
-                            f"{inv.description} (edge is missing "
-                            f"{inv.required_signal!r})"
-                        ),
+                        message=(f"{inv.description} (edge is missing {inv.required_signal!r})"),
                         invariant_id=inv.id,
                         edge_id=edge.id,
                     )

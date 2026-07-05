@@ -63,9 +63,7 @@ FILES = {
 }
 
 
-def test_sync_files_indexes_then_prunes(
-    service: KnowledgeService, source_id: uuid.UUID
-) -> None:
+def test_sync_files_indexes_then_prunes(service: KnowledgeService, source_id: uuid.UUID) -> None:
     first = sync_files(service, str(source_id), FILES)
     assert first.indexed > 0
 
@@ -74,9 +72,7 @@ def test_sync_files_indexes_then_prunes(
     assert pruned.deleted > 0
 
 
-def test_sync_files_is_idempotent(
-    service: KnowledgeService, source_id: uuid.UUID
-) -> None:
+def test_sync_files_is_idempotent(service: KnowledgeService, source_id: uuid.UUID) -> None:
     first = sync_files(service, str(source_id), FILES)
     second = sync_files(service, str(source_id), FILES)
     assert first.indexed > 0

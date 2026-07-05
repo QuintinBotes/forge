@@ -132,9 +132,7 @@ def _set_enabled(
     except (LastAdminError, SsoConfigError) as exc:
         session.rollback()
         if isinstance(exc, SsoConfigError):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         raise _map_config_errors(exc) from exc
     return service.to_out(config)
 

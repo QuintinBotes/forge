@@ -41,9 +41,7 @@ class SubAgentWorkspaceManager:
         self.integration_branch: str | None = None
         self.integration_base_sha: str | None = None
 
-    def ensure_integration_branch(
-        self, *, base_branch: str, integration_branch: str
-    ) -> str:
+    def ensure_integration_branch(self, *, base_branch: str, integration_branch: str) -> str:
         """Create (or reset) ``integration_branch`` at ``base_branch`` HEAD.
 
         Returns the base sha. The integration branch is **not** checked out in the

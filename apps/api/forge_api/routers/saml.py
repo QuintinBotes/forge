@@ -261,9 +261,7 @@ def acs(
         kind=APIKeyKind.SYSTEM,
         expires_at=now + SESSION_TTL,
     )
-    response = RedirectResponse(
-        url=_safe_next(RelayState), status_code=status.HTTP_302_FOUND
-    )
+    response = RedirectResponse(url=_safe_next(RelayState), status_code=status.HTTP_302_FOUND)
     response.set_cookie(
         "forge_session",
         token,

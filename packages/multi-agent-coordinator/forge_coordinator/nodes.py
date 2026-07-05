@@ -84,9 +84,7 @@ def _handoff_context(
         res = state.results.get(dep)
         if res is None:
             continue
-        chunks.extend(
-            normalize_artifact_to_chunks(res.artifact, assignment_id=dep, role=res.role)
-        )
+        chunks.extend(normalize_artifact_to_chunks(res.artifact, assignment_id=dep, role=res.role))
     return chunks
 
 
@@ -293,9 +291,7 @@ def dispatch(state: SupervisionState, deps: CoordinatorDeps) -> SupervisionState
     children: dict[str, AgentRunResult] = {}
     if len(prepared) > 1 and state.max_parallel > 1:
         with ThreadPoolExecutor(max_workers=state.max_parallel) as pool:
-            futures = {
-                a.id: pool.submit(_run_agent, deps, obj) for (a, obj, _b) in prepared
-            }
+            futures = {a.id: pool.submit(_run_agent, deps, obj) for (a, obj, _b) in prepared}
             for aid, fut in futures.items():
                 children[aid] = fut.result()
     else:

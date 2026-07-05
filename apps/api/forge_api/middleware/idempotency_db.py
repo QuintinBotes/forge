@@ -143,9 +143,7 @@ class DbIdempotencyStore:
         """
         now = datetime.now(UTC)
         with self._sf() as session:
-            result = session.execute(
-                delete(IdempotencyKey).where(IdempotencyKey.expires_at <= now)
-            )
+            result = session.execute(delete(IdempotencyKey).where(IdempotencyKey.expires_at <= now))
             session.commit()
             return int(result.rowcount or 0)
 

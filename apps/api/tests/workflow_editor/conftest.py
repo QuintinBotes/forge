@@ -39,9 +39,7 @@ def session_factory() -> sessionmaker[Session]:
         for ws in (WS_A, WS_B):
             session.add(Workspace(id=ws, name=f"ws-{ws.hex[:4]}", slug=f"ws-{ws.hex}"))
         session.flush()
-        session.add(
-            User(id=USER_ID, workspace_id=WS_A, email="admin@forge.test", name="Admin")
-        )
+        session.add(User(id=USER_ID, workspace_id=WS_A, email="admin@forge.test", name="Admin"))
         session.commit()
     return factory
 
@@ -84,9 +82,7 @@ def make_client(
 
         app.dependency_overrides[get_editor_service] = _service
         if authed:
-            app.dependency_overrides[get_current_principal] = lambda: _principal(
-                role, workspace_id
-            )
+            app.dependency_overrides[get_current_principal] = lambda: _principal(role, workspace_id)
         return TestClient(app)
 
     return _build

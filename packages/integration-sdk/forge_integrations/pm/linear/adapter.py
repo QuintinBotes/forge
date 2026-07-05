@@ -77,9 +77,7 @@ class LinearAdapter(BaseAdapter):
             status_category = None
         assignee = issue.get("assignee") or {}
         labels = [
-            n.get("name")
-            for n in ((issue.get("labels") or {}).get("nodes") or [])
-            if n.get("name")
+            n.get("name") for n in ((issue.get("labels") or {}).get("nodes") or []) if n.get("name")
         ]
         priority = issue.get("priority")
         return ExternalTask(
@@ -105,9 +103,7 @@ class LinearAdapter(BaseAdapter):
         for st in states:
             if st.get("type") == target_type:
                 return str(st.get("id"))
-        raise ProviderError(
-            f"no linear workflow state of type {target_type!r} in team"
-        )
+        raise ProviderError(f"no linear workflow state of type {target_type!r} in team")
 
     def _forge_to_input(self, forge_task: ForgeTask) -> dict[str, Any]:
         priority = int(self.map_priority(forge_task.priority.value, Direction.OUT))
@@ -207,9 +203,7 @@ class LinearAdapter(BaseAdapter):
         try:
             viewer = await self.client.viewer()
         except (PMAuthError, ProviderError) as exc:
-            return HealthResult(
-                status="error", provider=PMProvider.linear, error=str(exc)
-            )
+            return HealthResult(status="error", provider=PMProvider.linear, error=str(exc))
         latency = (time.perf_counter() - start) * 1000
         return HealthResult(
             status="connected",

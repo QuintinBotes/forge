@@ -385,8 +385,6 @@ def test_immutability_trigger_blocks_update(pg_engine) -> None:
                 {"i": row_id},
             )
         with pytest.raises(DatabaseError), pg_engine.begin() as conn:
-            conn.execute(
-                text("DELETE FROM policy_rule_evaluation WHERE id = :i"), {"i": row_id}
-            )
+            conn.execute(text("DELETE FROM policy_rule_evaluation WHERE id = :i"), {"i": row_id})
     finally:
         Base.metadata.drop_all(pg_engine)

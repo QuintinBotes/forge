@@ -103,9 +103,7 @@ class JiraAdapter(BaseAdapter):
         fields: dict[str, Any] = {
             "summary": forge_task.title,
             "description": mapping.markdown_to_adf(forge_task.description_md),
-            "priority": {
-                "name": self.map_priority(forge_task.priority.value, Direction.OUT)
-            },
+            "priority": {"name": self.map_priority(forge_task.priority.value, Direction.OUT)},
         }
         if forge_task.label_names:
             fields["labels"] = list(forge_task.label_names)
@@ -141,9 +139,7 @@ class JiraAdapter(BaseAdapter):
                 await self.client.do_transition(external_id, str(tr.get("id")))
                 return
         # No matching transition: surfaced as an error by the engine (no silent drop).
-        raise ProviderError(
-            f"no jira transition to category {target_category!r} for {external_id}"
-        )
+        raise ProviderError(f"no jira transition to category {target_category!r} for {external_id}")
 
     async def list_external(
         self, *, cursor: str | None = None, limit: int = 50
@@ -197,13 +193,9 @@ class JiraAdapter(BaseAdapter):
         try:
             me = await self.client.myself()
         except PMAuthError as exc:
-            return HealthResult(
-                status="error", provider=PMProvider.jira, error=str(exc)
-            )
+            return HealthResult(status="error", provider=PMProvider.jira, error=str(exc))
         except ProviderError as exc:
-            return HealthResult(
-                status="error", provider=PMProvider.jira, error=str(exc)
-            )
+            return HealthResult(status="error", provider=PMProvider.jira, error=str(exc))
         latency = (time.perf_counter() - start) * 1000
         return HealthResult(
             status="connected",

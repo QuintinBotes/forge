@@ -59,9 +59,7 @@ def factory() -> Iterator[sessionmaker[Session]]:
     engine.dispose()
 
 
-def _seed(
-    factory: sessionmaker[Session], *, with_spec: bool = True
-) -> dict[str, uuid.UUID]:
+def _seed(factory: sessionmaker[Session], *, with_spec: bool = True) -> dict[str, uuid.UUID]:
     with factory() as session:
         session.add(Workspace(id=WS_ID, name="Acme", slug="acme"))
         session.flush()

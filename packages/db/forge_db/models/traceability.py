@@ -97,9 +97,7 @@ class TraceabilitySpecRollup(WorkspaceScopedModel):
     __tablename__ = "traceability_spec_rollup"
     __table_args__ = (
         UniqueConstraint("spec_id", name="uq_traceability_spec_rollup_spec"),
-        Index(
-            "ix_traceability_spec_rollup_project_status", "project_id", "validation_status"
-        ),
+        Index("ix_traceability_spec_rollup_project_status", "project_id", "validation_status"),
         Index("ix_traceability_spec_rollup_project", "project_id"),
         Index("ix_traceability_spec_rollup_epic", "epic_id"),
     )
@@ -122,9 +120,7 @@ class TraceabilitySpecRollup(WorkspaceScopedModel):
     uncovered_criteria: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     claimed_criteria: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     stale_criteria: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    requirement_coverage: Mapped[float] = mapped_column(
-        Numeric(5, 4), default=0, nullable=False
-    )
+    requirement_coverage: Mapped[float] = mapped_column(Numeric(5, 4), default=0, nullable=False)
     acceptance_criteria_coverage: Mapped[float] = mapped_column(
         Numeric(5, 4), default=0, nullable=False
     )

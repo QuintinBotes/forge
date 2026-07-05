@@ -73,9 +73,7 @@ def seed(factory: sessionmaker[Session]) -> dict[str, uuid.UUID]:
             User(id=admin, workspace_id=ws, email=f"a-{admin.hex[:6]}@acme.dev", name="Admin")
         )
         session.add(AgentRun(id=run, workspace_id=ws))
-        session.add(
-            ApprovalRequest(id=request, workspace_id=ws, gate=ApprovalGate.POLICY_OVERRIDE)
-        )
+        session.add(ApprovalRequest(id=request, workspace_id=ws, gate=ApprovalGate.POLICY_OVERRIDE))
         session.commit()
     return {"ws": ws, "admin": admin, "run": run, "request": request}
 
@@ -117,9 +115,7 @@ def test_store_satisfies_grant_store_and_gate_protocols(store: DbGrantStore) -> 
 # --------------------------------------------------------------------------- #
 
 
-def test_mint_round_trips_every_field(
-    store: DbGrantStore, seed: dict[str, uuid.UUID]
-) -> None:
+def test_mint_round_trips_every_field(store: DbGrantStore, seed: dict[str, uuid.UUID]) -> None:
     grant = _grant(seed)
     returned = store.mint(grant)
     assert returned.id == grant.id
@@ -151,9 +147,7 @@ def test_mint_derives_workspace_from_agent_run(
     assert row.workspace_id == seed["ws"]
 
 
-def test_mint_unknown_agent_run_raises(
-    store: DbGrantStore, seed: dict[str, uuid.UUID]
-) -> None:
+def test_mint_unknown_agent_run_raises(store: DbGrantStore, seed: dict[str, uuid.UUID]) -> None:
     ghost = seed | {"run": uuid.uuid4()}
     with pytest.raises(UnknownAgentRunError):
         store.mint(_grant(ghost))
@@ -164,9 +158,7 @@ def test_mint_unknown_agent_run_raises(
 # --------------------------------------------------------------------------- #
 
 
-def test_mint_is_idempotent_while_active(
-    store: DbGrantStore, seed: dict[str, uuid.UUID]
-) -> None:
+def test_mint_is_idempotent_while_active(store: DbGrantStore, seed: dict[str, uuid.UUID]) -> None:
     first = store.mint(_grant(seed))
     second = store.mint(_grant(seed))  # a *different* grant object, same (run, fp)
     assert second.id == first.id  # existing active grant returned, not duplicated
@@ -178,32 +170,24 @@ def test_mint_is_idempotent_while_active(
 # --------------------------------------------------------------------------- #
 
 
-async def test_consume_is_single_use(
-    store: DbGrantStore, seed: dict[str, uuid.UUID]
-) -> None:
+async def test_consume_is_single_use(store: DbGrantStore, seed: dict[str, uuid.UUID]) -> None:
     store.mint(_grant(seed))
     assert await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
     # ... and never again for the same grant.
-    assert not await store.consume(
-        agent_run_id=seed["run"], action_fingerprint=FINGERPRINT
-    )
+    assert not await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
 
 
 async def test_consume_without_grant_denies(
     store: DbGrantStore, seed: dict[str, uuid.UUID]
 ) -> None:
-    assert not await store.consume(
-        agent_run_id=seed["run"], action_fingerprint=FINGERPRINT
-    )
+    assert not await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
 
 
 async def test_consume_fingerprint_mismatch_denies(
     store: DbGrantStore, seed: dict[str, uuid.UUID]
 ) -> None:
     store.mint(_grant(seed))
-    assert not await store.consume(
-        agent_run_id=seed["run"], action_fingerprint=OTHER_FINGERPRINT
-    )
+    assert not await store.consume(agent_run_id=seed["run"], action_fingerprint=OTHER_FINGERPRINT)
     # The original grant is untouched by the mismatch and still consumable once.
     assert await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
 
@@ -212,9 +196,7 @@ async def test_consume_agent_run_mismatch_denies(
     store: DbGrantStore, seed: dict[str, uuid.UUID]
 ) -> None:
     store.mint(_grant(seed))
-    assert not await store.consume(
-        agent_run_id=uuid.uuid4(), action_fingerprint=FINGERPRINT
-    )
+    assert not await store.consume(agent_run_id=uuid.uuid4(), action_fingerprint=FINGERPRINT)
 
 
 # --------------------------------------------------------------------------- #
@@ -226,9 +208,7 @@ async def test_expired_grant_denies_consume(
     store: DbGrantStore, seed: dict[str, uuid.UUID]
 ) -> None:
     store.mint(_grant(seed, expires_in=timedelta(minutes=-1)))
-    assert not await store.consume(
-        agent_run_id=seed["run"], action_fingerprint=FINGERPRINT
-    )
+    assert not await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
 
 
 async def test_remint_after_expiry_yields_a_fresh_usable_grant(
@@ -258,9 +238,7 @@ async def test_remint_after_consume_creates_new_active_grant(
     assert await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
 
 
-def test_all_orders_by_insertion(
-    store: DbGrantStore, seed: dict[str, uuid.UUID]
-) -> None:
+def test_all_orders_by_insertion(store: DbGrantStore, seed: dict[str, uuid.UUID]) -> None:
     # Two distinct fingerprints so both stay active (single-active is per-fp).
     g1 = store.mint(_grant(seed, fingerprint=FINGERPRINT))
     g2 = store.mint(_grant(seed, fingerprint=OTHER_FINGERPRINT))
@@ -281,9 +259,7 @@ async def test_persists_across_store_instances(
     second = DbGrantStore(factory)
     assert len(second.all()) == 1
     # A grant minted through one instance is consumable through another.
-    assert await second.consume(
-        agent_run_id=seed["run"], action_fingerprint=FINGERPRINT
-    )
+    assert await second.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
 
 
 # --------------------------------------------------------------------------- #
@@ -304,9 +280,9 @@ async def test_matches_in_memory_store_behaviour(
     assert mem.mint(_grant(seed, grant_id=mem_first.id)).id == mem_first.id
 
     # Single-use: True exactly once on both backends, then False.
-    assert (
-        await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
-    ) == (await mem.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT))
-    assert (
-        await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
-    ) == (await mem.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT))
+    assert (await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)) == (
+        await mem.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
+    )
+    assert (await store.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)) == (
+        await mem.consume(agent_run_id=seed["run"], action_fingerprint=FINGERPRINT)
+    )

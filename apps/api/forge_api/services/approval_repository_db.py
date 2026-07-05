@@ -217,9 +217,7 @@ class SqlAlchemyApprovalRepository:
         project_id: uuid.UUID | None = None,
     ) -> builtins.list[ApprovalRequest]:
         with self._sf() as session:
-            stmt = select(ApprovalRequestRow).where(
-                ApprovalRequestRow.workspace_id == workspace_id
-            )
+            stmt = select(ApprovalRequestRow).where(ApprovalRequestRow.workspace_id == workspace_id)
             if status is not None:
                 stmt = stmt.where(ApprovalRequestRow.status == _db_status(status))
             if gate_type is not None:
@@ -228,9 +226,7 @@ class SqlAlchemyApprovalRepository:
                 stmt = stmt.where(ApprovalRequestRow.project_id == project_id)
             # Deterministic insertion order (``created_at`` == ``requested_at``);
             # the service re-sorts the inbox by risk afterwards.
-            stmt = stmt.order_by(
-                ApprovalRequestRow.created_at.asc(), ApprovalRequestRow.id.asc()
-            )
+            stmt = stmt.order_by(ApprovalRequestRow.created_at.asc(), ApprovalRequestRow.id.asc())
             rows = session.scalars(stmt).all()
             return [self._to_domain(r) for r in rows]
 
@@ -243,9 +239,7 @@ class SqlAlchemyApprovalRepository:
             session.commit()
         return request.model_copy(deep=True)
 
-    async def add_decision(
-        self, record: ApprovalDecisionRecord
-    ) -> ApprovalDecisionRecord:
+    async def add_decision(self, record: ApprovalDecisionRecord) -> ApprovalDecisionRecord:
         stored = record.model_copy(deep=True)
         if stored.created_at is None:
             stored.created_at = datetime.now(UTC)
@@ -272,15 +266,11 @@ class SqlAlchemyApprovalRepository:
                 ) from exc
         return stored.model_copy(deep=True)
 
-    async def decisions_for(
-        self, approval_id: uuid.UUID
-    ) -> builtins.list[ApprovalDecisionRecord]:
+    async def decisions_for(self, approval_id: uuid.UUID) -> builtins.list[ApprovalDecisionRecord]:
         with self._sf() as session:
             rows = session.scalars(
                 select(ApprovalDecisionRow)
                 .where(ApprovalDecisionRow.approval_request_id == approval_id)
-                .order_by(
-                    ApprovalDecisionRow.created_at.asc(), ApprovalDecisionRow.id.asc()
-                )
+                .order_by(ApprovalDecisionRow.created_at.asc(), ApprovalDecisionRow.id.asc())
             ).all()
             return [self._decision_to_domain(r) for r in rows]

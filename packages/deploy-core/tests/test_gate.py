@@ -57,9 +57,7 @@ def test_rank0_skips_predecessor_and_clears(session: Session, project_id) -> Non
 def test_predecessor_failed_blocks(session: Session, project_id) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
     # staging on abc123, request production for def456 -> predecessor mismatch
-    make_deployment(
-        session, seeded["env"]["staging"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    make_deployment(session, seeded["env"]["staging"], "abc123", state=DeploymentState.SUCCEEDED)
     dep = make_deployment(session, seeded["env"]["production"], "def456")
     ev = _evaluator(session).evaluate(dep.id)
     assert _check(ev, GateCheckName.PREDECESSOR_SUCCEEDED) == GateCheckStatus.FAILED
@@ -69,9 +67,7 @@ def test_predecessor_failed_blocks(session: Session, project_id) -> None:
 
 def test_predecessor_passes_same_commit(session: Session, project_id) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
-    make_deployment(
-        session, seeded["env"]["staging"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    make_deployment(session, seeded["env"]["staging"], "abc123", state=DeploymentState.SUCCEEDED)
     dep = make_deployment(session, seeded["env"]["production"], "abc123")
     ev = _evaluator(session).evaluate(dep.id)
     assert _check(ev, GateCheckName.PREDECESSOR_SUCCEEDED) == GateCheckStatus.PASSED
@@ -98,9 +94,7 @@ def test_spec_validated_pass_and_skip(session: Session, project_id) -> None:
         project_id=project_id,
         gate_overrides={"staging": {"required_checks": ["ci_green", "spec_validated"]}},
     )
-    make_deployment(
-        session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    make_deployment(session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED)
     dep = make_deployment(session, seeded["env"]["staging"], "abc123")
     # No validation -> skipped (does not block)
     ev = _evaluator(session).evaluate(dep.id)
@@ -134,9 +128,7 @@ def test_restricted_always_requires_approval(
     # Even if someone forces requires_approval False, restricted forces it True.
     staging.requires_approval = env_requires_approval
     session.flush()
-    make_deployment(
-        session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    make_deployment(session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED)
     dep = make_deployment(session, staging, "abc123", trigger=trigger)
     ev = _evaluator(session).evaluate(dep.id)
     assert ev.requires_human_approval is True
@@ -145,9 +137,7 @@ def test_restricted_always_requires_approval(
 def test_agent_without_allow_requires_approval(session: Session, project_id) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
     # dev is unrestricted; agent deploy with allow_agent_deploy False still gates.
-    dep = make_deployment(
-        session, seeded["env"]["dev"], "abc123", trigger=DeploymentTrigger.AGENT
-    )
+    dep = make_deployment(session, seeded["env"]["dev"], "abc123", trigger=DeploymentTrigger.AGENT)
     ev = _evaluator(session).evaluate(dep.id)
     assert ev.requires_human_approval is True
     # policy still permits (human can approve), so can_proceed is not blocked by it
@@ -160,12 +150,8 @@ def test_not_frozen_blocks_then_override_clears(session: Session, project_id) ->
             {"start_day": 4, "start_time": "17:00", "end_day": 0, "end_time": "09:00"}
         ]
     }
-    seeded = seed_pipeline(
-        session, project_id=project_id, gate_overrides={"production": freeze}
-    )
-    make_deployment(
-        session, seeded["env"]["staging"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    seeded = seed_pipeline(session, project_id=project_id, gate_overrides={"production": freeze})
+    make_deployment(session, seeded["env"]["staging"], "abc123", state=DeploymentState.SUCCEEDED)
     dep = make_deployment(session, seeded["env"]["production"], "abc123")
     sat = FakeClock(datetime(2026, 6, 27, 12, 0, tzinfo=UTC))  # Saturday -> frozen
     ev = _evaluator(session, clock=sat).evaluate(dep.id)
@@ -208,12 +194,8 @@ def test_evaluate_is_total(session: Session, project_id) -> None:
     for env_name in ("dev", "staging", "production"):
         for ci_status in ("success", "failure", None):
             for trig in (DeploymentTrigger.MANUAL, DeploymentTrigger.AGENT):
-                dep = make_deployment(
-                    session, seeded["env"][env_name], "abc123", trigger=trig
-                )
-                ev = _evaluator(session, ci=FakeGitHub(status=ci_status)).evaluate(
-                    dep.id
-                )
+                dep = make_deployment(session, seeded["env"][env_name], "abc123", trigger=trig)
+                ev = _evaluator(session, ci=FakeGitHub(status=ci_status)).evaluate(dep.id)
                 assert ev.environment == env_name
                 if seeded["env"][env_name].is_restricted:
                     assert ev.requires_human_approval is True

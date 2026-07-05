@@ -202,9 +202,7 @@ class DbAPIKeyBackend:
             ).all()
             return [self._to_record(r) for r in rows]
 
-    def get(
-        self, workspace_id: uuid.UUID, key_id: uuid.UUID
-    ) -> APIKeyRecord | None:
+    def get(self, workspace_id: uuid.UUID, key_id: uuid.UUID) -> APIKeyRecord | None:
         """The record with ``key_id`` in ``workspace_id``, else ``None``."""
         with self._sf() as session:
             row = session.scalars(

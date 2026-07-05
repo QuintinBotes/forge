@@ -170,8 +170,11 @@ class DefaultPatternSelector:
             return CoordinationPattern.SEQUENTIAL_PIPELINE
 
         units = objective.context.get("fan_out_units")
-        if isinstance(units, list) and len(units) > 1 and resolved_parallel >= 2 and has(
-            "implementer"
+        if (
+            isinstance(units, list)
+            and len(units) > 1
+            and resolved_parallel >= 2
+            and has("implementer")
         ):
             return CoordinationPattern.FAN_OUT_FAN_IN
 
@@ -288,9 +291,7 @@ class DefaultPatternSelector:
                         ordinal=i - 1,
                     )
                 )
-            return out or [
-                make(SubAgentRole.IMPLEMENTER, idx=1, objective_text=base, ordinal=0)
-            ]
+            return out or [make(SubAgentRole.IMPLEMENTER, idx=1, objective_text=base, ordinal=0)]
 
         # DYNAMIC_HANDOFF — explicit deterministic route from the task hint.
         plan_steps = objective.context.get("handoff_plan")

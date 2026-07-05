@@ -304,8 +304,12 @@ class CostService:
     ) -> CostSummary:
         self._check_scope(workspace_id, scope, scope_id)
         return self._reader.summary(
-            workspace_id=workspace_id, scope=scope, scope_id=scope_id,
-            group_by=group_by, frm=frm, to=to,
+            workspace_id=workspace_id,
+            scope=scope,
+            scope_id=scope_id,
+            group_by=group_by,
+            frm=frm,
+            to=to,
         )
 
     def timeseries(
@@ -321,8 +325,13 @@ class CostService:
     ) -> CostTimeseries:
         self._check_scope(workspace_id, scope, scope_id)
         return self._reader.timeseries(
-            workspace_id=workspace_id, scope=scope, scope_id=scope_id,
-            bucket=bucket, group_by=group_by, frm=frm, to=to,
+            workspace_id=workspace_id,
+            scope=scope,
+            scope_id=scope_id,
+            bucket=bucket,
+            group_by=group_by,
+            frm=frm,
+            to=to,
         )
 
     def list_prices(
@@ -332,9 +341,7 @@ class CostService:
         provider: str | None = None,
         model: str | None = None,
     ) -> list[ModelPrice]:
-        return self._prices.list_prices(
-            workspace_id=workspace_id, provider=provider, model=model
-        )
+        return self._prices.list_prices(workspace_id=workspace_id, provider=provider, model=model)
 
     # -- admin mutations (audited) ---------------------------------------------- #
 
@@ -347,9 +354,7 @@ class CostService:
     ) -> ModelPrice:
         if data.kind not in COST_KINDS:
             raise ValueError(f"unknown price kind {data.kind!r}")
-        price = self._prices.create_price(
-            workspace_id=workspace_id, data=data, created_by=actor_id
-        )
+        price = self._prices.create_price(workspace_id=workspace_id, data=data, created_by=actor_id)
         self._audit.emit(
             AuditEvent(
                 workspace_id=workspace_id,

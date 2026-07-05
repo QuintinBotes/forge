@@ -82,8 +82,7 @@ class SupervisionState:
                 continue
             assignment = self.assignments[aid]
             if all(
-                self.statuses.get(dep) in {"succeeded", "skipped"}
-                for dep in assignment.depends_on
+                self.statuses.get(dep) in {"succeeded", "skipped"} for dep in assignment.depends_on
             ):
                 ready.append(assignment)
         ready.sort(key=lambda a: (a.ordinal, a.id))

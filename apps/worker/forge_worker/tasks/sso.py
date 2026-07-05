@@ -71,9 +71,7 @@ def refresh_all_saml_metadata_core(
         ids = [
             config_id
             for (config_id,) in session.execute(
-                select(SsoConfiguration.id).where(
-                    SsoConfiguration.metadata_url.is_not(None)
-                )
+                select(SsoConfiguration.id).where(SsoConfiguration.metadata_url.is_not(None))
             ).all()
         ]
     for config_id in ids:
@@ -123,9 +121,7 @@ def propagate_deprovision_core(
 
 @celery_app.task(name="sso.refresh_saml_metadata", queue="auth")
 def refresh_saml_metadata(sso_configuration_id: str) -> dict:
-    return refresh_saml_metadata_core(
-        get_session_factory(), uuid.UUID(sso_configuration_id)
-    )
+    return refresh_saml_metadata_core(get_session_factory(), uuid.UUID(sso_configuration_id))
 
 
 @celery_app.task(name="sso.refresh_all_saml_metadata", queue="auth")

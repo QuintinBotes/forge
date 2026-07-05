@@ -185,9 +185,7 @@ class PolicyOverrideResolutionHook:
 
     gate_type: ClassVar[GateType] = GateType.POLICY_OVERRIDE
 
-    def __init__(
-        self, grants: GrantStore, *, ttl: timedelta = DEFAULT_GRANT_TTL
-    ) -> None:
+    def __init__(self, grants: GrantStore, *, ttl: timedelta = DEFAULT_GRANT_TTL) -> None:
         self._grants = grants
         self._ttl = ttl
 

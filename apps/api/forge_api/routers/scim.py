@@ -37,9 +37,7 @@ class ScimJSONResponse(JSONResponse):
     media_type = SCIM_MEDIA_TYPE
 
 
-router = APIRouter(
-    prefix="/scim/v2", tags=["scim"], default_response_class=ScimJSONResponse
-)
+router = APIRouter(prefix="/scim/v2", tags=["scim"], default_response_class=ScimJSONResponse)
 
 
 def require_scim_token(
@@ -56,9 +54,7 @@ def require_scim_token(
         raise ScimApiError(status.HTTP_401_UNAUTHORIZED, "missing SCIM bearer token")
     record = verify_scim_token(session, token_value)
     if record is None:
-        raise ScimApiError(
-            status.HTTP_401_UNAUTHORIZED, "invalid, revoked, or expired SCIM token"
-        )
+        raise ScimApiError(status.HTTP_401_UNAUTHORIZED, "invalid, revoked, or expired SCIM token")
     session.commit()  # persist last_used_at even when the request later fails
     return record
 
@@ -72,9 +68,7 @@ def _revoke_sessions(workspace_id: uuid.UUID, user_id: uuid.UUID) -> int:
 
 
 def get_user_service(session: DbSession, settings: SettingsDep) -> ScimUserService:
-    return ScimUserService(
-        session, base_url=settings.public_url, revoke_sessions=_revoke_sessions
-    )
+    return ScimUserService(session, base_url=settings.public_url, revoke_sessions=_revoke_sessions)
 
 
 def get_group_service(session: DbSession, settings: SettingsDep) -> ScimGroupService:
@@ -96,9 +90,7 @@ def _run(session, fn, *args, **kwargs):
         raise
     except LastAdminError as exc:
         session.rollback()
-        raise ScimApiError(
-            status.HTTP_409_CONFLICT, str(exc), scim_type="mutability"
-        ) from exc
+        raise ScimApiError(status.HTTP_409_CONFLICT, str(exc), scim_type="mutability") from exc
 
 
 # -- discovery documents ------------------------------------------------------- #
@@ -253,9 +245,7 @@ def list_groups(
     startIndex: Annotated[int, Query(ge=1)] = 1,
     count: Annotated[int, Query(ge=0, le=200)] = 100,
 ) -> ScimListResponse:
-    return _run(
-        session, service.list, token.workspace_id, start_index=startIndex, count=count
-    )
+    return _run(session, service.list, token.workspace_id, start_index=startIndex, count=count)
 
 
 @router.post("/Groups", status_code=status.HTTP_201_CREATED, summary="Create a group")

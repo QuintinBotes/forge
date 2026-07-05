@@ -64,9 +64,7 @@ def has_cycle(edges: Edges) -> bool:
     return any(_visit(node) for node in edges)
 
 
-def topological_order(
-    edges: Edges, nodes: Iterable[uuid.UUID]
-) -> list[uuid.UUID]:
+def topological_order(edges: Edges, nodes: Iterable[uuid.UUID]) -> list[uuid.UUID]:
     """Return nodes ordered dependencies-first (``b`` before ``a`` for ``a -> b``).
 
     Raises :class:`CycleError` if the graph is cyclic.

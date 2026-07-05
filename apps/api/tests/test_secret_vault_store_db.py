@@ -243,7 +243,9 @@ def test_list_is_workspace_scoped_and_ordered(
     base = datetime(2026, 1, 1, tzinfo=UTC)
     first = _record(ws_a, name="first", created_at=base, updated_at=base)
     second = _record(
-        ws_a, name="second", created_at=base + timedelta(minutes=5),
+        ws_a,
+        name="second",
+        created_at=base + timedelta(minutes=5),
         updated_at=base + timedelta(minutes=5),
     )
     other = _record(ws_b, name="other")

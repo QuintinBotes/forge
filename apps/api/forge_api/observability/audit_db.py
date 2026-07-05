@@ -166,9 +166,7 @@ class DbAuditStore:
         with self._sf() as session:
             rows = (
                 session.execute(
-                    select(ObservabilityAuditEntry).order_by(
-                        ObservabilityAuditEntry.seq.asc()
-                    )
+                    select(ObservabilityAuditEntry).order_by(ObservabilityAuditEntry.seq.asc())
                 )
                 .scalars()
                 .all()
@@ -205,20 +203,14 @@ class DbAuditStore:
                 if limit == 0:
                     return []
                 rows = list(
-                    session.execute(
-                        stmt.order_by(ObservabilityAuditEntry.seq.desc()).limit(limit)
-                    )
+                    session.execute(stmt.order_by(ObservabilityAuditEntry.seq.desc()).limit(limit))
                     .scalars()
                     .all()
                 )
                 rows.reverse()
                 return [self._to_entry(r) for r in rows]
 
-            rows = (
-                session.execute(stmt.order_by(ObservabilityAuditEntry.seq.asc()))
-                .scalars()
-                .all()
-            )
+            rows = session.execute(stmt.order_by(ObservabilityAuditEntry.seq.asc())).scalars().all()
             return [self._to_entry(r) for r in rows]
 
     def verify_integrity(self) -> bool:

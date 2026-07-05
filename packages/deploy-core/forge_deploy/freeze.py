@@ -84,9 +84,7 @@ def _next_end(window: FreezeWindow, local: datetime) -> datetime:
     return candidate
 
 
-def is_frozen(
-    windows: list[FreezeWindow], now: datetime, timezone: str = "UTC"
-) -> FreezeState:
+def is_frozen(windows: list[FreezeWindow], now: datetime, timezone: str = "UTC") -> FreezeState:
     """Return whether ``now`` falls inside any freeze window."""
     if not windows:
         return FreezeState(frozen=False)
@@ -103,9 +101,7 @@ def is_frozen(
     return FreezeState(frozen=False)
 
 
-def next_open(
-    windows: list[FreezeWindow], now: datetime, timezone: str = "UTC"
-) -> datetime | None:
+def next_open(windows: list[FreezeWindow], now: datetime, timezone: str = "UTC") -> datetime | None:
     """When the environment next leaves all freeze windows, or ``None`` if open now."""
     state = is_frozen(windows, now, timezone)
     return state.until if state.frozen else None

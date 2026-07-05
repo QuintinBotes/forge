@@ -97,14 +97,10 @@ class DbWorkflowDefinitionRepository:
 
     # -- revisions ------------------------------------------------------------ #
 
-    def get_revision_by_id(
-        self, revision_id: UUID
-    ) -> WorkflowDefinitionRevision | None:
+    def get_revision_by_id(self, revision_id: UUID) -> WorkflowDefinitionRevision | None:
         return self._session.get(WorkflowDefinitionRevision, revision_id)
 
-    def get_revision(
-        self, definition_id: UUID, revision: int
-    ) -> WorkflowDefinitionRevision | None:
+    def get_revision(self, definition_id: UUID, revision: int) -> WorkflowDefinitionRevision | None:
         return self._session.scalars(
             select(WorkflowDefinitionRevision).where(
                 WorkflowDefinitionRevision.workflow_definition_id == definition_id,
@@ -112,15 +108,11 @@ class DbWorkflowDefinitionRepository:
             )
         ).one_or_none()
 
-    def list_revisions(
-        self, definition_id: UUID
-    ) -> list[WorkflowDefinitionRevision]:
+    def list_revisions(self, definition_id: UUID) -> list[WorkflowDefinitionRevision]:
         return list(
             self._session.scalars(
                 select(WorkflowDefinitionRevision)
-                .where(
-                    WorkflowDefinitionRevision.workflow_definition_id == definition_id
-                )
+                .where(WorkflowDefinitionRevision.workflow_definition_id == definition_id)
                 .order_by(WorkflowDefinitionRevision.revision)
             )
         )

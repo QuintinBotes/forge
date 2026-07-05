@@ -203,20 +203,15 @@ class OAuthClient:
                     headers={"Accept": "application/json"},
                 )
             except httpx.HTTPError as exc:  # network/transport failure
-                raise OAuthExchangeError(
-                    f"token request to '{provider}' failed: {exc}"
-                ) from exc
+                raise OAuthExchangeError(f"token request to '{provider}' failed: {exc}") from exc
         payload = self._decode(response, provider, "token")
         if response.status_code >= 400 or "error" in payload:
             raise OAuthExchangeError(
-                f"'{provider}' rejected the authorization code "
-                f"(status {response.status_code})"
+                f"'{provider}' rejected the authorization code (status {response.status_code})"
             )
         access_token = _coerce_str(payload.get("access_token"))
         if access_token is None:
-            raise OAuthExchangeError(
-                f"'{provider}' token response did not contain an access_token"
-            )
+            raise OAuthExchangeError(f"'{provider}' token response did not contain an access_token")
         return OAuthTokens(
             access_token=access_token,
             token_type=_coerce_str(payload.get("token_type")) or "bearer",
@@ -239,9 +234,7 @@ class OAuthClient:
                     },
                 )
             except httpx.HTTPError as exc:
-                raise OAuthExchangeError(
-                    f"userinfo request to '{provider}' failed: {exc}"
-                ) from exc
+                raise OAuthExchangeError(f"userinfo request to '{provider}' failed: {exc}") from exc
         if response.status_code >= 400:
             raise OAuthExchangeError(
                 f"'{provider}' userinfo request failed (status {response.status_code})"
@@ -305,9 +298,7 @@ class OAuthClient:
         except ValueError:
             decoded = dict(urllib.parse.parse_qsl(response.text))
         if not isinstance(decoded, dict):
-            raise OAuthExchangeError(
-                f"'{provider}' {stage} response was not a JSON object"
-            )
+            raise OAuthExchangeError(f"'{provider}' {stage} response was not a JSON object")
         return decoded
 
 

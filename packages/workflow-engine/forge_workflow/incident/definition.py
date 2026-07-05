@@ -67,9 +67,7 @@ INCIDENT_GUARDS: frozenset[str] = frozenset(
 )
 
 #: States from which no forward transition is taken (run is finished).
-INCIDENT_TERMINAL_STATES: frozenset[str] = frozenset(
-    {"closed", "failed", "cancelled"}
-)
+INCIDENT_TERMINAL_STATES: frozenset[str] = frozenset({"closed", "failed", "cancelled"})
 
 
 @lru_cache(maxsize=1)

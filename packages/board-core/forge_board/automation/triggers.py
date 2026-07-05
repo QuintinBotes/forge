@@ -36,9 +36,7 @@ _BOARD_EVENT_MAP: dict[str, AutomationTriggerType] = {
 }
 
 
-def trigger_type_for(
-    *, source: AutomationTriggerSource, event_type: str
-) -> AutomationTriggerType:
+def trigger_type_for(*, source: AutomationTriggerSource, event_type: str) -> AutomationTriggerType:
     """Map a producer event to its :class:`AutomationTriggerType`.
 
     Raises :class:`UnknownTriggerError` for an unmapped event type.

@@ -196,9 +196,7 @@ def test_mcp_connections_are_workspace_scoped(mcp_app: FastAPI) -> None:
         # Workspace B (also admin) must not see, read, call, or audit A's connection.
         _as(mcp_app, make_test_principal(role=UserRole.ADMIN, workspace_id=OTHER_WORKSPACE_ID))
         assert client.get("/mcp/connections").json() == []
-        assert (
-            client.get("/mcp/connections/confluence-engineering/resources").status_code == 404
-        )
+        assert client.get("/mcp/connections/confluence-engineering/resources").status_code == 404
         assert (
             client.get(
                 "/mcp/connections/confluence-engineering/resources/read",

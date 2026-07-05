@@ -98,13 +98,19 @@ class FakeGateway:
             m0 = items[-1][0]
             entries.append(
                 RegistryIndexEntry(
-                    kind=kind, slug=slug, name=m0.name, summary=m0.summary,
-                    latest_version=sorted(v.version for v in versions)[-1], versions=versions,
+                    kind=kind,
+                    slug=slug,
+                    name=m0.name,
+                    summary=m0.summary,
+                    latest_version=sorted(v.version for v in versions)[-1],
+                    versions=versions,
                 )
             )
         return RegistryIndex(
-            registry_name="R", public_key=self.public_key,
-            generated_at=datetime.now(UTC), entries=entries,
+            registry_name="R",
+            public_key=self.public_key,
+            generated_at=datetime.now(UTC),
+            entries=entries,
         )
 
     def fetch_manifest(self, registry, uri):
@@ -129,8 +135,14 @@ def session_factory() -> sessionmaker[Session]:
 def _registry(session_factory, pub) -> MarketplaceRegistry:
     with session_factory() as s:
         reg = MarketplaceRegistry(
-            workspace_id=WS_ID, slug="r", name="R", type="http_index",
-            url="https://r.test/index.json", public_key=pub, trust_level="community", enabled=True,
+            workspace_id=WS_ID,
+            slug="r",
+            name="R",
+            type="http_index",
+            url="https://r.test/index.json",
+            public_key=pub,
+            trust_level="community",
+            enabled=True,
         )
         s.add(reg)
         s.commit()
@@ -172,7 +184,9 @@ def test_refresh_update_flags_and_yank(session_factory) -> None:
     service = MarketplaceService(session_factory=session_factory, gateway=gw)
     sync_registry_core(service, reg.id)
     result = service.install(
-        workspace_id=WS_ID, actor="u", actor_user_id=None,
+        workspace_id=WS_ID,
+        actor="u",
+        actor_user_id=None,
         request=InstallRequest(registry_id=reg.id, kind=ArtifactKind.skill_profile, slug="pkg-p"),
     )
 
@@ -203,11 +217,12 @@ def test_official_registry_seeded(session_factory) -> None:
         s.commit()
         assert again.id == reg.id
         count = s.execute(
-            select(func.count()).select_from(MarketplaceRegistry).where(
-                MarketplaceRegistry.slug == "official"
-            )
+            select(func.count())
+            .select_from(MarketplaceRegistry)
+            .where(MarketplaceRegistry.slug == "official")
         ).scalar_one()
         assert count == 1
+
 
 # --------------------------------------------------------------------------- #
 # HARD-11: cover the thin Celery seams + config helpers (build_service,        #

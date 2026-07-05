@@ -57,9 +57,7 @@ def ws(factory: sessionmaker[Session]) -> uuid.UUID:
     """A persisted workspace (the ``platform_api_key.workspace_id`` FK target)."""
     workspace_id = uuid.uuid4()
     with factory() as session:
-        session.add(
-            Workspace(id=workspace_id, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}")
-        )
+        session.add(Workspace(id=workspace_id, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}"))
         session.commit()
     return workspace_id
 
@@ -68,9 +66,7 @@ def ws(factory: sessionmaker[Session]) -> uuid.UUID:
 def other_ws(factory: sessionmaker[Session]) -> uuid.UUID:
     workspace_id = uuid.uuid4()
     with factory() as session:
-        session.add(
-            Workspace(id=workspace_id, name="Beta", slug=f"beta-{uuid.uuid4().hex[:8]}")
-        )
+        session.add(Workspace(id=workspace_id, name="Beta", slug=f"beta-{uuid.uuid4().hex[:8]}"))
         session.commit()
     return workspace_id
 
@@ -181,9 +177,7 @@ def test_add_persists_user_id_as_created_by(
     assert got.user_id == user_id
 
 
-def test_add_overwrites_on_repeated_id(
-    backend: DbAPIKeyBackend, ws: uuid.UUID
-) -> None:
+def test_add_overwrites_on_repeated_id(backend: DbAPIKeyBackend, ws: uuid.UUID) -> None:
     """Re-adding the same id overwrites (mirrors the dict store's ``add``)."""
     rid = uuid.uuid4()
     backend.add(_record(ws, role=UserRole.MEMBER, record_id=rid))
@@ -208,9 +202,7 @@ def test_add_unknown_workspace_rejected(backend: DbAPIKeyBackend) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_by_prefix_returns_only_matching(
-    backend: DbAPIKeyBackend, ws: uuid.UUID
-) -> None:
+def test_by_prefix_returns_only_matching(backend: DbAPIKeyBackend, ws: uuid.UUID) -> None:
     tok_a = generate_api_token(APIKeyKind.SYSTEM)  # prefix "forge_sy"
     tok_b = generate_api_token(APIKeyKind.MCP_TOKEN)  # distinct prefix "forge_mc"
     a = _record(ws, token=tok_a)
@@ -221,9 +213,7 @@ def test_by_prefix_returns_only_matching(
     assert matches[0].key_prefix == _token_prefix(tok_a)
 
 
-def test_by_prefix_returns_all_sharing_a_prefix(
-    backend: DbAPIKeyBackend, ws: uuid.UUID
-) -> None:
+def test_by_prefix_returns_all_sharing_a_prefix(backend: DbAPIKeyBackend, ws: uuid.UUID) -> None:
     # Every SYSTEM token shares the display prefix "forge_sy" — the exact case the
     # store's constant-time verify fans out over.
     records = [_record(ws) for _ in range(3)]
@@ -286,9 +276,7 @@ def test_get_respects_workspace(
 # --------------------------------------------------------------------------- #
 
 
-def test_persists_across_backend_instances(
-    factory: sessionmaker[Session], ws: uuid.UUID
-) -> None:
+def test_persists_across_backend_instances(factory: sessionmaker[Session], ws: uuid.UUID) -> None:
     record = _record(ws)
     DbAPIKeyBackend(factory).add(record)
     assert DbAPIKeyBackend(factory).get(ws, record.id) is not None
@@ -299,9 +287,7 @@ def test_persists_across_backend_instances(
 # --------------------------------------------------------------------------- #
 
 
-def test_store_mint_verify_stamps_last_used(
-    factory: sessionmaker[Session], ws: uuid.UUID
-) -> None:
+def test_store_mint_verify_stamps_last_used(factory: sessionmaker[Session], ws: uuid.UUID) -> None:
     store = APIKeyStore(secret_key=SECRET, backend=DbAPIKeyBackend(factory))
     info, token = store.mint(workspace_id=ws, name="ci", role=UserRole.MEMBER)
 
@@ -314,17 +300,13 @@ def test_store_mint_verify_stamps_last_used(
     assert reread is not None and reread.last_used_at is not None
 
 
-def test_store_verify_rejects_unknown_token(
-    factory: sessionmaker[Session], ws: uuid.UUID
-) -> None:
+def test_store_verify_rejects_unknown_token(factory: sessionmaker[Session], ws: uuid.UUID) -> None:
     store = APIKeyStore(secret_key=SECRET, backend=DbAPIKeyBackend(factory))
     store.mint(workspace_id=ws, name="ci", role=UserRole.MEMBER)
     assert store.verify("forge_sy_not-a-real-token") is None
 
 
-def test_store_verify_rejects_expired(
-    factory: sessionmaker[Session], ws: uuid.UUID
-) -> None:
+def test_store_verify_rejects_expired(factory: sessionmaker[Session], ws: uuid.UUID) -> None:
     store = APIKeyStore(secret_key=SECRET, backend=DbAPIKeyBackend(factory))
     _, token = store.mint(
         workspace_id=ws,
@@ -335,9 +317,7 @@ def test_store_verify_rejects_expired(
     assert store.verify(token) is None
 
 
-def test_store_revoke_persists(
-    factory: sessionmaker[Session], ws: uuid.UUID
-) -> None:
+def test_store_revoke_persists(factory: sessionmaker[Session], ws: uuid.UUID) -> None:
     store = APIKeyStore(secret_key=SECRET, backend=DbAPIKeyBackend(factory))
     info, token = store.mint(workspace_id=ws, name="ci", role=UserRole.MEMBER)
     assert store.verify(token) is not None
@@ -351,9 +331,7 @@ def test_store_revoke_persists(
     assert store.revoke(ws, uuid.uuid4()) is False
 
 
-def test_store_revoke_for_user_persists(
-    factory: sessionmaker[Session], ws: uuid.UUID
-) -> None:
+def test_store_revoke_for_user_persists(factory: sessionmaker[Session], ws: uuid.UUID) -> None:
     user_id = uuid.uuid4()
     with factory() as session:
         session.add(
@@ -371,9 +349,7 @@ def test_store_revoke_for_user_persists(
     assert store.verify(other) is not None  # untouched
 
 
-def test_store_list_keys_reflects_state(
-    factory: sessionmaker[Session], ws: uuid.UUID
-) -> None:
+def test_store_list_keys_reflects_state(factory: sessionmaker[Session], ws: uuid.UUID) -> None:
     store = APIKeyStore(secret_key=SECRET, backend=DbAPIKeyBackend(factory))
     info, _ = store.mint(workspace_id=ws, name="ci", role=UserRole.MEMBER)
     keys = store.list_keys(ws)
@@ -389,9 +365,7 @@ def test_store_list_keys_reflects_state(
 # --------------------------------------------------------------------------- #
 
 
-def test_matches_in_memory_backend_behaviour(
-    factory: sessionmaker[Session], ws: uuid.UUID
-) -> None:
+def test_matches_in_memory_backend_behaviour(factory: sessionmaker[Session], ws: uuid.UUID) -> None:
     db = DbAPIKeyBackend(factory)
     mem = InMemoryAPIKeyBackend()
 

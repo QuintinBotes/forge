@@ -165,9 +165,7 @@ class DbLinkRepository:
             row = session.get(PMTaskLink, link_id)
             return self._to_domain(row) if row is not None else None
 
-    def get_by_forge_task(
-        self, connection_id: UUID, forge_task_id: UUID
-    ) -> LinkRecord | None:
+    def get_by_forge_task(self, connection_id: UUID, forge_task_id: UUID) -> LinkRecord | None:
         with self._sf() as session:
             row = session.scalars(
                 select(PMTaskLink)
@@ -179,9 +177,7 @@ class DbLinkRepository:
             ).first()
             return self._to_domain(row) if row is not None else None
 
-    def get_by_external(
-        self, connection_id: UUID, external_id: str
-    ) -> LinkRecord | None:
+    def get_by_external(self, connection_id: UUID, external_id: str) -> LinkRecord | None:
         with self._sf() as session:
             row = session.scalars(
                 select(PMTaskLink)
@@ -212,9 +208,7 @@ class DbLinkRepository:
                 session.delete(row)
                 session.commit()
 
-    def list_by_state(
-        self, connection_id: UUID, state: ContractsSyncState
-    ) -> list[LinkRecord]:
+    def list_by_state(self, connection_id: UUID, state: ContractsSyncState) -> list[LinkRecord]:
         with self._sf() as session:
             rows = session.scalars(
                 select(PMTaskLink)

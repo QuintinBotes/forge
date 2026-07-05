@@ -73,9 +73,7 @@ def test_fixture_reorders_documents_per_fixture() -> None:
 
 def test_fixture_respects_top_n() -> None:
     documents = ["a", "b", "c", "d"]
-    reranker = FixtureRerankerClient(
-        {"q": {"a": 0.1, "b": 0.9, "c": 0.5, "d": 0.7}}
-    )
+    reranker = FixtureRerankerClient({"q": {"a": 0.1, "b": 0.9, "c": 0.5, "d": 0.7}})
     results = reranker.rerank("q", documents, top_n=2)
     assert [r.index for r in results] == [1, 3]
     assert len(results) == 2
@@ -118,10 +116,7 @@ def _mock_client(
         captured.append(request)
         body = json.loads(request.content)
         top_n = body.get("top_n", len(body["documents"]))
-        results = [
-            {"index": idx, "relevance_score": score}
-            for idx, score in ranking[:top_n]
-        ]
+        results = [{"index": idx, "relevance_score": score} for idx, score in ranking[:top_n]]
         return httpx.Response(200, json={"model": body["model"], "results": results})
 
     return httpx.Client(transport=httpx.MockTransport(handler))
@@ -160,9 +155,7 @@ def test_jina_sends_expected_payload_and_auth() -> None:
 
 def test_jina_empty_documents_makes_no_request() -> None:
     captured: list[httpx.Request] = []
-    client = JinaRerankerClient(
-        "jina-reranker-v2", client=_mock_client(captured, ranking=[])
-    )
+    client = JinaRerankerClient("jina-reranker-v2", client=_mock_client(captured, ranking=[]))
     assert client.rerank("q", [], top_n=5) == []
     assert captured == []
 
@@ -182,9 +175,7 @@ def test_jina_raises_reranker_unavailable_on_error_status() -> None:
 
 
 def test_jina_results_are_reranke_results() -> None:
-    client = JinaRerankerClient(
-        "jina-reranker-v2", client=_mock_client([], ranking=[(0, 0.7)])
-    )
+    client = JinaRerankerClient("jina-reranker-v2", client=_mock_client([], ranking=[(0, 0.7)]))
     (result,) = client.rerank("q", ["only doc"], top_n=1)
     assert isinstance(result, RerankResult)
     assert result.document == "only doc"

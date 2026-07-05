@@ -90,9 +90,7 @@ def _submission_dto(row: BenchmarkSubmission, suite: BenchmarkSuite) -> Submissi
         model_label=row.model_label,
         agent_mode=row.agent_mode,
         forge_version=row.forge_version,
-        composite_score=float(row.composite_score)
-        if row.composite_score is not None
-        else None,
+        composite_score=float(row.composite_score) if row.composite_score is not None else None,
         scores=BenchmarkScore.model_validate(row.scores) if row.scores else None,
         status=SubmissionStatus(row.status),
         visibility=Visibility(row.visibility),
@@ -119,9 +117,7 @@ def get_submission(
     service: ServiceDep, principal: ReaderDep, submission_id: uuid.UUID
 ) -> SubmissionOut:
     try:
-        row, suite = service.get_submission(
-            submission_id, workspace_id=principal.workspace_id
-        )
+        row, suite = service.get_submission(submission_id, workspace_id=principal.workspace_id)
     except SubmissionNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return _submission_dto(row, suite)
@@ -163,9 +159,7 @@ def submit(
     except SuiteContentDriftError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except SubmissionTooLargeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
     suite = service.get_suite(slug, version)
     return _submission_dto(row, suite)
 
@@ -182,9 +176,7 @@ def list_submissions(
 
 
 @router.post("/submissions/{submission_id}/verify", response_model=VerifyResponse)
-def verify(
-    service: ServiceDep, principal: AdminDep, submission_id: uuid.UUID
-) -> VerifyResponse:
+def verify(service: ServiceDep, principal: AdminDep, submission_id: uuid.UUID) -> VerifyResponse:
     try:
         row, result = service.verify(
             submission_id,

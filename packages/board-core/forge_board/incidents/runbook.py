@@ -15,9 +15,7 @@ from forge_skill import SkillDirectives, blast_within, skill_permits_action
 __all__ = ["BLAST_ORDER", "assert_runbook_within_policy", "runbook_max_blast_radius"]
 
 
-def assert_runbook_within_policy(
-    runbook: Runbook, directives: SkillDirectives
-) -> list[str]:
+def assert_runbook_within_policy(runbook: Runbook, directives: SkillDirectives) -> list[str]:
     """Return the ids of steps that VIOLATE the incident-response posture.
 
     A step violates the posture when:

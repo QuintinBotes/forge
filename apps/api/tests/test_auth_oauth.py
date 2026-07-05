@@ -35,12 +35,9 @@ USERINFO: dict[str, dict[str, object]] = {
     "gitlab": {"id": 99, "username": "alice", "name": "Alice GL", "email": "a@gl.com"},
 }
 
-TOKEN_PATHS = {
-    p: urllib.parse.urlsplit(cfg.token_url).path for p, cfg in DEFAULT_PROVIDERS.items()
-}
+TOKEN_PATHS = {p: urllib.parse.urlsplit(cfg.token_url).path for p, cfg in DEFAULT_PROVIDERS.items()}
 USERINFO_PATHS = {
-    p: urllib.parse.urlsplit(cfg.userinfo_url).path
-    for p, cfg in DEFAULT_PROVIDERS.items()
+    p: urllib.parse.urlsplit(cfg.userinfo_url).path for p, cfg in DEFAULT_PROVIDERS.items()
 }
 
 
@@ -96,9 +93,7 @@ async def test_complete_flow_resolves_user(provider: str) -> None:
     captured: list[httpx.Request] = []
     client = _client(_make_handler(capture=captured))
 
-    result = await client.complete(
-        provider, "the-code", redirect_uri="https://app/cb"
-    )
+    result = await client.complete(provider, "the-code", redirect_uri="https://app/cb")
 
     assert result.provider == provider
     assert result.user.provider == provider
@@ -155,9 +150,7 @@ async def test_form_encoded_token_response_is_accepted() -> None:
 
 
 async def test_provider_rejects_authorization_code() -> None:
-    client = _client(
-        _make_handler(token_status=400, token_body={"error": "invalid_grant"})
-    )
+    client = _client(_make_handler(token_status=400, token_body={"error": "invalid_grant"}))
     with pytest.raises(OAuthExchangeError):
         await client.complete("google", "bad-code")
 
@@ -215,9 +208,7 @@ async def test_state_mismatch_raises_before_any_network_call() -> None:
 
 async def test_matching_state_completes() -> None:
     client = _client(_make_handler())
-    result = await client.complete(
-        "google", "c", state="same-state", expected_state="same-state"
-    )
+    result = await client.complete("google", "c", state="same-state", expected_state="same-state")
     assert result.user.subject == "google-123"
 
 

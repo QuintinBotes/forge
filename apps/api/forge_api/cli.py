@@ -200,9 +200,7 @@ def _policy_test(path: str) -> int:
         return 1
     report = run_policy_tests(policy, load_test_suite(suite_path))
     for failure in report.failures:
-        print(
-            f"FAIL {failure['name']}: expected={failure['expected']} actual={failure['actual']}"
-        )
+        print(f"FAIL {failure['name']}: expected={failure['expected']} actual={failure['actual']}")
     print(f"policy tests: {report.passed}/{report.total} passed")
     return 0 if report.ok else 1
 

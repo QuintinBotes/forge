@@ -104,9 +104,7 @@ def get_connection(
     except PMConnectionNotFound as exc:
         raise HTTPException(status_code=404, detail="connection not found") from exc
     base = _to_response(service, conn)
-    return PMConnectionDetail(
-        **base.model_dump(), link_counts=service.link_counts(connection_id)
-    )
+    return PMConnectionDetail(**base.model_dump(), link_counts=service.link_counts(connection_id))
 
 
 @router.patch("/connections/{connection_id}", response_model=PMConnectionResponse)

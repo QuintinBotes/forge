@@ -46,9 +46,7 @@ class AuditQueryRepository:
     def get(self, workspace_id: UUID, entry_id: UUID) -> AuditLog | None:
         """One entry, workspace-isolated: a foreign id resolves to ``None``."""
         return self._session.scalars(
-            select(AuditLog).where(
-                AuditLog.workspace_id == workspace_id, AuditLog.id == entry_id
-            )
+            select(AuditLog).where(AuditLog.workspace_id == workspace_id, AuditLog.id == entry_id)
         ).one_or_none()
 
     def list(

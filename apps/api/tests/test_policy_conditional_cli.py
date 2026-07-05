@@ -58,9 +58,7 @@ def test_cli_test_exit_zero_on_pass(capsys: pytest.CaptureFixture[str]) -> None:
     assert "passed" in capsys.readouterr().out
 
 
-def test_cli_test_exit_one_on_failure(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_test_exit_one_on_failure(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # A policy whose suite asserts the wrong outcome must exit non-zero.
     policy = tmp_path / "p.yaml"
     policy.write_text(INFRA_GATED.read_text(encoding="utf-8"), encoding="utf-8")

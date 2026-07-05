@@ -86,9 +86,9 @@ def test_cannot_read_update_or_delete_a_foreign_task_by_id(app: FastAPI) -> None
         _as(app, WORKSPACE_B)
         assert client.get(f"/board/tasks/{tid}").status_code == 404
         assert client.patch(f"/board/tasks/{tid}", json={"title": "hijacked"}).status_code == 404
-        assert client.post(
-            f"/board/tasks/{tid}/status", json={"status": "ready"}
-        ).status_code == 404
+        assert (
+            client.post(f"/board/tasks/{tid}/status", json={"status": "ready"}).status_code == 404
+        )
         assert client.delete(f"/board/tasks/{tid}").status_code == 404
 
         # A's task is untouched.

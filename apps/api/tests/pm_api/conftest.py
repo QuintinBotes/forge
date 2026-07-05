@@ -120,11 +120,7 @@ def pm_service(
 @pytest.fixture
 def project_id(session_factory: sessionmaker[Session]) -> uuid.UUID:
     with session_factory() as session:
-        proj = (
-            session.query(Project)
-            .filter(Project.workspace_id == WORKSPACE_ID)
-            .first()
-        )
+        proj = session.query(Project).filter(Project.workspace_id == WORKSPACE_ID).first()
         return proj.id
 
 

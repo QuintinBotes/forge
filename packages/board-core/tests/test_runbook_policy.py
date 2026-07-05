@@ -60,9 +60,19 @@ def test_assert_runbook_within_policy_is_total() -> None:
     """Randomized totality fuzz: always returns list[str], never raises (AC19)."""
     rng = random.Random(1729)
     actions = [
-        "read_logs", "query_metrics", "read_repo", "run_diagnostic_scripts",
-        "deploy_prod", "delete_data", "modify_access_controls", "scale_service",
-        "restart_service", "", "DEPLOY", "logs", "unknown_action",
+        "read_logs",
+        "query_metrics",
+        "read_repo",
+        "run_diagnostic_scripts",
+        "deploy_prod",
+        "delete_data",
+        "modify_access_controls",
+        "scale_service",
+        "restart_service",
+        "",
+        "DEPLOY",
+        "logs",
+        "unknown_action",
     ]
     blasts = list(BlastRadius)
     for _ in range(2000):
@@ -83,7 +93,10 @@ def test_assert_runbook_within_policy_is_total() -> None:
         # A forbidden or non-low-blast step must always be flagged.
         for step in steps:
             forbidden = step.action.strip().lower() in {
-                "deploy_prod", "delete_data", "modify_access_controls", "deploy",
+                "deploy_prod",
+                "delete_data",
+                "modify_access_controls",
+                "deploy",
             }
             if forbidden or step.blast_radius is not BlastRadius.LOW:
                 assert step.id in result

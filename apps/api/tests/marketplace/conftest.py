@@ -237,9 +237,7 @@ def registry(session_factory: sessionmaker[Session], keypair: Keypair) -> Market
 
 
 @pytest.fixture
-def service(
-    session_factory: sessionmaker[Session], gateway: FakeGateway
-) -> MarketplaceService:
+def service(session_factory: sessionmaker[Session], gateway: FakeGateway) -> MarketplaceService:
     return MarketplaceService(session_factory=session_factory, gateway=gateway)
 
 

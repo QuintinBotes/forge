@@ -12,9 +12,7 @@ class GitError(RuntimeError):
     """A git command failed."""
 
 
-def git(
-    repo: str | Path, *args: str, check: bool = True
-) -> subprocess.CompletedProcess[str]:
+def git(repo: str | Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run ``git -C <repo> <args>`` locally and return the completed process."""
     try:
         proc = subprocess.run(

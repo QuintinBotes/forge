@@ -18,7 +18,10 @@ _T = datetime(2026, 6, 2)
 
 def _committed(task_id: str, points: int, *, completed: bool = False) -> SprintTaskSnapshot:
     return SprintTaskSnapshot(
-        task_id=task_id, points=points, is_completed=completed, in_committed_scope=True,
+        task_id=task_id,
+        points=points,
+        is_completed=completed,
+        in_committed_scope=True,
         completed_at=_T if completed else None,
     )
 

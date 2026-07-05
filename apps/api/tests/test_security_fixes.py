@@ -38,9 +38,7 @@ def test_feature_router_requires_authentication() -> None:
     # A feature endpoint hit with no Authorization header must be rejected.
     app = create_app()
     with TestClient(app) as client:
-        resp = client.post(
-            "/knowledge/search", json={"query": "anything", "k": 3}
-        )
+        resp = client.post("/knowledge/search", json={"query": "anything", "k": 3})
     assert resp.status_code == 401
 
 
@@ -70,9 +68,7 @@ def test_wildcard_origin_is_never_paired_with_credentials() -> None:
     settings = Settings(cors_origins=["*"], cors_allow_credentials=True)
     app = create_app(settings)
     with TestClient(app) as client:
-        resp = client.get(
-            "/health", headers={"Origin": "https://evil.example"}
-        )
+        resp = client.get("/health", headers={"Origin": "https://evil.example"})
     acao = resp.headers.get("access-control-allow-origin")
     acac = resp.headers.get("access-control-allow-credentials")
     # The arbitrary origin must not be reflected, and "*" must never be paired
@@ -82,13 +78,9 @@ def test_wildcard_origin_is_never_paired_with_credentials() -> None:
 
 
 def test_explicit_origin_with_credentials_still_works() -> None:
-    settings = Settings(
-        cors_origins=["https://app.forge.local"], cors_allow_credentials=True
-    )
+    settings = Settings(cors_origins=["https://app.forge.local"], cors_allow_credentials=True)
     app = create_app(settings)
     with TestClient(app) as client:
-        resp = client.get(
-            "/health", headers={"Origin": "https://app.forge.local"}
-        )
+        resp = client.get("/health", headers={"Origin": "https://app.forge.local"})
     assert resp.headers.get("access-control-allow-origin") == "https://app.forge.local"
     assert resp.headers.get("access-control-allow-credentials") == "true"

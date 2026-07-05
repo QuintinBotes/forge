@@ -28,8 +28,7 @@ def resolve_image(
     if requested:
         if requested not in allowed:
             raise SandboxImageNotAllowed(
-                f"sandbox image {requested!r} is not on the allowlist "
-                f"({', '.join(allowed)})"
+                f"sandbox image {requested!r} is not on the allowlist ({', '.join(allowed)})"
             )
         return requested
     return settings.image_for(language)

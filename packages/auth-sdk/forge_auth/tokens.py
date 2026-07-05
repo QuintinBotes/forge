@@ -73,9 +73,7 @@ def encode_session_jwt(claims: SessionClaims, *, secret: str) -> str:
     return f"{signing_input.decode('ascii')}.{_b64url_encode(_sign(signing_input, secret))}"
 
 
-def decode_session_jwt(
-    token: str, *, secret: str, audience: str = "forge-api"
-) -> SessionClaims:
+def decode_session_jwt(token: str, *, secret: str, audience: str = "forge-api") -> SessionClaims:
     """Verify signature, ``exp``, and ``aud``; return the typed claims.
 
     Raises :class:`TokenExpired` for a stale token and :class:`InvalidToken`

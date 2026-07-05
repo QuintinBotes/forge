@@ -137,9 +137,7 @@ class AuditService:
         from_seq: int | None = None,
         to_seq: int | None = None,
     ) -> ChainVerifyResult:
-        return verify_chain(
-            self._session, workspace_id, from_seq=from_seq, to_seq=to_seq
-        )
+        return verify_chain(self._session, workspace_id, from_seq=from_seq, to_seq=to_seq)
 
     def export_ndjson(
         self,

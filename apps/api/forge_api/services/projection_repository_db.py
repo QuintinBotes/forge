@@ -212,9 +212,7 @@ class SqlAlchemyProjectionRepository:
             return new_version
 
     @staticmethod
-    def _apply_rollup(
-        row: TraceabilitySpecRollup, rollup: SpecRollupRecord, version: int
-    ) -> None:
+    def _apply_rollup(row: TraceabilitySpecRollup, rollup: SpecRollupRecord, version: int) -> None:
         row.workspace_id = uuid.UUID(rollup.workspace_id)
         row.project_id = uuid.UUID(rollup.project_id)
         row.spec_id = uuid.UUID(rollup.spec_id)
@@ -247,9 +245,7 @@ class SqlAlchemyProjectionRepository:
             return None
         with self._session() as session:
             row = session.execute(
-                select(TraceabilitySpecRollup).where(
-                    TraceabilitySpecRollup.spec_id == spec_uuid
-                )
+                select(TraceabilitySpecRollup).where(TraceabilitySpecRollup.spec_id == spec_uuid)
             ).scalar_one_or_none()
             return _rollup_record(row) if row is not None else None
 
@@ -274,9 +270,7 @@ class SqlAlchemyProjectionRepository:
                 session.execute(
                     select(TraceabilitySpecRollup)
                     .where(TraceabilitySpecRollup.project_id == project_uuid)
-                    .order_by(
-                        TraceabilitySpecRollup.spec_key, TraceabilitySpecRollup.spec_id
-                    )
+                    .order_by(TraceabilitySpecRollup.spec_key, TraceabilitySpecRollup.spec_id)
                 )
                 .scalars()
                 .all()

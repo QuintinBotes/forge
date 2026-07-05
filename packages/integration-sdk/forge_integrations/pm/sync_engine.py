@@ -78,17 +78,11 @@ class ForgeTaskPatch(BaseModel):
 
 class LinkRepository(Protocol):
     def get(self, link_id: UUID) -> LinkRecord | None: ...
-    def get_by_forge_task(
-        self, connection_id: UUID, forge_task_id: UUID
-    ) -> LinkRecord | None: ...
-    def get_by_external(
-        self, connection_id: UUID, external_id: str
-    ) -> LinkRecord | None: ...
+    def get_by_forge_task(self, connection_id: UUID, forge_task_id: UUID) -> LinkRecord | None: ...
+    def get_by_external(self, connection_id: UUID, external_id: str) -> LinkRecord | None: ...
     def upsert(self, link: LinkRecord) -> LinkRecord: ...
     def delete(self, link_id: UUID) -> None: ...
-    def list_by_state(
-        self, connection_id: UUID, state: PMSyncState
-    ) -> list[LinkRecord]: ...
+    def list_by_state(self, connection_id: UUID, state: PMSyncState) -> list[LinkRecord]: ...
 
 
 class BoardWriter(Protocol):
@@ -123,17 +117,13 @@ class InMemoryLinkRepository:
         rec = self._by_id.get(link_id)
         return rec.model_copy(deep=True) if rec else None
 
-    def get_by_forge_task(
-        self, connection_id: UUID, forge_task_id: UUID
-    ) -> LinkRecord | None:
+    def get_by_forge_task(self, connection_id: UUID, forge_task_id: UUID) -> LinkRecord | None:
         for rec in self._by_id.values():
             if rec.connection_id == connection_id and rec.forge_task_id == forge_task_id:
                 return rec.model_copy(deep=True)
         return None
 
-    def get_by_external(
-        self, connection_id: UUID, external_id: str
-    ) -> LinkRecord | None:
+    def get_by_external(self, connection_id: UUID, external_id: str) -> LinkRecord | None:
         for rec in self._by_id.values():
             if rec.connection_id == connection_id and rec.external_id == external_id:
                 return rec.model_copy(deep=True)
@@ -146,9 +136,7 @@ class InMemoryLinkRepository:
     def delete(self, link_id: UUID) -> None:
         self._by_id.pop(link_id, None)
 
-    def list_by_state(
-        self, connection_id: UUID, state: PMSyncState
-    ) -> list[LinkRecord]:
+    def list_by_state(self, connection_id: UUID, state: PMSyncState) -> list[LinkRecord]:
         return [
             rec.model_copy(deep=True)
             for rec in self._by_id.values()
@@ -510,9 +498,7 @@ class PMSyncEngine:
         self._audit("board_create", Direction.IN, forge_task, external_task)
         return forge_task
 
-    def _apply_inbound_update(
-        self, link: LinkRecord, external_task: ExternalTask
-    ) -> ForgeTask:
+    def _apply_inbound_update(self, link: LinkRecord, external_task: ExternalTask) -> ForgeTask:
         patch = self._external_to_patch(external_task)
         current = self.board.get(link.forge_task_id)
         expected = current.version if current else None
@@ -585,9 +571,7 @@ class PMSyncEngine:
                 "direction": direction.value,
                 "forge_task_id": str(forge_task.id) if forge_task else None,
                 "external_id": external_task.external_id if external_task else None,
-                "payload_hash": (
-                    forge_content_hash(forge_task) if forge_task else None
-                ),
+                "payload_hash": (forge_content_hash(forge_task) if forge_task else None),
                 "result": "ok",
                 "at": self._clock().isoformat(),
             }

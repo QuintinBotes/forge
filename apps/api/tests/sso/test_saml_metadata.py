@@ -33,7 +33,7 @@ class TestParseIdpMetadata:
         assert config.name_id_format.endswith("emailAddress")
 
     def test_metadata_without_certs_rejected(self, idp_keypair: Keypair):
-        xml = make_idp_metadata(idp_keypair).replace("use=\"signing\"", 'use="encryption"')
+        xml = make_idp_metadata(idp_keypair).replace('use="signing"', 'use="encryption"')
         with pytest.raises(SsoConfigError):
             parse_idp_metadata(xml)
 

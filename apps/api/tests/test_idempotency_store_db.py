@@ -64,9 +64,7 @@ def _response(**kwargs: object) -> StoredResponse:
     return StoredResponse(**fields)  # type: ignore[arg-type]
 
 
-def _insert_expired(
-    factory: sessionmaker[Session], key: str, value: StoredResponse
-) -> None:
+def _insert_expired(factory: sessionmaker[Session], key: str, value: StoredResponse) -> None:
     """Insert a row whose TTL is already in the past (a stale cache entry)."""
     import base64
 
@@ -238,9 +236,7 @@ def test_middleware_replays_through_db_store(factory: sessionmaker[Session]) -> 
         body = await request.json()
         return {"run": counter["n"], "echo": body.get("v", 0)}
 
-    app.add_middleware(
-        IdempotencyMiddleware, store=DbIdempotencyStore(factory), ttl_s=3600
-    )
+    app.add_middleware(IdempotencyMiddleware, store=DbIdempotencyStore(factory), ttl_s=3600)
     client = TestClient(app)
     headers = {"Idempotency-Key": uuid.uuid4().hex}
 

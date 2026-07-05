@@ -119,9 +119,7 @@ class BenchmarkSubmission(ForgeModel):
     submitter_contact: Mapped[str | None] = mapped_column(String(512), nullable=True)
     #: Public family label, e.g. ``claude-opus / anthropic`` (no keys).
     model_label: Mapped[str] = mapped_column(String(255), nullable=False)
-    agent_mode: Mapped[str] = mapped_column(
-        String(64), default="single_agent", nullable=False
-    )
+    agent_mode: Mapped[str] = mapped_column(String(64), default="single_agent", nullable=False)
     #: Redacted run configuration — secrets are stripped at ingest, never stored.
     config: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     forge_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -130,9 +128,7 @@ class BenchmarkSubmission(ForgeModel):
     #: Serialized ``BenchmarkScore`` (per-metric + per-category breakdown).
     scores: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     #: Inline deterministic replay bundles (foundation has no object store).
-    replay_bundles: Mapped[list[Any]] = mapped_column(
-        json_type(), default=list, nullable=False
-    )
+    replay_bundles: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
     #: Ordered bundle content hashes claimed at submit time (verification input).
     replay_content_hashes: Mapped[list[Any]] = mapped_column(
         json_type(), default=list, nullable=False
@@ -140,9 +136,7 @@ class BenchmarkSubmission(ForgeModel):
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
     visibility: Mapped[str] = mapped_column(String(8), default="private", nullable=False)
     verified: Mapped[bool] = mapped_column(default=False, nullable=False)
-    verified_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Serialized ``VerificationResult`` (claimed vs reproduced, deltas, reasons).
     verification: Mapped[dict[str, Any] | None] = mapped_column(json_type(), nullable=True)
     moderated_by: Mapped[uuid.UUID | None] = mapped_column(

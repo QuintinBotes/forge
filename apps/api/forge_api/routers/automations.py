@@ -57,9 +57,7 @@ from forge_contracts.automation import (
     ConditionOp,
 )
 
-router = APIRouter(
-    tags=["automations"], dependencies=[Depends(get_current_principal)]
-)
+router = APIRouter(tags=["automations"], dependencies=[Depends(get_current_principal)])
 
 ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
 WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
@@ -109,9 +107,7 @@ def _errors() -> Iterator[None]:
             detail={"error": "version_conflict", "current_version": exc.current_version},
         ) from exc
     except RuleNotFound as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 # --------------------------------------------------------------------------- #
@@ -199,9 +195,7 @@ def list_rules(
 
 
 @router.get("/automations/{rule_id}", response_model=AutomationRuleRead)
-def get_rule(
-    service: ServiceDep, principal: ReaderDep, rule_id: uuid.UUID
-) -> AutomationRuleRead:
+def get_rule(service: ServiceDep, principal: ReaderDep, rule_id: uuid.UUID) -> AutomationRuleRead:
     with _errors():
         return service.get(workspace_id=principal.workspace_id, rule_id=rule_id)
 
@@ -249,9 +243,7 @@ def disable_rule(
 
 
 @router.delete("/automations/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_rule(
-    service: ServiceDep, principal: AdminDep, rule_id: uuid.UUID
-) -> None:
+def delete_rule(service: ServiceDep, principal: AdminDep, rule_id: uuid.UUID) -> None:
     with _errors():
         service.delete(
             workspace_id=principal.workspace_id,
@@ -276,9 +268,7 @@ def dry_run(
         )
 
 
-@router.get(
-    "/automations/{rule_id}/executions", response_model=list[AutomationExecutionRead]
-)
+@router.get("/automations/{rule_id}/executions", response_model=list[AutomationExecutionRead])
 def executions(
     service: ServiceDep,
     principal: ReaderDep,
@@ -286,9 +276,7 @@ def executions(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[AutomationExecutionRead]:
     with _errors():
-        return service.executions(
-            workspace_id=principal.workspace_id, rule_id=rule_id, limit=limit
-        )
+        return service.executions(workspace_id=principal.workspace_id, rule_id=rule_id, limit=limit)
 
 
 __all__ = ["get_automation_service", "router"]

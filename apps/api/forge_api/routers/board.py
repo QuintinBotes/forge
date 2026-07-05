@@ -282,9 +282,7 @@ def set_task_status(
     response_model=TaskDTO,
     dependencies=[_REQUIRE_WRITE],
 )
-def add_dependency(
-    svc: BoardServiceDep, task_id: uuid.UUID, payload: DependencyRequest
-) -> TaskDTO:
+def add_dependency(svc: BoardServiceDep, task_id: uuid.UUID, payload: DependencyRequest) -> TaskDTO:
     with _domain_errors():
         svc.dependency_add(task_id, payload.depends_on_id)
         return svc.get_task(task_id)
@@ -303,9 +301,7 @@ def list_epics(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[EpicDTO]:
-    return svc.list_epics(
-        BoardFilter(project_id=project_id, text=text, limit=limit, offset=offset)
-    )
+    return svc.list_epics(BoardFilter(project_id=project_id, text=text, limit=limit, offset=offset))
 
 
 @router.post(
@@ -485,9 +481,7 @@ def get_incident(svc: BoardServiceDep, incident_id: uuid.UUID) -> IncidentDTO:
     response_model=IncidentDTO,
     dependencies=[_REQUIRE_WRITE],
 )
-def update_incident(
-    svc: BoardServiceDep, incident_id: uuid.UUID, data: IncidentDTO
-) -> IncidentDTO:
+def update_incident(svc: BoardServiceDep, incident_id: uuid.UUID, data: IncidentDTO) -> IncidentDTO:
     with _domain_errors():
         return svc.update_incident(incident_id, data)
 

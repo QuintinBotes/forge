@@ -69,9 +69,7 @@ def seed(factory: sessionmaker[Session]) -> dict[str, object]:
     tasks = [uuid4() for _ in range(8)]
     with factory() as session:
         session.add(Workspace(id=ws, name="Acme", slug=f"acme-{uuid4().hex[:8]}"))
-        session.add(
-            Workspace(id=other_ws, name="Other", slug=f"other-{uuid4().hex[:8]}")
-        )
+        session.add(Workspace(id=other_ws, name="Other", slug=f"other-{uuid4().hex[:8]}"))
         session.flush()
         session.add(
             Project(id=project_id, workspace_id=ws, name="API", key=f"API{uuid4().hex[:4]}")
@@ -202,9 +200,7 @@ def test_upsert_then_get_round_trips_every_field(
     assert loaded.last_error == "boom"
 
 
-def test_upsert_defaults_round_trip(
-    repo: DbLinkRepository, seed: dict[str, object]
-) -> None:
+def test_upsert_defaults_round_trip(repo: DbLinkRepository, seed: dict[str, object]) -> None:
     link = _link(seed, task_index=0, external_id="EXT-D")
     repo.upsert(link)
     loaded = repo.get(link.id)
@@ -222,12 +218,8 @@ def test_upsert_defaults_round_trip(
     assert loaded.sync_state is ContractsSyncState.synced  # LinkRecord default
 
 
-def test_upsert_updates_existing_by_id(
-    repo: DbLinkRepository, seed: dict[str, object]
-) -> None:
-    link = _link(
-        seed, task_index=0, external_id="EXT-1", sync_state=ContractsSyncState.pending_out
-    )
+def test_upsert_updates_existing_by_id(repo: DbLinkRepository, seed: dict[str, object]) -> None:
+    link = _link(seed, task_index=0, external_id="EXT-1", sync_state=ContractsSyncState.pending_out)
     repo.upsert(link)
 
     link.sync_state = ContractsSyncState.synced
@@ -359,18 +351,14 @@ def test_delete_removes_link_and_is_idempotent(
 # --------------------------------------------------------------------------- #
 
 
-def test_duplicate_forge_task_link_raises(
-    repo: DbLinkRepository, seed: dict[str, object]
-) -> None:
+def test_duplicate_forge_task_link_raises(repo: DbLinkRepository, seed: dict[str, object]) -> None:
     """``uq_pm_task_link_conn_task`` blocks a second link for the same task."""
     repo.upsert(_link(seed, task_index=0, connection=seed["conn"], external_id="X1"))  # type: ignore[arg-type]
     with pytest.raises(IntegrityError):
         repo.upsert(_link(seed, task_index=0, connection=seed["conn"], external_id="X2"))  # type: ignore[arg-type]
 
 
-def test_duplicate_external_id_link_raises(
-    repo: DbLinkRepository, seed: dict[str, object]
-) -> None:
+def test_duplicate_external_id_link_raises(repo: DbLinkRepository, seed: dict[str, object]) -> None:
     """``uq_pm_task_link_conn_extid`` blocks two tasks mapping to one external id."""
     repo.upsert(_link(seed, task_index=0, connection=seed["conn"], external_id="SAME"))  # type: ignore[arg-type]
     with pytest.raises(IntegrityError):
@@ -394,9 +382,7 @@ def test_persists_across_repository_instances(
 # --------------------------------------------------------------------------- #
 
 
-def test_matches_in_memory_store_behaviour(
-    repo: DbLinkRepository, seed: dict[str, object]
-) -> None:
+def test_matches_in_memory_store_behaviour(repo: DbLinkRepository, seed: dict[str, object]) -> None:
     conn: UUID = seed["conn"]  # type: ignore[assignment]
     tasks: list[UUID] = seed["tasks"]  # type: ignore[assignment]
     mem = InMemoryLinkRepository()

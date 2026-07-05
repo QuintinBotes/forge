@@ -141,9 +141,7 @@ class SqlAlchemyBoardService:
     def _task_edges(self, session: Session) -> dict[uuid.UUID, set[uuid.UUID]]:
         edges: dict[uuid.UUID, set[uuid.UUID]] = {}
         for row in (
-            session.execute(
-                select(TaskDependency).where(TaskDependency.workspace_id == self._ws)
-            )
+            session.execute(select(TaskDependency).where(TaskDependency.workspace_id == self._ws))
             .scalars()
             .all()
         ):
@@ -164,9 +162,7 @@ class SqlAlchemyBoardService:
         rows.sort(key=lambda r: (r.created_at, r.id))
         return [r.depends_on_id for r in rows]
 
-    def _set_edges(
-        self, session: Session, task_id: uuid.UUID, depends_on: list[uuid.UUID]
-    ) -> None:
+    def _set_edges(self, session: Session, task_id: uuid.UUID, depends_on: list[uuid.UUID]) -> None:
         session.execute(
             delete(TaskDependency).where(
                 TaskDependency.workspace_id == self._ws,
@@ -290,9 +286,7 @@ class SqlAlchemyBoardService:
         )
         row.subagent_policy = data.subagent_policy.model_dump(mode="json")
         row.handoff_rules = (
-            data.handoff_rules.model_dump(mode="json")
-            if data.handoff_rules is not None
-            else None
+            data.handoff_rules.model_dump(mode="json") if data.handoff_rules is not None else None
         )
         row.acceptance_criteria = [m.model_dump(mode="json") for m in data.acceptance_criteria]
         row.labels = list(data.labels)
@@ -368,9 +362,7 @@ class SqlAlchemyBoardService:
             edges = self._task_edges(session)
             edges[task_id] = set(data.depends_on)
             if has_cycle(edges):
-                raise CycleError(
-                    f"updating task {task_id} dependencies would create a cycle"
-                )
+                raise CycleError(f"updating task {task_id} dependencies would create a cycle")
             self._apply_task_fields(row, data)
             row.updated_at = _now()
             self._set_edges(session, task_id, data.depends_on)
@@ -397,8 +389,7 @@ class SqlAlchemyBoardService:
             session.execute(
                 delete(TaskDependency).where(
                     TaskDependency.workspace_id == self._ws,
-                    (TaskDependency.task_id == task_id)
-                    | (TaskDependency.depends_on_id == task_id),
+                    (TaskDependency.task_id == task_id) | (TaskDependency.depends_on_id == task_id),
                 )
             )
             session.delete(row)
@@ -535,11 +526,7 @@ class SqlAlchemyBoardService:
             )
             dtos = [self._milestone_to_dto(r) for r in rows]
             return _paginate(
-                [
-                    m
-                    for m in dtos
-                    if _simple_matches(m.project_id, [m.name, m.description], filter)
-                ],
+                [m for m in dtos if _simple_matches(m.project_id, [m.name, m.description], filter)],
                 filter,
             )
 

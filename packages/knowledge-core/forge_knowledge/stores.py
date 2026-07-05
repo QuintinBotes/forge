@@ -71,9 +71,7 @@ def _scope_filter(stmt: Select, scope: KnowledgeScope | None) -> Select:
     The statement must already select from / join ``RetrievalChunk``; this joins
     ``KnowledgeSource`` for source-level predicates.
     """
-    stmt = stmt.join(
-        KnowledgeSource, RetrievalChunk.knowledge_source_id == KnowledgeSource.id
-    )
+    stmt = stmt.join(KnowledgeSource, RetrievalChunk.knowledge_source_id == KnowledgeSource.id)
     if scope is None:
         return stmt
     if scope.workspace_id is not None:
@@ -112,9 +110,7 @@ def _to_retrieved(row: RetrievalChunk, *, score: float) -> RetrievedChunk:
 class PgVectorStore:
     """Semantic (dense) retrieval over pgvector. Implements ``KnowledgeStore``."""
 
-    def __init__(
-        self, session_factory: SessionFactory, embedding_client: EmbeddingClient
-    ) -> None:
+    def __init__(self, session_factory: SessionFactory, embedding_client: EmbeddingClient) -> None:
         self._session_factory = session_factory
         self._embedding = embedding_client
 
@@ -148,9 +144,7 @@ class PgVectorStore:
                 pending.append((chunk, content_hash))
 
             vectors = (
-                self._embedding.embed([chunk.content for chunk, _ in pending])
-                if pending
-                else []
+                self._embedding.embed([chunk.content for chunk, _ in pending]) if pending else []
             )
 
             is_postgres = session.get_bind().dialect.name == "postgresql"
@@ -175,9 +169,7 @@ class PgVectorStore:
 
             session.commit()
 
-        return IndexResult(
-            source_id=str(source_id), indexed=len(pending), skipped=skipped
-        )
+        return IndexResult(source_id=str(source_id), indexed=len(pending), skipped=skipped)
 
     # -- introspection / deletion (foundation for sync, Task 1.4) -------- #
 
@@ -217,9 +209,7 @@ class PgVectorStore:
 
     # -- search ---------------------------------------------------------- #
 
-    def search(
-        self, query: str, scope: KnowledgeScope, k: int = 10
-    ) -> list[RetrievedChunk]:
+    def search(self, query: str, scope: KnowledgeScope, k: int = 10) -> list[RetrievedChunk]:
         """Return the ``k`` chunks most cosine-similar to ``query``."""
         query_vector = self._embedding.embed_query(query)
         with self._session_factory() as session:
@@ -236,8 +226,7 @@ class PgVectorStore:
         )
         stmt = _scope_filter(stmt, scope).order_by(distance.asc()).limit(k)
         return [
-            _to_retrieved(row, score=1.0 - float(dist))
-            for row, dist in session.execute(stmt).all()
+            _to_retrieved(row, score=1.0 - float(dist)) for row, dist in session.execute(stmt).all()
         ]
 
     def _search_python(
@@ -267,9 +256,7 @@ class Bm25Store:
     def __init__(self, session_factory: SessionFactory) -> None:
         self._session_factory = session_factory
 
-    def search(
-        self, query: str, scope: KnowledgeScope, k: int = 10
-    ) -> list[RetrievedChunk]:
+    def search(self, query: str, scope: KnowledgeScope, k: int = 10) -> list[RetrievedChunk]:
         """Return up to ``k`` chunks ranked by keyword relevance to ``query``."""
         query_tokens = tokenize(query)
         if not query_tokens:
@@ -327,9 +314,7 @@ class Bm25Store:
                 freq = term_freq.get(term, 0)
                 if freq == 0:
                     continue
-                idf = math.log(
-                    1 + (n_docs - doc_freq[term] + 0.5) / (doc_freq[term] + 0.5)
-                )
+                idf = math.log(1 + (n_docs - doc_freq[term] + 0.5) / (doc_freq[term] + 0.5))
                 denom = freq + _BM25_K1 * (1 - _BM25_B + _BM25_B * doc_len / avg_len)
                 score += idf * (freq * (_BM25_K1 + 1)) / denom
             scored.append((score, row))

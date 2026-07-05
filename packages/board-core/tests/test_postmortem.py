@@ -31,21 +31,33 @@ def _events(incident_id: uuid.UUID) -> list[IncidentEventDTO]:
     base = datetime(2026, 6, 27, 10, 0, tzinfo=UTC)
     return [
         IncidentEventDTO(
-            incident_id=incident_id, sequence=1, kind="state_change",
-            summary="alert_received -> incident_created", created_at=base,
+            incident_id=incident_id,
+            sequence=1,
+            kind="state_change",
+            summary="alert_received -> incident_created",
+            created_at=base,
         ),
         IncidentEventDTO(
-            incident_id=incident_id, sequence=2, kind="context_finding",
-            summary="Error rate 12% on checkout-api", created_at=base,
+            incident_id=incident_id,
+            sequence=2,
+            kind="context_finding",
+            summary="Error rate 12% on checkout-api",
+            created_at=base,
         ),
         IncidentEventDTO(
-            incident_id=incident_id, sequence=3, kind="impact",
+            incident_id=incident_id,
+            sequence=3,
+            kind="impact",
             summary="Degraded checkout for ~8% of users",
-            data={"affected_services": ["checkout-api"]}, created_at=base,
+            data={"affected_services": ["checkout-api"]},
+            created_at=base,
         ),
         IncidentEventDTO(
-            incident_id=incident_id, sequence=4, kind="runbook_step",
-            summary="restart checkout-api pods", created_at=base,
+            incident_id=incident_id,
+            sequence=4,
+            kind="runbook_step",
+            summary="restart checkout-api pods",
+            created_at=base,
         ),
     ]
 
@@ -75,13 +87,14 @@ def test_high_blast_plan_step_yields_durability_action_item() -> None:
         incident_id=snap.id,
         steps=[
             RunbookStep(
-                id="s1", order=1, title="failover db", action="restart_service",
+                id="s1",
+                order=1,
+                title="failover db",
+                action="restart_service",
                 blast_radius=BlastRadius.MEDIUM,
             )
         ],
     )
-    pm = TemplatePostmortemComposer().compose(
-        incident=snap, events=_events(snap.id), plans=[plan]
-    )
+    pm = TemplatePostmortemComposer().compose(incident=snap, events=_events(snap.id), plans=[plan])
     titles = " ".join(item.title for item in pm.action_items)
     assert "Make remediation durable" in titles
