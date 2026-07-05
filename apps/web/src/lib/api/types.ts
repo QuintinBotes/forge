@@ -1252,3 +1252,111 @@ export interface DeploymentListQuery {
   state?: DeploymentState;
   limit?: number;
 }
+
+// --- Enterprise SSO / SCIM (F33 auth/sso admin routers) ------------------- //
+
+/** Roles an SSO-provisioned identity can be granted (matches UserRole). */
+export const SSO_ROLES = ["admin", "member", "viewer", "agent-runner"] as const;
+export type SsoRole = (typeof SSO_ROLES)[number];
+
+/** Where in the SAML assertion each Forge identity field is read from. */
+export interface SamlAttributeMapping {
+  email: string;
+  name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  groups?: string | null;
+}
+
+/** The identity-provider half of a SAML federation. */
+export interface SamlIdpConfig {
+  entity_id: string;
+  sso_url: string;
+  slo_url?: string | null;
+  x509_certs: string[];
+  name_id_format: string;
+}
+
+/**
+ * Public view of a workspace SAML configuration (`SsoConfigOut`). The SP private
+ * key is never exposed — only the public signing certificate (`sp_cert_pem`).
+ */
+export interface SsoConfig {
+  id: string;
+  workspace_id: string;
+  protocol: "saml";
+  enabled: boolean;
+  idp: SamlIdpConfig;
+  sp_entity_id: string;
+  sp_acs_url: string;
+  sp_slo_url: string;
+  sp_metadata_url: string;
+  sp_cert_pem: string;
+  domains: string[];
+  allow_idp_initiated: boolean;
+  sign_authn_requests: boolean;
+  want_assertions_signed: boolean;
+  attribute_mapping: SamlAttributeMapping;
+  default_role: string;
+  group_role_map: Record<string, string>;
+  jit_provisioning: boolean;
+  last_metadata_refresh_at?: string | null;
+}
+
+/** Create/replace payload for a workspace SAML configuration (`SsoConfigIn`). */
+export interface SsoConfigInput {
+  protocol?: "saml";
+  enabled?: boolean;
+  metadata_url?: string | null;
+  metadata_xml?: string | null;
+  idp?: SamlIdpConfig | null;
+  domains?: string[];
+  allow_idp_initiated?: boolean;
+  sign_authn_requests?: boolean;
+  want_assertions_signed?: boolean;
+  want_name_id_encrypted?: boolean;
+  attribute_mapping?: SamlAttributeMapping;
+  default_role?: SsoRole;
+  group_role_map?: Record<string, string>;
+  jit_provisioning?: boolean;
+}
+
+/** Redacted SCIM-token view — never the raw token or its hash. */
+export interface ScimTokenInfo {
+  id: string;
+  name: string;
+  token_prefix: string;
+  created_at: string;
+  last_used_at?: string | null;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+}
+
+/** Mint response — carries the plaintext `token` exactly once. */
+export interface ScimTokenCreated extends ScimTokenInfo {
+  token: string;
+}
+
+/** Body for issuing a SCIM bearer token. */
+export interface ScimTokenCreateRequest {
+  name: string;
+  expires_at?: string | null;
+}
+
+/** Parsed result of a validation-only SAML round trip. */
+export interface SamlTestResult {
+  name_id: string;
+  name_id_format: string;
+  issuer: string;
+  attributes: Record<string, string[]>;
+}
+
+/** Home-realm-discovery probe (POST /auth/saml/discover). */
+export interface HrdDiscoverRequest {
+  email: string;
+}
+
+export interface HrdDiscoverResponse {
+  sso: boolean;
+  redirect?: string | null;
+}

@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Store,
   TrendingUp,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -46,6 +47,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Observability", href: "/observability", icon: Gauge },
   { label: "Audit", href: "/audit", icon: ScrollText },
   { label: "Marketplace", href: "/marketplace", icon: Store },
+  { label: "SSO", href: "/settings/sso", icon: KeyRound },
 ];
 
 export interface AppShellProps {

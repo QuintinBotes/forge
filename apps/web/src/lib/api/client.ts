@@ -63,6 +63,14 @@ import type {
   TaskDTO,
   TaskStatus,
   VelocityDashboard,
+  HrdDiscoverRequest,
+  HrdDiscoverResponse,
+  SamlTestResult,
+  ScimTokenCreated,
+  ScimTokenCreateRequest,
+  ScimTokenInfo,
+  SsoConfig,
+  SsoConfigInput,
 } from "./types";
 
 export const DEFAULT_API_BASE_URL =
@@ -602,6 +610,92 @@ export class ForgeApiClient {
       `/deployments/${encodeURIComponent(deploymentId)}/rollback`,
       { method: "POST" },
     );
+  }
+
+  // --- Enterprise SSO + SCIM (F33 auth/sso admin routers) ----------------- //
+
+  /** The workspace SAML configuration (admin-only; 404 when unconfigured). */
+  getSsoConfig(workspaceId: string): Promise<SsoConfig> {
+    return this.request<SsoConfig>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/sso`,
+    );
+  }
+
+  /** Create or replace the workspace SAML configuration (admin-only). */
+  putSsoConfig(workspaceId: string, body: SsoConfigInput): Promise<SsoConfig> {
+    return this.request<SsoConfig>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/sso`,
+      { method: "PUT", body },
+    );
+  }
+
+  /** Enable SSO for the workspace. */
+  enableSso(workspaceId: string): Promise<SsoConfig> {
+    return this.request<SsoConfig>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/sso/enable`,
+      { method: "POST" },
+    );
+  }
+
+  /** Disable SSO (break-glass guarded: 409 without a local admin). */
+  disableSso(workspaceId: string): Promise<SsoConfig> {
+    return this.request<SsoConfig>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/sso/disable`,
+      { method: "POST" },
+    );
+  }
+
+  /** Delete the workspace SAML configuration entirely. */
+  deleteSsoConfig(workspaceId: string): Promise<void> {
+    return this.request<void>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/sso`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** Validation-only SAML round trip (never mints a session). */
+  testSsoConfig(
+    workspaceId: string,
+    samlResponse: string,
+  ): Promise<SamlTestResult> {
+    return this.request<SamlTestResult>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/sso/test`,
+      { method: "POST", body: { saml_response: samlResponse } },
+    );
+  }
+
+  /** SCIM provisioning tokens for the workspace (redacted). */
+  listScimTokens(workspaceId: string): Promise<ScimTokenInfo[]> {
+    return this.request<ScimTokenInfo[]>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/scim/tokens`,
+    );
+  }
+
+  /** Issue a SCIM bearer token; the raw value is returned exactly once. */
+  createScimToken(
+    workspaceId: string,
+    body: ScimTokenCreateRequest,
+  ): Promise<ScimTokenCreated> {
+    return this.request<ScimTokenCreated>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/scim/tokens`,
+      { method: "POST", body },
+    );
+  }
+
+  /** Revoke a SCIM token. */
+  revokeScimToken(workspaceId: string, tokenId: string): Promise<void> {
+    return this.request<void>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/scim/tokens/${encodeURIComponent(tokenId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** Home-realm discovery: does this email's domain route to SSO? */
+  discoverSso(body: HrdDiscoverRequest): Promise<HrdDiscoverResponse> {
+    return this.request<HrdDiscoverResponse>("/auth/saml/discover", {
+      method: "POST",
+      body,
+    });
   }
 }
 

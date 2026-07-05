@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   KanbanSquare,
+  KeyRound,
   Layers,
   LayoutList,
   Plus,
@@ -153,6 +154,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <Store />,
     run: (router) => router.push("/marketplace"),
+  },
+  {
+    id: "go-sso",
+    label: "Go to SSO settings",
+    group: "Navigate",
+    icon: <KeyRound />,
+    run: (router) => router.push("/settings/sso"),
   },
 ];
 
