@@ -1625,3 +1625,155 @@ export interface PmHealthResult {
   granted_scopes: string[];
   error?: string | null;
 }
+
+// --- Workflow visual editor (F28 /workflow/editor router) ----------------- //
+
+export type WorkflowRevisionStatus = "draft" | "published" | "archived";
+export type WorkflowValidationState = "valid" | "invalid" | "unvalidated";
+export type WorkflowDefinitionOrigin = "bundled" | "bundled_fork" | "custom";
+export type WorkflowNodeKind = "normal" | "initial" | "terminal" | "human_gate";
+export type WorkflowIssueSeverity = "error" | "warning";
+
+/** Canvas position of a state node (UI-only; persisted in `graph_json`). */
+export interface WorkflowNodeLayout {
+  x: number;
+  y: number;
+}
+
+/** A workflow state rendered as a graph node. */
+export interface WorkflowStateNode {
+  id: string;
+  label?: string | null;
+  kind: WorkflowNodeKind;
+  layout: WorkflowNodeLayout;
+}
+
+/** A workflow transition rendered as a graph edge (mirrors `WorkflowTransition`). */
+export interface WorkflowTransitionEdge {
+  id: string;
+  from_state: string;
+  to_state: string;
+  action?: string | null;
+  when?: string | string[] | null;
+  condition?: string | null;
+  preconditions: string[];
+  checks: string[];
+  record?: string | null;
+  skill?: string | null;
+}
+
+export interface WorkflowRetryPolicy {
+  max_retries: number;
+  backoff: string;
+  initial_delay_seconds: number;
+}
+
+export interface WorkflowEscalationPolicy {
+  confidence_threshold: number;
+  on_low_confidence: string;
+  on_policy_conflict: string;
+}
+
+/** The full editable graph: metadata + nodes + edges (+ layout). */
+export interface WorkflowGraph {
+  name: string;
+  version: string;
+  title: string;
+  description?: string | null;
+  modes: Record<string, unknown>;
+  retry_policy: WorkflowRetryPolicy;
+  escalation_policy: WorkflowEscalationPolicy;
+  nodes: WorkflowStateNode[];
+  edges: WorkflowTransitionEdge[];
+}
+
+/** One server-authoritative validation problem, anchored to a node or edge. */
+export interface WorkflowValidationIssue {
+  code: string;
+  severity: WorkflowIssueSeverity;
+  message: string;
+  node_id?: string | null;
+  edge_id?: string | null;
+  invariant_id?: string | null;
+}
+
+export interface WorkflowRevisionSummary {
+  id: string;
+  revision: number;
+  status: WorkflowRevisionStatus;
+  validation_status: WorkflowValidationState;
+  error_count: number;
+  warning_count: number;
+  notes?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+  published_at?: string | null;
+}
+
+export interface WorkflowRevisionDetail extends WorkflowRevisionSummary {
+  graph: WorkflowGraph;
+  dsl_yaml: string;
+  validation_issues: WorkflowValidationIssue[];
+}
+
+export interface WorkflowDefinitionSummary {
+  name: string;
+  title: string;
+  description?: string | null;
+  origin: WorkflowDefinitionOrigin;
+  base_bundled_name?: string | null;
+  is_active: boolean;
+  published_revision?: number | null;
+  has_draft: boolean;
+}
+
+export interface WorkflowDefinitionDetail extends WorkflowDefinitionSummary {
+  editable: boolean;
+  current_published?: WorkflowRevisionDetail | null;
+  draft?: WorkflowRevisionDetail | null;
+}
+
+/** Catalog (palette) entry for a guard / precondition predicate. */
+export interface WorkflowGuardMeta {
+  name: string;
+  description: string;
+  takes_arg: boolean;
+  arg_hint?: string | null;
+  is_precondition: boolean;
+}
+
+/** Catalog entry for an effect (a DSL `action` step). */
+export interface WorkflowEffectMeta {
+  name: string;
+  description: string;
+  provided_by?: string | null;
+}
+
+/** The registry palette the editor composes transitions from. */
+export interface WorkflowCatalog {
+  states: string[];
+  events: string[];
+  guards: WorkflowGuardMeta[];
+  preconditions: WorkflowGuardMeta[];
+  effects: WorkflowEffectMeta[];
+  skills: string[];
+  modes: string[];
+}
+
+export interface CreateWorkflowDefinition {
+  name: string;
+  title: string;
+  description?: string | null;
+  graph?: WorkflowGraph | null;
+}
+
+export interface SaveWorkflowDraftRequest {
+  graph: WorkflowGraph;
+  notes?: string | null;
+}
+
+/** The 409 body shape when a publish is blocked by validation errors. */
+export interface WorkflowPublishBlocked {
+  detail: string;
+  errors: WorkflowValidationIssue[];
+}

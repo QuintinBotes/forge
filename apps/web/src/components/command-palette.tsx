@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Store,
   TrendingUp,
+  Workflow,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
@@ -126,6 +127,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <Route />,
     run: (router) => router.push("/specs"),
+  },
+  {
+    id: "go-workflow",
+    label: "Go to Workflow editor",
+    group: "Navigate",
+    icon: <Workflow />,
+    run: (router) => router.push("/workflow"),
   },
   {
     id: "go-approvals",
