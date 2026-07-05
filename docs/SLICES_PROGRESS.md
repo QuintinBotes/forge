@@ -95,6 +95,105 @@ in 4m19s.
 - apps/web audit-log viewer UI — no apps/web files in the commit, per foundation precedent; the admin-only `/audit` query/verify/export API is the canonical surface.
 - Shipped and green: hash-chained durable audit log in Postgres (migration 0022, `forge_db.audit` chain/writer/repository/redaction), fail-open async `audit.record` sink + daily `audit.verify_chain_all` beat verifier (chain break → `audit.chain_broken` critical event), frozen `forge_contracts.audit` extensions, no HTTP create/update/delete route by design (AC13).
 
+## Hardening complete — HARD-01 … HARD-14 (production-hardening tier, 2026-07-05)
+
+The 14-slice production-hardening tier (`docs/implementation-slices/hardening/`,
+spec `SPEC-PRODUCTION-HARDENING.md`) is closed out. **13 of 14 slices landed on
+`main`** (HARD-01 … HARD-13); **HARD-14 was reverted** after review refuted two of
+its claims. Gate re-verified at HEAD `9a03c0d` (feat(HARD-06): live-slack) on
+2026-07-05: `uv run ruff check .` → *All checks passed*; full suite against real
+pgvector on :5433 → **3514 passed, 53 skipped, 0 failed** in 6m32s. Every one of
+the 53 skips is a documented live-/cred-/runner-gated tier that skips clean when
+its credential or runner is absent (live MCP transport ×14, learned real-corpus
+eval ×6, sandbox kernel/container runner ×6, live GitHub creds ×5, compose-build
+smoke ×4, live model BYOK ×4, live Slack creds ×3, perf/soak runner ×2, live
+reranker creds ×1, promtool/amtool ×2, …). No skip is a masked failure.
+
+### This batch (final four + the reverted spine)
+
+| id      | slug                   | refuted | repaired | decision  |
+|---------|------------------------|---------|----------|-----------|
+| HARD-02 | live-model-byok        | 0       | no       | committed |
+| HARD-03 | live-reranker          | 0       | no       | committed |
+| HARD-05 | live-mcp-server        | 0       | no       | committed |
+| HARD-06 | live-slack             | 0       | no       | committed |
+| HARD-14 | future-scope-execution | 2       | yes      | reverted  |
+
+**HARD-14 reverted (not committed):** review refuted two claims; a repair was
+attempted but the final gatekeeper decision was to revert rather than land — no
+HARD-14 commit exists in `main`. Its blocker-#5/#7 mandate is otherwise satisfied
+at the foundation level (see below): the toolchain already migrated to Python
+3.14.6 + re-locked deps (commit `4a75308`, `requires-python >=3.14`), which is
+precisely what made HARD-14's forward-compat lane redundant.
+
+### All 14 HARD items — final status
+
+| id      | slug                    | blocker(s) | decision  | commit    |
+|---------|-------------------------|------------|-----------|-----------|
+| HARD-01 | live-github-app         | #1         | committed | `82ffc1a` |
+| HARD-02 | live-model-byok         | #1         | committed | `47bba25` |
+| HARD-03 | live-reranker           | #1, #2     | committed | `d93b72f` |
+| HARD-04 | real-eval-corpus        | #2         | committed | `a33e068` |
+| HARD-05 | live-mcp-server         | #1         | committed | `2d7e726` |
+| HARD-06 | live-slack              | #1         | committed | `9a03c0d` |
+| HARD-07 | docker-build-and-pin    | #3         | committed | `2312aec` |
+| HARD-08 | kubernetes-helm-deploy  | #3, #6     | committed | `5807116` |
+| HARD-09 | security-hardening      | #4         | committed | `16ffeb6` |
+| HARD-10 | observability-cost-prod | #6         | committed | `8e67f8a` |
+| HARD-11 | reliability-maturity    | #6         | committed | `95228d6` |
+| HARD-12 | release-engineering     | #4, #6     | committed | `86dce5f` |
+| HARD-13 | secrets-config-prod     | #4, #5     | committed | `035eff0` |
+| HARD-14 | future-scope-execution  | #5, #7     | reverted  | — (none)  |
+
+**Committed: 13** (HARD-01 … HARD-13). **Reverted: 1** (HARD-14).
+
+### PARKED (live/manual verification) for this batch
+
+- **HARD-02 live-model-byok** — G-MODEL live verification (AC9–AC12) needs a real
+  BYOK Anthropic/OpenAI key + outbound network. Tests skip clean today (5 in
+  agent-runtime + 2 in worker). Close with: `uv sync --extra providers && set -a;
+  source .env.integration; set +a && export FORGE_MODEL_PROVIDER=anthropic
+  FORGE_MODEL_MAX_TOKENS=1024 && uv run pytest -m live_model packages/agent-runtime
+  apps/worker -q`. Runbook: `docs/runbooks/live-model.md`.
+- **HARD-03 live-reranker** — live verification (AC10–AC13) needs `JINA_API_KEY`/
+  `COHERE_API_KEY` (or a reachable `JINA_RERANKER_URL`) + network; skips clean.
+  Frontend rerank-score surfacing deferred (no numbered AC; would pull in the
+  pnpm gate — the API already emits `rerank_score=null` degradation). Self-hosted
+  reranker container digest-pin is HARD-08's networked gate. Runbook:
+  `docs/runbooks/live-reranker.md`.
+- **HARD-05 live-mcp-server** — AC8 *durable-Postgres audit row* awaits a
+  Postgres-backed `AuditStore` (only `InMemoryAuditStore` exists); the bridge,
+  redaction, every-op and hash-chain assertions pass offline + live against the
+  in-memory store. Third-party hosted-SaaS MCP connector + human SSRF/transport
+  pentest are out of agent scope (handed to HARD-09's punch-list). Close durable
+  row with: `FORGE_MCP_AUDIT_BACKEND=db … MCP_LIVE_TRANSPORT=true uv run pytest -m
+  live_mcp -q`.
+- **HARD-06 live-slack** — AC1/AC2/AC11 need a disposable Slack test workspace +
+  `SLACK_BOT_TOKEN` / `SLACK_TEST_CHANNEL` / `SLACK_SIGNING_SECRET` + network;
+  skips clean. One-time operator step: create the Slack app (scopes
+  `chat:write`+`commands`), install to the test workspace, point the `/forge`
+  slash-command + interactivity Request URLs at the deployed API. Runbook:
+  `docs/runbooks/live-slack.md`.
+
+### The 7 release blockers — CLOSED vs still gated
+
+| # | Release blocker | Owning slices | Status |
+|---|-----------------|---------------|--------|
+| 1 | No real external systems exercised (GitHub App, model, reranker, MCP, Slack) | HARD-01/02/03/05/06 | **Code CLOSED · live green CRED-GATED** — production clients + env-gated live lanes shipped; G-GH/G-MODEL/G-SLACK live half needs real creds+network; G-MCP self-hosted path proven offline (durable Postgres audit row awaits HARD-01's DB `AuditStore`). |
+| 2 | Eval numbers offline/deterministic (fake embedder, 1.000s) | HARD-03, HARD-04 | **CLOSED** — HARD-04 lands honest recall@k / MRR / nDCG@10 on a real corpus via a learned local `sentence-transformers` embedder (no creds); only the optional live cross-encoder reranker leg is cred-gated and has an offline default. |
+| 3 | `docker compose build` / `next build` never run; images not `@sha256`-pinned | HARD-07, HARD-08 | **Pin-enforcement CLOSED · real build RUNNER-GATED** — no-floating-tag `@sha256` assertions + Helm/compose validation run in-suite; the actual 4-image build + `next build` + kind/k3d install need a networked CI runner (no creds). |
+| 4 | No real security audit / no pentest | HARD-09, HARD-12, HARD-13 | **Automated CLOSED · human pentest PENTEST-GATED** — secret-scan/SAST/dep-audit + RBAC/MCP-write-default-deny/policy-default-deny matrix + SBOM/provenance green; the scoped human penetration test stays a named, owned punch-list item (MANUAL-PENDING, never auto-greened). |
+| 5 | Parked items may stay reverted/parked | HARD-13, HARD-14 | **Named §5 items CLOSED · F40 spine DEFERRED** — G-CRYPTO (Fernet default, `FORGE_SECRET_KEY` required) + OAuth land via HARD-13; the re-lock leg is done at the foundation (`4a75308`). HARD-14's systemic F40 future-scope execution machinery was **reverted** → forward-scope stays a scheduled, deferred backlog. |
+| 6 | Maturity gaps (coverage, load/perf, migration up/rollback, soak) | HARD-08/10/11/12 | **Mostly CLOSED · real fleet soak MANUAL-PENDING** — coverage, G-TYPES, durable cost ledger, migration up→rollback→re-upgrade, and a bounded simulated soak land; perf/soak execution is runner-gated and the *multi-week multi-tenant fleet soak* is a named MANUAL-PENDING item. |
+| 7 | Python 3.14 deferred; eslint held at 9 | HARD-14 (foundation) | **CLOSED (at foundation)** — the tree is on Python 3.14.6 with re-locked deps (`4a75308`, `requires-python >=3.14`); this superseded HARD-14's forward-compat lane. The eslint upgrade go/no-go remains a documented web-toolchain note. |
+
+**Net:** blockers **#2 and #7 are fully CLOSED**; **#3, #4 (automated half), #6
+(bulk)** are code-CLOSED with their live execution runner-gated; **#1** is
+code-CLOSED with live verification **cred-gated**; **#4 (human pentest)** and
+**#6 (multi-week fleet soak)** remain the two honest, never-auto-greened
+**MANUAL-PENDING** asterisks the PRODUCTION bar ships verbatim; **#5** closes its
+named §5 items but leaves the F40 future-scope spine deferred (HARD-14 reverted).
+
 ---
 
 *Maintained by the slice-run gatekeeper; append new runs above this line's section boundary as they land.*
