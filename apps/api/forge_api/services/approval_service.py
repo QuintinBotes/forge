@@ -38,6 +38,7 @@ from forge_approval.models import Role as ApprovalRole
 from forge_approval.providers import (
     DeployGateProvider,
     DeployResolutionHook,
+    GrantStore,
     InMemoryGrantStore,
     PolicyOverrideGateProvider,
     PolicyOverrideResolutionHook,
@@ -45,7 +46,7 @@ from forge_approval.providers import (
 from forge_contracts import UserRole
 
 
-def build_gate_registry(grants: InMemoryGrantStore) -> GateRegistry:
+def build_gate_registry(grants: GrantStore) -> GateRegistry:
     """Register every available provider/hook (the F36 composition root)."""
     registry = GateRegistry()
     registry.register_provider(DeployGateProvider())
@@ -56,8 +57,23 @@ def build_gate_registry(grants: InMemoryGrantStore) -> GateRegistry:
 
 
 @lru_cache(maxsize=1)
-def get_override_grant_store() -> InMemoryGrantStore:
-    """Process-wide single-use override-grant store (J5 consume contract)."""
+def get_override_grant_store() -> GrantStore:
+    """Return the override-grant store selected by ``FORGE_OVERRIDE_GRANT_BACKEND``.
+
+    ``memory`` (default) -> the hermetic :class:`InMemoryGrantStore` (unit-test
+    default, no Postgres); ``db`` -> the durable
+    :class:`~forge_api.services.policy_override_grant_store_db.DbGrantStore` bound
+    to the shared session factory. Both satisfy the same ``mint`` / ``consume`` /
+    ``all`` grant-store seam, so the swap is behaviour-preserving (single-active,
+    single-use, TTL-expiry).
+    """
+    from forge_api.settings import get_settings
+
+    if get_settings().override_grant_backend == "db":
+        from forge_api.db import get_session_factory
+        from forge_api.services.policy_override_grant_store_db import DbGrantStore
+
+        return DbGrantStore(get_session_factory())
     return InMemoryGrantStore()
 
 

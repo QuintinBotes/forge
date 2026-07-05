@@ -126,6 +126,14 @@ class Settings(BaseSettings):
     # are durably persisted. Read via ``FORGE_APPROVAL_BACKEND``.
     approval_backend: str = "memory"
 
+    # F36 policy-override grant-store backend selection (J5). ``memory`` (default)
+    # keeps the hermetic, process-memory ``InMemoryGrantStore`` (unit-test default,
+    # no Postgres); ``db`` wires the Postgres-backed ``DbGrantStore`` behind the
+    # same ``mint`` / ``consume`` / ``all`` grant-store seam so single-use override
+    # grants survive a restart and the single-active + atomic-consume invariants
+    # are enforced by the database. Read via ``FORGE_OVERRIDE_GRANT_BACKEND``.
+    override_grant_backend: str = "memory"
+
     # Filesystem root for the spec engine's SDD artifacts (manifests, plans).
     spec_root: str = "specs"
 
