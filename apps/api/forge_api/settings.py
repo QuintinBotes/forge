@@ -151,6 +151,15 @@ class Settings(BaseSettings):
     # ``FORGE_POLICY_AUDIT_BACKEND``.
     policy_audit_backend: str = "memory"
 
+    # F18 PM-sync link-repository backend selection. ``memory`` (default) keeps
+    # the hermetic, process-memory ``InMemoryLinkRepository`` (the sync-engine
+    # unit-test default, no Postgres); ``db`` wires the Postgres-backed
+    # ``DbLinkRepository`` behind the same ``LinkRepository`` protocol so a
+    # ``PMSyncEngine``'s Forge-task <-> external-issue links (and the loop-
+    # suppression hashes) land durably on the ``pm_task_link`` table. Read via
+    # ``FORGE_PM_LINK_BACKEND``.
+    pm_link_backend: str = "memory"
+
     # F36 policy-override grant-store backend selection (J5). ``memory`` (default)
     # keeps the hermetic, process-memory ``InMemoryGrantStore`` (unit-test default,
     # no Postgres); ``db`` wires the Postgres-backed ``DbGrantStore`` behind the
