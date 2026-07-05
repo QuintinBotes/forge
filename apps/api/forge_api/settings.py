@@ -134,6 +134,15 @@ class Settings(BaseSettings):
     # survive a restart. Read via ``FORGE_APIKEY_BACKEND``.
     apikey_backend: str = "memory"
 
+    # F23 traceability-projection repository backend selection. ``memory``
+    # (default) keeps the hermetic, process-memory ``InMemoryProjectionRepository``
+    # (unit-test default, no Postgres); ``db`` wires the Postgres-backed
+    # ``SqlAlchemyProjectionRepository`` behind the same ``ProjectionRepository``
+    # protocol so the F23 dashboard's denormalised projection (criterion links +
+    # spec rollups, with the monotonic ``projection_version``) is durably
+    # persisted. Read via ``FORGE_PROJECTION_BACKEND``.
+    projection_backend: str = "memory"
+
     # F29 policy-audit sink backend selection. ``memory`` (default) keeps the
     # hermetic, process-memory ``InMemoryPolicyAuditSink`` (unit-test default, no
     # Postgres); ``db`` wires the Postgres-backed ``DbPolicyAuditSink`` behind the
