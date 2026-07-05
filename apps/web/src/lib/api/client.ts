@@ -90,6 +90,14 @@ import type {
   ScimTokenInfo,
   SsoConfig,
   SsoConfigInput,
+  CreateWorkflowDefinition,
+  SaveWorkflowDraftRequest,
+  WorkflowCatalog,
+  WorkflowDefinitionDetail,
+  WorkflowDefinitionSummary,
+  WorkflowRevisionDetail,
+  WorkflowRevisionSummary,
+  WorkflowValidationIssue,
 } from "./types";
 
 export const DEFAULT_API_BASE_URL =
@@ -878,6 +886,79 @@ export class ForgeApiClient {
     return this.request<void>(
       `/projects/${encodeURIComponent(projectId)}/team-access/${encodeURIComponent(teamId)}`,
       { method: "DELETE" },
+    );
+  }
+
+  // --- Workflow visual editor (F28 /workflow/editor router) --------------- //
+
+  /** The registry palette: states, events, guards, effects, skills, modes. */
+  getWorkflowCatalog(): Promise<WorkflowCatalog> {
+    return this.request<WorkflowCatalog>("/workflow/editor/catalog");
+  }
+
+  /** Every workflow definition in the workspace (bundled + custom + forks). */
+  listWorkflowDefinitions(): Promise<WorkflowDefinitionSummary[]> {
+    return this.request<WorkflowDefinitionSummary[]>(
+      "/workflow/editor/definitions",
+    );
+  }
+
+  /** One definition with its published + draft revisions (graph + issues). */
+  getWorkflowDefinition(name: string): Promise<WorkflowDefinitionDetail> {
+    return this.request<WorkflowDefinitionDetail>(
+      `/workflow/editor/definitions/${encodeURIComponent(name)}`,
+    );
+  }
+
+  /** Author a new custom workflow (admin). Seeds an initial draft. */
+  createWorkflowDefinition(
+    body: CreateWorkflowDefinition,
+  ): Promise<WorkflowDefinitionDetail> {
+    return this.request<WorkflowDefinitionDetail>(
+      "/workflow/editor/definitions",
+      { method: "POST", body },
+    );
+  }
+
+  /** Fork a read-only bundled workflow into an editable copy (admin). */
+  forkBundledWorkflow(name: string): Promise<WorkflowDefinitionDetail> {
+    return this.request<WorkflowDefinitionDetail>(
+      `/workflow/editor/definitions/${encodeURIComponent(name)}/fork`,
+      { method: "POST" },
+    );
+  }
+
+  /** Save the working graph as the draft; returns it re-validated server-side. */
+  saveWorkflowDraft(
+    name: string,
+    body: SaveWorkflowDraftRequest,
+  ): Promise<WorkflowRevisionDetail> {
+    return this.request<WorkflowRevisionDetail>(
+      `/workflow/editor/definitions/${encodeURIComponent(name)}/draft`,
+      { method: "PUT", body },
+    );
+  }
+
+  /** Re-run validation on the saved draft; returns every issue (errors + warnings). */
+  validateWorkflowDraft(name: string): Promise<WorkflowValidationIssue[]> {
+    return this.request<WorkflowValidationIssue[]>(
+      `/workflow/editor/definitions/${encodeURIComponent(name)}/draft/validate`,
+      { method: "POST" },
+    );
+  }
+
+  /** Publish the draft as the new active revision (admin). 409 when errors remain. */
+  publishWorkflow(name: string): Promise<WorkflowRevisionDetail> {
+    return this.request<WorkflowRevisionDetail>(
+      `/workflow/editor/definitions/${encodeURIComponent(name)}/publish`,
+      { method: "POST" },
+    );
+  }
+
+  /** A definition's revision history (newest edits last; drafts + published). */
+  listWorkflowRevisions(name: string): Promise<WorkflowRevisionSummary[]> {
+    return this.request<WorkflowRevisionSummary[]>(
+      `/workflow/editor/definitions/${encodeURIComponent(name)}/revisions`,
     );
   }
 }
