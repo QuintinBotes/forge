@@ -820,7 +820,7 @@ Forge is self-hosting-first. Full feature parity for self-hosted deployments.
 ### Local Quickstart
 
 ```bash
-git clone https://github.com/forge-platform/forge
+git clone https://github.com/service-hive/forge
 cd forge
 cp .env.example .env
 make setup    # installs deps, runs migrations, seeds demo workspace
@@ -836,7 +836,7 @@ Target: Ubuntu 24.04 LTS — minimum 4 vCPU / 8 GB RAM / 50 GB SSD
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER && newgrp docker
 
-git clone https://github.com/forge-platform/forge
+git clone https://github.com/service-hive/forge
 cd forge
 cp .env.production.example .env.production
 # Fill in: SECRET_KEY, DB_PASSWORD, GITHUB_APP_*, MODEL_PROVIDER_KEY, DOMAIN
