@@ -662,3 +662,125 @@ export interface MarketplaceListingQuery {
   limit?: number;
   offset?: number;
 }
+
+// --- Incidents (F17 /incidents workflow surface) -------------------------- //
+
+/** The ten forward incident lifecycle states (matches IncidentState). */
+export const INCIDENT_STATES = [
+  "alert_received",
+  "incident_created",
+  "context_gathering",
+  "impact_assessed",
+  "remediation_proposed",
+  "awaiting_approval",
+  "executing_runbook",
+  "monitoring",
+  "resolved",
+  "postmortem_created",
+] as const;
+export type IncidentState = (typeof INCIDENT_STATES)[number];
+
+/** Declared blast radius of a remediation step / plan (matches BlastRadius). */
+export const BLAST_RADII = ["low", "medium", "high"] as const;
+export type BlastRadius = (typeof BLAST_RADII)[number];
+
+export type RemediationStepStatus =
+  | "proposed"
+  | "approved"
+  | "skipped"
+  | "running"
+  | "succeeded"
+  | "failed";
+
+/** An incident summary (GET /incidents, POST /incidents). */
+export interface IncidentView {
+  id: string;
+  key: string;
+  project_id: string;
+  title: string;
+  description?: string | null;
+  severity: IncidentSeverity;
+  state: IncidentState;
+  /** The raw FSM lifecycle state (may be an error/terminal state too). */
+  lifecycle_state: string;
+  source: string;
+  dedup_key?: string | null;
+  commander_id?: string | null;
+  blast_radius?: string | null;
+  impact_summary?: string | null;
+  created_at: string;
+  detected_at?: string | null;
+  acknowledged_at?: string | null;
+  resolved_at?: string | null;
+  /** FSM events valid from the current lifecycle state (drives the action bar). */
+  allowed_events: string[];
+}
+
+/** One incident timeline event (GET /incidents/{id}/timeline). */
+export interface IncidentEventView {
+  id: string;
+  incident_id: string;
+  sequence: number;
+  kind: string;
+  actor: string;
+  summary: string;
+  data: Record<string, unknown>;
+  created_at: string;
+}
+
+/** One ordered remediation step with its declared blast radius. */
+export interface RemediationStepView {
+  id: string;
+  order: number;
+  title: string;
+  action: string;
+  blast_radius: BlastRadius;
+  rationale: string;
+  status: RemediationStepStatus;
+  /** True when this step is outside the incident's blast-radius policy. */
+  blocked: boolean;
+}
+
+/** The latest proposed remediation runbook (GET /incidents/{id}/remediation). */
+export interface RemediationPlanView {
+  id: string;
+  incident_id: string;
+  attempt: number;
+  max_blast_radius: BlastRadius;
+  status: string;
+  steps: RemediationStepView[];
+  offending_step_ids: string[];
+}
+
+/** Incident detail: summary + latest plan + event count (GET /incidents/{id}). */
+export interface IncidentDetailView extends IncidentView {
+  remediation_plan?: RemediationPlanView | null;
+  event_count: number;
+}
+
+/** A rendered postmortem with its extracted action items. */
+export interface PostmortemView {
+  id: string;
+  incident_id: string;
+  status: string;
+  content_md: string;
+  root_cause?: string | null;
+  action_item_task_keys: string[];
+}
+
+/** Body of POST /incidents (manual declaration). */
+export interface IncidentDeclareRequest {
+  project_id: string;
+  title: string;
+  severity?: IncidentSeverity;
+  description?: string | null;
+  repo_id?: string | null;
+  commander_id?: string | null;
+}
+
+/** Body of POST /incidents/{id}/events — drive the incident FSM. */
+export interface IncidentEventRequest {
+  event: string;
+  context?: Record<string, boolean>;
+  note?: string | null;
+}
