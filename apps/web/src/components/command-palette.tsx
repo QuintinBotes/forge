@@ -9,6 +9,7 @@ import {
   Route,
   Search,
   ShieldCheck,
+  Store,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
@@ -121,6 +122,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <ShieldCheck />,
     run: (router) => router.push("/approvals"),
+  },
+  {
+    id: "go-marketplace",
+    label: "Go to Marketplace",
+    group: "Navigate",
+    icon: <Store />,
+    run: (router) => router.push("/marketplace"),
   },
 ];
 

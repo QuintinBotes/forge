@@ -9,6 +9,7 @@ import {
   Layers,
   Route,
   ShieldCheck,
+  Store,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -36,6 +37,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Specs", href: "/specs", icon: Route },
   { label: "Approvals", href: "/approvals", icon: ShieldCheck },
   { label: "Runs", href: "/runs", icon: Activity },
+  { label: "Marketplace", href: "/marketplace", icon: Store },
 ];
 
 export interface AppShellProps {
