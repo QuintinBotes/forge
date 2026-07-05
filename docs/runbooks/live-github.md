@@ -32,7 +32,7 @@ It closes the GitHub half of release blocker #1 (BETA gate **G-GH**).
 3. Set a **Webhook secret** (a long random string). Record it.
 4. **Generate a private key** → downloads a `.pem`. This file is the only
    long-lived secret; treat it like a password.
-5. **Install** the App on a *disposable* test repo (e.g. `your-org/forge-ci-sandbox`)
+5. **Install** the App on a *disposable* test repo (e.g. `service-hive/forge-ci-sandbox`)
    and note the **installation id** (the numeric id in the install URL, or via
    `GET /app/installations` with an App JWT).
 
