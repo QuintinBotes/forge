@@ -114,6 +114,25 @@ export interface IncidentDTO {
   updated_at?: string | null;
 }
 
+/** One entry in a bulk board mutation (POST /board/tasks/bulk). */
+export interface BulkUpdate {
+  task_id: string;
+  status?: TaskStatus;
+  priority?: Priority;
+  assignee_id?: string | null;
+  sprint_id?: string | null;
+  labels?: string[];
+}
+
+/** The authenticated principal (GET /auth/me) — drives "assign to me". */
+export interface Principal {
+  user_id: string;
+  workspace_id: string;
+  role?: string;
+  email?: string | null;
+  auth_method?: string;
+}
+
 // --- Knowledge -------------------------------------------------------------- //
 
 export interface RetrievedChunk {

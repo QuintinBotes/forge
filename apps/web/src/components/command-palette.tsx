@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   KanbanSquare,
+  Layers,
   LayoutList,
   Plus,
   Search,
@@ -90,6 +91,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <KanbanSquare />,
     run: (router) => router.push("/board"),
+  },
+  {
+    id: "go-depth",
+    label: "Go to Board depth",
+    group: "Navigate",
+    icon: <Layers />,
+    run: (router) => router.push("/depth"),
   },
   {
     id: "go-incidents",

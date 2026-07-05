@@ -8,11 +8,13 @@
  */
 
 import type {
+  BulkUpdate,
   EpicDTO,
   HealthResponse,
   IncidentDTO,
   KnowledgeSearchRequest,
   MilestoneDTO,
+  Principal,
   RetrievedChunk,
   ServiceInfo,
   SprintDTO,
@@ -123,6 +125,11 @@ export class ForgeApiClient {
     return this.request<HealthResponse>("/health");
   }
 
+  /** The authenticated principal (used to resolve "assign to me"). */
+  me(): Promise<Principal> {
+    return this.request<Principal>("/auth/me");
+  }
+
   // --- Board: tasks ------------------------------------------------------- //
 
   listTasks(query?: RequestOptions["query"]): Promise<TaskDTO[]> {
@@ -148,6 +155,14 @@ export class ForgeApiClient {
     return this.request<TaskDTO>(`/board/tasks/${taskId}/status`, {
       method: "POST",
       body: { status },
+    });
+  }
+
+  /** Apply one mutation per entry in a single call (spec: bulk actions). */
+  bulkUpdateTasks(updates: BulkUpdate[]): Promise<TaskDTO[]> {
+    return this.request<TaskDTO[]>("/board/tasks/bulk", {
+      method: "POST",
+      body: updates,
     });
   }
 
