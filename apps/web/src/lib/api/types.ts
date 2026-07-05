@@ -310,6 +310,124 @@ export interface ApprovalCount {
   count: number;
 }
 
+// --- Spec engine / SDD (F02 /spec + F23 spec-validation) ------------------ //
+// Hand-maintained mirror of the spec DTOs in `forge_contracts.dtos` (Pydantic
+// v2). Enum string values match the Python `SpecStatus` StrEnum verbatim.
+
+/** The SDD lifecycle stages (forge_contracts.enums.SpecStatus), in order. */
+export const SPEC_STATUSES = [
+  "draft",
+  "clarifying",
+  "approved",
+  "implementing",
+  "validated",
+  "closed",
+] as const;
+export type SpecStatus = (typeof SPEC_STATUSES)[number];
+
+export interface Requirement {
+  id: string;
+  text: string;
+}
+
+/** An acceptance criterion; `req_refs` links it back to requirements. */
+export interface AcceptanceCriterion {
+  id: string;
+  text: string;
+  req_refs?: string[];
+  spec_ref?: string | null;
+}
+
+export interface OpenQuestion {
+  id: string;
+  text: string;
+  resolution?: string | null;
+}
+
+/** An architecture decision record (spec manifest `decisions[]`). */
+export interface ADR {
+  id: string;
+  title: string;
+  status?: string;
+  context?: string | null;
+  decision?: string | null;
+  consequences?: string | null;
+}
+
+/** Engineering principles / architecture guardrails for a project. */
+export interface Constitution {
+  id?: string | null;
+  project_id?: string | null;
+  principles?: string[];
+  architecture_guardrails?: string[];
+  content?: string | null;
+}
+
+/** Machine-readable spec metadata (GET /spec/specs/{id}). */
+export interface SpecManifest {
+  id: string;
+  name: string;
+  status?: SpecStatus;
+  constitution_refs?: string[];
+  repos?: string[];
+  requirements?: Requirement[];
+  acceptance_criteria?: AcceptanceCriterion[];
+  open_questions?: OpenQuestion[];
+  constraints?: string[];
+  decisions?: ADR[];
+  plan_ref?: string | null;
+  tasks_ref?: string | null;
+  validation_ref?: string | null;
+  execution_mode?: ExecutionMode;
+  skill_profile?: string | null;
+}
+
+/** One requirement -> acceptance -> task -> test traceability row. */
+export interface RequirementTrace {
+  requirement_id: string;
+  text?: string | null;
+  acceptance_criteria_ids?: string[];
+  task_refs?: string[];
+  test_refs?: string[];
+  satisfied?: boolean;
+}
+
+/** A single verification check outcome (lint / type / tests / coverage). */
+export interface CheckResult {
+  name: string;
+  passed: boolean;
+  details?: string | null;
+}
+
+/** Output of spec validation (spec: validation / traceability + gates). */
+export interface ValidationReport {
+  task_id?: string;
+  spec_id?: string | null;
+  passed?: boolean;
+  traceability?: RequirementTrace[];
+  checks?: CheckResult[];
+  coverage?: number | null;
+  notes?: string[];
+}
+
+/**
+ * A spec manifest enriched with its latest validation report — the row shape of
+ * the F23 spec-validation dashboard projection (GET /projects/{id}/specs).
+ */
+export interface SpecOverview extends SpecManifest {
+  validation?: ValidationReport | null;
+}
+
+/**
+ * The spec-validation dashboard payload for a project: the project constitution
+ * plus every spec with its rolled-up validation (GET /projects/{id}/specs).
+ */
+export interface SpecDashboard {
+  project_id: string;
+  constitution?: Constitution | null;
+  specs: SpecOverview[];
+}
+
 // --- Observability: run traces -------------------------------------------- //
 // Mirrors forge_api.observability.trace.RunTrace + forge_contracts.Step, the
 // response shape of GET /observability/runs/{run_id}/trace.
