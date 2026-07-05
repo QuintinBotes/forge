@@ -51,10 +51,22 @@ import type {
   PipelineRead,
   PostmortemView,
   Principal,
+  ProjectAccess,
+  ProjectTeamAccess,
+  ProjectTeamAccessInput,
+  ProjectVisibilityInput,
   RemediationPlanView,
   RetrievedChunk,
+  RoleGrant,
+  RoleGrantInput,
+  RoleGrantQuery,
   RunTrace,
   ServiceInfo,
+  Team,
+  TeamInput,
+  TeamMember,
+  TeamMemberInput,
+  TeamRole,
   SpecDashboard,
   SpecManifest,
   Sprint,
@@ -696,6 +708,113 @@ export class ForgeApiClient {
       method: "POST",
       body,
     });
+  }
+
+  // --- Multi-team & RBAC (F30 authz routers) ------------------------------ //
+  // Every route is implicitly scoped to the authenticated principal's
+  // workspace (no workspace path param); the server enforces the escalation +
+  // last-admin-lockout invariants and returns 403/409 on violation.
+
+  /** Role grants in the workspace (filterable by principal / scope). */
+  listRoleGrants(query?: RoleGrantQuery): Promise<RoleGrant[]> {
+    return this.request<RoleGrant[]>("/access/grants", {
+      query: query as RequestOptions["query"],
+    });
+  }
+
+  /** Grant a role to a principal at a scope (WRITE-gated: `role.grant`). */
+  createRoleGrant(body: RoleGrantInput): Promise<RoleGrant> {
+    return this.request<RoleGrant>("/access/grants", { method: "POST", body });
+  }
+
+  /** Revoke a role grant (409 when it would remove the last workspace admin). */
+  revokeRoleGrant(grantId: string): Promise<void> {
+    return this.request<void>(
+      `/access/grants/${encodeURIComponent(grantId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** Every team in the workspace (excludes archived by default server-side). */
+  listTeams(query?: RequestOptions["query"]): Promise<Team[]> {
+    return this.request<Team[]>("/teams", { query });
+  }
+
+  /** Create a team (WRITE-gated: `team.manage`). */
+  createTeam(body: TeamInput): Promise<Team> {
+    return this.request<Team>("/teams", { method: "POST", body });
+  }
+
+  /** A team's members with their team roles. */
+  listTeamMembers(teamId: string): Promise<TeamMember[]> {
+    return this.request<TeamMember[]>(
+      `/teams/${encodeURIComponent(teamId)}/members`,
+    );
+  }
+
+  /** Add a member to a team (WRITE-gated: `team.member.manage`). */
+  addTeamMember(teamId: string, body: TeamMemberInput): Promise<TeamMember> {
+    return this.request<TeamMember>(
+      `/teams/${encodeURIComponent(teamId)}/members`,
+      { method: "POST", body },
+    );
+  }
+
+  /** Change a member's team role (lead / member). */
+  setTeamMemberRole(
+    teamId: string,
+    userId: string,
+    teamRole: TeamRole,
+  ): Promise<TeamMember> {
+    return this.request<TeamMember>(
+      `/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`,
+      { method: "PATCH", body: { team_role: teamRole } },
+    );
+  }
+
+  /** Remove a member from a team. */
+  removeTeamMember(teamId: string, userId: string): Promise<void> {
+    return this.request<void>(
+      `/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** A project's visibility + per-team access (404 when invisible/foreign). */
+  getProjectAccess(projectId: string): Promise<ProjectAccess> {
+    return this.request<ProjectAccess>(
+      `/projects/${encodeURIComponent(projectId)}/access`,
+    );
+  }
+
+  /** Set a project's visibility (WRITE-gated: `project.admin`). */
+  setProjectVisibility(
+    projectId: string,
+    body: ProjectVisibilityInput,
+  ): Promise<ProjectAccess> {
+    return this.request<ProjectAccess>(
+      `/projects/${encodeURIComponent(projectId)}/visibility`,
+      { method: "PUT", body },
+    );
+  }
+
+  /** Grant or update a team's access level on a project. */
+  upsertProjectTeamAccess(
+    projectId: string,
+    body: ProjectTeamAccessInput,
+  ): Promise<ProjectTeamAccess> {
+    return this.request<ProjectTeamAccess>(
+      `/projects/${encodeURIComponent(projectId)}/team-access`,
+      { method: "POST", body },
+    );
+  }
+
+  /** Remove a team's access on a project. */
+  removeProjectTeamAccess(projectId: string, teamId: string): Promise<void> {
+    return this.request<void>(
+      `/projects/${encodeURIComponent(projectId)}/team-access/${encodeURIComponent(teamId)}`,
+      { method: "DELETE" },
+    );
   }
 }
 
