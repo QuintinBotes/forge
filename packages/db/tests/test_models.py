@@ -140,6 +140,10 @@ EXPECTED_MODELS = [
     # optional workspace tag is a free UUID (``workspace_ref``), never the FK.
     "ObservabilityAuditEntry",
     "ObservabilityAuditChainHead",
+    # secret-vault persistence: durable backing for the encrypted BYOK secret
+    # store (the storage boundary behind ``SecretVault``). Workspace-scoped;
+    # holds only ciphertext, never plaintext.
+    "Secret",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

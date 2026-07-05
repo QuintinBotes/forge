@@ -168,6 +168,15 @@ class Settings(BaseSettings):
     # are enforced by the database. Read via ``FORGE_OVERRIDE_GRANT_BACKEND``.
     override_grant_backend: str = "memory"
 
+    # Encrypted secret-vault store backend selection. ``memory`` (default) keeps
+    # the hermetic, process-memory ``InMemorySecretStore`` (unit-test default, no
+    # Postgres); ``db`` wires the Postgres-backed ``DbSecretStore`` behind the same
+    # ``SecretStore`` seam (``add`` / ``get`` / ``list`` / ``remove`` + rotation's
+    # ``all_records``) so envelope-encrypted BYOK secrets survive a restart. Only
+    # ever holds ciphertext — plaintext is never persisted. Read via
+    # ``FORGE_SECRET_BACKEND``.
+    secret_backend: str = "memory"
+
     # Filesystem root for the spec engine's SDD artifacts (manifests, plans).
     spec_root: str = "specs"
 
