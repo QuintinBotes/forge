@@ -38,7 +38,7 @@ from forge_api.auth.models import OAuthChallenge, OAuthResult
 from forge_api.auth.oauth import OAuthClient, UnsupportedOAuthProviderError
 from forge_api.auth.providers import get_default_provider, resolve_secret
 from forge_api.auth.rbac import Permission, PermissionDeniedError, ensure
-from forge_api.auth.vault import SecretVault
+from forge_api.auth.vault import SecretStore, SecretVault
 from forge_api.deps import Principal
 from forge_api.observability.redaction import redact_text
 from forge_api.services.auth_audit import AuthAuditEmitter
@@ -208,14 +208,35 @@ def _keyring_for_master(master: bytes) -> KeyRing:
     return KeyRing(keys, current_version)
 
 
+def _build_secret_store() -> SecretStore | None:
+    """Return the secret-vault store selected by ``FORGE_SECRET_BACKEND``.
+
+    ``memory`` (default) → ``None``, so :class:`SecretVault` falls back to the
+    hermetic :class:`~forge_api.auth.vault.InMemorySecretStore` (unit-test default,
+    no Postgres); ``db`` → the durable
+    :class:`~forge_api.auth.vault_db.DbSecretStore` bound to the shared session
+    factory. Both satisfy the same ``SecretStore`` seam, so the swap is
+    behaviour-preserving (add / get / list / remove + rotation's ``all_records``).
+    """
+    from forge_api.settings import get_settings
+
+    if get_settings().secret_backend == "db":
+        from forge_api.auth.vault_db import DbSecretStore
+        from forge_api.db import get_session_factory
+
+        return DbSecretStore(get_session_factory())
+    return None
+
+
 def _build_vault(master: bytes) -> SecretVault:
     """Construct the vault, selecting envelope vs single-tier cipher via config."""
     cipher_subkey = _subkey(master, b"forge-cipher")
+    store = _build_secret_store()
     if _envelope_enabled():
         keyring = _keyring_for_master(master)
         cipher = EnvelopeCipher(keyring, legacy=default_cipher(cipher_subkey))
-        return SecretVault(cipher=cipher)
-    return SecretVault(cipher=default_cipher(cipher_subkey))
+        return SecretVault(cipher=cipher, store=store)
+    return SecretVault(cipher=default_cipher(cipher_subkey), store=store)
 
 
 class AuthService:

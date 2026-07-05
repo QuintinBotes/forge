@@ -128,6 +128,7 @@ from forge_db.models.project_team_access import ProjectTeamAccess
 from forge_db.models.role_grant import RoleGrant
 from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
 from forge_db.models.sandbox import SandboxInstance
+from forge_db.models.secret import Secret
 from forge_db.models.sprint_velocity import (
     SprintBurndownSnapshot,
     SprintScopeEvent,
@@ -271,6 +272,7 @@ __all__ = [
     "ScimResourceType",
     "ScimToken",
     "ScopeType",
+    "Secret",
     "SkillProfile",
     "SpecDocument",
     "SpecStatus",
