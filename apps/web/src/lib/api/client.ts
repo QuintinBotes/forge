@@ -23,6 +23,11 @@ import type {
   ChainVerifyResult,
   BurndownSeries,
   CompleteSprintRequest,
+  DeploymentDecisionRequest,
+  DeploymentDetail,
+  DeploymentListQuery,
+  DeploymentRead,
+  DeploymentRequestBody,
   CostSummary,
   CostSummaryQuery,
   CostTimeseries,
@@ -43,6 +48,7 @@ import type {
   Listing,
   ListingDetail,
   MilestoneDTO,
+  PipelineRead,
   PostmortemView,
   Principal,
   RemediationPlanView,
@@ -530,6 +536,71 @@ export class ForgeApiClient {
     return this.request<SprintReport>(
       `/sprints/${encodeURIComponent(sprintId)}/complete`,
       { method: "POST", body },
+    );
+  }
+
+  // --- Deployments & gates (F31 deployment-gates) ------------------------- //
+
+  /** A project's promotion pipeline: ranked environments + what's live on each. */
+  getDeploymentPipeline(projectId: string): Promise<PipelineRead> {
+    return this.request<PipelineRead>(
+      `/projects/${encodeURIComponent(projectId)}/pipeline`,
+    );
+  }
+
+  /** Recent deployments for a project (optionally by environment / state). */
+  listProjectDeployments(
+    projectId: string,
+    query?: DeploymentListQuery,
+  ): Promise<DeploymentRead[]> {
+    return this.request<DeploymentRead[]>(
+      `/projects/${encodeURIComponent(projectId)}/deployments`,
+      { query: query as RequestOptions["query"] },
+    );
+  }
+
+  /** One deployment's detail: gate evaluation, per-check results, transitions. */
+  getDeployment(deploymentId: string): Promise<DeploymentDetail> {
+    return this.request<DeploymentDetail>(
+      `/deployments/${encodeURIComponent(deploymentId)}`,
+    );
+  }
+
+  /** Request a promotion of a commit to an environment (WRITE-gated). */
+  requestDeployment(
+    projectId: string,
+    body: DeploymentRequestBody,
+  ): Promise<DeploymentRead> {
+    return this.request<DeploymentRead>(
+      `/projects/${encodeURIComponent(projectId)}/deployments`,
+      { method: "POST", body },
+    );
+  }
+
+  /** Approve / reject / request-changes on a gated deployment (WRITE-gated). */
+  decideDeployment(
+    deploymentId: string,
+    body: DeploymentDecisionRequest,
+  ): Promise<DeploymentRead> {
+    return this.request<DeploymentRead>(
+      `/deployments/${encodeURIComponent(deploymentId)}/decision`,
+      { method: "POST", body },
+    );
+  }
+
+  /** Cancel an in-flight deployment (WRITE-gated). */
+  cancelDeployment(deploymentId: string): Promise<DeploymentRead> {
+    return this.request<DeploymentRead>(
+      `/deployments/${encodeURIComponent(deploymentId)}/cancel`,
+      { method: "POST" },
+    );
+  }
+
+  /** Roll back a succeeded deployment (WRITE-gated). */
+  rollbackDeployment(deploymentId: string): Promise<DeploymentRead> {
+    return this.request<DeploymentRead>(
+      `/deployments/${encodeURIComponent(deploymentId)}/rollback`,
+      { method: "POST" },
     );
   }
 }
