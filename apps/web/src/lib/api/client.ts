@@ -25,6 +25,8 @@ import type {
   RetrievedChunk,
   RunTrace,
   ServiceInfo,
+  SpecDashboard,
+  SpecManifest,
   SprintDTO,
   TaskDTO,
   TaskStatus,
@@ -238,6 +240,34 @@ export class ForgeApiClient {
       method: "POST",
       body,
     });
+  }
+
+  // --- Spec engine / SDD lifecycle (F02 /spec + F23 dashboard) ------------ //
+
+  /**
+   * The spec-validation dashboard projection for a project: the constitution
+   * plus every spec manifest with its rolled-up validation report. Backs the
+   * SDD lifecycle view, gates and requirement->task->test traceability matrix.
+   */
+  getProjectSpecOverview(projectId: string): Promise<SpecDashboard> {
+    return this.request<SpecDashboard>(
+      `/projects/${encodeURIComponent(projectId)}/specs`,
+    );
+  }
+
+  /** Read a single spec manifest by its deterministic uuid. */
+  getSpecManifest(specId: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}`,
+    );
+  }
+
+  /** Approve a spec — the human gate that advances it out of clarification. */
+  approveSpec(specId: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/approve`,
+      { method: "POST" },
+    );
   }
 
   // --- Observability (run-trace viewer) ----------------------------------- //

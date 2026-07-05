@@ -6,6 +6,7 @@ import {
   Layers,
   LayoutList,
   Plus,
+  Route,
   Search,
   ShieldCheck,
 } from "lucide-react";
@@ -106,6 +107,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <AlertTriangle />,
     run: (router) => router.push("/incidents"),
+  },
+  {
+    id: "go-specs",
+    label: "Go to Specs",
+    group: "Navigate",
+    icon: <Route />,
+    run: (router) => router.push("/specs"),
   },
   {
     id: "go-approvals",

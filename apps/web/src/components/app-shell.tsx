@@ -7,6 +7,7 @@ import {
   KanbanSquare,
   LayoutList,
   Layers,
+  Route,
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
@@ -32,6 +33,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Roadmap", href: "/roadmap", icon: CalendarRange },
   { label: "Milestones", href: "/milestones", icon: Flag },
   { label: "Incidents", href: "/incidents", icon: AlertTriangle },
+  { label: "Specs", href: "/specs", icon: Route },
   { label: "Approvals", href: "/approvals", icon: ShieldCheck },
   { label: "Runs", href: "/runs", icon: Activity },
 ];
