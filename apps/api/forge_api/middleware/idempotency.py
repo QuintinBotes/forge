@@ -21,7 +21,7 @@ import hashlib
 import threading
 import time
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -49,6 +49,7 @@ class StoredResponse(BaseModel):
     created_at: datetime
 
 
+@runtime_checkable
 class IdempotencyStore(Protocol):
     """A tenant-scoped idempotency-key → response store."""
 

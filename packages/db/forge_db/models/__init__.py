@@ -80,6 +80,7 @@ from forge_db.models.enums import (
     UserRole,
     WorkflowState,
 )
+from forge_db.models.idempotency import IdempotencyKey
 from forge_db.models.incidents import (
     IncidentAlert,
     IncidentEvent,
@@ -204,6 +205,7 @@ __all__ = [
     "GateCheckName",
     "GateCheckStatus",
     "HealthStatus",
+    "IdempotencyKey",
     "Incident",
     "IncidentAlert",
     "IncidentEvent",

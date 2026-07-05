@@ -63,9 +63,11 @@ def install_middleware(app: FastAPI, settings: Settings) -> None:
     app.add_middleware(InFlightMiddleware)
 
     if settings.idempotency_enabled:
+        from forge_api.middleware.idempotency_db import build_idempotency_store
+
         app.add_middleware(
             IdempotencyMiddleware,
-            store=InMemoryIdempotencyStore(),
+            store=build_idempotency_store(settings),
             ttl_s=settings.idempotency_ttl_seconds,
             enabled=True,
         )

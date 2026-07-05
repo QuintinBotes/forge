@@ -144,6 +144,10 @@ EXPECTED_MODELS = [
     # store (the storage boundary behind ``SecretVault``). Workspace-scoped;
     # holds only ciphertext, never plaintext.
     "Secret",
+    # idempotency-store persistence: durable backing for the HTTP idempotency-key
+    # response cache (the store behind ``IdempotencyMiddleware``). Not tenant-
+    # scoped — the tenant is baked into the ``key`` (anonymous scopes by client IP).
+    "IdempotencyKey",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
@@ -167,6 +171,10 @@ NON_WORKSPACE_SCOPED = {
     # ``workspace_ref`` tag, and the cursor row no workspace column at all.
     "observability_audit_entry",
     "observability_audit_chain_head",
+    # The HTTP idempotency-key response cache is keyed by a tenant-scoped string
+    # (``forge:idem:<tenant>:<header>``, anonymous falls back to client IP), so the
+    # tenant lives in the key itself — there is no ``workspace`` FK to hang it on.
+    "idempotency_key",
 }
 
 
