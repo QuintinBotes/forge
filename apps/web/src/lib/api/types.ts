@@ -1777,3 +1777,40 @@ export interface WorkflowPublishBlocked {
   detail: string;
   errors: WorkflowValidationIssue[];
 }
+
+// --- Onboarding / guided walkthrough progress ----------------------------- //
+// A derived, read-only projection that grounds the first-run product tour in
+// real workspace state. Each step of the "spec -> run -> review PR -> merge"
+// loop is backed by an existing router read (specs, approvals, deployments), so
+// the walkthrough can reflect what the user has genuinely already accomplished.
+
+/** The four stages of the Forge build loop, in order. */
+export const ONBOARDING_STEP_KEYS = [
+  "spec",
+  "run",
+  "review",
+  "merge",
+] as const;
+
+export type OnboardingStepKey = (typeof ONBOARDING_STEP_KEYS)[number];
+
+/** One loop stage's real-data completion signal. */
+export interface OnboardingStepProgress {
+  key: OnboardingStepKey;
+  /** True once at least one real artifact backs this stage. */
+  done: boolean;
+  /** How many real artifacts back this stage (specs, PR gates, deploys…). */
+  count: number;
+}
+
+/** The whole loop's completion, derived from live router reads. */
+export interface OnboardingProgress {
+  projectId: string;
+  steps: OnboardingStepProgress[];
+  /** Number of stages with `done === true`. */
+  completedCount: number;
+  /** Total number of stages (always {@link ONBOARDING_STEP_KEYS}.length). */
+  totalCount: number;
+  /** True when every stage has been completed at least once. */
+  allComplete: boolean;
+}

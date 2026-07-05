@@ -7,6 +7,7 @@
  * against a stable shape and progressively light up real handlers.
  */
 
+import { deriveOnboardingProgress } from "./onboarding-progress";
 import type {
   ApprovalContext,
   ApprovalCount,
@@ -48,6 +49,7 @@ import type {
   Listing,
   ListingDetail,
   MilestoneDTO,
+  OnboardingProgress,
   PipelineRead,
   PostmortemView,
   PmConnection,
@@ -395,6 +397,27 @@ export class ForgeApiClient {
       `/spec/specs/${encodeURIComponent(specId)}/approve`,
       { method: "POST" },
     );
+  }
+
+  // --- Onboarding / guided walkthrough ------------------------------------ //
+
+  /**
+   * Derived progress for the first-run guided walkthrough: how far the user has
+   * advanced through the "spec -> run -> review PR -> merge" loop. Composed from
+   * three existing router reads (specs, approvals, deployments) so the tour can
+   * reflect real workspace state without a bespoke backend endpoint.
+   */
+  async getOnboardingProgress(projectId: string): Promise<OnboardingProgress> {
+    const [dashboard, approvals, deployments] = await Promise.all([
+      this.getProjectSpecOverview(projectId),
+      this.listApprovals({ project_id: projectId }),
+      this.listProjectDeployments(projectId),
+    ]);
+    return deriveOnboardingProgress(projectId, {
+      specs: dashboard.specs ?? [],
+      approvals,
+      deployments,
+    });
   }
 
   // --- Observability (run-trace viewer) ----------------------------------- //

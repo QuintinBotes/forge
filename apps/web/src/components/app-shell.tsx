@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   CalendarRange,
+  Compass,
   Flag,
   Gauge,
   KanbanSquare,
@@ -54,6 +55,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Access", href: "/settings/rbac", icon: Users },
   { label: "SSO", href: "/settings/sso", icon: KeyRound },
   { label: "Integrations", href: "/settings/integrations", icon: Cable },
+  { label: "Walkthrough", href: "/walkthrough", icon: Compass },
 ];
 
 export interface AppShellProps {
