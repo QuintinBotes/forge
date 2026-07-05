@@ -172,3 +172,140 @@ export interface NotImplementedResponse {
   router: string;
   operation: string;
 }
+
+// --- Approvals (F36 unified /approvals router) ---------------------------- //
+// Hand-maintained mirror of `forge_approval.models` (Pydantic v2). Enum string
+// values match the Python StrEnum members verbatim.
+
+/** The six approval gate types (forge_contracts.enums.ApprovalGate). */
+export const GATE_TYPES = [
+  "spec",
+  "plan",
+  "pr",
+  "deploy",
+  "incident_remediation",
+  "policy_override",
+] as const;
+export type GateType = (typeof GATE_TYPES)[number];
+
+/** Gate lifecycle (ApprovalStatus + the SLA sweeper's `expired`). */
+export const GATE_STATUSES = [
+  "pending",
+  "approved",
+  "rejected",
+  "changes_requested",
+  "expired",
+] as const;
+export type GateStatus = (typeof GATE_STATUSES)[number];
+
+/** The decisions a reviewer can record on a gate. */
+export const APPROVAL_ACTIONS = [
+  "approve",
+  "reject",
+  "request_changes",
+  "escalate",
+] as const;
+export type ApprovalAction = (typeof APPROVAL_ACTIONS)[number];
+
+/** Ascending severity — drives the inbox sort + risk styling. */
+export const RISK_LEVELS = ["info", "warning", "critical"] as const;
+export type RiskLevel = (typeof RISK_LEVELS)[number];
+
+/** One inbox row (GET /approvals). */
+export interface ApprovalSummary {
+  id: string;
+  gate_type: GateType;
+  status: GateStatus;
+  title: string;
+  project_id?: string | null;
+  risk_level?: string;
+  requested_actor?: string;
+  requested_at?: string | null;
+}
+
+/** One full approval-request row (GET /approvals/{id}). */
+export interface ApprovalRequest {
+  id: string;
+  workspace_id: string;
+  project_id?: string | null;
+  gate_type: GateType;
+  status: GateStatus;
+  subject_type?: string;
+  subject_id?: string | null;
+  workflow_run_id?: string | null;
+  agent_run_id?: string | null;
+  task_id?: string | null;
+  required_approvals?: number;
+  risk_level?: RiskLevel;
+  title?: string | null;
+  gate_payload?: Record<string, unknown>;
+  requested_actor?: string;
+  escalated?: boolean;
+  decision_note?: string | null;
+  expires_at?: string | null;
+  requested_at?: string | null;
+  resolved_at?: string | null;
+}
+
+/** One entry in the "Risks flagged" panel (must-show item 7). */
+export interface RiskFlag {
+  severity?: RiskLevel;
+  category?: string;
+  message: string;
+  source?: string | null;
+}
+
+/**
+ * The spec's nine "must-show" review items (GET /approvals/{id}/context).
+ * Nullable sections are hidden when a gate type does not apply them.
+ */
+export interface ApprovalContext {
+  approval_id: string;
+  gate_type: GateType;
+  goal?: string; // 1 — goal & requirements
+  requirements?: Record<string, unknown>[]; // 1
+  diff?: Record<string, unknown> | null; // 2 — changed files
+  verification?: Record<string, unknown> | null; // 3 — lint/type/test/coverage
+  traceability?: Record<string, unknown>[] | null; // 4 — spec traceability
+  knowledge_refs?: Record<string, unknown>[] | null; // 5 — provenance
+  confidence?: Record<string, unknown> | null; // 6 — {score, rationale}
+  risk_flags?: RiskFlag[]; // 7 — always shown
+  run_trace_ref?: Record<string, unknown> | null; // 8 — {workflow_run_id, agent_run_id}
+  available_actions?: ApprovalAction[]; // 9
+  gate_payload?: Record<string, unknown>;
+}
+
+/** One immutable per-approver decision row (GET /approvals/{id}/decisions). */
+export interface ApprovalDecisionRecord {
+  approval_request_id: string;
+  approver_user_id: string;
+  decision: ApprovalAction;
+  note?: string | null;
+  created_at?: string | null;
+}
+
+/** Body of POST /approvals/{id}/decision. */
+export interface ApprovalDecisionRequest {
+  decision: ApprovalAction;
+  note?: string | null;
+}
+
+/** What the gate's resolution hook did (or could not yet do). */
+export interface ResolutionOutcome {
+  completed?: boolean;
+  blocking_reasons?: string[];
+  follow_up_state?: string | null;
+  details?: Record<string, unknown>;
+}
+
+/** Result of a decision — gate status + hook outcome. */
+export interface ApprovalResolution {
+  approval_id: string;
+  status: GateStatus;
+  outcome: ResolutionOutcome;
+}
+
+/** Body of GET /approvals/count (the nav badge). */
+export interface ApprovalCount {
+  count: number;
+}

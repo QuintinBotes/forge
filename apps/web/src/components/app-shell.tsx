@@ -6,6 +6,7 @@ import {
   KanbanSquare,
   LayoutList,
   Layers,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -30,6 +31,7 @@ export const BOARD_NAV: NavItem[] = [
   { label: "Roadmap", href: "/roadmap", icon: CalendarRange },
   { label: "Milestones", href: "/milestones", icon: Flag },
   { label: "Incidents", href: "/incidents", icon: AlertTriangle },
+  { label: "Approvals", href: "/approvals", icon: ShieldCheck },
 ];
 
 export interface AppShellProps {
