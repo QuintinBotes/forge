@@ -132,6 +132,9 @@ EXPECTED_MODELS = [
     "ModelPrice",
     # F39 audit-log: per-workspace hash-chain cursor (audit_log itself is F30's).
     "AuditChainHead",
+    # F01 board persistence: task-dependency adjacency (depends_on edges) backing
+    # the DB-backed SqlAlchemyBoardService.
+    "TaskDependency",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

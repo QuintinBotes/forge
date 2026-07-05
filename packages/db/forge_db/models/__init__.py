@@ -113,6 +113,7 @@ from forge_db.models.planning import (
     SpecDocument,
     Sprint,
     Task,
+    TaskDependency,
 )
 from forge_db.models.platform_api_key import PlatformAPIKey
 from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
@@ -277,6 +278,7 @@ __all__ = [
     "SubAgentRun",
     "SyncMode",
     "Task",
+    "TaskDependency",
     "TaskKind",
     "TaskStatus",
     "Team",
