@@ -20,11 +20,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.auth.rbac import Permission
+from forge_api.db import get_session_factory
 from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
-from forge_board import InMemoryBoardService
+from forge_api.settings import get_settings
+from forge_board import InMemoryBoardService, SqlAlchemyBoardService
 from forge_board.exceptions import (
     CycleError,
     EntityNotFoundError,
@@ -32,6 +35,7 @@ from forge_board.exceptions import (
 )
 from forge_contracts import (
     BoardFilter,
+    BoardService,
     BulkUpdate,
     EpicDTO,
     IncidentDTO,
@@ -64,34 +68,52 @@ _REQUIRE_WRITE = Depends(require_permission(Permission.WRITE))
 
 
 class BoardServiceRegistry:
-    """Vends a :class:`InMemoryBoardService` per workspace (tenant isolation).
+    """Vends a :class:`~forge_contracts.BoardService` per workspace (tenant isolation).
 
     Phase-2 bug fix r4: the board is the primary write surface and must enforce
     the spec's mandatory per-workspace isolation (design doc section 4; plan Task
     1.15) like every other tenant surface hardened in r3. The frozen
     ``BoardService`` protocol has no ``workspace_id`` dimension, and the entities
     (``TaskDTO`` etc.) carry no workspace field, so isolation is achieved by
-    giving each workspace its **own** in-memory service instance. A caller can
-    therefore only ever see, fetch, mutate, or delete entities in its own
-    workspace; a foreign id simply does not exist there (404), and listing never
-    spans tenants. The DB-backed service swapped in at the wire-up barrier filters
-    by ``workspace_id`` behind the same dependency.
+    giving each workspace its **own** service instance. A caller can therefore
+    only ever see, fetch, mutate, or delete entities in its own workspace; a
+    foreign id simply does not exist there (404), and listing never spans tenants.
+
+    The backend is chosen once (``FORGE_BOARD_BACKEND``): ``memory`` (default)
+    vends a hermetic :class:`InMemoryBoardService`; ``db`` vends a
+    :class:`SqlAlchemyBoardService` bound to the workspace + shared session
+    factory, which filters by ``workspace_id`` behind the same dependency. Both
+    satisfy the same frozen ``BoardService`` protocol, so the router is agnostic.
     """
 
-    def __init__(self) -> None:
-        self._services: dict[uuid.UUID, InMemoryBoardService] = {}
+    def __init__(
+        self,
+        *,
+        backend: str = "memory",
+        session_factory: sessionmaker[Session] | None = None,
+    ) -> None:
+        self._backend = backend
+        self._session_factory = session_factory
+        self._services: dict[uuid.UUID, BoardService] = {}
 
-    def for_workspace(self, workspace_id: uuid.UUID) -> InMemoryBoardService:
+    def for_workspace(self, workspace_id: uuid.UUID) -> BoardService:
         service = self._services.get(workspace_id)
         if service is None:
-            service = InMemoryBoardService()
+            if self._backend == "db":
+                if self._session_factory is None:  # pragma: no cover - misconfiguration
+                    raise RuntimeError("db board backend requires a session factory")
+                service = SqlAlchemyBoardService(self._session_factory, workspace_id)
+            else:
+                service = InMemoryBoardService()
             self._services[workspace_id] = service
         return service
 
 
 @lru_cache(maxsize=1)
 def _board_registry_singleton() -> BoardServiceRegistry:
-    return BoardServiceRegistry()
+    if get_settings().board_backend == "db":
+        return BoardServiceRegistry(backend="db", session_factory=get_session_factory())
+    return BoardServiceRegistry(backend="memory")
 
 
 def get_board_registry() -> BoardServiceRegistry:
@@ -102,7 +124,7 @@ def get_board_registry() -> BoardServiceRegistry:
 def get_board_service(
     principal: Annotated[Principal, Depends(get_current_principal)],
     registry: Annotated[BoardServiceRegistry, Depends(get_board_registry)],
-) -> InMemoryBoardService:
+) -> BoardService:
     """Return the board service scoped to the caller's workspace.
 
     Scoping happens here (not in the handlers) so every route — reads and writes
@@ -112,7 +134,7 @@ def get_board_service(
     return registry.for_workspace(principal.workspace_id)
 
 
-BoardServiceDep = Annotated[InMemoryBoardService, Depends(get_board_service)]
+BoardServiceDep = Annotated[BoardService, Depends(get_board_service)]
 
 
 # --------------------------------------------------------------------------- #

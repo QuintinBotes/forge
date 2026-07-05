@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     database_url: str = DEFAULT_DATABASE_URL
     redis_url: str = DEFAULT_REDIS_URL
 
+    # F01 board backend selection. ``memory`` (default) keeps the hermetic,
+    # process-memory ``InMemoryBoardService`` (unit-test default, no Postgres);
+    # ``db`` wires the Postgres-backed ``SqlAlchemyBoardService`` behind the same
+    # frozen ``BoardService`` protocol. Read via ``FORGE_BOARD_BACKEND``.
+    board_backend: str = "memory"
+
     # Filesystem root for the spec engine's SDD artifacts (manifests, plans).
     spec_root: str = "specs"
 
