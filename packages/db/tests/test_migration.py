@@ -998,6 +998,41 @@ def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) 
         engine.dispose()
 
 
+# F36-persist approval-repository columns, owned by 0026_approval_repository_columns.
+APPROVAL_REPO_COLUMNS = {"requested_actor", "escalated"}
+
+
+def test_approval_repository_columns_migration_up_down(alembic_config: Config) -> None:
+    """0026 adds the ``requested_actor`` + ``escalated`` columns to
+    ``approval_request`` (backing the DB-backed ``SqlAlchemyApprovalRepository``)
+    and drops exactly them on downgrade, leaving the table intact.
+
+    (forge_db's baseline is metadata-driven, so a fresh chain provisions the
+    columns at 0001; like 0019, the 0026 step is idempotent about that and owns a
+    clean, reversible down.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        command.upgrade(alembic_config, "head")
+        inspector = inspect(engine)
+        cols = {c["name"] for c in inspector.get_columns("approval_request")}
+        assert cols >= APPROVAL_REPO_COLUMNS, (
+            f"missing 0026 columns: {sorted(APPROVAL_REPO_COLUMNS - cols)}"
+        )
+
+        # Downgrade one step: 0026 columns gone, approval_request still present.
+        command.downgrade(alembic_config, "0025_observability_audit_store")
+        inspector = inspect(engine)
+        assert "approval_request" in inspector.get_table_names()
+        cols_after = {c["name"] for c in inspector.get_columns("approval_request")}
+        assert not (APPROVAL_REPO_COLUMNS & cols_after), "downgrade left 0026 columns"
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # --------------------------------------------------------------------------- #
 # HARD-11 — live-Postgres migration round-trip, per-revision walk, and         #
 # data-preservation. These run only against a real pgvector Postgres (the      #

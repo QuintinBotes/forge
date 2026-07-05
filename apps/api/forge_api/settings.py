@@ -119,6 +119,13 @@ class Settings(BaseSettings):
     # db-path sink) is durably persisted. Read via ``FORGE_AUDIT_BACKEND``.
     audit_backend: str = "memory"
 
+    # F36 approval-repository backend selection. ``memory`` (default) keeps the
+    # hermetic, process-memory ``InMemoryApprovalRepository`` (unit-test default,
+    # no Postgres); ``db`` wires the Postgres-backed ``SqlAlchemyApprovalRepository``
+    # behind the same ``ApprovalRepository`` protocol so approval gates + decisions
+    # are durably persisted. Read via ``FORGE_APPROVAL_BACKEND``.
+    approval_backend: str = "memory"
+
     # Filesystem root for the spec engine's SDD artifacts (manifests, plans).
     spec_root: str = "specs"
 
