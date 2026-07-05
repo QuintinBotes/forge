@@ -77,6 +77,18 @@
     /* Spark — the bright struck highlight (focus glow, logo spark, active) */
     --spark: 36 100% 62%;
 
+    /* Categorical chart ramp (dataviz). Fixed hue order, assigned by series
+       identity (never cycled). Ember anchors slot 1 so the brand leads the
+       palette; the remaining hues are spread + lightness-tuned to clear the
+       colourblind-safety checks (Machado-2009 ΔE, OKLCH lightness band, ≥3:1 on
+       the card surface) in this mode. Consumed via hsl(var(--chart-N)). */
+    --chart-1: 22 88% 50%;
+    --chart-2: 210 82% 49%;
+    --chart-3: 160 66% 37%;
+    --chart-4: 276 50% 55%;
+    --chart-5: 40 96% 40%;
+    --chart-6: 330 62% 52%;
+
     --radius: 0.5rem;
   }
 
@@ -116,6 +128,16 @@
     --ring: 36 100% 58%;
 
     --spark: 38 100% 66%;
+
+    /* Categorical chart ramp — dark forge. Own steps (not a flip of the light
+       ramp), re-tuned into the dark lightness band and re-validated against the
+       dark card surface. */
+    --chart-1: 22 88% 49%;
+    --chart-2: 210 76% 56%;
+    --chart-3: 160 58% 40%;
+    --chart-4: 276 54% 62%;
+    --chart-5: 42 92% 37%;
+    --chart-6: 330 62% 58%;
   }
 }
 
