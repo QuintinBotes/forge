@@ -14,14 +14,18 @@ import sys
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from forge_obs.cost.models import ModelPrice, ModelUsage
 from forge_obs.cost.pricing import compute_cost
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
+
 __all__ = ["build_parser", "main"]
 
 
-def _session_factory(database_url: str | None):
+def _session_factory(database_url: str | None) -> sessionmaker[Session] | None:
     from forge_db.session import create_db_engine, create_session_factory
 
     url = database_url or os.environ.get("FORGE_DATABASE_URL")

@@ -21,7 +21,10 @@ from typing import TYPE_CHECKING
 from forge_workflow.temporal.config import TemporalSettings
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
     from temporalio.client import Client
+
+    from forge_policy import PolicyContext
 
 
 async def bootstrap_namespace(client: Client, namespace: str, retention_days: int) -> bool:
@@ -29,12 +32,15 @@ async def bootstrap_namespace(client: Client, namespace: str, retention_days: in
 
     Returns ``True`` if it was newly created, ``False`` if it already existed.
     """
+    from google.protobuf.duration_pb2 import Duration
     from temporalio.api.workflowservice.v1 import RegisterNamespaceRequest
     from temporalio.service import RPCError, RPCStatusCode
 
+    retention = Duration()
+    retention.FromTimedelta(timedelta(days=retention_days))
     request = RegisterNamespaceRequest(
         namespace=namespace,
-        workflow_execution_retention_period=timedelta(days=retention_days),
+        workflow_execution_retention_period=retention,
     )
     try:
         await client.service_client.workflow_service.register_namespace(request)
@@ -82,7 +88,7 @@ async def _replay(settings: TemporalSettings, workflow_id: str) -> int:
     return 0
 
 
-def _sprint_session_factory():
+def _sprint_session_factory() -> sessionmaker[Session]:
     from forge_db import create_db_engine, create_session_factory, get_database_url
 
     return create_session_factory(create_db_engine(get_database_url()))
@@ -138,7 +144,7 @@ def _sprint_velocity(project_id: str, *, as_json: bool) -> int:
     return 0
 
 
-def _policy_context_from_args(args: argparse.Namespace):
+def _policy_context_from_args(args: argparse.Namespace) -> PolicyContext:
     """Build a :class:`PolicyContext` from the ``policy simulate`` CLI flags."""
     from datetime import datetime
 

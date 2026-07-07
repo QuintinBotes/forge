@@ -49,7 +49,10 @@ from forge_eval.benchmark import (
 from forge_eval.golden import GoldenCase
 
 #: Default packaged benchmark root (``forge_eval/benchmarks``).
-DEFAULT_BENCHMARK_ROOT = Path(__import__("forge_eval").__file__).parent / "benchmarks"
+_forge_eval_file = __import__("forge_eval").__file__
+if _forge_eval_file is None:  # pragma: no cover - forge_eval is a regular package
+    raise RuntimeError("forge_eval has no __file__; cannot locate packaged benchmarks")
+DEFAULT_BENCHMARK_ROOT = Path(_forge_eval_file).parent / "benchmarks"
 
 #: Statuses a public leaderboard may rank (flagged/rejected never appear).
 PUBLIC_RANKABLE_STATUSES = (SubmissionStatus.scored.value, SubmissionStatus.verified.value)
@@ -91,7 +94,7 @@ class BenchmarkService:
         self,
         *,
         session_factory: sessionmaker[Session],
-        benchmark_root: Path | None = None,
+        benchmark_root: Path | str | None = None,
         epsilon: float = 0.005,
         max_submission_bytes: int = 52_428_800,
         audit: AuditLog | None = None,

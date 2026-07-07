@@ -213,6 +213,8 @@ class DeploymentService:
             )
             repo = self._repo(session, ws)
             pipeline = repo.get_pipeline_for_project(project_id)
+            if pipeline is None:  # pragma: no cover - just upserted above
+                raise PipelineNotFoundError(str(project_id))
             return self._pipeline_view(repo, pipeline)
 
     def _sync_environments(
@@ -224,8 +226,8 @@ class DeploymentService:
     ) -> None:
         existing = {e.name: e for e in pipeline.environments}
         # Offset existing ranks to avoid transient unique(rank) collisions.
-        for env in existing.values():
-            env.rank += 1000
+        for existing_env in existing.values():
+            existing_env.rank += 1000
         session.flush()
         seen: set[str] = set()
         for r in resolved:

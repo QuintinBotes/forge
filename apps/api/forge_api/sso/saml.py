@@ -22,7 +22,7 @@ from urllib.parse import urlencode
 
 from cryptography.exceptions import InvalidSignature as CryptoInvalidSignature
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from lxml import etree
 from signxml import XMLVerifier
@@ -107,7 +107,12 @@ class SamlSpService:
             params.append(("SigAlg", _SIG_ALG_RSA_SHA256))
             to_sign = urlencode(params).encode("ascii")
             key = load_pem_private_key(sp_private_key_pem.encode("utf-8"), password=None)
-            signature = key.sign(to_sign, padding.PKCS1v15(), hashes.SHA256())  # type: ignore[union-attr]
+            # SigAlg is fixed to rsa-sha256, so the SP signing key must be RSA.
+            if not isinstance(key, rsa.RSAPrivateKey):
+                raise SamlValidationError(
+                    "unsupported_sp_key", "SP signing key must be RSA (SigAlg=rsa-sha256)"
+                )
+            signature = key.sign(to_sign, padding.PKCS1v15(), hashes.SHA256())
             params.append(("Signature", base64.b64encode(signature).decode("ascii")))
 
         separator = "&" if "?" in config.sso_url else "?"
@@ -190,7 +195,10 @@ class SamlSpService:
         for cert in config.x509_certs:
             try:
                 result = XMLVerifier().verify(root, x509_cert=cert)
-                verified_xml = result.signed_xml
+                # A single-signature document yields one VerifyResult; the union
+                # return type also allows a list, so narrow before use.
+                verified = result[-1] if isinstance(result, list) else result
+                verified_xml = verified.signed_xml
                 break
             except (InvalidSignature, InvalidInput, CryptoInvalidSignature, ValueError) as exc:
                 last_error = exc
@@ -234,7 +242,7 @@ class SamlSpService:
         name_id_el = assertion.find(f"{{{saml}}}Subject/{{{saml}}}NameID")
         if name_id_el is None or not (name_id_el.text or "").strip():
             raise SamlValidationError("missing_name_id")
-        name_id = name_id_el.text.strip()  # type: ignore[union-attr]
+        name_id = (name_id_el.text or "").strip()
         name_id_format = name_id_el.get("Format") or config.name_id_format
 
         # SubjectConfirmationData: InResponseTo + NotOnOrAfter (bearer).

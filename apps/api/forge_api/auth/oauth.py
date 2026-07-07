@@ -134,7 +134,7 @@ class OAuthClient:
     providers: dict[str, OAuthProviderConfig] = field(
         default_factory=lambda: dict(DEFAULT_PROVIDERS)
     )
-    transport: httpx.BaseTransport | httpx.AsyncBaseTransport | None = None
+    transport: httpx.AsyncBaseTransport | None = None
     timeout: float = _DEFAULT_TIMEOUT
 
     @classmethod
@@ -142,7 +142,7 @@ class OAuthClient:
         cls,
         env: dict[str, str] | None = None,
         *,
-        transport: httpx.BaseTransport | httpx.AsyncBaseTransport | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> OAuthClient:
         """Build a client reading ``FORGE_OAUTH_<PROVIDER>_CLIENT_ID/SECRET``.
 
@@ -281,10 +281,7 @@ class OAuthClient:
     # -- helpers ------------------------------------------------------------ #
 
     def _async_client(self) -> httpx.AsyncClient:
-        kwargs: dict[str, object] = {"timeout": self.timeout}
-        if self.transport is not None:
-            kwargs["transport"] = self.transport
-        return httpx.AsyncClient(**kwargs)
+        return httpx.AsyncClient(timeout=self.timeout, transport=self.transport)
 
     @staticmethod
     def _decode(response: httpx.Response, provider: str, stage: str) -> dict[str, object]:
@@ -304,12 +301,12 @@ class OAuthClient:
 
 def _as_int(value: object) -> int | None:
     """Best-effort int coercion for ``expires_in`` (may arrive as a string)."""
-    if value is None:
-        return None
-    try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+    if isinstance(value, (int, float, str)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 __all__ = [

@@ -42,6 +42,12 @@ from forge_api.services.marketplace_service import (
     RegistryConflictError,
     RegistryNotFoundError,
 )
+from forge_db.models.marketplace import (
+    MarketplaceInstallation,
+    MarketplaceListing,
+    MarketplaceRegistry,
+)
+from forge_marketplace.models import ArtifactKind
 
 router = APIRouter(
     prefix="/marketplace",
@@ -69,7 +75,7 @@ ServiceDep = Annotated[MarketplaceService, Depends(get_marketplace_service)]
 # --------------------------------------------------------------------------- #
 
 
-def _registry_dto(r) -> RegistryResponse:
+def _registry_dto(r: MarketplaceRegistry) -> RegistryResponse:
     return RegistryResponse(
         id=r.id,
         slug=r.slug,
@@ -87,13 +93,13 @@ def _registry_dto(r) -> RegistryResponse:
     )
 
 
-def _listing_dto(listing, registry) -> ListingResponse:
+def _listing_dto(listing: MarketplaceListing, registry: MarketplaceRegistry) -> ListingResponse:
     return ListingResponse(
         id=listing.id,
         registry_id=registry.id,
         registry_slug=registry.slug,
         trust_level=registry.trust_level,
-        kind=listing.kind,
+        kind=ArtifactKind(listing.kind),
         slug=listing.slug,
         name=listing.name,
         summary=listing.summary,
@@ -106,7 +112,7 @@ def _listing_dto(listing, registry) -> ListingResponse:
     )
 
 
-def _installation_dto(row) -> InstallationResponse:
+def _installation_dto(row: MarketplaceInstallation) -> InstallationResponse:
     return InstallationResponse(
         id=row.id,
         registry_slug=row.registry_slug,

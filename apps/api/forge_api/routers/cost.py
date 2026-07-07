@@ -11,6 +11,7 @@ infra-internal and NOT part of this authenticated product surface — see
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated
 
@@ -61,7 +62,7 @@ def get_cost_service() -> CostService:
 ServiceDep = Annotated[CostService, Depends(get_cost_service)]
 
 
-def _guard(call):
+def _guard[T](call: Callable[[], T]) -> T:
     """Translate service errors into the API's HTTP contract."""
     try:
         return call()

@@ -34,6 +34,7 @@ from forge_api.services.pm_service import (
 )
 from forge_contracts.pm import PMConnectionConfig
 from forge_db.models.enums import PMSyncState
+from forge_db.models.pm import PMConnection
 
 router = APIRouter(prefix="/integrations/pm", tags=["integrations", "pm"])
 
@@ -63,7 +64,7 @@ def get_pm_service() -> PMConnectionService:
 PMServiceDep = Annotated[PMConnectionService, Depends(get_pm_service)]
 
 
-def _to_response(service: PMConnectionService, conn) -> PMConnectionResponse:
+def _to_response(service: PMConnectionService, conn: PMConnection) -> PMConnectionResponse:
     resp = PMConnectionResponse.model_validate(conn)
     resp = resp.model_copy(
         update={

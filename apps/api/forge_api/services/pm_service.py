@@ -16,6 +16,7 @@ which is not present in this foundation. The engine that performs it lives in
 
 from __future__ import annotations
 
+import builtins
 import hashlib
 import secrets
 import time
@@ -32,6 +33,7 @@ from forge_contracts.enums import APIKeyKind
 from forge_contracts.pm import (
     AdapterContext,
     HealthResult,
+    PMAdapter,
     PMConnectionConfig,
     WebhookEvent,
 )
@@ -362,7 +364,7 @@ class PMConnectionService:
         connection_id: uuid.UUID,
         *,
         state: PMSyncState | None = None,
-    ) -> list[PMTaskLink]:
+    ) -> builtins.list[PMTaskLink]:
         with self._sf() as session:
             self._load(session, workspace_id, connection_id)  # tenant check / 404
             stmt = select(PMTaskLink).where(PMTaskLink.connection_id == connection_id)
@@ -385,7 +387,7 @@ class PMConnectionService:
             raise PMConnectionNotFound(str(connection_id))
         return conn
 
-    def _build_adapter(self, connection: PMConnection):
+    def _build_adapter(self, connection: PMConnection) -> PMAdapter:
         ctx = AdapterContext(
             connection_id=connection.id,
             workspace_id=connection.workspace_id,

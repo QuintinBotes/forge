@@ -61,6 +61,7 @@ from forge_approval.repository import (
 )
 from forge_db.models import ApprovalDecision as ApprovalDecisionRow
 from forge_db.models import ApprovalRequest as ApprovalRequestRow
+from forge_db.models.enums import ApprovalGate as DbApprovalGate
 from forge_db.models.enums import ApprovalStatus
 
 if TYPE_CHECKING:
@@ -79,6 +80,11 @@ def _aware(value: datetime | None) -> datetime | None:
 def _db_status(status: GateStatus) -> ApprovalStatus:
     """Domain gate status -> the DB ``ApprovalStatus`` (value-identical enums)."""
     return ApprovalStatus(status.value)
+
+
+def _db_gate(gate: GateType) -> DbApprovalGate:
+    """Domain gate type -> the DB ``ApprovalGate`` (value-identical enums)."""
+    return DbApprovalGate(gate.value)
 
 
 def _gate_status(value: object) -> GateStatus:
@@ -100,7 +106,7 @@ class SqlAlchemyApprovalRepository:
         """Write every domain field onto ``row`` (used by ``add`` + ``update``)."""
         row.workspace_id = request.workspace_id
         row.project_id = request.project_id
-        row.gate = request.gate_type
+        row.gate = _db_gate(request.gate_type)
         row.status = _db_status(request.status)
         row.subject_type = request.subject_type
         row.subject_id = request.subject_id

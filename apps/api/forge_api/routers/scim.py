@@ -10,10 +10,12 @@ Responses use ``application/scim+json``.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 from forge_api.auth.service import get_auth_service
 from forge_api.deps import DbSession, SettingsDep
@@ -79,7 +81,7 @@ UserServiceDep = Annotated[ScimUserService, Depends(get_user_service)]
 GroupServiceDep = Annotated[ScimGroupService, Depends(get_group_service)]
 
 
-def _run(session, fn, *args, **kwargs):
+def _run[T](session: Session, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     """Execute a SCIM service call; commit on success, map errors on failure."""
     try:
         result = fn(*args, **kwargs)

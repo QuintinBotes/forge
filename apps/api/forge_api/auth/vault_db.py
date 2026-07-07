@@ -40,9 +40,9 @@ from __future__ import annotations
 import builtins
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import CursorResult, delete, select, update
 
 from forge_api.auth.vault import StoredSecret
 from forge_contracts.enums import APIKeyKind
@@ -166,11 +166,14 @@ class DbSecretStore:
     def remove(self, workspace_id: uuid.UUID, secret_id: uuid.UUID) -> bool:
         """Delete a workspace-scoped record; ``False`` if absent/cross-tenant."""
         with self._sf() as session:
-            result = session.execute(
-                delete(Secret).where(
-                    Secret.id == secret_id,
-                    Secret.workspace_id == workspace_id,
-                )
+            result = cast(
+                "CursorResult[Any]",
+                session.execute(
+                    delete(Secret).where(
+                        Secret.id == secret_id,
+                        Secret.workspace_id == workspace_id,
+                    )
+                ),
             )
             session.commit()
             return bool(result.rowcount)

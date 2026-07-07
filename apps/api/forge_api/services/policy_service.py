@@ -21,7 +21,7 @@ append-only ``policy_rule_evaluation`` row (DB-level immutability trigger).
 from __future__ import annotations
 
 import uuid
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -104,7 +104,11 @@ class PolicyService:
             traces.append(
                 RuleTrace(rule_id=rule.id, matched=matched, effect=rule.effect, reason=rule.reason)
             )
-        base_effect = (decision.base_effect or decision.effect).value
+        # DecisionEffect (StrEnum) values are exactly the SimulationResult literal;
+        # annotate to stop the local widening to ``str``.
+        base_effect: Literal["allow", "deny", "requires_approval"] = (
+            decision.base_effect or decision.effect
+        ).value
         return SimulationResult(decision=decision, base_effect=base_effect, traces=traces)
 
     # --------------------------------------------------------- evaluate + record

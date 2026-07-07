@@ -62,7 +62,12 @@ from typing import TYPE_CHECKING
 from sqlalchemy import delete, select
 
 from forge_db.models import TraceabilityCriterionLink, TraceabilitySpecRollup
-from forge_spec.dashboard_schemas import CriterionLinkRecord, SpecRollupRecord
+from forge_spec.dashboard_schemas import (
+    CellStatus,
+    CriterionLinkRecord,
+    SpecRollupRecord,
+    ValidationStatus,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
@@ -100,7 +105,7 @@ def _link_record(row: TraceabilityCriterionLink) -> CriterionLinkRecord:
         criterion_ext_id=row.criterion_ext_id,
         criterion_text=row.criterion_text,
         requirement_ext_ids=list(row.requirement_ext_ids or []),
-        status=row.status,  # str -> CellStatus (pydantic coercion)
+        status=CellStatus(row.status),  # str column -> CellStatus at the boundary
         satisfied=row.satisfied,
         test_refs=list(row.test_refs or []),
         diff_refs=list(row.diff_refs or []),
@@ -132,7 +137,7 @@ def _rollup_record(row: TraceabilitySpecRollup) -> SpecRollupRecord:
         requirement_coverage=float(row.requirement_coverage),
         acceptance_criteria_coverage=float(row.acceptance_criteria_coverage),
         uncovered_requirement_ext_ids=list(row.uncovered_requirement_ext_ids or []),
-        validation_status=row.validation_status,  # str -> ValidationStatus
+        validation_status=ValidationStatus(row.validation_status),  # str column -> enum
         gap_count=row.gap_count,
         last_validated_at=_aware(row.last_validated_at),
     )

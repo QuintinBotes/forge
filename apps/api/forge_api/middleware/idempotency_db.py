@@ -32,9 +32,9 @@ from __future__ import annotations
 
 import base64
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from forge_api.middleware.idempotency import (
@@ -143,7 +143,10 @@ class DbIdempotencyStore:
         """
         now = datetime.now(UTC)
         with self._sf() as session:
-            result = session.execute(delete(IdempotencyKey).where(IdempotencyKey.expires_at <= now))
+            result = cast(
+                "CursorResult[Any]",
+                session.execute(delete(IdempotencyKey).where(IdempotencyKey.expires_at <= now)),
+            )
             session.commit()
             return int(result.rowcount or 0)
 

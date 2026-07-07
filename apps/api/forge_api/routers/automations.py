@@ -16,6 +16,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from forge_api.auth.rbac import Permission
 from forge_api.db import get_session_factory
@@ -114,7 +115,7 @@ def _errors() -> Iterator[None]:
 # Catalog                                                                      #
 # --------------------------------------------------------------------------- #
 
-_ACTION_MODELS = {
+_ACTION_MODELS: dict[AutomationActionType, type[BaseModel]] = {
     AutomationActionType.SET_STATUS: SetStatusAction,
     AutomationActionType.SET_PRIORITY: SetPriorityAction,
     AutomationActionType.SET_ASSIGNEE: SetAssigneeAction,

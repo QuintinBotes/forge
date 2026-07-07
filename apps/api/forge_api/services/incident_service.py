@@ -13,6 +13,7 @@ behind the same surface), and enforces the structural safety properties:
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -160,14 +161,14 @@ class IncidentService:
             raise IncidentNotFound(incident_id)
         return record
 
-    def timeline(self, incident_id: uuid.UUID) -> list[_Event]:
+    def timeline(self, incident_id: uuid.UUID) -> builtins.list[_Event]:
         return list(self.get(incident_id).events)
 
     def latest_plan(self, incident_id: uuid.UUID) -> _Plan | None:
         plans = self.get(incident_id).plans
         return plans[-1] if plans else None
 
-    def allowed_events(self, record: IncidentRecord) -> list[str]:
+    def allowed_events(self, record: IncidentRecord) -> builtins.list[str]:
         return allowed_incident_events(
             record.lifecycle_state,
             context=dict(record.context),
@@ -251,7 +252,7 @@ class IncidentService:
     # -- remediation ------------------------------------------------------ #
 
     def propose_remediation(
-        self, incident_id: uuid.UUID, *, steps: list[RunbookStep], actor: str = "agent"
+        self, incident_id: uuid.UUID, *, steps: builtins.list[RunbookStep], actor: str = "agent"
     ) -> _Plan:
         """Store a proposed runbook and set the blast-radius guard context flags."""
         record = self.get(incident_id)

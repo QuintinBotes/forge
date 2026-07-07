@@ -42,9 +42,9 @@ from __future__ import annotations
 import builtins
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.exc import IntegrityError
 
 from forge_approval.models import PolicyOverrideGrant
@@ -84,6 +84,11 @@ class DbGrantStore:
 
     def _to_domain(self, row: PolicyOverrideGrantRow) -> PolicyOverrideGrant:
         """Rebuild the domain grant from a persisted row."""
+        # The column is nullable only for the FK ``SET NULL`` edge; every grant
+        # this store mints carries the (required) approval_request_id, so narrow
+        # ``UUID | None`` -> ``UUID`` at the boundary the domain model demands.
+        if row.approval_request_id is None:
+            raise ValueError(f"policy_override_grant {row.id} has no approval_request_id")
         return PolicyOverrideGrant(
             id=row.id,
             approval_request_id=row.approval_request_id,
@@ -179,15 +184,18 @@ class DbGrantStore:
         """
         now = datetime.now(UTC)
         with self._sf() as session:
-            result = session.execute(
-                update(PolicyOverrideGrantRow)
-                .where(
-                    PolicyOverrideGrantRow.agent_run_id == agent_run_id,
-                    PolicyOverrideGrantRow.action_fingerprint == action_fingerprint,
-                    PolicyOverrideGrantRow.consumed.is_(False),
-                    PolicyOverrideGrantRow.expires_at > now,
-                )
-                .values(consumed=True)
+            result = cast(
+                "CursorResult[Any]",
+                session.execute(
+                    update(PolicyOverrideGrantRow)
+                    .where(
+                        PolicyOverrideGrantRow.agent_run_id == agent_run_id,
+                        PolicyOverrideGrantRow.action_fingerprint == action_fingerprint,
+                        PolicyOverrideGrantRow.consumed.is_(False),
+                        PolicyOverrideGrantRow.expires_at > now,
+                    )
+                    .values(consumed=True)
+                ),
             )
             session.commit()
             return (result.rowcount or 0) > 0

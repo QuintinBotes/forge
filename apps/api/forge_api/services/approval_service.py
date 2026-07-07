@@ -21,6 +21,7 @@ Builds the process-wide ``forge_approval.ApprovalService`` with:
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from forge_api.deps import Principal
 from forge_api.observability.redaction import redact_mapping
@@ -125,7 +126,9 @@ def to_approval_principal(principal: Principal) -> ApprovalPrincipal:
     every gate (Build-Prompt constraint #2), regardless of any router-level
     permission checks.
     """
-    kind = "agent" if principal.role is UserRole.AGENT_RUNNER else "user"
+    kind: Literal["user", "agent", "system"] = (
+        "agent" if principal.role is UserRole.AGENT_RUNNER else "user"
+    )
     return ApprovalPrincipal(
         kind=kind,
         id=principal.user_id,

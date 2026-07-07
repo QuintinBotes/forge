@@ -12,6 +12,7 @@ is 404, no existence leak).
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from datetime import datetime
 
@@ -349,7 +350,7 @@ class AutomationRuleService:
         rule_id: uuid.UUID,
         limit: int = 50,
         before: datetime | None = None,
-    ) -> list[AutomationExecutionRead]:
+    ) -> builtins.list[AutomationExecutionRead]:
         with self._sf() as session:
             self._row(session, workspace_id, rule_id)  # tenant check / 404
             q = select(AutomationExecution).where(

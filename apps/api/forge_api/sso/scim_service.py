@@ -30,6 +30,7 @@ from forge_contracts.sso import (
     ScimMember,
     ScimMeta,
     ScimName,
+    ScimPatchOperation,
     ScimPatchRequest,
     ScimUser,
 )
@@ -589,7 +590,7 @@ class ScimGroupService:
         workspace_id: uuid.UUID,
         group: ScimGroup,
         op: str,
-        operation,
+        operation: ScimPatchOperation,
     ) -> set[uuid.UUID]:
         touched: set[uuid.UUID] = set()
         path = (operation.path or "").strip()
@@ -600,7 +601,7 @@ class ScimGroupService:
             if match:
                 values = [match.group(1)]
             elif isinstance(operation.value, list):
-                values = [m.get("value") for m in operation.value if isinstance(m, dict)]
+                values = [str(m.get("value")) for m in operation.value if isinstance(m, dict)]
             if not values:  # bare `remove members` == clear all
                 touched |= self._member_user_ids(group)
                 self._clear_members(group)
@@ -624,10 +625,10 @@ class ScimGroupService:
                 self._clear_members(group)
             members = operation.value if isinstance(operation.value, list) else []
             for member in members:
-                value = member.get("value") if isinstance(member, dict) else None
-                if not value:
+                raw_value = member.get("value") if isinstance(member, dict) else None
+                if not raw_value:
                     raise ScimApiError(400, "member entries need a 'value'", "invalidValue")
-                touched.add(self._add_member(workspace_id, group, value))
+                touched.add(self._add_member(workspace_id, group, raw_value))
             return touched
         raise ScimApiError(400, f"unsupported members op {op!r}", "invalidValue")
 

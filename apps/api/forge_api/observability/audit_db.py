@@ -210,7 +210,9 @@ class DbAuditStore:
                 rows.reverse()
                 return [self._to_entry(r) for r in rows]
 
-            rows = session.execute(stmt.order_by(ObservabilityAuditEntry.seq.asc())).scalars().all()
+            rows = list(
+                session.execute(stmt.order_by(ObservabilityAuditEntry.seq.asc())).scalars().all()
+            )
             return [self._to_entry(r) for r in rows]
 
     def verify_integrity(self) -> bool:

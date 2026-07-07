@@ -47,7 +47,7 @@ from forge_contracts import (
     PolicyViolationError,
 )
 from forge_contracts.enums import MCPIndexStrategy
-from forge_mcp import MCPConnectionManager, TeeAuditLog, live_transport_factory
+from forge_mcp import AuditSink, MCPConnectionManager, TeeAuditLog, live_transport_factory
 from forge_mcp.exceptions import (
     MCPConnectionNotFoundError,
     MCPInputError,
@@ -109,7 +109,7 @@ def _mcp_token_resolver(conn: MCPConnection) -> str | None:
     return os.environ.get("MCP_TOKEN")
 
 
-def _mcp_audit_sink() -> object | None:
+def _mcp_audit_sink() -> AuditSink | None:
     """Build the durable MCP audit bridge when ``FORGE_MCP_AUDIT_BACKEND=db``.
 
     The bridge forwards every ``MCPAuditEntry`` to the platform

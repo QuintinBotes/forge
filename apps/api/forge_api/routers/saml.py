@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from forge_api.auth.service import get_auth_service
 from forge_api.deps import DbSession, SettingsDep
+from forge_api.settings import Settings
 from forge_api.sso.attribute_mapping import map_assertion
 from forge_api.sso.config_service import SsoConfigService
 from forge_api.sso.errors import SamlValidationError, SsoConfigError
@@ -32,9 +33,9 @@ from forge_api.sso.provisioning import emit_sso_audit, link_or_jit_provision
 from forge_api.sso.replay import InMemoryReplayGuard
 from forge_api.sso.saml import SamlSpService, peek_in_response_to
 from forge_api.sso.saml_metadata import render_sp_metadata
+from forge_contracts.enums import APIKeyKind, UserRole
 from forge_contracts.sso import AttributeMapping, ReplayGuard, SamlIdpConfig
 from forge_db.models import SsoConfiguration, Workspace
-from forge_db.models.enums import APIKeyKind
 
 router = APIRouter(prefix="/auth/saml", tags=["saml"])
 
@@ -71,7 +72,7 @@ class DiscoverResponse(BaseModel):
 
 
 def _load(
-    session: Session, settings, slug: str
+    session: Session, settings: Settings, slug: str
 ) -> tuple[Workspace, SsoConfiguration, SsoConfigService]:
     service = SsoConfigService(session, public_url=settings.public_url)
     try:
@@ -184,7 +185,7 @@ def acs(
     urls = service.sp_urls(workspace.slug)
     now = datetime.now(UTC)
 
-    def _login_failed(reason: str, http_status: int = status.HTTP_400_BAD_REQUEST):
+    def _login_failed(reason: str, http_status: int = status.HTTP_400_BAD_REQUEST) -> HTTPException:
         emit_sso_audit(
             session,
             workspace_id=workspace.id,
@@ -256,7 +257,7 @@ def acs(
     _info, token = get_auth_service().bootstrap_key(
         workspace_id=workspace.id,
         name=f"sso-session-{uuid.uuid4().hex[:8]}",
-        role=user.role,
+        role=UserRole(user.role.value),
         user_id=user.id,
         kind=APIKeyKind.SYSTEM,
         expires_at=now + SESSION_TTL,

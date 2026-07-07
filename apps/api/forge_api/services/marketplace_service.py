@@ -30,9 +30,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.observability.audit import AuditCategory, AuditLog
-from forge_contracts.enums import MCPAuthType, MCPTransport
+from forge_contracts.enums import MCPAuthType
 from forge_db.models import User
 from forge_db.models.connections import MCPConnection
+from forge_db.models.enums import MCPTransport as DbMCPTransport
 from forge_db.models.marketplace import (
     MarketplaceAuditLog,
     MarketplaceInstallation,
@@ -778,7 +779,8 @@ class MarketplaceService:
         existing: MCPConnection | None = None,
     ) -> tuple[str, uuid.UUID]:
         cfg = dict(plan.resolved_config)
-        transport = MCPTransport(cfg.get("transport", "http"))
+        # Persisted straight to the db-enum column, so build the db enum here.
+        transport = DbMCPTransport(cfg.get("transport", "http"))
         namespaces = list(cfg.get("allowed_namespaces") or [])
         if existing is None:
             conn = MCPConnection(
@@ -966,6 +968,7 @@ class MarketplaceService:
         with self._sf() as s:
             row = self._require_installation(s, workspace_id, installation_id)
             if row.target_object_id is not None:
+                obj: SkillProfile | MCPConnection | None
                 if row.target_kind == "skill_profile":
                     obj = s.get(SkillProfile, row.target_object_id)
                 else:

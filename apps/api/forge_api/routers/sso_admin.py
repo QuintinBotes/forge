@@ -14,6 +14,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from forge_api.auth.rbac import Permission
 from forge_api.deps import DbSession, Principal, SettingsDep
@@ -123,7 +124,7 @@ def _set_enabled(
     enabled: bool,
     principal: Principal,
     service: SsoConfigService,
-    session,
+    session: Session,
 ) -> SsoConfigOut:
     _check_workspace(principal, workspace_id)
     try:
