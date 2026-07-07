@@ -10,10 +10,12 @@ tests — the metadata fetch goes through an injected ``httpx.MockTransport``.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.db import get_session_factory
 from forge_api.sso.config_service import fetch_idp_metadata
@@ -25,7 +27,7 @@ from forge_worker.celery_app import celery_app
 
 
 def refresh_saml_metadata_core(
-    session_factory,
+    session_factory: sessionmaker[Session],
     sso_configuration_id: uuid.UUID,
     *,
     transport: httpx.BaseTransport | None = None,
@@ -64,7 +66,7 @@ def refresh_saml_metadata_core(
 
 
 def refresh_all_saml_metadata_core(
-    session_factory, *, transport: httpx.BaseTransport | None = None
+    session_factory: sessionmaker[Session], *, transport: httpx.BaseTransport | None = None
 ) -> int:
     """Refresh every config that has a ``metadata_url``; returns the count."""
     with session_factory() as session:
@@ -79,7 +81,7 @@ def refresh_all_saml_metadata_core(
     return len(ids)
 
 
-def cleanup_saml_replay_core(session_factory) -> int:
+def cleanup_saml_replay_core(session_factory: sessionmaker[Session]) -> int:
     """Evict expired ``saml_replay`` rows (Postgres-fallback deployments)."""
     with session_factory() as session:
         removed = DbReplayGuard(session).cleanup_expired()
@@ -88,11 +90,11 @@ def cleanup_saml_replay_core(session_factory) -> int:
 
 
 def propagate_deprovision_core(
-    session_factory,
+    session_factory: sessionmaker[Session],
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     *,
-    revoke_sessions=None,
+    revoke_sessions: Callable[[uuid.UUID, uuid.UUID], int] | None = None,
 ) -> dict:
     """Best-effort fan-out after the synchronous SCIM deprovision.
 
