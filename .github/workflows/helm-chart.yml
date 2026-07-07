@@ -35,7 +35,9 @@ jobs:
           version: v3.17.3
 
       - name: Install helm-unittest plugin
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.1.1
+        # Pin to the last 0.x: 1.x plugin.yaml uses `platformHooks`, which needs
+        # Helm >= 3.18; 0.8.2 loads on 3.16/3.17 and runs the same test format.
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 0.8.2
 
       - name: Install kubeconform
         run: |
