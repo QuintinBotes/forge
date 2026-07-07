@@ -4,7 +4,7 @@
 > a sandboxed agent runtime, hybrid knowledge retrieval, and a native project
 > board, all on one Postgres-backed platform you run yourself.
 
-<!-- Badge placeholders — replace service-hive/forge with your repository slug before publishing. -->
+<!-- Badge placeholders — replace QuintinBotes/forge with your repository slug before publishing. -->
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![CI](https://img.shields.io/badge/CI-see%20Actions-lightgrey.svg)](../../actions)
 [![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0%20(active)-orange.svg)](#status)
@@ -65,7 +65,7 @@ for the honest per-feature ledger.
 Requires Docker Engine 24+ and the Docker Compose v2 plugin, plus `make`.
 
 ```bash
-git clone https://github.com/service-hive/forge.git
+git clone https://github.com/QuintinBotes/forge.git
 cd forge
 cp .env.example .env     # then set SECRET_KEY, POSTGRES_PASSWORD, DOMAIN, ...
 make dev                 # build + start the full stack, migrate, seed, wait healthy
