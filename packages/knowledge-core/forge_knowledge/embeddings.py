@@ -81,7 +81,8 @@ class DeterministicEmbeddingClient:
         for token, count in counts.items():
             # Feature hashing, not cryptography: SHA-1 here only buckets tokens
             # deterministically (bandit B324 — usedforsecurity=False).
-            digest = hashlib.sha1(token.encode("utf-8"), usedforsecurity=False).digest()  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+            digest = hashlib.sha1(token.encode("utf-8"), usedforsecurity=False).digest()
             bucket = int.from_bytes(digest[:8], "big") % self._dimension
             sign = 1.0 if digest[8] & 1 else -1.0
             # Sub-linear term frequency damps the effect of repeated tokens.
