@@ -10,7 +10,7 @@ dependencies = [
     "forge-contracts",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
-    "pgvector>=0.2.5",
+    "pgvector>=0.5.0",
     "psycopg[binary]>=3.1",
 ]
 
