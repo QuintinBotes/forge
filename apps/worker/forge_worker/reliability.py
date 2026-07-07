@@ -181,7 +181,7 @@ def _build_dedup_backend() -> DedupBackend:
     if backend == "memory":
         return InMemoryDedupBackend()
     try:
-        import redis  # type: ignore[import-untyped]
+        import redis
 
         url = os.environ.get("FORGE_REDIS_URL", "redis://localhost:6379/0")
         client = redis.Redis.from_url(url)

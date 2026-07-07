@@ -52,21 +52,35 @@ def _manifest(*, requirements, criteria) -> SpecManifest:
     ("verdict", "report_v", "current_v", "expected"),
     [
         (None, None, 5, CellStatus.UNCOVERED),
-        (CriterionVerdict(criterion_id="A1", satisfied=True, test_refs=("t",)), 5, 5,
-         CellStatus.VALIDATED),
-        (CriterionVerdict(criterion_id="A1", satisfied=True, test_refs=("t",)), 2, 5,
-         CellStatus.STALE),
-        (CriterionVerdict(criterion_id="A1", satisfied=False, test_refs=("t",)), 5, 5,
-         CellStatus.FAILED),
-        (CriterionVerdict(criterion_id="A1", satisfied=False, test_refs=()), 5, 5,
-         CellStatus.CLAIMED),
+        (
+            CriterionVerdict(criterion_id="A1", satisfied=True, test_refs=("t",)),
+            5,
+            5,
+            CellStatus.VALIDATED,
+        ),
+        (
+            CriterionVerdict(criterion_id="A1", satisfied=True, test_refs=("t",)),
+            2,
+            5,
+            CellStatus.STALE,
+        ),
+        (
+            CriterionVerdict(criterion_id="A1", satisfied=False, test_refs=("t",)),
+            5,
+            5,
+            CellStatus.FAILED,
+        ),
+        (
+            CriterionVerdict(criterion_id="A1", satisfied=False, test_refs=()),
+            5,
+            5,
+            CellStatus.CLAIMED,
+        ),
     ],
 )
 def test_classify_cell(verdict, report_v, current_v, expected) -> None:
     assert (
-        classify_cell(
-            verdict=verdict, report_spec_version=report_v, current_spec_version=current_v
-        )
+        classify_cell(verdict=verdict, report_spec_version=report_v, current_spec_version=current_v)
         is expected
     )
 

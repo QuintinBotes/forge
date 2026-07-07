@@ -385,9 +385,7 @@ def sync_source(
 
     if mode == SyncMode.INCREMENTAL:
         if not base_ref:
-            raise ValueError(
-                "incremental sync requires a base_ref (the git ref to diff from)"
-            )
+            raise ValueError("incremental sync requires a base_ref (the git ref to diff from)")
         changes = git_changed_files(root, base_ref, head_ref)
         return incremental_sync(store, source_id, read_repo_files(root), changes)
 

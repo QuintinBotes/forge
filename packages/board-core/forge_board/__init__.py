@@ -23,6 +23,7 @@ from forge_board.exceptions import (
 )
 from forge_board.service import InMemoryBoardService
 from forge_board.sprint_state import SprintStateMachine
+from forge_board.sql_service import SqlAlchemyBoardService
 from forge_board.velocity import (
     BurndownPoint,
     ScopeEvent,
@@ -51,6 +52,7 @@ __all__ = [
     "SprintStateMachine",
     "SprintTaskSnapshot",
     "SprintWindow",
+    "SqlAlchemyBoardService",
     "VelocityResult",
     "VelocitySummary",
     "__version__",

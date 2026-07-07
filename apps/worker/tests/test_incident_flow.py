@@ -134,9 +134,7 @@ def test_forbidden_remediation_escalates_pre_approval() -> None:
     bad_agent = FakeIncidentAgent(
         steps=[RunbookStep(id="bad", order=1, title="deploy", action="deploy_prod")]
     )
-    state = asyncio.run(
-        run_pre_approval_phase(state, agent=bad_agent, directives=DIRECTIVES)
-    )
+    state = asyncio.run(run_pre_approval_phase(state, agent=bad_agent, directives=DIRECTIVES))
     assert state.lifecycle_state == "needs_human_input"
 
 
@@ -152,9 +150,7 @@ def test_execute_runbook_rechecks_every_step() -> None:
     )
     executor = FakeExecutor()
     event, _results = asyncio.run(
-        execute_runbook(
-            executor, incident_id=incident_id, runbook=runbook, directives=DIRECTIVES
-        )
+        execute_runbook(executor, incident_id=incident_id, runbook=runbook, directives=DIRECTIVES)
     )
     assert event == "runbook_step_failed"
     # The forbidden step was never executed (stopped at the re-check).
@@ -169,9 +165,7 @@ def test_runbook_step_failure_reports_failure() -> None:
     )
     executor = FakeExecutor(fail="s1")
     event, _results = asyncio.run(
-        execute_runbook(
-            executor, incident_id=incident_id, runbook=runbook, directives=DIRECTIVES
-        )
+        execute_runbook(executor, incident_id=incident_id, runbook=runbook, directives=DIRECTIVES)
     )
     assert event == "runbook_step_failed"
 

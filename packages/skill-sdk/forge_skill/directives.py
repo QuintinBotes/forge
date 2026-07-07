@@ -135,10 +135,7 @@ def skill_permits_action(directives: SkillDirectives, action: str) -> PermitDeci
     if directives.allowed_actions and canonical not in directives.allowed_actions:
         return PermitDecision(
             allowed=False,
-            reason=(
-                f"action {canonical!r} is not in the allowlist for skill "
-                f"{directives.name!r}"
-            ),
+            reason=(f"action {canonical!r} is not in the allowlist for skill {directives.name!r}"),
             requires_approval=False,
             severity="high",
         )

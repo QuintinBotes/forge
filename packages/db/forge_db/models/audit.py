@@ -101,9 +101,7 @@ class AuditChainHead(WorkspaceScopedModel):
     """
 
     __tablename__ = "audit_chain_head"
-    __table_args__ = (
-        Index("uq_audit_chain_head_workspace", "workspace_id", unique=True),
-    )
+    __table_args__ = (Index("uq_audit_chain_head_workspace", "workspace_id", unique=True),)
 
     last_seq: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     last_hash: Mapped[str] = mapped_column(String(64), default=GENESIS_HASH, nullable=False)
@@ -120,13 +118,9 @@ attach_immutability_trigger(AuditLog.__table__)
 # hash chain exists to *detect* exactly that.
 @event.listens_for(AuditLog, "before_update")
 def _audit_log_block_update(_mapper: object, _connection: object, target: AuditLog) -> None:
-    raise AuditLogImmutableError(
-        f"audit_log is append-only: refusing to update row {target.id}"
-    )
+    raise AuditLogImmutableError(f"audit_log is append-only: refusing to update row {target.id}")
 
 
 @event.listens_for(AuditLog, "before_delete")
 def _audit_log_block_delete(_mapper: object, _connection: object, target: AuditLog) -> None:
-    raise AuditLogImmutableError(
-        f"audit_log is append-only: refusing to delete row {target.id}"
-    )
+    raise AuditLogImmutableError(f"audit_log is append-only: refusing to delete row {target.id}")

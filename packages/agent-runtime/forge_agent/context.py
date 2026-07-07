@@ -69,16 +69,13 @@ def build_system_prompt(
     if objective.skill_profile is not None:
         parts.append("\n".join(skill_profile_directives(objective.skill_profile)))
     if objective.acceptance_criteria:
-        rendered = "\n".join(
-            f"- {ac.id}: {ac.text}" for ac in objective.acceptance_criteria
-        )
+        rendered = "\n".join(f"- {ac.id}: {ac.text}" for ac in objective.acceptance_criteria)
         parts.append("# Acceptance criteria\n" + rendered)
     if objective.allowed_actions:
         parts.append("Allowed actions: " + ", ".join(objective.allowed_actions))
     if objective.restricted_actions:
         parts.append(
-            "Restricted actions (never perform these): "
-            + ", ".join(objective.restricted_actions)
+            "Restricted actions (never perform these): " + ", ".join(objective.restricted_actions)
         )
     parts.extend(_knowledge_section(context))
     if agents_md:

@@ -16,6 +16,7 @@ which is not present in this foundation. The engine that performs it lives in
 
 from __future__ import annotations
 
+import builtins
 import hashlib
 import secrets
 import time
@@ -32,6 +33,7 @@ from forge_contracts.enums import APIKeyKind
 from forge_contracts.pm import (
     AdapterContext,
     HealthResult,
+    PMAdapter,
     PMConnectionConfig,
     WebhookEvent,
 )
@@ -68,9 +70,11 @@ class PMConflictExists(ValueError):
 
 def _default_transport_factory(connection: PMConnection) -> PMTransport:  # pragma: no cover
     if connection.provider == PMProvider.JIRA:
-        base = jira_auth.cloud_api_base(connection.jira_cloud_id or "") if (
-            connection.jira_cloud_id
-        ) else (connection.external_base_url or "")
+        base = (
+            jira_auth.cloud_api_base(connection.jira_cloud_id or "")
+            if (connection.jira_cloud_id)
+            else (connection.external_base_url or "")
+        )
         return HttpxJiraTransport(base_url=base)
     return HttpxLinearTransport()
 
@@ -168,11 +172,15 @@ class PMConnectionService:
 
     def list(self, workspace_id: uuid.UUID) -> list[PMConnection]:
         with self._sf() as session:
-            rows = session.execute(
-                select(PMConnection)
-                .where(PMConnection.workspace_id == workspace_id)
-                .order_by(PMConnection.created_at)
-            ).scalars().all()
+            rows = (
+                session.execute(
+                    select(PMConnection)
+                    .where(PMConnection.workspace_id == workspace_id)
+                    .order_by(PMConnection.created_at)
+                )
+                .scalars()
+                .all()
+            )
             for r in rows:
                 session.expunge(r)
             return list(rows)
@@ -185,9 +193,11 @@ class PMConnectionService:
 
     def link_counts(self, connection_id: uuid.UUID) -> dict[str, int]:
         with self._sf() as session:
-            links = session.execute(
-                select(PMTaskLink).where(PMTaskLink.connection_id == connection_id)
-            ).scalars().all()
+            links = (
+                session.execute(select(PMTaskLink).where(PMTaskLink.connection_id == connection_id))
+                .scalars()
+                .all()
+            )
         counts: dict[str, int] = {}
         for link in links:
             counts[link.sync_state.value] = counts.get(link.sync_state.value, 0) + 1
@@ -315,9 +325,7 @@ class PMConnectionService:
         payload_hash = hashlib.sha256(body).hexdigest()
         with self._sf() as session:
             dupe = session.execute(
-                select(PMWebhookDelivery).where(
-                    PMWebhookDelivery.delivery_id == event.delivery_id
-                )
+                select(PMWebhookDelivery).where(PMWebhookDelivery.delivery_id == event.delivery_id)
             ).scalar_one_or_none()
             if dupe is not None:
                 return 202, event
@@ -356,7 +364,7 @@ class PMConnectionService:
         connection_id: uuid.UUID,
         *,
         state: PMSyncState | None = None,
-    ) -> list[PMTaskLink]:
+    ) -> builtins.list[PMTaskLink]:
         with self._sf() as session:
             self._load(session, workspace_id, connection_id)  # tenant check / 404
             stmt = select(PMTaskLink).where(PMTaskLink.connection_id == connection_id)
@@ -379,7 +387,7 @@ class PMConnectionService:
             raise PMConnectionNotFound(str(connection_id))
         return conn
 
-    def _build_adapter(self, connection: PMConnection):
+    def _build_adapter(self, connection: PMConnection) -> PMAdapter:
         ctx = AdapterContext(
             connection_id=connection.id,
             workspace_id=connection.workspace_id,
@@ -434,9 +442,7 @@ class PMConnectionService:
     @staticmethod
     def _default_status_map(provider: PMProvider) -> dict:
         table = (
-            jira_mapping.STATUS_OUT
-            if provider == PMProvider.JIRA
-            else linear_mapping.STATUS_OUT
+            jira_mapping.STATUS_OUT if provider == PMProvider.JIRA else linear_mapping.STATUS_OUT
         )
         return dict(table)
 

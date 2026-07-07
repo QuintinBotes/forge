@@ -62,9 +62,7 @@ def _collect_condition_fields(group: ConditionGroup, out: list[Condition]) -> No
         _collect_condition_fields(sub, out)
 
 
-def validate_rule(
-    spec: AutomationRuleSpec, ctx: RuleRefContext | None = None
-) -> list[RuleWarning]:
+def validate_rule(spec: AutomationRuleSpec, ctx: RuleRefContext | None = None) -> list[RuleWarning]:
     """Validate a rule; raise on hard errors, return non-fatal warnings."""
     ctx = ctx or RuleRefContext()
     issues: list[dict[str, str]] = []
@@ -174,9 +172,7 @@ def _warnings(spec: AutomationRuleSpec) -> list[RuleWarning]:
 
     # possible_self_trigger: a SET_STATUS action under a status-change trigger
     # with no narrowing condition can re-fire its own trigger.
-    has_status_action = any(
-        a.type is AutomationActionType.SET_STATUS for a in spec.actions
-    )
+    has_status_action = any(a.type is AutomationActionType.SET_STATUS for a in spec.actions)
     is_status_trigger = spec.trigger.type in (
         AutomationTriggerType.TASK_STATUS_CHANGED,
         AutomationTriggerType.WORKFLOW_STATE_CHANGED,

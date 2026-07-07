@@ -38,9 +38,7 @@ def _admin_auth(service: AuthService) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def test_rotate_secret_changes_value(
-    client: httpx.AsyncClient, service: AuthService
-) -> None:
+async def test_rotate_secret_changes_value(client: httpx.AsyncClient, service: AuthService) -> None:
     auth = _admin_auth(service)
     created = await client.post(
         "/auth/secrets",

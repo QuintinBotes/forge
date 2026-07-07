@@ -35,13 +35,19 @@ def _webhook_secret(pm_service, connection_id: uuid.UUID, vault) -> str:
 
 # --- Linear HMAC (AC15) ----------------------------------------------------- #
 
+
 def test_webhook_linear_signed_202(client, project_id, pm_service, vault) -> None:
     conn = _create(client, project_id, "linear")
     secret = _webhook_secret(pm_service, uuid.UUID(conn["id"]), vault)
     ts = int(datetime.now(UTC).timestamp() * 1000)
     body = json.dumps(
-        {"action": "update", "type": "Issue", "webhookTimestamp": ts,
-         "webhookId": "wh-1", "data": {"id": "uuid-1", "identifier": "ENG-1"}}
+        {
+            "action": "update",
+            "type": "Issue",
+            "webhookTimestamp": ts,
+            "webhookId": "wh-1",
+            "data": {"id": "uuid-1", "identifier": "ENG-1"},
+        }
     ).encode()
     sig = sign_linear(secret, body)
     resp = client.post(
@@ -74,12 +80,16 @@ def test_webhook_linear_bad_signature_401(client, project_id) -> None:
 
 # --- Jira secret (AC16) ----------------------------------------------------- #
 
+
 def test_webhook_jira_secret_202(client, project_id, pm_service, vault) -> None:
     conn = _create(client, project_id, "jira", external_base_url="https://acme.atlassian.net")
     secret = _webhook_secret(pm_service, uuid.UUID(conn["id"]), vault)
     body = json.dumps(
-        {"webhookEvent": "jira:issue_updated", "timestamp": 1767348000000,
-         "issue": {"id": "10001", "key": "ENG-1"}}
+        {
+            "webhookEvent": "jira:issue_updated",
+            "timestamp": 1767348000000,
+            "issue": {"id": "10001", "key": "ENG-1"},
+        }
     ).encode()
     resp = client.post(
         f"/integrations/pm/webhooks/jira/{conn['id']}",
@@ -102,13 +112,19 @@ def test_webhook_jira_wrong_secret_401(client, project_id) -> None:
 
 # --- Idempotency (AC17) ----------------------------------------------------- #
 
+
 def test_webhook_dedup_one_row(client, project_id, pm_service, vault, session_factory) -> None:
     conn = _create(client, project_id, "linear")
     secret = _webhook_secret(pm_service, uuid.UUID(conn["id"]), vault)
     ts = int(datetime.now(UTC).timestamp() * 1000)
     body = json.dumps(
-        {"action": "update", "type": "Issue", "webhookTimestamp": ts,
-         "webhookId": "wh-1", "data": {"id": "uuid-1", "identifier": "ENG-1"}}
+        {
+            "action": "update",
+            "type": "Issue",
+            "webhookTimestamp": ts,
+            "webhookId": "wh-1",
+            "data": {"id": "uuid-1", "identifier": "ENG-1"},
+        }
     ).encode()
     sig = sign_linear(secret, body)
     headers = {"Linear-Signature": sig, "Content-Type": "application/json"}
@@ -126,6 +142,7 @@ def test_webhook_dedup_one_row(client, project_id, pm_service, vault, session_fa
 
 # --- Direction enforcement (AC19) ------------------------------------------ #
 
+
 def test_outbound_only_records_skipped(
     client, project_id, pm_service, vault, session_factory
 ) -> None:
@@ -133,8 +150,13 @@ def test_outbound_only_records_skipped(
     secret = _webhook_secret(pm_service, uuid.UUID(conn["id"]), vault)
     ts = int(datetime.now(UTC).timestamp() * 1000)
     body = json.dumps(
-        {"action": "update", "type": "Issue", "webhookTimestamp": ts,
-         "webhookId": "wh-9", "data": {"id": "uuid-9", "identifier": "ENG-9"}}
+        {
+            "action": "update",
+            "type": "Issue",
+            "webhookTimestamp": ts,
+            "webhookId": "wh-9",
+            "data": {"id": "uuid-9", "identifier": "ENG-9"},
+        }
     ).encode()
     sig = sign_linear(secret, body)
     resp = client.post(

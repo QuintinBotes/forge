@@ -94,9 +94,7 @@ def _knowledge_service_singleton() -> KnowledgeService:
     # by default (FORGE_RERANK_PROVIDER=fixture), and only builds a budgeted,
     # SSRF-guarded live client when an operator opts in. The BYOK key is resolved
     # on demand and never stored on the settings object.
-    reranker = build_reranker_from_settings(
-        settings, api_key=_resolve_reranker_key(settings)
-    )
+    reranker = build_reranker_from_settings(settings, api_key=_resolve_reranker_key(settings))
     return KnowledgeService.from_session_factory(
         get_session_factory(),
         DeterministicEmbeddingClient(),

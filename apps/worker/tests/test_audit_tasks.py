@@ -92,9 +92,7 @@ def test_verify_all_ok_and_detects_tamper(session: Session) -> None:
 
     # The break itself was audited: system/critical audit.chain_broken (AC16).
     broken_events = session.scalars(
-        select(AuditLog).where(
-            AuditLog.workspace_id == WS, AuditLog.action == "audit.chain_broken"
-        )
+        select(AuditLog).where(AuditLog.workspace_id == WS, AuditLog.action == "audit.chain_broken")
     ).all()
     assert len(broken_events) == 1
     event = broken_events[0]

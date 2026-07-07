@@ -31,14 +31,14 @@ from urllib.parse import urlencode
 
 from fastapi import Depends, Header, HTTPException, status
 
-from forge_api.auth.apikeys import APIKeyInfo, APIKeyStore
+from forge_api.auth.apikeys import APIKeyBackend, APIKeyInfo, APIKeyStore
 from forge_api.auth.crypto import EnvelopeCipher, default_cipher
 from forge_api.auth.keyring import KeyRing
 from forge_api.auth.models import OAuthChallenge, OAuthResult
 from forge_api.auth.oauth import OAuthClient, UnsupportedOAuthProviderError
 from forge_api.auth.providers import get_default_provider, resolve_secret
 from forge_api.auth.rbac import Permission, PermissionDeniedError, ensure
-from forge_api.auth.vault import SecretVault
+from forge_api.auth.vault import SecretStore, SecretVault
 from forge_api.deps import Principal
 from forge_api.observability.redaction import redact_text
 from forge_api.services.auth_audit import AuthAuditEmitter
@@ -168,6 +168,26 @@ def _resolve_master_key(secret_key: bytes | None) -> bytes:
     )
 
 
+def _build_apikey_backend() -> APIKeyBackend | None:
+    """Return the API-key backend selected by ``FORGE_APIKEY_BACKEND``.
+
+    ``memory`` (default) → ``None``, so :class:`APIKeyStore` falls back to the
+    hermetic :class:`~forge_api.auth.apikeys.InMemoryAPIKeyBackend` (unit-test
+    default, no Postgres); ``db`` → the durable
+    :class:`~forge_api.auth.apikeys_db.DbAPIKeyBackend` bound to the shared
+    session factory. Both satisfy the same ``APIKeyBackend`` seam, so the swap is
+    behaviour-preserving (mint / verify / list / revoke).
+    """
+    from forge_api.settings import get_settings
+
+    if get_settings().apikey_backend == "db":
+        from forge_api.auth.apikeys_db import DbAPIKeyBackend
+        from forge_api.db import get_session_factory
+
+        return DbAPIKeyBackend(get_session_factory())
+    return None
+
+
 def _keyring_for_master(master: bytes) -> KeyRing:
     """Build a :class:`KeyRing` whose current KEK is the resolved ``master`` key.
 
@@ -188,14 +208,35 @@ def _keyring_for_master(master: bytes) -> KeyRing:
     return KeyRing(keys, current_version)
 
 
+def _build_secret_store() -> SecretStore | None:
+    """Return the secret-vault store selected by ``FORGE_SECRET_BACKEND``.
+
+    ``memory`` (default) → ``None``, so :class:`SecretVault` falls back to the
+    hermetic :class:`~forge_api.auth.vault.InMemorySecretStore` (unit-test default,
+    no Postgres); ``db`` → the durable
+    :class:`~forge_api.auth.vault_db.DbSecretStore` bound to the shared session
+    factory. Both satisfy the same ``SecretStore`` seam, so the swap is
+    behaviour-preserving (add / get / list / remove + rotation's ``all_records``).
+    """
+    from forge_api.settings import get_settings
+
+    if get_settings().secret_backend == "db":
+        from forge_api.auth.vault_db import DbSecretStore
+        from forge_api.db import get_session_factory
+
+        return DbSecretStore(get_session_factory())
+    return None
+
+
 def _build_vault(master: bytes) -> SecretVault:
     """Construct the vault, selecting envelope vs single-tier cipher via config."""
     cipher_subkey = _subkey(master, b"forge-cipher")
+    store = _build_secret_store()
     if _envelope_enabled():
         keyring = _keyring_for_master(master)
         cipher = EnvelopeCipher(keyring, legacy=default_cipher(cipher_subkey))
-        return SecretVault(cipher=cipher)
-    return SecretVault(cipher=default_cipher(cipher_subkey))
+        return SecretVault(cipher=cipher, store=store)
+    return SecretVault(cipher=default_cipher(cipher_subkey), store=store)
 
 
 class AuthService:
@@ -212,7 +253,10 @@ class AuthService:
         audit_sink: AuditSink | None = None,
     ) -> None:
         master = _resolve_master_key(secret_key)
-        self.api_keys = api_keys or APIKeyStore(secret_key=_subkey(master, b"forge-apikey"))
+        self.api_keys = api_keys or APIKeyStore(
+            secret_key=_subkey(master, b"forge-apikey"),
+            backend=_build_apikey_backend(),
+        )
         self.vault = vault or _build_vault(master)
         # Constructs without network access; the IdP is only contacted when an
         # authorization-code exchange is actually requested.
@@ -220,8 +264,8 @@ class AuthService:
         # F37 web↔API seam: the shared HS256 secret Better Auth signs the
         # session JWT with. Absent ⇒ the JWT auth path is disabled (API keys
         # keep working); never silently defaulted.
-        self._auth_secret = auth_secret if auth_secret is not None else os.environ.get(
-            "AUTH_SECRET"
+        self._auth_secret = (
+            auth_secret if auth_secret is not None else os.environ.get("AUTH_SECRET")
         )
         # F37 audit producer: auth-domain events flow through the injected
         # AuditSink (F39's SqlAuditWriter at DB wire-up; a log-only fallback
@@ -365,9 +409,7 @@ class AuthService:
 
     # -- OAuth descriptor --------------------------------------------------- #
 
-    def oauth_challenge(
-        self, provider: str, redirect_uri: str | None = None
-    ) -> OAuthChallenge:
+    def oauth_challenge(self, provider: str, redirect_uri: str | None = None) -> OAuthChallenge:
         """Build an OAuth authorization-code descriptor (no external call).
 
         Returns the provider authorize URL (with ``client_id`` and requested

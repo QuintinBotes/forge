@@ -23,9 +23,7 @@ except Exception:  # pragma: no cover - hermetic fallback
         r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
         re.DOTALL,
     )
-    _AWS_KEY_RE = re.compile(
-        r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}\b"
-    )
+    _AWS_KEY_RE = re.compile(r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}\b")
     _BEARER_RE = re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]+")
     _KV_SECRET_RE = re.compile(
         r"(?i)\b(?:token|secret|password|passwd|api[_-]?key|authorization|"

@@ -97,9 +97,7 @@ class StateGraph[S]:
         self._edges[src] = dst
         self._builder.add_edge(src, dst)
 
-    def add_conditional_edges(
-        self, src: str, router: RouterFn[S], mapping: dict[str, str]
-    ) -> None:
+    def add_conditional_edges(self, src: str, router: RouterFn[S], mapping: dict[str, str]) -> None:
         if src in self._edges:
             raise GraphError(f"node '{src}' already has an unconditional edge")
         self._conditional[src] = dict(mapping)
@@ -143,11 +141,7 @@ class CompiledGraph[S]:
         :class:`GraphError`.
         """
         try:
-            result = self._compiled.invoke(
-                {"value": state}, config={"recursion_limit": max_steps}
-            )
+            result = self._compiled.invoke({"value": state}, config={"recursion_limit": max_steps})
         except GraphRecursionError as exc:
-            raise GraphError(
-                f"graph exceeded max_steps={max_steps} (runaway loop)"
-            ) from exc
+            raise GraphError(f"graph exceeded max_steps={max_steps} (runaway loop)") from exc
         return cast("S", result["value"])

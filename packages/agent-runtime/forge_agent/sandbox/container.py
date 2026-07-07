@@ -40,7 +40,7 @@ _KILL_GRACE_SECONDS = 10
 def _load_docker() -> Any:
     """Import the docker SDK or raise a startup error (never a silent fallback)."""
     try:
-        import docker  # type: ignore[import-untyped]
+        import docker
     except ModuleNotFoundError as exc:  # pragma: no cover - dep is declared
         raise SandboxStartupError("docker SDK is not installed") from exc
     return docker

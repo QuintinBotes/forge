@@ -69,9 +69,7 @@ def test_external_content_hash_stable() -> None:
     e1 = _external(external_updated_at=datetime(2020, 1, 1, tzinfo=UTC))
     e2 = _external(external_updated_at=datetime(2031, 1, 1, tzinfo=UTC))
     assert external_content_hash(e1) == external_content_hash(e2)
-    assert external_content_hash(_external(title="Other")) != external_content_hash(
-        _external()
-    )
+    assert external_content_hash(_external(title="Other")) != external_content_hash(_external())
 
 
 def test_hash_excludes_secrets_and_raw() -> None:

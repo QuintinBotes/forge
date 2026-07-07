@@ -85,9 +85,7 @@ _TS_DEFS = frozenset(
         "module",
     }
 )
-_GO_DEFS = frozenset(
-    {"function_declaration", "method_declaration", "type_declaration"}
-)
+_GO_DEFS = frozenset({"function_declaration", "method_declaration", "type_declaration"})
 
 #: Registry of every language this backend understands.
 _LANGUAGES: dict[str, _LanguageSpec] = {
@@ -221,9 +219,7 @@ def _symbol_of(node: Node, source: bytes) -> str | None:
     for child in cur.named_children:
         spec_name = child.child_by_field_name("name")
         if spec_name is not None:
-            return source[spec_name.start_byte : spec_name.end_byte].decode(
-                "utf-8", "replace"
-            )
+            return source[spec_name.start_byte : spec_name.end_byte].decode("utf-8", "replace")
     return None
 
 

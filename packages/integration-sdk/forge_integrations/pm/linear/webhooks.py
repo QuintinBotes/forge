@@ -52,9 +52,7 @@ def verify_linear(
     return True
 
 
-def parse_linear(
-    body: dict[str, Any], *, delivery_id: str, signature_valid: bool
-) -> WebhookEvent:
+def parse_linear(body: dict[str, Any], *, delivery_id: str, signature_valid: bool) -> WebhookEvent:
     """Map a Linear webhook body onto the normalized :class:`WebhookEvent`."""
     action = str(body.get("action") or "").lower()
     event_type = _ACTION_MAP.get(action, "issue.updated")

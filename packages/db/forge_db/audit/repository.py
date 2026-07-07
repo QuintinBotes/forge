@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections.abc import Iterator
 from datetime import datetime
 from uuid import UUID
 
@@ -46,9 +47,7 @@ class AuditQueryRepository:
     def get(self, workspace_id: UUID, entry_id: UUID) -> AuditLog | None:
         """One entry, workspace-isolated: a foreign id resolves to ``None``."""
         return self._session.scalars(
-            select(AuditLog).where(
-                AuditLog.workspace_id == workspace_id, AuditLog.id == entry_id
-            )
+            select(AuditLog).where(AuditLog.workspace_id == workspace_id, AuditLog.id == entry_id)
         ).one_or_none()
 
     def list(
@@ -123,7 +122,7 @@ class AuditQueryRepository:
         to_time: datetime | None = None,
         to_seq: int | None = None,
         batch_size: int = 500,
-    ):
+    ) -> Iterator[AuditLog]:
         """Yield rows oldest-first for NDJSON export (chain-order, streamed)."""
         after_seq = 0
         while True:

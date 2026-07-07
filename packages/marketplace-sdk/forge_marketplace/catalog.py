@@ -115,9 +115,7 @@ def latest_compatible(
     return sort_versions(eligible)[-1]
 
 
-def find_version(
-    versions: list[RegistryIndexVersion], version: str
-) -> RegistryIndexVersion | None:
+def find_version(versions: list[RegistryIndexVersion], version: str) -> RegistryIndexVersion | None:
     """Return the index entry for an exact ``version`` string, or ``None``."""
     for v in versions:
         if v.version == version:

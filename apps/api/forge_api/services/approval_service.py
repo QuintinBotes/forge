@@ -21,12 +21,14 @@ Builds the process-wide ``forge_approval.ApprovalService`` with:
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from forge_api.deps import Principal
 from forge_api.observability.redaction import redact_mapping
 from forge_api.observability.service import get_observability_service
 from forge_approval import (
     ApprovalAuthorizer,
+    ApprovalRepository,
     ApprovalService,
     GateRegistry,
     InMemoryActivityBus,
@@ -37,6 +39,7 @@ from forge_approval.models import Role as ApprovalRole
 from forge_approval.providers import (
     DeployGateProvider,
     DeployResolutionHook,
+    GrantStore,
     InMemoryGrantStore,
     PolicyOverrideGateProvider,
     PolicyOverrideResolutionHook,
@@ -44,7 +47,7 @@ from forge_approval.providers import (
 from forge_contracts import UserRole
 
 
-def build_gate_registry(grants: InMemoryGrantStore) -> GateRegistry:
+def build_gate_registry(grants: GrantStore) -> GateRegistry:
     """Register every available provider/hook (the F36 composition root)."""
     registry = GateRegistry()
     registry.register_provider(DeployGateProvider())
@@ -55,8 +58,23 @@ def build_gate_registry(grants: InMemoryGrantStore) -> GateRegistry:
 
 
 @lru_cache(maxsize=1)
-def get_override_grant_store() -> InMemoryGrantStore:
-    """Process-wide single-use override-grant store (J5 consume contract)."""
+def get_override_grant_store() -> GrantStore:
+    """Return the override-grant store selected by ``FORGE_OVERRIDE_GRANT_BACKEND``.
+
+    ``memory`` (default) -> the hermetic :class:`InMemoryGrantStore` (unit-test
+    default, no Postgres); ``db`` -> the durable
+    :class:`~forge_api.services.policy_override_grant_store_db.DbGrantStore` bound
+    to the shared session factory. Both satisfy the same ``mint`` / ``consume`` /
+    ``all`` grant-store seam, so the swap is behaviour-preserving (single-active,
+    single-use, TTL-expiry).
+    """
+    from forge_api.settings import get_settings
+
+    if get_settings().override_grant_backend == "db":
+        from forge_api.db import get_session_factory
+        from forge_api.services.policy_override_grant_store_db import DbGrantStore
+
+        return DbGrantStore(get_session_factory())
     return InMemoryGrantStore()
 
 
@@ -66,11 +84,32 @@ def get_gate_registry() -> GateRegistry:
     return build_gate_registry(get_override_grant_store())
 
 
+def build_approval_repository() -> ApprovalRepository:
+    """Return the approval repository selected by ``FORGE_APPROVAL_BACKEND``.
+
+    ``memory`` (default) -> the hermetic :class:`InMemoryApprovalRepository`
+    (unit-test default, no Postgres); ``db`` -> the durable
+    :class:`~forge_api.services.approval_repository_db.SqlAlchemyApprovalRepository`
+    bound to the shared session factory. Both satisfy the same async
+    ``ApprovalRepository`` protocol, so the swap is behaviour-preserving.
+    """
+    from forge_api.settings import get_settings
+
+    if get_settings().approval_backend == "db":
+        from forge_api.db import get_session_factory
+        from forge_api.services.approval_repository_db import (
+            SqlAlchemyApprovalRepository,
+        )
+
+        return SqlAlchemyApprovalRepository(get_session_factory())
+    return InMemoryApprovalRepository()
+
+
 @lru_cache(maxsize=1)
 def get_approval_service() -> ApprovalService:
     """Process-wide unified approval service (override in tests via DI)."""
     return ApprovalService(
-        InMemoryApprovalRepository(),
+        build_approval_repository(),
         get_gate_registry(),
         ApprovalAuthorizer(),
         events=InMemoryActivityBus(),
@@ -87,7 +126,9 @@ def to_approval_principal(principal: Principal) -> ApprovalPrincipal:
     every gate (Build-Prompt constraint #2), regardless of any router-level
     permission checks.
     """
-    kind = "agent" if principal.role is UserRole.AGENT_RUNNER else "user"
+    kind: Literal["user", "agent", "system"] = (
+        "agent" if principal.role is UserRole.AGENT_RUNNER else "user"
+    )
     return ApprovalPrincipal(
         kind=kind,
         id=principal.user_id,
@@ -97,6 +138,7 @@ def to_approval_principal(principal: Principal) -> ApprovalPrincipal:
 
 
 __all__ = [
+    "build_approval_repository",
     "build_gate_registry",
     "get_approval_service",
     "get_gate_registry",

@@ -36,9 +36,7 @@ async def time_skip_env() -> Any:
     from temporalio.testing import WorkflowEnvironment
 
     try:
-        env = await WorkflowEnvironment.start_time_skipping(
-            data_converter=pydantic_data_converter
-        )
+        env = await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter)
     except Exception as exc:  # pragma: no cover - offline sandbox
         pytest.skip(f"PARKED: Temporal test server unavailable: {exc}")
     try:

@@ -50,9 +50,7 @@ def workspace_id(session_factory: sessionmaker[Session]) -> uuid.UUID:
     return ws_id
 
 
-def _make_source(
-    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
-) -> uuid.UUID:
+def _make_source(session_factory: sessionmaker[Session], workspace_id: uuid.UUID) -> uuid.UUID:
     with session_factory() as session:
         source = KnowledgeSource(
             workspace_id=workspace_id, kind="repo", name="api", uri="github.com/org/api"

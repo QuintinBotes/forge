@@ -58,9 +58,7 @@ def _check_key(version: int, key: bytes) -> bytes:
     if not 1 <= version <= 255:
         raise KeyMaterialError(f"KEK version must be 1..255, got {version}")
     if len(key) != _KEY_SIZE:
-        raise KeyMaterialError(
-            f"KEK v{version} must be exactly {_KEY_SIZE} bytes, got {len(key)}"
-        )
+        raise KeyMaterialError(f"KEK v{version} must be exactly {_KEY_SIZE} bytes, got {len(key)}")
     return bytes(key)
 
 
@@ -124,7 +122,7 @@ class EnvKeyProvider(StaticKeyProvider):
         if not raw:
             raise KeyMaterialError(
                 f"{VAULT_KEYS_ENV} must be set (versioned KEK map '1:<base64-32B>'); "
-                "generate a key with: python -c \"import os,base64;"
+                'generate a key with: python -c "import os,base64;'
                 'print(base64.b64encode(os.urandom(32)).decode())"'
             )
         keys = parse_vault_keys(raw)

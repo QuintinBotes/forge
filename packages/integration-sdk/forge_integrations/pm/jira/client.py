@@ -68,13 +68,9 @@ class JiraClient:
         return dict(resp.json_body or {})
 
     async def update_issue(self, issue_id_or_key: str, fields: dict[str, Any]) -> None:
-        await self._request(
-            "PUT", f"{API}/issue/{issue_id_or_key}", json={"fields": fields}
-        )
+        await self._request("PUT", f"{API}/issue/{issue_id_or_key}", json={"fields": fields})
 
-    async def search(
-        self, jql: str, *, start_at: int = 0, max_results: int = 50
-    ) -> dict[str, Any]:
+    async def search(self, jql: str, *, start_at: int = 0, max_results: int = 50) -> dict[str, Any]:
         resp = await self._request(
             "GET",
             f"{API}/search",

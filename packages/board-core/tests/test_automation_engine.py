@@ -114,9 +114,7 @@ def _close_spec_rule(**spec_kw: object) -> AutomationRuleSpec:
 
 def test_condition_eq_and_in() -> None:
     snap = _snapshot(priority=Priority.URGENT.value)
-    g = ConditionGroup(
-        conditions=[Condition(field="priority", op=ConditionOp.EQ, value="urgent")]
-    )
+    g = ConditionGroup(conditions=[Condition(field="priority", op=ConditionOp.EQ, value="urgent")])
     assert evaluate_condition(g, snap) is True
 
     g2 = ConditionGroup(
@@ -140,10 +138,13 @@ def test_condition_changed_op_uses_change() -> None:
     snap = _snapshot(change={"to_status": "done"})
     g = ConditionGroup(conditions=[Condition(field="to_status", op=ConditionOp.CHANGED)])
     assert evaluate_condition(g, snap) is True
-    assert evaluate_condition(
-        ConditionGroup(conditions=[Condition(field="from_status", op=ConditionOp.CHANGED)]),
-        snap,
-    ) is False
+    assert (
+        evaluate_condition(
+            ConditionGroup(conditions=[Condition(field="from_status", op=ConditionOp.CHANGED)]),
+            snap,
+        )
+        is False
+    )
 
 
 def test_condition_all_any_nesting() -> None:
@@ -187,9 +188,7 @@ def test_condition_in_without_list_raises() -> None:
 
 def test_trigger_type_for_workflow_and_board() -> None:
     assert (
-        trigger_type_for(
-            source=AutomationTriggerSource.WORKFLOW_TRANSITION, event_type="anything"
-        )
+        trigger_type_for(source=AutomationTriggerSource.WORKFLOW_TRANSITION, event_type="anything")
         is AutomationTriggerType.WORKFLOW_STATE_CHANGED
     )
     assert (
@@ -252,9 +251,7 @@ def test_validate_unknown_condition_field() -> None:
         trigger=TriggerSpec(
             type=AutomationTriggerType.WORKFLOW_STATE_CHANGED, config={"to_state": "merged"}
         ),
-        condition=ConditionGroup(
-            conditions=[Condition(field="bogus", op=ConditionOp.EQ, value=1)]
-        ),
+        condition=ConditionGroup(conditions=[Condition(field="bogus", op=ConditionOp.EQ, value=1)]),
         actions=[SetStatusAction(status=TaskStatus.DONE)],
     )
     with pytest.raises(RuleValidationError):

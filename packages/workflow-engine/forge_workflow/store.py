@@ -24,9 +24,7 @@ if TYPE_CHECKING:
 
 
 #: Terminal run statuses — used to decide whether a task already has a live run.
-_TERMINAL_STATUSES = frozenset(
-    {RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED}
-)
+_TERMINAL_STATUSES = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
 
 
 @runtime_checkable
@@ -80,11 +78,7 @@ class InMemoryWorkflowStore:
         return None
 
     def list_by_task(self, task_id: uuid.UUID) -> list[WorkflowRun]:
-        return [
-            run.model_copy(deep=True)
-            for run in self._runs.values()
-            if run.task_id == task_id
-        ]
+        return [run.model_copy(deep=True) for run in self._runs.values() if run.task_id == task_id]
 
 
 class SqlAlchemyWorkflowStore:

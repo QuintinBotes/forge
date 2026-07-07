@@ -25,10 +25,14 @@ def test_compute_is_pure_and_exact(capsys: pytest.CaptureFixture[str]) -> None:
     code = main(
         [
             "compute",
-            "--prompt-tokens", "2000",
-            "--completion-tokens", "500",
-            "--prompt-usd-per-1k", "0.003",
-            "--completion-usd-per-1k", "0.015",
+            "--prompt-tokens",
+            "2000",
+            "--completion-tokens",
+            "500",
+            "--prompt-usd-per-1k",
+            "0.003",
+            "--completion-usd-per-1k",
+            "0.015",
         ]
     )
     assert code == 0
@@ -89,14 +93,21 @@ def test_price_set_reprice_summary_roundtrip(
     assert (
         main(
             [
-                "--database-url", url,
+                "--database-url",
+                url,
                 "price-set",
-                "--provider", "anthropic",
-                "--model", "claude-sonnet-4-5",
-                "--kind", "completion",
-                "--prompt-usd-per-1k", "0.001",
-                "--completion-usd-per-1k", "0.001",
-                "--effective-from", (NOW - timedelta(days=1)).isoformat(),
+                "--provider",
+                "anthropic",
+                "--model",
+                "claude-sonnet-4-5",
+                "--kind",
+                "completion",
+                "--prompt-usd-per-1k",
+                "0.001",
+                "--completion-usd-per-1k",
+                "0.001",
+                "--effective-from",
+                (NOW - timedelta(days=1)).isoformat(),
             ]
         )
         == 0
@@ -104,10 +115,13 @@ def test_price_set_reprice_summary_roundtrip(
     assert (
         main(
             [
-                "--database-url", url,
+                "--database-url",
+                url,
                 "reprice",
-                "--workspace", str(ws),
-                "--from", (NOW - timedelta(days=1)).isoformat(),
+                "--workspace",
+                str(ws),
+                "--from",
+                (NOW - timedelta(days=1)).isoformat(),
             ]
         )
         == 0
@@ -125,7 +139,5 @@ def test_price_set_reprice_summary_roundtrip(
         assert session.scalars(select(ModelPrice)).all()  # price row landed
         row = session.scalars(select(CostEvent)).one()
         assert Decimal(str(row.cost_usd)) == Decimal("0.0011")
-        audit = session.scalars(
-            select(AuditLog).where(AuditLog.action == "cost.repriced")
-        ).one()
+        audit = session.scalars(select(AuditLog).where(AuditLog.action == "cost.repriced")).one()
         assert audit.details["updated"] == 1

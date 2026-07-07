@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -114,8 +115,9 @@ class DbReplayGuard:
 
     def cleanup_expired(self) -> int:
         """Delete expired rows; returns the count (worker beat task)."""
-        result = self._session.execute(
-            delete(SamlReplay).where(SamlReplay.expires_at <= self._now())
+        result = cast(
+            "CursorResult[Any]",
+            self._session.execute(delete(SamlReplay).where(SamlReplay.expires_at <= self._now())),
         )
         self._session.flush()
         return int(result.rowcount or 0)

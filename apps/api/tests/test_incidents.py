@@ -32,6 +32,8 @@ def make_test_principal(
         auth_method="test",
         scopes=["*"],
     )
+
+
 WEBHOOK_SECRETS = {
     "pagerduty_webhook_secret": "pd-secret",
     "datadog_webhook_secret": "dd-secret",
@@ -156,12 +158,16 @@ def test_viewer_cannot_declare_or_drive(registry: IncidentServiceRegistry) -> No
     # Viewer can read.
     assert viewer.get(f"/incidents/{inc['id']}").status_code == 200
     # Viewer cannot declare or drive.
-    assert viewer.post(
-        "/incidents", json={"project_id": str(PROJECT_ID), "title": "x"}
-    ).status_code == 403
-    assert viewer.post(
-        f"/incidents/{inc['id']}/events", json={"event": "incident_acknowledged"}
-    ).status_code == 403
+    assert (
+        viewer.post("/incidents", json={"project_id": str(PROJECT_ID), "title": "x"}).status_code
+        == 403
+    )
+    assert (
+        viewer.post(
+            f"/incidents/{inc['id']}/events", json={"event": "incident_acknowledged"}
+        ).status_code
+        == 403
+    )
 
 
 def test_agent_runner_cannot_approve(registry: IncidentServiceRegistry) -> None:
@@ -217,7 +223,8 @@ def _signed(provider: AlertProvider, body: bytes, secret: str) -> dict[str, str]
 def test_webhook_bad_signature_401(client: TestClient) -> None:
     body = b'{"id":"1","title":"x","priority":"P1","aggreg_key":"k"}'
     resp = client.post(
-        _webhook_url("datadog"), content=body,
+        _webhook_url("datadog"),
+        content=body,
         headers={"X-Datadog-Signature": "deadbeef"},
     )
     assert resp.status_code == 401
@@ -227,7 +234,8 @@ def test_webhook_missing_secret_501(registry: IncidentServiceRegistry) -> None:
     no_secret = _build(registry, with_secrets=False)
     body = b'{"id":"1","title":"x","priority":"P1","aggreg_key":"k"}'
     resp = no_secret.post(
-        _webhook_url("datadog"), content=body,
+        _webhook_url("datadog"),
+        content=body,
         headers=_signed(AlertProvider.DATADOG, body, "dd-secret"),
     )
     assert resp.status_code == 501

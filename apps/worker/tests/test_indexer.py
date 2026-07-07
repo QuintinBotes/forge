@@ -95,9 +95,7 @@ def test_index_source_indexes_and_is_searchable(
     assert any(c.path == "auth.py" for c in hits)
 
 
-def test_index_source_is_idempotent(
-    service: KnowledgeService, source_id: uuid.UUID
-) -> None:
+def test_index_source_is_idempotent(service: KnowledgeService, source_id: uuid.UUID) -> None:
     first = index_source(service, str(source_id), FILES)
     second = index_source(service, str(source_id), FILES)
     assert first.indexed > 0
@@ -118,9 +116,7 @@ def test_build_knowledge_service_constructs(
     # ``build_knowledge_service`` resolves the default session factory at call
     # time via ``from forge_db import create_session_factory``; redirect it at the
     # source module so we get an in-memory service instead of a live Postgres one.
-    monkeypatch.setattr(
-        "forge_db.create_session_factory", lambda *a, **k: session_factory
-    )
+    monkeypatch.setattr("forge_db.create_session_factory", lambda *a, **k: session_factory)
     from forge_worker.indexer import build_knowledge_service
 
     service = build_knowledge_service()
@@ -132,9 +128,7 @@ def test_index_source_task_delegates(
     service: KnowledgeService,
     source_id: uuid.UUID,
 ) -> None:
-    monkeypatch.setattr(
-        "forge_worker.indexer.build_knowledge_service", lambda: service
-    )
+    monkeypatch.setattr("forge_worker.indexer.build_knowledge_service", lambda: service)
     result = index_source_task(str(source_id), FILES)
     assert isinstance(result, dict)
     assert result["indexed"] > 0

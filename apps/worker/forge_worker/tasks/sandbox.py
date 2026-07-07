@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_agent.sandbox import SandboxSettings, build_sandbox_provider, reap_orphans
-from forge_contracts import CONTAINER_BACKED_KINDS
+from forge_contracts import CONTAINER_BACKED_KINDS, SandboxProvider
 from forge_db.models import AgentRun, SandboxInstance
 from forge_db.models.enums import RunStatus, SandboxStatus
 from forge_db.session import create_session_factory
@@ -68,13 +68,16 @@ def _collect_terminal_ids(
 
 def run_reap_pass(
     *,
-    provider: Any = None,
+    provider: SandboxProvider | None = None,
     settings: SandboxSettings | None = None,
     session_factory: sessionmaker[Session] | None = None,
 ) -> dict[str, Any]:
     """Run one reap pass; returns ``{removed, kind}``. Injectable for tests."""
     resolved = settings or SandboxSettings.from_env()
-    prov = provider or build_sandbox_provider(resolved)
+    # build_sandbox_provider's concrete providers type create() to their own session
+    # subclass, so mypy won't accept them as the SandboxProvider protocol; the reaper
+    # only reads .kind/.reap_orphans, so narrowing at this boundary is sound.
+    prov: SandboxProvider = provider or build_sandbox_provider(resolved)  # type: ignore[assignment]
     terminal_ids = _collect_terminal_ids(resolved, session_factory)
     removed = asyncio.run(reap_orphans(prov, terminal_run_ids=terminal_ids))
     return {"removed": removed, "kind": resolved.kind.value}

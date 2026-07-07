@@ -105,8 +105,7 @@ def _mock_client(captured: list[httpx.Request]) -> httpx.Client:
         body = json.loads(request.content)
         inputs = body["input"]
         data = [
-            {"index": i, "embedding": [float(len(text)), 1.0, 0.0]}
-            for i, text in enumerate(inputs)
+            {"index": i, "embedding": [float(len(text)), 1.0, 0.0]} for i, text in enumerate(inputs)
         ]
         return httpx.Response(200, json={"data": data, "model": body["model"]})
 

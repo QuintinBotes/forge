@@ -16,7 +16,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { type ForgeApiClient } from "@/lib/api/client";
@@ -65,10 +65,11 @@ export function TeamsPanel({ client }: TeamsPanelProps) {
 
   const teams = teamsQuery.data ?? [];
 
-  // Open the first team by default so the roster isn't empty on arrival.
-  useEffect(() => {
-    if (!selectedId && teams.length > 0) setSelectedId(teams[0].id);
-  }, [selectedId, teams]);
+  // Open the first team by default so the roster isn't empty on arrival —
+  // adjusted during render rather than synced through an effect.
+  if (!selectedId && teams.length > 0) {
+    setSelectedId(teams[0].id);
+  }
 
   const selected = teams.find((t) => t.id === selectedId) ?? null;
 

@@ -44,7 +44,9 @@ def _seed(session: Session) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
     session.add(project)
     session.flush()
     spec = SpecDocument(
-        workspace_id=ws.id, project_id=project.id, spec_key=f"SPEC-{uuid.uuid4().hex[:4]}",
+        workspace_id=ws.id,
+        project_id=project.id,
+        spec_key=f"SPEC-{uuid.uuid4().hex[:4]}",
         name="Customer endpoint",
     )
     session.add(spec)

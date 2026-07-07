@@ -116,9 +116,7 @@ def _transport_serving(xml: str) -> httpx.MockTransport:
 
 
 class TestMetadataRefresh:
-    def test_refresh_appends_rotated_cert_and_keeps_old(
-        self, session_factory, config_id
-    ):
+    def test_refresh_appends_rotated_cert_and_keeps_old(self, session_factory, config_id):
         """AC20: a rotated IdP cert is appended; the prior cert stays."""
         rotated = _cert_pem("idp-rotated")
         report = refresh_saml_metadata_core(
@@ -136,15 +134,11 @@ class TestMetadataRefresh:
         rotated = _cert_pem("idp-rotated")
         transport = _transport_serving(_metadata_xml(rotated))
         refresh_saml_metadata_core(session_factory, config_id, transport=transport)
-        report = refresh_saml_metadata_core(
-            session_factory, config_id, transport=transport
-        )
+        report = refresh_saml_metadata_core(session_factory, config_id, transport=transport)
         assert report["certs_added"] == 0
         assert report["certs_total"] == 2
 
-    def test_refresh_all_covers_every_config_with_url(
-        self, session_factory, config_id
-    ):
+    def test_refresh_all_covers_every_config_with_url(self, session_factory, config_id):
         rotated = _cert_pem("idp-rotated")
         count = refresh_all_saml_metadata_core(
             session_factory, transport=_transport_serving(_metadata_xml(rotated))
@@ -162,18 +156,14 @@ class TestReplayCleanup:
     def test_evicts_only_expired_rows(self, session_factory):
         now = datetime.now(UTC)
         with session_factory() as session:
-            session.add(
-                SamlReplay(replay_id="assertion:_old", expires_at=now - timedelta(hours=1))
-            )
+            session.add(SamlReplay(replay_id="assertion:_old", expires_at=now - timedelta(hours=1)))
             session.add(
                 SamlReplay(replay_id="assertion:_live", expires_at=now + timedelta(hours=1))
             )
             session.commit()
         assert cleanup_saml_replay_core(session_factory) == 1
         with session_factory() as session:
-            remaining = [
-                rid for (rid,) in session.execute(select(SamlReplay.replay_id)).all()
-            ]
+            remaining = [rid for (rid,) in session.execute(select(SamlReplay.replay_id)).all()]
             assert remaining == ["assertion:_live"]
 
     def test_db_replay_guard_semantics(self, session_factory):
@@ -225,9 +215,7 @@ class TestTaskRegistration:
         assert BEAT_SCHEDULE["sso-refresh-saml-metadata"]["task"] == (
             "sso.refresh_all_saml_metadata"
         )
-        assert BEAT_SCHEDULE["sso-cleanup-saml-replay"]["task"] == (
-            "sso.cleanup_saml_replay"
-        )
+        assert BEAT_SCHEDULE["sso-cleanup-saml-replay"]["task"] == ("sso.cleanup_saml_replay")
 
 
 def test_metadata_fetch_requires_https():

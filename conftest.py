@@ -119,9 +119,7 @@ def pg_engine(postgres_url: str) -> Iterator[Engine]:
         # try to create it for the first time.
         try:
             with bootstrap.begin() as conn:
-                conn.execute(
-                    text("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public")
-                )
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public"))
         except (IntegrityError, OperationalError, ProgrammingError):
             pass
         with bootstrap.begin() as conn:

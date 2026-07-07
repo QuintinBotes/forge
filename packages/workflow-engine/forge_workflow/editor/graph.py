@@ -139,9 +139,7 @@ def derive_kind(
 # --------------------------------------------------------------------------- #
 
 
-def auto_layout(
-    nodes: list[StateNode], edges: list[TransitionEdge]
-) -> dict[str, NodeLayout]:
+def auto_layout(nodes: list[StateNode], edges: list[TransitionEdge]) -> dict[str, NodeLayout]:
     """Deterministic layered layout (server-side fallback).
 
     Layers are assigned by longest forward distance from an initial state; the
@@ -232,8 +230,10 @@ def definition_to_graph(
         if t.to_state != t.from_state:
             inbound[t.to_state] = inbound.get(t.to_state, 0) + 1
 
-    placeholder = [StateNode(id=s, kind=derive_kind(s, inbound=inbound[s]),
-                             layout=NodeLayout(x=0, y=0)) for s in states]
+    placeholder = [
+        StateNode(id=s, kind=derive_kind(s, inbound=inbound[s]), layout=NodeLayout(x=0, y=0))
+        for s in states
+    ]
     positions = layout or auto_layout(placeholder, edges)
 
     nodes = [

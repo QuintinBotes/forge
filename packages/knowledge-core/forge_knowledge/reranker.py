@@ -353,8 +353,12 @@ class GracefulReranker:
         results = box.get("result")
         if not isinstance(results, list):  # pragma: no cover - defensive
             self._last_call = RerankTelemetry(
-                self._provider, self._model, len(documents), latency_ms,
-                fallback_used=True, reason="reranker returned no result",
+                self._provider,
+                self._model,
+                len(documents),
+                latency_ms,
+                fallback_used=True,
+                reason="reranker returned no result",
             )
             return []
         self._last_call = RerankTelemetry(
@@ -499,9 +503,7 @@ def build_reranker(
     return GracefulReranker(inner, timeout_ms=timeout_ms)
 
 
-def build_reranker_from_settings(
-    settings: object, *, api_key: str | None = None
-) -> RerankerClient:
+def build_reranker_from_settings(settings: object, *, api_key: str | None = None) -> RerankerClient:
     """Build a reranker from a ``FORGE_RERANK_*`` settings-like object.
 
     Reads (via ``getattr``, so this pure package stays decoupled from
@@ -513,8 +515,8 @@ def build_reranker_from_settings(
     """
     enabled = bool(getattr(settings, "rerank_enabled", True))
     provider = (getattr(settings, "rerank_provider", "fixture") or "fixture").strip().lower()
-    model = (getattr(settings, "rerank_model", None) or None)
-    base_url = (getattr(settings, "rerank_base_url", None) or None)
+    model = getattr(settings, "rerank_model", None) or None
+    base_url = getattr(settings, "rerank_base_url", None) or None
     timeout_ms = int(getattr(settings, "rerank_timeout_ms", DEFAULT_RERANK_TIMEOUT_MS))
     allow_insecure = bool(getattr(settings, "rerank_allow_insecure_url", False))
     url_validator = getattr(settings, "rerank_url_validator", None)

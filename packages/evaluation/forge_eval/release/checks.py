@@ -78,7 +78,9 @@ def run_command_check(
     try:
         completed = subprocess.run(
             args,
-            shell=use_shell,
+            # B602 waiver: 'run' is operator-authored gate config (trusted), not
+            # user input; shell form is opt-in only when it uses shell metachars.
+            shell=use_shell,  # nosec B602
             cwd=str(cwd) if cwd else None,
             env=environ,
             capture_output=True,

@@ -140,17 +140,13 @@ class InMemorySubAgentRunSink:
         row.update(fields)
 
     def list_for_parent(self, parent_agent_run_id: uuid.UUID) -> list[SubAgentResult]:
-        rows = [
-            r for r in self._rows.values() if r["parent_agent_run_id"] == parent_agent_run_id
-        ]
+        rows = [r for r in self._rows.values() if r["parent_agent_run_id"] == parent_agent_run_id]
         rows.sort(key=lambda r: (r["ordinal"], r["assignment_id"]))
         return [_to_result(r) for r in rows]
 
     # Test/diagnostic helpers ------------------------------------------------ #
     def rows_for_parent(self, parent_agent_run_id: uuid.UUID) -> list[dict[str, Any]]:
-        rows = [
-            r for r in self._rows.values() if r["parent_agent_run_id"] == parent_agent_run_id
-        ]
+        rows = [r for r in self._rows.values() if r["parent_agent_run_id"] == parent_agent_run_id]
         rows.sort(key=lambda r: (r["ordinal"], r["assignment_id"]))
         return rows
 

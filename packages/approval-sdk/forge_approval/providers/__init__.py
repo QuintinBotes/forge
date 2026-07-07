@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from forge_approval.providers.deploy import DeployGateProvider, DeployResolutionHook
 from forge_approval.providers.policy_override import (
+    GrantStore,
     InMemoryGrantStore,
     PolicyOverrideGate,
     PolicyOverrideGateProvider,
@@ -18,6 +19,7 @@ from forge_approval.providers.policy_override import (
 __all__ = [
     "DeployGateProvider",
     "DeployResolutionHook",
+    "GrantStore",
     "InMemoryGrantStore",
     "PolicyOverrideGate",
     "PolicyOverrideGateProvider",

@@ -69,9 +69,7 @@ def jira_records() -> dict[tuple[str, str], Any]:
         ("GET", f"{JIRA_API}/issue/10001"): ok(issue),
         ("POST", f"{JIRA_API}/issue"): ok(load_json("jira/create_issue.json")),
         ("PUT", f"{JIRA_API}/issue/10001"): ok({}),
-        ("GET", f"{JIRA_API}/issue/10001/transitions"): ok(
-            load_json("jira/transitions.json")
-        ),
+        ("GET", f"{JIRA_API}/issue/10001/transitions"): ok(load_json("jira/transitions.json")),
         ("POST", f"{JIRA_API}/issue/10001/transitions"): ok({}),
         ("GET", f"{JIRA_API}/search"): ok(load_json("jira/search.json")),
         ("GET", f"{JIRA_API}/myself"): ok(load_json("jira/myself.json")),

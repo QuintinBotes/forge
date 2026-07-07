@@ -56,12 +56,19 @@ class FakeRepo:
     def list_all(self, workspace_id):
         return [d for d in self.definitions.values() if d.workspace_id == workspace_id]
 
-    def create_definition(self, *, workspace_id, name, title, description, source,
-                          base_bundled_name, actor):
+    def create_definition(
+        self, *, workspace_id, name, title, description, source, base_bundled_name, actor
+    ):
         defn = WorkflowDefinition(
-            id=uuid.uuid4(), workspace_id=workspace_id, name=name, title=title,
-            description=description, source=source,
-            base_bundled_name=base_bundled_name, is_active=True, created_by=actor,
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            name=name,
+            title=title,
+            description=description,
+            source=source,
+            base_bundled_name=base_bundled_name,
+            is_active=True,
+            created_by=actor,
         )
         self.definitions[defn.id] = defn
         return defn
@@ -91,22 +98,47 @@ class FakeRepo:
     def next_revision(self, definition_id):
         return max((r.revision for r in self.list_revisions(definition_id)), default=0) + 1
 
-    def create_draft(self, definition, *, dsl_yaml, graph_json, dsl_version, notes,
-                     validation_status, validation_issues, actor):
+    def create_draft(
+        self,
+        definition,
+        *,
+        dsl_yaml,
+        graph_json,
+        dsl_version,
+        notes,
+        validation_status,
+        validation_issues,
+        actor,
+    ):
         rev = WorkflowDefinitionRevision(
-            id=uuid.uuid4(), workflow_definition_id=definition.id,
+            id=uuid.uuid4(),
+            workflow_definition_id=definition.id,
             workspace_id=definition.workspace_id,
-            revision=self.next_revision(definition.id), status=RevisionStatus.DRAFT,
-            dsl_yaml=dsl_yaml, graph_json=graph_json, dsl_version=dsl_version,
-            validation_status=validation_status, validation_issues=validation_issues,
-            notes=notes, created_by=actor,
+            revision=self.next_revision(definition.id),
+            status=RevisionStatus.DRAFT,
+            dsl_yaml=dsl_yaml,
+            graph_json=graph_json,
+            dsl_version=dsl_version,
+            validation_status=validation_status,
+            validation_issues=validation_issues,
+            notes=notes,
+            created_by=actor,
         )
         self.revisions[rev.id] = rev
         definition.draft_revision_id = rev.id
         return rev
 
-    def update_draft(self, draft, *, dsl_yaml, graph_json, dsl_version, notes,
-                     validation_status, validation_issues):
+    def update_draft(
+        self,
+        draft,
+        *,
+        dsl_yaml,
+        graph_json,
+        dsl_version,
+        notes,
+        validation_status,
+        validation_issues,
+    ):
         draft.dsl_yaml = dsl_yaml
         draft.graph_json = graph_json
         draft.dsl_version = dsl_version
@@ -171,8 +203,10 @@ def test_bundled_is_read_only(service: WorkflowEditorService) -> None:
     assert detail.editable is False
     with pytest.raises(BundledReadOnlyError):
         service.save_draft(
-            WS, "default_feature",
-            SaveDraftRequest(graph=detail.current_published.graph), actor=ACTOR,
+            WS,
+            "default_feature",
+            SaveDraftRequest(graph=detail.current_published.graph),
+            actor=ACTOR,
         )
 
 
@@ -260,7 +294,8 @@ transitions:
     action: definitely_not_a_real_effect
 """
     detail = service.import_yaml(
-        WS, ImportRequest(name="imported_flow", title="Imported", dsl_yaml=bad_yaml),
+        WS,
+        ImportRequest(name="imported_flow", title="Imported", dsl_yaml=bad_yaml),
         actor=ACTOR,
     )
     assert detail.draft is not None
@@ -272,7 +307,9 @@ transitions:
 
 def test_create_custom_definition(service: WorkflowEditorService) -> None:
     detail = service.create_definition(
-        WS, CreateDefinition(name="release_train", title="Release Train"), actor=ACTOR,
+        WS,
+        CreateDefinition(name="release_train", title="Release Train"),
+        actor=ACTOR,
     )
     assert detail.origin == "custom"
     assert detail.base_bundled_name is None

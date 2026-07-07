@@ -11,6 +11,7 @@ structured timeline, not free-form parsing.
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 
 from forge_contracts.incident import (
     ActionItem,
@@ -69,9 +70,7 @@ class TemplatePostmortemComposer:
         )
 
 
-def _epoch():
-    from datetime import UTC, datetime
-
+def _epoch() -> datetime:
     return datetime(1970, 1, 1, tzinfo=UTC)
 
 
@@ -103,8 +102,7 @@ def _action_items(
         ActionItem(
             title=f"Postmortem follow-up: {incident.title}",
             description=(
-                f"Address the root cause of incident {incident.key or incident.id}: "
-                f"{root_cause}"
+                f"Address the root cause of incident {incident.key or incident.id}: {root_cause}"
             ),
             kind="bug",
             priority="high",
@@ -167,9 +165,7 @@ def render_postmortem_md(postmortem: Postmortem) -> str:
     lines += ["## Action Items", ""]
     for item in postmortem.action_items:
         owner = f" (owner: {item.owner_hint})" if item.owner_hint else ""
-        lines.append(
-            f"- [{item.kind}/{item.priority}] {item.title}{owner} — {item.description}"
-        )
+        lines.append(f"- [{item.kind}/{item.priority}] {item.title}{owner} — {item.description}")
     lines.append("")
     return "\n".join(lines)
 

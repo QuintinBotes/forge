@@ -79,9 +79,7 @@ def workspace_id(session_factory: sessionmaker[Session]) -> uuid.UUID:
 
 
 @pytest.fixture
-def source_id(
-    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
-) -> uuid.UUID:
+def source_id(session_factory: sessionmaker[Session], workspace_id: uuid.UUID) -> uuid.UUID:
     with session_factory() as session:
         source = KnowledgeSource(
             workspace_id=workspace_id, kind="repo", name="app", uri="github.com/org/app"
@@ -105,9 +103,7 @@ def _rows_by_path(
     out: dict[str, list[tuple[uuid.UUID, str]]] = {}
     with session_factory() as session:
         rows = session.scalars(
-            select(RetrievalChunk).where(
-                RetrievalChunk.knowledge_source_id == source_id
-            )
+            select(RetrievalChunk).where(RetrievalChunk.knowledge_source_id == source_id)
         )
         for row in rows:
             out.setdefault(row.path or "", []).append((row.id, row.content_hash))
@@ -119,9 +115,7 @@ def _rows_by_path(
 # --------------------------------------------------------------------------- #
 
 
-def test_store_source_paths_lists_indexed_paths(
-    store: PgVectorStore, source_id: uuid.UUID
-) -> None:
+def test_store_source_paths_lists_indexed_paths(store: PgVectorStore, source_id: uuid.UUID) -> None:
     full_sync(store, str(source_id), CORPUS)
     assert store.source_paths(str(source_id)) == set(CORPUS)
 
@@ -276,9 +270,7 @@ def test_incremental_sync_handles_rename(
     assert result.indexed >= 1
 
 
-def test_incremental_sync_no_changes_is_noop(
-    store: PgVectorStore, source_id: uuid.UUID
-) -> None:
+def test_incremental_sync_no_changes_is_noop(store: PgVectorStore, source_id: uuid.UUID) -> None:
     full_sync(store, str(source_id), CORPUS)
     result = incremental_sync(store, str(source_id), CORPUS, ChangeSet())
     assert result.indexed == 0
@@ -286,9 +278,7 @@ def test_incremental_sync_no_changes_is_noop(
     assert result.updated == 0
 
 
-def test_incremental_result_still_searchable(
-    store: PgVectorStore, source_id: uuid.UUID
-) -> None:
+def test_incremental_result_still_searchable(store: PgVectorStore, source_id: uuid.UUID) -> None:
     full_sync(store, str(source_id), CORPUS)
     updated = dict(CORPUS)
     updated["auth/jwt.py"] = "def validate_jwt(token):\n    return verify_audience(token)\n"

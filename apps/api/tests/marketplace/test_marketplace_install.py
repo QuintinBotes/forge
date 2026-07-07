@@ -82,9 +82,11 @@ def test_install_skill_creates_object_and_provenance(
         assert inst.verification_status == "verified"
         assert inst.target_object_id == profile.id
         # exactly one install audit row
-        audits = s.execute(
-            select(MarketplaceAuditLog).where(MarketplaceAuditLog.operation == "install")
-        ).scalars().all()
+        audits = (
+            s.execute(select(MarketplaceAuditLog).where(MarketplaceAuditLog.operation == "install"))
+            .scalars()
+            .all()
+        )
         assert len(audits) == 1
         assert audits[0].result_status == "ok"
 
@@ -152,9 +154,13 @@ def test_install_blocked_on_hash_mismatch(
     assert count_rows(session_factory, SkillProfile) == 0
     # a denied audit row was written
     with session_factory() as s:
-        denied = s.execute(
-            select(MarketplaceAuditLog).where(MarketplaceAuditLog.result_status == "denied")
-        ).scalars().all()
+        denied = (
+            s.execute(
+                select(MarketplaceAuditLog).where(MarketplaceAuditLog.result_status == "denied")
+            )
+            .scalars()
+            .all()
+        )
         assert any(a.error_code == "hash_mismatch" for a in denied)
 
 
@@ -205,8 +211,9 @@ def test_official_registry_always_strict(
         s.commit()
         s.refresh(official)
         s.expunge(official)
-    manifest, version = make_skill_version(keypair, slug="off-unsigned", name="off-unsigned",
-                                           sign=False)
+    manifest, version = make_skill_version(
+        keypair, slug="off-unsigned", name="off-unsigned", sign=False
+    )
     gateway.add(manifest, version)
     resp = admin_client.post(
         "/marketplace/install",
@@ -219,9 +226,7 @@ def test_official_registry_always_strict(
 def test_forge_version_incompatible_blocked(
     admin_client: TestClient, registry, gateway: FakeGateway, keypair: Keypair
 ) -> None:
-    manifest, version = make_skill_version(
-        keypair, slug="future", name="future", min_forge="9.9.9"
-    )
+    manifest, version = make_skill_version(keypair, slug="future", name="future", min_forge="9.9.9")
     gateway.add(manifest, version)
     resp = admin_client.post(
         "/marketplace/install",

@@ -21,6 +21,11 @@ from forge_api.observability.audit import (
     compute_payload_hash,
     verify_chain,
 )
+from forge_api.observability.audit_db import (
+    DbAuditStore,
+    build_audit_store,
+    default_audit_log,
+)
 from forge_api.observability.otel import (
     OTEL_AVAILABLE,
     SpanRecord,
@@ -51,6 +56,7 @@ __all__ = [
     "AuditEntry",
     "AuditLog",
     "AuditStore",
+    "DbAuditStore",
     "InMemoryAuditStore",
     "MCPAuditSink",
     "ObservabilityService",
@@ -59,7 +65,9 @@ __all__ = [
     "RunTraceAssembler",
     "SpanRecord",
     "SpanRecorder",
+    "build_audit_store",
     "compute_payload_hash",
+    "default_audit_log",
     "get_observability_service",
     "get_span_recorder",
     "get_tracer",

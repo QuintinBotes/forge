@@ -55,15 +55,26 @@ def test_registry_and_listing_roundtrip(factory: sessionmaker[Session]) -> None:
     with factory() as session:
         ws_id = _ws(session)
         reg = MarketplaceRegistry(
-            workspace_id=ws_id, slug="official", name="Official", type="http_index",
-            url="https://official/index.json", trust_level="official", enabled=True,
+            workspace_id=ws_id,
+            slug="official",
+            name="Official",
+            type="http_index",
+            url="https://official/index.json",
+            trust_level="official",
+            enabled=True,
         )
         session.add(reg)
         session.flush()
         listing = MarketplaceListing(
-            workspace_id=ws_id, registry_id=reg.id, kind="skill_profile", slug="backend-tdd",
-            name="Backend TDD", summary="hardened tdd profile", tags=["backend", "tdd"],
-            latest_version="1.2.0", cached_at=datetime.now(UTC),
+            workspace_id=ws_id,
+            registry_id=reg.id,
+            kind="skill_profile",
+            slug="backend-tdd",
+            name="Backend TDD",
+            summary="hardened tdd profile",
+            tags=["backend", "tdd"],
+            latest_version="1.2.0",
+            cached_at=datetime.now(UTC),
         )
         session.add(listing)
         session.commit()
@@ -90,7 +101,5 @@ def test_audit_log_is_immutable(factory: sessionmaker[Session]) -> None:
         session.commit()
 
     with factory() as session, pytest.raises((ProgrammingError, IntegrityError)):
-        session.execute(
-            text("DELETE FROM marketplace_audit_log WHERE id = :i"), {"i": str(row_id)}
-        )
+        session.execute(text("DELETE FROM marketplace_audit_log WHERE id = :i"), {"i": str(row_id)})
         session.commit()

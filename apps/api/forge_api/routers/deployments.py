@@ -79,9 +79,7 @@ def _handle(exc: Exception) -> HTTPException:
     ):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, RuleValidationError):
-        return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        )
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     if isinstance(exc, VersionConflictError | DeploymentConflictError):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     if isinstance(exc, GateBlockedError):
@@ -91,18 +89,14 @@ def _handle(exc: Exception) -> HTTPException:
         )
     if isinstance(exc, InvalidTransitionError):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    if isinstance(
-        exc, SelfApprovalError | UnauthorizedApproverError | NotInitiatorError
-    ):
+    if isinstance(exc, SelfApprovalError | UnauthorizedApproverError | NotInitiatorError):
         return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     raise exc
 
 
 # --------------------------------------------------------------- pipeline
 @router.get("/projects/{project_id}/pipeline", response_model=PipelineRead)
-def get_pipeline(
-    project_id: uuid.UUID, principal: ReaderDep, service: ServiceDep
-) -> PipelineRead:
+def get_pipeline(project_id: uuid.UUID, principal: ReaderDep, service: ServiceDep) -> PipelineRead:
     try:
         data = service.get_pipeline(ws=principal.workspace_id, project_id=project_id)
     except Exception as exc:
@@ -180,22 +174,16 @@ def get_deployment(
     deployment_id: uuid.UUID, principal: ReaderDep, service: ServiceDep
 ) -> DeploymentDetail:
     try:
-        data = service.get_deployment(
-            ws=principal.workspace_id, deployment_id=deployment_id
-        )
+        data = service.get_deployment(ws=principal.workspace_id, deployment_id=deployment_id)
     except Exception as exc:
         raise _handle(exc) from exc
     return DeploymentDetail.model_validate(data)
 
 
 @router.get("/deployments/{deployment_id}/gate", response_model=GateEvaluation)
-def get_gate(
-    deployment_id: uuid.UUID, principal: ReaderDep, service: ServiceDep
-) -> GateEvaluation:
+def get_gate(deployment_id: uuid.UUID, principal: ReaderDep, service: ServiceDep) -> GateEvaluation:
     try:
-        return service.get_gate(
-            ws=principal.workspace_id, deployment_id=deployment_id
-        )
+        return service.get_gate(ws=principal.workspace_id, deployment_id=deployment_id)
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -250,9 +238,7 @@ def rollback_deployment(
     return DeploymentRead.model_validate(dto, from_attributes=True)
 
 
-@router.post(
-    "/deployments/{deployment_id}/freeze-override", response_model=DeploymentRead
-)
+@router.post("/deployments/{deployment_id}/freeze-override", response_model=DeploymentRead)
 def override_freeze(
     deployment_id: uuid.UUID,
     body: FreezeOverrideRequest,

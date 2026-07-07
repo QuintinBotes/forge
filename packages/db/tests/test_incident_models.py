@@ -125,8 +125,12 @@ def test_open_dedup_partial_unique_index(factory: sessionmaker[Session]) -> None
     with factory() as session:
         ws_id, project_id = _seed_project(session)
         first = Incident(
-            workspace_id=ws_id, project_id=project_id, key="CORE-INC1",
-            title="A", dedup_key="dup", lifecycle_state="context_gathering",
+            workspace_id=ws_id,
+            project_id=project_id,
+            key="CORE-INC1",
+            title="A",
+            dedup_key="dup",
+            lifecycle_state="context_gathering",
         )
         session.add(first)
         session.commit()
@@ -135,8 +139,12 @@ def test_open_dedup_partial_unique_index(factory: sessionmaker[Session]) -> None
         with pytest.raises(IntegrityError):
             session.add(
                 Incident(
-                    workspace_id=ws_id, project_id=project_id, key="CORE-INC2",
-                    title="B", dedup_key="dup", lifecycle_state="impact_assessed",
+                    workspace_id=ws_id,
+                    project_id=project_id,
+                    key="CORE-INC2",
+                    title="B",
+                    dedup_key="dup",
+                    lifecycle_state="impact_assessed",
                 )
             )
             session.commit()
@@ -146,15 +154,23 @@ def test_open_dedup_partial_unique_index(factory: sessionmaker[Session]) -> None
     with factory() as session:
         ws_id, project_id = _seed_project(session)
         closed = Incident(
-            workspace_id=ws_id, project_id=project_id, key="CORE-INC1",
-            title="A", dedup_key="dup2", lifecycle_state="closed",
+            workspace_id=ws_id,
+            project_id=project_id,
+            key="CORE-INC1",
+            title="A",
+            dedup_key="dup2",
+            lifecycle_state="closed",
         )
         session.add(closed)
         session.commit()
         session.add(
             Incident(
-                workspace_id=ws_id, project_id=project_id, key="CORE-INC2",
-                title="B", dedup_key="dup2", lifecycle_state="alert_received",
+                workspace_id=ws_id,
+                project_id=project_id,
+                key="CORE-INC2",
+                title="B",
+                dedup_key="dup2",
+                lifecycle_state="alert_received",
             )
         )
         session.commit()  # no error
@@ -166,16 +182,24 @@ def test_alert_delivery_partial_unique_index(factory: sessionmaker[Session]) -> 
         ws_id, _ = _seed_project(session)
         session.add(
             IncidentAlert(
-                workspace_id=ws_id, provider="pagerduty", delivery_id="d1",
-                dedup_key="k", severity="high", title="t",
+                workspace_id=ws_id,
+                provider="pagerduty",
+                delivery_id="d1",
+                dedup_key="k",
+                severity="high",
+                title="t",
             )
         )
         session.commit()
         with pytest.raises(IntegrityError):
             session.add(
                 IncidentAlert(
-                    workspace_id=ws_id, provider="pagerduty", delivery_id="d1",
-                    dedup_key="k2", severity="high", title="t2",
+                    workspace_id=ws_id,
+                    provider="pagerduty",
+                    delivery_id="d1",
+                    dedup_key="k2",
+                    severity="high",
+                    title="t2",
                 )
             )
             session.commit()
@@ -187,8 +211,12 @@ def test_alert_delivery_partial_unique_index(factory: sessionmaker[Session]) -> 
         for _ in range(2):
             session.add(
                 IncidentAlert(
-                    workspace_id=ws_id, provider="manual", delivery_id=None,
-                    dedup_key="k", severity="low", title="t",
+                    workspace_id=ws_id,
+                    provider="manual",
+                    delivery_id=None,
+                    dedup_key="k",
+                    severity="low",
+                    title="t",
                 )
             )
         session.commit()

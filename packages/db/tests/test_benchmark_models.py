@@ -130,10 +130,7 @@ def test_fk_delete_rules_declared() -> None:
     (SQLite does not enforce FKs by default, so the delete rules are asserted on
     the schema metadata — the DDL Postgres receives via create_all/0018.)
     """
-    fks = {
-        fk.parent.name: fk.ondelete
-        for fk in BenchmarkSubmission.__table__.foreign_keys
-    }
+    fks = {fk.parent.name: fk.ondelete for fk in BenchmarkSubmission.__table__.foreign_keys}
     assert fks["benchmark_suite_id"] == "CASCADE"
     assert fks["workspace_id"] == "CASCADE"
     assert fks["moderated_by"] == "SET NULL"

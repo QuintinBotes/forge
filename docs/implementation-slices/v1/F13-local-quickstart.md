@@ -23,7 +23,7 @@ This slice is **mechanism + content-orchestration + docs**, not new product surf
 The canonical journey (mirrors the spec's "Local Quickstart" block verbatim):
 
 ```bash
-git clone https://github.com/forge-platform/forge
+git clone https://github.com/QuintinBotes/forge
 cd forge
 make setup    # preflight, install deps, bring up infra, migrate, seed demo workspace
 make dev      # start all services

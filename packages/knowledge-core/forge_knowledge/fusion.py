@@ -44,9 +44,7 @@ def fuse(rankings: list[list[Ranked]], k: int = RRF_K) -> list[Ranked]:
     for ranking in rankings:
         for position, entry in enumerate(ranking, start=1):
             rank = entry.rank if entry.rank else position
-            fused_scores[entry.chunk_id] = (
-                fused_scores.get(entry.chunk_id, 0.0) + 1.0 / (k + rank)
-            )
+            fused_scores[entry.chunk_id] = fused_scores.get(entry.chunk_id, 0.0) + 1.0 / (k + rank)
             # Keep the first non-null chunk payload we see for this id.
             if chunks.get(entry.chunk_id) is None and entry.chunk is not None:
                 chunks[entry.chunk_id] = entry.chunk

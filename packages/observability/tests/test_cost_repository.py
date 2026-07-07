@@ -78,24 +78,37 @@ def test_summary_by_phase_buckets(ledger) -> None:
 
 def test_summary_scope_isolation(ledger) -> None:
     other = ledger.summary(
-        workspace_id=uuid.uuid4(), scope="task", scope_id=TASK, group_by="none",
-        frm=None, to=None,
+        workspace_id=uuid.uuid4(),
+        scope="task",
+        scope_id=TASK,
+        group_by="none",
+        frm=None,
+        to=None,
     )
     assert other.total_cost_usd == Decimal(0) and other.buckets == []
 
 
 def test_summary_time_window(ledger) -> None:
     only_day0 = ledger.summary(
-        workspace_id=WS, scope="project", scope_id=PROJECT, group_by="none",
-        frm=DAY0, to=DAY0 + timedelta(days=1),
+        workspace_id=WS,
+        scope="project",
+        scope_id=PROJECT,
+        group_by="none",
+        frm=DAY0,
+        to=DAY0 + timedelta(days=1),
     )
     assert only_day0.total_cost_usd == Decimal("0.32")
 
 
 def test_timeseries_buckets_sum_to_total(ledger) -> None:
     ts = ledger.timeseries(
-        workspace_id=WS, scope="project", scope_id=PROJECT, bucket="day",
-        group_by="provider", frm=None, to=None,
+        workspace_id=WS,
+        scope="project",
+        scope_id=PROJECT,
+        bucket="day",
+        group_by="provider",
+        frm=None,
+        to=None,
     )
     assert set(ts.series) == {"anthropic", "openai"}
     total = sum(cost for points in ts.series.values() for _, cost in points)
@@ -110,8 +123,13 @@ def test_timeseries_buckets_sum_to_total(ledger) -> None:
 def test_timeseries_rejects_bad_bucket(ledger) -> None:
     with pytest.raises(ValueError, match="unknown bucket"):
         ledger.timeseries(
-            workspace_id=WS, scope="task", scope_id=TASK, bucket="fortnight",
-            group_by="none", frm=None, to=None,
+            workspace_id=WS,
+            scope="task",
+            scope_id=TASK,
+            bucket="fortnight",
+            group_by="none",
+            frm=None,
+            to=None,
         )
 
 

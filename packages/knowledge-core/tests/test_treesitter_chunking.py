@@ -32,7 +32,7 @@ from forge_knowledge.treesitter_chunking import (
     language_for_path,
 )
 
-JS_SRC = '''import x from "y";
+JS_SRC = """import x from "y";
 
 export function greet(name) {
   return "hi " + name;
@@ -45,9 +45,9 @@ class Service {
 }
 
 const arrow = (a) => a * 2;
-'''
+"""
 
-TS_SRC = '''interface Props {
+TS_SRC = """interface Props {
   id: number;
 }
 
@@ -58,7 +58,7 @@ export function greet(name: string): string {
 export class Service {
   run(): void {}
 }
-'''
+"""
 
 GO_SRC = (
     "package main\n"

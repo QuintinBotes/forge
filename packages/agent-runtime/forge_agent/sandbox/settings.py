@@ -106,8 +106,7 @@ class SandboxSettings(BaseModel):
             network=SandboxNetwork(e.get("FORGE_SANDBOX_NETWORK", defaults.network.value)),
             egress_network=e.get("FORGE_SANDBOX_EGRESS_NETWORK", defaults.egress_network),
             egress_allowlist=tuple(
-                _split_csv(e.get("FORGE_SANDBOX_EGRESS_ALLOWLIST"))
-                or DEFAULT_EGRESS_ALLOWLIST
+                _split_csv(e.get("FORGE_SANDBOX_EGRESS_ALLOWLIST")) or DEFAULT_EGRESS_ALLOWLIST
             ),
             exec_timeout_seconds=int(
                 e.get("FORGE_SANDBOX_EXEC_TIMEOUT_SECONDS", defaults.exec_timeout_seconds)

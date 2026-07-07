@@ -54,12 +54,19 @@ def test_multi_issue_not_fail_fast(vocabulary: Vocabulary) -> None:
         title="Custom",
         nodes=[_node("created"), _node("B"), _node("C")],
         edges=[
-            TransitionEdge(id="e0", from_state="created", to_state="B",
-                           action="generate_spec_draft"),
-            TransitionEdge(id="e1", from_state="created", to_state="ghost",
-                           action="gather_clarifications"),
-            TransitionEdge(id="e2", from_state="B", to_state="C",
-                           action="submit_spec_for_review", condition="bogus_guard"),
+            TransitionEdge(
+                id="e0", from_state="created", to_state="B", action="generate_spec_draft"
+            ),
+            TransitionEdge(
+                id="e1", from_state="created", to_state="ghost", action="gather_clarifications"
+            ),
+            TransitionEdge(
+                id="e2",
+                from_state="B",
+                to_state="C",
+                action="submit_spec_for_review",
+                condition="bogus_guard",
+            ),
             TransitionEdge(id="e3", from_state="B", to_state="C", action="bogus_effect"),
         ],
     )
@@ -84,9 +91,7 @@ def test_unknown_skill_is_warning(vocabulary: Vocabulary, bundled_default_graph)
     graph = bundled_default_graph.model_copy(deep=True)
     edge = _find_edge(graph, "created", "spec_drafting")
     edge.skill = "no-such-skill"
-    issues = collect_validation_issues(
-        graph, vocabulary=vocabulary, skill_names={"spec-analyst"}
-    )
+    issues = collect_validation_issues(graph, vocabulary=vocabulary, skill_names={"spec-analyst"})
     skill_issues = [i for i in issues if i.code is IssueCode.UNKNOWN_SKILL]
     assert len(skill_issues) == 1
     assert skill_issues[0].severity is Severity.WARNING
@@ -98,10 +103,8 @@ def test_duplicate_edge_error(vocabulary: Vocabulary) -> None:
         title="Dup",
         nodes=[_node("created"), _node("closed")],
         edges=[
-            TransitionEdge(id="e0", from_state="created", to_state="closed",
-                           action="close_task"),
-            TransitionEdge(id="e1", from_state="created", to_state="closed",
-                           action="close_task"),
+            TransitionEdge(id="e0", from_state="created", to_state="closed", action="close_task"),
+            TransitionEdge(id="e1", from_state="created", to_state="closed", action="close_task"),
         ],
     )
     issues = collect_validation_issues(graph, vocabulary=vocabulary)
@@ -117,10 +120,13 @@ def test_nondeterministic_rules(vocabulary: Vocabulary) -> None:
         title="ND",
         nodes=[_node("created"), _node("a"), _node("closed")],
         edges=[
-            TransitionEdge(id="e0", from_state="created", to_state="a",
-                           when=["checks_failed", "ci_status_green"]),
-            TransitionEdge(id="e1", from_state="created", to_state="closed",
-                           when="checks_failed"),
+            TransitionEdge(
+                id="e0",
+                from_state="created",
+                to_state="a",
+                when=["checks_failed", "ci_status_green"],
+            ),
+            TransitionEdge(id="e1", from_state="created", to_state="closed", when="checks_failed"),
         ],
     )
     issues = collect_validation_issues(graph, vocabulary=vocabulary)
@@ -135,11 +141,9 @@ def test_unreachable_state_warning(vocabulary: Vocabulary) -> None:
         title="UR",
         nodes=[_node("created"), _node("x"), _node("y"), _node("closed")],
         edges=[
-            TransitionEdge(id="e0", from_state="created", to_state="closed",
-                           action="close_task"),
+            TransitionEdge(id="e0", from_state="created", to_state="closed", action="close_task"),
             TransitionEdge(id="e1", from_state="x", to_state="y", action="run_checks"),
-            TransitionEdge(id="e2", from_state="y", to_state="x",
-                           action="request_reviews"),
+            TransitionEdge(id="e2", from_state="y", to_state="x", action="request_reviews"),
         ],
     )
     issues = collect_validation_issues(graph, vocabulary=vocabulary)
@@ -165,10 +169,8 @@ def test_parity_duplicate_both_reject(vocabulary: Vocabulary) -> None:
         title="Dup",
         nodes=[_node("created"), _node("closed")],
         edges=[
-            TransitionEdge(id="e0", from_state="created", to_state="closed",
-                           action="close_task"),
-            TransitionEdge(id="e1", from_state="created", to_state="closed",
-                           action="close_task"),
+            TransitionEdge(id="e0", from_state="created", to_state="closed", action="close_task"),
+            TransitionEdge(id="e1", from_state="created", to_state="closed", action="close_task"),
         ],
     )
     assert error_count(collect_validation_issues(graph, vocabulary=vocabulary)) > 0
@@ -249,7 +251,9 @@ def _violations_for(graph, vocabulary, base):
     return [
         i
         for i in collect_validation_issues(
-            graph, vocabulary=vocabulary, base_bundled_name=base,
+            graph,
+            vocabulary=vocabulary,
+            base_bundled_name=base,
             invariants=FEATURE_INVARIANTS,
         )
         if i.code is IssueCode.PROTECTED_INVARIANT_VIOLATION

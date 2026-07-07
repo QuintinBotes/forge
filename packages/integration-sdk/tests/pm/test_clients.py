@@ -38,6 +38,7 @@ def _forge_task(**overrides) -> ForgeTask:
 
 # --- Jira ------------------------------------------------------------------- #
 
+
 async def test_jira_fetch_external(jira_adapter) -> None:
     ext = await jira_adapter.fetch_external("10001")
     assert ext.provider is PMProvider.jira
@@ -60,8 +61,10 @@ async def test_jira_create_external(jira_adapter, jira_transport) -> None:
 async def test_jira_update_uses_transition_for_status(jira_adapter, jira_transport) -> None:
     await jira_adapter.update_external("10001", _forge_task(status_category=StatusCategory.started))
     paths = [c["url"] for c in jira_transport.call_log]
-    assert any(p.endswith("/issue/10001/transitions") and m == "POST"
-               for p, m in [(c["url"], c["method"]) for c in jira_transport.call_log])
+    assert any(
+        p.endswith("/issue/10001/transitions") and m == "POST"
+        for p, m in [(c["url"], c["method"]) for c in jira_transport.call_log]
+    )
     assert any("/issue/10001/transitions" in p for p in paths)
 
 
@@ -97,6 +100,7 @@ async def test_jira_health_error_on_auth_failure(jira_ctx) -> None:
 
 
 # --- Linear ----------------------------------------------------------------- #
+
 
 async def test_linear_fetch_external(linear_adapter) -> None:
     ext = await linear_adapter.fetch_external("uuid-1")
@@ -139,6 +143,7 @@ async def test_linear_webhook_create_delete(linear_adapter) -> None:
 
 
 # --- Cross-cutting ---------------------------------------------------------- #
+
 
 def test_clients_redact_auth_in_serialized_output(jira_adapter, linear_adapter) -> None:
     # The auth header lives only on the client's private headers; it must not be

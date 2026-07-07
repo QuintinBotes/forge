@@ -59,9 +59,7 @@ def session_factory() -> sessionmaker[Session]:
 @pytest.fixture
 def source_id(session_factory: sessionmaker[Session]) -> uuid.UUID:
     with session_factory() as session:
-        workspace = Workspace(
-            id=uuid.UUID(WORKSPACE_ID), name="Acme", slug="acme"
-        )
+        workspace = Workspace(id=uuid.UUID(WORKSPACE_ID), name="Acme", slug="acme")
         session.add(workspace)
         session.flush()
         source = KnowledgeSource(
@@ -150,9 +148,7 @@ def test_index_then_search_returns_attributed_chunks(
     assert results[0]["rerank_score"] is not None
 
 
-def test_search_recovers_exact_identifier(
-    client: TestClient, source_id: uuid.UUID
-) -> None:
+def test_search_recovers_exact_identifier(client: TestClient, source_id: uuid.UUID) -> None:
     client.post("/knowledge/index", json=_index_payload(source_id))
     resp = client.post(
         "/knowledge/search",
@@ -171,9 +167,7 @@ def test_search_empty_index_returns_empty_list(client: TestClient) -> None:
     assert resp.json() == []
 
 
-def test_sync_full_indexes_inline_files(
-    client: TestClient, source_id: uuid.UUID
-) -> None:
+def test_sync_full_indexes_inline_files(client: TestClient, source_id: uuid.UUID) -> None:
     resp = client.post(
         "/knowledge/sync",
         json={
@@ -197,9 +191,7 @@ def test_sync_full_indexes_inline_files(
     assert any(c["path"] == "auth/jwt.py" for c in found.json())
 
 
-def test_sync_full_prunes_vanished_files(
-    client: TestClient, source_id: uuid.UUID
-) -> None:
+def test_sync_full_prunes_vanished_files(client: TestClient, source_id: uuid.UUID) -> None:
     base = {
         "source_id": str(source_id),
         "mode": "full",
@@ -235,9 +227,7 @@ def test_sync_incremental_requires_root_and_base_ref(
     assert resp.status_code == 422
 
 
-def test_sync_full_requires_files_or_root(
-    client: TestClient, source_id: uuid.UUID
-) -> None:
+def test_sync_full_requires_files_or_root(client: TestClient, source_id: uuid.UUID) -> None:
     resp = client.post(
         "/knowledge/sync",
         json={"source_id": str(source_id), "mode": "full"},

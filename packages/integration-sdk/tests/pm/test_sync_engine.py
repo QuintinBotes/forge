@@ -181,6 +181,7 @@ def _engine(
 
 # --- OUT create / update / no-op ------------------------------------------- #
 
+
 async def test_sync_out_create_links_and_sets_watermarks() -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
@@ -233,6 +234,7 @@ async def test_sync_out_no_change_makes_no_external_call() -> None:
 
 # --- IN create / update ----------------------------------------------------- #
 
+
 async def test_sync_in_create_via_board_service_tagged_pm_sync() -> None:
     adapter = FakeAdapter()
     board = InMemoryBoardWriter(clock=_now)
@@ -267,6 +269,7 @@ async def test_sync_in_update_writes_through_board() -> None:
 
 # --- Echo suppression (content hash) — AC12 -------------------------------- #
 
+
 async def test_echo_suppression_out_after_in_write() -> None:
     adapter = FakeAdapter()
     board = InMemoryBoardWriter(clock=_now)
@@ -298,6 +301,7 @@ async def test_echo_suppression_in_after_out_write() -> None:
 
 # --- Conflict resolution — AC13 / AC14 ------------------------------------- #
 
+
 def _seed_conflict_link(links: InMemoryLinkRepository, forge_task: ForgeTask) -> LinkRecord:
     """A synced link whose stored hashes are 'stale' so both sides look changed."""
     link = LinkRecord(
@@ -320,9 +324,7 @@ async def test_conflict_newest_wins_picks_forge() -> None:
     links = InMemoryLinkRepository()
     task = _forge(version=2, updated_at=_now() + timedelta(hours=1))
     _seed_conflict_link(links, task)
-    adapter.externals["ext-1"] = _external(
-        title="external edit", external_updated_at=_now()
-    )
+    adapter.externals["ext-1"] = _external(title="external edit", external_updated_at=_now())
     engine = _engine(adapter, links=links, policy=ConflictPolicy.newest_wins)
 
     outcome = await engine.sync_out(task)
@@ -432,6 +434,7 @@ async def test_resolve_conflict_applies_winner_external() -> None:
 
 
 # --- Direction enforcement — AC19 ------------------------------------------ #
+
 
 async def test_sync_direction_inbound_only_skips_out() -> None:
     adapter = FakeAdapter()

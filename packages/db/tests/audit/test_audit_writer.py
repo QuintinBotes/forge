@@ -84,9 +84,7 @@ def test_emit_assigns_monotonic_seq_and_links_chain(session: Session) -> None:
     assert r2.prev_hash == r1.entry_hash
     assert r3.prev_hash == r2.entry_hash
 
-    head = session.scalars(
-        select(AuditChainHead).where(AuditChainHead.workspace_id == WS)
-    ).one()
+    head = session.scalars(select(AuditChainHead).where(AuditChainHead.workspace_id == WS)).one()
     assert head.last_seq == 3
     assert head.last_hash == r3.entry_hash
 

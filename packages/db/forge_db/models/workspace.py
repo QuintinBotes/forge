@@ -60,9 +60,7 @@ class User(WorkspaceScopedModel):
     # F33 enterprise SSO: when the user was deprovisioned (SCIM active=false /
     # DELETE), distinct from is_active so the *when* survives re-activation; and
     # whether the directory (SCIM) owns this user's lifecycle.
-    deactivated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     external_managed: Mapped[bool] = mapped_column(
         default=False, server_default=text("false"), nullable=False
     )
@@ -92,9 +90,7 @@ class APIKey(WorkspaceScopedModel):
     key_version: Mapped[int] = mapped_column(
         SmallInteger, default=1, server_default=text("1"), nullable=False
     )
-    rotated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - trivial, secret-safe
         return (

@@ -47,7 +47,7 @@ from forge_contracts import (
     PolicyViolationError,
 )
 from forge_contracts.enums import MCPIndexStrategy
-from forge_mcp import MCPConnectionManager, TeeAuditLog, live_transport_factory
+from forge_mcp import AuditSink, MCPConnectionManager, TeeAuditLog, live_transport_factory
 from forge_mcp.exceptions import (
     MCPConnectionNotFoundError,
     MCPInputError,
@@ -109,7 +109,7 @@ def _mcp_token_resolver(conn: MCPConnection) -> str | None:
     return os.environ.get("MCP_TOKEN")
 
 
-def _mcp_audit_sink() -> object | None:
+def _mcp_audit_sink() -> AuditSink | None:
     """Build the durable MCP audit bridge when ``FORGE_MCP_AUDIT_BACKEND=db``.
 
     The bridge forwards every ``MCPAuditEntry`` to the platform
@@ -118,9 +118,12 @@ def _mcp_audit_sink() -> object | None:
     """
     if os.environ.get("FORGE_MCP_AUDIT_BACKEND", "memory").strip().lower() != "db":
         return None
-    from forge_api.observability import AuditLog, MCPAuditSink
+    from forge_api.observability import MCPAuditSink
+    from forge_api.observability.audit_db import default_audit_log
 
-    return MCPAuditSink(AuditLog())
+    # ``default_audit_log`` selects the store via ``FORGE_AUDIT_BACKEND`` (default
+    # ``memory``); set it to ``db`` for the entries to land in durable Postgres.
+    return MCPAuditSink(default_audit_log())
 
 
 @lru_cache(maxsize=1)

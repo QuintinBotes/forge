@@ -123,13 +123,9 @@ async def ingest_alert(
 
     # The raw payload is not persisted beyond a redacted hash.
     _payload_hash = hashlib.sha256(body).hexdigest()
-    record, ingest_status = service.ingest_alert(
-        alert=alert, project_id=project_id, actor="system"
-    )
+    record, ingest_status = service.ingest_alert(alert=alert, project_id=project_id, actor="system")
     response.status_code = status.HTTP_202_ACCEPTED
-    return AlertAccepted(
-        status=ingest_status, incident_id=record.id, incident_key=record.key
-    )
+    return AlertAccepted(status=ingest_status, incident_id=record.id, incident_key=record.key)
 
 
 __all__ = ["router"]

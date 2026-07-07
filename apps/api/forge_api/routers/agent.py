@@ -58,18 +58,14 @@ class AgentRunStore:
         self._runs: dict[uuid.UUID, AgentRunResult] = {}
         self._owner: dict[uuid.UUID, uuid.UUID] = {}
 
-    def put(
-        self, result: AgentRunResult, *, workspace_id: uuid.UUID
-    ) -> AgentRunResult:
+    def put(self, result: AgentRunResult, *, workspace_id: uuid.UUID) -> AgentRunResult:
         if result.run_id is None:
             result.run_id = uuid.uuid4()
         self._runs[result.run_id] = result
         self._owner[result.run_id] = workspace_id
         return result
 
-    def get(
-        self, run_id: uuid.UUID, *, workspace_id: uuid.UUID
-    ) -> AgentRunResult | None:
+    def get(self, run_id: uuid.UUID, *, workspace_id: uuid.UUID) -> AgentRunResult | None:
         if self._owner.get(run_id) != workspace_id:
             return None
         return self._runs.get(run_id)
@@ -139,9 +135,7 @@ def get_run(store: StoreDep, principal: ReaderDep, run_id: uuid.UUID) -> AgentRu
     """Fetch a recorded agent run result with its steps (own workspace only)."""
     result = store.get(run_id, workspace_id=principal.workspace_id)
     if result is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"no agent run {run_id}"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"no agent run {run_id}")
     return result
 
 

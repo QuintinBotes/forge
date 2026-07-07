@@ -70,9 +70,7 @@ class AgentRunner:
         artifacts: dict[str, object] = {}
         try:
             if self._use_worktree and self._repo_root is not None and _wants_worktree(objective):
-                sandbox = WorktreeSandbox(
-                    self._repo_root, base_branch=_base_branch(objective)
-                )
+                sandbox = WorktreeSandbox(self._repo_root, base_branch=_base_branch(objective))
                 try:
                     working_root = sandbox.create(_branch_name(objective))
                     artifacts["worktree_path"] = str(working_root)
@@ -105,9 +103,7 @@ class AgentRunner:
         if not isinstance(agents_md, str):
             agents_md = load_agents_md(working_root) if working_root is not None else None
         artifacts["agents_md_loaded"] = agents_md is not None
-        system = build_system_prompt(
-            objective, agents_md=agents_md, context=objective.context
-        )
+        system = build_system_prompt(objective, agents_md=agents_md, context=objective.context)
         user = objective.objective
         if objective.instructions:
             user = f"{user}\n\n{objective.instructions}"
@@ -126,13 +122,9 @@ class AgentRunner:
         graph.add_node("observe", self._observe_node)
         graph.add_node("finalize", self._finalize_node)
         graph.set_entry_point("plan")
-        graph.add_conditional_edges(
-            "plan", self._route, {"act": "act", "finalize": "finalize"}
-        )
+        graph.add_conditional_edges("plan", self._route, {"act": "act", "finalize": "finalize"})
         graph.add_edge("act", "observe")
-        graph.add_conditional_edges(
-            "observe", self._route, {"act": "act", "finalize": "finalize"}
-        )
+        graph.add_conditional_edges("observe", self._route, {"act": "act", "finalize": "finalize"})
         graph.add_edge("finalize", END)
         return graph.compile()
 
@@ -164,17 +156,13 @@ class AgentRunner:
             self._apply_refusal(state, response.stop_reason)
             return state
         state.last_content = response.content or ""
-        state.messages.append(
-            ModelMessage(role="assistant", content=response.content or "")
-        )
+        state.messages.append(ModelMessage(role="assistant", content=response.content or ""))
         # Always record the planning turn; for observe turns, only when the model
         # actually said something.
         if step_kind is StepKind.PLAN or response.content:
             thought = response.content or None
             if thought is None and response.tool_calls:
-                thought = "planned tool calls: " + ", ".join(
-                    tc.name for tc in response.tool_calls
-                )
+                thought = "planned tool calls: " + ", ".join(tc.name for tc in response.tool_calls)
             state.add_step(Step(kind=step_kind, thought=thought))
 
         pending: list[ModelToolCall] = []
@@ -263,12 +251,10 @@ class AgentRunner:
                 if worst > hr.on_test_failure_after_retries:
                     state.needs_human = True
                     state.risks.append(
-                        f"tool failed {worst} times (>" f"{hr.on_test_failure_after_retries})"
+                        f"tool failed {worst} times (>{hr.on_test_failure_after_retries})"
                     )
 
-        state.add_step(
-            Step(kind=StepKind.OUTPUT, output=state.output, confidence=state.confidence)
-        )
+        state.add_step(Step(kind=StepKind.OUTPUT, output=state.output, confidence=state.confidence))
         if state.needs_human:
             state.add_step(
                 Step(

@@ -23,9 +23,7 @@ class TestConfigCrud:
         self, client_factory, session_factory, idp_keypair: Keypair
     ):
         admin = client_factory(UserRole.ADMIN)
-        response = admin.put(
-            f"/workspaces/{WS_ID}/sso", json=make_config_in(idp_keypair)
-        )
+        response = admin.put(f"/workspaces/{WS_ID}/sso", json=make_config_in(idp_keypair))
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["enabled"] is True
@@ -70,9 +68,7 @@ class TestConfigCrud:
         member = client_factory(UserRole.MEMBER)
         assert member.get(f"/workspaces/{WS_ID}/sso").status_code == 403
         assert (
-            member.put(
-                f"/workspaces/{WS_ID}/sso", json=make_config_in(idp_keypair)
-            ).status_code
+            member.put(f"/workspaces/{WS_ID}/sso", json=make_config_in(idp_keypair)).status_code
             == 403
         )
         assert member.get(f"/workspaces/{WS_ID}/scim/tokens").status_code == 403
@@ -115,9 +111,7 @@ class TestEnableDisable:
         with session_factory() as session:
             for user in (
                 session.execute(
-                    select(User).where(
-                        User.workspace_id == WS_ID, User.role == UserRole.ADMIN
-                    )
+                    select(User).where(User.workspace_id == WS_ID, User.role == UserRole.ADMIN)
                 )
                 .scalars()
                 .all()
@@ -131,17 +125,11 @@ class TestEnableDisable:
 
 
 class TestConnectionTest:
-    def test_validation_only_no_session_no_user(
-        self, client_factory, session_factory, idp_keypair
-    ):
+    def test_validation_only_no_session_no_user(self, client_factory, session_factory, idp_keypair):
         install_config(session_factory, idp_keypair)
         admin = client_factory(UserRole.ADMIN)
-        b64 = sign_saml_response(
-            build_saml_response(attributes={"groups": ["eng"]}), idp_keypair
-        )
-        response = admin.post(
-            f"/workspaces/{WS_ID}/sso/test", json={"saml_response": b64}
-        )
+        b64 = sign_saml_response(build_saml_response(attributes={"groups": ["eng"]}), idp_keypair)
+        response = admin.post(f"/workspaces/{WS_ID}/sso/test", json={"saml_response": b64})
         assert response.status_code == 200
         body = response.json()
         assert body["name_id"] == "dana@acme.com"
@@ -161,9 +149,7 @@ class TestConnectionTest:
         install_config(session_factory, idp_keypair)
         admin = client_factory(UserRole.ADMIN)
         b64 = sign_saml_response(build_saml_response(), wrong_keypair)
-        response = admin.post(
-            f"/workspaces/{WS_ID}/sso/test", json={"saml_response": b64}
-        )
+        response = admin.post(f"/workspaces/{WS_ID}/sso/test", json={"saml_response": b64})
         assert response.status_code == 400
         assert response.json()["detail"]["reason"] == "bad_signature"
 
@@ -173,9 +159,7 @@ class TestScimTokens:
         self, client_factory, session_factory, idp_keypair
     ):
         admin = client_factory(UserRole.ADMIN)
-        created = admin.post(
-            f"/workspaces/{WS_ID}/scim/tokens", json={"name": "Okta production"}
-        )
+        created = admin.post(f"/workspaces/{WS_ID}/scim/tokens", json={"name": "Okta production"})
         assert created.status_code == 201
         body = created.json()
         raw = body["token"]
@@ -191,17 +175,16 @@ class TestScimTokens:
         assert "token_hash" not in listed.text
 
         token_id = rows[0]["id"]
-        assert (
-            admin.delete(f"/workspaces/{WS_ID}/scim/tokens/{token_id}").status_code
-            == 204
-        )
+        assert admin.delete(f"/workspaces/{WS_ID}/scim/tokens/{token_id}").status_code == 204
         assert admin.get(f"/workspaces/{WS_ID}/scim/tokens").json()[0]["revoked_at"]
 
         # Audit trail for issue + revoke, with no raw token in the details.
         with session_factory() as session:
-            rows = session.execute(
-                select(AuditLog).where(AuditLog.workspace_id == WS_ID)
-            ).scalars().all()
+            rows = (
+                session.execute(select(AuditLog).where(AuditLog.workspace_id == WS_ID))
+                .scalars()
+                .all()
+            )
             actions = [row.action for row in rows]
             assert "scim.token_issued" in actions
             assert "scim.token_revoked" in actions
@@ -211,14 +194,8 @@ class TestScimTokens:
     def test_duplicate_name_409(self, client_factory):
         admin = client_factory(UserRole.ADMIN)
         assert (
-            admin.post(
-                f"/workspaces/{WS_ID}/scim/tokens", json={"name": "dup"}
-            ).status_code
-            == 201
+            admin.post(f"/workspaces/{WS_ID}/scim/tokens", json={"name": "dup"}).status_code == 201
         )
         assert (
-            admin.post(
-                f"/workspaces/{WS_ID}/scim/tokens", json={"name": "dup"}
-            ).status_code
-            == 409
+            admin.post(f"/workspaces/{WS_ID}/scim/tokens", json={"name": "dup"}).status_code == 409
         )

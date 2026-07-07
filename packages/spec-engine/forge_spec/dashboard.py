@@ -193,13 +193,9 @@ def compute_spec_rollup(
         1 for r in manifest.requirements if _requirement_is_covered(r.id, cells)
     )
     referenced = {rid for c in cells for rid in c.requirement_ids}
-    uncovered_requirement_ext_ids = [
-        r.id for r in manifest.requirements if r.id not in referenced
-    ]
+    uncovered_requirement_ext_ids = [r.id for r in manifest.requirements if r.id not in referenced]
 
-    requirement_coverage = (
-        covered_requirements / total_requirements if total_requirements else 0.0
-    )
+    requirement_coverage = covered_requirements / total_requirements if total_requirements else 0.0
     acceptance_criteria_coverage = validated / total_criteria if total_criteria else 0.0
 
     validation_status = _resolve_validation_status(
@@ -354,9 +350,7 @@ def _criterion_gap(
     )
 
 
-def summarize_project(
-    project_id: str, rows: list[SpecValidationRow]
-) -> ProjectValidationSummary:
+def summarize_project(project_id: str, rows: list[SpecValidationRow]) -> ProjectValidationSummary:
     """Aggregate per-spec rollup rows into the project summary (AC #10)."""
     total_requirements = sum(r.total_requirements for r in rows)
     covered_requirements = sum(r.covered_requirements for r in rows)

@@ -106,7 +106,9 @@ async def test_create_after_resolution_opens_new_gate(service: ApprovalService) 
     subject_id = uuid.uuid4()
     first = await _create(service, subject_id=subject_id)
     await service.resolve(
-        first.id, APPROVE, make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
+        first.id,
+        APPROVE,
+        make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
         workspace_id=WS,
     )
     second = await _create(service, subject_id=subject_id)
@@ -200,7 +202,9 @@ async def test_resolve_invokes_hook_and_folds_outcome(
     """AC#10: the pr hook runs and its outcome lands in the resolution."""
     created = await _create(service)
     resolution = await service.resolve(
-        created.id, APPROVE, make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
+        created.id,
+        APPROVE,
+        make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
         workspace_id=WS,
     )
     assert resolution.outcome.completed is True
@@ -227,7 +231,9 @@ async def test_approve_but_blocked_keeps_reasons(
     service = ApprovalService(repo, registry, ApprovalAuthorizer(), events=fake_bus)
     created = await _create(service)
     resolution = await service.resolve(
-        created.id, APPROVE, make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
+        created.id,
+        APPROVE,
+        make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
         workspace_id=WS,
     )
     assert resolution.status is GateStatus.APPROVED  # the approval IS recorded
@@ -243,7 +249,9 @@ async def test_resolve_without_hook_returns_not_implemented(
     service = ApprovalService(repo, GateRegistry(), ApprovalAuthorizer())
     created = await _create(service, GateType.SPEC)
     resolution = await service.resolve(
-        created.id, APPROVE, make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
+        created.id,
+        APPROVE,
+        make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
         workspace_id=WS,
     )
     assert resolution.status is GateStatus.APPROVED
@@ -300,7 +308,9 @@ async def test_escalate_raises_role_and_risk(
         await service.resolve(created.id, APPROVE, other_member, workspace_id=WS)
     # An admin can now resolve it.
     final = await service.resolve(
-        created.id, APPROVE, make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
+        created.id,
+        APPROVE,
+        make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
         workspace_id=WS,
     )
     assert final.status is GateStatus.APPROVED
@@ -353,9 +363,7 @@ async def test_resolve_cross_workspace_not_found(service: ApprovalService) -> No
 async def test_inbox_scoped_sorted_and_mine(service: ApprovalService) -> None:
     """AC#18: critical first; mine=True keeps only resolvable gates."""
     await _create(service, GateType.PR, risk_level="info", subject_id=uuid.uuid4())
-    await _create(
-        service, GateType.POLICY_OVERRIDE, risk_level="critical", subject_id=uuid.uuid4()
-    )
+    await _create(service, GateType.POLICY_OVERRIDE, risk_level="critical", subject_id=uuid.uuid4())
     await _create(service, GateType.DEPLOY, risk_level="warning", subject_id=uuid.uuid4())
 
     admin = make_principal(role=Role.ADMIN, principal_id=ADMIN_ID)
@@ -363,9 +371,7 @@ async def test_inbox_scoped_sorted_and_mine(service: ApprovalService) -> None:
     assert [r.risk_level for r in rows] == ["critical", "warning", "info"]
 
     member = make_principal()
-    mine = await service.list(
-        workspace_id=WS, actor=member, status=GateStatus.PENDING, mine=True
-    )
+    mine = await service.list(workspace_id=WS, actor=member, status=GateStatus.PENDING, mine=True)
     # policy_override is admin-only, so the member's inbox excludes it.
     assert {r.gate_type for r in mine} == {GateType.PR, GateType.DEPLOY}
 
@@ -398,12 +404,8 @@ async def test_expire_pending_marks_and_emits(
 ) -> None:
     """SLA sweep: past-expiry pending gates flip to expired + emit resolved."""
     now = datetime.now(UTC)
-    expired = await _create(
-        service, subject_id=uuid.uuid4(), expires_at=now - timedelta(minutes=1)
-    )
-    alive = await _create(
-        service, subject_id=uuid.uuid4(), expires_at=now + timedelta(hours=1)
-    )
+    expired = await _create(service, subject_id=uuid.uuid4(), expires_at=now - timedelta(minutes=1))
+    alive = await _create(service, subject_id=uuid.uuid4(), expires_at=now + timedelta(hours=1))
     resolutions = await service.expire_pending(now=now)
     assert [r.approval_id for r in resolutions] == [expired.id]
     assert (await service.get(expired.id, workspace_id=WS)).status is GateStatus.EXPIRED
