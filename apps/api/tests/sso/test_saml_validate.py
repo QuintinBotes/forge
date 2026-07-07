@@ -78,9 +78,7 @@ class TestBuildAuthnRequest:
         root = etree.fromstring(inflated)
         assert root.get("ID") == request_id
         assert root.get("AssertionConsumerServiceURL") == ACS_URL
-        assert root.findtext(
-            "{urn:oasis:names:tc:SAML:2.0:assertion}Issuer"
-        ) == SP_ENTITY_ID
+        assert root.findtext("{urn:oasis:names:tc:SAML:2.0:assertion}Issuer") == SP_ENTITY_ID
 
         # The redirect-binding signature verifies with the SP public key over
         # the exact SAMLRequest=..&RelayState=..&SigAlg=.. byte sequence.
@@ -190,16 +188,12 @@ class TestValidateResponse:
         assert err.value.reason == "issuer_mismatch"
 
     def test_in_response_to_mismatch_rejected(self, idp_keypair: Keypair):
-        b64 = sign_saml_response(
-            build_saml_response(in_response_to="_other"), idp_keypair
-        )
+        b64 = sign_saml_response(build_saml_response(in_response_to="_other"), idp_keypair)
         with pytest.raises(SamlValidationError) as err:
             _validate(b64, idp_keypair, expected_irt="_req1")
         assert err.value.reason == "in_response_to_mismatch"
 
-    def test_idp_initiated_shape_accepted_when_unexpected_none(
-        self, idp_keypair: Keypair
-    ):
+    def test_idp_initiated_shape_accepted_when_unexpected_none(self, idp_keypair: Keypair):
         b64 = sign_saml_response(build_saml_response(), idp_keypair)
         assertion = _validate(b64, idp_keypair, expected_irt=None)
         assert assertion.in_response_to is None
@@ -229,14 +223,10 @@ class TestValidateResponse:
         (attacker) assertion is injected — the document is rejected."""
         assertion_id = "_axsw1"
         response = build_saml_response(assertion_id=assertion_id)
-        b64 = sign_saml_response(
-            response, idp_keypair, reference_uri=f"#{assertion_id}"
-        )
+        b64 = sign_saml_response(response, idp_keypair, reference_uri=f"#{assertion_id}")
         root = etree.fromstring(base64.b64decode(b64))
         saml_ns = "{urn:oasis:names:tc:SAML:2.0:assertion}"
-        evil = etree.fromstring(
-            etree.tostring(root.find(f".//{saml_ns}Assertion"))
-        )
+        evil = etree.fromstring(etree.tostring(root.find(f".//{saml_ns}Assertion")))
         evil.set("ID", "_evil")
         evil.find(f"{saml_ns}Subject/{saml_ns}NameID").text = "attacker@acme.com"
         root.insert(list(root).index(root.find(f".//{saml_ns}Assertion")), evil)

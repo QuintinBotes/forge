@@ -197,9 +197,7 @@ def test_custom_profile_overrides_builtin() -> None:
 def test_registry_seeded_from_mapping_and_iterable() -> None:
     p1 = SkillProfile(name="alpha")
     p2 = SkillProfile(name="beta")
-    from_map = SkillProfileRegistry(
-        {"alpha": p1, "beta": p2}, include_builtins=False
-    )
+    from_map = SkillProfileRegistry({"alpha": p1, "beta": p2}, include_builtins=False)
     assert set(from_map.names()) == {"alpha", "beta"}
     from_iter = SkillProfileRegistry([p1, p2], include_builtins=False)
     assert set(from_iter.names()) == {"alpha", "beta"}

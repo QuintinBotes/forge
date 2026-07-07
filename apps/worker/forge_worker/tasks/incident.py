@@ -26,12 +26,15 @@ from forge_board.incidents import (
     assert_runbook_within_policy,
     create_action_item_tasks,
 )
+from forge_board.incidents.actions import TaskCreator
+from forge_contracts import TaskDTO
 from forge_contracts.incident import (
     ContextFinding,
     ImpactAssessment,
     IncidentAgentPort,
     IncidentEventDTO,
     IncidentSnapshot,
+    Postmortem,
     PostmortemComposer,
     RecoveryMonitor,
     Runbook,
@@ -161,12 +164,16 @@ def generate_postmortem(
     incident: IncidentSnapshot,
     events: list[IncidentEventDTO],
     plans: list[Runbook],
-    board: object,
+    board: TaskCreator,
     composer: PostmortemComposer | None = None,
-):
+) -> tuple[Postmortem, list[TaskDTO]]:
     """Compose the postmortem and create follow-up board Tasks from its items."""
     comp = composer or TemplatePostmortemComposer()
     postmortem = comp.compose(incident=incident, events=events, plans=plans)
+    # A postmortem's action items are tracked as board tasks in the incident's
+    # project; the composer is only run for a resolved incident, which always
+    # carries a project (mirrors the ``state.runbook``/``assessment`` asserts).
+    assert incident.project_id is not None
     tasks = create_action_item_tasks(
         board,
         project_id=incident.project_id,
@@ -273,10 +280,10 @@ async def run_post_approval_phase(
     monitor: RecoveryMonitor,
     directives: SkillDirectives,
     incident: IncidentSnapshot,
-    board: object,
+    board: TaskCreator,
     policy: object | None = None,
     composer: PostmortemComposer | None = None,
-):
+) -> tuple[IncidentFlowState, Postmortem | None, list[TaskDTO]]:
     """Drive ``executing_runbook`` → ``postmortem_created`` and compose the PM."""
     from forge_workflow import drive_incident
 

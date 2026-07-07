@@ -17,17 +17,13 @@ from forge_deploy.states import HealthStatus
 
 @runtime_checkable
 class HealthChecker(Protocol):
-    def check(
-        self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID
-    ) -> HealthCheckResult: ...
+    def check(self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID) -> HealthCheckResult: ...
 
 
 class NullHealthChecker:
     """Always-passing checker (used when ``health_check.kind == 'none'``)."""
 
-    def check(
-        self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID
-    ) -> HealthCheckResult:
+    def check(self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID) -> HealthCheckResult:
         return HealthCheckResult(
             status=HealthStatus.PASSING, attempts=0, detail="no health check configured"
         )
@@ -40,9 +36,7 @@ class ScriptedHealthChecker:
         self._results = list(results)
         self._idx = 0
 
-    def check(
-        self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID
-    ) -> HealthCheckResult:
+    def check(self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID) -> HealthCheckResult:
         ok = self._results[min(self._idx, len(self._results) - 1)]
         self._idx += 1
         return HealthCheckResult(
@@ -61,9 +55,7 @@ class HttpHealthChecker:
     def __init__(self, getter: Callable[[str], int]) -> None:
         self._getter = getter
 
-    def check(
-        self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID
-    ) -> HealthCheckResult:
+    def check(self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID) -> HealthCheckResult:
         if not spec.url:
             return HealthCheckResult(
                 status=HealthStatus.UNKNOWN, attempts=0, detail="no url configured"
@@ -84,9 +76,7 @@ class HttpHealthChecker:
                     detail=f"GET {spec.url} -> {code}",
                 )
             last = f"GET {spec.url} -> {code} (want {spec.expect_status})"
-        return HealthCheckResult(
-            status=HealthStatus.FAILING, attempts=attempts, detail=last
-        )
+        return HealthCheckResult(status=HealthStatus.FAILING, attempts=attempts, detail=last)
 
 
 class CommandHealthChecker:
@@ -98,9 +88,7 @@ class CommandHealthChecker:
     def __init__(self, runner: Callable[[str], int]) -> None:
         self._runner = runner
 
-    def check(
-        self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID
-    ) -> HealthCheckResult:
+    def check(self, spec: HealthCheckSpec, *, deployment_id: uuid.UUID) -> HealthCheckResult:
         if not spec.command:
             return HealthCheckResult(
                 status=HealthStatus.UNKNOWN, attempts=0, detail="no command configured"
@@ -121,9 +109,7 @@ class CommandHealthChecker:
                     detail=f"`{spec.command}` exited 0",
                 )
             last = f"`{spec.command}` exited {code}"
-        return HealthCheckResult(
-            status=HealthStatus.FAILING, attempts=attempts, detail=last
-        )
+        return HealthCheckResult(status=HealthStatus.FAILING, attempts=attempts, detail=last)
 
 
 __all__ = [

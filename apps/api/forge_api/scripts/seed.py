@@ -32,9 +32,7 @@ def seed() -> None:
     """Create the demo workspace + admin user if they do not already exist."""
     factory = create_session_factory()
     with factory() as session:
-        workspace = session.scalar(
-            select(Workspace).where(Workspace.slug == DEMO_WORKSPACE_SLUG)
-        )
+        workspace = session.scalar(select(Workspace).where(Workspace.slug == DEMO_WORKSPACE_SLUG))
         if workspace is None:
             workspace = Workspace(name=DEMO_WORKSPACE_NAME, slug=DEMO_WORKSPACE_SLUG)
             session.add(workspace)
@@ -63,10 +61,7 @@ def seed() -> None:
 
         session.commit()
 
-    print(
-        f"Seed complete: workspace slug={DEMO_WORKSPACE_SLUG!r} "
-        f"admin={DEMO_ADMIN_EMAIL!r}"
-    )
+    print(f"Seed complete: workspace slug={DEMO_WORKSPACE_SLUG!r} admin={DEMO_ADMIN_EMAIL!r}")
 
 
 def main() -> None:

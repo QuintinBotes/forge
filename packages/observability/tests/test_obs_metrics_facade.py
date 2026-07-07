@@ -97,9 +97,7 @@ def test_facade_methods_emit_expected_instruments() -> None:
 
 
 def test_unknown_label_value_bucketed_to_other_with_allow_list() -> None:
-    m = RecordingMetrics(
-        service="t", allowed_values={"skill_profile": frozenset({"backend-tdd"})}
-    )
+    m = RecordingMetrics(service="t", allowed_values={"skill_profile": frozenset({"backend-tdd"})})
     m.record_agent_run(status="failed", skill_profile="totally-new", retries=0, confidence=None)
     assert m.counter_value("forge_agent_runs_total", skill_profile="other") == 1
     assert m.label_values("forge_agent_runs_total", "skill_profile") == {"other"}
@@ -119,8 +117,13 @@ def test_noop_metrics_accepts_every_facade_call() -> None:
     noop = NoopMetrics()
     assert isinstance(noop, ForgeMetrics)
     noop.record_model_cost(
-        provider="p", model="m", kind="completion", phase=None,
-        prompt_tokens=1, completion_tokens=1, cost_usd=0.0,
+        provider="p",
+        model="m",
+        kind="completion",
+        phase=None,
+        prompt_tokens=1,
+        completion_tokens=1,
+        cost_usd=0.0,
     )
     noop.set_mcp_freshness_lag(connection="c", lag_seconds=1.0)
     with pytest.raises(AttributeError):

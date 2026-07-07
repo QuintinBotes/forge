@@ -39,9 +39,7 @@ class LoopGuard:
     def __init__(self, max_depth: int | None = None) -> None:
         self.max_depth = max_depth if max_depth is not None else resolve_max_depth()
 
-    def abort_reason(
-        self, envelope: AutomationTriggerEnvelope, rule_id: uuid.UUID
-    ) -> str | None:
+    def abort_reason(self, envelope: AutomationTriggerEnvelope, rule_id: uuid.UUID) -> str | None:
         """Return a reason string if the rule must be skipped, else ``None``."""
         if envelope.depth >= self.max_depth:
             return f"max_depth_reached:{self.max_depth}"

@@ -47,9 +47,7 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def test_me_requires_authentication(
-    client: httpx.AsyncClient, service: AuthService
-) -> None:
+async def test_me_requires_authentication(client: httpx.AsyncClient, service: AuthService) -> None:
     resp = await client.get("/auth/me")
     assert resp.status_code == 401
 
@@ -96,9 +94,7 @@ async def test_api_key_create_and_list_roundtrip(
 async def test_non_admin_cannot_create_api_keys(
     client: httpx.AsyncClient, service: AuthService
 ) -> None:
-    _, viewer_token = service.bootstrap_key(
-        workspace_id=WS, name="viewer", role=UserRole.VIEWER
-    )
+    _, viewer_token = service.bootstrap_key(workspace_id=WS, name="viewer", role=UserRole.VIEWER)
     resp = await client.post(
         "/auth/api-keys",
         headers=_auth(viewer_token),
@@ -133,12 +129,8 @@ async def test_secret_create_returns_no_plaintext_and_is_decryptable(
     assert "sk-ant-PLAINTEXTSECRET99" not in listed.text
 
 
-async def test_viewer_cannot_write_secret(
-    client: httpx.AsyncClient, service: AuthService
-) -> None:
-    _, viewer_token = service.bootstrap_key(
-        workspace_id=WS, name="viewer", role=UserRole.VIEWER
-    )
+async def test_viewer_cannot_write_secret(client: httpx.AsyncClient, service: AuthService) -> None:
+    _, viewer_token = service.bootstrap_key(workspace_id=WS, name="viewer", role=UserRole.VIEWER)
     resp = await client.post(
         "/auth/secrets",
         headers=_auth(viewer_token),
@@ -147,9 +139,7 @@ async def test_viewer_cannot_write_secret(
     assert resp.status_code == 403
 
 
-async def test_invalid_token_rejected(
-    client: httpx.AsyncClient, service: AuthService
-) -> None:
+async def test_invalid_token_rejected(client: httpx.AsyncClient, service: AuthService) -> None:
     resp = await client.get("/auth/me", headers=_auth("forge_system_not_a_real_token"))
     assert resp.status_code == 401
 
@@ -187,9 +177,7 @@ def oauth_service() -> Iterator[Callable[[Callable[[httpx.Request], httpx.Respon
         svc = AuthService(
             secret_key=b"1" * 32,
             oauth=OAuthClient(
-                credentials={
-                    "github": OAuthClientCredentials(client_id="id", client_secret="sec")
-                },
+                credentials={"github": OAuthClientCredentials(client_id="id", client_secret="sec")},
                 transport=httpx.MockTransport(handler),
             ),
         )

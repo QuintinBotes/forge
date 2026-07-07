@@ -91,9 +91,7 @@ class DeploymentGateEvaluator:
         self.security = security or _NullSecurityReader()
         self.clock = clock or SystemClock()
 
-    def evaluate(
-        self, deployment_id: uuid.UUID, *, persist: bool = False
-    ) -> GateEvaluation:
+    def evaluate(self, deployment_id: uuid.UUID, *, persist: bool = False) -> GateEvaluation:
         dep = self.repo.get_or_404(deployment_id)
         env = self.repo.session.get(Environment, dep.environment_id)
         if env is None:  # pragma: no cover - referential integrity guarantees it
@@ -115,12 +113,8 @@ class DeploymentGateEvaluator:
             self._check_freeze(gate_config, frozen_overridden=dep.freeze_override_by is not None)
         )
 
-        agent_blocked = (
-            dep.trigger == DeploymentTrigger.AGENT and not rules.allow_agent_deploy
-        )
-        requires_human_approval = bool(
-            env.is_restricted or env.requires_approval or agent_blocked
-        )
+        agent_blocked = dep.trigger == DeploymentTrigger.AGENT and not rules.allow_agent_deploy
+        requires_human_approval = bool(env.is_restricted or env.requires_approval or agent_blocked)
         can_proceed = all(c.status != GateCheckStatus.FAILED for c in checks)
         blocking = [c.detail for c in checks if c.status == GateCheckStatus.FAILED]
 
@@ -166,9 +160,7 @@ class DeploymentGateEvaluator:
             detail=f"environment {env_name!r} permitted by deploy_rules",
         )
 
-    def _check_predecessor(
-        self, env: Environment, commit_sha: str
-    ) -> GateCheckResult:
+    def _check_predecessor(self, env: Environment, commit_sha: str) -> GateCheckResult:
         if env.rank == 0:
             return GateCheckResult(
                 name=GateCheckName.PREDECESSOR_SUCCEEDED,
@@ -259,9 +251,7 @@ class DeploymentGateEvaluator:
             detail=f"{findings} critical security finding(s)",
         )
 
-    def _check_freeze(
-        self, gate_config: GateConfig, *, frozen_overridden: bool
-    ) -> GateCheckResult:
+    def _check_freeze(self, gate_config: GateConfig, *, frozen_overridden: bool) -> GateCheckResult:
         windows: list[FreezeWindow] = list(gate_config.freeze_windows)
         state = is_frozen(windows, self.clock.now(), gate_config.timezone)
         if not state.frozen:

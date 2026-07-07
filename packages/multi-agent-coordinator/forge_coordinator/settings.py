@@ -61,7 +61,5 @@ class CoordinatorSettings(BaseModel):
             subagent_timeout_seconds=_env_int("MULTI_AGENT_SUBAGENT_TIMEOUT_SECONDS", 3600),
             review_loop_budget=_env_int("MULTI_AGENT_REVIEW_LOOP_BUDGET", 1),
             fallback_to_single_agent=_env_bool("MULTI_AGENT_FALLBACK_TO_SINGLE_AGENT", False),
-            confidence_threshold=_env_float(
-                "MULTI_AGENT_CONFIDENCE_THRESHOLD", 0.72
-            ),
+            confidence_threshold=_env_float("MULTI_AGENT_CONFIDENCE_THRESHOLD", 0.72),
         )

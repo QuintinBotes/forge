@@ -52,9 +52,7 @@ async def test_fingerprint_mismatch_denies() -> None:
 async def test_agent_run_mismatch_denies() -> None:
     store = InMemoryGrantStore()
     store.mint(_grant())
-    assert (
-        await store.consume(agent_run_id=uuid.uuid4(), action_fingerprint=FINGERPRINT) is False
-    )
+    assert await store.consume(agent_run_id=uuid.uuid4(), action_fingerprint=FINGERPRINT) is False
 
 
 def test_mint_is_idempotent_while_active() -> None:

@@ -19,7 +19,10 @@ import {
   type ReactNode,
 } from "react";
 
-import { useRegisterCommands } from "@/components/command-palette";
+import {
+  useRegisterCommands,
+  type CommandAction,
+} from "@/components/command-palette";
 import { Button } from "@/components/ui/button";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
@@ -79,9 +82,12 @@ export function ObservabilityView({ client = apiClient }: ObservabilityViewProps
   const [windowDays, setWindowDays] = useState(30);
   const [status, setStatus] = useState<string | null>(null);
 
+  // Capture "now" once at mount so `from` is a pure function of the window and
+  // stays stable across re-renders (calling Date.now() during render is impure).
+  const [now] = useState(() => Date.now());
   const from = useMemo(
-    () => new Date(Date.now() - windowDays * 86_400_000).toISOString(),
-    [windowDays],
+    () => new Date(now - windowDays * 86_400_000).toISOString(),
+    [now, windowDays],
   );
   const bucket = windowDays > 45 ? "week" : "day";
 
@@ -157,25 +163,27 @@ export function ObservabilityView({ client = apiClient }: ObservabilityViewProps
   useEffect(() => {
     exportRef.current = exportCsv;
   }, [exportCsv]);
-  const commands = useMemo(
-    () => [
-      {
-        id: "obs-export",
-        label: "Export cost report (CSV)",
-        group: "Observability",
-        icon: <Download />,
-        run: () => exportRef.current(),
-      },
-      ...GROUP_OPTIONS.map((opt) => ({
-        id: `obs-group-${opt.id}`,
-        label: `Group cost by ${opt.label.toLowerCase()}`,
-        group: "Observability",
-        icon: <Coins />,
-        run: () => setGroupByRef.current(opt.id),
-      })),
-    ],
-    [],
-  );
+  // The palette command set never changes across renders — its handlers are
+  // reached through the refs above — so it's built exactly once. A useState
+  // initializer keeps the array reference stable (as useRegisterCommands
+  // requires) without a useMemo whose object-literal-plus-`.map()` shape the
+  // React Compiler can't preserve.
+  const [commands] = useState<CommandAction[]>(() => [
+    {
+      id: "obs-export",
+      label: "Export cost report (CSV)",
+      group: "Observability",
+      icon: <Download />,
+      run: () => exportRef.current(),
+    },
+    ...GROUP_OPTIONS.map((opt) => ({
+      id: `obs-group-${opt.id}`,
+      label: `Group cost by ${opt.label.toLowerCase()}`,
+      group: "Observability",
+      icon: <Coins />,
+      run: () => setGroupByRef.current(opt.id),
+    })),
+  ]);
   useRegisterCommands("observability", commands);
 
   const dimensionLabel =

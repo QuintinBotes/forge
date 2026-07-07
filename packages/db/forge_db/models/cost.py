@@ -90,9 +90,7 @@ class ModelPrice(ForgeModel):
     currency: Mapped[str] = mapped_column(
         String(8), default="USD", server_default=text("'USD'"), nullable=False
     )
-    effective_from: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
     )

@@ -118,9 +118,7 @@ def replay_bundles(
 
     aggregate = {
         metric: MetricAggregate(
-            mean=round(fmean(r.metrics.get(metric, 0.0) for r in results), 6)
-            if results
-            else 0.0,
+            mean=round(fmean(r.metrics.get(metric, 0.0) for r in results), 6) if results else 0.0,
             count=len(results),
         )
         for metric in scoring.metric_weights

@@ -14,6 +14,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from forge_api.auth.rbac import Permission
 from forge_api.deps import DbSession, Principal, SettingsDep
@@ -123,7 +124,7 @@ def _set_enabled(
     enabled: bool,
     principal: Principal,
     service: SsoConfigService,
-    session,
+    session: Session,
 ) -> SsoConfigOut:
     _check_workspace(principal, workspace_id)
     try:
@@ -132,9 +133,7 @@ def _set_enabled(
     except (LastAdminError, SsoConfigError) as exc:
         session.rollback()
         if isinstance(exc, SsoConfigError):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         raise _map_config_errors(exc) from exc
     return service.to_out(config)
 

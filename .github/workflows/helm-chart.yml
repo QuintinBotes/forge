@@ -32,10 +32,12 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with:
-          version: v3.16.2
+          version: v3.17.3
 
       - name: Install helm-unittest plugin
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.1.1
+        # Pin to the last 0.x: 1.x plugin.yaml uses `platformHooks`, which needs
+        # Helm >= 3.18; 0.8.2 loads on 3.16/3.17 and runs the same test format.
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 0.8.2
 
       - name: Install kubeconform
         run: |
@@ -47,6 +49,9 @@ jobs:
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
+
+      - name: Add subchart repos (Bitnami postgres/redis)
+        run: helm repo add bitnami https://charts.bitnami.com/bitnami
 
       - name: Build chart dependencies
         run: helm dependency build ${CHART}
@@ -90,7 +95,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with:
-          version: v3.16.2
+          version: v3.17.3
 
       - name: Create kind cluster
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0

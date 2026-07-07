@@ -65,9 +65,7 @@ def test_purge_revokes_expired_and_audits(session: Session) -> None:
     expired2 = _key(expires_at=now - timedelta(minutes=5))
     live = _key(expires_at=now + timedelta(hours=1), kind=PlatformKeyKind.AGENT_RUNNER)
     everlasting = _key(expires_at=None)
-    already_revoked = _key(
-        expires_at=now - timedelta(days=1), revoked_at=now - timedelta(days=1)
-    )
+    already_revoked = _key(expires_at=now - timedelta(days=1), revoked_at=now - timedelta(days=1))
     session.add_all([expired1, expired2, live, everlasting, already_revoked])
     session.commit()
 

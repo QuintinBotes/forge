@@ -81,9 +81,7 @@ def _keystream(enc_key: bytes, nonce: bytes, length: int) -> bytes:
     out = bytearray()
     counter = 0
     while len(out) < length:
-        block = hmac.new(
-            enc_key, nonce + struct.pack(">I", counter), hashlib.sha256
-        ).digest()
+        block = hmac.new(enc_key, nonce + struct.pack(">I", counter), hashlib.sha256).digest()
         out.extend(block)
         counter += 1
     return bytes(out[:length])
@@ -102,9 +100,7 @@ class HmacAeadCipher:
 
     def __init__(self, key: bytes) -> None:
         if len(key) < _MIN_KEY_SIZE:
-            raise ValueError(
-                f"master key must be at least {_MIN_KEY_SIZE} bytes, got {len(key)}"
-            )
+            raise ValueError(f"master key must be at least {_MIN_KEY_SIZE} bytes, got {len(key)}")
         self._key = bytes(key)
 
     def encrypt(self, plaintext: str) -> bytes:
@@ -146,9 +142,7 @@ def _fernet_key(key: bytes) -> bytes:
     cipher (secrets survive a restart when ``FORGE_SECRET_KEY`` is stable).
     """
     if len(key) < _MIN_KEY_SIZE:
-        raise ValueError(
-            f"master key must be at least {_MIN_KEY_SIZE} bytes, got {len(key)}"
-        )
+        raise ValueError(f"master key must be at least {_MIN_KEY_SIZE} bytes, got {len(key)}")
     return base64.urlsafe_b64encode(hashlib.sha256(key).digest())
 
 
@@ -175,9 +169,7 @@ class FernetCipher:
         try:
             return self._fernet.decrypt(blob).decode("utf-8")
         except InvalidToken as exc:
-            raise InvalidTokenError(
-                "authentication failed (wrong key or tampered)"
-            ) from exc
+            raise InvalidTokenError("authentication failed (wrong key or tampered)") from exc
 
 
 def default_cipher(key: bytes) -> SecretCipher:

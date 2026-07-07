@@ -108,12 +108,21 @@ def _register(
 def _seed() -> tuple[DashboardService, InMemoryProjectionRepository]:
     source = FakeSpecSource()
     # a: all validated; b: failed (gaps, epic E1); c: stale.
-    _register(source, spec_id="a", spec_key="SPEC-1", current_version=1,
-              report_version=1, satisfied=True)
-    _register(source, spec_id="b", spec_key="SPEC-2", current_version=1,
-              report_version=1, satisfied=False, epic_id="E1")
-    _register(source, spec_id="c", spec_key="SPEC-3", current_version=3,
-              report_version=2, satisfied=True)
+    _register(
+        source, spec_id="a", spec_key="SPEC-1", current_version=1, report_version=1, satisfied=True
+    )
+    _register(
+        source,
+        spec_id="b",
+        spec_key="SPEC-2",
+        current_version=1,
+        report_version=1,
+        satisfied=False,
+        epic_id="E1",
+    )
+    _register(
+        source, spec_id="c", spec_key="SPEC-3", current_version=3, report_version=2, satisfied=True
+    )
     repo = InMemoryProjectionRepository()
     projector = TraceabilityProjector(source, NoOpEvidencePort(), repo)
     projector.reconcile_project("proj-1")

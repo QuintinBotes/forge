@@ -194,11 +194,7 @@ class WorkflowEditorService:
         graph = body.graph or self._starter_graph(body.name, body.title)
         graph = graph.model_copy(update={"name": body.name, "title": body.title})
         base = body.name if self._bundled_loader(body.name) is not None else None
-        source = (
-            WorkflowDefinitionSource.BUNDLED_FORK
-            if base
-            else WorkflowDefinitionSource.CUSTOM
-        )
+        source = WorkflowDefinitionSource.BUNDLED_FORK if base else WorkflowDefinitionSource.CUSTOM
         defn = self._repo.create_definition(
             workspace_id=workspace_id,
             name=body.name,
@@ -266,9 +262,7 @@ class WorkflowEditorService:
 
     # -- publish -------------------------------------------------------------- #
 
-    def publish(
-        self, workspace_id: UUID, name: str, *, actor: UUID | None
-    ) -> RevisionDetail:
+    def publish(self, workspace_id: UUID, name: str, *, actor: UUID | None) -> RevisionDetail:
         defn = self._require_editable(workspace_id, name)
         draft = self._repo.get_draft(defn.id)
         if draft is None:
@@ -314,18 +308,14 @@ class WorkflowEditorService:
         defn = self._require_definition(workspace_id, name)
         return [self._revision_summary(r) for r in self._repo.list_revisions(defn.id)]
 
-    def get_revision(
-        self, workspace_id: UUID, name: str, revision: int
-    ) -> RevisionDetail:
+    def get_revision(self, workspace_id: UUID, name: str, revision: int) -> RevisionDetail:
         defn = self._require_definition(workspace_id, name)
         row = self._repo.get_revision(defn.id, revision)
         if row is None:
             raise RevisionNotFoundError(name, revision)
         return self._revision_detail(row)
 
-    def diff_revisions(
-        self, workspace_id: UUID, name: str, frm: int, to: int
-    ) -> DefinitionDiff:
+    def diff_revisions(self, workspace_id: UUID, name: str, frm: int, to: int) -> DefinitionDiff:
         defn = self._require_definition(workspace_id, name)
         from_row = self._repo.get_revision(defn.id, frm)
         to_row = self._repo.get_revision(defn.id, to)
@@ -418,11 +408,7 @@ class WorkflowEditorService:
         graph = yaml_to_graph(req.dsl_yaml, title=req.title)
         graph = graph.model_copy(update={"name": req.name, "title": req.title})
         base = req.name if self._bundled_loader(req.name) is not None else None
-        source = (
-            WorkflowDefinitionSource.BUNDLED_FORK
-            if base
-            else WorkflowDefinitionSource.CUSTOM
-        )
+        source = WorkflowDefinitionSource.BUNDLED_FORK if base else WorkflowDefinitionSource.CUSTOM
         defn = self._repo.create_definition(
             workspace_id=workspace_id,
             name=req.name,
@@ -436,9 +422,7 @@ class WorkflowEditorService:
         self._repo.commit()
         return self._definition_detail(self._repo.get(workspace_id, req.name))
 
-    def export_yaml(
-        self, workspace_id: UUID, name: str, *, revision: int | None = None
-    ) -> str:
+    def export_yaml(self, workspace_id: UUID, name: str, *, revision: int | None = None) -> str:
         defn = self._repo.get(workspace_id, name)
         if defn is None:
             bundled = self._bundled_loader(name)

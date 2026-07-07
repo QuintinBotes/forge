@@ -19,9 +19,7 @@ from forge_eval.golden import GoldenCase
 
 EPSILON = 0.005
 
-SCORING = BenchmarkScoring(
-    metric_weights={"retrieval.recall_at_k": 0.7, "retrieval.mrr": 0.3}, k=5
-)
+SCORING = BenchmarkScoring(metric_weights={"retrieval.recall_at_k": 0.7, "retrieval.mrr": 0.3}, k=5)
 
 CASES = [
     GoldenCase(id="c1", query="q1", expected_ids=["a", "b"], tags=["retrieval"]),

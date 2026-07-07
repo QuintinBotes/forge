@@ -10,6 +10,11 @@ tests/
 */tests/*
 packages/*/tests/
 apps/*/tests/
+conftest.py
+# Alembic migrations are reviewed DDL (CREATE SCHEMA / DO $$ blocks / ALTER TABLE)
+# that legitimately use sqlalchemy.text() with INTERNAL constants (table names,
+# not user input) — the avoid-sqlalchemy-text rule is a false positive there.
+packages/*/migrations/
 docs/
 examples/
 spec-templates/

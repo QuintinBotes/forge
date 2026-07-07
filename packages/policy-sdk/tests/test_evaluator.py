@@ -36,9 +36,7 @@ def evaluator() -> RepoPolicyEvaluator:
 def test_write_to_allowed_path_is_allowed(
     evaluator: RepoPolicyEvaluator, spec_policy: Policy
 ) -> None:
-    decision = evaluator.evaluate(
-        ToolCall(tool="write_code", path="app/main.py"), spec_policy
-    )
+    decision = evaluator.evaluate(ToolCall(tool="write_code", path="app/main.py"), spec_policy)
     assert isinstance(decision, Decision)
     assert decision.effect is DecisionEffect.ALLOW
     assert decision.allowed is True
@@ -58,9 +56,7 @@ def test_write_to_tests_path_is_allowed(
 def test_write_to_secrets_path_is_denied(
     evaluator: RepoPolicyEvaluator, spec_policy: Policy
 ) -> None:
-    decision = evaluator.evaluate(
-        ToolCall(tool="write_code", path="secrets/db.json"), spec_policy
-    )
+    decision = evaluator.evaluate(ToolCall(tool="write_code", path="secrets/db.json"), spec_policy)
     assert decision.effect is DecisionEffect.DENY
     assert decision.allowed is False
     assert decision.matched_rule is not None
@@ -87,9 +83,7 @@ def test_write_deny_takes_precedence_over_allow(evaluator: RepoPolicyEvaluator) 
         repo_id="r",
         write_rules=WriteRules(allow=["app/**"], deny=["app/secrets/**"]),
     )
-    decision = evaluator.evaluate(
-        ToolCall(tool="write_code", path="app/secrets/token.txt"), policy
-    )
+    decision = evaluator.evaluate(ToolCall(tool="write_code", path="app/secrets/token.txt"), policy)
     assert decision.effect is DecisionEffect.DENY
     assert "app/secrets/**" in (decision.matched_rule or "")
 
@@ -134,9 +128,7 @@ def test_restricted_action_deploy_prod_is_denied(
 def test_restricted_action_via_action_field(
     evaluator: RepoPolicyEvaluator, spec_policy: Policy
 ) -> None:
-    decision = evaluator.evaluate(
-        ToolCall(tool="shell", action="delete_files"), spec_policy
-    )
+    decision = evaluator.evaluate(ToolCall(tool="shell", action="delete_files"), spec_policy)
     assert decision.effect is DecisionEffect.DENY
 
 
@@ -191,9 +183,7 @@ def test_deploy_to_allowed_env_is_allowed_when_enabled(evaluator: RepoPolicyEval
             restricted_environments=["production"],
         ),
     )
-    decision = evaluator.evaluate(
-        ToolCall(tool="deploy", arguments={"environment": "dev"}), policy
-    )
+    decision = evaluator.evaluate(ToolCall(tool="deploy", arguments={"environment": "dev"}), policy)
     assert decision.effect is DecisionEffect.ALLOW
 
 
@@ -203,9 +193,7 @@ def test_deploy_denied_when_agent_deploy_disabled(evaluator: RepoPolicyEvaluator
         allowed_actions=["deploy"],
         deploy_rules=DeployRules(allow_agent_deploy=False, environments=["dev"]),
     )
-    decision = evaluator.evaluate(
-        ToolCall(tool="deploy", arguments={"environment": "dev"}), policy
-    )
+    decision = evaluator.evaluate(ToolCall(tool="deploy", arguments={"environment": "dev"}), policy)
     assert decision.effect is DecisionEffect.DENY
 
 

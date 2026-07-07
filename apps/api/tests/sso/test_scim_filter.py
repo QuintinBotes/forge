@@ -11,9 +11,7 @@ from forge_api.sso.scim_filter import parse_scim_filter
 
 def _sql(text: str) -> str:
     predicate = parse_scim_filter(text)
-    return str(
-        predicate.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True})
-    )
+    return str(predicate.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
 
 
 class TestOperators:

@@ -41,8 +41,7 @@ def verify_submission(
     reasons: list[str] = []
 
     recomputed_hashes = [
-        compute_bundle_hash(bundle.case_id, bundle.output_ids)
-        for bundle in reproduced_bundles
+        compute_bundle_hash(bundle.case_id, bundle.output_ids) for bundle in reproduced_bundles
     ]
     bundle_hash_matches = recomputed_hashes == list(claimed_bundle_hashes)
     if len(recomputed_hashes) != len(claimed_bundle_hashes):

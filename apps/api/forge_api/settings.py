@@ -106,6 +106,77 @@ class Settings(BaseSettings):
     database_url: str = DEFAULT_DATABASE_URL
     redis_url: str = DEFAULT_REDIS_URL
 
+    # F01 board backend selection. ``memory`` (default) keeps the hermetic,
+    # process-memory ``InMemoryBoardService`` (unit-test default, no Postgres);
+    # ``db`` wires the Postgres-backed ``SqlAlchemyBoardService`` behind the same
+    # frozen ``BoardService`` protocol. Read via ``FORGE_BOARD_BACKEND``.
+    board_backend: str = "memory"
+
+    # Observability audit-store backend selection. ``memory`` (default) keeps the
+    # hermetic, process-memory ``InMemoryAuditStore`` (unit-test default, no
+    # Postgres); ``db`` wires the Postgres-backed ``DbAuditStore`` behind the same
+    # frozen ``AuditStore`` protocol so the platform audit trail (and the MCP
+    # db-path sink) is durably persisted. Read via ``FORGE_AUDIT_BACKEND``.
+    audit_backend: str = "memory"
+
+    # F36 approval-repository backend selection. ``memory`` (default) keeps the
+    # hermetic, process-memory ``InMemoryApprovalRepository`` (unit-test default,
+    # no Postgres); ``db`` wires the Postgres-backed ``SqlAlchemyApprovalRepository``
+    # behind the same ``ApprovalRepository`` protocol so approval gates + decisions
+    # are durably persisted. Read via ``FORGE_APPROVAL_BACKEND``.
+    approval_backend: str = "memory"
+
+    # Platform API-key backend selection. ``memory`` (default) keeps the hermetic,
+    # process-memory ``InMemoryAPIKeyBackend`` (unit-test default, no Postgres);
+    # ``db`` wires the Postgres-backed ``DbAPIKeyBackend`` behind the same
+    # ``APIKeyBackend`` seam (``add`` / ``by_prefix`` / ``list`` / ``get``) onto the
+    # ``platform_api_key`` table so minted keys, revocations, and last-used stamps
+    # survive a restart. Read via ``FORGE_APIKEY_BACKEND``.
+    apikey_backend: str = "memory"
+
+    # F23 traceability-projection repository backend selection. ``memory``
+    # (default) keeps the hermetic, process-memory ``InMemoryProjectionRepository``
+    # (unit-test default, no Postgres); ``db`` wires the Postgres-backed
+    # ``SqlAlchemyProjectionRepository`` behind the same ``ProjectionRepository``
+    # protocol so the F23 dashboard's denormalised projection (criterion links +
+    # spec rollups, with the monotonic ``projection_version``) is durably
+    # persisted. Read via ``FORGE_PROJECTION_BACKEND``.
+    projection_backend: str = "memory"
+
+    # F29 policy-audit sink backend selection. ``memory`` (default) keeps the
+    # hermetic, process-memory ``InMemoryPolicyAuditSink`` (unit-test default, no
+    # Postgres); ``db`` wires the Postgres-backed ``DbPolicyAuditSink`` behind the
+    # same ``PolicyAuditSink`` seam so each emitted ``policy.decision`` event lands
+    # durably as an append-only ``policy_rule_evaluation`` row. Read via
+    # ``FORGE_POLICY_AUDIT_BACKEND``.
+    policy_audit_backend: str = "memory"
+
+    # F18 PM-sync link-repository backend selection. ``memory`` (default) keeps
+    # the hermetic, process-memory ``InMemoryLinkRepository`` (the sync-engine
+    # unit-test default, no Postgres); ``db`` wires the Postgres-backed
+    # ``DbLinkRepository`` behind the same ``LinkRepository`` protocol so a
+    # ``PMSyncEngine``'s Forge-task <-> external-issue links (and the loop-
+    # suppression hashes) land durably on the ``pm_task_link`` table. Read via
+    # ``FORGE_PM_LINK_BACKEND``.
+    pm_link_backend: str = "memory"
+
+    # F36 policy-override grant-store backend selection (J5). ``memory`` (default)
+    # keeps the hermetic, process-memory ``InMemoryGrantStore`` (unit-test default,
+    # no Postgres); ``db`` wires the Postgres-backed ``DbGrantStore`` behind the
+    # same ``mint`` / ``consume`` / ``all`` grant-store seam so single-use override
+    # grants survive a restart and the single-active + atomic-consume invariants
+    # are enforced by the database. Read via ``FORGE_OVERRIDE_GRANT_BACKEND``.
+    override_grant_backend: str = "memory"
+
+    # Encrypted secret-vault store backend selection. ``memory`` (default) keeps
+    # the hermetic, process-memory ``InMemorySecretStore`` (unit-test default, no
+    # Postgres); ``db`` wires the Postgres-backed ``DbSecretStore`` behind the same
+    # ``SecretStore`` seam (``add`` / ``get`` / ``list`` / ``remove`` + rotation's
+    # ``all_records``) so envelope-encrypted BYOK secrets survive a restart. Only
+    # ever holds ciphertext — plaintext is never persisted. Read via
+    # ``FORGE_SECRET_BACKEND``.
+    secret_backend: str = "memory"
+
     # Filesystem root for the spec engine's SDD artifacts (manifests, plans).
     spec_root: str = "specs"
 
@@ -186,6 +257,13 @@ class Settings(BaseSettings):
     # request carries no key.
     idempotency_enabled: bool = True
     idempotency_ttl_seconds: int = 86_400
+    # HTTP idempotency-store backend selection. ``memory`` (default) keeps the
+    # hermetic, process-memory ``InMemoryIdempotencyStore`` (unit-test default, no
+    # Postgres); ``db`` wires the Postgres-backed ``DbIdempotencyStore`` behind the
+    # same ``IdempotencyStore`` protocol so the cached idempotency-key responses
+    # survive a restart and dedup across processes. Read via
+    # ``FORGE_IDEMPOTENCY_BACKEND``.
+    idempotency_backend: str = "memory"
     # Graceful-shutdown request drain grace: on SIGTERM readiness flips to 503 and
     # the app waits up to this long for in-flight requests before tearing down.
     shutdown_drain_seconds: int = 30

@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 from forge_contracts.dtos import KnowledgeScope
 from forge_eval.retrieval_eval import build_indexed_service
+from forge_knowledge import KnowledgeService
 
 __all__ = [
     "SoakReport",
@@ -63,7 +64,7 @@ class SoakReport(BaseModel):
 def sample_resources() -> tuple[float, int]:
     """Return ``(rss_mb, open_fds)`` for the current process (best-effort)."""
     try:
-        import psutil  # type: ignore[import-untyped]
+        import psutil
 
         proc = psutil.Process()
         rss_mb = proc.memory_info().rss / (1024 * 1024)
@@ -113,7 +114,7 @@ def run_soak(
         raise ValueError("tenants must be >= 1")
 
     # Build one indexed service per tenant and record its own source ids.
-    services: list[tuple[KnowledgeScope, object, set[str]]] = []
+    services: list[tuple[KnowledgeScope, KnowledgeService, set[str]]] = []
     for _ in range(tenants):
         service, scope = build_indexed_service(corpus)
         own_sources = {str(sid) for sid in _source_ids_for_scope(service, scope)}

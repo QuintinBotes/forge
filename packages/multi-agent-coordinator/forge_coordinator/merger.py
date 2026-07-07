@@ -39,9 +39,7 @@ class BranchMerger:
         code_results = [
             r
             for r in results
-            if r.role in CODE_PRODUCING_ROLES
-            and r.status == "succeeded"
-            and r.artifact.branch_name
+            if r.role in CODE_PRODUCING_ROLES and r.status == "succeeded" and r.artifact.branch_name
         ]
         if strategy == "read_only" or not code_results:
             head = rev_parse(repo, integration_branch)

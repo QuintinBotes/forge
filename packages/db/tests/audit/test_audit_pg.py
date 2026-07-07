@@ -62,9 +62,7 @@ def test_trigger_blocks_update_and_delete(factory, workspace_id) -> None:
         s.rollback()
         with pytest.raises(DBAPIError):
             s.execute(
-                delete(AuditLog.__table__).where(
-                    AuditLog.__table__.c.workspace_id == workspace_id
-                )
+                delete(AuditLog.__table__).where(AuditLog.__table__.c.workspace_id == workspace_id)
             )
         s.rollback()
 
@@ -95,9 +93,7 @@ def test_concurrent_emit_keeps_linear_chain(factory, workspace_id) -> None:
 
     with factory() as s:
         seqs = sorted(
-            s.scalars(
-                select(AuditLog.seq).where(AuditLog.workspace_id == workspace_id)
-            ).all()
+            s.scalars(select(AuditLog.seq).where(AuditLog.workspace_id == workspace_id)).all()
         )
         assert seqs == list(range(1, 42))  # 1 seed + 40 concurrent, gap-free
         result = verify_chain(s, workspace_id)

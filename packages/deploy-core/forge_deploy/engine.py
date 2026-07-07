@@ -71,9 +71,7 @@ class DeploymentDefinition(BaseModel):
     transitions: list[DeploymentTransitionRule] = Field(default_factory=list)
 
     def candidates(self, state: str, event: str) -> list[DeploymentTransitionRule]:
-        return [
-            r for r in self.transitions if r.from_state == state and r.event == event
-        ]
+        return [r for r in self.transitions if r.from_state == state and r.event == event]
 
 
 def parse_deployment_definition(text: str) -> DeploymentDefinition:
@@ -145,9 +143,7 @@ class DeploymentStateMachine:
                 if guard not in self.guards:
                     raise ValueError(f"unregistered deploy guard: {guard!r}")
 
-    def transition(
-        self, deployment_id: uuid.UUID, event: DeploymentEvent
-    ) -> DeploymentState:
+    def transition(self, deployment_id: uuid.UUID, event: DeploymentEvent) -> DeploymentState:
         dep = self.repo.lock(deployment_id)
 
         # Idempotent replay: same event idempotency key already recorded.
@@ -219,9 +215,7 @@ class DeploymentStateMachine:
         top_priority = passing[0].priority
         top = [r for r in passing if r.priority == top_priority]
         if len(top) > 1:
-            raise InvalidTransitionError(
-                f"ambiguous transition from {state!r} on {event!r}"
-            )
+            raise InvalidTransitionError(f"ambiguous transition from {state!r} on {event!r}")
         return top[0], results
 
 

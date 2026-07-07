@@ -120,15 +120,11 @@ async def test_override_approve_mints_single_use_grant() -> None:
 
     assert request.agent_run_id is not None
     assert (
-        await grants.consume(
-            agent_run_id=request.agent_run_id, action_fingerprint=fingerprint
-        )
+        await grants.consume(agent_run_id=request.agent_run_id, action_fingerprint=fingerprint)
         is True
     )
     assert (
-        await grants.consume(
-            agent_run_id=request.agent_run_id, action_fingerprint=fingerprint
-        )
+        await grants.consume(agent_run_id=request.agent_run_id, action_fingerprint=fingerprint)
         is False
     )
 
@@ -153,9 +149,7 @@ async def test_override_reject_routes_to_human() -> None:
     assert grants.all() == []  # no grant minted on reject
     assert request.agent_run_id is not None
     assert (
-        await grants.consume(
-            agent_run_id=request.agent_run_id, action_fingerprint=fingerprint
-        )
+        await grants.consume(agent_run_id=request.agent_run_id, action_fingerprint=fingerprint)
         is False
     )
 

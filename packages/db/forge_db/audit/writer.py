@@ -91,9 +91,7 @@ class SqlAuditWriter:
         seq = head.last_seq + 1
         prev_hash = head.last_hash
         occurred_at = event.created_at or datetime.now(UTC)
-        payload_hash = compute_payload_hash(
-            {"before": before, "after": after, "details": details}
-        )
+        payload_hash = compute_payload_hash({"before": before, "after": after, "details": details})
         entry_hash = compute_entry_hash(
             prev_hash=prev_hash,
             workspace_id=event.workspace_id,

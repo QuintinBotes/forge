@@ -120,10 +120,7 @@ def test_recall_at_k_and_mrr_meet_threshold(
     mrr = sum(reciprocal_ranks) / len(GOLDEN)
 
     # Surface the numbers for the morning report.
-    print(
-        f"\n[RAG spine eval] queries={len(GOLDEN)} "
-        f"recall@{k}={recall_at_k:.3f} MRR={mrr:.3f}"
-    )
+    print(f"\n[RAG spine eval] queries={len(GOLDEN)} recall@{k}={recall_at_k:.3f} MRR={mrr:.3f}")
 
     assert recall_at_k >= 0.8, f"recall@{k}={recall_at_k:.3f} below threshold"
     assert mrr >= 0.7, f"MRR={mrr:.3f} below threshold"

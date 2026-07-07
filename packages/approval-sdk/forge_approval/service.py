@@ -154,9 +154,7 @@ class ApprovalService:
     # read                                                                #
     # ------------------------------------------------------------------ #
 
-    async def get(
-        self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID
-    ) -> ApprovalRequest:
+    async def get(self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID) -> ApprovalRequest:
         """Workspace-scoped fetch; cross-workspace ids look nonexistent (404)."""
         request = await self._repo.get(approval_id, workspace_id=workspace_id)
         if request is None:
@@ -215,9 +213,7 @@ class ApprovalService:
     ) -> int:
         """Nav-badge count — matches the inbox length by construction."""
         return len(
-            await self.list(
-                workspace_id=workspace_id, actor=actor, status=status, mine=mine
-            )
+            await self.list(workspace_id=workspace_id, actor=actor, status=status, mine=mine)
         )
 
     async def get_context(
@@ -321,9 +317,7 @@ class ApprovalService:
                 resolved_at=request.resolved_at,
             ),
         )
-        return ApprovalResolution(
-            approval_id=request.id, status=request.status, outcome=outcome
-        )
+        return ApprovalResolution(approval_id=request.id, status=request.status, outcome=outcome)
 
     async def expire_pending(
         self, *, now: datetime | None = None
@@ -405,9 +399,7 @@ class ApprovalService:
                     "workflow_run_id": str(request.workflow_run_id)
                     if request.workflow_run_id
                     else None,
-                    "agent_run_id": str(request.agent_run_id)
-                    if request.agent_run_id
-                    else None,
+                    "agent_run_id": str(request.agent_run_id) if request.agent_run_id else None,
                 }
                 if (request.workflow_run_id or request.agent_run_id)
                 else None
@@ -449,11 +441,7 @@ class ApprovalService:
         items = getattr(self._repo, "_items", None)
         if items is None:  # pragma: no cover — DB-backed repos sweep in the worker
             return []
-        return [
-            i.model_copy(deep=True)
-            for i in items.values()
-            if i.status is GateStatus.PENDING
-        ]
+        return [i.model_copy(deep=True) for i in items.values() if i.status is GateStatus.PENDING]
 
 
 _STATUS_FOR_ACTION: dict[ApprovalAction, GateStatus] = {

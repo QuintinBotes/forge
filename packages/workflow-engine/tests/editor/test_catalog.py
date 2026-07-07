@@ -50,9 +50,9 @@ def test_catalog_events_include_triggers(registry_catalog: RegistryCatalog) -> N
 
 
 def test_catalog_skills_from_provider() -> None:
-    catalog = RegistryCatalog(
-        skill_names_provider=lambda _ws: ["custom-skill"]
-    ).build(workspace_id=uuid.uuid4())
+    catalog = RegistryCatalog(skill_names_provider=lambda _ws: ["custom-skill"]).build(
+        workspace_id=uuid.uuid4()
+    )
     assert "custom-skill" in catalog.skills
     # bundled skills are folded in too
     assert "spec-analyst" in catalog.skills

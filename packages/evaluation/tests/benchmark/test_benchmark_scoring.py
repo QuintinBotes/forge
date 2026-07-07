@@ -41,9 +41,7 @@ def test_composite_hand_computed() -> None:
 
 def test_composite_recompute_identical() -> None:
     """AC3/AC11: recomputation yields a byte-identical BenchmarkScore."""
-    scoring = BenchmarkScoring(
-        metric_weights={"retrieval.recall_at_k": 0.7, "retrieval.mrr": 0.3}
-    )
+    scoring = BenchmarkScoring(metric_weights={"retrieval.recall_at_k": 0.7, "retrieval.mrr": 0.3})
     report = _report({"retrieval.recall_at_k": 0.61, "retrieval.mrr": 0.44})
     first = compute_benchmark_score(report, scoring, [])
     second = compute_benchmark_score(report, scoring, [])
@@ -71,9 +69,7 @@ def test_direction_lower_is_better_and_missing_metric_zero() -> None:
 
 def test_weights_are_normalized() -> None:
     """Weights that do not sum to 1 are normalized at scoring time."""
-    scoring = BenchmarkScoring(
-        metric_weights={"retrieval.recall_at_k": 2.0, "retrieval.mrr": 2.0}
-    )
+    scoring = BenchmarkScoring(metric_weights={"retrieval.recall_at_k": 2.0, "retrieval.mrr": 2.0})
     report = _report({"retrieval.recall_at_k": 1.0, "retrieval.mrr": 0.0})
     assert compute_benchmark_score(report, scoring, []).composite == 0.5
 

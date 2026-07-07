@@ -115,24 +115,31 @@ def test_rotate_secret_reencrypts_and_preserves_identity() -> None:
 def test_rotate_missing_secret_raises() -> None:
     vault = _vault()
     with pytest.raises(SecretNotFoundError):
-        vault.rotate_secret(
-            workspace_id=uuid.uuid4(), secret_id=uuid.uuid4(), new_secret="x"
-        )
+        vault.rotate_secret(workspace_id=uuid.uuid4(), secret_id=uuid.uuid4(), new_secret="x")
 
 
 def test_sweep_expired_counts_and_purges() -> None:
     vault = _vault()
     ws = uuid.uuid4()
     vault.put_secret(
-        workspace_id=ws, name="e1", secret="a", kind=APIKeyKind.SYSTEM,
+        workspace_id=ws,
+        name="e1",
+        secret="a",
+        kind=APIKeyKind.SYSTEM,
         expires_at=_NOW - timedelta(days=1),
     )
     vault.put_secret(
-        workspace_id=ws, name="e2", secret="b", kind=APIKeyKind.SYSTEM,
+        workspace_id=ws,
+        name="e2",
+        secret="b",
+        kind=APIKeyKind.SYSTEM,
         expires_at=_NOW - timedelta(hours=1),
     )
     vault.put_secret(
-        workspace_id=ws, name="ok", secret="c", kind=APIKeyKind.SYSTEM,
+        workspace_id=ws,
+        name="ok",
+        secret="c",
+        kind=APIKeyKind.SYSTEM,
         expires_at=_NOW + timedelta(days=1),
     )
     assert vault.sweep_expired(now=_NOW, purge=False) == 2

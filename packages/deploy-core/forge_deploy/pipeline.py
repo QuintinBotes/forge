@@ -59,13 +59,9 @@ def resolve_environments(
                 f"(environments or restricted_environments)"
             )
         is_restricted = _norm(env.name) in restricted
-        if (
-            is_restricted
-            and requested_restricted.get(env.name) is False
-        ):
+        if is_restricted and requested_restricted.get(env.name) is False:
             raise RuleValidationError(
-                f"environment {env.name!r} is policy-restricted and cannot be "
-                f"set unrestricted"
+                f"environment {env.name!r} is policy-restricted and cannot be set unrestricted"
             )
         resolved.append(_to_resolved(env, is_restricted))
     return resolved

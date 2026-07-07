@@ -36,10 +36,7 @@ class GrafanaAlertAdapter(BaseAlertAdapter):
         }
         fingerprint = str(first.get("fingerprint") or "")
         dedup_key = str(
-            fingerprint
-            or payload.get("groupKey")
-            or labels.get("alertname")
-            or "grafana"
+            fingerprint or payload.get("groupKey") or labels.get("alertname") or "grafana"
         )
         # Grafana carries no native severity; read a `severity` label, else map
         # the alert state (firing -> high).

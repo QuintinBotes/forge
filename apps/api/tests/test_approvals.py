@@ -191,9 +191,7 @@ def test_cross_workspace_404(make_client: Callable[..., TestClient]) -> None:
         f"/approvals/{created['id']}/decisions",
     ):
         assert intruder.get(path).status_code == 404
-    denied = intruder.post(
-        f"/approvals/{created['id']}/decision", json={"decision": "approve"}
-    )
+    denied = intruder.post(f"/approvals/{created['id']}/decision", json={"decision": "approve"})
     assert denied.status_code == 404
 
     inbox = intruder.get("/approvals")
@@ -216,9 +214,7 @@ def test_decision_authz_matrix(make_client: Callable[..., TestClient]) -> None:
     assert resp.status_code == 403
 
     member = make_client(role=UserRole.MEMBER)
-    resp = member.post(
-        f"/approvals/{override['id']}/decision", json={"decision": "approve"}
-    )
+    resp = member.post(f"/approvals/{override['id']}/decision", json={"decision": "approve"})
     assert resp.status_code == 403
     assert "admin" in resp.json()["detail"]
 
@@ -299,9 +295,7 @@ def test_policy_override_approve_mints_consumable_grant(
     import asyncio
 
     async def consume_twice() -> tuple[bool, bool]:
-        first = await grant_store.consume(
-            agent_run_id=agent_run_id, action_fingerprint=fingerprint
-        )
+        first = await grant_store.consume(agent_run_id=agent_run_id, action_fingerprint=fingerprint)
         second = await grant_store.consume(
             agent_run_id=agent_run_id, action_fingerprint=fingerprint
         )
@@ -330,9 +324,7 @@ def test_escalate_keeps_pending_and_requires_admin(
     # NOTE: member and admin share TEST_USER_ID in this suite, so the admin
     # retry below also exercises the duplicate-vote guard when ids collide;
     # use the authz refusal assertion on the member only.
-    refused = member.post(
-        f"/approvals/{created['id']}/decision", json={"decision": "approve"}
-    )
+    refused = member.post(f"/approvals/{created['id']}/decision", json={"decision": "approve"})
     assert refused.status_code == 403
 
 
@@ -367,9 +359,7 @@ def test_expired_gates_swept(
     import asyncio
 
     client = make_client()
-    created = _create(
-        client, expires_at=(datetime.now(UTC) - timedelta(minutes=1)).isoformat()
-    )
+    created = _create(client, expires_at=(datetime.now(UTC) - timedelta(minutes=1)).isoformat())
     asyncio.run(service.expire_pending())
     stored = client.get(f"/approvals/{created['id']}").json()
     assert stored["status"] == "expired"

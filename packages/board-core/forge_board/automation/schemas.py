@@ -110,9 +110,7 @@ class SendWorkflowEventAction(_ActionBase):
 
 
 class SendNotificationAction(_ActionBase):
-    type: Literal[AutomationActionType.SEND_NOTIFICATION] = (
-        AutomationActionType.SEND_NOTIFICATION
-    )
+    type: Literal[AutomationActionType.SEND_NOTIFICATION] = AutomationActionType.SEND_NOTIFICATION
     channel: Literal["slack", "email"]
     target: str
     message_template: str = Field(max_length=4000)

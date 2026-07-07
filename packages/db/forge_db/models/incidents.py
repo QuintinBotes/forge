@@ -64,7 +64,9 @@ class IncidentEvent(WorkspaceScopedModel):
     __table_args__ = (UniqueConstraint("incident_id", "sequence"),)
 
     incident_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("incident.id", ondelete="CASCADE"), nullable=False,
+        Uuid(as_uuid=True),
+        ForeignKey("incident.id", ondelete="CASCADE"),
+        nullable=False,
         index=True,
     )
     workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -83,7 +85,9 @@ class RemediationPlan(WorkspaceScopedModel):
     __tablename__ = "remediation_plan"
 
     incident_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("incident.id", ondelete="CASCADE"), nullable=False,
+        Uuid(as_uuid=True),
+        ForeignKey("incident.id", ondelete="CASCADE"),
+        nullable=False,
         index=True,
     )
     workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -104,7 +108,9 @@ class Postmortem(WorkspaceScopedModel):
     __tablename__ = "postmortem"
 
     incident_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("incident.id", ondelete="CASCADE"), nullable=False,
+        Uuid(as_uuid=True),
+        ForeignKey("incident.id", ondelete="CASCADE"),
+        nullable=False,
         unique=True,
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
@@ -124,7 +130,9 @@ class PostmortemActionItem(WorkspaceScopedModel):
     __tablename__ = "postmortem_action_item"
 
     postmortem_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("postmortem.id", ondelete="CASCADE"), nullable=False,
+        Uuid(as_uuid=True),
+        ForeignKey("postmortem.id", ondelete="CASCADE"),
+        nullable=False,
         index=True,
     )
     task_id: Mapped[uuid.UUID | None] = mapped_column(

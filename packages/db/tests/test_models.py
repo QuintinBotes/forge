@@ -132,6 +132,22 @@ EXPECTED_MODELS = [
     "ModelPrice",
     # F39 audit-log: per-workspace hash-chain cursor (audit_log itself is F30's).
     "AuditChainHead",
+    # F01 board persistence: task-dependency adjacency (depends_on edges) backing
+    # the DB-backed SqlAlchemyBoardService.
+    "TaskDependency",
+    # audit-store persistence: durable backing for the observability audit store
+    # (global hash chain + its single cursor row). Not tenant-scoped — the entry's
+    # optional workspace tag is a free UUID (``workspace_ref``), never the FK.
+    "ObservabilityAuditEntry",
+    "ObservabilityAuditChainHead",
+    # secret-vault persistence: durable backing for the encrypted BYOK secret
+    # store (the storage boundary behind ``SecretVault``). Workspace-scoped;
+    # holds only ciphertext, never plaintext.
+    "Secret",
+    # idempotency-store persistence: durable backing for the HTTP idempotency-key
+    # response cache (the store behind ``IdempotencyMiddleware``). Not tenant-
+    # scoped — the tenant is baked into the ``key`` (anonymous scopes by client IP).
+    "IdempotencyKey",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
@@ -150,6 +166,15 @@ NON_WORKSPACE_SCOPED = {
     # A frozen benchmark suite is a global community artifact (F35 §3.1);
     # submissions carry a *nullable* workspace_id (NULL = official/system).
     "benchmark_suite",
+    # The observability audit store is a *global* (cross-workspace) hash chain,
+    # mirroring the in-memory store: the entry carries only an optional, un-FK'd
+    # ``workspace_ref`` tag, and the cursor row no workspace column at all.
+    "observability_audit_entry",
+    "observability_audit_chain_head",
+    # The HTTP idempotency-key response cache is keyed by a tenant-scoped string
+    # (``forge:idem:<tenant>:<header>``, anonymous falls back to client IP), so the
+    # tenant lives in the key itself — there is no ``workspace`` FK to hang it on.
+    "idempotency_key",
 }
 
 

@@ -57,9 +57,7 @@ def markdown_to_adf(markdown: str | None) -> dict[str, Any]:
         para = para.strip()
         if not para:
             continue
-        content.append(
-            {"type": "paragraph", "content": [{"type": "text", "text": para}]}
-        )
+        content.append({"type": "paragraph", "content": [{"type": "text", "text": para}]})
     if not content:
         content.append({"type": "paragraph", "content": []})
     return {"type": "doc", "version": 1, "content": content}

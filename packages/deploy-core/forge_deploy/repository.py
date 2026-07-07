@@ -62,9 +62,7 @@ class DeploymentRepository:
             raise DeploymentNotFoundError(str(deployment_id))
         return row
 
-    def get_pipeline_for_project(
-        self, project_id: uuid.UUID
-    ) -> EnvironmentPipeline | None:
+    def get_pipeline_for_project(self, project_id: uuid.UUID) -> EnvironmentPipeline | None:
         stmt = (
             select(EnvironmentPipeline)
             .where(
@@ -75,9 +73,7 @@ class DeploymentRepository:
         )
         return self.session.execute(stmt).scalars().first()
 
-    def get_environment(
-        self, pipeline_id: uuid.UUID, name: str
-    ) -> Environment | None:
+    def get_environment(self, pipeline_id: uuid.UUID, name: str) -> Environment | None:
         stmt = select(Environment).where(
             Environment.pipeline_id == pipeline_id,
             Environment.name == name,
@@ -153,9 +149,7 @@ class DeploymentRepository:
         )
         return self.session.execute(stmt).scalars().first()
 
-    def active_for_environment(
-        self, environment_id: uuid.UUID
-    ) -> Deployment | None:
+    def active_for_environment(self, environment_id: uuid.UUID) -> Deployment | None:
         terminal = {s.value for s in DeploymentState} - {
             DeploymentState.SUCCEEDED.value,
             DeploymentState.FAILED.value,
@@ -212,9 +206,7 @@ class DeploymentRepository:
         return list(self.session.execute(stmt).scalars())
 
     def approvals(self, deployment_id: uuid.UUID) -> list[DeploymentApproval]:
-        stmt = select(DeploymentApproval).where(
-            DeploymentApproval.deployment_id == deployment_id
-        )
+        stmt = select(DeploymentApproval).where(DeploymentApproval.deployment_id == deployment_id)
         return list(self.session.execute(stmt).scalars())
 
     def distinct_approver_count(self, deployment_id: uuid.UUID) -> int:

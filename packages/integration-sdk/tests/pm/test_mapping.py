@@ -101,10 +101,16 @@ def test_priority_map_table_jira_out(forge: str, expected: str) -> None:
     assert _jira().map_priority(forge, Direction.OUT) == expected
 
 
-@pytest.mark.parametrize(("name", "expected"), [
-    ("Lowest", "low"), ("Low", "low"), ("Medium", "medium"),
-    ("High", "high"), ("Highest", "urgent"),
-])
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Lowest", "low"),
+        ("Low", "low"),
+        ("Medium", "medium"),
+        ("High", "high"),
+        ("Highest", "urgent"),
+    ],
+)
 def test_priority_map_table_jira_in(name: str, expected: str) -> None:
     assert _jira().map_priority(name, Direction.IN) == expected
 
@@ -117,6 +123,7 @@ def test_priority_map_table_linear_both_directions(forge: str, expected: str) ->
 
 
 # --- Overrides + errors ----------------------------------------------------- #
+
 
 def test_status_map_override_precedence() -> None:
     a = _jira(status_map={"started": "in_dev"})

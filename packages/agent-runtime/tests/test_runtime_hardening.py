@@ -182,9 +182,7 @@ def test_worktree_creation_error_falls_back_to_repo_root(
     assert "worktree_cleaned" not in result.artifacts
 
 
-def test_worktree_cleaned_up_on_exception(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_worktree_cleaned_up_on_exception(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     cleanups: list[bool] = []
 
     class _SpySandbox:

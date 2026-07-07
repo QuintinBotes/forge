@@ -108,9 +108,7 @@ class _ExplodingMetrics(RecordingMetrics):
 
 def test_metric_export_failure_is_swallowed(ledger, price_book) -> None:
     """AC7: the ledger row still lands; no exception propagates."""
-    meter = UsageMeter(
-        ledger=ledger, price_book=price_book, metrics=_ExplodingMetrics(service="t")
-    )
+    meter = UsageMeter(ledger=ledger, price_book=price_book, metrics=_ExplodingMetrics(service="t"))
     record = meter.record(_usage())
     assert record.cost_usd == Decimal("0.0135")
     assert len(ledger.rows()) == 1

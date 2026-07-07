@@ -29,6 +29,10 @@ jobs:
   analyze:
     name: analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    # Code scanning (CodeQL SARIF upload) requires GitHub Advanced Security,
+    # which isn't available on a PRIVATE repo — skip cleanly there so the check
+    # doesn't fail; this activates automatically once the repo is public.
+    if: ${{ github.event.repository.private == false }}
     permissions:
       contents: read           # checkout
       security-events: write   # upload CodeQL results to code scanning

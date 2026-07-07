@@ -121,15 +121,11 @@ class Environment(WorkspaceScopedModel):
     requires_approval: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true"), nullable=False
     )
-    gate_config: Mapped[dict[str, Any]] = mapped_column(
-        json_type(), default=dict, nullable=False
-    )
+    gate_config: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     provider_config: Mapped[dict[str, Any]] = mapped_column(
         json_type(), default=dict, nullable=False
     )
-    health_check: Mapped[dict[str, Any]] = mapped_column(
-        json_type(), default=dict, nullable=False
-    )
+    health_check: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
 
     pipeline: Mapped[EnvironmentPipeline] = relationship(back_populates="environments")
 
@@ -210,12 +206,8 @@ class Deployment(WorkspaceScopedModel):
         nullable=False,
     )
     initiated_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), nullable=True
-    )
-    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), nullable=True
-    )
+    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     provider_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     provider_external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -256,9 +248,7 @@ class DeploymentTransition(WorkspaceScopedModel):
 
     __tablename__ = "deployment_transition"
     __table_args__ = (
-        Index(
-            "uq_deployment_transition_seq", "deployment_id", "sequence", unique=True
-        ),
+        Index("uq_deployment_transition_seq", "deployment_id", "sequence", unique=True),
         Index(
             "uq_deployment_transition_idem",
             "deployment_id",
@@ -279,16 +269,10 @@ class DeploymentTransition(WorkspaceScopedModel):
     from_state: Mapped[str] = mapped_column(String(64), nullable=False)
     to_state: Mapped[str] = mapped_column(String(64), nullable=False)
     event: Mapped[str] = mapped_column(String(64), nullable=False)
-    guard_results: Mapped[dict[str, Any]] = mapped_column(
-        json_type(), default=dict, nullable=False
-    )
-    effects_dispatched: Mapped[list[Any]] = mapped_column(
-        json_type(), default=list, nullable=False
-    )
+    guard_results: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    effects_dispatched: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
     actor: Mapped[str] = mapped_column(String(255), nullable=False)
-    payload: Mapped[dict[str, Any]] = mapped_column(
-        json_type(), default=dict, nullable=False
-    )
+    payload: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     deployment: Mapped[Deployment] = relationship(back_populates="transitions")
@@ -306,13 +290,9 @@ class DeploymentCheckResult(WorkspaceScopedModel):
         index=True,
     )
     name: Mapped[GateCheckName] = mapped_column(enum_type(GateCheckName), nullable=False)
-    status: Mapped[GateCheckStatus] = mapped_column(
-        enum_type(GateCheckStatus), nullable=False
-    )
+    status: Mapped[GateCheckStatus] = mapped_column(enum_type(GateCheckStatus), nullable=False)
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    metrics: Mapped[dict[str, Any]] = mapped_column(
-        json_type(), default=dict, nullable=False
-    )
+    metrics: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
 
     deployment: Mapped[Deployment] = relationship(back_populates="checks")
 

@@ -28,9 +28,7 @@ def test_added_and_removed_transition(bundled_default_graph) -> None:
     modified.edges = [
         e for e in modified.edges if not (e.from_state == "merged" and e.to_state == "closed")
     ]
-    diff = definition_diff(
-        bundled_default_graph, modified, from_revision=1, to_revision=2
-    )
+    diff = definition_diff(bundled_default_graph, modified, from_revision=1, to_revision=2)
     removed = [d for d in diff.transition_diffs if d.change == "removed"]
     assert any(d.from_state == "merged" and d.to == "closed" for d in removed)
 
@@ -39,9 +37,7 @@ def test_changed_transition(bundled_default_graph) -> None:
     modified = bundled_default_graph.model_copy(deep=True)
     edge = _edge(modified, "created", "spec_drafting")
     edge.skill = "different-skill"
-    diff = definition_diff(
-        bundled_default_graph, modified, from_revision=1, to_revision=2
-    )
+    diff = definition_diff(bundled_default_graph, modified, from_revision=1, to_revision=2)
     changed = [d for d in diff.transition_diffs if d.change == "changed"]
     assert any(d.from_state == "created" and d.to == "spec_drafting" for d in changed)
 
@@ -49,7 +45,5 @@ def test_changed_transition(bundled_default_graph) -> None:
 def test_policy_changed(bundled_default_graph) -> None:
     modified = bundled_default_graph.model_copy(deep=True)
     modified.retry_policy = modified.retry_policy.model_copy(update={"max_retries": 9})
-    diff = definition_diff(
-        bundled_default_graph, modified, from_revision=1, to_revision=2
-    )
+    diff = definition_diff(bundled_default_graph, modified, from_revision=1, to_revision=2)
     assert diff.policy_changed

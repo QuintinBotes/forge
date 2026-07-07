@@ -10,9 +10,7 @@ from forge_policy import load_policy, load_test_suite, run_policy_tests
 from forge_policy.tests_runner import suite_path_for
 
 # repo_root/examples/policies/conditional
-EXAMPLES_DIR = (
-    Path(__file__).resolve().parents[3] / "examples" / "policies" / "conditional"
-)
+EXAMPLES_DIR = Path(__file__).resolve().parents[3] / "examples" / "policies" / "conditional"
 EXAMPLE_POLICIES = sorted(
     p for p in EXAMPLES_DIR.glob("*.yaml") if not p.name.endswith(".tests.yaml")
 )

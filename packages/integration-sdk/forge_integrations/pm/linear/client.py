@@ -39,9 +39,7 @@ class LinearClient:
         if resp.status_code in (401, 403):
             raise PMAuthError(f"linear auth failed ({resp.status_code})")
         if resp.status_code >= 400:
-            raise ProviderError(
-                f"linear http {resp.status_code}", status_code=resp.status_code
-            )
+            raise ProviderError(f"linear http {resp.status_code}", status_code=resp.status_code)
         body = resp.json_body or {}
         if isinstance(body, dict) and body.get("errors"):
             raise ProviderError(f"linear graphql errors: {body['errors']}")

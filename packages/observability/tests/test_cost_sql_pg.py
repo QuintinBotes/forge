@@ -110,22 +110,31 @@ def _usage(seeded: dict, request_id: str, **overrides) -> ModelUsage:
 def test_db_price_book_prefers_workspace_override_and_dates(factory, seeded) -> None:
     book = DbPriceBook(factory)
     resolved = book.resolve(
-        workspace_id=seeded["ws"], provider="anthropic", model="claude-sonnet-4-5",
-        kind="completion", at=NOW,
+        workspace_id=seeded["ws"],
+        provider="anthropic",
+        model="claude-sonnet-4-5",
+        kind="completion",
+        at=NOW,
     )
     assert resolved is not None and resolved.id == seeded["override"]
 
     # Before the override's effective_from the global row was in force.
     older = book.resolve(
-        workspace_id=seeded["ws"], provider="anthropic", model="claude-sonnet-4-5",
-        kind="completion", at=NOW - timedelta(days=10),
+        workspace_id=seeded["ws"],
+        provider="anthropic",
+        model="claude-sonnet-4-5",
+        kind="completion",
+        at=NOW - timedelta(days=10),
     )
     assert older is not None and older.id == seeded["global_price"]
 
     # Another workspace only sees the global default.
     other = book.resolve(
-        workspace_id=seeded["other_ws"], provider="anthropic", model="claude-sonnet-4-5",
-        kind="completion", at=NOW,
+        workspace_id=seeded["other_ws"],
+        provider="anthropic",
+        model="claude-sonnet-4-5",
+        kind="completion",
+        at=NOW,
     )
     assert other is not None and other.id == seeded["global_price"]
 
@@ -165,8 +174,12 @@ def test_sql_reader_summary_and_timeseries_agree(factory, seeded) -> None:
     ledger.upsert_event(_usage(seeded, "r2"), cost=Decimal("0.28"), price_id=None)
     ledger.upsert_event(
         _usage(
-            seeded, "r3", provider="openai", model="text-embedding-3-small",
-            kind="embedding", occurred_at=NOW + timedelta(days=1),
+            seeded,
+            "r3",
+            provider="openai",
+            model="text-embedding-3-small",
+            kind="embedding",
+            occurred_at=NOW + timedelta(days=1),
         ),
         cost=Decimal("0.06"),
         price_id=None,
@@ -174,8 +187,12 @@ def test_sql_reader_summary_and_timeseries_agree(factory, seeded) -> None:
 
     reader = SqlCostReader(factory)
     summary = reader.summary(
-        workspace_id=seeded["ws"], scope="task", scope_id=seeded["task"],
-        group_by="provider", frm=None, to=None,
+        workspace_id=seeded["ws"],
+        scope="task",
+        scope_id=seeded["task"],
+        group_by="provider",
+        frm=None,
+        to=None,
     )
     assert summary.total_cost_usd == Decimal("0.38")
     by_key = {b.key: b.cost_usd for b in summary.buckets}
@@ -183,23 +200,36 @@ def test_sql_reader_summary_and_timeseries_agree(factory, seeded) -> None:
     assert sum(b.cost_usd for b in summary.buckets) == summary.total_cost_usd
 
     by_phase = reader.summary(
-        workspace_id=seeded["ws"], scope="project", scope_id=seeded["project"],
-        group_by="phase", frm=None, to=None,
+        workspace_id=seeded["ws"],
+        scope="project",
+        scope_id=seeded["project"],
+        group_by="phase",
+        frm=None,
+        to=None,
     )
     phase_keys = {b.key: b.cost_usd for b in by_phase.buckets}
     assert phase_keys == {"spec_drafting": Decimal("0.04"), "executing": Decimal("0.34")}
 
     ts = reader.timeseries(
-        workspace_id=seeded["ws"], scope="workspace", scope_id=seeded["ws"],
-        bucket="day", group_by="provider", frm=None, to=None,
+        workspace_id=seeded["ws"],
+        scope="workspace",
+        scope_id=seeded["ws"],
+        bucket="day",
+        group_by="provider",
+        frm=None,
+        to=None,
     )
     total = sum(cost for points in ts.series.values() for _, cost in points)
     assert total == Decimal("0.38")
 
     # Cross-workspace read returns nothing (isolation at the repository floor).
     empty = reader.summary(
-        workspace_id=seeded["other_ws"], scope="task", scope_id=seeded["task"],
-        group_by="none", frm=None, to=None,
+        workspace_id=seeded["other_ws"],
+        scope="task",
+        scope_id=seeded["task"],
+        group_by="none",
+        frm=None,
+        to=None,
     )
     assert empty.total_cost_usd == Decimal(0)
 
@@ -227,8 +257,11 @@ def test_sql_reprice_updates_only_changed_rows(factory, seeded) -> None:
         session.commit()
 
     updated = ledger.reprice(
-        workspace_id=seeded["ws"], since=NOW - timedelta(days=2),
-        provider=None, model=None, price_book=book,
+        workspace_id=seeded["ws"],
+        since=NOW - timedelta(days=2),
+        provider=None,
+        model=None,
+        price_book=book,
     )
     assert updated == 1
     with factory() as session:
@@ -238,8 +271,11 @@ def test_sql_reprice_updates_only_changed_rows(factory, seeded) -> None:
 
     assert (
         ledger.reprice(
-            workspace_id=seeded["ws"], since=NOW - timedelta(days=2),
-            provider=None, model=None, price_book=book,
+            workspace_id=seeded["ws"],
+            since=NOW - timedelta(days=2),
+            provider=None,
+            model=None,
+            price_book=book,
         )
         == 0
     )

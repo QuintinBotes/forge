@@ -76,9 +76,7 @@ def test_unrestricted_auto_clears_no_approval(session: Session, project_id) -> N
 
 def test_restricted_waits_for_approval(session: Session, project_id) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
-    make_deployment(
-        session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    make_deployment(session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED)
     provider = NullDeployProvider()
     dep = make_deployment(session, seeded["env"]["staging"], "abc123")
     final = _orch(session, provider=provider).advance(dep.id)
@@ -88,9 +86,7 @@ def test_restricted_waits_for_approval(session: Session, project_id) -> None:
 
 def test_approve_triggers_single_deploy(session: Session, project_id) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
-    make_deployment(
-        session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    make_deployment(session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED)
     provider = NullDeployProvider()
     orch = _orch(session, provider=provider)
     dep = make_deployment(session, seeded["env"]["staging"], "abc123")
@@ -105,9 +101,7 @@ def test_approve_triggers_single_deploy(session: Session, project_id) -> None:
 
 def test_reject_to_gate_rejected_no_deploy(session: Session, project_id) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
-    make_deployment(
-        session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    make_deployment(session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED)
     provider = NullDeployProvider()
     orch = _orch(session, provider=provider)
     dep = make_deployment(session, seeded["env"]["staging"], "abc123")
@@ -121,12 +115,8 @@ def test_reject_to_gate_rejected_no_deploy(session: Session, project_id) -> None
 
 def test_multi_approval_needs_two_distinct(session: Session, project_id) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
-    make_deployment(
-        session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED
-    )
-    make_deployment(
-        session, seeded["env"]["staging"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    make_deployment(session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED)
+    make_deployment(session, seeded["env"]["staging"], "abc123", state=DeploymentState.SUCCEEDED)
     orch = _orch(session)
     dep = make_deployment(session, seeded["env"]["production"], "abc123")
     orch.advance(dep.id)
@@ -134,9 +124,7 @@ def test_multi_approval_needs_two_distinct(session: Session, project_id) -> None
     # One approval is not enough (min_approvals=2): transition guard blocks.
     _approve(session, dep.id, APPROVER_ID)
     with pytest.raises(InvalidTransitionError):
-        engine.transition(
-            dep.id, DeploymentEvent(type=DeploymentEventType.APPROVE)
-        )
+        engine.transition(dep.id, DeploymentEvent(type=DeploymentEventType.APPROVE))
     # Same user approving again does not increase the distinct count.
     repo = DeploymentRepository(session, workspace_id=WS_ID)
     assert repo.distinct_approver_count(dep.id) == 1
@@ -146,9 +134,7 @@ def test_multi_approval_needs_two_distinct(session: Session, project_id) -> None
     assert orch.advance(dep.id) == DeploymentState.SUCCEEDED
 
 
-def test_deploy_success_then_health_pass_to_succeeded(
-    session: Session, project_id
-) -> None:
+def test_deploy_success_then_health_pass_to_succeeded(session: Session, project_id) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
     dev = seeded["env"]["dev"]
     dep = make_deployment(session, dev, "abc123")
@@ -224,13 +210,9 @@ def test_cancel_non_terminal(session: Session, project_id) -> None:
 
 def test_cancel_terminal_raises(session: Session, project_id) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
-    dep = make_deployment(
-        session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED
-    )
+    dep = make_deployment(session, seeded["env"]["dev"], "abc123", state=DeploymentState.SUCCEEDED)
     with pytest.raises(InvalidTransitionError):
-        _engine(session).transition(
-            dep.id, DeploymentEvent(type=DeploymentEventType.CANCEL)
-        )
+        _engine(session).transition(dep.id, DeploymentEvent(type=DeploymentEventType.CANCEL))
 
 
 def test_transitions_append_only_and_redacted(session: Session, project_id) -> None:

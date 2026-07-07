@@ -35,9 +35,7 @@ class BundledReadOnlyError(WorkflowError):
 
     def __init__(self, name: str) -> None:
         self.name = name
-        super().__init__(
-            f"bundled definition {name!r} is read-only; fork it to customize"
-        )
+        super().__init__(f"bundled definition {name!r} is read-only; fork it to customize")
 
 
 class RevisionNotFoundError(WorkflowError):
@@ -54,9 +52,7 @@ class PublishBlockedError(WorkflowError):
 
     def __init__(self, errors: list[ValidationIssue]) -> None:
         self.errors = errors
-        super().__init__(
-            f"publish blocked: {len(errors)} validation error(s) remain"
-        )
+        super().__init__(f"publish blocked: {len(errors)} validation error(s) remain")
 
 
 class UnknownDefinitionError(WorkflowError):

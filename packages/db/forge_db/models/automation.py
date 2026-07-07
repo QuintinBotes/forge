@@ -65,9 +65,7 @@ class AutomationRule(WorkspaceScopedModel):
     trigger_config: Mapped[dict[str, Any]] = mapped_column(
         json_type(), default=dict, nullable=False
     )
-    condition: Mapped[dict[str, Any]] = mapped_column(
-        json_type(), default=dict, nullable=False
-    )
+    condition: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     actions: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
     run_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -83,9 +81,7 @@ class AutomationExecution(WorkspaceScopedModel):
     __table_args__ = (
         UniqueConstraint("idempotency_key", name="uq_automation_execution_idempotency_key"),
         Index("ix_automation_execution_rule_id_created", "rule_id", "created_at"),
-        Index(
-            "ix_automation_execution_entity", "entity_type", "entity_id", "created_at"
-        ),
+        Index("ix_automation_execution_entity", "entity_type", "entity_id", "created_at"),
     )
 
     # Intentionally NOT a hard FK: the audit row is immutable (the F39 trigger
@@ -110,16 +106,10 @@ class AutomationExecution(WorkspaceScopedModel):
         enum_type(AutomationExecutionStatus), nullable=False
     )
     condition_result: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    actions_planned: Mapped[list[Any]] = mapped_column(
-        json_type(), default=list, nullable=False
-    )
-    action_results: Mapped[list[Any]] = mapped_column(
-        json_type(), default=list, nullable=False
-    )
+    actions_planned: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
+    action_results: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
     depth: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    causation_chain: Mapped[list[Any]] = mapped_column(
-        json_type(), default=list, nullable=False
-    )
+    causation_chain: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)

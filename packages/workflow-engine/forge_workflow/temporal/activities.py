@@ -79,7 +79,8 @@ def _default_guard_inputs(_: GuardInputsRequest) -> GuardInputs:
     )
 
 
-def _default_run_agent(inp: RunAgentInput) -> AgentRunResultDTO:
+def _default_agent_result() -> AgentRunResultDTO:
+    # SOFT dep (F06) absent → a parked, all-green result keeps the spine runnable.
     return AgentRunResultDTO(
         agent_run_id=uuid.uuid4(),
         status="succeeded",
@@ -88,6 +89,14 @@ def _default_run_agent(inp: RunAgentInput) -> AgentRunResultDTO:
         branch_name="forge/auto",
         head_commit_sha=None,
     )
+
+
+def _default_run_agent(inp: RunAgentInput) -> AgentRunResultDTO:
+    return _default_agent_result()
+
+
+def _default_resume_agent(inp: ResumeAgentInput) -> AgentRunResultDTO:
+    return _default_agent_result()
 
 
 def _default_run_checks(_: RunChecksInput) -> ChecksResult:
@@ -133,7 +142,7 @@ class WorkflowActivities:
         self._store: WorkflowStore = store or InMemoryWorkflowStore()
         self._guard_inputs_fn = guard_inputs_fn or _default_guard_inputs
         self._run_agent_fn = run_agent_fn or _default_run_agent
-        self._resume_agent_fn = resume_agent_fn or _default_run_agent  # type: ignore[assignment]
+        self._resume_agent_fn = resume_agent_fn or _default_resume_agent
         self._run_checks_fn = run_checks_fn or _default_run_checks
         self._open_pr_fn = open_pr_fn or _default_open_pr
         self._notify_fn = notify_fn or _default_notify
@@ -166,7 +175,9 @@ class WorkflowActivities:
         transitions: list[dict[str, object]] = list(run.context.get("transitions", []))
         for existing in transitions:
             if existing.get("idempotency_key") == rec.idempotency_key:
-                return int(existing["sequence"])  # at-least-once no-op
+                seq = existing["sequence"]  # at-least-once no-op
+                assert isinstance(seq, int)  # always written as an int below
+                return seq
 
         sequence = len(transitions) + 1
         transitions.append(

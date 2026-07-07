@@ -415,9 +415,7 @@ class PRGroup(_Model):
     task_id: uuid.UUID | None = None
     merge_order: list[str] = Field(default_factory=list)
     prs: list[CrossPRLink] = Field(default_factory=list)
-    status: Literal[
-        "open", "ready", "merging", "merged", "partially_merged", "failed"
-    ] = "open"
+    status: Literal["open", "ready", "merging", "merged", "partially_merged", "failed"] = "open"
     merged_repo_ids: list[str] = Field(default_factory=list)
 
 

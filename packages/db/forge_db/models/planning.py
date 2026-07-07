@@ -53,6 +53,12 @@ class Epic(WorkspaceScopedModel):
     priority: Mapped[Priority] = mapped_column(
         enum_type(Priority), default=Priority.MEDIUM, nullable=False
     )
+    # F01 board persistence: carries the ``EpicDTO`` free-form fields the domain
+    # service round-trips but the base Epic has no dedicated column for. ``spec_id``
+    # is a plain UUID mirror of the DTO value (the referential 1:1 link lives on
+    # ``spec_document.epic_id``); ``labels`` is the DTO's saved-filter label set.
+    spec_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    labels: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="epics")
     spec_document: Mapped[SpecDocument | None] = relationship(
@@ -143,6 +149,10 @@ class Sprint(WorkspaceScopedModel):
     committed_task_ids: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
     position: Mapped[str | None] = mapped_column(Text, nullable=True)
     velocity_version: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    # F01 board persistence: the ``SprintDTO.task_ids`` membership list the domain
+    # service round-trips verbatim (distinct from the F26 ``committed_task_ids``
+    # velocity snapshot frozen at sprint start).
+    task_ids: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="sprints")
     tasks: Mapped[list[Task]] = relationship(back_populates="sprint")
@@ -217,16 +227,25 @@ class Task(WorkspaceScopedModel):
     requires_approval: Mapped[dict[str, Any]] = mapped_column(
         json_type(), default=dict, nullable=False
     )
-    knowledge_scope: Mapped[dict[str, Any]] = mapped_column(
+    # ``None`` round-trips faithfully: JSON columns store Python ``None`` as the
+    # JSON literal ``null`` (``none_as_null`` defaults to False), a non-SQL-NULL
+    # value that satisfies ``nullable=False`` and reads back as ``None`` — distinct
+    # from an all-defaults empty object. The Mapped type therefore includes None.
+    knowledge_scope: Mapped[dict[str, Any] | None] = mapped_column(
         json_type(), default=dict, nullable=False
     )
     subagent_policy: Mapped[dict[str, Any]] = mapped_column(
         json_type(), default=dict, nullable=False
     )
-    handoff_rules: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    handoff_rules: Mapped[dict[str, Any] | None] = mapped_column(
+        json_type(), default=dict, nullable=False
+    )
     acceptance_criteria: Mapped[list[Any]] = mapped_column(
         json_type(), default=list, nullable=False
     )
+    # F01 board persistence: the ``TaskDTO.labels`` saved-filter set (the DTO's
+    # ``depends_on`` edges live in the ``task_dependency`` adjacency table below).
+    labels: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="tasks")
     epic: Mapped[Epic | None] = relationship(back_populates="tasks")
@@ -282,3 +301,32 @@ class Incident(WorkspaceScopedModel):
     resolved_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     project: Mapped[Project] = relationship(back_populates="incidents")
+
+
+class TaskDependency(WorkspaceScopedModel):
+    """A directed task-dependency edge (``TaskDTO.depends_on``).
+
+    An edge ``(task_id -> depends_on_id)`` means *task ``task_id`` depends on /
+    is blocked-by task ``depends_on_id``* — the same orientation the in-memory
+    board's cycle detector uses. This adjacency table is what the DB-backed
+    :class:`~forge_board.sql_service.SqlAlchemyBoardService` persists the
+    dependency graph in (the base ``task`` table has no ``depends_on`` column).
+    Both endpoints ``ON DELETE CASCADE`` so deleting a task removes its incident
+    edges without leaving dangling references.
+    """
+
+    __tablename__ = "task_dependency"
+    __table_args__ = (UniqueConstraint("task_id", "depends_on_id"),)
+
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("task.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    depends_on_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("task.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )

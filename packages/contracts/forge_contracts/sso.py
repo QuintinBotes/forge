@@ -34,12 +34,8 @@ class AttributeMapping(BaseModel):
 
     email: str = ""
     name: str | None = None
-    first_name: str | None = (
-        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
-    )
-    last_name: str | None = (
-        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"
-    )
+    first_name: str | None = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
+    last_name: str | None = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"
     groups: str | None = None
 
 

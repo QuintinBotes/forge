@@ -139,9 +139,7 @@ class HttpIndexRegistryClient:
 
     async def fetch_index(self) -> RegistryIndex:
         guard_url(self._index_url, allowed_hosts=self._allowed, resolver=self._resolver)
-        raw = _read_capped(
-            self._index_url, timeout=self._timeout, max_bytes=self._max_index_bytes
-        )
+        raw = _read_capped(self._index_url, timeout=self._timeout, max_bytes=self._max_index_bytes)
         return parse_index(raw)
 
     async def fetch_manifest(self, manifest_uri: str) -> tuple[PackageManifest, bytes]:

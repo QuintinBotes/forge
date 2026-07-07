@@ -82,9 +82,7 @@ class TestScimAuth:
         client.headers.update({"Authorization": f"Bearer {scim_token}"})
         assert client.get("/scim/v2/Users").status_code == 401
 
-    def test_valid_token_resolves_workspace_and_touches_last_used(
-        self, scim, session_factory
-    ):
+    def test_valid_token_resolves_workspace_and_touches_last_used(self, scim, session_factory):
         assert scim.get("/scim/v2/Users").status_code == 200
         with session_factory() as session:
             row = session.execute(select(ScimToken)).scalar_one()
@@ -113,9 +111,7 @@ class TestScimUsers:
         assert created.headers["location"].endswith(f"/scim/v2/Users/{scim_id}")
 
         with session_factory() as session:
-            user = session.execute(
-                select(User).where(User.email == "eve@acme.com")
-            ).scalar_one()
+            user = session.execute(select(User).where(User.email == "eve@acme.com")).scalar_one()
             assert user.external_managed is True
             assert user.workspace_id == WS_ID
 
@@ -123,16 +119,12 @@ class TestScimUsers:
         assert fetched.status_code == 200
         assert fetched.json()["externalId"] == "okta|eve@acme.com"
 
-        listed = scim.get(
-            "/scim/v2/Users", params={"filter": 'userName eq "eve@acme.com"'}
-        )
+        listed = scim.get("/scim/v2/Users", params={"filter": 'userName eq "eve@acme.com"'})
         assert listed.status_code == 200
         assert listed.json()["totalResults"] == 1
         assert listed.json()["Resources"][0]["id"] == scim_id
 
-        empty = scim.get(
-            "/scim/v2/Users", params={"filter": 'userName eq "nobody@acme.com"'}
-        )
+        empty = scim.get("/scim/v2/Users", params={"filter": 'userName eq "nobody@acme.com"'})
         assert empty.json()["totalResults"] == 0
 
     def test_invalid_filter_400(self, scim):
@@ -143,9 +135,7 @@ class TestScimUsers:
     def test_pagination_deterministic(self, scim):
         for i in range(5):
             assert (
-                scim.post(
-                    "/scim/v2/Users", json=_user_payload(f"user{i}@acme.com")
-                ).status_code
+                scim.post("/scim/v2/Users", json=_user_payload(f"user{i}@acme.com")).status_code
                 == 201
             )
         page1 = scim.get("/scim/v2/Users", params={"startIndex": 1, "count": 2}).json()
@@ -181,9 +171,7 @@ class TestScimUsers:
         """AC15: PATCH active=false revokes sessions/tokens + blocks SAML."""
         scim_id = scim.post("/scim/v2/Users", json=_user_payload()).json()["id"]
         with session_factory() as session:
-            user = session.execute(
-                select(User).where(User.email == "eve@acme.com")
-            ).scalar_one()
+            user = session.execute(select(User).where(User.email == "eve@acme.com")).scalar_one()
             user_id = user.id
 
         # Give eve a live Forge session/agent token (the F37 in-memory store).
@@ -196,9 +184,7 @@ class TestScimUsers:
             f"/scim/v2/Users/{scim_id}",
             json={
                 "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-                "Operations": [
-                    {"op": "replace", "path": "active", "value": False}
-                ],
+                "Operations": [{"op": "replace", "path": "active", "value": False}],
             },
         )
         assert patched.status_code == 200
@@ -223,12 +209,8 @@ class TestScimUsers:
         assert scim.delete(f"/scim/v2/Users/{scim_id}").status_code == 204
 
         saml_client = client_factory(authenticated=False)
-        b64 = sign_saml_response(
-            build_saml_response(name_id="eve@acme.com"), idp_keypair
-        )
-        response = saml_client.post(
-            "/auth/saml/acme/acs", data={"SAMLResponse": b64}
-        )
+        b64 = sign_saml_response(build_saml_response(name_id="eve@acme.com"), idp_keypair)
+        response = saml_client.post("/auth/saml/acme/acs", data={"SAMLResponse": b64})
         assert response.status_code == 403
 
     def test_patch_no_path_object_value(self, scim):
@@ -262,17 +244,13 @@ class TestScimUsers:
         )
         assert reactivated.json()["active"] is True
         with session_factory() as session:
-            user = session.execute(
-                select(User).where(User.email == "eve@acme.com")
-            ).scalar_one()
+            user = session.execute(select(User).where(User.email == "eve@acme.com")).scalar_one()
             assert user.is_active is True
             assert user.deactivated_at is None
 
 
 class TestScimGroups:
-    def test_group_membership_drives_effective_role(
-        self, scim, session_factory, idp_keypair
-    ):
+    def test_group_membership_drives_effective_role(self, scim, session_factory, idp_keypair):
         """AC16: group → role mapping; removal reverts to default_role."""
         install_config(
             session_factory,
@@ -296,16 +274,12 @@ class TestScimGroups:
             f"/scim/v2/Groups/{group_id}",
             json={
                 "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-                "Operations": [
-                    {"op": "add", "path": "members", "value": [{"value": user_id}]}
-                ],
+                "Operations": [{"op": "add", "path": "members", "value": [{"value": user_id}]}],
             },
         )
         assert added.status_code == 200
         with session_factory() as session:
-            user = session.execute(
-                select(User).where(User.email == "eve@acme.com")
-            ).scalar_one()
+            user = session.execute(select(User).where(User.email == "eve@acme.com")).scalar_one()
             assert user.role == UserRole.VIEWER
 
         # Highest privilege across memberships wins.
@@ -319,9 +293,7 @@ class TestScimGroups:
         )
         assert admins.status_code == 201
         with session_factory() as session:
-            user = session.execute(
-                select(User).where(User.email == "eve@acme.com")
-            ).scalar_one()
+            user = session.execute(select(User).where(User.email == "eve@acme.com")).scalar_one()
             assert user.role == UserRole.ADMIN
 
         # Removing the admin membership drops back to viewer; removing all
@@ -340,16 +312,12 @@ class TestScimGroups:
         )
         assert removed.status_code == 200
         with session_factory() as session:
-            user = session.execute(
-                select(User).where(User.email == "eve@acme.com")
-            ).scalar_one()
+            user = session.execute(select(User).where(User.email == "eve@acme.com")).scalar_one()
             assert user.role == UserRole.VIEWER
 
         assert scim.delete(f"/scim/v2/Groups/{group_id}").status_code == 204
         with session_factory() as session:
-            user = session.execute(
-                select(User).where(User.email == "eve@acme.com")
-            ).scalar_one()
+            user = session.execute(select(User).where(User.email == "eve@acme.com")).scalar_one()
             assert user.role == UserRole.MEMBER
 
     def test_group_crud(self, scim):
@@ -376,18 +344,18 @@ class TestScimGroups:
 
 
 class TestAuditCompleteness:
-    def test_scim_actions_audited_and_redacted(
-        self, scim, scim_token, session_factory
-    ):
+    def test_scim_actions_audited_and_redacted(self, scim, scim_token, session_factory):
         """AC19: create/update/deactivate each emit exactly one audit event;
         AC18: no raw token ever lands in audit details."""
         scim_id = scim.post("/scim/v2/Users", json=_user_payload()).json()["id"]
         scim.put(f"/scim/v2/Users/{scim_id}", json=_user_payload(displayName="E"))
         scim.delete(f"/scim/v2/Users/{scim_id}")
         with session_factory() as session:
-            rows = session.execute(
-                select(AuditLog).where(AuditLog.workspace_id == WS_ID)
-            ).scalars().all()
+            rows = (
+                session.execute(select(AuditLog).where(AuditLog.workspace_id == WS_ID))
+                .scalars()
+                .all()
+            )
             actions = [row.action for row in rows]
             assert actions.count("scim.user_created") == 1
             assert actions.count("scim.user_updated") == 1

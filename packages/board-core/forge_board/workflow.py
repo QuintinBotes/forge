@@ -13,9 +13,7 @@ from forge_contracts import TaskStatus
 
 #: Statuses considered terminal (a task is finished or abandoned). They can be
 #: *reopened* but cannot advance further down the normal flow.
-TERMINAL_STATUSES: frozenset[TaskStatus] = frozenset(
-    {TaskStatus.DONE, TaskStatus.CANCELLED}
-)
+TERMINAL_STATUSES: frozenset[TaskStatus] = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED})
 
 #: Default per-status set of legal next statuses. Total over ``TaskStatus``.
 TASK_STATUS_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {

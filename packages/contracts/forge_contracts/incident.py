@@ -129,9 +129,9 @@ class RunbookStep(_Model):
     args: dict[str, Any] = Field(default_factory=dict)
     blast_radius: BlastRadius = BlastRadius.LOW
     rationale: str = ""
-    status: Literal[
-        "proposed", "approved", "skipped", "running", "succeeded", "failed"
-    ] = "proposed"
+    status: Literal["proposed", "approved", "skipped", "running", "succeeded", "failed"] = (
+        "proposed"
+    )
 
 
 class Runbook(_Model):

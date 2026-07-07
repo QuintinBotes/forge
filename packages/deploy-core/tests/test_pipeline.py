@@ -38,9 +38,7 @@ def test_restricted_derived_from_policy(pipeline_spec: PipelineSpec) -> None:
 
 def test_restricted_unset_rejected(pipeline_spec: PipelineSpec) -> None:
     with pytest.raises(RuleValidationError):
-        resolve_environments(
-            pipeline_spec, RULES, requested_restricted={"production": False}
-        )
+        resolve_environments(pipeline_spec, RULES, requested_restricted={"production": False})
 
 
 def test_unknown_env_rejected() -> None:
@@ -71,9 +69,7 @@ def test_predecessor_lookup(session: Session, project_id: uuid.UUID) -> None:
     assert resolver.predecessor(envs["production"]).name == "staging"
 
 
-def test_currently_deployed_returns_last_succeeded(
-    session: Session, project_id: uuid.UUID
-) -> None:
+def test_currently_deployed_returns_last_succeeded(session: Session, project_id: uuid.UUID) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
     dev = seeded["env"]["dev"]
     repo = DeploymentRepository(session, workspace_id=WS_ID)
@@ -81,9 +77,7 @@ def test_currently_deployed_returns_last_succeeded(
     from datetime import UTC, datetime, timedelta
 
     base = datetime(2026, 6, 20, 12, 0, tzinfo=UTC)
-    make_deployment(
-        session, dev, "old111", state=DeploymentState.SUCCEEDED, finished_at=base
-    )
+    make_deployment(session, dev, "old111", state=DeploymentState.SUCCEEDED, finished_at=base)
     make_deployment(
         session,
         dev,
@@ -104,9 +98,7 @@ def test_currently_deployed_returns_last_succeeded(
     assert current.commit_sha == "new222"
 
 
-def test_predecessor_succeeded_same_commit_only(
-    session: Session, project_id: uuid.UUID
-) -> None:
+def test_predecessor_succeeded_same_commit_only(session: Session, project_id: uuid.UUID) -> None:
     seeded = seed_pipeline(session, project_id=project_id)
     dev, staging = seeded["env"]["dev"], seeded["env"]["staging"]
     repo = DeploymentRepository(session, workspace_id=WS_ID)

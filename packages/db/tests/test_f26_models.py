@@ -54,8 +54,9 @@ def _seed_project(session: Session) -> tuple[uuid.UUID, uuid.UUID]:
 
 
 def _sprint(ws_id: uuid.UUID, project_id: uuid.UUID, status: str) -> Sprint:
-    return Sprint(workspace_id=ws_id, project_id=project_id, name=f"S-{uuid.uuid4().hex[:4]}",
-                  status=status)
+    return Sprint(
+        workspace_id=ws_id, project_id=project_id, name=f"S-{uuid.uuid4().hex[:4]}", status=status
+    )
 
 
 def test_one_active_sprint_per_project(factory: sessionmaker[Session]) -> None:

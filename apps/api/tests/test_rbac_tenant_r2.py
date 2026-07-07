@@ -108,13 +108,9 @@ def test_viewer_cannot_write_or_run_across_routers() -> None:
     rid = uuid.uuid4()
     with TestClient(app) as client:
         cases = [
-            client.post(
-                f"/approval/requests/{rid}/decision", json={"status": "approved"}
-            ),
+            client.post(f"/approval/requests/{rid}/decision", json={"status": "approved"}),
             client.post(f"/spec/specs/{rid}/approve"),
-            client.post(
-                f"/workflow/runs/{rid}/transition", json={"event": "x"}
-            ),
+            client.post(f"/workflow/runs/{rid}/transition", json={"event": "x"}),
             client.post(
                 "/integration/github/pull-requests",
                 json={"repo": "org/api", "title": "t", "head": "f", "base": "main"},
@@ -174,9 +170,7 @@ def test_agent_runner_cannot_decide_its_own_gate() -> None:
     with TestClient(app) as client:
         rid = _open_request(client)
         _as(app, make_test_principal(role=UserRole.AGENT_RUNNER))
-        resp = client.post(
-            f"/approval/requests/{rid}/decision", json={"status": "approved"}
-        )
+        resp = client.post(f"/approval/requests/{rid}/decision", json={"status": "approved"})
     assert resp.status_code == 403, resp.text
 
 
@@ -194,9 +188,7 @@ def test_approval_is_workspace_scoped() -> None:
         _as(app, make_test_principal(role=UserRole.MEMBER, workspace_id=OTHER_WORKSPACE_ID))
         assert client.get(f"/approval/requests/{rid}").status_code == 404
         assert client.get("/approval/requests").json() == []
-        decide = client.post(
-            f"/approval/requests/{rid}/decision", json={"status": "approved"}
-        )
+        decide = client.post(f"/approval/requests/{rid}/decision", json={"status": "approved"})
         assert decide.status_code == 404
 
 
@@ -351,9 +343,7 @@ def test_sync_foreign_connection_is_404(
     app, synced = sync_app
     _as(app, make_test_principal(role=UserRole.MEMBER, workspace_id=OTHER_WORKSPACE_ID))
     with TestClient(app) as client:
-        resp = client.post(
-            f"/integration/github/repos/{CONNECTION_ID}/sync", json={}
-        )
+        resp = client.post(f"/integration/github/repos/{CONNECTION_ID}/sync", json={})
     assert resp.status_code == 404, resp.text
     assert synced == []
 
@@ -362,7 +352,5 @@ def test_viewer_cannot_sync(sync_app: tuple[FastAPI, list[str]]) -> None:
     app, _synced = sync_app
     _as(app, make_test_principal(role=UserRole.VIEWER, workspace_id=TEST_WORKSPACE_ID))
     with TestClient(app) as client:
-        resp = client.post(
-            f"/integration/github/repos/{CONNECTION_ID}/sync", json={}
-        )
+        resp = client.post(f"/integration/github/repos/{CONNECTION_ID}/sync", json={})
     assert resp.status_code == 403, resp.text

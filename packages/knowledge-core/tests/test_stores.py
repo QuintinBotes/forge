@@ -68,9 +68,7 @@ def _make_source(
     uri: str = "github.com/org/api",
 ) -> uuid.UUID:
     with session_factory() as session:
-        source = KnowledgeSource(
-            workspace_id=workspace_id, kind="repo", name="api", uri=uri
-        )
+        source = KnowledgeSource(workspace_id=workspace_id, kind="repo", name="api", uri=uri)
         session.add(source)
         session.flush()
         src_id = source.id

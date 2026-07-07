@@ -66,16 +66,12 @@ def test_publish_blocked_returns_409_with_errors(admin_client: TestClient) -> No
     for edge in graph["edges"]:
         if edge["from_state"] == "awaiting_review" and edge["to_state"] == "merged":
             edge["when"] = [s for s in edge["when"] if s != "review_approved_by_human"]
-    save = admin_client.put(
-        f"{BASE}/definitions/default_feature/draft", json={"graph": graph}
-    )
+    save = admin_client.put(f"{BASE}/definitions/default_feature/draft", json={"graph": graph})
     assert save.status_code == 200, save.text
     resp = admin_client.post(f"{BASE}/definitions/default_feature/publish")
     assert resp.status_code == 409
     detail = resp.json()["detail"]
-    assert any(
-        e["invariant_id"] == "merge_human_gate" for e in detail["errors"]
-    )
+    assert any(e["invariant_id"] == "merge_human_gate" for e in detail["errors"])
 
 
 def test_diff(admin_client: TestClient) -> None:
@@ -87,9 +83,7 @@ def test_diff(admin_client: TestClient) -> None:
     for edge in graph["edges"]:
         if edge["from_state"] == "created":
             edge["skill"] = "spec-analyst-v2"
-    admin_client.put(
-        f"{BASE}/definitions/default_feature/draft", json={"graph": graph}
-    )
+    admin_client.put(f"{BASE}/definitions/default_feature/draft", json={"graph": graph})
     admin_client.post(f"{BASE}/definitions/default_feature/publish")
     resp = admin_client.get(f"{BASE}/definitions/default_feature/diff?from=1&to=2")
     assert resp.status_code == 200, resp.text
@@ -137,9 +131,7 @@ def test_rbac_viewer(make_client: Callable[..., TestClient]) -> None:
         assert client.get(f"{BASE}/definitions").status_code == 200
         assert client.post(f"{BASE}/definitions/default_feature/fork").status_code == 403
         assert (
-            client.put(
-                f"{BASE}/definitions/default_feature/draft", json={"graph": {}}
-            ).status_code
+            client.put(f"{BASE}/definitions/default_feature/draft", json={"graph": {}}).status_code
             == 403
         )
 
@@ -157,10 +149,7 @@ def test_rbac_member(make_client: Callable[..., TestClient]) -> None:
             ).status_code
             == 200
         )
-        assert (
-            member.post(f"{BASE}/definitions/default_feature/draft/validate").status_code
-            == 200
-        )
+        assert member.post(f"{BASE}/definitions/default_feature/draft/validate").status_code == 200
         assert member.post(f"{BASE}/definitions/default_feature/publish").status_code == 403
         assert member.post(f"{BASE}/definitions/default_feature/fork").status_code == 403
 

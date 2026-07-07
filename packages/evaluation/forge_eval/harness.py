@@ -93,11 +93,7 @@ class TaskScorecard:
 
     @property
     def mean_requirement_satisfaction(self) -> float:
-        return (
-            fmean(r.requirement_satisfaction for r in self.results)
-            if self.results
-            else 0.0
-        )
+        return fmean(r.requirement_satisfaction for r in self.results) if self.results else 0.0
 
     @property
     def mean_retrieval_recall(self) -> float | None:
@@ -146,9 +142,7 @@ def _score_task(
     min_requirement_satisfaction: float,
     min_recall: float,
 ) -> TaskEval:
-    satisfaction = requirement_satisfaction(
-        output.satisfied_requirements, task.requirement_ids
-    )
+    satisfaction = requirement_satisfaction(output.satisfied_requirements, task.requirement_ids)
 
     if task.expected_chunks:
         recall: float | None = recall_at_k(output.retrieved_ids, task.expected_chunks, k)

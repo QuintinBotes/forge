@@ -41,9 +41,7 @@ class GitHubDeployClient(Protocol):
         self, repo_id: str, *, workflow_file: str, ref: str, inputs: dict[str, Any]
     ) -> dict[str, Any]: ...
 
-    def get_deployment_status(
-        self, repo_id: str, external_id: str
-    ) -> dict[str, Any]: ...
+    def get_deployment_status(self, repo_id: str, external_id: str) -> dict[str, Any]: ...
 
 
 @runtime_checkable
@@ -76,9 +74,7 @@ class NullDeployProvider:
 
     def trigger(self, req: DeployRequest) -> DeployHandle:
         self.triggered.append(req)
-        return DeployHandle(
-            provider=self.name, external_id=f"null-{len(self.triggered)}", url=None
-        )
+        return DeployHandle(provider=self.name, external_id=f"null-{len(self.triggered)}", url=None)
 
     def get_status(self, handle: DeployHandle) -> DeployStatus:
         if self._idx < len(self._statuses) - 1:

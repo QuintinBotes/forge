@@ -106,9 +106,7 @@ class PMTaskLink(WorkspaceScopedModel):
     __tablename__ = "pm_task_link"
     __table_args__ = (
         UniqueConstraint("connection_id", "external_id", name="uq_pm_task_link_conn_extid"),
-        UniqueConstraint(
-            "connection_id", "forge_task_id", name="uq_pm_task_link_conn_task"
-        ),
+        UniqueConstraint("connection_id", "forge_task_id", name="uq_pm_task_link_conn_task"),
         Index("ix_pm_task_link_workspace_state", "workspace_id", "sync_state"),
         Index("ix_pm_task_link_conn_state", "connection_id", "sync_state"),
     )

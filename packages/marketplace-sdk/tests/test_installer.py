@@ -106,9 +106,7 @@ def test_build_install_plan_blocks_on_verification(
     make_skill_package: Callable[..., Package],
 ) -> None:
     pkg = make_skill_package()
-    blocked = VerificationResult(
-        status=VerificationStatus.hash_mismatch, content_hash_ok=False
-    )
+    blocked = VerificationResult(status=VerificationStatus.hash_mismatch, content_hash_ok=False)
     plan = build_install_plan(
         manifest=pkg.manifest,
         version=pkg.manifest.version,

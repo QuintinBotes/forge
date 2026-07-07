@@ -136,9 +136,7 @@ async def test_escalation_denied_and_audited(
     # admin principal but request a role above... admin is the max role, so
     # exercise the guard directly with a member-role principal via a JWT-free
     # in-memory key: mint a member key, then have it attempt an admin key.
-    _, member_token = service.bootstrap_key(
-        workspace_id=WS, name="member", role=UserRole.MEMBER
-    )
+    _, member_token = service.bootstrap_key(workspace_id=WS, name="member", role=UserRole.MEMBER)
     resp = await client.post(
         "/auth/api-keys",
         headers={"Authorization": f"Bearer {member_token}"},

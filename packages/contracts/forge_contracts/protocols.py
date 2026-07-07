@@ -80,9 +80,7 @@ class KnowledgeStore(Protocol):
 
     def index(self, source_id: str, chunks: list[Chunk]) -> IndexResult: ...
 
-    def search(
-        self, query: str, scope: KnowledgeScope, k: int = 10
-    ) -> list[RetrievedChunk]: ...
+    def search(self, query: str, scope: KnowledgeScope, k: int = 10) -> list[RetrievedChunk]: ...
 
 
 @runtime_checkable
@@ -95,9 +93,7 @@ class Retriever(Protocol):
 
     def fuse(self, rankings: list[list[Ranked]], k: int = RRF_K) -> list[Ranked]: ...
 
-    def rerank(
-        self, query: str, candidates: list[Ranked], top_n: int
-    ) -> list[RetrievedChunk]: ...
+    def rerank(self, query: str, candidates: list[Ranked], top_n: int) -> list[RetrievedChunk]: ...
 
 
 # --------------------------------------------------------------------------- #

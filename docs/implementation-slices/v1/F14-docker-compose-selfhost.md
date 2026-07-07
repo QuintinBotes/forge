@@ -33,7 +33,7 @@ The "user" here is a **self-hosting operator** (admin running Forge on their own
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER && newgrp docker
 
-git clone https://github.com/forge-platform/forge && cd forge
+git clone https://github.com/QuintinBotes/forge && cd forge
 sudo cp deploy/docker/daemon.json /etc/docker/daemon.json && sudo systemctl restart docker  # log caps
 cp deploy/.env.production.example .env.production
 $EDITOR .env.production   # fill SECRET_KEY, AUTH_SECRET, API_KEY_PEPPER, FORGE_VAULT_KEYS, INTERNAL_SERVICE_TOKEN,

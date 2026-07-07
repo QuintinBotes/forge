@@ -92,9 +92,7 @@ ServiceDep = Annotated[BenchmarkService, Depends(get_benchmark_service)]
     response_model=list[PublicBenchmarkOut],
     dependencies=[RateLimited],
 )
-def list_public_benchmarks(
-    service: ServiceDep, response: Response
-) -> list[PublicBenchmarkOut]:
+def list_public_benchmarks(service: ServiceDep, response: Response) -> list[PublicBenchmarkOut]:
     _cache_headers(response)
     return [
         PublicBenchmarkOut(

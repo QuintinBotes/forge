@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_db.models import ApprovalRequest, ApprovalStatus, AuditLog, PolicyOverrideGrant
@@ -93,15 +94,18 @@ def run_consume_grant(
     never granting future scope (Build-Prompt constraint #2).
     """
     now = now or datetime.now(UTC)
-    result = session.execute(
-        update(PolicyOverrideGrant)
-        .where(
-            PolicyOverrideGrant.agent_run_id == agent_run_id,
-            PolicyOverrideGrant.action_fingerprint == action_fingerprint,
-            PolicyOverrideGrant.consumed.is_(False),
-            PolicyOverrideGrant.expires_at > now,
-        )
-        .values(consumed=True)
+    result = cast(
+        "CursorResult[Any]",
+        session.execute(
+            update(PolicyOverrideGrant)
+            .where(
+                PolicyOverrideGrant.agent_run_id == agent_run_id,
+                PolicyOverrideGrant.action_fingerprint == action_fingerprint,
+                PolicyOverrideGrant.consumed.is_(False),
+                PolicyOverrideGrant.expires_at > now,
+            )
+            .values(consumed=True)
+        ),
     )
     consumed = (result.rowcount or 0) > 0
     if consumed:

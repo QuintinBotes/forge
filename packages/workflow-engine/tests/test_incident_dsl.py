@@ -92,24 +92,18 @@ def test_approval_required_before_execution() -> None:
 def test_postmortem_persisted_guards_close() -> None:
     with pytest.raises(InvalidTransitionError):
         drive_incident("postmortem_created", "close", context={})
-    outcome = drive_incident(
-        "postmortem_created", "close", context={"postmortem_persisted": True}
-    )
+    outcome = drive_incident("postmortem_created", "close", context={"postmortem_persisted": True})
     assert outcome.to_state == "closed"
 
 
 def test_recovery_retry_then_escalate() -> None:
     # Budget remaining (count 0 < max 2): re-propose, retry consumed.
-    o1 = drive_incident(
-        "monitoring", "recovery_failed", retry_count=0, max_retries=2
-    )
+    o1 = drive_incident("monitoring", "recovery_failed", retry_count=0, max_retries=2)
     assert o1.to_state == "remediation_proposed"
     assert o1.retry_consumed is True
     assert o1.retry_count == 1
     # Budget exhausted (count 2 >= max 2): escalate.
-    o2 = drive_incident(
-        "monitoring", "recovery_failed", retry_count=2, max_retries=2
-    )
+    o2 = drive_incident("monitoring", "recovery_failed", retry_count=2, max_retries=2)
     assert o2.to_state == "needs_human_input"
 
 

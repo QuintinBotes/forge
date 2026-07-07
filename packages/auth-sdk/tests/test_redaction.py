@@ -36,9 +36,7 @@ def test_key_assignments_keep_name(redactor: SecretRedactor) -> None:
 
 
 def test_bearer_and_jwt(redactor: SecretRedactor) -> None:
-    out = redactor.redact(
-        "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"
-    )
+    out = redactor.redact("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl")
     assert "eyJ" not in out
 
 

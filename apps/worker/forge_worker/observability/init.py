@@ -18,6 +18,8 @@ aborts a run.
 
 from __future__ import annotations
 
+from sqlalchemy.orm import Session, sessionmaker
+
 from forge_obs.cost.meter import UsageMeter
 from forge_obs.cost.pricing import DbPriceBook, PriceBook
 from forge_obs.cost.repository import CostLedger, SqlCostLedger
@@ -46,7 +48,7 @@ def setup_worker_telemetry(settings: ObsSettings | None = None) -> Telemetry:
 
 
 def build_usage_meter(
-    session_factory=None,
+    session_factory: sessionmaker[Session] | None = None,
     *,
     ledger: CostLedger | None = None,
     price_book: PriceBook | None = None,

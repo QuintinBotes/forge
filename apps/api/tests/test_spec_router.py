@@ -21,9 +21,7 @@ from forge_spec import FileSpecEngine, spec_id_for_key
 
 
 @pytest.fixture
-def client(
-    tmp_path: Path, authenticate_app: Callable[..., FastAPI]
-) -> Iterator[TestClient]:
+def client(tmp_path: Path, authenticate_app: Callable[..., FastAPI]) -> Iterator[TestClient]:
     app = create_app()
     authenticate_app(app)
     engine = FileSpecEngine(root=tmp_path / "specs")

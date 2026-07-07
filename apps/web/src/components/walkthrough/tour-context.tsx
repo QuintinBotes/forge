@@ -114,6 +114,11 @@ export function TourProvider({
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    // Post-mount hydration from localStorage (unavailable during SSR). These
+    // setState calls are a deliberate external-store sync run after the first
+    // client render to avoid a hydration mismatch — not a cascading in-render
+    // update, so set-state-in-effect is a false positive here.
+    /* eslint-disable react-hooks/set-state-in-effect */
     const persisted = readPersisted(storageKey);
     if (persisted) {
       setState(persisted);
@@ -121,6 +126,7 @@ export function TourProvider({
       setState({ status: "running", stepIndex: 0 });
     }
     setHydrated(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [autoStart, storageKey]);
 
   useEffect(() => {

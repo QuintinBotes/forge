@@ -44,9 +44,7 @@ def chunk_files(files: Mapping[str, str]) -> list[Chunk]:
     return chunks
 
 
-def index_source(
-    store: KnowledgeStore, source_id: str, files: Mapping[str, str]
-) -> IndexResult:
+def index_source(store: KnowledgeStore, source_id: str, files: Mapping[str, str]) -> IndexResult:
     """Chunk ``files`` and index them into ``store`` for ``source_id``."""
     return store.index(source_id, chunk_files(files))
 

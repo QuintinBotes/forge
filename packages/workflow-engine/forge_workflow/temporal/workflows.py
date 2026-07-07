@@ -321,9 +321,7 @@ class FeatureWorkflow:
     # ------------------------------------------------------------------ #
     async def _await_gate(self, allowed: list[str]) -> WorkflowEventPayload:
         self._awaiting = list(allowed)
-        await workflow.wait_condition(
-            lambda: self._cancel_requested or self._has_event(allowed)
-        )
+        await workflow.wait_condition(lambda: self._cancel_requested or self._has_event(allowed))
         if self._cancel_requested and not self._has_event(allowed):
             raise _Cancelled()
         eid, ev = self._pop_event(allowed)

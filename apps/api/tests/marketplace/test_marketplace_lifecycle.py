@@ -31,9 +31,7 @@ def test_sync_upserts_and_prunes(
     m2, v2 = make_mcp_version(keypair, slug="beta", name="beta")
     gateway.add(m1, v1)
     gateway.add(m2, v2)
-    report = service.sync_registry(
-        workspace_id=WS_ID, actor="user:x", registry_id=registry.id
-    )
+    report = service.sync_registry(workspace_id=WS_ID, actor="user:x", registry_id=registry.id)
     assert report.status == "ok"
     assert report.listings_upserted == 2
 
@@ -45,9 +43,7 @@ def test_sync_upserts_and_prunes(
     # Drop 'beta' upstream and resync -> pruned.
     gateway._packages.pop((m2.kind, m2.slug))
     gateway._manifests.pop(v2.manifest_uri)
-    report2 = service.sync_registry(
-        workspace_id=WS_ID, actor="user:x", registry_id=registry.id
-    )
+    report2 = service.sync_registry(workspace_id=WS_ID, actor="user:x", registry_id=registry.id)
     assert report2.listings_pruned == 1
     with session_factory() as s:
         slugs = {left.slug for left in s.execute(select(MarketplaceListing)).scalars().all()}
@@ -76,7 +72,10 @@ def test_sync_malformed_index_records_error(
 
 
 def test_browse_and_search(
-    admin_client: TestClient, service: MarketplaceService, registry, gateway: FakeGateway,
+    admin_client: TestClient,
+    service: MarketplaceService,
+    registry,
+    gateway: FakeGateway,
     keypair: Keypair,
 ) -> None:
     m1, v1 = make_skill_version(keypair, slug="searchable", name="Findable Widget")
@@ -96,8 +95,12 @@ def test_browse_and_search(
 
 
 def test_update_flow_and_pin(
-    admin_client: TestClient, service: MarketplaceService, registry, gateway: FakeGateway,
-    keypair: Keypair, session_factory
+    admin_client: TestClient,
+    service: MarketplaceService,
+    registry,
+    gateway: FakeGateway,
+    keypair: Keypair,
+    session_factory,
 ) -> None:
     m1, v1 = make_skill_version(keypair, slug="upd", name="upd", version="1.0.0")
     gateway.add(m1, v1)
@@ -111,8 +114,11 @@ def test_update_flow_and_pin(
 
     # New version appears + resync + refresh flags.
     m2, v2 = make_skill_version(
-        keypair, slug="upd", name="upd", version="1.3.0", artifact={"name": "upd",
-        "min_test_coverage": 99}
+        keypair,
+        slug="upd",
+        name="upd",
+        version="1.3.0",
+        artifact={"name": "upd", "min_test_coverage": 99},
     )
     gateway.add(m2, v2)
     service.sync_registry(workspace_id=WS_ID, actor="u", registry_id=registry.id)
@@ -163,7 +169,9 @@ def test_yank_propagation(
     gateway.add(m1, v1)
     service.sync_registry(workspace_id=WS_ID, actor="u", registry_id=registry.id)
     result = service.install(
-        workspace_id=WS_ID, actor="u", actor_user_id=None,
+        workspace_id=WS_ID,
+        actor="u",
+        actor_user_id=None,
         request=_req(registry, "skill_profile", "yankable"),
     )
     # Yank the installed version upstream.
@@ -177,13 +185,19 @@ def test_yank_propagation(
 
 
 def test_uninstall_deletes_object(
-    admin_client: TestClient, service: MarketplaceService, registry, gateway: FakeGateway,
-    keypair: Keypair, session_factory
+    admin_client: TestClient,
+    service: MarketplaceService,
+    registry,
+    gateway: FakeGateway,
+    keypair: Keypair,
+    session_factory,
 ) -> None:
     m1, v1 = make_mcp_version(keypair, slug="rmconn", name="rmconn")
     gateway.add(m1, v1)
     result = service.install(
-        workspace_id=WS_ID, actor="u", actor_user_id=None,
+        workspace_id=WS_ID,
+        actor="u",
+        actor_user_id=None,
         request=_req(registry, "mcp_connector", "rmconn"),
     )
     conn_id = result.target_object_id

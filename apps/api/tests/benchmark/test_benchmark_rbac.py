@@ -43,9 +43,7 @@ def test_submit_requires_write(make_client, role, expected) -> None:
     assert response.status_code == expected
 
 
-@pytest.mark.parametrize(
-    "role", [UserRole.MEMBER, UserRole.VIEWER, UserRole.AGENT_RUNNER]
-)
+@pytest.mark.parametrize("role", [UserRole.MEMBER, UserRole.VIEWER, UserRole.AGENT_RUNNER])
 @pytest.mark.parametrize("action", ["verify", "publish", "flag"])
 def test_moderation_is_admin_only(make_client, submission_id, role, action) -> None:
     client = make_client(role)
@@ -58,8 +56,7 @@ def test_admin_can_moderate(make_client, submission_id) -> None:
     admin = make_client(UserRole.ADMIN)
     assert admin.post(f"/benchmarks/submissions/{submission_id}/verify").status_code == 200
     assert (
-        admin.post(f"/benchmarks/submissions/{submission_id}/publish", json={}).status_code
-        == 200
+        admin.post(f"/benchmarks/submissions/{submission_id}/publish", json={}).status_code == 200
     )
     assert (
         admin.post(

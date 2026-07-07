@@ -48,9 +48,7 @@ def seeded() -> tuple[sessionmaker[Session], uuid.UUID]:
         project = Project(workspace_id=WS_ID, name="API", key="API")
         s.add(project)
         s.flush()
-        pipeline = EnvironmentPipeline(
-            workspace_id=WS_ID, project_id=project.id, repo_id=REPO_ID
-        )
+        pipeline = EnvironmentPipeline(workspace_id=WS_ID, project_id=project.id, repo_id=REPO_ID)
         s.add(pipeline)
         s.flush()
         s.add(

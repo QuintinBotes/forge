@@ -35,7 +35,10 @@ def test_runbook_rollup_blast_radius() -> None:
         steps=[
             RunbookStep(id="s1", order=1, title="read logs", action="read_logs"),
             RunbookStep(
-                id="s2", order=2, title="restart", action="restart_service",
+                id="s2",
+                order=2,
+                title="restart",
+                action="restart_service",
                 blast_radius=BlastRadius.MEDIUM,
             ),
         ],

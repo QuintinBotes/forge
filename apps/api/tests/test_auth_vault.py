@@ -65,9 +65,7 @@ def test_get_secret_decrypts() -> None:
 def test_workspace_isolation_blocks_cross_tenant_read() -> None:
     vault = _vault()
     ws_a, ws_b = uuid.uuid4(), uuid.uuid4()
-    info = vault.put_secret(
-        workspace_id=ws_a, name="k", secret="topsecret", kind=APIKeyKind.SYSTEM
-    )
+    info = vault.put_secret(workspace_id=ws_a, name="k", secret="topsecret", kind=APIKeyKind.SYSTEM)
     with pytest.raises(SecretNotFoundError):
         vault.get_secret(ws_b, info.id)
 
@@ -106,8 +104,6 @@ def test_delete_removes_secret() -> None:
 def test_record_repr_does_not_leak_secret() -> None:
     vault = _vault()
     ws = uuid.uuid4()
-    info = vault.put_secret(
-        workspace_id=ws, name="k", secret="VERYSECRET", kind=APIKeyKind.SYSTEM
-    )
+    info = vault.put_secret(workspace_id=ws, name="k", secret="VERYSECRET", kind=APIKeyKind.SYSTEM)
     record = vault.raw_record(ws, info.id)
     assert "VERYSECRET" not in repr(record)

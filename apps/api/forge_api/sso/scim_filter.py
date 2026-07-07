@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, func, or_
+from sqlalchemy import ColumnElement, SQLColumnExpression, and_, func, or_
 
 from forge_api.sso.errors import ScimApiError
 from forge_db.models import ExternalIdentity, User
@@ -112,7 +112,7 @@ class _Parser:
     @staticmethod
     def _compare(attr: str, op: str, value: Any) -> ColumnElement[bool]:
         if attr in ("username", "emails.value"):
-            column = func.lower(User.email)
+            column: SQLColumnExpression[str] = func.lower(User.email)
             if op == "pr":
                 return User.email.is_not(None)
             if not isinstance(value, str):

@@ -13,6 +13,7 @@ behind the same surface), and enforces the structural safety properties:
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -41,9 +42,7 @@ from forge_workflow import allowed_incident_events, drive_incident
 from forge_workflow.incident.fsm import PAUSED_FROM_KEY
 
 #: States considered "open" for dedup-attach purposes.
-_CLOSED_STATES = frozenset(
-    {"resolved", "postmortem_created", "closed", "cancelled", "failed"}
-)
+_CLOSED_STATES = frozenset({"resolved", "postmortem_created", "closed", "cancelled", "failed"})
 _FORWARD_STATES = frozenset(s.value for s in IncidentState)
 _MAX_RETRIES = 2
 
@@ -162,14 +161,14 @@ class IncidentService:
             raise IncidentNotFound(incident_id)
         return record
 
-    def timeline(self, incident_id: uuid.UUID) -> list[_Event]:
+    def timeline(self, incident_id: uuid.UUID) -> builtins.list[_Event]:
         return list(self.get(incident_id).events)
 
     def latest_plan(self, incident_id: uuid.UUID) -> _Plan | None:
         plans = self.get(incident_id).plans
         return plans[-1] if plans else None
 
-    def allowed_events(self, record: IncidentRecord) -> list[str]:
+    def allowed_events(self, record: IncidentRecord) -> builtins.list[str]:
         return allowed_incident_events(
             record.lifecycle_state,
             context=dict(record.context),
@@ -253,13 +252,11 @@ class IncidentService:
     # -- remediation ------------------------------------------------------ #
 
     def propose_remediation(
-        self, incident_id: uuid.UUID, *, steps: list[RunbookStep], actor: str = "agent"
+        self, incident_id: uuid.UUID, *, steps: builtins.list[RunbookStep], actor: str = "agent"
     ) -> _Plan:
         """Store a proposed runbook and set the blast-radius guard context flags."""
         record = self.get(incident_id)
-        runbook = Runbook(
-            incident_id=incident_id, attempt=record.retry_count + 1, steps=steps
-        )
+        runbook = Runbook(incident_id=incident_id, attempt=record.retry_count + 1, steps=steps)
         offending = assert_runbook_within_policy(runbook, _INCIDENT_DIRECTIVES)
         plan = _Plan(
             id=uuid.uuid4(),
@@ -301,9 +298,7 @@ class IncidentService:
         if event == "remediation_approved":
             plan = record.plans[-1] if record.plans else None
             if plan is not None:
-                runbook = Runbook(
-                    incident_id=incident_id, attempt=plan.attempt, steps=plan.steps
-                )
+                runbook = Runbook(incident_id=incident_id, attempt=plan.attempt, steps=plan.steps)
                 offending = assert_runbook_within_policy(runbook, _INCIDENT_DIRECTIVES)
                 if offending:
                     raise BlastRadiusExceeded(offending)
@@ -371,8 +366,7 @@ class IncidentService:
             for ev in record.events
         ]
         plans = [
-            Runbook(incident_id=record.id, attempt=p.attempt, steps=p.steps)
-            for p in record.plans
+            Runbook(incident_id=record.id, attempt=p.attempt, steps=p.steps) for p in record.plans
         ]
         postmortem = self._composer.compose(incident=snapshot, events=events, plans=plans)
         record.postmortem = postmortem

@@ -30,9 +30,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.observability.audit import AuditCategory, AuditLog
-from forge_contracts.enums import MCPAuthType, MCPTransport
+from forge_contracts.enums import MCPAuthType
 from forge_db.models import User
 from forge_db.models.connections import MCPConnection
+from forge_db.models.enums import MCPTransport as DbMCPTransport
 from forge_db.models.marketplace import (
     MarketplaceAuditLog,
     MarketplaceInstallation,
@@ -205,25 +206,17 @@ class MarketplaceService:
         """Distinct workspace ids that have marketplace installations (fan-out)."""
         with self._sf() as s:
             return list(
-                s.execute(
-                    select(MarketplaceInstallation.workspace_id).distinct()
-                )
-                .scalars()
-                .all()
+                s.execute(select(MarketplaceInstallation.workspace_id).distinct()).scalars().all()
             )
 
-    def sync_registry_by_id(
-        self, *, registry_id: uuid.UUID, actor: str = "system"
-    ) -> SyncReport:
+    def sync_registry_by_id(self, *, registry_id: uuid.UUID, actor: str = "system") -> SyncReport:
         """System-context sync (worker): resolve the owning workspace, then sync."""
         with self._sf() as s:
             registry = s.get(MarketplaceRegistry, registry_id)
             workspace_id = registry.workspace_id if registry is not None else None
         if workspace_id is None:
             return SyncReport(registry_id=registry_id, status="error", error="registry not found")
-        return self.sync_registry(
-            workspace_id=workspace_id, actor=actor, registry_id=registry_id
-        )
+        return self.sync_registry(workspace_id=workspace_id, actor=actor, registry_id=registry_id)
 
     def add_registry(
         self,
@@ -414,9 +407,7 @@ class MarketplaceService:
         pruned = 0
         existing = (
             s.execute(
-                select(MarketplaceListing).where(
-                    MarketplaceListing.registry_id == registry.id
-                )
+                select(MarketplaceListing).where(MarketplaceListing.registry_id == registry.id)
             )
             .scalars()
             .all()
@@ -574,15 +565,17 @@ class MarketplaceService:
             return plan
 
     def install(
-        self, *, workspace_id: uuid.UUID, actor: str, actor_user_id: uuid.UUID | None,
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        actor: str,
+        actor_user_id: uuid.UUID | None,
         request: InstallRequest,
     ) -> InstallResult:
         with self._sf() as s:
             registry = self._require_registry(s, workspace_id, request.registry_id)
             manifest, plan = self._fetch_and_plan(registry, request)
-            self._enforce_install_policy(
-                s, workspace_id, actor, registry, plan, request
-            )
+            self._enforce_install_policy(s, workspace_id, actor, registry, plan, request)
             result = self._apply(
                 s,
                 workspace_id=workspace_id,
@@ -601,11 +594,7 @@ class MarketplaceService:
     ) -> tuple[PackageManifest, InstallPlan]:
         index = self._gateway.fetch_index(registry)
         entry = next(
-            (
-                e
-                for e in index.entries
-                if e.kind == request.kind and e.slug == request.slug
-            ),
+            (e for e in index.entries if e.kind == request.kind and e.slug == request.slug),
             None,
         )
         if entry is None:
@@ -628,9 +617,7 @@ class MarketplaceService:
             override_name=request.override_name,
         )
         if version.yanked:
-            plan.warnings.append(
-                f"Yanked: {version.yanked_reason or 'this version was withdrawn'}"
-            )
+            plan.warnings.append(f"Yanked: {version.yanked_reason or 'this version was withdrawn'}")
         return manifest, plan
 
     def _resolve_version(
@@ -792,7 +779,8 @@ class MarketplaceService:
         existing: MCPConnection | None = None,
     ) -> tuple[str, uuid.UUID]:
         cfg = dict(plan.resolved_config)
-        transport = MCPTransport(cfg.get("transport", "http"))
+        # Persisted straight to the db-enum column, so build the db enum here.
+        transport = DbMCPTransport(cfg.get("transport", "http"))
         namespaces = list(cfg.get("allowed_namespaces") or [])
         if existing is None:
             conn = MCPConnection(
@@ -871,9 +859,7 @@ class MarketplaceService:
 
     # ---- installations ---- #
 
-    def list_installations(
-        self, *, workspace_id: uuid.UUID
-    ) -> list[MarketplaceInstallation]:
+    def list_installations(self, *, workspace_id: uuid.UUID) -> list[MarketplaceInstallation]:
         with self._sf() as s:
             rows = (
                 s.execute(
@@ -904,7 +890,11 @@ class MarketplaceService:
             return row
 
     def update_installation(
-        self, *, workspace_id: uuid.UUID, actor: str, installation_id: uuid.UUID,
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        actor: str,
+        installation_id: uuid.UUID,
         version: str | None = None,
     ) -> InstallResult:
         with self._sf() as s:
@@ -930,18 +920,14 @@ class MarketplaceService:
 
             if manifest.kind is ArtifactKind.skill_profile:
                 existing = (
-                    s.get(SkillProfile, row.target_object_id)
-                    if row.target_object_id
-                    else None
+                    s.get(SkillProfile, row.target_object_id) if row.target_object_id else None
                 )
                 target_kind, target_id = self._apply_skill(
                     s, workspace_id, plan, request, existing=existing
                 )
             else:
                 existing_conn = (
-                    s.get(MCPConnection, row.target_object_id)
-                    if row.target_object_id
-                    else None
+                    s.get(MCPConnection, row.target_object_id) if row.target_object_id else None
                 )
                 target_kind, target_id = self._apply_mcp(
                     s, workspace_id, manifest, plan, existing=existing_conn
@@ -978,12 +964,11 @@ class MarketplaceService:
                 warnings=plan.warnings,
             )
 
-    def uninstall(
-        self, *, workspace_id: uuid.UUID, actor: str, installation_id: uuid.UUID
-    ) -> None:
+    def uninstall(self, *, workspace_id: uuid.UUID, actor: str, installation_id: uuid.UUID) -> None:
         with self._sf() as s:
             row = self._require_installation(s, workspace_id, installation_id)
             if row.target_object_id is not None:
+                obj: SkillProfile | MCPConnection | None
                 if row.target_kind == "skill_profile":
                     obj = s.get(SkillProfile, row.target_object_id)
                 else:
@@ -1233,9 +1218,7 @@ def seed_official_registry(
     return registry
 
 
-def backfill_official_registries(
-    session: Session, *, url: str, public_key: str | None
-) -> int:
+def backfill_official_registries(session: Session, *, url: str, public_key: str | None) -> int:
     """Seed the official registry for every existing workspace (startup hook)."""
     count = 0
     workspace_ids = session.execute(select(User.workspace_id).distinct()).scalars().all()

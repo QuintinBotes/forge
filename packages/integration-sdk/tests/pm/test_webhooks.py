@@ -21,10 +21,15 @@ SECRET = "shh-very-secret"
 
 # --- Linear HMAC (AC15) ----------------------------------------------------- #
 
+
 def _linear_body(ts_ms: int) -> bytes:
     return json.dumps(
-        {"action": "update", "type": "Issue", "webhookTimestamp": ts_ms,
-         "data": {"id": "uuid-1", "identifier": "ENG-1"}}
+        {
+            "action": "update",
+            "type": "Issue",
+            "webhookTimestamp": ts_ms,
+            "data": {"id": "uuid-1", "identifier": "ENG-1"},
+        }
     ).encode()
 
 
@@ -53,9 +58,10 @@ def test_verify_linear_rejects_stale_timestamp() -> None:
     stale_ms = int((now - 600) * 1000)  # 10 minutes old
     body = _linear_body(stale_ms)
     sig = sign_linear(SECRET, body)
-    assert verify_linear(
-        SECRET, body, sig, timestamp_ms=stale_ms, tolerance_seconds=60, now=now
-    ) is False
+    assert (
+        verify_linear(SECRET, body, sig, timestamp_ms=stale_ms, tolerance_seconds=60, now=now)
+        is False
+    )
 
 
 def test_verify_linear_wrong_secret() -> None:
@@ -66,6 +72,7 @@ def test_verify_linear_wrong_secret() -> None:
 
 
 # --- Jira secret (AC16) ----------------------------------------------------- #
+
 
 def test_verify_jira_secret_match_mismatch() -> None:
     assert verify_jira(SECRET, SECRET) is True
@@ -88,14 +95,18 @@ def test_synthesize_delivery_id_is_stable_per_minute() -> None:
 
 # --- Parsing (AC9, AC10, AC17) --------------------------------------------- #
 
+
 def test_parse_jira_created_updated_deleted() -> None:
     for raw, expected in [
         ("jira:issue_created", "issue.created"),
         ("jira:issue_updated", "issue.updated"),
         ("jira:issue_deleted", "issue.deleted"),
     ]:
-        body = {"webhookEvent": raw, "timestamp": 1767348000000,
-                "issue": {"id": "10001", "key": "ENG-1"}}
+        body = {
+            "webhookEvent": raw,
+            "timestamp": 1767348000000,
+            "issue": {"id": "10001", "key": "ENG-1"},
+        }
         ev = parse_jira(body, delivery_id="d1", signature_valid=True)
         assert ev.event_type == expected
         assert ev.external_id == "10001"
@@ -109,8 +120,12 @@ def test_parse_linear_actions() -> None:
         ("update", "issue.updated"),
         ("remove", "issue.deleted"),
     ]:
-        body = {"action": action, "type": "Issue", "webhookTimestamp": 1767348000000,
-                "data": {"id": "uuid-1", "identifier": "ENG-1"}}
+        body = {
+            "action": action,
+            "type": "Issue",
+            "webhookTimestamp": 1767348000000,
+            "data": {"id": "uuid-1", "identifier": "ENG-1"},
+        }
         ev = parse_linear(body, delivery_id="d2", signature_valid=True)
         assert ev.event_type == expected
         assert ev.external_id == "uuid-1"

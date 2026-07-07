@@ -96,9 +96,7 @@ def request_deployment_sync(
             if existing is not None:
                 return DeploymentDTO.model_validate(existing)
         if repo.active_for_environment(env.id) is not None:
-            raise DeploymentConflictError(
-                f"an active deployment already exists for {env.name!r}"
-            )
+            raise DeploymentConflictError(f"an active deployment already exists for {env.name!r}")
         pred = repo.predecessor(env)
         dep = repo.create_deployment(
             project_id=project_id,
@@ -170,9 +168,7 @@ class CeleryDeploymentRequester:
     long-running advance is the same deterministic loop the worker task uses.
     """
 
-    def __init__(
-        self, session_factory: sessionmaker[Session], *, workspace_id: uuid.UUID
-    ) -> None:
+    def __init__(self, session_factory: sessionmaker[Session], *, workspace_id: uuid.UUID) -> None:
         self._sf = session_factory
         self._ws = workspace_id
 

@@ -58,15 +58,12 @@ def test_summary_group_by_provider_and_model(client_factory) -> None:
 def test_timeseries_day_by_provider(client_factory) -> None:
     res = client_factory(UserRole.VIEWER).get(
         "/cost/timeseries",
-        params={"scope": "task", "scope_id": str(TASK_ID), "bucket": "day",
-                "group_by": "provider"},
+        params={"scope": "task", "scope_id": str(TASK_ID), "bucket": "day", "group_by": "provider"},
     )
     assert res.status_code == 200
     body = res.json()
     assert set(body["series"]) == {"anthropic", "openai"}
-    total = sum(
-        Decimal(str(cost)) for points in body["series"].values() for _, cost in points
-    )
+    total = sum(Decimal(str(cost)) for points in body["series"].values() for _, cost in points)
     assert total == Decimal("0.43")
 
 
@@ -106,9 +103,7 @@ def test_viewer_reads_admin_mutates(client_factory, audit_sink: CapturingAuditSi
         "completion_usd_per_1k": "0.005",
     }
     assert viewer.post("/cost/prices", json=price_body).status_code == 403
-    assert (
-        viewer.post("/cost/reprice", json={"since": NOW.isoformat()}).status_code == 403
-    )
+    assert viewer.post("/cost/reprice", json={"since": NOW.isoformat()}).status_code == 403
     member = client_factory(UserRole.MEMBER)
     assert member.post("/cost/prices", json=price_body).status_code == 403
 
@@ -141,8 +136,13 @@ def test_price_list_includes_globals_and_overrides(client_factory) -> None:
 def test_price_kind_validated(client_factory) -> None:
     res = client_factory(UserRole.ADMIN).post(
         "/cost/prices",
-        json={"provider": "p", "model": "m", "kind": "video",
-              "prompt_usd_per_1k": "1", "completion_usd_per_1k": "1"},
+        json={
+            "provider": "p",
+            "model": "m",
+            "kind": "video",
+            "prompt_usd_per_1k": "1",
+            "completion_usd_per_1k": "1",
+        },
     )
     assert res.status_code == 422
 
@@ -170,8 +170,7 @@ def test_reprice_applies_current_price_book_and_audits(
     admin = client_factory(UserRole.ADMIN)
     res = admin.post(
         "/cost/reprice",
-        json={"since": NOW.isoformat(), "provider": "anthropic",
-              "model": "claude-sonnet-4-5"},
+        json={"since": NOW.isoformat(), "provider": "anthropic", "model": "claude-sonnet-4-5"},
     )
     assert res.status_code == 200
     assert res.json()["updated"] == 3  # r1, r2, r4 (anthropic rows)
@@ -180,8 +179,7 @@ def test_reprice_applies_current_price_book_and_audits(
     # Idempotent: a second run updates nothing further (still audited).
     again = admin.post(
         "/cost/reprice",
-        json={"since": NOW.isoformat(), "provider": "anthropic",
-              "model": "claude-sonnet-4-5"},
+        json={"since": NOW.isoformat(), "provider": "anthropic", "model": "claude-sonnet-4-5"},
     )
     assert again.json()["updated"] == 0
 

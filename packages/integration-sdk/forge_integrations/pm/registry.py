@@ -26,11 +26,11 @@ def build_adapter(
     provider = PMProvider(provider)
     if provider is PMProvider.jira:
         base_url = ctx.external_base_url or ""
-        client = JiraClient(transport, base_url=base_url, auth_header=auth_header)
-        return JiraAdapter(client, ctx)
+        jira_client = JiraClient(transport, base_url=base_url, auth_header=auth_header)
+        return JiraAdapter(jira_client, ctx)
     if provider is PMProvider.linear:
-        client = LinearClient(transport, auth_header=auth_header)
-        return LinearAdapter(client, ctx)
+        linear_client = LinearClient(transport, auth_header=auth_header)
+        return LinearAdapter(linear_client, ctx)
     raise ProviderError(f"unsupported PM provider: {provider}")
 
 

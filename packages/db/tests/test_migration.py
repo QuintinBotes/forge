@@ -277,9 +277,7 @@ def test_f22_multi_repo_migration_up_down(alembic_config: Config) -> None:
         after_f22 = set(inspector.get_table_names())
         assert after_f22 >= F22_TABLES, f"missing F22 tables: {sorted(F22_TABLES - after_f22)}"
 
-        pr_group_uniques = {
-            uc["name"] for uc in inspector.get_unique_constraints("pr_group")
-        }
+        pr_group_uniques = {uc["name"] for uc in inspector.get_unique_constraints("pr_group")}
         assert "uq_pr_group_workflow_run_id" in pr_group_uniques
         arw_uniques = {
             uc["name"] for uc in inspector.get_unique_constraints("agent_repo_workspace")
@@ -815,13 +813,9 @@ def test_f35_benchmark_migration_up_down(alembic_config: Config) -> None:
         after_f35 = set(inspector.get_table_names())
         assert after_f35 >= F35_TABLES, f"missing F35 tables: {sorted(F35_TABLES - after_f35)}"
 
-        suite_uniques = {
-            uc["name"] for uc in inspector.get_unique_constraints("benchmark_suite")
-        }
+        suite_uniques = {uc["name"] for uc in inspector.get_unique_constraints("benchmark_suite")}
         assert "uq_benchmark_suite_slug_version" in suite_uniques
-        submission_indexes = {
-            ix["name"] for ix in inspector.get_indexes("benchmark_submission")
-        }
+        submission_indexes = {ix["name"] for ix in inspector.get_indexes("benchmark_submission")}
         assert "ix_benchmark_submission_leaderboard" in submission_indexes
 
         # Downgrade one step: F35 tables gone, prior chain intact.
@@ -961,13 +955,9 @@ def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) 
         assert "uq_audit_log_workspace_seq" in audit_indexes
 
         with engine.connect() as conn:
-            rows = conn.execute(
-                text("SELECT seq, action FROM audit_log ORDER BY seq")
-            ).fetchall()
+            rows = conn.execute(text("SELECT seq, action FROM audit_log ORDER BY seq")).fetchall()
             assert [r[0] for r in rows] == [1, 2, 3], "backfill must assign gap-free seq"
-            head = conn.execute(
-                text("SELECT last_seq FROM audit_chain_head")
-            ).fetchone()
+            head = conn.execute(text("SELECT last_seq FROM audit_chain_head")).fetchone()
             assert head is not None and head[0] == 3
 
         # The backfilled prefix verifies, and stays ok after a live append.
@@ -977,9 +967,7 @@ def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) 
 
         with Session(engine) as session:
             assert verify_chain(session, ws_id).ok is True
-            SqlAuditWriter(session).emit(
-                AuditEvent(workspace_id=ws_id, action="tool.call")
-            )
+            SqlAuditWriter(session).emit(AuditEvent(workspace_id=ws_id, action="tool.call"))
             session.commit()
             live = verify_chain(session, ws_id)
             assert live.ok is True
@@ -992,6 +980,77 @@ def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) 
         assert "audit_log" in set(inspector.get_table_names())
         cols_after = {c["name"] for c in inspector.get_columns("audit_log")}
         assert not (F39_COLUMNS & cols_after), "downgrade left F39 columns"
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
+# F36-persist approval-repository columns, owned by 0026_approval_repository_columns.
+APPROVAL_REPO_COLUMNS = {"requested_actor", "escalated"}
+
+
+def test_approval_repository_columns_migration_up_down(alembic_config: Config) -> None:
+    """0026 adds the ``requested_actor`` + ``escalated`` columns to
+    ``approval_request`` (backing the DB-backed ``SqlAlchemyApprovalRepository``)
+    and drops exactly them on downgrade, leaving the table intact.
+
+    (forge_db's baseline is metadata-driven, so a fresh chain provisions the
+    columns at 0001; like 0019, the 0026 step is idempotent about that and owns a
+    clean, reversible down.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        command.upgrade(alembic_config, "head")
+        inspector = inspect(engine)
+        cols = {c["name"] for c in inspector.get_columns("approval_request")}
+        assert cols >= APPROVAL_REPO_COLUMNS, (
+            f"missing 0026 columns: {sorted(APPROVAL_REPO_COLUMNS - cols)}"
+        )
+
+        # Downgrade one step: 0026 columns gone, approval_request still present.
+        command.downgrade(alembic_config, "0025_observability_audit_store")
+        inspector = inspect(engine)
+        assert "approval_request" in inspector.get_table_names()
+        cols_after = {c["name"] for c in inspector.get_columns("approval_request")}
+        assert not (APPROVAL_REPO_COLUMNS & cols_after), "downgrade left 0026 columns"
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
+# HARD-11-persist HTTP idempotency-store table, owned by 0028_idempotency_store.
+IDEMPOTENCY_TABLES = {"idempotency_key"}
+
+
+def test_idempotency_store_migration_up_down(alembic_config: Config) -> None:
+    """0028 owns the ``idempotency_key`` response-cache table (with its ``key``
+    UNIQUE index + ``expires_at`` index) and drops exactly it on downgrade, leaving
+    the prior chain intact.
+
+    (forge_db's baseline is metadata-driven, so a fresh chain provisions the table
+    at 0001; like 0025/0027, the 0028 step is idempotent about that and owns a
+    clean, reversible down.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        command.upgrade(alembic_config, "head")
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert tables >= IDEMPOTENCY_TABLES, "missing idempotency_key table"
+        indexes = {i["name"] for i in inspector.get_indexes("idempotency_key")}
+        assert "ix_idempotency_key_expires_at" in indexes
+        uniques = {uc["name"] for uc in inspector.get_unique_constraints("idempotency_key")}
+        assert "uq_idempotency_key_key" in uniques
+
+        # Downgrade one step: the idempotency table is gone, the chain intact.
+        command.downgrade(alembic_config, "0027_secret_vault_store")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (IDEMPOTENCY_TABLES & after_down), "downgrade left idempotency_key"
+        assert after_down >= EXPECTED_TABLES
 
         command.downgrade(alembic_config, "base")
     finally:

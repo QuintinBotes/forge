@@ -114,9 +114,7 @@ class InMemoryBoardService:
         coll.put(new_id, item)
         return item
 
-    def _merged_item[T: BaseModel](
-        self, coll: _Collection[T], entity_id: uuid.UUID, data: T
-    ) -> T:
+    def _merged_item[T: BaseModel](self, coll: _Collection[T], entity_id: uuid.UUID, data: T) -> T:
         """Build (not store) a full-replace update preserving id/key/created_at."""
         existing = coll.raw(entity_id).model_dump()
         fields = type(data).model_fields
@@ -166,9 +164,7 @@ class InMemoryBoardService:
         edges = self._task_edges()
         edges[task_id] = set(item.depends_on)
         if has_cycle(edges):
-            raise CycleError(
-                f"updating task {task_id} dependencies would create a cycle"
-            )
+            raise CycleError(f"updating task {task_id} dependencies would create a cycle")
         self._tasks.put(task_id, item)
         return item.model_copy(deep=True)
 
@@ -298,9 +294,7 @@ class InMemoryBoardService:
         self._tasks.raw(task_id)
         self._tasks.raw(depends_on_id)
         if would_create_cycle(self._task_edges(), task_id, depends_on_id):
-            raise CycleError(
-                f"task {task_id} depending on {depends_on_id} would create a cycle"
-            )
+            raise CycleError(f"task {task_id} depending on {depends_on_id} would create a cycle")
         task = self._tasks.raw(task_id)
         if depends_on_id not in task.depends_on:
             task.depends_on = [*task.depends_on, depends_on_id]

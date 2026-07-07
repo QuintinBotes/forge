@@ -167,9 +167,7 @@ class TransitionEvaluator:
 
         raise GuardFailedError(state_value, event, sorted(set(guard_failures)))
 
-    def _unmet_preconditions(
-        self, t: WorkflowTransition, ctx: PureGuardContext
-    ) -> list[str]:
+    def _unmet_preconditions(self, t: WorkflowTransition, ctx: PureGuardContext) -> list[str]:
         if not t.preconditions:
             return []
         loaded = ctx.preconditions or {}

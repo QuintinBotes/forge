@@ -48,9 +48,7 @@ def session_factory(seeded: dict[str, uuid.UUID]) -> sessionmaker[Session]:
             session.add(Workspace(id=ws_id, name=slug.title(), slug=slug))
             session.flush()
         session.add(
-            User(
-                id=USER_ID, workspace_id=WS_ID, email="dev@acme.test", name="Dev", role="admin"
-            )
+            User(id=USER_ID, workspace_id=WS_ID, email="dev@acme.test", name="Dev", role="admin")
         )
         project = Project(workspace_id=WS_ID, name="Core", key="CORE")
         session.add(project)

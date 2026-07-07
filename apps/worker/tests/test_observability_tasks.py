@@ -90,16 +90,12 @@ def test_run_reprice_updates_rows_and_audits(factory, workspace_id) -> None:
         )
         session.commit()
 
-    updated = run_reprice(
-        factory, workspace_id=workspace_id, since=NOW - timedelta(days=1)
-    )
+    updated = run_reprice(factory, workspace_id=workspace_id, since=NOW - timedelta(days=1))
     assert updated == 1
     with factory() as session:
         row = session.scalars(select(CostEvent)).one()
         assert Decimal(str(row.cost_usd)) == Decimal("0.0011")
-        audit = session.scalars(
-            select(AuditLog).where(AuditLog.action == "cost.repriced")
-        ).one()
+        audit = session.scalars(select(AuditLog).where(AuditLog.action == "cost.repriced")).one()
         assert audit.workspace_id == workspace_id
         assert audit.details["updated"] == 1
 

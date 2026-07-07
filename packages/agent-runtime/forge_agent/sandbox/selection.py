@@ -103,9 +103,7 @@ def resolve_sandbox_settings(
             else settings.pids_limit
         ),
         tmpfs_mb=(
-            policy_block.tmpfs_mb
-            if policy_block and policy_block.tmpfs_mb
-            else settings.tmpfs_mb
+            policy_block.tmpfs_mb if policy_block and policy_block.tmpfs_mb else settings.tmpfs_mb
         ),
     )
 
@@ -123,9 +121,7 @@ def resolve_sandbox_settings(
     # gvisor/microvm sandboxes are containers under a different OCI runtime, so
     # they resolve (and allowlist-check) an image exactly like ``container``.
     image = (
-        resolve_image(language, policy_block, settings)
-        if kind in CONTAINER_BACKED_KINDS
-        else None
+        resolve_image(language, policy_block, settings) if kind in CONTAINER_BACKED_KINDS else None
     )
 
     runtime = _runtime_for(kind, settings)

@@ -59,10 +59,15 @@ def ledger() -> InMemoryCostLedger:
     rows = [
         ("r1", "anthropic", "claude-sonnet-4-5", "spec_drafting", NOW, "0.04"),
         ("r2", "anthropic", "claude-sonnet-4-5", "executing", NOW + timedelta(hours=1), "0.28"),
-        ("r3", "openai", "text-embedding-3-small", "executing",
-         NOW + timedelta(days=1), "0.06"),
-        ("r4", "anthropic", "claude-sonnet-4-5", "verifying",
-         NOW + timedelta(days=1, hours=2), "0.05"),
+        ("r3", "openai", "text-embedding-3-small", "executing", NOW + timedelta(days=1), "0.06"),
+        (
+            "r4",
+            "anthropic",
+            "claude-sonnet-4-5",
+            "verifying",
+            NOW + timedelta(days=1, hours=2),
+            "0.05",
+        ),
     ]
     for request_id, provider, model, phase, occurred, cost in rows:
         ledger.upsert_event(

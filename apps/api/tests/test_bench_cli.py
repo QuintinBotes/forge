@@ -122,26 +122,17 @@ def test_bench_verify_exit_codes(tmp_path: Path) -> None:
     assert main(["freeze", str(suite_dir)]) == 0
 
     faithful = _submission_file(tmp_path, suite_dir)
-    assert (
-        main(["verify", "--suite-dir", str(suite_dir), "--submission", str(faithful)])
-        == 0
-    )
+    assert main(["verify", "--suite-dir", str(suite_dir), "--submission", str(faithful)]) == 0
 
     tampered = _submission_file(tmp_path, suite_dir, tamper=True)
-    assert (
-        main(["verify", "--suite-dir", str(suite_dir), "--submission", str(tampered)])
-        == 1
-    )
+    assert main(["verify", "--suite-dir", str(suite_dir), "--submission", str(tampered)]) == 1
 
 
 def test_bench_verify_missing_suite_dir_errors(tmp_path: Path) -> None:
     missing = tmp_path / "nope"
     submission = tmp_path / "s.json"
     submission.write_text("{}")
-    assert (
-        main(["verify", "--suite-dir", str(missing), "--submission", str(submission)])
-        == 1
-    )
+    assert main(["verify", "--suite-dir", str(missing), "--submission", str(submission)]) == 1
 
 
 def test_scoring_helper_types_roundtrip() -> None:

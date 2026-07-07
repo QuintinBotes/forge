@@ -51,9 +51,7 @@ def test_viewer_cannot_install(
     assert viewer.post("/marketplace/install", json=_body(registry)).status_code == 403
 
 
-def test_unauthenticated_401(
-    client_factory: Callable[..., TestClient], registry
-) -> None:
+def test_unauthenticated_401(client_factory: Callable[..., TestClient], registry) -> None:
     anon = client_factory(authenticated=False)
     assert anon.get("/marketplace/listings").status_code == 401
 
@@ -79,9 +77,12 @@ def test_audit_completeness_one_row_per_op(
     gateway.add(manifest, version)
     service.sync_registry(workspace_id=WS_ID, actor="u", registry_id=registry.id)
     result = service.install(
-        workspace_id=WS_ID, actor="u", actor_user_id=None,
-        request=InstallRequest(registry_id=registry.id, kind=ArtifactKind.skill_profile,
-                               slug="audited"),
+        workspace_id=WS_ID,
+        actor="u",
+        actor_user_id=None,
+        request=InstallRequest(
+            registry_id=registry.id, kind=ArtifactKind.skill_profile, slug="audited"
+        ),
     )
     service.uninstall(workspace_id=WS_ID, actor="u", installation_id=result.installation_id)
 

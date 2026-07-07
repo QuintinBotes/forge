@@ -74,9 +74,7 @@ class FixturePMTransport:
             self._records[(method.upper(), key)] = seq
         self.call_log: list[dict] = []
 
-    def add(
-        self, method: str, key: str, response: HttpResponse | list[HttpResponse]
-    ) -> None:
+    def add(self, method: str, key: str, response: HttpResponse | list[HttpResponse]) -> None:
         seq = list(response) if isinstance(response, list) else [response]
         self._records.setdefault((method.upper(), key), []).extend(seq)
 
@@ -100,9 +98,7 @@ class FixturePMTransport:
         params: dict | None = None,
     ) -> HttpResponse:
         method = method.upper()
-        self.call_log.append(
-            {"method": method, "url": url, "json": json, "params": params}
-        )
+        self.call_log.append({"method": method, "url": url, "json": json, "params": params})
         for key in self._candidate_keys(url, json):
             seq = self._records.get((method, key))
             if seq:
@@ -151,14 +147,10 @@ class _HttpxTransport:
         json: dict | None = None,
         params: dict | None = None,
     ) -> HttpResponse:
-        resp = await self._client.request(
-            method, url, headers=headers, json=json, params=params
-        )
+        resp = await self._client.request(method, url, headers=headers, json=json, params=params)
         if resp.status_code == 429:
             retry = resp.headers.get("Retry-After")
-            raise RateLimitError(
-                "rate limited", retry_after=float(retry) if retry else None
-            )
+            raise RateLimitError("rate limited", retry_after=float(retry) if retry else None)
         body: dict | list | None
         try:
             body = resp.json()

@@ -34,10 +34,7 @@ GuardFn = Callable[[GuardContext], bool]
 
 def gate_clear(ctx: GuardContext) -> bool:
     """No persisted gate check is ``failed`` for this deployment."""
-    return all(
-        c.status != GateCheckStatus.FAILED
-        for c in ctx.repo.checks(ctx.deployment.id)
-    )
+    return all(c.status != GateCheckStatus.FAILED for c in ctx.repo.checks(ctx.deployment.id))
 
 
 def no_approval_required(ctx: GuardContext) -> bool:

@@ -20,12 +20,14 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from types import ModuleType
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from forge_api.observability.redaction import redact_mapping
 
+_otel_trace: ModuleType | None
 try:  # pragma: no cover - exercised only when the SDK is installed
     from opentelemetry import trace as _otel_trace
 
@@ -81,7 +83,7 @@ def get_span_recorder() -> SpanRecorder:
 
 def get_tracer() -> Any | None:
     """Return the real OpenTelemetry tracer when available, else ``None``."""
-    if OTEL_AVAILABLE:
+    if _otel_trace is not None:
         return _otel_trace.get_tracer("forge")
     return None
 

@@ -278,13 +278,13 @@ class RunningHttpServer:
     @property
     def url(self) -> str:
         host, port = self.server.server_address[:2]
-        host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+        host = "127.0.0.1" if host in ("0.0.0.0", "") else str(host)
         return f"http://{host}:{port}/mcp"
 
     @property
     def inspect_url(self) -> str:
         host, port = self.server.server_address[:2]
-        host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+        host = "127.0.0.1" if host in ("0.0.0.0", "") else str(host)
         return f"http://{host}:{port}/inspect"
 
     def shutdown(self) -> None:

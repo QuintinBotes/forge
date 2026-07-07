@@ -49,9 +49,7 @@ def test_plan_follows_task_flag() -> None:
 def test_deploy_required_for_restricted_env() -> None:
     task = FakeTask(requires_approval=ApprovalPolicy(deploy=False))
     policy = FakePolicy(
-        deploy_rules=DeployRules(
-            allow_agent_deploy=True, restricted_environments=["production"]
-        )
+        deploy_rules=DeployRules(allow_agent_deploy=True, restricted_environments=["production"])
     )
     assert GateRequirementResolver.is_required(
         GateType.DEPLOY, task=task, policy=policy, target_environment="production"

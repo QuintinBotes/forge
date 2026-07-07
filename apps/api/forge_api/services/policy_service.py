@@ -21,7 +21,7 @@ append-only ``policy_rule_evaluation`` row (DB-level immutability trigger).
 from __future__ import annotations
 
 import uuid
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -53,6 +53,7 @@ class PolicyDecisionEvent(BaseModel):
     step_id: uuid.UUID | None = None
 
 
+@runtime_checkable
 class PolicyAuditSink(Protocol):
     """The audit seam F29 emits ``policy.decision`` events through."""
 
@@ -98,16 +99,16 @@ class PolicyService:
             matched = bool(
                 rule.enabled
                 and applies
-                and evaluate_condition(
-                    rule.when, fields, field_whitelist=POLICY_CONDITION_FIELDS
-                )
+                and evaluate_condition(rule.when, fields, field_whitelist=POLICY_CONDITION_FIELDS)
             )
             traces.append(
-                RuleTrace(
-                    rule_id=rule.id, matched=matched, effect=rule.effect, reason=rule.reason
-                )
+                RuleTrace(rule_id=rule.id, matched=matched, effect=rule.effect, reason=rule.reason)
             )
-        base_effect = (decision.base_effect or decision.effect).value
+        # DecisionEffect (StrEnum) values are exactly the SimulationResult literal;
+        # annotate to stop the local widening to ``str``.
+        base_effect: Literal["allow", "deny", "requires_approval"] = (
+            decision.base_effect or decision.effect
+        ).value
         return SimulationResult(decision=decision, base_effect=base_effect, traces=traces)
 
     # --------------------------------------------------------- evaluate + record
@@ -182,9 +183,7 @@ class PolicyService:
         limit: int = 50,
     ) -> list[PolicyRuleEvaluation]:
         """Workspace-scoped audit rows, newest first."""
-        stmt = select(PolicyRuleEvaluation).where(
-            PolicyRuleEvaluation.workspace_id == workspace_id
-        )
+        stmt = select(PolicyRuleEvaluation).where(PolicyRuleEvaluation.workspace_id == workspace_id)
         if agent_run_id is not None:
             stmt = stmt.where(PolicyRuleEvaluation.agent_run_id == agent_run_id)
         stmt = stmt.order_by(PolicyRuleEvaluation.evaluated_at.desc()).limit(limit)

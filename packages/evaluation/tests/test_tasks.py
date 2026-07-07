@@ -20,9 +20,7 @@ from forge_eval.tasks import (
     parse_golden_tasks,
 )
 
-V1_SET = (
-    Path(__file__).resolve().parent.parent / "forge_eval" / "golden" / "v1_task_set.yaml"
-)
+V1_SET = Path(__file__).resolve().parent.parent / "forge_eval" / "golden" / "v1_task_set.yaml"
 
 
 # --------------------------------------------------------------------------- #
@@ -84,9 +82,7 @@ def test_parse_tasks_accepts_mapping_with_tasks_key() -> None:
 
 
 def test_string_requirement_shorthand_is_core() -> None:
-    tasks = parse_golden_tasks(
-        [{"id": "T1", "objective": "x", "requirements": ["R1"]}]
-    )
+    tasks = parse_golden_tasks([{"id": "T1", "objective": "x", "requirements": ["R1"]}])
     assert tasks[0].requirements[0] == GoldenRequirement(id="R1")
     assert tasks[0].requirements[0].difficulty == "core"
 
@@ -97,9 +93,7 @@ def test_dict_requirement_carries_text_and_difficulty() -> None:
             {
                 "id": "T1",
                 "objective": "x",
-                "requirements": [
-                    {"id": "R1", "text": "must do thing", "difficulty": "stretch"}
-                ],
+                "requirements": [{"id": "R1", "text": "must do thing", "difficulty": "stretch"}],
             }
         ]
     )
@@ -127,9 +121,7 @@ def test_core_requirement_ids_excludes_stretch() -> None:
 
 
 def test_retrieval_only_task_is_valid() -> None:
-    tasks = parse_golden_tasks(
-        [{"id": "T1", "objective": "find auth", "expected_chunks": ["c1"]}]
-    )
+    tasks = parse_golden_tasks([{"id": "T1", "objective": "find auth", "expected_chunks": ["c1"]}])
     assert tasks[0].expected_chunks == ["c1"]
     assert tasks[0].requirements == []
 

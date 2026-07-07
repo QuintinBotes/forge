@@ -40,9 +40,7 @@ _ALL: frozenset[Permission] = frozenset(Permission)
 #: The authoritative role -> permission matrix (least privilege per role).
 ROLE_PERMISSIONS: dict[UserRole, frozenset[Permission]] = {
     UserRole.ADMIN: _ALL,
-    UserRole.MEMBER: frozenset(
-        {Permission.READ, Permission.WRITE, Permission.RUN_AGENT}
-    ),
+    UserRole.MEMBER: frozenset({Permission.READ, Permission.WRITE, Permission.RUN_AGENT}),
     UserRole.VIEWER: frozenset({Permission.READ}),
     # agent-runner executes agent runs but cannot mutate the board, manage
     # members, or touch keys/secrets — it acts only through policy-gated runs.

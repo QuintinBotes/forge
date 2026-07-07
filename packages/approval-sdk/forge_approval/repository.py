@@ -36,9 +36,7 @@ class DuplicateDecisionError(ValueError):
     def __init__(self, approval_id: uuid.UUID, approver_user_id: uuid.UUID) -> None:
         self.approval_id = approval_id
         self.approver_user_id = approver_user_id
-        super().__init__(
-            f"approver {approver_user_id} already voted on approval {approval_id}"
-        )
+        super().__init__(f"approver {approver_user_id} already voted on approval {approval_id}")
 
 
 class AlreadyResolvedError(ValueError):
@@ -164,15 +162,11 @@ class InMemoryApprovalRepository:
         with self._lock:
             votes = self._decisions.setdefault(stored.approval_request_id, [])
             if any(v.approver_user_id == stored.approver_user_id for v in votes):
-                raise DuplicateDecisionError(
-                    stored.approval_request_id, stored.approver_user_id
-                )
+                raise DuplicateDecisionError(stored.approval_request_id, stored.approver_user_id)
             votes.append(stored)
         return stored.model_copy(deep=True)
 
-    async def decisions_for(
-        self, approval_id: uuid.UUID
-    ) -> builtins.list[ApprovalDecisionRecord]:
+    async def decisions_for(self, approval_id: uuid.UUID) -> builtins.list[ApprovalDecisionRecord]:
         return [v.model_copy(deep=True) for v in self._decisions.get(approval_id, [])]
 
 

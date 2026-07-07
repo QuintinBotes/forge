@@ -14,20 +14,25 @@ import sys
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from forge_obs.cost.models import ModelPrice, ModelUsage
 from forge_obs.cost.pricing import compute_cost
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
+
 __all__ = ["build_parser", "main"]
 
 
-def _session_factory(database_url: str | None):
+def _session_factory(database_url: str | None) -> sessionmaker[Session] | None:
     from forge_db.session import create_db_engine, create_session_factory
 
     url = database_url or os.environ.get("FORGE_DATABASE_URL")
     if not url:
-        print("no database configured: pass --database-url or set FORGE_DATABASE_URL",
-              file=sys.stderr)
+        print(
+            "no database configured: pass --database-url or set FORGE_DATABASE_URL", file=sys.stderr
+        )
         return None
     return create_session_factory(create_db_engine(url))
 
@@ -166,8 +171,9 @@ def build_parser() -> argparse.ArgumentParser:
     price.add_argument("--workspace", default=None, help="omit for a global default row")
     price.add_argument("--provider", required=True)
     price.add_argument("--model", required=True)
-    price.add_argument("--kind", default="completion",
-                       choices=["completion", "embedding", "rerank"])
+    price.add_argument(
+        "--kind", default="completion", choices=["completion", "embedding", "rerank"]
+    )
     price.add_argument("--prompt-usd-per-1k", required=True)
     price.add_argument("--completion-usd-per-1k", required=True)
     price.add_argument("--effective-from", default=None)
@@ -175,11 +181,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     summ = sub.add_parser("summary", help="print a scope's cost summary")
     summ.add_argument("--workspace", required=True)
-    summ.add_argument("--scope", default="workspace",
-                      choices=["workspace", "project", "task"])
+    summ.add_argument("--scope", default="workspace", choices=["workspace", "project", "task"])
     summ.add_argument("--scope-id", dest="scope_id", default=None)
-    summ.add_argument("--group-by", dest="group_by", default="provider",
-                      choices=["phase", "provider", "model", "none"])
+    summ.add_argument(
+        "--group-by",
+        dest="group_by",
+        default="provider",
+        choices=["phase", "provider", "model", "none"],
+    )
     summ.set_defaults(func=_cmd_summary)
 
     return parser

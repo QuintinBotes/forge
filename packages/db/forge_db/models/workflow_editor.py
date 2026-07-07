@@ -86,9 +86,7 @@ class WorkflowDefinition(WorkspaceScopedModel):
     current_published_revision_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), nullable=True
     )
-    draft_revision_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), nullable=True
-    )
+    draft_revision_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true"), nullable=False
     )
@@ -135,9 +133,7 @@ class WorkflowDefinitionRevision(WorkspaceScopedModel):
         nullable=False,
     )
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[RevisionStatus] = mapped_column(
-        enum_type(RevisionStatus), nullable=False
-    )
+    status: Mapped[RevisionStatus] = mapped_column(enum_type(RevisionStatus), nullable=False)
     dsl_yaml: Mapped[str] = mapped_column(Text, nullable=False)
     graph_json: Mapped[dict[str, Any]] = mapped_column(json_type(), nullable=False)
     dsl_version: Mapped[str] = mapped_column(String(16), default="1", nullable=False)

@@ -133,11 +133,12 @@ export function WorkflowEditor({ client = apiClient }: WorkflowEditorProps) {
   );
 
   // Default selection: prefer an in-progress draft, else the first workflow.
-  useEffect(() => {
-    if (selectedName || definitions.length === 0) return;
+  // Adjusted during render (not via an effect) so the first paint already has a
+  // selection instead of flashing an empty editor for a frame.
+  if (!selectedName && definitions.length > 0) {
     const withDraft = definitions.find((d) => d.has_draft);
     setSelectedName((withDraft ?? definitions[0]).name);
-  }, [definitions, selectedName]);
+  }
 
   const detailQuery = useWorkflowDefinition(selectedName, client);
   const detail = detailQuery.data ?? null;

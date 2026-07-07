@@ -55,15 +55,26 @@ def sf() -> Iterator[sessionmaker[Session]]:
 def _active_sprint(sf: sessionmaker[Session]) -> uuid.UUID:
     with sf() as session:
         sprint = Sprint(
-            workspace_id=WS, project_id=PROJECT, name="S1", status="planned",
-            start_date=date(2026, 6, 1), end_date=date(2026, 6, 14),
+            workspace_id=WS,
+            project_id=PROJECT,
+            name="S1",
+            status="planned",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 14),
         )
         session.add(sprint)
         session.flush()
-        session.add(Task(
-            workspace_id=WS, project_id=PROJECT, key="CORE-1", title="t",
-            status=TaskStatus.IN_PROGRESS, estimate=8, sprint_id=sprint.id,
-        ))
+        session.add(
+            Task(
+                workspace_id=WS,
+                project_id=PROJECT,
+                key="CORE-1",
+                title="t",
+                status=TaskStatus.IN_PROGRESS,
+                estimate=8,
+                sprint_id=sprint.id,
+            )
+        )
         sid = sprint.id
         session.commit()
     SprintService(sf).start(workspace_id=WS, sprint_id=sid)

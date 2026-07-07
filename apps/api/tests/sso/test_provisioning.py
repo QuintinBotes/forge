@@ -52,22 +52,14 @@ class TestLinkOrJitProvision:
 
     def test_second_login_links_no_duplicate(self, session_factory, config):
         with session_factory() as session:
-            first = link_or_jit_provision(
-                session=session, config=config, identity=_identity()
-            )
+            first = link_or_jit_provision(session=session, config=config, identity=_identity())
             session.commit()
             first_id = first.id
         with session_factory() as session:
-            again = link_or_jit_provision(
-                session=session, config=config, identity=_identity()
-            )
+            again = link_or_jit_provision(session=session, config=config, identity=_identity())
             session.commit()
             assert again.id == first_id
-            count = len(
-                session.execute(
-                    select(User).where(User.email == "dana@acme.com")
-                ).all()
-            )
+            count = len(session.execute(select(User).where(User.email == "dana@acme.com")).all())
             assert count == 1
             link = session.execute(
                 select(ExternalIdentity).where(ExternalIdentity.user_id == first_id)
@@ -109,9 +101,7 @@ class TestLinkOrJitProvision:
 
     def test_deactivated_user_cannot_login(self, session_factory, config):
         with session_factory() as session:
-            user = link_or_jit_provision(
-                session=session, config=config, identity=_identity()
-            )
+            user = link_or_jit_provision(session=session, config=config, identity=_identity())
             session.commit()
             user_id = user.id
         with session_factory() as session:
@@ -135,9 +125,7 @@ class TestDeprovision:
             return 3
 
         with session_factory() as session:
-            user = link_or_jit_provision(
-                session=session, config=config, identity=_identity()
-            )
+            user = link_or_jit_provision(session=session, config=config, identity=_identity())
             session.commit()
             user_id = user.id
         with session_factory() as session:

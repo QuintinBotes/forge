@@ -30,9 +30,7 @@ SHIPPED_SUITE = (
 
 
 def _scoring() -> BenchmarkScoring:
-    return BenchmarkScoring(
-        metric_weights={"retrieval.recall_at_k": 0.7, "retrieval.mrr": 0.3}
-    )
+    return BenchmarkScoring(metric_weights={"retrieval.recall_at_k": 0.7, "retrieval.mrr": 0.3})
 
 
 def _cases() -> list[GoldenCase]:
@@ -47,17 +45,13 @@ def test_content_hash_order_independent() -> None:
     cases = _cases()
     shuffled = list(cases)
     random.Random(7).shuffle(shuffled)
-    assert compute_content_hash(cases, _scoring()) == compute_content_hash(
-        shuffled, _scoring()
-    )
+    assert compute_content_hash(cases, _scoring()) == compute_content_hash(shuffled, _scoring())
 
 
 def test_content_hash_changes_with_case_body_and_scoring() -> None:
     cases = _cases()
     base = compute_content_hash(cases, _scoring())
-    mutated = [
-        GoldenCase(id=c.id, query=c.query + "!", expected_ids=c.expected_ids) for c in cases
-    ]
+    mutated = [GoldenCase(id=c.id, query=c.query + "!", expected_ids=c.expected_ids) for c in cases]
     assert compute_content_hash(mutated, _scoring()) != base
     other_scoring = BenchmarkScoring(metric_weights={"retrieval.recall_at_k": 1.0})
     assert compute_content_hash(cases, other_scoring) != base
@@ -81,9 +75,7 @@ def test_content_hash_stable_across_process() -> None:
         print(compute_content_hash(cases, scoring), end="")
         """
     )
-    out = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True, check=True
-    )
+    out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
     assert out.stdout == in_process
 
 
@@ -154,9 +146,7 @@ def test_load_manifest_detects_on_disk_drift(tmp_path: Path) -> None:
     suite = tmp_path / "fixture" / "1.0.0"
     shutil.copytree(FIXTURE_SUITE, suite)
     case_file = suite / "cases" / "retrieval.yaml"
-    case_file.write_text(
-        case_file.read_text().replace("auth.py::refresh", "auth.py::tampered")
-    )
+    case_file.write_text(case_file.read_text().replace("auth.py::refresh", "auth.py::tampered"))
     with pytest.raises(BenchmarkContentHashMismatch, match="bump version"):
         load_manifest(suite)
 

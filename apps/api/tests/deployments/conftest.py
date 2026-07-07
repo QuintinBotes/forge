@@ -196,6 +196,4 @@ def pipeline_body(version: int = 1) -> dict:
 
 
 def configure_pipeline(client: TestClient, project_id: uuid.UUID, version: int = 1):
-    return client.put(
-        f"/projects/{project_id}/pipeline", json=pipeline_body(version=version)
-    )
+    return client.put(f"/projects/{project_id}/pipeline", json=pipeline_body(version=version))

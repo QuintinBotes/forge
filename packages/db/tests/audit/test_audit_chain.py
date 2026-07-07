@@ -42,9 +42,7 @@ def session() -> Iterator[Session]:
 def _seed(session: Session, n: int = 5) -> list[AuditLog]:
     writer = SqlAuditWriter(session)
     rows = [
-        writer.emit(
-            AuditEvent(workspace_id=WS, action="tool.call", details={"i": i})
-        )
+        writer.emit(AuditEvent(workspace_id=WS, action="tool.call", details={"i": i}))
         for i in range(n)
     ]
     session.commit()

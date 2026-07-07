@@ -10,10 +10,12 @@ Responses use ``application/scim+json``.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 from forge_api.auth.service import get_auth_service
 from forge_api.deps import DbSession, SettingsDep
@@ -37,9 +39,7 @@ class ScimJSONResponse(JSONResponse):
     media_type = SCIM_MEDIA_TYPE
 
 
-router = APIRouter(
-    prefix="/scim/v2", tags=["scim"], default_response_class=ScimJSONResponse
-)
+router = APIRouter(prefix="/scim/v2", tags=["scim"], default_response_class=ScimJSONResponse)
 
 
 def require_scim_token(
@@ -56,9 +56,7 @@ def require_scim_token(
         raise ScimApiError(status.HTTP_401_UNAUTHORIZED, "missing SCIM bearer token")
     record = verify_scim_token(session, token_value)
     if record is None:
-        raise ScimApiError(
-            status.HTTP_401_UNAUTHORIZED, "invalid, revoked, or expired SCIM token"
-        )
+        raise ScimApiError(status.HTTP_401_UNAUTHORIZED, "invalid, revoked, or expired SCIM token")
     session.commit()  # persist last_used_at even when the request later fails
     return record
 
@@ -72,9 +70,7 @@ def _revoke_sessions(workspace_id: uuid.UUID, user_id: uuid.UUID) -> int:
 
 
 def get_user_service(session: DbSession, settings: SettingsDep) -> ScimUserService:
-    return ScimUserService(
-        session, base_url=settings.public_url, revoke_sessions=_revoke_sessions
-    )
+    return ScimUserService(session, base_url=settings.public_url, revoke_sessions=_revoke_sessions)
 
 
 def get_group_service(session: DbSession, settings: SettingsDep) -> ScimGroupService:
@@ -85,7 +81,7 @@ UserServiceDep = Annotated[ScimUserService, Depends(get_user_service)]
 GroupServiceDep = Annotated[ScimGroupService, Depends(get_group_service)]
 
 
-def _run(session, fn, *args, **kwargs):
+def _run[T](session: Session, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     """Execute a SCIM service call; commit on success, map errors on failure."""
     try:
         result = fn(*args, **kwargs)
@@ -96,9 +92,7 @@ def _run(session, fn, *args, **kwargs):
         raise
     except LastAdminError as exc:
         session.rollback()
-        raise ScimApiError(
-            status.HTTP_409_CONFLICT, str(exc), scim_type="mutability"
-        ) from exc
+        raise ScimApiError(status.HTTP_409_CONFLICT, str(exc), scim_type="mutability") from exc
 
 
 # -- discovery documents ------------------------------------------------------- #
@@ -253,9 +247,7 @@ def list_groups(
     startIndex: Annotated[int, Query(ge=1)] = 1,
     count: Annotated[int, Query(ge=0, le=200)] = 100,
 ) -> ScimListResponse:
-    return _run(
-        session, service.list, token.workspace_id, start_index=startIndex, count=count
-    )
+    return _run(session, service.list, token.workspace_id, start_index=startIndex, count=count)
 
 
 @router.post("/Groups", status_code=status.HTTP_201_CREATED, summary="Create a group")

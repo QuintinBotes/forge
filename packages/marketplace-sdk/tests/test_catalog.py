@@ -68,8 +68,6 @@ def test_has_newer_compatible() -> None:
     )
     assert newer is not None and newer.version == "1.2.0"
     assert (
-        has_newer_compatible(
-            installed_version="1.2.0", versions=versions, forge_version="3.0.0"
-        )
+        has_newer_compatible(installed_version="1.2.0", versions=versions, forge_version="3.0.0")
         is None
     )

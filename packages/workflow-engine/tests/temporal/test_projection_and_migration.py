@@ -119,9 +119,7 @@ async def test_reads_do_not_touch_temporal(factory: sessionmaker[Session]) -> No
         ws_id, task_id = _seed_task(session)
         store = SqlAlchemyWorkflowStore(session, workspace_id=ws_id)
         run = store.create(_new_run(task_id, f"wf-{uuid.uuid4()}"))
-        engine = TemporalWorkflowEngine(
-            workspace_id=ws_id, store=store, client=_ExplodingClient()
-        )
+        engine = TemporalWorkflowEngine(workspace_id=ws_id, store=store, client=_ExplodingClient())
 
         fetched = engine.get_run(run.id)
         assert fetched.id == run.id
@@ -135,9 +133,7 @@ async def test_duplicate_active_run(factory: sessionmaker[Session]) -> None:
     with factory() as session:
         ws_id, task_id = _seed_task(session)
         store = SqlAlchemyWorkflowStore(session, workspace_id=ws_id)
-        engine = TemporalWorkflowEngine(
-            workspace_id=ws_id, store=store, client=_FakeClient()
-        )
+        engine = TemporalWorkflowEngine(workspace_id=ws_id, store=store, client=_FakeClient())
         first = await engine.astart(task_id)
         assert first.context["engine_backend"] == "temporal"
 

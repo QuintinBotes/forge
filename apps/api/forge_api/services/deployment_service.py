@@ -134,9 +134,7 @@ class DeploymentService:
     def _dto(dep: Deployment) -> DeploymentDTO:
         return DeploymentDTO.model_validate(dep)
 
-    def _audit_record(
-        self, action: str, *, ws: uuid.UUID, actor: str, target: str
-    ) -> None:
+    def _audit_record(self, action: str, *, ws: uuid.UUID, actor: str, target: str) -> None:
         self._audit.record(
             category=AuditCategory.SYSTEM,
             action=action,
@@ -167,9 +165,7 @@ class DeploymentService:
     ) -> dict:
         rules = self._policy.deploy_rules(repo_id)
         requested_restricted = {
-            e.name: e.is_restricted
-            for e in environments
-            if e.is_restricted is not None
+            e.name: e.is_restricted for e in environments if e.is_restricted is not None
         }
         spec = PipelineSpec(
             repo_id=repo_id,
@@ -186,9 +182,7 @@ class DeploymentService:
                 for e in environments
             ],
         )
-        resolved = resolve_environments(
-            spec, rules, requested_restricted=requested_restricted
-        )
+        resolved = resolve_environments(spec, rules, requested_restricted=requested_restricted)
 
         with self._sf() as session:
             repo = self._repo(session, ws)
@@ -219,6 +213,8 @@ class DeploymentService:
             )
             repo = self._repo(session, ws)
             pipeline = repo.get_pipeline_for_project(project_id)
+            if pipeline is None:  # pragma: no cover - just upserted above
+                raise PipelineNotFoundError(str(project_id))
             return self._pipeline_view(repo, pipeline)
 
     def _sync_environments(
@@ -230,8 +226,8 @@ class DeploymentService:
     ) -> None:
         existing = {e.name: e for e in pipeline.environments}
         # Offset existing ranks to avoid transient unique(rank) collisions.
-        for env in existing.values():
-            env.rank += 1000
+        for existing_env in existing.values():
+            existing_env.rank += 1000
         session.flush()
         seen: set[str] = set()
         for r in resolved:
@@ -251,9 +247,7 @@ class DeploymentService:
                 session.delete(env)
         session.flush()
 
-    def _pipeline_view(
-        self, repo: DeploymentRepository, pipeline: EnvironmentPipeline
-    ) -> dict:
+    def _pipeline_view(self, repo: DeploymentRepository, pipeline: EnvironmentPipeline) -> dict:
         envs = []
         for env in repo.environments(pipeline.id):
             current = repo.currently_deployed(env.id)
@@ -496,9 +490,7 @@ class DeploymentService:
                     session.rollback()
                     dep = repo.get_or_404(deployment_id)
                 cfg = GateConfig.model_validate((env.gate_config if env else {}) or {})
-                if repo.distinct_approver_count(deployment_id) >= max(
-                    1, cfg.min_approvals
-                ):
+                if repo.distinct_approver_count(deployment_id) >= max(1, cfg.min_approvals):
                     engine.transition(
                         deployment_id,
                         DeploymentEvent(type=DeploymentEventType.APPROVE, actor=actor),
@@ -541,9 +533,7 @@ class DeploymentService:
                 raise InvalidTransitionError("deployment is already terminal")
             actor = f"user:{principal.user_id}"
             if dep.initiated_by != actor and principal.role != UserRole.ADMIN:
-                raise NotInitiatorError(
-                    "only the initiator or an admin can cancel a deployment"
-                )
+                raise NotInitiatorError("only the initiator or an admin can cancel a deployment")
             self._engine(session, ws).transition(
                 deployment_id,
                 DeploymentEvent(type=DeploymentEventType.CANCEL, actor=actor),

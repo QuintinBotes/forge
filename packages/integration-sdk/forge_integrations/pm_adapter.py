@@ -133,9 +133,7 @@ class BasePMAdapter:
             return self.priority_in.get(key, self.default_forge_priority)
         return self.priority_out.get(key, self.default_external_priority)
 
-    def map_fields(
-        self, external: dict[str, object], direction: Direction
-    ) -> dict[str, object]:
+    def map_fields(self, external: dict[str, object], direction: Direction) -> dict[str, object]:
         if direction == Direction.IN:
             mapping = self.field_map
         else:
@@ -168,9 +166,7 @@ class BasePMAdapter:
         )
 
     def sync_out(self, forge_task: ForgeTask) -> ExternalTask:
-        external_id = forge_task.key or (
-            str(forge_task.id) if forge_task.id is not None else ""
-        )
+        external_id = forge_task.key or (str(forge_task.id) if forge_task.id is not None else "")
         return ExternalTask(
             external_id=external_id,
             system=self.system,

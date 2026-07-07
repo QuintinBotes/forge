@@ -9,9 +9,7 @@ from forge_workflow.temporal.converter import REDACTED, RedactingEncryptionCodec
 
 KEY = "unit-test-codec-key"
 FAKE_AWS = "AKIAIOSFODNN7EXAMPLE"
-FAKE_PEM = (
-    "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----"
-)
+FAKE_PEM = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----"
 
 
 def _payload(text: str) -> Payload:

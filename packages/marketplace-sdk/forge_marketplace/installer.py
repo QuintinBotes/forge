@@ -70,8 +70,9 @@ class McpConnectorInstaller:
         try:
             conn = MCPConnection.model_validate(data)
         except ValidationError as exc:
-            raise SchemaInvalid(f"mcp_connector artifact is not a valid MCPConnection: {exc}") \
-                from exc
+            raise SchemaInvalid(
+                f"mcp_connector artifact is not a valid MCPConnection: {exc}"
+            ) from exc
 
         # Security floor (F32 §3.2 / AC8):
         if conn.transport is MCPTransport.STDIO:
@@ -143,8 +144,7 @@ def get_installer(kind: ArtifactKind) -> McpConnectorInstaller | SkillProfileIns
     installer = INSTALLERS.get(kind)
     if installer is None:
         raise UnknownArtifactKind(
-            f"no installer registered for kind '{kind.value}' "
-            "(reserved — requires F21/F04)"
+            f"no installer registered for kind '{kind.value}' (reserved — requires F21/F04)"
         )
     return installer
 
@@ -186,8 +186,7 @@ def build_install_plan(
             resolved_config={},
             blocked=True,
             block_reason=(
-                f"requires Forge >= {manifest.min_forge_version} "
-                f"(running {forge_version})"
+                f"requires Forge >= {manifest.min_forge_version} (running {forge_version})"
             ),
         )
 

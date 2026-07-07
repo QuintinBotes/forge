@@ -131,8 +131,6 @@ def test_freeze_blocks_then_admin_override_clears(
 
     # Admin override creates a fresh, override-flagged deployment that clears
     # not_frozen and proceeds to the approval gate.
-    resp = admin.post(
-        f"/deployments/{prod['id']}/freeze-override", json={"reason": "hotfix"}
-    )
+    resp = admin.post(f"/deployments/{prod['id']}/freeze-override", json={"reason": "hotfix"})
     assert resp.status_code == 200, resp.text
     assert resp.json()["state"] == "awaiting_approval"

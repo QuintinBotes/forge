@@ -280,9 +280,7 @@ def get_remediation_plan(
         record = service.get(incident_id)
     plan = _plan_view(service, record)
     if plan is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="no remediation plan"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no remediation plan")
     return plan
 
 

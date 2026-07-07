@@ -63,9 +63,7 @@ def login(body: LoginRequest, service: AuthServiceDep) -> OAuthChallenge:
     response_model=OAuthResult,
     summary="Complete an OAuth flow: exchange the IdP code for tokens and a user.",
 )
-async def oauth_callback(
-    body: OAuthCallbackRequest, service: AuthServiceDep
-) -> OAuthResult:
+async def oauth_callback(body: OAuthCallbackRequest, service: AuthServiceDep) -> OAuthResult:
     try:
         return await service.exchange_oauth_code(
             body.provider,
@@ -75,13 +73,9 @@ async def oauth_callback(
             expected_state=body.expected_state,
         )
     except UnsupportedOAuthProviderError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except OAuthStateError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except OAuthConfigError as exc:
         # The provider is valid but this deployment has no client credentials.
         raise HTTPException(
@@ -89,9 +83,7 @@ async def oauth_callback(
         ) from exc
     except OAuthExchangeError as exc:
         # The upstream IdP rejected the code or returned an unusable response.
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @router.post(
@@ -169,9 +161,7 @@ def create_api_key(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Revoke an API key.",
 )
-def revoke_api_key(
-    key_id: uuid.UUID, principal: KeyManager, service: AuthServiceDep
-) -> Response:
+def revoke_api_key(key_id: uuid.UUID, principal: KeyManager, service: AuthServiceDep) -> Response:
     if not service.api_keys.revoke(principal.workspace_id, key_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
     service.audit.emit(

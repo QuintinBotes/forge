@@ -47,9 +47,7 @@ def test_verify_version_invalid_signature_blocks(
     """AC5: a tampered signature -> signature_invalid (hard block)."""
     pkg = make_skill_package(sign=True)
     # Verify against a *different* key -> signature cannot validate.
-    wrong = base64.b64encode(
-        Ed25519PrivateKey.generate().public_key().public_bytes_raw()
-    ).decode()
+    wrong = base64.b64encode(Ed25519PrivateKey.generate().public_key().public_bytes_raw()).decode()
     result = verify_version(
         artifact_bytes=pkg.artifact_bytes,
         version=pkg.version,
@@ -91,5 +89,6 @@ def test_verify_version_unsigned(
 def test_signature_verifier_is_total() -> None:
     """The verifier never raises — malformed inputs return False."""
     v = Ed25519SignatureVerifier()
-    assert v.verify(payload=b"x", signature_b64="!!!not-base64!!!", public_key_b64="also-bad") \
-        is False
+    assert (
+        v.verify(payload=b"x", signature_b64="!!!not-base64!!!", public_key_b64="also-bad") is False
+    )

@@ -58,9 +58,7 @@ def workspace_id(session_factory: sessionmaker[Session]) -> uuid.UUID:
     return ws_id
 
 
-def _make_source(
-    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
-) -> uuid.UUID:
+def _make_source(session_factory: sessionmaker[Session], workspace_id: uuid.UUID) -> uuid.UUID:
     with session_factory() as session:
         source = KnowledgeSource(
             workspace_id=workspace_id, kind="repo", name="api", uri="github.com/org/api"
@@ -85,9 +83,9 @@ def _retriever(
 def _index(
     session_factory: sessionmaker[Session], source_id: uuid.UUID, chunks: list[Chunk]
 ) -> None:
-    PgVectorStore(
-        session_factory, DeterministicEmbeddingClient(dimension=512)
-    ).index(str(source_id), chunks)
+    PgVectorStore(session_factory, DeterministicEmbeddingClient(dimension=512)).index(
+        str(source_id), chunks
+    )
 
 
 CORPUS = [
@@ -182,10 +180,8 @@ def test_rerank_applies_chunk_weight_boost(
         session_factory,
         source_id,
         [
-            Chunk(content=note, path="notes.md",
-                  chunk_type=ChunkType.MARKDOWN, weight=1.0),
-            Chunk(content=policy, path="AGENTS.md",
-                  chunk_type=ChunkType.POLICY, weight=1.5),
+            Chunk(content=note, path="notes.md", chunk_type=ChunkType.MARKDOWN, weight=1.0),
+            Chunk(content=policy, path="AGENTS.md", chunk_type=ChunkType.POLICY, weight=1.5),
         ],
     )
     reranker = FixtureRerankerClient({"deployment runbook": {note: 0.5, policy: 0.5}})
@@ -301,9 +297,7 @@ def test_rerank_disabled_equals_weighted_rrf_and_never_calls_reranker() -> None:
 def test_rerank_enabled_reorders_and_sets_final_score() -> None:
     # AC5 (enabled): a fixture that reorders yields an order != fused, and
     # final score == rerank_score * weight.
-    fixture = FixtureRerankerClient(
-        {"q": {"alpha": 0.1, "bravo": 0.9, "charlie": 0.5}}
-    )
+    fixture = FixtureRerankerClient({"q": {"alpha": 0.1, "bravo": 0.9, "charlie": 0.5}})
     retriever = _bare_retriever(fixture)
     out = retriever.rerank("q", _weighted_candidates(), top_n=3)
 
@@ -315,9 +309,7 @@ def test_rerank_enabled_reorders_and_sets_final_score() -> None:
 
 def test_rank_delta_positive_on_reorder() -> None:
     # AC9: a reordering fixture -> mean |Δpos| > 0 and monotonic False.
-    fixture = FixtureRerankerClient(
-        {"q": {"alpha": 0.1, "bravo": 0.9, "charlie": 0.5}}
-    )
+    fixture = FixtureRerankerClient({"q": {"alpha": 0.1, "bravo": 0.9, "charlie": 0.5}})
     retriever = _bare_retriever(fixture)
     candidates = [
         _cand("c0", "alpha", score=0.9),
@@ -335,9 +327,7 @@ def test_rank_delta_positive_on_reorder() -> None:
 
 def test_rank_delta_zero_on_identity() -> None:
     # AC9: an order-preserving fixture -> delta 0, monotonic True.
-    fixture = FixtureRerankerClient(
-        {"q": {"alpha": 0.9, "bravo": 0.5, "charlie": 0.1}}
-    )
+    fixture = FixtureRerankerClient({"q": {"alpha": 0.9, "bravo": 0.5, "charlie": 0.1}})
     retriever = _bare_retriever(fixture)
     candidates = [
         _cand("c0", "alpha", score=0.9),

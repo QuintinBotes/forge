@@ -110,11 +110,14 @@ class ExternalIdentity(WorkspaceScopedModel):
     __tablename__ = "external_identity"
     __table_args__ = (
         UniqueConstraint(
-            "workspace_id", "provider", "external_id",
+            "workspace_id",
+            "provider",
+            "external_id",
             name="uq_external_identity_provider_subject",
         ),
         UniqueConstraint(
-            "workspace_id", "scim_resource_id",
+            "workspace_id",
+            "scim_resource_id",
             name="uq_external_identity_scim_resource",
         ),
         Index("ix_external_identity_user", "user_id"),
@@ -132,9 +135,7 @@ class ExternalIdentity(WorkspaceScopedModel):
     external_id: Mapped[str] = mapped_column(String(512), nullable=False)
     name_id_format: Mapped[str | None] = mapped_column(Text, nullable=True)
     scim_resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    last_login_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ScimToken(WorkspaceScopedModel):
@@ -152,9 +153,7 @@ class ScimToken(WorkspaceScopedModel):
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
     )
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -171,9 +170,7 @@ class ScimGroup(WorkspaceScopedModel):
     __tablename__ = "scim_group"
     __table_args__ = (
         UniqueConstraint("workspace_id", "scim_id", name="uq_scim_group_scim_id"),
-        UniqueConstraint(
-            "workspace_id", "display_name", name="uq_scim_group_display_name"
-        ),
+        UniqueConstraint("workspace_id", "display_name", name="uq_scim_group_display_name"),
     )
 
     scim_id: Mapped[str] = mapped_column(String(64), nullable=False)

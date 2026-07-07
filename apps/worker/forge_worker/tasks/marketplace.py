@@ -14,10 +14,13 @@ from __future__ import annotations
 import os
 import uuid
 
+from sqlalchemy.orm import Session, sessionmaker
+
 from forge_api.db import get_session_factory
 from forge_api.services.marketplace_service import (
     HttpRegistryGateway,
     MarketplaceService,
+    RegistryGateway,
     backfill_official_registries,
 )
 from forge_worker.celery_app import celery_app
@@ -28,7 +31,10 @@ def _allowed_hosts() -> frozenset[str]:
     return frozenset(h.strip() for h in raw.split(",") if h.strip())
 
 
-def build_service(session_factory=None, gateway=None) -> MarketplaceService:
+def build_service(
+    session_factory: sessionmaker[Session] | None = None,
+    gateway: RegistryGateway | None = None,
+) -> MarketplaceService:
     """Construct the marketplace service for the worker (overridable in tests)."""
     return MarketplaceService(
         session_factory=session_factory or get_session_factory(),

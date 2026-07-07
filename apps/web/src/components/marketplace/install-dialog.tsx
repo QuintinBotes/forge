@@ -76,10 +76,27 @@ export function InstallDialog({
 
   const resolvedVersion = version ?? listing.latest_version;
 
+  // Clear any prior acknowledgement each time the dialog opens or the install
+  // target changes. Derived during render (React's "adjust state when a value
+  // changes" pattern) rather than in the effect below, which is reserved for the
+  // preview dry-run side effect.
+  const openTargetKey = open
+    ? JSON.stringify([
+        listing.registry_id,
+        listing.kind,
+        listing.slug,
+        resolvedVersion,
+      ])
+    : null;
+  const [ackTargetKey, setAckTargetKey] = useState(openTargetKey);
+  if (ackTargetKey !== openTargetKey) {
+    setAckTargetKey(openTargetKey);
+    if (openTargetKey !== null) setAcknowledged(false);
+  }
+
   // Dry-run the install whenever the dialog opens (or the target changes).
   useEffect(() => {
     if (!open) return;
-    setAcknowledged(false);
     resetPreview();
     runPreview({
       registry_id: listing.registry_id,

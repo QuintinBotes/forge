@@ -31,6 +31,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.sql.expression import FromClause
 from sqlalchemy.types import TypeEngine
 
 # Constraint naming convention — keeps Alembic migrations stable across runs.
@@ -67,7 +68,7 @@ def enum_type[E: enum.Enum](enum_cls: type[E]) -> SAEnum:
 _IMMUTABILITY_FN = "forge_block_mutation"
 
 
-def attach_immutability_trigger(table: Table) -> None:
+def attach_immutability_trigger(table: FromClause) -> None:
     """Make ``table`` append-only on Postgres (BEFORE UPDATE/DELETE → raise).
 
     This is the reusable F39-audit-log helper that per-domain append-only tables
@@ -75,7 +76,12 @@ def attach_immutability_trigger(table: Table) -> None:
     dialects (SQLite unit tests), where the repository layer enforces
     append-only by exposing no update/delete path. Registered on the table's
     ``after_create`` so it applies via both ``create_all`` and Alembic.
+
+    Callers pass ``Model.__table__``, which SQLAlchemy types as the wider
+    ``FromClause``; it is always a concrete ``Table`` at runtime, so narrow it.
     """
+    if not isinstance(table, Table):  # pragma: no cover - defensive, never hit
+        raise TypeError("attach_immutability_trigger requires a mapped Table")
 
     create_fn = DDL(
         f"""

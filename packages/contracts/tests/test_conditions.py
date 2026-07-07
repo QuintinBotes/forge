@@ -97,9 +97,7 @@ def test_ops_table(op: ConditionOp, value: object, actual: object, expected: boo
 
 def test_is_null_and_is_not_null() -> None:
     assert (
-        evaluate_condition(
-            _g(Condition(field="a", op=ConditionOp.IS_NULL)), {}, field_whitelist=WL
-        )
+        evaluate_condition(_g(Condition(field="a", op=ConditionOp.IS_NULL)), {}, field_whitelist=WL)
         is True
     )
     assert (

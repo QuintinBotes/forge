@@ -98,30 +98,41 @@ export function RunTraceViewer({
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Reset transient view state whenever we load a different run.
-  useEffect(() => {
+  // Reset transient view state whenever we load a different run — adjusted
+  // during render (not in an effect) so it happens in the same pass that swaps
+  // the run instead of a trailing render.
+  const viewKey = `${runId ?? ""}|${totalSteps}`;
+  const [viewKeyState, setViewKeyState] = useState(viewKey);
+  if (viewKeyState !== viewKey) {
+    setViewKeyState(viewKey);
     setActiveIndex(0);
     setExpanded(new Set());
     setIsPlaying(false);
-  }, [runId, totalSteps]);
+  }
 
   const clampedActive = totalSteps > 0 ? Math.min(activeIndex, totalSteps - 1) : 0;
 
-  // Replay: advance the playhead one step per tick.
+  // Replay: advance the playhead one step per tick, halting once it lands on the
+  // final step. The stop is issued from the interval callback (an event-driven
+  // update), not synchronously in the effect body.
   useEffect(() => {
     if (!isPlaying) return;
     const id = setInterval(() => {
-      setActiveIndex((i) => (i >= totalSteps - 1 ? i : i + 1));
+      let reachedEnd = false;
+      setActiveIndex((i) => {
+        const last = Math.max(totalSteps - 1, 0);
+        if (i >= last) {
+          reachedEnd = true;
+          return i;
+        }
+        const next = i + 1;
+        if (next >= last) reachedEnd = true;
+        return next;
+      });
+      if (reachedEnd) setIsPlaying(false);
     }, replayIntervalMs);
     return () => clearInterval(id);
   }, [isPlaying, replayIntervalMs, totalSteps]);
-
-  // Stop when the playhead reaches the final step.
-  useEffect(() => {
-    if (isPlaying && clampedActive >= totalSteps - 1) {
-      setIsPlaying(false);
-    }
-  }, [isPlaying, clampedActive, totalSteps]);
 
   const moveActive = useCallback(
     (delta: number) => {

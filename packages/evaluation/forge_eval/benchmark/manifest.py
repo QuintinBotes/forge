@@ -49,9 +49,7 @@ def compute_content_hash(cases: Sequence[GoldenCase], scoring: BenchmarkScoring)
     stable across processes (sorted keys, compact separators).
     """
     payload = {
-        "cases": sorted(
-            (_canonical_case(case) for case in cases), key=lambda c: str(c["id"])
-        ),
+        "cases": sorted((_canonical_case(case) for case in cases), key=lambda c: str(c["id"])),
         "scoring": scoring.model_dump(mode="json"),
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)

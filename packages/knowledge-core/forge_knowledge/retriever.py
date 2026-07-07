@@ -64,9 +64,7 @@ class RerankDebug:
 class _SearchableStore(Protocol):
     """Minimal surface the retriever needs from each indexed store."""
 
-    def search(
-        self, query: str, scope: KnowledgeScope, k: int = 10
-    ) -> list[RetrievedChunk]: ...
+    def search(self, query: str, scope: KnowledgeScope, k: int = 10) -> list[RetrievedChunk]: ...
 
 
 def _to_ranked(chunks: list[RetrievedChunk]) -> list[Ranked]:
@@ -113,9 +111,7 @@ class HybridRetriever:
     def fuse(self, rankings: list[list[Ranked]], k: int = RRF_K) -> list[Ranked]:
         return fuse(rankings, k=k)
 
-    def rerank(
-        self, query: str, candidates: list[Ranked], top_n: int
-    ) -> list[RetrievedChunk]:
+    def rerank(self, query: str, candidates: list[Ranked], top_n: int) -> list[RetrievedChunk]:
         """Cross-encode ``candidates`` and return the weight-boosted top-n.
 
         Each candidate must carry its ``chunk`` (the semantic/keyword legs always
@@ -202,8 +198,10 @@ class HybridRetriever:
             chunk.score = candidate.score * (chunk.weight or 1.0)
             out.append(chunk)
 
-        provider = telemetry.provider if telemetry is not None else getattr(
-            self._reranker, "provider", "unknown"
+        provider = (
+            telemetry.provider
+            if telemetry is not None
+            else getattr(self._reranker, "provider", "unknown")
         )
         model = telemetry.model if telemetry is not None else getattr(self._reranker, "model", None)
         latency_ms = telemetry.latency_ms if telemetry is not None else 0.0
@@ -229,8 +227,10 @@ class HybridRetriever:
     ) -> RerankDebug:
         """Compute the rank delta of the returned top-n vs their fused order."""
         mean_delta, monotonic = _rank_delta(orig_indices)
-        provider = telemetry.provider if telemetry is not None else getattr(
-            self._reranker, "provider", "unknown"
+        provider = (
+            telemetry.provider
+            if telemetry is not None
+            else getattr(self._reranker, "provider", "unknown")
         )
         model = telemetry.model if telemetry is not None else getattr(self._reranker, "model", None)
         latency_ms = telemetry.latency_ms if telemetry is not None else 0.0

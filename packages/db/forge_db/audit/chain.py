@@ -66,9 +66,7 @@ def verify_chain(
         prev_hash = GENESIS_HASH
     else:
         anchor = session.scalars(
-            select(AuditLog).where(
-                AuditLog.workspace_id == workspace_id, AuditLog.seq == start - 1
-            )
+            select(AuditLog).where(AuditLog.workspace_id == workspace_id, AuditLog.seq == start - 1)
         ).one_or_none()
         if anchor is None or anchor.entry_hash is None:
             return broken(start - 1, 0, f"anchor row seq={start - 1} missing")

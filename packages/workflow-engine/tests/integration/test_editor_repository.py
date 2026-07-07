@@ -36,7 +36,10 @@ def test_partial_unique_single_draft(db_session: Session) -> None:
     """AC 10: the DB rejects a second draft for the same definition."""
     ws = make_workspace(db_session)
     definition = WorkflowDefinition(
-        id=uuid.uuid4(), workspace_id=ws, name="custom_flow", title="Custom",
+        id=uuid.uuid4(),
+        workspace_id=ws,
+        name="custom_flow",
+        title="Custom",
         source=WorkflowDefinitionSource.CUSTOM,
     )
     db_session.add(definition)
@@ -44,10 +47,15 @@ def test_partial_unique_single_draft(db_session: Session) -> None:
     for _ in range(2):
         db_session.add(
             WorkflowDefinitionRevision(
-                id=uuid.uuid4(), workflow_definition_id=definition.id, workspace_id=ws,
+                id=uuid.uuid4(),
+                workflow_definition_id=definition.id,
+                workspace_id=ws,
                 revision=db_session.query(WorkflowDefinitionRevision).count() + 1,
-                status=RevisionStatus.DRAFT, dsl_yaml="workflow: x", graph_json={},
-                dsl_version="1", validation_status=RevisionValidationStatus.UNVALIDATED,
+                status=RevisionStatus.DRAFT,
+                dsl_yaml="workflow: x",
+                graph_json={},
+                dsl_version="1",
+                validation_status=RevisionValidationStatus.UNVALIDATED,
                 validation_issues=[],
             )
         )

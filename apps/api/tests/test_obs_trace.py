@@ -111,9 +111,7 @@ def test_assemble_merges_subagent_steps_and_flags_them() -> None:
     assert trace.total_steps == 3
     # Sub-agent steps are tagged with their originating role.
     sub_roles = {
-        s.metadata.get("subagent_role")
-        for s in trace.steps
-        if s.metadata.get("subagent_role")
+        s.metadata.get("subagent_role") for s in trace.steps if s.metadata.get("subagent_role")
     }
     assert sub_roles == {"implementer", "tester"}
     # The whole timeline is contiguously reindexed.

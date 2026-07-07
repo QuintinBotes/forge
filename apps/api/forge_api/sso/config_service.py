@@ -311,9 +311,7 @@ class SsoConfigService:
         )
         return config
 
-    def delete_config(
-        self, workspace_id: uuid.UUID, *, actor_id: uuid.UUID | None = None
-    ) -> None:
+    def delete_config(self, workspace_id: uuid.UUID, *, actor_id: uuid.UUID | None = None) -> None:
         config = self.get_config(workspace_id)
         if config is None:
             raise SsoConfigError("no SSO configuration for workspace")
@@ -402,9 +400,7 @@ class SsoConfigService:
         created_by: uuid.UUID | None = None,
     ) -> ScimTokenCreated:
         clash = self._session.execute(
-            select(ScimToken).where(
-                ScimToken.workspace_id == workspace_id, ScimToken.name == name
-            )
+            select(ScimToken).where(ScimToken.workspace_id == workspace_id, ScimToken.name == name)
         ).scalar_one_or_none()
         if clash is not None:
             raise SsoConfigError(f"a SCIM token named {name!r} already exists")
@@ -492,9 +488,7 @@ def verify_scim_token(session: Session, raw_token: str) -> ScimToken | None:
     """
     candidate_hash = _hash_token(raw_token)
     rows = (
-        session.execute(
-            select(ScimToken).where(ScimToken.token_prefix == raw_token[:8])
-        )
+        session.execute(select(ScimToken).where(ScimToken.token_prefix == raw_token[:8]))
         .scalars()
         .all()
     )

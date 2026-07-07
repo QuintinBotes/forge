@@ -27,16 +27,12 @@ def workflow_run_id_from(workflow_id_value: str) -> uuid.UUID:
     return uuid.UUID(workflow_id_value[len(WORKFLOW_ID_PREFIX) :])
 
 
-def transition_idempotency_key(
-    workflow_run_id: uuid.UUID | str, sequence: int
-) -> str:
+def transition_idempotency_key(workflow_run_id: uuid.UUID | str, sequence: int) -> str:
     """Idempotency key for a persisted transition (unique per run + sequence)."""
     return f"{workflow_run_id}:transition:{sequence}"
 
 
-def activity_idempotency_key(
-    workflow_run_id: uuid.UUID | str, effect: str, attempt: int
-) -> str:
+def activity_idempotency_key(workflow_run_id: uuid.UUID | str, effect: str, attempt: int) -> str:
     """Idempotency key for a side-effecting activity (e.g. ``open_pr``)."""
     return f"{workflow_run_id}:{effect}:{attempt}"
 

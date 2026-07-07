@@ -93,15 +93,11 @@ def test_bulk_update(client: TestClient) -> None:
 def test_dependency_cycle_is_409(client: TestClient) -> None:
     a = _create_task(client, "a")
     b = _create_task(client, "b")
-    ok = client.post(
-        f"/board/tasks/{a['id']}/dependencies", json={"depends_on_id": b["id"]}
-    )
+    ok = client.post(f"/board/tasks/{a['id']}/dependencies", json={"depends_on_id": b["id"]})
     assert ok.status_code == 200
     assert b["id"] in ok.json()["depends_on"]
 
-    cycle = client.post(
-        f"/board/tasks/{b['id']}/dependencies", json={"depends_on_id": a["id"]}
-    )
+    cycle = client.post(f"/board/tasks/{b['id']}/dependencies", json={"depends_on_id": a["id"]})
     assert cycle.status_code == 409
 
 

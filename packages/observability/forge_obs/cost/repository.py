@@ -459,9 +459,7 @@ class SqlCostReader:
             if to is not None:
                 stmt = stmt.where(CostEvent.occurred_at < to)
             for row in session.scalars(stmt):
-                key = _group_key(
-                    group_by, phase=row.phase, provider=row.provider, model=row.model
-                )
+                key = _group_key(group_by, phase=row.phase, provider=row.provider, model=row.model)
                 entry = buckets.setdefault(key, CostBucket(key=key, cost_usd=Decimal(0)))
                 cost = Decimal(row.cost_usd)
                 entry.cost_usd += cost
@@ -509,9 +507,7 @@ class SqlCostReader:
             if to is not None:
                 stmt = stmt.where(CostEvent.occurred_at < to)
             for row in session.scalars(stmt):
-                key = _group_key(
-                    group_by, phase=row.phase, provider=row.provider, model=row.model
-                )
+                key = _group_key(group_by, phase=row.phase, provider=row.provider, model=row.model)
                 ts = _truncate(row.occurred_at, bucket)
                 per_key = series.setdefault(key, {})
                 per_key[ts] = per_key.get(ts, Decimal(0)) + Decimal(row.cost_usd)

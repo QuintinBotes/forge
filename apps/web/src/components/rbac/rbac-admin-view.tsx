@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -59,7 +60,9 @@ export function RbacAdminView({
 
   // Keyboard-first: register per-tab jumps in the command palette.
   const setActiveRef = useRef(setActive);
-  setActiveRef.current = setActive;
+  useEffect(() => {
+    setActiveRef.current = setActive;
+  }, [setActive]);
   const commands = useMemo(
     () =>
       TABS.map((t) => ({

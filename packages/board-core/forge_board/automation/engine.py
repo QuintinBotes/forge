@@ -114,9 +114,7 @@ class AutomationEngine:
                 action_results.append(executor.execute(action, ctx))
             except Exception as exc:
                 action_results.append(
-                    ActionResult(
-                        type=action.type, status="error", detail={"error": str(exc)}
-                    )
+                    ActionResult(type=action.type, status="error", detail={"error": str(exc)})
                 )
 
         status = self._summarize(action_results)

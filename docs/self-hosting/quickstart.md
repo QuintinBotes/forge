@@ -18,7 +18,7 @@ API. For the production hardening details see
 ## 1. Clone and configure
 
 ```bash
-git clone https://github.com/your-org/forge.git
+git clone https://github.com/QuintinBotes/forge.git
 cd forge
 cp .env.example .env
 ```

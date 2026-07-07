@@ -131,9 +131,7 @@ def _run_preflight_with_stub_docker(tmp_path: Path, reported_version: str) -> in
     )
     stub.chmod(0o755)
     env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}")
-    proc = subprocess.run(
-        ["bash", str(PREFLIGHT)], env=env, capture_output=True, text=True
-    )
+    proc = subprocess.run(["bash", str(PREFLIGHT)], env=env, capture_output=True, text=True)
     return proc.returncode
 
 
@@ -261,9 +259,7 @@ def test_preflight_gvisor_passes_when_registered(tmp_path: Path) -> None:
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_preflight_microvm_kvm_check(tmp_path: Path) -> None:
     """AC13 — FORGE_SANDBOX_KIND=microvm fails when /dev/kvm is absent."""
-    env = _stub_docker_with_runtimes(
-        tmp_path, '{"runc":{"path":"runc"},"kata-fc":{"path":"kata"}}'
-    )
+    env = _stub_docker_with_runtimes(tmp_path, '{"runc":{"path":"runc"},"kata-fc":{"path":"kata"}}')
     env["FORGE_SANDBOX_KIND"] = "microvm"
     env["FORGE_KVM_DEVICE"] = str(tmp_path / "no-such-kvm")
     proc = _run_preflight(env)
@@ -273,9 +269,7 @@ def test_preflight_microvm_kvm_check(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_preflight_microvm_passes_with_runtime_and_kvm(tmp_path: Path) -> None:
-    env = _stub_docker_with_runtimes(
-        tmp_path, '{"runc":{"path":"runc"},"kata-fc":{"path":"kata"}}'
-    )
+    env = _stub_docker_with_runtimes(tmp_path, '{"runc":{"path":"runc"},"kata-fc":{"path":"kata"}}')
     kvm = tmp_path / "kvm"
     kvm.write_bytes(b"")
     env["FORGE_SANDBOX_KIND"] = "microvm"

@@ -43,9 +43,7 @@ HealthResolver = Callable[[dict], HealthChecker]
 def _default_provider_resolver(config: dict) -> DeployProvider:
     if config.get("provider", "null") == "null":
         return NullDeployProvider()
-    raise RuntimeError(
-        f"no provider client configured for {config.get('provider')!r}"
-    )
+    raise RuntimeError(f"no provider client configured for {config.get('provider')!r}")
 
 
 def _default_health_resolver(config: dict) -> HealthChecker:
@@ -71,9 +69,7 @@ class DeploymentOrchestrator:
         self.session = session
         self.workspace_id = workspace_id
         self.repo = DeploymentRepository(session, workspace_id=workspace_id)
-        self.engine = engine or DeploymentStateMachine(
-            session, workspace_id=workspace_id
-        )
+        self.engine = engine or DeploymentStateMachine(session, workspace_id=workspace_id)
         self.provider_resolver = provider_resolver or _default_provider_resolver
         self.health_resolver = health_resolver or _default_health_resolver
         self.clock = clock or SystemClock()
@@ -95,9 +91,7 @@ class DeploymentOrchestrator:
             if state in TERMINAL_STATES:
                 break
             if state == DeploymentState.REQUESTED:
-                self.engine.transition(
-                    dep.id, DeploymentEvent(type=DeploymentEventType.REQUEST)
-                )
+                self.engine.transition(dep.id, DeploymentEvent(type=DeploymentEventType.REQUEST))
             elif state == DeploymentState.GATE_EVALUATING:
                 if not self._evaluate_gate(dep):
                     break  # awaiting human approval
@@ -134,9 +128,7 @@ class DeploymentOrchestrator:
                 dep.id, DeploymentEvent(type=DeploymentEventType.GATE_REQUIRES_APPROVAL)
             )
             return False
-        self.engine.transition(
-            dep.id, DeploymentEvent(type=DeploymentEventType.GATE_PASSED)
-        )
+        self.engine.transition(dep.id, DeploymentEvent(type=DeploymentEventType.GATE_PASSED))
         return True
 
     def _env_for(self, dep: Deployment) -> Environment | None:
@@ -159,9 +151,7 @@ class DeploymentOrchestrator:
         dep.provider_external_id = handle.external_id
         dep.provider_url = handle.url
         self.session.flush()
-        self.engine.transition(
-            dep.id, DeploymentEvent(type=DeploymentEventType.DEPLOY_STARTED)
-        )
+        self.engine.transition(dep.id, DeploymentEvent(type=DeploymentEventType.DEPLOY_STARTED))
 
     def _poll_deploy(self, dep: Deployment) -> bool:
         from forge_deploy.schemas import DeployHandle
@@ -200,9 +190,7 @@ class DeploymentOrchestrator:
         dep.health_status = result.status
         self.session.flush()
         if result.status == HealthStatus.PASSING:
-            self.engine.transition(
-                dep.id, DeploymentEvent(type=DeploymentEventType.HEALTH_PASSED)
-            )
+            self.engine.transition(dep.id, DeploymentEvent(type=DeploymentEventType.HEALTH_PASSED))
         else:
             dep.failure_reason = f"health check failed: {result.detail}"
             self.engine.transition(

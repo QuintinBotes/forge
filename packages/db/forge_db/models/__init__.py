@@ -80,6 +80,7 @@ from forge_db.models.enums import (
     UserRole,
     WorkflowState,
 )
+from forge_db.models.idempotency import IdempotencyKey
 from forge_db.models.incidents import (
     IncidentAlert,
     IncidentEvent,
@@ -106,6 +107,10 @@ from forge_db.models.mcp_index import (
 )
 from forge_db.models.multi_repo import AgentRepoWorkspace, PRGroup
 from forge_db.models.oauth_account import OAuthAccount
+from forge_db.models.observability_audit import (
+    ObservabilityAuditChainHead,
+    ObservabilityAuditEntry,
+)
 from forge_db.models.planning import (
     Epic,
     Incident,
@@ -113,6 +118,7 @@ from forge_db.models.planning import (
     SpecDocument,
     Sprint,
     Task,
+    TaskDependency,
 )
 from forge_db.models.platform_api_key import PlatformAPIKey
 from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
@@ -123,6 +129,7 @@ from forge_db.models.project_team_access import ProjectTeamAccess
 from forge_db.models.role_grant import RoleGrant
 from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
 from forge_db.models.sandbox import SandboxInstance
+from forge_db.models.secret import Secret
 from forge_db.models.sprint_velocity import (
     SprintBurndownSnapshot,
     SprintScopeEvent,
@@ -198,6 +205,7 @@ __all__ = [
     "GateCheckName",
     "GateCheckStatus",
     "HealthStatus",
+    "IdempotencyKey",
     "Incident",
     "IncidentAlert",
     "IncidentEvent",
@@ -220,6 +228,8 @@ __all__ = [
     "ModelPrice",
     "OAuthAccount",
     "OAuthProvider",
+    "ObservabilityAuditChainHead",
+    "ObservabilityAuditEntry",
     "PMAuthType",
     "PMConflictPolicy",
     "PMConnection",
@@ -264,6 +274,7 @@ __all__ = [
     "ScimResourceType",
     "ScimToken",
     "ScopeType",
+    "Secret",
     "SkillProfile",
     "SpecDocument",
     "SpecStatus",
@@ -277,6 +288,7 @@ __all__ = [
     "SubAgentRun",
     "SyncMode",
     "Task",
+    "TaskDependency",
     "TaskKind",
     "TaskStatus",
     "Team",

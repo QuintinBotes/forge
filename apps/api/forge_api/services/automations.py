@@ -12,6 +12,7 @@ is 404, no existence leak).
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from datetime import datetime
 
@@ -78,9 +79,7 @@ class AutomationRuleService:
     def _ref_context(
         self, session: Session, workspace_id: uuid.UUID, project_id: uuid.UUID | None
     ) -> RuleRefContext:
-        users = session.execute(
-            select(User.id).where(User.workspace_id == workspace_id)
-        ).scalars()
+        users = session.execute(select(User.id).where(User.workspace_id == workspace_id)).scalars()
         sprint_q = select(Sprint.id).where(Sprint.workspace_id == workspace_id)
         milestone_q = select(Milestone.id).where(Milestone.workspace_id == workspace_id)
         if project_id is not None:
@@ -93,9 +92,7 @@ class AutomationRuleService:
             check_references=True,
         )
 
-    def _row(
-        self, session: Session, workspace_id: uuid.UUID, rule_id: uuid.UUID
-    ) -> AutomationRule:
+    def _row(self, session: Session, workspace_id: uuid.UUID, rule_id: uuid.UUID) -> AutomationRule:
         row = session.get(AutomationRule, rule_id)
         if row is None or row.workspace_id != workspace_id:
             raise RuleNotFound(str(rule_id))
@@ -328,7 +325,10 @@ class AutomationRuleService:
             matched = trigger_matches(spec.trigger, envelope)
             executor = RecordingActionExecutor()
             meta = AutomationRuleSpecWithMeta(
-                spec=spec, id=row.id, version=row.version, enabled=row.enabled,
+                spec=spec,
+                id=row.id,
+                version=row.version,
+                enabled=row.enabled,
                 run_order=row.run_order,
             )
             notes: list[str] = []
@@ -350,7 +350,7 @@ class AutomationRuleService:
         rule_id: uuid.UUID,
         limit: int = 50,
         before: datetime | None = None,
-    ) -> list[AutomationExecutionRead]:
+    ) -> builtins.list[AutomationExecutionRead]:
         with self._sf() as session:
             self._row(session, workspace_id, rule_id)  # tenant check / 404
             q = select(AutomationExecution).where(

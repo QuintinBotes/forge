@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -147,7 +148,9 @@ export function PmIntegrationsView({
 
   // Keyboard-first: open the connect form from the command palette.
   const openNewRef = useRef(openNew);
-  openNewRef.current = openNew;
+  useEffect(() => {
+    openNewRef.current = openNew;
+  }, [openNew]);
   const commands = useMemo(
     () => [
       {
@@ -358,9 +361,11 @@ function ConnectionDetail({
 
   // Keyboard-first detail actions.
   const saveRef = useRef(saveMap);
-  saveRef.current = saveMap;
   const testRef = useRef(runTest);
-  testRef.current = runTest;
+  useEffect(() => {
+    saveRef.current = saveMap;
+    testRef.current = runTest;
+  }, [saveMap, runTest]);
   const commands = useMemo(
     () => [
       {

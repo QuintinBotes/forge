@@ -24,6 +24,7 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import suppress
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -55,11 +56,14 @@ from forge_board.automation.schemas import (
 from forge_board.workflow import InvalidStatusTransitionError, validate_transition
 from forge_contracts.automation import (
     HUMAN_GATE_EVENTS,
+    AutomationActionType,
     AutomationExecutionStatus,
     AutomationTriggerEnvelope,
 )
 from forge_contracts.enums import TaskKind, TaskStatus
 from forge_db.models import AutomationExecution, AutomationRule, Task
+from forge_db.models.enums import Priority as DbPriority
+from forge_db.models.enums import TaskStatus as DbTaskStatus
 from forge_worker.celery_app import celery_app
 
 EVALUATE_TASK = "forge.automations.evaluate_trigger"
@@ -93,7 +97,7 @@ class DbActionExecutor:
         if isinstance(action, SetStatusAction):
             return self._set_status(task, action.status, action.type)
         if isinstance(action, SetPriorityAction):
-            task.priority = action.priority
+            task.priority = DbPriority(action.priority)
             return ActionResult(
                 type=action.type, status="ok", detail={"priority": action.priority.value}
             )
@@ -132,18 +136,20 @@ class DbActionExecutor:
             type=action.type, status="error", detail={"error": "unknown_action"}
         )
 
-    def _set_status(self, task: Task, new_status: TaskStatus, atype) -> ActionResult:
+    def _set_status(
+        self, task: Task, new_status: TaskStatus, atype: AutomationActionType
+    ) -> ActionResult:
         if task.status == new_status:
             return ActionResult(type=atype, status="no_op", detail={"status": new_status.value})
         try:
-            validate_transition(task.status, new_status)
+            validate_transition(TaskStatus(task.status), new_status)
         except InvalidStatusTransitionError as exc:
             return ActionResult(
                 type=atype,
                 status="error",
                 detail={"error": "status_transition_forbidden", "detail": str(exc)},
             )
-        task.status = new_status
+        task.status = DbTaskStatus(new_status)
         return ActionResult(type=atype, status="ok", detail={"status": new_status.value})
 
     def _set_field(self, task: Task, action: SetFieldAction) -> ActionResult:
@@ -158,12 +164,8 @@ class DbActionExecutor:
 
     def _close_linked(self, task: Task, action: CloseLinkedSpecTasksAction) -> ActionResult:
         if task.spec_id is None:
-            return ActionResult(
-                type=action.type, status="no_op", detail={"reason": "no_spec_link"}
-            )
-        q = select(Task).where(
-            Task.workspace_id == task.workspace_id, Task.spec_id == task.spec_id
-        )
+            return ActionResult(type=action.type, status="no_op", detail={"reason": "no_spec_link"})
+        q = select(Task).where(Task.workspace_id == task.workspace_id, Task.spec_id == task.spec_id)
         if action.scope == "project":
             q = q.where(Task.project_id == task.project_id)
         closed: list[str] = []
@@ -175,13 +177,11 @@ class DbActionExecutor:
             # Force the close (terminal target) even across non-adjacent edges:
             # the canonical "close on merge" intent overrides the default table.
             with suppress(InvalidStatusTransitionError):
-                validate_transition(sibling.status, action.target_status)
-            sibling.status = action.target_status
+                validate_transition(TaskStatus(sibling.status), action.target_status)
+            sibling.status = DbTaskStatus(action.target_status)
             closed.append(str(sibling.id))
-        status = "ok" if closed else "no_op"
-        return ActionResult(
-            type=action.type, status=status, detail={"closed_task_ids": closed}
-        )
+        status: Literal["ok", "no_op"] = "ok" if closed else "no_op"
+        return ActionResult(type=action.type, status=status, detail={"closed_task_ids": closed})
 
     def _create_task(
         self, task: Task, action: CreateTaskAction, ctx: ActionContext
@@ -243,9 +243,7 @@ def _matching_rules(session: Session, env: AutomationTriggerEnvelope) -> list[Au
     )
     rows = list(session.execute(q).scalars())
     # project_id NULL = workspace-wide; otherwise must match the envelope project.
-    return [
-        r for r in rows if r.project_id is None or r.project_id == env.project_id
-    ]
+    return [r for r in rows if r.project_id is None or r.project_id == env.project_id]
 
 
 def evaluate_envelope(
@@ -269,9 +267,7 @@ def evaluate_envelope(
         for row in rule_rows:
             key = f"{row.id}:{envelope.trigger_event_id}"
             exists = session.scalar(
-                select(AutomationExecution.id).where(
-                    AutomationExecution.idempotency_key == key
-                )
+                select(AutomationExecution.id).where(AutomationExecution.idempotency_key == key)
             )
             if exists is None:
                 pending.append(row)
@@ -294,7 +290,7 @@ def evaluate_envelope(
         persisted: list[AutomationExecution] = []
         for result in results:
             key = f"{result.rule_id}:{envelope.trigger_event_id}"
-            row = AutomationExecution(
+            execution = AutomationExecution(
                 workspace_id=envelope.workspace_id,
                 rule_id=result.rule_id,
                 rule_version=result.rule_version,
@@ -315,17 +311,17 @@ def evaluate_envelope(
             )
             try:
                 with session.begin_nested():
-                    session.add(row)
+                    session.add(execution)
                     session.flush()
             except IntegrityError:
                 continue
-            persisted.append(row)
+            persisted.append(execution)
 
         session.commit()
-        for row in persisted:
-            session.refresh(row)
-            if audit_sink is not None and row.status in _MUTATING:
-                audit_sink(row)
+        for execution in persisted:
+            session.refresh(execution)
+            if audit_sink is not None and execution.status in _MUTATING:
+                audit_sink(execution)
         return persisted
 
 
@@ -358,9 +354,7 @@ def sweep_unprocessed_triggers(
             for row in rule_rows:
                 key = f"{row.id}:{env.trigger_event_id}"
                 exists = session.scalar(
-                    select(AutomationExecution.id).where(
-                        AutomationExecution.idempotency_key == key
-                    )
+                    select(AutomationExecution.id).where(AutomationExecution.idempotency_key == key)
                 )
                 if exists is None:
                     has_unprocessed = True

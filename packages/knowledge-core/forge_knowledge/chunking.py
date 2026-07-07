@@ -226,9 +226,7 @@ def chunk_code(path: str, src: str, *, language: str = "python") -> list[Chunk]:
     if not src.strip():
         return []
 
-    ts_chunks = chunk_with_treesitter(
-        path, src, language, weight=weight_for(ChunkType.CODE)
-    )
+    ts_chunks = chunk_with_treesitter(path, src, language, weight=weight_for(ChunkType.CODE))
     if ts_chunks is not None:
         return ts_chunks
 
