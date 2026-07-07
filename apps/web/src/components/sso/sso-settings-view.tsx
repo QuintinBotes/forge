@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -262,7 +263,9 @@ export function SsoSettingsView({
 
   // Save via the command palette (keyboard-first).
   const saveRef = useRef(save);
-  saveRef.current = save;
+  useEffect(() => {
+    saveRef.current = save;
+  }, [save]);
   const commands = useMemo(
     () => [
       {
