@@ -247,9 +247,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install pnpm
+        # Version comes from package.json "packageManager" — passing `version:`
+        # too makes pnpm/action-setup v4 fail with "multiple versions specified".
         uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
-        with:
-          version: 10
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -280,9 +280,11 @@ jobs:
   security:
     name: security (sast + deps + secrets + sbom + matrix)
     runs-on: ubuntu-latest
+    # No security-events:write — code scanning (SARIF upload) needs GitHub
+    # Advanced Security, which a private repo can't grant (fails "Set up job").
+    # The SARIF-upload step is already guarded to skip on private repos.
     permissions:
       contents: read
-      security-events: write   # upload SARIF to code scanning
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -418,6 +420,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Validate production compose
+        # The prod compose requires ${FORGE_SECRET_KEY:?} by design; supply a
+        # throwaway value so `config` can validate (never a real secret).
+        env:
+          FORGE_SECRET_KEY: ci-compose-validation-dummy-not-a-secret
         run: docker compose -f deploy/docker-compose.yml config --quiet
 
       - name: Validate dev compose
@@ -432,6 +438,10 @@ jobs:
   build:
     name: build (images + sbom + smoke)
     runs-on: ubuntu-latest
+    # The prod compose requires ${FORGE_SECRET_KEY:?}; `compose build` + smoke
+    # parse it, so provide a throwaway value (never a real secret).
+    env:
+      FORGE_SECRET_KEY: ci-build-validation-dummy-not-a-secret
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
