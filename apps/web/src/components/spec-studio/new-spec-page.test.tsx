@@ -1,0 +1,118 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { describe, expect, it, vi } from "vitest";
+
+import type { ForgeApiClient } from "@/lib/api/client";
+import type { EpicDTO, SpecManifest } from "@/lib/api/types";
+
+import { NewSpecPage } from "./new-spec-page";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+}));
+
+const epics: EpicDTO[] = [
+  { id: "e1", title: "Auth overhaul" },
+  { id: "e2", title: "Billing v2" },
+];
+
+function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+  return {
+    listEpics: vi.fn(() => Promise.resolve(epics)),
+    createSpec: vi.fn((body: { epic_id: string; name: string }) =>
+      Promise.resolve({ id: "s-new", name: body.name, status: "draft" } as SpecManifest),
+    ),
+    putSpecManifest: vi.fn((specId: string, manifest: SpecManifest) =>
+      Promise.resolve({ ...manifest, id: specId } as SpecManifest),
+    ),
+    ...overrides,
+  } as unknown as ForgeApiClient;
+}
+
+function renderPage(client: ForgeApiClient, onCreated = vi.fn()) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  function Wrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  }
+  return {
+    onCreated,
+    ...render(<NewSpecPage client={client} onCreated={onCreated} />, { wrapper: Wrapper }),
+  };
+}
+
+describe("NewSpecPage", () => {
+  it("lists epics to pick from and disables create until an epic + goal are set", async () => {
+    const client = makeClient();
+    renderPage(client);
+
+    await screen.findByText("Auth overhaul");
+    expect(screen.getByTestId("create-spec")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("new-spec-epic"), { target: { value: "e1" } });
+    expect(screen.getByTestId("create-spec")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("guided-name"), { target: { value: "Passwordless auth" } });
+    expect(screen.getByTestId("create-spec")).toBeEnabled();
+  });
+
+  it("creates the spec and hands off the new id", async () => {
+    const client = makeClient();
+    const { onCreated } = renderPage(client);
+    await screen.findByText("Auth overhaul");
+
+    fireEvent.change(screen.getByTestId("new-spec-epic"), { target: { value: "e1" } });
+    fireEvent.change(screen.getByTestId("guided-name"), { target: { value: "Passwordless auth" } });
+    fireEvent.click(screen.getByTestId("create-spec"));
+
+    await waitFor(() =>
+      expect(client.createSpec).toHaveBeenCalledWith(
+        expect.objectContaining({ epic_id: "e1", name: "Passwordless auth" }),
+      ),
+    );
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("s-new"));
+    // No acceptance criteria / advanced fields were drafted, so the create
+    // call alone is sufficient — no follow-up PUT is needed.
+    expect(client.putSpecManifest).not.toHaveBeenCalled();
+  });
+
+  it("uses the shared Guided-mode form for requirements and acceptance criteria", async () => {
+    const client = makeClient();
+    renderPage(client);
+    await screen.findByText("Auth overhaul");
+    expect(screen.getByTestId("guided-requirements")).toBeInTheDocument();
+    expect(screen.getByTestId("guided-acceptance-criteria")).toBeInTheDocument();
+  });
+
+  it("persists acceptance criteria drafted before creation via a follow-up PUT", async () => {
+    const client = makeClient();
+    const { onCreated } = renderPage(client);
+    await screen.findByText("Auth overhaul");
+
+    fireEvent.change(screen.getByTestId("new-spec-epic"), { target: { value: "e1" } });
+    fireEvent.change(screen.getByTestId("guided-name"), { target: { value: "Passwordless auth" } });
+
+    // Draft an acceptance criterion in the Guided form before the spec exists.
+    fireEvent.click(screen.getByTestId("guided-add-acceptance-criterion"));
+    fireEvent.change(screen.getByTestId("ac-item-0").querySelector('[aria-label$="given"]')!, {
+      target: { value: "a user" },
+    });
+
+    fireEvent.click(screen.getByTestId("create-spec"));
+
+    await waitFor(() => expect(client.createSpec).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(client.putSpecManifest).toHaveBeenCalledWith(
+        "s-new",
+        expect.objectContaining({
+          acceptance_criteria: expect.arrayContaining([
+            expect.objectContaining({ text: expect.stringContaining("a user") }),
+          ]),
+        }),
+      ),
+    );
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("s-new"));
+  });
+});
