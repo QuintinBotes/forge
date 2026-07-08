@@ -99,6 +99,24 @@ describe("SpecStudio", () => {
     );
   });
 
+  it("preserves unsaved Markdown edits when switching to Guided and back", async () => {
+    renderStudio(makeClient());
+    await screen.findByTestId("guided-mode");
+
+    fireEvent.click(screen.getByTestId("studio-mode-markdown"));
+    const textarea = await screen.findByTestId("markdown-textarea");
+    fireEvent.change(textarea, {
+      target: { value: "---\nid: SPEC-1\n---\n\n## Goal\n\nRenamed via Markdown\n" },
+    });
+
+    fireEvent.click(screen.getByTestId("studio-mode-guided"));
+    fireEvent.click(screen.getByTestId("studio-mode-markdown"));
+
+    expect(await screen.findByTestId("markdown-textarea")).toHaveValue(
+      "---\nid: SPEC-1\n---\n\n## Goal\n\nRenamed via Markdown\n",
+    );
+  });
+
   it("saving in YAML mode invalidates the Markdown buffer so it reloads fresh, synced text", async () => {
     const client = makeClient({
       putSpecManifestYaml: vi.fn(() =>
