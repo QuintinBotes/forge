@@ -7,6 +7,7 @@ Alembic's ``env.py`` and by ``Base.metadata.create_all`` in tests).
 from __future__ import annotations
 
 from forge_db.models import enums
+from forge_db.models.ao_settings import AoWorkspaceSettings
 from forge_db.models.approval import ApprovalDecision, PolicyOverrideGrant
 from forge_db.models.audit import AuditChainHead, AuditLog, AuditLogImmutableError
 from forge_db.models.automation import AutomationExecution, AutomationRule
@@ -172,6 +173,7 @@ __all__ = [
     "AgentRole",
     "AgentRoleConfig",
     "AgentRun",
+    "AoWorkspaceSettings",
     "ApprovalDecision",
     "ApprovalGate",
     "ApprovalRequest",

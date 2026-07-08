@@ -1814,3 +1814,96 @@ export interface OnboardingProgress {
   /** True when every stage has been completed at least once. */
   allComplete: boolean;
 }
+
+// --- Adaptive Orchestration settings (ao-settings-api, /ao/*) ------------- //
+
+/** The five Adaptive Orchestration roles configured independently. */
+export type AgentRole = "planner" | "coder" | "reviewer" | "spec_author" | "coordinator";
+
+/** Model "thinking effort" a role runs at (provider-agnostic). */
+export type AoEffort = "low" | "medium" | "high" | "max";
+
+/** Where an effective role config came from, in resolution order. */
+export type RoleConfigSource = "default" | "workspace" | "project";
+
+/** The effective `{model_or_tier, effort}` for one role, plus its source. */
+export interface RoleConfigOut {
+  role: AgentRole;
+  model_or_tier: string;
+  effort: AoEffort;
+  source: RoleConfigSource;
+}
+
+/** Body for `GET /ao/role-config`. */
+export interface RoleConfigListResponse {
+  items: RoleConfigOut[];
+}
+
+/** Body for `PUT /ao/role-config/{role}`: pin a human override. */
+export interface RoleConfigUpsertRequest {
+  model_or_tier: string;
+  effort: AoEffort;
+}
+
+/**
+ * The effective workspace-wide Adaptive Orchestration settings. `junior_max`/
+ * `medior_max` are always the *effective* threshold (workspace override, or
+ * the hardcoded default when unset).
+ */
+export interface AoSettingsOut {
+  workspace_id: string;
+  auto_route: boolean;
+  /** `{provider: {tier: model}}` overrides layered onto the model router's defaults. */
+  tier_model_overrides: Record<string, Record<string, string>>;
+  junior_max: number;
+  medior_max: number;
+  junior_max_is_default: boolean;
+  medior_max_is_default: boolean;
+}
+
+/** `PUT /ao/settings` — every field is optional (partial update). */
+export interface AoSettingsUpdateRequest {
+  auto_route?: boolean;
+  tier_model_overrides?: Record<string, Record<string, string>>;
+  junior_max?: number;
+  medior_max?: number;
+  /** Reset the corresponding threshold back to the hardcoded default. */
+  clear_junior_max?: boolean;
+  clear_medior_max?: boolean;
+}
+
+/** Adaptive Orchestration seniority tier a task/spec sizes into. */
+export type AoTier = "junior" | "medior" | "senior";
+
+/** Whether a sized task runs single-agent or as a supervised swarm. */
+export type AoStrategy = "single" | "swarm";
+
+/** A sample task's sizing signals for `POST /ao/routing-preview` (all optional). */
+export interface RoutingPreviewRequest {
+  kind?: string;
+  priority?: string;
+  blast_radius?: "low" | "medium" | "high" | null;
+  file_count?: number;
+  repo_count?: number;
+  requirement_count?: number;
+  acceptance_criteria_count?: number;
+  touches_contracts?: boolean;
+  touches_security?: boolean;
+  dependency_count?: number;
+  open_questions_count?: number;
+  underspecified?: boolean;
+  provider?: "anthropic" | "openai";
+}
+
+/** What tier/model/strategy the sample task in `RoutingPreviewRequest` gets. */
+export interface RoutingPreviewResponse {
+  tier: AoTier;
+  strategy: AoStrategy;
+  score: number;
+  reasons: string[];
+  model: string;
+  provider: "anthropic" | "openai";
+  junior_max: number;
+  medior_max: number;
+  auto_route_enabled: boolean;
+}

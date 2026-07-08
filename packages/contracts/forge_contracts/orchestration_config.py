@@ -33,6 +33,8 @@ from pydantic import BaseModel, ConfigDict
 __all__ = [
     "DEFAULT_ROLE_CONFIG",
     "AgentRole",
+    "AoSettingsStore",
+    "AoWorkspaceSettingsDTO",
     "EffectiveRoleConfig",
     "Effort",
     "RoleConfigOverride",
@@ -148,4 +150,60 @@ class RoleConfigStore(Protocol):
         self, workspace_id: UUID, *, project_id: UUID | None = None
     ) -> list[RoleConfigOverride]:
         """All overrides for ``workspace_id`` (optionally narrowed to one project)."""
+        ...
+
+
+class AoWorkspaceSettingsDTO(BaseModel):
+    """The workspace-wide Adaptive Orchestration settings row (``ao-settings-api``).
+
+    Distinct from :class:`RoleConfigOverride` (per-role, per-scope): this is the
+    single workspace-wide row holding the ``auto_route`` toggle, the
+    ``tier -> model`` overrides layered onto the model router's per-provider
+    defaults (``{provider: {tier: model}}``), and the complexity-score
+    thresholds a workspace may retune. ``junior_max``/``medior_max`` are
+    ``None`` when unset (the hardcoded
+    :mod:`forge_orchestration_policy.complexity` default applies) -- only the
+    resolving service fills in the effective value.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore", frozen=True)
+
+    workspace_id: UUID
+    auto_route: bool = True
+    tier_model_overrides: dict[str, dict[str, str]] = {}
+    junior_max: int | None = None
+    medior_max: int | None = None
+
+
+@runtime_checkable
+class AoSettingsStore(Protocol):
+    """Storage boundary for the one-row-per-workspace Adaptive Orchestration settings.
+
+    Pure read/upsert over the single settings row -- default-filling (the
+    hardcoded thresholds, ``auto_route=True`` when no row exists at all) is the
+    service's job, not this Protocol's.
+    """
+
+    def get_settings(self, workspace_id: UUID) -> AoWorkspaceSettingsDTO | None:
+        """The settings row for ``workspace_id``, or ``None`` when never set."""
+        ...
+
+    def upsert_settings(
+        self,
+        workspace_id: UUID,
+        *,
+        auto_route: bool | None = None,
+        tier_model_overrides: dict[str, dict[str, str]] | None = None,
+        junior_max: int | None = None,
+        medior_max: int | None = None,
+        clear_junior_max: bool = False,
+        clear_medior_max: bool = False,
+    ) -> AoWorkspaceSettingsDTO:
+        """Create or partially update the settings row for ``workspace_id``.
+
+        Every keyword defaults to "leave unchanged" (``None``) except the two
+        explicit ``clear_*`` flags, which reset the corresponding threshold back
+        to the hardcoded default -- setting a field to ``None`` cannot itself
+        mean "clear" since ``None`` also means "leave unchanged".
+        """
         ...
