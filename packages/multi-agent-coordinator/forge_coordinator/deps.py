@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from forge_agent import ExecutionPlan
 from forge_contracts import AgentRuntime, Step
 from forge_coordinator.merger import BranchMerger
 from forge_coordinator.persistence import InMemorySubAgentRunSink, SubAgentRunSink
@@ -36,3 +37,7 @@ class CoordinatorDeps:
     workspace_factory: Callable[[str], SubAgentWorkspaceManager] = _default_workspace_factory
     step_sink: Callable[[Step], None] | None = None
     audit_sink: Callable[[dict], None] | None = None
+    #: Adaptive Orchestration plan (ao-policy). When present it gates swarm
+    #: fan-out (``strategy=single`` forces a single agent), scales the review
+    #: loop budget with complexity, and pins each subagent's per-role model.
+    execution_plan: ExecutionPlan | None = None

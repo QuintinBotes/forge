@@ -60,6 +60,15 @@ from forge_contracts.enums import (
     SprintState,
 )
 
+# ao-config per-role model+effort enums are defined once in the frozen
+# contracts package (``forge_contracts.orchestration_config``) and re-exported
+# here so the SQLAlchemy column types (``enum_type(...)``) follow the local
+# ``forge_db.models.enums`` import convention.
+from forge_contracts.orchestration_config import (
+    AgentRole,
+    Effort,
+)
+
 
 class UserRole(enum.StrEnum):
     """Workspace member roles (spec: admin, member, viewer, agent-runner)."""
@@ -417,6 +426,7 @@ class ScimResourceType(enum.StrEnum):
 __all__ = [
     "APIKeyKind",
     "AccessLevel",
+    "AgentRole",
     "ApprovalGate",
     "ApprovalStatus",
     "AutomationActionType",
@@ -431,6 +441,7 @@ __all__ = [
     "DeploymentKind",
     "DeploymentState",
     "DeploymentTrigger",
+    "Effort",
     "EngineBackend",
     "ExecutionMode",
     "ExternalIdentityProvider",

@@ -187,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--group-by",
         dest="group_by",
         default="provider",
-        choices=["phase", "provider", "model", "none"],
+        choices=["phase", "provider", "model", "tier", "strategy", "none"],
     )
     summ.set_defaults(func=_cmd_summary)
 

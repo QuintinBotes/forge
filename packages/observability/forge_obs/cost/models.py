@@ -39,6 +39,12 @@ class ModelUsage(BaseModel):
     agent_run_id: UUID | None = None
     step_id: UUID | None = None
     phase: str | None = None
+    #: Adaptive Orchestration (ao-observability): the seniority tier
+    #: (junior|medior|senior) and strategy (single|swarm) the ExecutionPlan
+    #: resolved for the role that made this call. ``None`` for calls made
+    #: outside an Adaptive Orchestration plan.
+    tier: str | None = None
+    strategy: str | None = None
 
 
 class ModelPrice(BaseModel):
@@ -71,12 +77,16 @@ class CostRecord(BaseModel):
 
 
 class CostBucket(BaseModel):
-    """One breakdown bucket (phase | provider | model | day, per ``group_by``)."""
+    """One breakdown bucket (phase | provider | model | tier | strategy, per ``group_by``)."""
 
     key: str
     cost_usd: Decimal
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    #: Number of priced calls folded into this bucket (Adaptive Orchestration
+    #: ao-observability: lets a routing-decisions view show call counts, not
+    #: just spend, per tier/strategy/model).
+    request_count: int = 0
 
 
 class CostSummary(BaseModel):

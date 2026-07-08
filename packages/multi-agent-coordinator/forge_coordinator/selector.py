@@ -159,6 +159,14 @@ class DefaultPatternSelector:
             except ValueError:
                 pass
 
+        # Adaptive Orchestration (ao-policy): a ``single`` execution strategy gates
+        # the swarm off — simple work runs a single agent and never fans out.
+        # ``swarm`` leaves the table-driven selection below intact (fan-out is
+        # reached only for complex work). An explicit ``coordination_pattern``
+        # hint above still wins over the sized strategy.
+        if str(objective.context.get("ao_execution_strategy", "")).lower() == "single":
+            return CoordinationPattern.ORCHESTRATOR_WORKER
+
         has = allowed_roles.__contains__
         maker_roles = has("implementer") and has("reviewer")
         if directives.review_required and maker_roles:

@@ -7,6 +7,7 @@ Alembic's ``env.py`` and by ``Base.metadata.create_all`` in tests).
 from __future__ import annotations
 
 from forge_db.models import enums
+from forge_db.models.ao_settings import AoWorkspaceSettings
 from forge_db.models.approval import ApprovalDecision, PolicyOverrideGrant
 from forge_db.models.audit import AuditChainHead, AuditLog, AuditLogImmutableError
 from forge_db.models.automation import AutomationExecution, AutomationRule
@@ -23,6 +24,7 @@ from forge_db.models.deployment import (
 )
 from forge_db.models.enums import (
     AccessLevel,
+    AgentRole,
     APIKeyKind,
     ApprovalGate,
     ApprovalStatus,
@@ -37,6 +39,7 @@ from forge_db.models.enums import (
     DeploymentKind,
     DeploymentState,
     DeploymentTrigger,
+    Effort,
     EngineBackend,
     ExecutionMode,
     ExternalIdentityProvider,
@@ -126,6 +129,7 @@ from forge_db.models.policy_rule_evaluation import PolicyRuleEvaluation
 from forge_db.models.profiles import PolicyProfile, SkillProfile
 from forge_db.models.project import Constitution, Project
 from forge_db.models.project_team_access import ProjectTeamAccess
+from forge_db.models.role_config import AgentRoleConfig
 from forge_db.models.role_grant import RoleGrant
 from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
 from forge_db.models.sandbox import SandboxInstance
@@ -166,7 +170,10 @@ __all__ = [
     "APIKeyKind",
     "AccessLevel",
     "AgentRepoWorkspace",
+    "AgentRole",
+    "AgentRoleConfig",
     "AgentRun",
+    "AoWorkspaceSettings",
     "ApprovalDecision",
     "ApprovalGate",
     "ApprovalRequest",
@@ -195,6 +202,7 @@ __all__ = [
     "DeploymentState",
     "DeploymentTransition",
     "DeploymentTrigger",
+    "Effort",
     "EngineBackend",
     "Environment",
     "EnvironmentPipeline",

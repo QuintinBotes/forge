@@ -9,6 +9,9 @@
 
 import { deriveOnboardingProgress } from "./onboarding-progress";
 import type {
+  AgentRole,
+  AoSettingsOut,
+  AoSettingsUpdateRequest,
   ApprovalContext,
   ApprovalCount,
   ApprovalDecisionRecord,
@@ -66,9 +69,14 @@ import type {
   ProjectVisibilityInput,
   RemediationPlanView,
   RetrievedChunk,
+  RoleConfigListResponse,
+  RoleConfigOut,
+  RoleConfigUpsertRequest,
   RoleGrant,
   RoleGrantInput,
   RoleGrantQuery,
+  RoutingPreviewRequest,
+  RoutingPreviewResponse,
   RunTrace,
   ServiceInfo,
   Team,
@@ -442,6 +450,60 @@ export class ForgeApiClient {
   getCostTimeseries(query?: CostTimeseriesQuery): Promise<CostTimeseries> {
     return this.request<CostTimeseries>("/cost/timeseries", {
       query: query as RequestOptions["query"],
+    });
+  }
+
+  // --- Adaptive Orchestration settings (ao-settings-api) ------------------ //
+
+  /** Every role's effective `{model_or_tier, effort}` (optionally project-scoped). */
+  listAoRoleConfig(projectId?: string): Promise<RoleConfigListResponse> {
+    return this.request<RoleConfigListResponse>("/ao/role-config", {
+      query: projectId ? { project_id: projectId } : undefined,
+    });
+  }
+
+  /** Pin a workspace- or project-scoped override for one role (admin). */
+  upsertAoRoleConfig(
+    role: AgentRole,
+    body: RoleConfigUpsertRequest,
+    projectId?: string,
+  ): Promise<RoleConfigOut> {
+    return this.request<RoleConfigOut>(
+      `/ao/role-config/${encodeURIComponent(role)}`,
+      {
+        method: "PUT",
+        body,
+        query: projectId ? { project_id: projectId } : undefined,
+      },
+    );
+  }
+
+  /** Remove an override for one role, reverting to the next fallback (admin). */
+  deleteAoRoleConfig(role: AgentRole, projectId?: string): Promise<RoleConfigOut> {
+    return this.request<RoleConfigOut>(
+      `/ao/role-config/${encodeURIComponent(role)}`,
+      {
+        method: "DELETE",
+        query: projectId ? { project_id: projectId } : undefined,
+      },
+    );
+  }
+
+  /** Workspace-wide auto-route toggle, tier-model map, complexity thresholds. */
+  getAoSettings(): Promise<AoSettingsOut> {
+    return this.request<AoSettingsOut>("/ao/settings");
+  }
+
+  /** Update the workspace-wide Adaptive Orchestration settings (admin). */
+  updateAoSettings(body: AoSettingsUpdateRequest): Promise<AoSettingsOut> {
+    return this.request<AoSettingsOut>("/ao/settings", { method: "PUT", body });
+  }
+
+  /** What tier/model/strategy a sample task would get under this workspace's settings. */
+  previewAoRouting(body: RoutingPreviewRequest): Promise<RoutingPreviewResponse> {
+    return this.request<RoutingPreviewResponse>("/ao/routing-preview", {
+      method: "POST",
+      body,
     });
   }
 

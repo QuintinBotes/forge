@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from forge_agent.providers import effort as effort_map
 from forge_contracts import (
     ModelRequest,
     ModelResponse,
@@ -76,7 +77,9 @@ def anthropic_stream_kwargs(
     """Build the kwargs for ``client.messages.stream(...)``.
 
     Uses adaptive thinking + ``output_config.effort`` per the claude-api guidance
-    (no ``budget_tokens``/``temperature`` — those 400 on Opus 4.8). When
+    (no ``budget_tokens``/``temperature`` — those 400 on Opus 4.8). The ao-config
+    effort level is mapped to a valid Claude ``effort`` via
+    :func:`forge_agent.providers.effort.anthropic_effort` (ao-effort). When
     ``prompt_cache`` is on, the stable system prompt carries a ``cache_control``
     breakpoint so re-sent turns read it from cache.
     """
@@ -85,7 +88,7 @@ def anthropic_stream_kwargs(
         "max_tokens": max_tokens,
         "messages": _anthropic_messages(request),
         "thinking": {"type": "adaptive"},
-        "output_config": {"effort": effort},
+        "output_config": {"effort": effort_map.anthropic_effort(effort)},
     }
     system = request.system
     if system:
@@ -203,13 +206,23 @@ def _openai_messages(request: ModelRequest) -> list[dict[str, Any]]:
     return messages
 
 
-def openai_create_kwargs(request: ModelRequest, *, model: str, max_tokens: int) -> dict[str, Any]:
-    """Build the kwargs for ``client.chat.completions.stream(...)``."""
+def openai_create_kwargs(
+    request: ModelRequest, *, model: str, max_tokens: int, effort: Any = "high"
+) -> dict[str, Any]:
+    """Build the kwargs for ``client.chat.completions.stream(...)``.
+
+    The ao-config effort level is mapped to OpenAI's ``reasoning_effort`` via
+    :func:`forge_agent.providers.effort.openai_reasoning_effort` (ao-effort), but
+    only for reasoning models (``o*`` / ``gpt-5``) — non-reasoning models reject
+    the parameter with a 400.
+    """
     kwargs: dict[str, Any] = {
         "model": model,
         "messages": _openai_messages(request),
         "max_tokens": max_tokens,
     }
+    if effort_map.openai_supports_reasoning_effort(model):
+        kwargs["reasoning_effort"] = effort_map.openai_reasoning_effort(effort)
     if request.tools:
         kwargs["tools"] = to_openai_tools(request.tools)
     if request.stop:
