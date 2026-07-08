@@ -122,6 +122,43 @@ describe("ObservabilityView", () => {
     );
   });
 
+  it("switches the breakdown dimension to Adaptive Orchestration tier", async () => {
+    const client = makeClient();
+    renderView(client);
+    await screen.findByTestId("cost-breakdown");
+
+    fireEvent.click(screen.getByRole("button", { name: "Tier" }));
+
+    await waitFor(() =>
+      expect(client.getCostSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ group_by: "tier" }),
+      ),
+    );
+  });
+
+  it("shows call counts alongside tokens per breakdown row", async () => {
+    renderView(
+      makeClient({
+        getCostSummary: vi.fn(() =>
+          Promise.resolve({
+            ...SUMMARY,
+            buckets: [
+              {
+                key: "senior",
+                cost_usd: "0.30",
+                prompt_tokens: 800,
+                completion_tokens: 500,
+                request_count: 3,
+              },
+            ],
+          }),
+        ),
+      }),
+    );
+    const breakdown = await screen.findByTestId("cost-breakdown");
+    expect(breakdown).toHaveTextContent("3 calls");
+  });
+
   it("reveals the spend-over-time data table for accessibility", async () => {
     renderView(makeClient());
     await screen.findByTestId("cost-trend");

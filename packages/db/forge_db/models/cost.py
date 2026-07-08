@@ -114,6 +114,7 @@ class CostEvent(WorkspaceScopedModel):
             "occurred_at",
         ),
         Index("ix_cost_event_phase_time", "workspace_id", "phase", "occurred_at"),
+        Index("ix_cost_event_tier_time", "workspace_id", "tier", "occurred_at"),
     )
 
     project_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -131,6 +132,12 @@ class CostEvent(WorkspaceScopedModel):
     # Correlates to the step id inside agent_run.steps JSON (no step table exists).
     step_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     phase: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Adaptive Orchestration (ao-observability): the seniority tier
+    # (junior|medior|senior) and strategy (single|swarm) the ExecutionPlan
+    # resolved for the role that made this call — NULL for calls made outside
+    # an Adaptive Orchestration plan (e.g. the cost CLI's ad-hoc commands).
+    tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    strategy: Mapped[str | None] = mapped_column(String(16), nullable=True)
     kind: Mapped[CostEventKind] = mapped_column(enum_type(CostEventKind), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     model: Mapped[str] = mapped_column(String(255), nullable=False)

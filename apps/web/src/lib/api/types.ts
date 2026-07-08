@@ -793,16 +793,24 @@ export interface IncidentEventRequest {
 /** Aggregation scope for a cost query. */
 export type CostScope = "workspace" | "project" | "task";
 /** Breakdown dimension for a summary/timeseries. */
-export type CostGroupBy = "phase" | "provider" | "model" | "none";
+export type CostGroupBy =
+  | "phase"
+  | "provider"
+  | "model"
+  | "tier"
+  | "strategy"
+  | "none";
 /** Time-bucket granularity for a timeseries. */
 export type CostBucketSize = "hour" | "day" | "week";
 
-/** One breakdown bucket (keyed by phase | provider | model, per `group_by`). */
+/** One breakdown bucket (keyed by phase | provider | model | tier | strategy, per `group_by`). */
 export interface CostBucket {
   key: string;
   cost_usd: string | number;
   prompt_tokens: number;
   completion_tokens: number;
+  /** Number of priced calls folded into this bucket. */
+  request_count?: number;
 }
 
 /** Aggregate spend for a scope, with a grouped breakdown (GET /cost/summary). */

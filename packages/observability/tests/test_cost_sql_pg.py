@@ -234,6 +234,52 @@ def test_sql_reader_summary_and_timeseries_agree(factory, seeded) -> None:
     assert empty.total_cost_usd == Decimal(0)
 
 
+def test_sql_reader_groups_by_tier_and_strategy(factory, seeded) -> None:
+    """Adaptive Orchestration (ao-observability): cost-by-tier over the real table."""
+    ledger = SqlCostLedger(factory)
+    ledger.upsert_event(
+        _usage(seeded, "r1", tier="medior", strategy="single"),
+        cost=Decimal("0.04"),
+        price_id=None,
+    )
+    ledger.upsert_event(
+        _usage(seeded, "r2", tier="senior", strategy="swarm"),
+        cost=Decimal("0.28"),
+        price_id=None,
+    )
+
+    reader = SqlCostReader(factory)
+    with factory() as session:
+        rows = session.scalars(select(CostEvent)).all()
+        by_request = {r.request_id: r for r in rows}
+        assert by_request["r1"].tier == "medior"
+        assert by_request["r1"].strategy == "single"
+
+    by_tier = reader.summary(
+        workspace_id=seeded["ws"],
+        scope="task",
+        scope_id=seeded["task"],
+        group_by="tier",
+        frm=None,
+        to=None,
+    )
+    tier_keys = {b.key: b.cost_usd for b in by_tier.buckets}
+    assert tier_keys == {"medior": Decimal("0.04"), "senior": Decimal("0.28")}
+    counts = {b.key: b.request_count for b in by_tier.buckets}
+    assert counts == {"medior": 1, "senior": 1}
+
+    by_strategy = reader.summary(
+        workspace_id=seeded["ws"],
+        scope="task",
+        scope_id=seeded["task"],
+        group_by="strategy",
+        frm=None,
+        to=None,
+    )
+    strategy_keys = {b.key: b.cost_usd for b in by_strategy.buckets}
+    assert strategy_keys == {"single": Decimal("0.04"), "swarm": Decimal("0.28")}
+
+
 def test_sql_reprice_updates_only_changed_rows(factory, seeded) -> None:
     """AC15: recompute cost_usd from the price in force; idempotent."""
     ledger = SqlCostLedger(factory)

@@ -20,13 +20,40 @@ DAY0 = datetime(2026, 7, 1, 9, 0, tzinfo=UTC)
 
 def _seed(ledger: InMemoryCostLedger) -> None:
     rows = [
-        # (request, provider, model, phase, occurred, cost)
-        ("r1", "anthropic", "sonnet", "spec_drafting", DAY0, "0.04"),
-        ("r2", "anthropic", "sonnet", "executing", DAY0 + timedelta(hours=2), "0.28"),
-        ("r3", "openai", "embed", "executing", DAY0 + timedelta(days=1), "0.06"),
-        ("r4", "anthropic", "sonnet", "verifying", DAY0 + timedelta(days=1, hours=3), "0.05"),
+        # (request, provider, model, phase, tier, strategy, occurred, cost)
+        ("r1", "anthropic", "sonnet", "spec_drafting", "medior", "single", DAY0, "0.04"),
+        (
+            "r2",
+            "anthropic",
+            "sonnet",
+            "executing",
+            "medior",
+            "single",
+            DAY0 + timedelta(hours=2),
+            "0.28",
+        ),
+        (
+            "r3",
+            "openai",
+            "embed",
+            "executing",
+            "senior",
+            "swarm",
+            DAY0 + timedelta(days=1),
+            "0.06",
+        ),
+        (
+            "r4",
+            "anthropic",
+            "sonnet",
+            "verifying",
+            None,
+            None,
+            DAY0 + timedelta(days=1, hours=3),
+            "0.05",
+        ),
     ]
-    for request_id, provider, model, phase, occurred, cost in rows:
+    for request_id, provider, model, phase, tier, strategy, occurred, cost in rows:
         ledger.upsert_event(
             ModelUsage(
                 workspace_id=WS,
@@ -40,6 +67,8 @@ def _seed(ledger: InMemoryCostLedger) -> None:
                 project_id=PROJECT,
                 task_id=TASK,
                 phase=phase,
+                tier=tier,
+                strategy=strategy,
             ),
             cost=Decimal(cost),
             price_id=None,
@@ -53,7 +82,7 @@ def ledger() -> InMemoryCostLedger:
     return ledger
 
 
-@pytest.mark.parametrize("group_by", ["phase", "provider", "model", "none"])
+@pytest.mark.parametrize("group_by", ["phase", "provider", "model", "tier", "strategy", "none"])
 def test_summary_bucket_sums_match_total(ledger, group_by) -> None:
     summary = ledger.summary(
         workspace_id=WS, scope="task", scope_id=TASK, group_by=group_by, frm=None, to=None
@@ -62,6 +91,34 @@ def test_summary_bucket_sums_match_total(ledger, group_by) -> None:
     assert sum(b.cost_usd for b in summary.buckets) == summary.total_cost_usd
     assert summary.total_prompt_tokens == 4000
     assert summary.total_completion_tokens == 400
+    assert sum(b.request_count for b in summary.buckets) == 4
+
+
+def test_summary_by_tier_buckets(ledger) -> None:
+    """Adaptive Orchestration: cost-by-tier, with a NULL tier bucketed as unknown."""
+    summary = ledger.summary(
+        workspace_id=WS, scope="task", scope_id=TASK, group_by="tier", frm=None, to=None
+    )
+    by_key = {b.key: b.cost_usd for b in summary.buckets}
+    assert by_key == {
+        "medior": Decimal("0.04") + Decimal("0.28"),
+        "senior": Decimal("0.06"),
+        "unknown": Decimal("0.05"),
+    }
+    counts = {b.key: b.request_count for b in summary.buckets}
+    assert counts == {"medior": 2, "senior": 1, "unknown": 1}
+
+
+def test_summary_by_strategy_buckets(ledger) -> None:
+    summary = ledger.summary(
+        workspace_id=WS, scope="task", scope_id=TASK, group_by="strategy", frm=None, to=None
+    )
+    by_key = {b.key: b.cost_usd for b in summary.buckets}
+    assert by_key == {
+        "single": Decimal("0.04") + Decimal("0.28"),
+        "swarm": Decimal("0.06"),
+        "unknown": Decimal("0.05"),
+    }
 
 
 def test_summary_by_phase_buckets(ledger) -> None:
