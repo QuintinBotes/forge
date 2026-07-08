@@ -26,6 +26,7 @@ members = [
     "forge-mcp",
     "forge-mcp-gateway",
     "forge-obs",
+    "forge-orchestration-policy",
     "forge-policy",
     "forge-skill",
     "forge-spec",
@@ -772,6 +773,7 @@ dependencies = [
     { name = "forge-mcp" },
     { name = "forge-mcp-gateway" },
     { name = "forge-obs" },
+    { name = "forge-orchestration-policy" },
     { name = "forge-policy" },
     { name = "forge-skill" },
     { name = "forge-spec" },
@@ -815,6 +817,7 @@ requires-dist = [
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
     { name = "forge-mcp-gateway", editable = "apps/mcp-gateway" },
     { name = "forge-obs", editable = "packages/observability" },
+    { name = "forge-orchestration-policy", editable = "packages/orchestration-policy" },
     { name = "forge-policy", editable = "packages/policy-sdk" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-spec", editable = "packages/spec-engine" },
@@ -846,6 +849,7 @@ source = { editable = "packages/agent-runtime" }
 dependencies = [
     { name = "docker" },
     { name = "forge-contracts" },
+    { name = "forge-orchestration-policy" },
     { name = "langgraph" },
 ]
 
@@ -860,6 +864,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.49" },
     { name = "docker", specifier = ">=7.1,<8" },
     { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "forge-orchestration-policy", editable = "packages/orchestration-policy" },
     { name = "langgraph", specifier = ">=1.2,<2" },
     { name = "openai", marker = "extra == 'providers'", specifier = ">=1.60" },
 ]
@@ -1218,6 +1223,21 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.29" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "sqlalchemy", specifier = ">=2.0" },
+]
+
+[[package]]
+name = "forge-orchestration-policy"
+version = "0.1.0"
+source = { editable = "packages/orchestration-policy" }
+dependencies = [
+    { name = "forge-contracts" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "pydantic", specifier = ">=2.0" },
 ]
 
 [[package]]

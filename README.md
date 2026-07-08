@@ -4,9 +4,14 @@
 > a sandboxed agent runtime, hybrid knowledge retrieval, and a native project
 > board, all on one Postgres-backed platform you run yourself.
 
-<!-- Badge placeholders — replace QuintinBotes/forge with your repository slug before publishing. -->
+> ⚠️ **Under active development — pre-1.0, not production-ready.** Forge is shared
+> openly for **evaluation and testing**, not for production use yet. Expect rough
+> edges, changing APIs, and features that are API/CLI-first with their UI or live
+> integrations still landing. Read **[Status](#status)** for the honest per-area
+> state before you rely on it, and please contribute via pull request.
+
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
-[![CI](https://img.shields.io/badge/CI-see%20Actions-lightgrey.svg)](../../actions)
+[![CI](https://github.com/QuintinBotes/forge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/QuintinBotes/forge/actions/workflows/ci.yml)
 [![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0%20(active)-orange.svg)](#status)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776AB.svg)](./.python-version)
 
@@ -19,15 +24,22 @@ Compose stack (or a Helm chart) that you own end to end.
 
 ## Status
 
-Forge is **pre-1.0 and under active development**. The backend platform, its
-HTTP API, the CLI, the workflow/agent runtime, and the self-hosting substrate
-are the mature surface and are exercised by a large test suite (real pgvector
-Postgres in CI). The **web UI (`apps/web`) is early** — the app-router shell,
-board, and command palette exist, but most feature screens are still being
-built out on top of the API. Where a feature below is API/CLI-first with its UI
-still landing, it is marked **(UI in progress)**. We try hard not to advertise
-anything that is only parked; see [`docs/SLICES_PROGRESS.md`](./docs/SLICES_PROGRESS.md)
-for the honest per-feature ledger.
+Forge is **pre-1.0 and under active development** — usable for evaluation and
+self-host testing, **not yet for production**. The backend platform, HTTP API,
+CLI, workflow/agent runtime, and self-hosting substrate are the mature surface,
+exercised by a large test suite (~3,700 tests on real pgvector Postgres, green
+in CI). The **web UI ships 15 feature screens** (board, approvals, run-trace
+viewer, spec dashboard, marketplace, incidents, observability, sprints, audit,
+deployment gates, SSO/SCIM, RBAC admin, PM integrations, workflow editor, and a
+guided walkthrough) on the Forge design system. Some screens carry **honestly
+marked gaps** where a backend projection or live credential is still landing
+(e.g. live real-time updates, a couple of dashboard projections, OIDC), and the
+third-party integrations (GitHub App, model BYOK, reranker, MCP, Slack) are
+code-complete with tests + runbooks but need **your keys** to verify live. We
+try hard not to advertise anything that is only parked; see
+[`docs/SLICES_PROGRESS.md`](./docs/SLICES_PROGRESS.md) and
+[`docs/FRONTEND_PROGRESS.md`](./docs/FRONTEND_PROGRESS.md) for the honest
+per-feature ledger.
 
 ## Key features
 

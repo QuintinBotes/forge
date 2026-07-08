@@ -25,6 +25,7 @@ TASKS_DATA_FILENAME = "tasks.yaml"
 VALIDATION_FILENAME = "validation.md"
 DECISIONS_FILENAME = "decisions.md"
 CONSTITUTION_FILENAME = "constitution.md"
+CONSTITUTION_DATA_FILENAME = "constitution.yaml"
 VERIFICATION_FILENAME = "verification.yaml"
 
 
@@ -53,6 +54,7 @@ def load_manifest(text: str) -> SpecManifest:
 
 __all__ = [
     "CLARIFY_FILENAME",
+    "CONSTITUTION_DATA_FILENAME",
     "CONSTITUTION_FILENAME",
     "DECISIONS_FILENAME",
     "MANIFEST_FILENAME",

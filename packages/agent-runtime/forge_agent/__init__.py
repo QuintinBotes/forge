@@ -19,16 +19,21 @@ from forge_agent.multi_repo import MultiRepoWorkspace, WorktreeHandle
 from forge_agent.policy_gate import ActionPolicyGate, PolicyEvaluatorGate, PolicyGate
 from forge_agent.policy_guard import MultiRepoPolicyGuard
 from forge_agent.providers import (
+    DEFAULT_TIER_MODELS,
     MODEL_PRICING,
     AnthropicModelClient,
     ModelClientConfig,
     ModelClientError,
     ModelClientUnavailable,
+    ModelRouter,
     OpenAIModelClient,
     ProviderName,
+    RouteDecision,
     UsageAccumulator,
     build_model_client,
+    classify_tier,
     cost_usd,
+    route,
 )
 from forge_agent.runtime import AgentRunner
 from forge_agent.sandbox import SandboxError, WorktreeSandbox, load_agents_md
@@ -45,6 +50,7 @@ from forge_agent.tools import (
 __version__ = "0.1.0"
 
 __all__ = [
+    "DEFAULT_TIER_MODELS",
     "END",
     "FINISH_TOOL",
     "MODEL_PRICING",
@@ -57,12 +63,14 @@ __all__ = [
     "ModelClientConfig",
     "ModelClientError",
     "ModelClientUnavailable",
+    "ModelRouter",
     "MultiRepoPolicyGuard",
     "MultiRepoWorkspace",
     "OpenAIModelClient",
     "PolicyEvaluatorGate",
     "PolicyGate",
     "ProviderName",
+    "RouteDecision",
     "SandboxError",
     "StateGraph",
     "Tool",
@@ -74,8 +82,10 @@ __all__ = [
     "WorktreeSandbox",
     "build_model_client",
     "build_system_prompt",
+    "classify_tier",
     "cost_usd",
     "default_tool_registry",
     "load_agents_md",
+    "route",
     "skill_profile_directives",
 ]
