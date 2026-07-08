@@ -27,6 +27,7 @@ import type {
   ChainVerifyResult,
   BurndownSeries,
   CompleteSprintRequest,
+  Constitution,
   DeploymentDecisionRequest,
   DeploymentDetail,
   DeploymentListQuery,
@@ -68,6 +69,7 @@ import type {
   ProjectTeamAccessInput,
   ProjectVisibilityInput,
   RemediationPlanView,
+  Requirement,
   RetrievedChunk,
   RoleConfigListResponse,
   RoleConfigOut,
@@ -91,6 +93,7 @@ import type {
   SprintReport,
   TaskDTO,
   TaskStatus,
+  ValidationReport,
   VelocityDashboard,
   HrdDiscoverRequest,
   HrdDiscoverResponse,
@@ -399,11 +402,99 @@ export class ForgeApiClient {
     );
   }
 
+  /** Create a draft spec for an epic (SDD lifecycle entry point). */
+  createSpec(body: {
+    epic_id: string;
+    name: string;
+    requirements?: Requirement[];
+  }): Promise<SpecManifest> {
+    return this.request<SpecManifest>("/spec/specs", { method: "POST", body });
+  }
+
+  /**
+   * Read a spec's ``spec.md`` prose serialization — one of the two
+   * first-class editable formats (kept in sync with `manifest.yaml`).
+   */
+  getSpecMarkdown(specId: string): Promise<string> {
+    return this.request<string>(
+      `/spec/specs/${encodeURIComponent(specId)}/markdown`,
+    );
+  }
+
+  /** Save a spec edited as ``spec.md`` prose; re-renders `manifest.yaml` to match. */
+  putSpecMarkdown(specId: string, content: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/markdown`,
+      { method: "PUT", body: { content } },
+    );
+  }
+
+  /**
+   * Read a spec's ``manifest.yaml`` serialization — the precise machine/CI/agent
+   * format (kept in sync with `spec.md`).
+   */
+  getSpecManifestYaml(specId: string): Promise<string> {
+    return this.request<string>(
+      `/spec/specs/${encodeURIComponent(specId)}/manifest`,
+    );
+  }
+
+  /**
+   * Save a spec edited (or created) as ``manifest.yaml``; re-renders `spec.md`
+   * to match. Both formats are first-class: a spec can be created and edited
+   * from either.
+   */
+  putSpecManifestYaml(specId: string, content: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/manifest`,
+      { method: "PUT", body: { content } },
+    );
+  }
+
+  /** Run the clarification pass: surface + resolve open questions. */
+  clarifySpec(specId: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/clarify`,
+      { method: "POST" },
+    );
+  }
+
+  /** Generate the technical plan + ADRs. */
+  planSpec(specId: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/plan`,
+      { method: "POST" },
+    );
+  }
+
   /** Approve a spec — the human gate that advances it out of clarification. */
   approveSpec(specId: string): Promise<SpecManifest> {
     return this.request<SpecManifest>(
       `/spec/specs/${encodeURIComponent(specId)}/approve`,
       { method: "POST" },
+    );
+  }
+
+  /** Generate implementation tasks from an *approved* spec (409 if not). */
+  generateTasks(specId: string): Promise<TaskDTO[]> {
+    return this.request<TaskDTO[]>(
+      `/spec/specs/${encodeURIComponent(specId)}/tasks`,
+      { method: "POST" },
+    );
+  }
+
+  /** Validate a task against its spec (requirement-to-test traceability). */
+  validateTask(taskId: string): Promise<ValidationReport> {
+    return this.request<ValidationReport>(
+      `/spec/tasks/${encodeURIComponent(taskId)}/validate`,
+      { method: "POST" },
+    );
+  }
+
+  /** Read a project's constitution (404 if it was never initialised). */
+  getConstitution(projectId: string): Promise<Constitution> {
+    return this.request<Constitution>(
+      `/spec/constitution/${encodeURIComponent(projectId)}`,
     );
   }
 

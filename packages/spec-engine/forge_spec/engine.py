@@ -300,6 +300,17 @@ class FileSpecEngine:
         _, manifest = self._resolve(spec_id)
         return render_spec_md(manifest)
 
+    def read_manifest_yaml(self, spec_id: uuid.UUID) -> str:
+        """Return the spec's ``manifest.yaml`` serialization (always in sync).
+
+        The YAML counterpart of :meth:`read_spec_md`: rendered from the
+        canonical manifest so callers get a consistent view even when only
+        ``spec.md`` exists on disk (md-only back-compat) or the two had
+        diverged and were reconciled.
+        """
+        _, manifest = self._resolve(spec_id)
+        return manifest_io.dump_manifest(manifest)
+
     def save_spec_md(self, text: str) -> SpecManifest:
         """Save a spec edited as ``spec.md`` prose (create or update).
 

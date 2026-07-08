@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from forge_api.auth.rbac import Permission
@@ -131,6 +132,12 @@ class SpecCreateRequest(BaseModel):
     requirements: list[Requirement] = Field(default_factory=list)
 
 
+class TextContent(BaseModel):
+    """Body for the ``spec.md`` / ``manifest.yaml`` write endpoints."""
+
+    content: str
+
+
 # --------------------------------------------------------------------------- #
 # Routes                                                                      #
 # --------------------------------------------------------------------------- #
@@ -170,6 +177,71 @@ def write_manifest(engine: EngineDep, spec_id: uuid.UUID, manifest: SpecManifest
     """Persist (create or update) a spec manifest."""
     with _spec_errors():
         return engine.write_manifest(manifest)
+
+
+@router.get(
+    "/specs/{spec_id}/markdown",
+    dependencies=[ReadGate],
+    response_class=PlainTextResponse,
+)
+def read_spec_markdown(engine: EngineDep, spec_id: uuid.UUID) -> PlainTextResponse:
+    """Read the spec's ``spec.md`` prose serialization (always kept in sync)."""
+    with _spec_errors():
+        text = engine.read_spec_md(spec_id)
+    return PlainTextResponse(text)
+
+
+@router.put("/specs/{spec_id}/markdown", response_model=SpecManifest, dependencies=[WriteGate])
+def write_spec_markdown(engine: EngineDep, spec_id: uuid.UUID, body: TextContent) -> SpecManifest:
+    """Save a spec edited as ``spec.md`` prose; re-renders ``manifest.yaml`` to match.
+
+    The spec being edited must already exist at ``spec_id`` (404 otherwise);
+    the document's own frontmatter id governs which spec is written, mirroring
+    ``PUT /spec/specs/{spec_id}``.
+    """
+    with _spec_errors():
+        engine.read_manifest(spec_id)
+        return engine.save_spec_md(body.content)
+
+
+@router.get(
+    "/specs/{spec_id}/manifest",
+    dependencies=[ReadGate],
+    response_class=PlainTextResponse,
+)
+def read_spec_manifest_yaml(engine: EngineDep, spec_id: uuid.UUID) -> PlainTextResponse:
+    """Read the spec's ``manifest.yaml`` serialization (always kept in sync)."""
+    with _spec_errors():
+        text = engine.read_manifest_yaml(spec_id)
+    return PlainTextResponse(text)
+
+
+@router.put("/specs/{spec_id}/manifest", response_model=SpecManifest, dependencies=[WriteGate])
+def write_spec_manifest_yaml(
+    engine: EngineDep, spec_id: uuid.UUID, body: TextContent
+) -> SpecManifest:
+    """Save a spec edited as ``manifest.yaml``; re-renders ``spec.md`` to match.
+
+    Unlike the markdown endpoint, this may also *create* a new spec: when no
+    spec resolves to ``spec_id`` yet, the YAML's own id governs where it is
+    written (mirroring ``PUT /spec/specs/{spec_id}``'s create-or-update
+    semantics).
+    """
+    with _spec_errors():
+        return engine.save_manifest_yaml(body.content)
+
+
+@router.get(
+    "/constitution/{project_id}",
+    response_model=Constitution,
+    dependencies=[ReadGate],
+)
+def read_constitution(engine: EngineDep, project_id: uuid.UUID) -> Constitution:
+    """Read a project's constitution; 404 if it was never initialised."""
+    constitution = engine.read_constitution(project_id)
+    if constitution is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="constitution not found")
+    return constitution
 
 
 @router.post("/specs/{spec_id}/clarify", response_model=SpecManifest, dependencies=[WriteGate])
@@ -291,6 +363,7 @@ __all__ = [
     "SpecDashboard",
     "SpecEngineRegistry",
     "SpecOverview",
+    "TextContent",
     "get_spec_engine",
     "get_spec_registry",
     "project_router",
