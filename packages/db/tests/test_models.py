@@ -148,6 +148,8 @@ EXPECTED_MODELS = [
     # response cache (the store behind ``IdempotencyMiddleware``). Not tenant-
     # scoped — the tenant is baked into the ``key`` (anonymous scopes by client IP).
     "IdempotencyKey",
+    # ao-config: per-role model+effort override store (Adaptive Orchestration).
+    "AgentRoleConfig",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
