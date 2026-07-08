@@ -13,7 +13,7 @@ dependencies = [
     "pyyaml>=6.0",
     # F25 — Temporal durable workflow engine (V2). Pinned exactly: the Workflow
     # Update API + time-skipping WorkflowEnvironment are version-sensitive.
-    "temporalio==1.29.0",
+    "temporalio==1.30.0",
     # F25 — RedactingEncryptionCodec AES-GCM encryption of Temporal payloads.
     "cryptography>=43",
 ]
