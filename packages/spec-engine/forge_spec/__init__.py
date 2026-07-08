@@ -54,6 +54,7 @@ from forge_spec.ids import (
     task_key,
 )
 from forge_spec.manifest import dump_manifest, load_manifest, manifest_to_dict
+from forge_spec.markdown import SpecParseError, parse_spec_md, render_spec_md
 from forge_spec.projection import (
     EvidencePort,
     InMemoryProjectionRepository,
@@ -87,6 +88,7 @@ __all__ = [
     "ProjectionRepository",
     "SpecEngineService",
     "SpecNotFoundError",
+    "SpecParseError",
     "SpecSourcePort",
     "SpecTraceabilityMatrix",
     "SpecValidationRow",
@@ -108,6 +110,8 @@ __all__ = [
     "generate_tasks",
     "load_manifest",
     "manifest_to_dict",
+    "parse_spec_md",
+    "render_spec_md",
     "slugify",
     "spec_dirname",
     "spec_id_for_key",
