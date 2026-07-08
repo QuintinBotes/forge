@@ -29,6 +29,7 @@ dependencies = [
     "forge-api",
     "forge-worker",
     "forge-mcp-gateway",
+    "forge-orchestration-policy",
 ]
 
 [dependency-groups]
@@ -84,6 +85,7 @@ forge-obs = { workspace = true }
 forge-api = { workspace = true }
 forge-worker = { workspace = true }
 forge-mcp-gateway = { workspace = true }
+forge-orchestration-policy = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages", "apps", "deploy"]
@@ -131,8 +133,8 @@ skips = ["B101"]
 # The root ``[project].version`` above is the ONE true version (``pep621``
 # provider). ``cz bump`` reads the conventional-commit history since the last
 # ``v$version`` tag, computes the next SemVer, and rewrites the version in EVERY
-# file listed in ``version_files`` in lockstep (all 22 member ``pyproject.toml``,
-# all 22 package ``__init__.__version__``, both ``package.json``, and the compose
+# file listed in ``version_files`` in lockstep (all 23 member ``pyproject.toml``,
+# all 23 package ``__init__.__version__``, both ``package.json``, and the compose
 # ``FORGE_VERSION`` default), regenerates ``CHANGELOG.md``, commits, and tags.
 #
 # ``major_version_zero = true``: we are pre-1.0, so ``feat`` bumps the minor and a
@@ -164,6 +166,7 @@ version_files = [
     "packages/mcp-sdk/pyproject.toml:^version",
     "packages/multi-agent-coordinator/pyproject.toml:^version",
     "packages/observability/pyproject.toml:^version",
+    "packages/orchestration-policy/pyproject.toml:^version",
     "packages/policy-sdk/pyproject.toml:^version",
     "packages/skill-sdk/pyproject.toml:^version",
     "packages/spec-engine/pyproject.toml:^version",
@@ -186,6 +189,7 @@ version_files = [
     "packages/mcp-sdk/forge_mcp/__init__.py:__version__",
     "packages/multi-agent-coordinator/forge_coordinator/__init__.py:__version__",
     "packages/observability/forge_obs/__init__.py:__version__",
+    "packages/orchestration-policy/forge_orchestration_policy/__init__.py:__version__",
     "packages/policy-sdk/forge_policy/__init__.py:__version__",
     "packages/skill-sdk/forge_skill/__init__.py:__version__",
     "packages/spec-engine/forge_spec/__init__.py:__version__",
