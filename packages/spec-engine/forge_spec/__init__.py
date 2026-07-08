@@ -42,7 +42,7 @@ from forge_spec.engine import (
     DEFAULT_PRINCIPLES,
     FileSpecEngine,
 )
-from forge_spec.errors import SpecNotFoundError
+from forge_spec.errors import SpecNotFoundError, SpecReconcileWarning
 from forge_spec.gates import IMPLEMENTABLE_STATUSES, check_implementation_gate
 from forge_spec.ids import (
     constitution_id_for,
@@ -89,6 +89,7 @@ __all__ = [
     "SpecEngineService",
     "SpecNotFoundError",
     "SpecParseError",
+    "SpecReconcileWarning",
     "SpecSourcePort",
     "SpecTraceabilityMatrix",
     "SpecValidationRow",
