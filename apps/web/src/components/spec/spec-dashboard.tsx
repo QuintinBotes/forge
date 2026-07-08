@@ -5,6 +5,7 @@ import {
   FileText,
   Landmark,
   ListChecks,
+  Pencil,
   Route,
   ShieldCheck,
   Stamp,
@@ -21,6 +22,7 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
+import { SpecStudio } from "@/components/spec-studio/spec-studio";
 import { Button } from "@/components/ui/button";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { useApproveSpec, useSpecOverview } from "@/lib/api/spec";
@@ -43,12 +45,13 @@ import { TraceabilityMatrix } from "./traceability-matrix";
 /** Placeholder project until project routing lands (F02). */
 export const DEFAULT_PROJECT_ID = "default";
 
-type TabId = "traceability" | "manifest" | "constitution";
+type TabId = "traceability" | "manifest" | "constitution" | "studio";
 
 const TABS: { id: TabId; label: string; icon: typeof Route }[] = [
   { id: "traceability", label: "Traceability", icon: Route },
   { id: "manifest", label: "Manifest", icon: FileText },
   { id: "constitution", label: "Constitution", icon: Landmark },
+  { id: "studio", label: "Studio", icon: Pencil },
 ];
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -241,6 +244,7 @@ export function SpecDashboard({
                   {tab === "constitution" ? (
                     <ConstitutionPanel constitution={constitution} />
                   ) : null}
+                  {tab === "studio" ? <SpecStudio specId={selected.id} client={client} /> : null}
                 </div>
               </div>
             </div>

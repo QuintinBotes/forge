@@ -402,6 +402,18 @@ export class ForgeApiClient {
     );
   }
 
+  /**
+   * Persist a full spec manifest (Spec Studio's Guided mode save path).
+   * Re-renders both `spec.md` and `manifest.yaml` to match, same as the
+   * markdown/YAML save endpoints.
+   */
+  putSpecManifest(specId: string, manifest: SpecManifest): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}`,
+      { method: "PUT", body: manifest },
+    );
+  }
+
   /** Create a draft spec for an epic (SDD lifecycle entry point). */
   createSpec(body: {
     epic_id: string;

@@ -84,6 +84,25 @@ describe("ForgeApiClient spec-engine surface", () => {
     expect(yaml).toContain("Billing v2");
   });
 
+  it("putSpecManifest persists the full manifest (Guided mode save path)", async () => {
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("PUT");
+      return Promise.resolve(json({ id: "SPEC-1", name: "Renamed", status: "draft" }));
+    });
+    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+
+    const updated = await client.putSpecManifest("spec-uuid-1", {
+      id: "SPEC-1",
+      name: "Renamed",
+      status: "draft",
+    });
+
+    expect(updated.name).toBe("Renamed");
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toContain("/spec/specs/spec-uuid-1");
+    expect(JSON.parse(init?.body as string)).toMatchObject({ name: "Renamed" });
+  });
+
   it("drives clarify -> plan -> approve -> generateTasks -> validateTask", async () => {
     const fetchImpl = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
