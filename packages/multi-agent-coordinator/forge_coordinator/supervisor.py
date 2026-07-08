@@ -141,6 +141,7 @@ class Supervisor:
             base_sha=base_sha,
             ws_manager=ws_manager,
             review_loop_budget=self._deps.settings.review_loop_budget,
+            execution_plan=self._deps.execution_plan,
         )
 
 

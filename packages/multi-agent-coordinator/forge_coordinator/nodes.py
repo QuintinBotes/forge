@@ -27,6 +27,7 @@ from forge_contracts import (
     SubAgentResult,
     SubAgentRole,
 )
+from forge_contracts.orchestration_config import AgentRole
 from forge_coordinator.aggregate import aggregate_confidence, validate_acceptance
 from forge_coordinator.artifacts import build_subagent_result, normalize_artifact_to_chunks
 from forge_coordinator.deps import CoordinatorDeps
@@ -44,6 +45,18 @@ __all__ = [
     "select_pattern",
     "validate_node",
 ]
+
+#: Map each coordinator :class:`SubAgentRole` to the Adaptive Orchestration
+#: :class:`AgentRole` whose configured model/effort it runs under (ao-policy).
+#: Researchers/planners plan; implementers/testers code; reviewers/security review.
+_AO_ROLE_BY_SUBAGENT: dict[SubAgentRole, AgentRole] = {
+    SubAgentRole.PLANNER: AgentRole.PLANNER,
+    SubAgentRole.RESEARCHER: AgentRole.PLANNER,
+    SubAgentRole.IMPLEMENTER: AgentRole.CODER,
+    SubAgentRole.TESTER: AgentRole.CODER,
+    SubAgentRole.REVIEWER: AgentRole.REVIEWER,
+    SubAgentRole.SECURITY: AgentRole.REVIEWER,
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -124,6 +137,17 @@ def _prepare(
         branch_name=branch_name,
     )
 
+    # Adaptive Orchestration (ao-policy): pin this subagent's per-role model +
+    # effort from the plan (the router already resolved tier -> concrete model).
+    if state.execution_plan is not None:
+        role_exec = state.execution_plan.for_role(_AO_ROLE_BY_SUBAGENT[assignment.role])
+        context = {
+            **objective.context,
+            "ao_effort": role_exec.effort.value,
+            "ao_tier": role_exec.tier,
+        }
+        objective = objective.model_copy(update={"model": role_exec.model, "context": context})
+
     persisted_objective = {
         "objective": objective.objective,
         "role": assignment.role.value,
@@ -186,8 +210,16 @@ def _fold(
 # nodes                                                                        #
 # --------------------------------------------------------------------------- #
 def select_pattern(state: SupervisionState, deps: CoordinatorDeps) -> SupervisionState:
+    # Adaptive Orchestration (ao-policy): feed the sized strategy to the (pure)
+    # selector so ``single`` gates the swarm off and ``swarm`` leaves fan-out
+    # reachable. An explicit ``coordination_pattern`` hint still wins.
+    objective = state.objective
+    if state.execution_plan is not None:
+        context = {**objective.context, "ao_execution_strategy": state.execution_plan.strategy}
+        objective = objective.model_copy(update={"context": context})
+
     plan = deps.pattern_selector.select(
-        objective=state.objective,
+        objective=objective,
         policy=None,
         subagent_rules=state.subagent_rules,
         task_subagent_policy=state.task_subagent_policy,
@@ -196,7 +228,11 @@ def select_pattern(state: SupervisionState, deps: CoordinatorDeps) -> Supervisio
     state.plan = plan
     state.assignments = {a.id: a for a in plan.assignments}
     state.statuses = {a.id: "pending" for a in plan.assignments}
-    state.review_loop_budget = deps.settings.review_loop_budget
+    # Loop/verify depth scales with complexity when a plan is present.
+    if state.execution_plan is not None:
+        state.review_loop_budget = state.execution_plan.review_loop_budget
+    else:
+        state.review_loop_budget = deps.settings.review_loop_budget
     _record_step(
         state,
         deps,
@@ -205,6 +241,10 @@ def select_pattern(state: SupervisionState, deps: CoordinatorDeps) -> Supervisio
         metadata={
             "pattern": plan.pattern.value,
             "assignments": [a.id for a in plan.assignments],
+            "ao_strategy": (
+                state.execution_plan.strategy if state.execution_plan is not None else None
+            ),
+            "review_loop_budget": state.review_loop_budget,
         },
     )
     return state

@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
+from forge_agent import ExecutionPlan
 from forge_contracts import (
     AgentObjective,
     AgentRunResult,
@@ -72,6 +73,9 @@ class SupervisionState:
     steps: list[Step] = field(default_factory=list)
     ws_manager: SubAgentWorkspaceManager | None = None
     result: AgentRunResult | None = None
+
+    #: Adaptive Orchestration plan (ao-policy) resolved for this run, if any.
+    execution_plan: ExecutionPlan | None = None
 
     # ------------------------------------------------------------------ #
     def ready_assignments(self) -> list[SubAgentAssignment]:
