@@ -3,8 +3,8 @@
 import { Eye, FileCode2, FileText, ListTree } from "lucide-react";
 import { useState } from "react";
 
-import { ManifestPanel } from "@/components/spec/manifest-panel";
 import { apiClient, ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { useApproveSpec } from "@/lib/api/spec";
 import {
   useSaveGuidedManifest,
   useSaveSpecMarkdown,
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 import { GuidedMode } from "./guided-mode";
 import { MarkdownMode } from "./markdown-mode";
+import { ReadMode } from "./read-mode";
 import { YamlMode } from "./yaml-mode";
 
 export type SpecStudioMode = "guided" | "markdown" | "yaml" | "read";
@@ -79,6 +80,7 @@ export function SpecStudio({ specId, client = apiClient }: SpecStudioProps) {
   const saveGuided = useSaveGuidedManifest(specId, client);
   const saveMarkdown = useSaveSpecMarkdown(specId, client);
   const saveYaml = useSaveSpecManifestYaml(specId, client);
+  const approveSpec = useApproveSpec(client);
 
   const manifest = manifestQuery.data ?? null;
   const guidedValue = guidedOverride ?? manifest;
@@ -203,7 +205,14 @@ export function SpecStudio({ specId, client = apiClient }: SpecStudioProps) {
               />
             )
           ) : null}
-          {mode === "read" ? <ManifestPanel spec={manifest} /> : null}
+          {mode === "read" ? (
+            <ReadMode
+              spec={manifest}
+              onApprove={() => approveSpec.mutate({ specId })}
+              approving={approveSpec.isPending}
+              approveError={approveSpec.isError ? errorMessage(approveSpec.error) : null}
+            />
+          ) : null}
         </>
       )}
     </div>
