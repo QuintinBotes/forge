@@ -32,6 +32,12 @@ dependencies = [
     # F35 — benchmark suite & public leaderboard (frozen suites, deterministic
     # scoring, replay verification, ranking — the pure core the service wires).
     "forge-eval",
+    # Adaptive Orchestration — complexity sizing + per-role config resolver
+    # (ao-settings-api mounts the settings/routing-preview endpoints on top).
+    "forge-orchestration-policy",
+    # Adaptive Orchestration — the provider-agnostic tier -> model router
+    # (ao-settings-api's routing-preview resolves a concrete model through it).
+    "forge-agent",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic-settings>=2.2",

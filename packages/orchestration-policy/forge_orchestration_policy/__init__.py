@@ -12,6 +12,7 @@ from forge_orchestration_policy.complexity import (
     score_complexity,
     signals_from_spec,
 )
+from forge_orchestration_policy.role_config import resolve_effective_config
 
 __version__ = "0.1.0"
 
@@ -22,6 +23,7 @@ __all__ = [
     "Strategy",
     "Tier",
     "candidate_tiers",
+    "resolve_effective_config",
     "score_complexity",
     "signals_from_spec",
 ]

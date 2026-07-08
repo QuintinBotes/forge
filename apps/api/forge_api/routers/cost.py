@@ -95,7 +95,9 @@ def cost_summary(
     service: ServiceDep,
     scope: Annotated[str, Query(pattern="^(workspace|project|task)$")] = "workspace",
     scope_id: Annotated[uuid.UUID | None, Query()] = None,
-    group_by: Annotated[str, Query(pattern="^(phase|provider|model|none)$")] = "provider",
+    group_by: Annotated[
+        str, Query(pattern="^(phase|provider|model|tier|strategy|none)$")
+    ] = "provider",
     from_: Annotated[datetime | None, Query(alias="from")] = None,
     to: Annotated[datetime | None, Query()] = None,
 ) -> CostSummary:
@@ -123,7 +125,9 @@ def cost_timeseries(
     scope: Annotated[str, Query(pattern="^(workspace|project|task)$")] = "workspace",
     scope_id: Annotated[uuid.UUID | None, Query()] = None,
     bucket: Annotated[str, Query(pattern="^(hour|day|week)$")] = "day",
-    group_by: Annotated[str, Query(pattern="^(phase|provider|model|none)$")] = "provider",
+    group_by: Annotated[
+        str, Query(pattern="^(phase|provider|model|tier|strategy|none)$")
+    ] = "provider",
     from_: Annotated[datetime | None, Query(alias="from")] = None,
     to: Annotated[datetime | None, Query()] = None,
 ) -> CostTimeseries:

@@ -262,6 +262,7 @@ export interface BreakdownRow {
   label: string;
   costUsd: number;
   tokens: number;
+  requestCount: number;
 }
 
 /** Human labels for the phase/provider group keys (fallback: title-case). */
@@ -282,6 +283,7 @@ export function toBreakdownRows(summary: CostSummary | undefined): BreakdownRow[
       label: prettyKey(b.key),
       costUsd: toNum(b.cost_usd),
       tokens: toNum(b.prompt_tokens) + toNum(b.completion_tokens),
+      requestCount: toNum(b.request_count),
     }))
     .sort((a, b) => b.costUsd - a.costUsd);
 }

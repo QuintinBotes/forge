@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   Compass,
+  Cpu,
   KanbanSquare,
   KeyRound,
   Layers,
@@ -170,6 +171,13 @@ export const DEFAULT_COMMANDS: CommandAction[] = [
     group: "Navigate",
     icon: <KeyRound />,
     run: (router) => router.push("/settings/sso"),
+  },
+  {
+    id: "go-ao-settings",
+    label: "Go to Models & Effort settings",
+    group: "Navigate",
+    icon: <Cpu />,
+    run: (router) => router.push("/settings/models"),
   },
   {
     id: "go-walkthrough",

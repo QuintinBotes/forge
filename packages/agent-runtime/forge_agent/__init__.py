@@ -14,6 +14,12 @@ Public surface:
 from __future__ import annotations
 
 from forge_agent.context import build_system_prompt, skill_profile_directives
+from forge_agent.execution_plan import (
+    ExecutionPlan,
+    RoleExecution,
+    plan_execution,
+    plan_role_execution,
+)
 from forge_agent.graph import END, CompiledGraph, GraphError, StateGraph
 from forge_agent.multi_repo import MultiRepoWorkspace, WorktreeHandle
 from forge_agent.policy_gate import ActionPolicyGate, PolicyEvaluatorGate, PolicyGate
@@ -59,6 +65,7 @@ __all__ = [
     "AgentState",
     "AnthropicModelClient",
     "CompiledGraph",
+    "ExecutionPlan",
     "GraphError",
     "ModelClientConfig",
     "ModelClientError",
@@ -70,6 +77,7 @@ __all__ = [
     "PolicyEvaluatorGate",
     "PolicyGate",
     "ProviderName",
+    "RoleExecution",
     "RouteDecision",
     "SandboxError",
     "StateGraph",
@@ -86,6 +94,8 @@ __all__ = [
     "cost_usd",
     "default_tool_registry",
     "load_agents_md",
+    "plan_execution",
+    "plan_role_execution",
     "route",
     "skill_profile_directives",
 ]

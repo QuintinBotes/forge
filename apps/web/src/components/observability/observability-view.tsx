@@ -57,6 +57,8 @@ const GROUP_OPTIONS: { id: CostGroupBy; label: string }[] = [
   { id: "provider", label: "Provider" },
   { id: "phase", label: "Phase" },
   { id: "model", label: "Model" },
+  { id: "tier", label: "Tier" },
+  { id: "strategy", label: "Strategy" },
 ];
 
 const WINDOW_OPTIONS: { id: number; label: string }[] = [
@@ -133,13 +135,19 @@ export function ObservabilityView({ client = apiClient }: ObservabilityViewProps
       "cost_usd",
       "prompt_tokens",
       "completion_tokens",
+      "request_count",
     ];
     const lines = [header.join(",")];
     for (const b of buckets_) {
       lines.push(
-        [groupBy, b.key, toNum(b.cost_usd), b.prompt_tokens, b.completion_tokens].join(
-          ",",
-        ),
+        [
+          groupBy,
+          b.key,
+          toNum(b.cost_usd),
+          b.prompt_tokens,
+          b.completion_tokens,
+          toNum(b.request_count),
+        ].join(","),
       );
     }
     const csv = lines.join("\n");
@@ -313,7 +321,7 @@ export function ObservabilityView({ client = apiClient }: ObservabilityViewProps
                     key: r.key,
                     label: r.label,
                     value: r.costUsd,
-                    secondary: `${formatTokens(r.tokens)} tok`,
+                    secondary: `${compactNumber(r.requestCount)} call${r.requestCount === 1 ? "" : "s"} · ${formatTokens(r.tokens)} tok`,
                   }))}
                   formatValue={(n) => formatUsd(n)}
                 />

@@ -38,7 +38,7 @@ __all__ = [
     "SqlCostReader",
 ]
 
-_GROUPS = frozenset({"phase", "provider", "model", "none"})
+_GROUPS = frozenset({"phase", "provider", "model", "tier", "strategy", "none"})
 _BUCKETS = frozenset({"hour", "day", "week"})
 _SCOPES = frozenset({"workspace", "project", "task"})
 
@@ -108,13 +108,25 @@ def _truncate(ts: datetime, bucket: str) -> datetime:
     return day
 
 
-def _group_key(group_by: str, *, phase: str | None, provider: str, model: str) -> str:
+def _group_key(
+    group_by: str,
+    *,
+    phase: str | None,
+    provider: str,
+    model: str,
+    tier: str | None = None,
+    strategy: str | None = None,
+) -> str:
     if group_by == "phase":
         return phase or "unknown"
     if group_by == "provider":
         return provider
     if group_by == "model":
         return model
+    if group_by == "tier":
+        return tier or "unknown"
+    if group_by == "strategy":
+        return strategy or "unknown"
     return "total"
 
 
@@ -229,12 +241,18 @@ class InMemoryCostLedger:
         prompt = completion = 0
         for row in self._scoped(workspace_id, scope, scope_id, frm, to):
             key = _group_key(
-                group_by, phase=row["phase"], provider=row["provider"], model=row["model"]
+                group_by,
+                phase=row["phase"],
+                provider=row["provider"],
+                model=row["model"],
+                tier=row.get("tier"),
+                strategy=row.get("strategy"),
             )
             entry = buckets.setdefault(key, CostBucket(key=key, cost_usd=Decimal(0)))
             entry.cost_usd += row["cost_usd"]
             entry.prompt_tokens += row["prompt_tokens"]
             entry.completion_tokens += row["completion_tokens"]
+            entry.request_count += 1
             total += row["cost_usd"]
             prompt += row["prompt_tokens"]
             completion += row["completion_tokens"]
@@ -265,7 +283,12 @@ class InMemoryCostLedger:
         series: dict[str, dict[datetime, Decimal]] = {}
         for row in self._scoped(workspace_id, scope, scope_id, frm, to):
             key = _group_key(
-                group_by, phase=row["phase"], provider=row["provider"], model=row["model"]
+                group_by,
+                phase=row["phase"],
+                provider=row["provider"],
+                model=row["model"],
+                tier=row.get("tier"),
+                strategy=row.get("strategy"),
             )
             ts = _truncate(row["occurred_at"], bucket)
             per_key = series.setdefault(key, {})
@@ -300,6 +323,8 @@ def _usage_from_row(row: Any) -> ModelUsage:
         agent_run_id=row.agent_run_id,
         step_id=row.step_id,
         phase=row.phase,
+        tier=row.tier,
+        strategy=row.strategy,
     )
 
 
@@ -346,6 +371,8 @@ class SqlCostLedger:
                 agent_run_id=usage.agent_run_id,
                 step_id=usage.step_id,
                 phase=usage.phase,
+                tier=usage.tier,
+                strategy=usage.strategy,
                 kind=CostEventKind(usage.kind),
                 provider=usage.provider,
                 model=usage.model,
@@ -459,12 +486,20 @@ class SqlCostReader:
             if to is not None:
                 stmt = stmt.where(CostEvent.occurred_at < to)
             for row in session.scalars(stmt):
-                key = _group_key(group_by, phase=row.phase, provider=row.provider, model=row.model)
+                key = _group_key(
+                    group_by,
+                    phase=row.phase,
+                    provider=row.provider,
+                    model=row.model,
+                    tier=row.tier,
+                    strategy=row.strategy,
+                )
                 entry = buckets.setdefault(key, CostBucket(key=key, cost_usd=Decimal(0)))
                 cost = Decimal(row.cost_usd)
                 entry.cost_usd += cost
                 entry.prompt_tokens += row.prompt_tokens
                 entry.completion_tokens += row.completion_tokens
+                entry.request_count += 1
                 total += cost
                 prompt += row.prompt_tokens
                 completion += row.completion_tokens
@@ -507,7 +542,14 @@ class SqlCostReader:
             if to is not None:
                 stmt = stmt.where(CostEvent.occurred_at < to)
             for row in session.scalars(stmt):
-                key = _group_key(group_by, phase=row.phase, provider=row.provider, model=row.model)
+                key = _group_key(
+                    group_by,
+                    phase=row.phase,
+                    provider=row.provider,
+                    model=row.model,
+                    tier=row.tier,
+                    strategy=row.strategy,
+                )
                 ts = _truncate(row.occurred_at, bucket)
                 per_key = series.setdefault(key, {})
                 per_key[ts] = per_key.get(ts, Decimal(0)) + Decimal(row.cost_usd)

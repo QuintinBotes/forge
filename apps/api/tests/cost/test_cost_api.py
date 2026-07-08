@@ -43,7 +43,7 @@ def test_task_cost_summary_by_phase(client_factory: Callable[..., TestClient]) -
 def test_summary_group_by_provider_and_model(client_factory) -> None:
     """AC10: bucket sums equal the scoped total for every group_by."""
     client = client_factory(UserRole.VIEWER)
-    for group_by in ("provider", "model", "none"):
+    for group_by in ("provider", "model", "tier", "strategy", "none"):
         res = client.get(
             "/cost/summary",
             params={"scope": "workspace", "scope_id": str(WS_ID), "group_by": group_by},

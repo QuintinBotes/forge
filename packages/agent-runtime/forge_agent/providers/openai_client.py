@@ -35,6 +35,7 @@ class OpenAIModelClient:
         *,
         model: str,
         api_key: str,
+        effort: str = "high",
         max_tokens: int = 16000,
         timeout_s: float = 600.0,
         max_retries: int = 2,
@@ -43,6 +44,7 @@ class OpenAIModelClient:
         client: Any | None = None,
     ) -> None:
         self._model = model
+        self._effort = effort
         self._max_tokens = max_tokens
         self._redactor = redactor
         self._client = (
@@ -58,7 +60,7 @@ class OpenAIModelClient:
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         kwargs = translate.openai_create_kwargs(
-            request, model=self._model, max_tokens=self._max_tokens
+            request, model=self._model, max_tokens=self._max_tokens, effort=self._effort
         )
         try:
             with self._client.chat.completions.stream(**kwargs) as stream:
@@ -70,7 +72,7 @@ class OpenAIModelClient:
 
     def stream(self, request: ModelRequest) -> Iterator[ModelStreamEvent]:
         kwargs = translate.openai_create_kwargs(
-            request, model=self._model, max_tokens=self._max_tokens
+            request, model=self._model, max_tokens=self._max_tokens, effort=self._effort
         )
         try:
             with self._client.chat.completions.stream(**kwargs) as stream:

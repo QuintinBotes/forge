@@ -137,8 +137,20 @@ describe("cost shaping", () => {
     total_completion_tokens: 800,
     group_by: "provider",
     buckets: [
-      { key: "anthropic", cost_usd: "0.13", prompt_tokens: 400, completion_tokens: 300 },
-      { key: "openai", cost_usd: "0.30", prompt_tokens: 800, completion_tokens: 500 },
+      {
+        key: "anthropic",
+        cost_usd: "0.13",
+        prompt_tokens: 400,
+        completion_tokens: 300,
+        request_count: 2,
+      },
+      {
+        key: "openai",
+        cost_usd: "0.30",
+        prompt_tokens: 800,
+        completion_tokens: 500,
+        request_count: 3,
+      },
     ],
   };
 
@@ -147,6 +159,7 @@ describe("cost shaping", () => {
     expect(rows.map((r) => r.key)).toEqual(["openai", "anthropic"]);
     expect(rows[0].costUsd).toBeCloseTo(0.3, 5);
     expect(rows[0].tokens).toBe(1300);
+    expect(rows[0].requestCount).toBe(3);
   });
 
   it("aligns timeseries onto a shared, sorted x-domain", () => {

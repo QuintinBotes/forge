@@ -63,6 +63,7 @@ def build_model_client(
         return OpenAIModelClient(
             model=config.model,
             api_key=config.api_key,
+            effort=config.effort,
             max_tokens=config.max_tokens,
             timeout_s=config.timeout_s,
             max_retries=config.max_retries,

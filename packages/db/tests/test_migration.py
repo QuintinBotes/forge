@@ -1057,6 +1057,44 @@ def test_idempotency_store_migration_up_down(alembic_config: Config) -> None:
         engine.dispose()
 
 
+# ao-config per-role model+effort override table, owned by
+# 0029_ao_config_role_model_config.
+AO_CONFIG_TABLES = {"agent_role_config"}
+
+
+def test_ao_config_role_model_config_migration_up_down(alembic_config: Config) -> None:
+    """0029 owns the ``agent_role_config`` per-role override table (with its
+    partial-unique ``uq_agent_role_config_workspace_default`` index and its
+    plain ``uq_agent_role_config_project`` unique constraint) and drops exactly
+    it on downgrade, leaving the prior chain intact.
+
+    (forge_db's baseline is metadata-driven, so a fresh chain provisions the
+    table at 0001; like 0025/0027/0028, the 0029 step is idempotent about that
+    and owns a clean, reversible down.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    try:
+        command.upgrade(alembic_config, "head")
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert tables >= AO_CONFIG_TABLES, "missing agent_role_config table"
+        indexes = {i["name"] for i in inspector.get_indexes("agent_role_config")}
+        assert "uq_agent_role_config_workspace_default" in indexes
+        uniques = {uc["name"] for uc in inspector.get_unique_constraints("agent_role_config")}
+        assert "uq_agent_role_config_project" in uniques
+
+        # Downgrade one step: the ao-config table is gone, the chain intact.
+        command.downgrade(alembic_config, "0028_idempotency_store")
+        after_down = set(inspect(engine).get_table_names())
+        assert not (AO_CONFIG_TABLES & after_down), "downgrade left agent_role_config"
+        assert after_down >= EXPECTED_TABLES
+
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
 # --------------------------------------------------------------------------- #
 # HARD-11 — live-Postgres migration round-trip, per-revision walk, and         #
 # data-preservation. These run only against a real pgvector Postgres (the      #
