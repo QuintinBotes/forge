@@ -30,6 +30,12 @@ BlastRadiusLevel = Literal["low", "medium", "high"]
 _JUNIOR_MAX = 6
 _MEDIOR_MAX = 16
 
+#: Score distance from a tier threshold within which the heuristic is treated as
+#: "on the fence": when a score lands this close to a junior/medior or
+#: medior/senior boundary, the two adjacent tiers are both plausible and an
+#: optional LLM classifier may break the tie (see :func:`candidate_tiers`).
+_BOUNDARY_BAND = 1
+
 _KIND_POINTS: dict[TaskKind, int] = {
     TaskKind.DOC: 0,
     TaskKind.CHORE: 0,
@@ -222,3 +228,20 @@ def score_complexity(signals: SizingSignals) -> ComplexitySizing:
         reasons.append("strategy=single (no swarm trigger)")
 
     return ComplexitySizing(tier=tier, strategy=strategy, score=score, reasons=reasons)
+
+
+def candidate_tiers(sizing: ComplexitySizing) -> list[Tier]:
+    """Return the tier(s) the heuristic considers plausible for ``sizing``.
+
+    Normally this is just ``[sizing.tier]``. When the score sits within
+    ``_BOUNDARY_BAND`` of a tier threshold, the two adjacent tiers (ordered
+    junior -> senior) are returned so a caller can break the tie — e.g. the
+    Adaptive Orchestration model router consulting a cheap LLM classifier. The
+    returned list always contains ``sizing.tier`` and is ordered low -> high.
+    """
+    score = sizing.score
+    if _JUNIOR_MAX - _BOUNDARY_BAND < score <= _JUNIOR_MAX + _BOUNDARY_BAND:
+        return ["junior", "medior"]
+    if _MEDIOR_MAX - _BOUNDARY_BAND < score <= _MEDIOR_MAX + _BOUNDARY_BAND:
+        return ["medior", "senior"]
+    return [sizing.tier]

@@ -24,10 +24,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from forge_api.auth.rbac import Permission
-from forge_api.deps import Principal, get_current_principal
+from forge_api.deps import DbSession, Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
+from forge_api.routers.board import BoardServiceDep
 from forge_api.settings import get_settings
 from forge_contracts import (
+    BoardFilter,
     Constitution,
     Requirement,
     SpecManifest,
@@ -35,6 +37,7 @@ from forge_contracts import (
     ValidationReport,
 )
 from forge_contracts.exceptions import SpecGateError
+from forge_db.models import Project
 from forge_spec import FileSpecEngine, SpecNotFoundError
 
 router = APIRouter(
@@ -208,11 +211,88 @@ def validate(engine: EngineDep, task_id: uuid.UUID) -> ValidationReport:
         return engine.validate(task_id)
 
 
+# --------------------------------------------------------------------------- #
+# F23 spec-validation dashboard: GET /projects/{project_id}/specs             #
+# --------------------------------------------------------------------------- #
+#
+# The web dashboard's degraded "Live specs are unavailable" state exists
+# because this route has never been implemented. It projects the F23
+# dashboard shape {project_id, constitution, specs[]}: each spec is its
+# FileSpecEngine manifest enriched with its latest (F23 traceability
+# projection) validation report. A project's specs are discovered via the
+# board's epics (``epic.spec_id`` -> the engine's deterministic spec uuid) --
+# the only place an epic/spec is linked back to a project today.
+
+
+class SpecOverview(SpecManifest):
+    """A spec manifest enriched with its latest validation report (dashboard row)."""
+
+    validation: ValidationReport | None = None
+
+
+class SpecDashboard(BaseModel):
+    """The spec-validation dashboard projection for a project."""
+
+    project_id: uuid.UUID
+    constitution: Constitution | None = None
+    specs: list[SpecOverview] = Field(default_factory=list)
+
+
+#: A distinct router (no ``/spec`` prefix) for the project-scoped dashboard read.
+project_router = APIRouter(tags=["spec"], dependencies=[Depends(get_current_principal)])
+
+
+@project_router.get(
+    "/projects/{project_id}/specs",
+    response_model=SpecDashboard,
+    dependencies=[ReadGate],
+)
+def project_spec_overview(
+    project_id: uuid.UUID,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    engine: EngineDep,
+    board: BoardServiceDep,
+    db: DbSession,
+) -> SpecDashboard:
+    """The F23 spec-validation dashboard projection for a project.
+
+    404s when the project does not exist in the caller's workspace (no
+    existence leak beyond that); a project with no linked specs yet returns an
+    empty ``specs`` list rather than 404.
+    """
+    project = db.get(Project, project_id)
+    if project is None or project.workspace_id != principal.workspace_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+    epics = board.list_epics(BoardFilter(project_id=project_id))
+    seen: set[uuid.UUID] = set()
+    spec_ids: list[uuid.UUID] = []
+    for epic in epics:
+        if epic.spec_id is not None and epic.spec_id not in seen:
+            seen.add(epic.spec_id)
+            spec_ids.append(epic.spec_id)
+
+    specs: list[SpecOverview] = []
+    for spec_id in spec_ids:
+        try:
+            manifest = engine.read_manifest(spec_id)
+        except SpecNotFoundError:
+            continue
+        validation = engine.latest_validation(spec_id)
+        specs.append(SpecOverview(**manifest.model_dump(), validation=validation))
+
+    constitution = engine.read_constitution(project_id)
+    return SpecDashboard(project_id=project_id, constitution=constitution, specs=specs)
+
+
 __all__ = [
     "ConstitutionInitRequest",
     "SpecCreateRequest",
+    "SpecDashboard",
     "SpecEngineRegistry",
+    "SpecOverview",
     "get_spec_engine",
     "get_spec_registry",
+    "project_router",
     "router",
 ]

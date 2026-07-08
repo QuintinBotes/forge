@@ -849,6 +849,7 @@ source = { editable = "packages/agent-runtime" }
 dependencies = [
     { name = "docker" },
     { name = "forge-contracts" },
+    { name = "forge-orchestration-policy" },
     { name = "langgraph" },
 ]
 
@@ -863,6 +864,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.49" },
     { name = "docker", specifier = ">=7.1,<8" },
     { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "forge-orchestration-policy", editable = "packages/orchestration-policy" },
     { name = "langgraph", specifier = ">=1.2,<2" },
     { name = "openai", marker = "extra == 'providers'", specifier = ">=1.60" },
 ]

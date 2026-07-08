@@ -13,12 +13,14 @@ import uuid
 import pytest
 
 from forge_contracts import (
+    CheckResult,
     Constitution,
     Requirement,
     SpecGateError,
     SpecManifest,
     SpecStatus,
     TaskDTO,
+    ValidationReport,
 )
 from forge_spec import FileSpecEngine, spec_id_for_key
 
@@ -199,3 +201,91 @@ def test_engine_recovers_state_from_disk(tmp_path) -> None:
 
     eng2 = FileSpecEngine(tmp_path)
     assert eng2.read_manifest(spec_id).id == manifest.id
+
+
+# --------------------------------------------------------------------------- #
+# read_constitution (spec-overview-endpoint)                                   #
+# --------------------------------------------------------------------------- #
+
+
+def test_read_constitution_returns_none_when_never_initialised(engine) -> None:
+    assert engine.read_constitution(uuid.uuid4()) is None
+
+
+def test_read_constitution_roundtrips_after_init(engine) -> None:
+    project_id = uuid.uuid4()
+    created = engine.constitution_init(project_id, principles=["Prefer composition"])
+
+    read_back = engine.read_constitution(project_id)
+
+    assert read_back is not None
+    assert read_back.project_id == project_id
+    assert read_back.principles == created.principles
+    assert read_back.architecture_guardrails == created.architecture_guardrails
+    assert read_back.content == created.content
+
+
+def test_read_constitution_mismatched_project_returns_none(engine) -> None:
+    engine.constitution_init(uuid.uuid4())
+    # A different project than the one whose constitution was initialised must
+    # not receive it back (no cross-project leak of the single-root sidecar).
+    assert engine.read_constitution(uuid.uuid4()) is None
+
+
+# --------------------------------------------------------------------------- #
+# latest_validation (spec-overview-endpoint)                                   #
+# --------------------------------------------------------------------------- #
+
+
+def test_latest_validation_none_before_validate_runs(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+    assert engine.latest_validation(spec_id) is None
+
+
+def test_latest_validation_reflects_recorded_verification(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+    engine.spec_clarify(spec_id)
+    engine.spec_plan(spec_id)
+    engine.approve_spec(spec_id)
+    tasks = engine.spec_tasks(spec_id)
+    task = tasks[0]
+
+    engine.record_verification(
+        task.id,
+        checks=[CheckResult(name="lint", passed=True), CheckResult(name="tests", passed=True)],
+        coverage=0.91,
+    )
+    report = engine.validate(task.id)
+
+    read_back = engine.latest_validation(spec_id)
+
+    assert read_back is not None
+    assert isinstance(read_back, ValidationReport)
+    assert read_back.passed == report.passed
+    assert read_back.coverage == 0.91
+    assert {c.name for c in read_back.checks} == {"lint", "tests"}
+    assert read_back.traceability == report.traceability
+
+
+def test_latest_validation_is_non_mutating(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+    engine.spec_clarify(spec_id)
+    engine.spec_plan(spec_id)
+    engine.approve_spec(spec_id)
+    tasks = engine.spec_tasks(spec_id)
+    engine.record_verification(
+        tasks[0].id,
+        checks=[CheckResult(name="lint", passed=True)],
+        coverage=1.0,
+    )
+    engine.validate(tasks[0].id)
+    before = engine.read_manifest(spec_id)
+
+    engine.latest_validation(spec_id)
+    engine.latest_validation(spec_id)
+
+    after = engine.read_manifest(spec_id)
+    assert after == before

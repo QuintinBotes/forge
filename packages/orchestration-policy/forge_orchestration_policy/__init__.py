@@ -8,6 +8,7 @@ from forge_orchestration_policy.complexity import (
     SizingSignals,
     Strategy,
     Tier,
+    candidate_tiers,
     score_complexity,
     signals_from_spec,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "SizingSignals",
     "Strategy",
     "Tier",
+    "candidate_tiers",
     "score_complexity",
     "signals_from_spec",
 ]

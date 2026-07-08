@@ -97,6 +97,30 @@ class FileSpecEngine:
         constitution.content = content
         self.root.mkdir(parents=True, exist_ok=True)
         self._write(self.root / manifest_io.CONSTITUTION_FILENAME, content)
+        self._write(
+            self.root / manifest_io.CONSTITUTION_DATA_FILENAME,
+            yaml.safe_dump(
+                constitution.model_dump(mode="json"), sort_keys=False, allow_unicode=True
+            ),
+        )
+        return constitution
+
+    def read_constitution(self, project_id: uuid.UUID) -> Constitution | None:
+        """Read the project's constitution, or ``None`` if never initialised.
+
+        Constitutions are stored as a single ``constitution.yaml`` sidecar at the
+        engine root (one per workspace, mirroring ``constitution_init``'s
+        markdown write), so a constitution initialised for a *different*
+        project reads back as ``None`` rather than ambiguously standing in for
+        the requested project's constitution.
+        """
+        path = self.root / manifest_io.CONSTITUTION_DATA_FILENAME
+        if not path.exists():
+            return None
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        constitution = Constitution.model_validate(data)
+        if constitution.project_id != project_id:
+            return None
         return constitution
 
     # ----------------------------------------------------------------- #
@@ -212,6 +236,37 @@ class FileSpecEngine:
     # Manifest read/write                                                #
     # ----------------------------------------------------------------- #
 
+    def latest_validation(self, spec_id: uuid.UUID) -> ValidationReport | None:
+        """Return the spec's latest validation report, or ``None`` if never validated.
+
+        Non-mutating: recomputes traceability from the current manifest and its
+        (deterministic) generated tasks -- the same inputs :meth:`validate`
+        persists -- folding in the most recently *recorded* verification (if
+        any), without writing state or advancing the spec's status. Backs
+        read-only projections (the F23 spec-validation dashboard) that must not
+        trigger lifecycle side effects merely by being viewed.
+        """
+        spec_dir, manifest = self._resolve(spec_id)
+        if manifest.validation_ref is None:
+            return None
+        tasks = generate_tasks(manifest)
+        if not tasks:
+            return None
+        verification = self._verification_data(spec_dir)
+        task = tasks[-1]
+        checks: list[CheckResult] | None = None
+        coverage: float | None = None
+        for candidate in reversed(tasks):
+            entry = verification.get(candidate.key or str(candidate.id))
+            if entry:
+                task = candidate
+                checks = [CheckResult.model_validate(c) for c in entry.get("checks", [])]
+                coverage = entry.get("coverage")
+                break
+        return build_validation_report(
+            manifest=manifest, task=task, tasks=tasks, checks=checks, coverage=coverage
+        )
+
     def read_manifest(self, spec_id: uuid.UUID) -> SpecManifest:
         """Read a spec manifest by its (deterministic) uuid."""
         _, manifest = self._resolve(spec_id)
@@ -311,14 +366,16 @@ class FileSpecEngine:
                     return spec_dir, manifest, task, tasks
         raise SpecNotFoundError(f"no task resolves to id {task_id}")
 
+    def _verification_data(self, spec_dir: Path) -> dict[str, Any]:
+        path = spec_dir / manifest_io.VERIFICATION_FILENAME
+        if not path.exists():
+            return {}
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
     def _read_verification(
         self, spec_dir: Path, task_key: str
     ) -> tuple[list[CheckResult] | None, float | None]:
-        path = spec_dir / manifest_io.VERIFICATION_FILENAME
-        if not path.exists():
-            return None, None
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        entry = data.get(task_key)
+        entry = self._verification_data(spec_dir).get(task_key)
         if not entry:
             return None, None
         checks = [CheckResult.model_validate(c) for c in entry.get("checks", [])]

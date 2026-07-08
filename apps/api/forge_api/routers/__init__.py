@@ -51,6 +51,7 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     auth.router,
     board.router,
     spec.router,
+    spec.project_router,
     knowledge.router,
     workflow.router,
     workflow_editor.router,
