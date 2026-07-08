@@ -16,7 +16,6 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
-from forge_orchestration_policy import resolve_effective_config
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -25,6 +24,7 @@ from forge_contracts.orchestration_config import AgentRole, Effort
 from forge_db.base import Base
 from forge_db.models import AgentRoleConfig, Project, Workspace
 from forge_db.role_config import SqlRoleConfigStore
+from forge_orchestration_policy import resolve_effective_config
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

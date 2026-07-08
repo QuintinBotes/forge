@@ -15,16 +15,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from forge_orchestration_policy import Strategy, Tier
-from forge_orchestration_policy.complexity import _JUNIOR_MAX as _DEFAULT_JUNIOR_MAX
-from forge_orchestration_policy.complexity import _MEDIOR_MAX as _DEFAULT_MEDIOR_MAX
-from forge_orchestration_policy.complexity import (
-    BlastRadiusLevel,
-    SizingSignals,
-    score_complexity,
-)
-from forge_orchestration_policy.role_config import resolve_effective_config
-
 from forge_agent.providers.config import ProviderName
 from forge_agent.providers.router import ModelRouter
 from forge_contracts.enums import Priority, TaskKind
@@ -36,6 +26,15 @@ from forge_contracts.orchestration_config import (
     Effort,
     RoleConfigStore,
 )
+from forge_orchestration_policy import Strategy, Tier
+from forge_orchestration_policy.complexity import _JUNIOR_MAX as _DEFAULT_JUNIOR_MAX
+from forge_orchestration_policy.complexity import _MEDIOR_MAX as _DEFAULT_MEDIOR_MAX
+from forge_orchestration_policy.complexity import (
+    BlastRadiusLevel,
+    SizingSignals,
+    score_complexity,
+)
+from forge_orchestration_policy.role_config import resolve_effective_config
 
 __all__ = ["AoSettingsService", "EffectiveAoSettings", "RoutingPreview"]
 

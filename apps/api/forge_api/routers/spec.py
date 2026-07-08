@@ -16,6 +16,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -28,10 +29,12 @@ from forge_api.auth.rbac import Permission
 from forge_api.deps import DbSession, Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
 from forge_api.routers.board import BoardServiceDep
+from forge_api.services.spec_draft_service import SpecDraft, draft_spec
 from forge_api.settings import get_settings
 from forge_contracts import (
     BoardFilter,
     Constitution,
+    ModelClient,
     Requirement,
     SpecManifest,
     TaskDTO,
@@ -39,6 +42,7 @@ from forge_contracts import (
 )
 from forge_contracts.exceptions import SpecGateError
 from forge_db.models import Project
+from forge_orchestration_policy import Tier
 from forge_spec import FileSpecEngine, SpecNotFoundError
 
 router = APIRouter(
@@ -136,6 +140,15 @@ class TextContent(BaseModel):
     """Body for the ``spec.md`` / ``manifest.yaml`` write endpoints."""
 
     content: str
+
+
+class DraftSpecRequest(BaseModel):
+    """Body for ``POST /spec/draft`` (BYOK AI spec drafting; draft-only)."""
+
+    goal: str = Field(min_length=1, description="One-line engineering goal to draft a spec for.")
+    epic_id: uuid.UUID | None = None
+    #: Optional project whose constitution seeds the spec-authoring prompt.
+    project_id: uuid.UUID | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -281,6 +294,93 @@ def validate(engine: EngineDep, task_id: uuid.UUID) -> ValidationReport:
     """Validate a task against its spec (requirement-to-test traceability)."""
     with _spec_errors():
         return engine.validate(task_id)
+
+
+# --------------------------------------------------------------------------- #
+# ss-draft: BYOK AI spec drafting (POST /spec/draft)                          #
+# --------------------------------------------------------------------------- #
+#
+# Uses the ao-model-router to pick a model for the workspace's BYOK provider,
+# resolves the HARD-02 ModelClient (env/vault key) bound to that model, and
+# streams a spec.md draft seeded with the project constitution. Draft-only:
+# nothing is persisted. The binding is a single overridable dependency so tests
+# inject a mocked ModelClient (no live key / network).
+
+#: The Adaptive Orchestration tier used for spec authoring. Drafting a spec is
+#: high-leverage work, so it routes to the senior model by default.
+_DRAFT_TIER: Tier = "senior"
+
+
+@dataclass(frozen=True)
+class DraftModelBinding:
+    """A resolved model client + the router-chosen model for a draft call."""
+
+    client: ModelClient
+    model: str
+
+
+def get_draft_binding(
+    principal: Annotated[Principal, Depends(get_current_principal)],
+) -> DraftModelBinding:
+    """Resolve the BYOK model client + router-chosen model for spec drafting.
+
+    The provider comes from the workspace's ``FORGE_MODEL_*`` env config; the
+    ``ao-model-router`` maps the spec-authoring tier to a concrete model on that
+    provider; the HARD-02 client is then resolved with the workspace's BYOK key
+    bound to that model. Overridden in tests to inject a mocked client.
+    """
+    from forge_agent.providers import ModelClientConfig, ModelClientError
+    from forge_agent.providers.router import ModelRouter
+    from forge_api.auth.service import get_auth_service
+
+    config = ModelClientConfig.from_env()
+    if config is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "no model provider configured for spec drafting; set FORGE_MODEL_PROVIDER "
+                "and a BYOK key"
+            ),
+        )
+    model = ModelRouter(provider=config.provider).resolve(_DRAFT_TIER)
+    try:
+        client = get_auth_service().resolve_model_client(principal.workspace_id, model=model)
+    except ModelClientError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    return DraftModelBinding(client=client, model=model)
+
+
+DraftBindingDep = Annotated[DraftModelBinding, Depends(get_draft_binding)]
+
+
+@router.post("/draft", response_model=SpecDraft, dependencies=[WriteGate])
+def draft_spec_endpoint(
+    engine: EngineDep, binding: DraftBindingDep, request: DraftSpecRequest
+) -> SpecDraft:
+    """Draft a ``spec.md`` from a one-line goal via the BYOK model (draft-only).
+
+    Seeds the spec-authoring prompt with the project constitution (when a
+    ``project_id`` resolving to one is supplied), streams the draft, and returns
+    a parsed :class:`SpecManifest` preview plus token/cost accounting. Nothing is
+    persisted — a human refines the draft via the spec-editing endpoints.
+    """
+    from forge_agent.providers import ModelClientError
+
+    constitution = (
+        engine.read_constitution(request.project_id) if request.project_id is not None else None
+    )
+    try:
+        return draft_spec(
+            binding.client,
+            goal=request.goal,
+            model=binding.model,
+            constitution=constitution,
+            epic_id=request.epic_id,
+        )
+    except ModelClientError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 # --------------------------------------------------------------------------- #

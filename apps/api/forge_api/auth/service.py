@@ -371,6 +371,7 @@ class AuthService:
         workspace_id: uuid.UUID,
         *,
         secret_id: uuid.UUID | None = None,
+        model: str | None = None,
         redactor: Callable[[str], str] = redact_text,
     ) -> ModelClient:
         """Resolve a provider-agnostic BYOK :class:`ModelClient` for a workspace.
@@ -382,9 +383,16 @@ class AuthService:
         never logged. The injected ``redactor`` scrubs any provider exception before
         it is re-raised as ``ModelClientError``.
 
+        ``model`` overrides the env-configured model name — used by the
+        Adaptive Orchestration model router (``ao-model-router``) to bind a
+        tier-resolved model onto the workspace's provider/key without touching
+        any other client knob.
+
         Raises ``ModelClientError`` when no provider is configured, and
         ``ModelClientUnavailable`` when the provider SDK extra is not installed.
         """
+        import dataclasses
+
         from forge_agent.providers import ModelClientConfig, ModelClientError, build_model_client
 
         if secret_id is not None:
@@ -405,6 +413,8 @@ class AuthService:
                 "no model provider configured; set FORGE_MODEL_PROVIDER and a BYOK "
                 "key (env or vault under MODEL_PROVIDER, + FORGE_MODEL_NAME for OpenAI)"
             )
+        if model:
+            config = dataclasses.replace(config, model=model)
         return build_model_client(config, redactor=redactor)
 
     # -- OAuth descriptor --------------------------------------------------- #

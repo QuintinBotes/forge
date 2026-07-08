@@ -25,10 +25,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from forge_orchestration_policy import ComplexitySizing, Tier, candidate_tiers
-
 from forge_agent.providers.config import ModelClientConfig, ProviderName
 from forge_contracts import ModelClient, ModelMessage, ModelRequest
+from forge_orchestration_policy import ComplexitySizing, Tier, candidate_tiers
 
 __all__ = [
     "DEFAULT_TIER_MODELS",

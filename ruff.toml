@@ -43,6 +43,7 @@ known-first-party = [
     "forge_agent",
     "forge_coordinator",
     "forge_spec",
+    "forge_orchestration_policy",
     "forge_board",
     "forge_knowledge",
     "forge_integrations",
