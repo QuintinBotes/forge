@@ -13,7 +13,7 @@ MYPY_PACKAGES := \
 	forge_contracts forge_db forge_workflow forge_agent forge_coordinator \
 	forge_spec forge_board forge_knowledge forge_integrations forge_mcp \
 	forge_policy forge_authz forge_skill forge_eval forge_approval forge_api \
-	forge_worker forge_mcp_gateway
+	forge_worker forge_mcp_gateway forge_orchestration_policy
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

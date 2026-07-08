@@ -18,17 +18,29 @@ from forge_agent.providers.base import (
 from forge_agent.providers.config import ModelClientConfig, ProviderName
 from forge_agent.providers.openai_client import OpenAIModelClient
 from forge_agent.providers.pricing import MODEL_PRICING, cost_usd
+from forge_agent.providers.router import (
+    DEFAULT_TIER_MODELS,
+    ModelRouter,
+    RouteDecision,
+    classify_tier,
+    route,
+)
 from forge_agent.providers.usage import UsageAccumulator
 
 __all__ = [
+    "DEFAULT_TIER_MODELS",
     "MODEL_PRICING",
     "AnthropicModelClient",
     "ModelClientConfig",
     "ModelClientError",
     "ModelClientUnavailable",
+    "ModelRouter",
     "OpenAIModelClient",
     "ProviderName",
+    "RouteDecision",
     "UsageAccumulator",
     "build_model_client",
+    "classify_tier",
     "cost_usd",
+    "route",
 ]
