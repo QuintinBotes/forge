@@ -1,0 +1,5 @@
+{
+  "id": "wh-trello-1",
+  "idModel": "brd1",
+  "callbackURL": "https://forge.example/webhook"
+}

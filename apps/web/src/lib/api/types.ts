@@ -1603,7 +1603,17 @@ export interface ProjectAccess {
 
 // --- External PM adapters (F18 `/integrations/pm` routers) ----------------- //
 
-export const PM_PROVIDERS = ["jira", "linear"] as const;
+export const PM_PROVIDERS = [
+  "jira",
+  "linear",
+  "asana",
+  "monday",
+  "github_projects",
+  "clickup",
+  "trello",
+  "gitlab",
+  "generic",
+] as const;
 export type PmProvider = (typeof PM_PROVIDERS)[number];
 
 export const PM_AUTH_TYPES = ["oauth", "api_token"] as const;

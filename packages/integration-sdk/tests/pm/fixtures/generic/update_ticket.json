@@ -1,0 +1,12 @@
+{
+  "id": "t-1",
+  "key": "BYO-1",
+  "subject": "Fix pagination bug",
+  "state": "in_progress",
+  "body": "conformance body",
+  "priority": "P2",
+  "assignee": { "email": "alice@acme.test" },
+  "tags": ["backend"],
+  "updated_at": "2024-01-01T00:10:00+00:00",
+  "link": "https://byo.example/tickets/t-1"
+}

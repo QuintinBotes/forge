@@ -15,24 +15,44 @@ from uuid import uuid4
 
 import pytest
 
-from forge_contracts.pm import AdapterContext, HttpResponse, PMProvider
+from forge_contracts.pm import (
+    AdapterContext,
+    GenericAdapterConfig,
+    GenericEndpointConfig,
+    GenericWebhookConfig,
+    GenericWebhookSignatureAlgo,
+    HttpResponse,
+    PMProvider,
+)
 from forge_integrations.pm import FixturePMTransport
 from forge_integrations.pm.asana.adapter import AsanaAdapter
 from forge_integrations.pm.asana.client import AsanaClient
+from forge_integrations.pm.clickup.adapter import ClickUpAdapter
+from forge_integrations.pm.clickup.client import ClickUpClient
+from forge_integrations.pm.generic.adapter import GenericAdapter
 from forge_integrations.pm.github_projects.adapter import GitHubProjectsAdapter
 from forge_integrations.pm.github_projects.client import GitHubProjectsClient
+from forge_integrations.pm.gitlab.adapter import GitLabAdapter
+from forge_integrations.pm.gitlab.client import GitLabClient
 from forge_integrations.pm.jira.adapter import JiraAdapter
 from forge_integrations.pm.jira.client import JiraClient
 from forge_integrations.pm.linear.adapter import LinearAdapter
 from forge_integrations.pm.linear.client import LinearClient
 from forge_integrations.pm.monday.adapter import MondayAdapter
 from forge_integrations.pm.monday.client import MondayClient
+from forge_integrations.pm.trello.adapter import TrelloAdapter
+from forge_integrations.pm.trello.client import TrelloClient
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 JIRA_BASE = "https://acme.atlassian.net"
 JIRA_API = "/rest/api/3"
 ASANA_API = "/api/1.0"
+CLICKUP_API = "/api/v2"
+TRELLO_API = "/1"
+GITLAB_BASE = "https://gitlab.com/api/v4"
+GITLAB_API = "/api/v4"
+GENERIC_BASE = "https://byo.example"
 
 
 def load_json(rel: str) -> Any:
@@ -260,3 +280,230 @@ def github_projects_adapter(
 ) -> GitHubProjectsAdapter:
     client = GitHubProjectsClient(github_projects_transport, auth_header="Bearer ghs_xxx")
     return GitHubProjectsAdapter(client, github_projects_ctx)
+
+
+# --- ClickUp -------------------------------------------------------------- #
+
+
+@pytest.fixture
+def clickup_ctx() -> AdapterContext:
+    return AdapterContext(
+        connection_id=uuid4(),
+        workspace_id=uuid4(),
+        provider=PMProvider.clickup,
+        external_project_key="lst1",
+        external_project_id="lst1",
+        config={"team_id": "team1", "granted_scopes": ["default"]},
+    )
+
+
+@pytest.fixture
+def clickup_records() -> dict[tuple[str, str], Any]:
+    return {
+        ("GET", f"{CLICKUP_API}/task/9hz"): ok(load_json("clickup/get_task.json")),
+        ("POST", f"{CLICKUP_API}/list/lst1/task"): ok(load_json("clickup/create_task.json")),
+        ("PUT", f"{CLICKUP_API}/task/9hz"): ok(load_json("clickup/update_task.json")),
+        ("GET", f"{CLICKUP_API}/list/lst1/task"): ok(load_json("clickup/list_tasks.json")),
+        ("GET", f"{CLICKUP_API}/user"): ok(load_json("clickup/me.json")),
+        ("POST", f"{CLICKUP_API}/team/team1/webhook"): ok(load_json("clickup/webhook_create.json")),
+        ("DELETE", f"{CLICKUP_API}/webhook/wh-cu-1"): ok({}),
+    }
+
+
+@pytest.fixture
+def clickup_transport(clickup_records: dict[tuple[str, str], Any]) -> FixturePMTransport:
+    return FixturePMTransport(clickup_records)
+
+
+@pytest.fixture
+def clickup_adapter(
+    clickup_transport: FixturePMTransport, clickup_ctx: AdapterContext
+) -> ClickUpAdapter:
+    client = ClickUpClient(clickup_transport, auth_header="pk_xxx")
+    return ClickUpAdapter(client, clickup_ctx)
+
+
+# --- Trello ----------------------------------------------------------------- #
+
+
+@pytest.fixture
+def trello_ctx() -> AdapterContext:
+    return AdapterContext(
+        connection_id=uuid4(),
+        workspace_id=uuid4(),
+        provider=PMProvider.trello,
+        external_project_key="brd1",
+        external_project_id="brd1",
+        config={"granted_scopes": ["default"]},
+    )
+
+
+@pytest.fixture
+def trello_records() -> dict[tuple[str, str], Any]:
+    return {
+        ("GET", f"{TRELLO_API}/boards/brd1/lists"): ok(load_json("trello/list_lists.json")),
+        ("GET", f"{TRELLO_API}/boards/brd1/labels"): ok(load_json("trello/list_labels.json")),
+        ("GET", f"{TRELLO_API}/cards/card1"): ok(load_json("trello/get_card.json")),
+        ("POST", f"{TRELLO_API}/cards"): ok(load_json("trello/create_card.json")),
+        ("PUT", f"{TRELLO_API}/cards/card2"): ok({}),
+        ("GET", f"{TRELLO_API}/cards/card2"): ok(load_json("trello/get_created_card.json")),
+        ("PUT", f"{TRELLO_API}/cards/card1"): ok({}),
+        ("GET", f"{TRELLO_API}/boards/brd1/cards"): ok(load_json("trello/list_cards.json")),
+        ("GET", f"{TRELLO_API}/members/me"): ok(load_json("trello/me.json")),
+        ("POST", f"{TRELLO_API}/webhooks"): ok(load_json("trello/webhook_create.json")),
+        ("DELETE", f"{TRELLO_API}/webhooks/wh-trello-1"): ok({}),
+    }
+
+
+@pytest.fixture
+def trello_transport(trello_records: dict[tuple[str, str], Any]) -> FixturePMTransport:
+    return FixturePMTransport(trello_records)
+
+
+@pytest.fixture
+def trello_adapter(
+    trello_transport: FixturePMTransport, trello_ctx: AdapterContext
+) -> TrelloAdapter:
+    client = TrelloClient(trello_transport, auth_header="OAuth oauth_token=xxx")
+    return TrelloAdapter(client, trello_ctx)
+
+
+# --- GitLab issues ------------------------------------------------------------ #
+
+
+@pytest.fixture
+def gitlab_ctx() -> AdapterContext:
+    return AdapterContext(
+        connection_id=uuid4(),
+        workspace_id=uuid4(),
+        provider=PMProvider.gitlab,
+        external_project_key="701",
+        external_project_id="701",
+        external_base_url=GITLAB_BASE,
+        config={"granted_scopes": ["default"]},
+    )
+
+
+@pytest.fixture
+def gitlab_records() -> dict[tuple[str, str], Any]:
+    return {
+        ("GET", f"{GITLAB_API}/projects/701/issues/42"): ok(load_json("gitlab/get_issue.json")),
+        ("POST", f"{GITLAB_API}/projects/701/issues"): ok(load_json("gitlab/create_issue.json")),
+        ("PUT", f"{GITLAB_API}/projects/701/issues/42"): ok(load_json("gitlab/update_issue.json")),
+        ("GET", f"{GITLAB_API}/projects/701/issues"): ok(load_json("gitlab/list_issues.json")),
+        ("GET", f"{GITLAB_API}/user"): ok(load_json("gitlab/me.json")),
+        ("POST", f"{GITLAB_API}/projects/701/hooks"): ok(load_json("gitlab/create_hook.json")),
+        ("DELETE", f"{GITLAB_API}/projects/701/hooks/77"): ok({}),
+    }
+
+
+@pytest.fixture
+def gitlab_transport(gitlab_records: dict[tuple[str, str], Any]) -> FixturePMTransport:
+    return FixturePMTransport(gitlab_records)
+
+
+@pytest.fixture
+def gitlab_adapter(
+    gitlab_transport: FixturePMTransport, gitlab_ctx: AdapterContext
+) -> GitLabAdapter:
+    client = GitLabClient(gitlab_transport, base_url=GITLAB_BASE, auth_header="glpat-xxx")
+    return GitLabAdapter(client, gitlab_ctx)
+
+
+# --- Generic / BYO-board connector -------------------------------------------- #
+
+
+@pytest.fixture
+def generic_config() -> GenericAdapterConfig:
+    return GenericAdapterConfig(
+        base_url=GENERIC_BASE,
+        auth_header_name="Authorization",
+        endpoints=GenericEndpointConfig(
+            get="/tickets/{external_id}",
+            create="/projects/{project_id}/tickets",
+            update="/tickets/{external_id}",
+            list="/projects/{project_id}/tickets",
+            register_webhook="/projects/{project_id}/webhooks",
+            unregister_webhook="/webhooks/{webhook_id}",
+            me="/me",
+        ),
+        fields={
+            "title": "subject",
+            "status": "state",
+            "description_md": "body",
+            "priority_token": "priority",
+            "assignee_email": "assignee.email",
+            "labels": "tags",
+            "external_updated_at": "updated_at",
+        },
+        status_map={
+            "backlog": "open_backlog",
+            "unstarted": "open",
+            "started": "in_progress",
+            "completed": "resolved",
+            "canceled": "wontfix",
+        },
+        priority_map={
+            "none": "P3",
+            "low": "P4",
+            "medium": "P3",
+            "high": "P2",
+            "urgent": "P1",
+        },
+        item_id_path="id",
+        item_key_path="key",
+        item_url_path="link",
+        webhook=GenericWebhookConfig(
+            signature_header="X-Byo-Signature",
+            signature_algo=GenericWebhookSignatureAlgo.hmac_sha256_hex,
+            event_type_path="type",
+            external_id_path="ticket.id",
+            event_type_map={
+                "ticket_created": "issue.created",
+                "ticket_updated": "issue.updated",
+                "ticket_deleted": "issue.deleted",
+            },
+            default_event_type="issue.updated",
+        ),
+    )
+
+
+@pytest.fixture
+def generic_ctx() -> AdapterContext:
+    return AdapterContext(
+        connection_id=uuid4(),
+        workspace_id=uuid4(),
+        provider=PMProvider.generic,
+        external_project_key="proj1",
+        external_project_id="proj1",
+        config={"granted_scopes": ["default"]},
+    )
+
+
+@pytest.fixture
+def generic_records() -> dict[tuple[str, str], Any]:
+    return {
+        ("GET", "/tickets/t-1"): ok(load_json("generic/get_ticket.json")),
+        ("POST", "/projects/proj1/tickets"): ok(load_json("generic/create_ticket.json")),
+        ("PUT", "/tickets/t-1"): ok(load_json("generic/update_ticket.json")),
+        ("GET", "/projects/proj1/tickets"): ok(load_json("generic/list_tickets.json")),
+        ("GET", "/me"): ok(load_json("generic/me.json")),
+        ("POST", "/projects/proj1/webhooks"): ok(load_json("generic/webhook_create.json")),
+        ("DELETE", "/webhooks/wh-byo-1"): ok({}),
+    }
+
+
+@pytest.fixture
+def generic_transport(generic_records: dict[tuple[str, str], Any]) -> FixturePMTransport:
+    return FixturePMTransport(generic_records)
+
+
+@pytest.fixture
+def generic_adapter(
+    generic_transport: FixturePMTransport,
+    generic_ctx: AdapterContext,
+    generic_config: GenericAdapterConfig,
+) -> GenericAdapter:
+    return GenericAdapter(
+        generic_transport, generic_ctx, generic_config, auth_header="Bearer byo_xxx"
+    )

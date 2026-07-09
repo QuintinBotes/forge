@@ -27,6 +27,10 @@ def test_provider_enum_values() -> None:
         "asana",
         "monday",
         "github_projects",
+        "clickup",
+        "trello",
+        "gitlab",
+        "generic",
     }
 
 

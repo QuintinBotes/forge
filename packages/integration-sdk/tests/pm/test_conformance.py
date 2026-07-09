@@ -1,14 +1,15 @@
-"""Cross-provider conformance suite (F40-PM-ADAPTERS-1).
+"""Cross-provider conformance suite (F40-PM-ADAPTERS-1, extended by -2).
 
-Every ``PMAdapter`` implementation — Jira and Linear (F18), plus Asana,
-Monday.com, and GitHub Projects (F40) — must satisfy the same async Protocol
-and behave identically from the sync engine's point of view: fetch/create/
-update/list a task, report connection health, and register/unregister a
-webhook. This module parametrizes one shared assertion set over all five
-providers' adapter fixtures (declared in ``conftest.py``) so a new provider
-that fails here is *not* conformant, regardless of how its provider-specific
-unit tests (``test_clients.py``, ``test_mapping.py``, ``test_webhooks.py``)
-look.
+Every ``PMAdapter`` implementation — Jira and Linear (F18), Asana,
+Monday.com, and GitHub Projects (F40-PM-ADAPTERS-1), plus ClickUp, Trello,
+GitLab issues, and the config-driven generic/BYO-board connector
+(F40-PM-ADAPTERS-2) — must satisfy the same async Protocol and behave
+identically from the sync engine's point of view: fetch/create/update/list a
+task, report connection health, and register/unregister a webhook. This
+module parametrizes one shared assertion set over all providers' adapter
+fixtures (declared in ``conftest.py``) so a new provider that fails here is
+*not* conformant, regardless of how its provider-specific unit tests
+(``test_clients.py``, ``test_mapping.py``, ``test_webhooks.py``) look.
 """
 
 from __future__ import annotations
@@ -22,7 +23,17 @@ from forge_contracts.enums import Direction
 from forge_contracts.pm import ForgePriority, ForgeTask, StatusCategory
 from forge_contracts.pm import PMAdapter as PMAdapterProtocol
 
-PROVIDERS = ["jira", "linear", "asana", "monday", "github_projects"]
+PROVIDERS = [
+    "jira",
+    "linear",
+    "asana",
+    "monday",
+    "github_projects",
+    "clickup",
+    "trello",
+    "gitlab",
+    "generic",
+]
 
 # A pre-existing external id each provider's fixture data resolves via GET/fetch.
 EXTERNAL_IDS: dict[str, str] = {
@@ -31,6 +42,10 @@ EXTERNAL_IDS: dict[str, str] = {
     "asana": "10001",
     "monday": "1001",
     "github_projects": "PVTI_1",
+    "clickup": "9hz",
+    "trello": "card1",
+    "gitlab": "42",
+    "generic": "t-1",
 }
 
 

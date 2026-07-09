@@ -20,7 +20,7 @@ from enum import StrEnum
 from typing import Literal, Protocol, runtime_checkable
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from forge_contracts.enums import Direction
 
@@ -31,6 +31,10 @@ __all__ = [
     "ExternalTask",
     "ForgePriority",
     "ForgeTask",
+    "GenericAdapterConfig",
+    "GenericEndpointConfig",
+    "GenericWebhookConfig",
+    "GenericWebhookSignatureAlgo",
     "HealthResult",
     "HttpResponse",
     "PMAdapter",
@@ -57,7 +61,9 @@ class PMProvider(StrEnum):
     """Supported external project-management providers.
 
     F18 shipped Jira + Linear; F40-PM-ADAPTERS-1 adds Asana, Monday.com, and
-    GitHub Projects (v2) behind the same ``PMAdapter`` seam.
+    GitHub Projects (v2); F40-PM-ADAPTERS-2 adds ClickUp, Trello, GitLab
+    Issues, and a config-driven ``generic`` (BYO-board) connector — all behind
+    the same ``PMAdapter`` seam.
     """
 
     jira = "jira"
@@ -65,6 +71,10 @@ class PMProvider(StrEnum):
     asana = "asana"
     monday = "monday"
     github_projects = "github_projects"
+    clickup = "clickup"
+    trello = "trello"
+    gitlab = "gitlab"
+    generic = "generic"
 
 
 class SyncDirection(StrEnum):
@@ -243,6 +253,165 @@ class PMConnectionConfig(_PMModel):
     priority_map: dict = Field(default_factory=dict)
     field_map: dict = Field(default_factory=dict)
     on_external_delete: Literal["unlink", "archive"] = "unlink"
+
+
+# --------------------------------------------------------------------------- #
+# Generic / BYO-board connector (F40-PM-ADAPTERS-2)                            #
+# --------------------------------------------------------------------------- #
+
+
+class GenericWebhookSignatureAlgo(StrEnum):
+    """Supported webhook-verification schemes for a BYO board."""
+
+    none = "none"
+    hmac_sha256_hex = "hmac_sha256_hex"
+    hmac_sha1_base64 = "hmac_sha1_base64"
+    shared_secret_header = "shared_secret_header"  # plain constant-time equality
+
+
+class GenericWebhookConfig(_PMModel):
+    """Declarative webhook shape for the generic connector.
+
+    ``*_path`` fields are dotted paths (``"a.b.c"``) into the parsed JSON
+    webhook body; an empty string means "the root object itself".
+    """
+
+    signature_header: str | None = None
+    signature_algo: GenericWebhookSignatureAlgo = GenericWebhookSignatureAlgo.none
+    event_type_path: str = "event_type"
+    external_id_path: str = "id"
+    delivery_id_header: str | None = None
+    event_type_map: dict[str, Literal["issue.created", "issue.updated", "issue.deleted"]] = Field(
+        default_factory=dict
+    )
+    default_event_type: Literal["issue.created", "issue.updated", "issue.deleted"] = "issue.updated"
+
+
+class GenericEndpointConfig(_PMModel):
+    """URL path templates for the generic connector.
+
+    Templates may reference ``{external_id}``, ``{project_id}``, ``{cursor}``,
+    ``{limit}``, and ``{webhook_id}`` — unused placeholders are simply not
+    substituted for a given call.
+    """
+
+    get: str
+    create: str
+    update: str
+    list: str
+    # Optional dedicated status-change call for boards that require a
+    # workflow-validated transition rather than a plain field write on the
+    # ``update`` endpoint (the Jira-shaped case). When set, the adapter posts
+    # the mapped status there instead of folding it into the ``update`` body.
+    transition: str | None = None
+    register_webhook: str | None = None
+    unregister_webhook: str | None = None
+    me: str | None = None
+
+
+# The forge-side fields a BYO board can populate via a dotted response path.
+# (The item's own id/key/url are covered separately by ``item_id_path`` /
+# ``item_key_path`` / ``item_url_path`` below, since they are also needed
+# outside the ``ExternalTask`` shape — e.g. to address the update/get
+# endpoints after a create.)
+_GENERIC_KNOWN_FIELDS: frozenset[str] = frozenset(
+    {
+        "title",
+        "status",
+        "description_md",
+        "priority_token",
+        "assignee_email",
+        "labels",
+        "external_updated_at",
+    }
+)
+
+
+class GenericAdapterConfig(_PMModel):
+    """Declarative mapping that drives :class:`GenericAdapter` — no code change.
+
+    A user brings a board Forge has no native adapter for by supplying this
+    config (persisted on ``AdapterContext.config["generic_config"]``): a base
+    URL, endpoint templates, a field-map (forge field -> dotted JSON path),
+    and a status/priority-category map from provider-native values to the
+    agnostic Forge tokens. Validated eagerly so a bad config is rejected at
+    connection-setup time, not at first sync (status/priority mapping never
+    silently drops a value — see ``forge_integrations.pm.base``).
+    """
+
+    base_url: str
+    auth_header_name: str = "Authorization"
+    endpoints: GenericEndpointConfig
+    fields: dict[str, str]  # forge field name -> dotted external JSON path
+    status_map: dict[str, str]  # forge StatusCategory value -> external status token (OUT)
+    priority_map: dict[str, str] = Field(default_factory=dict)  # forge priority -> token (OUT)
+    list_items_path: str = ""  # dotted path to the array in a list response ("" = root array)
+    item_id_path: str = "id"
+    item_key_path: str = "id"
+    item_url_path: str = "url"
+    webhook: GenericWebhookConfig = Field(default_factory=GenericWebhookConfig)
+
+    @field_validator("base_url")
+    @classmethod
+    def _base_url_is_http(cls, value: str) -> str:
+        if not value or not value.startswith(("http://", "https://")):
+            raise ValueError(f"base_url must be an http(s) URL, got {value!r}")
+        return value.rstrip("/")
+
+    @field_validator("fields")
+    @classmethod
+    def _fields_cover_required(cls, value: dict[str, str]) -> dict[str, str]:
+        unknown = set(value) - _GENERIC_KNOWN_FIELDS
+        if unknown:
+            raise ValueError(f"fields has unknown forge field name(s): {sorted(unknown)}")
+        missing = {"title", "status"} - set(value)
+        if missing:
+            raise ValueError(f"fields is missing required mapping(s): {sorted(missing)}")
+        for name, path in value.items():
+            if not path:
+                raise ValueError(f"fields[{name!r}] must be a non-empty dotted path")
+        return value
+
+    @field_validator("status_map")
+    @classmethod
+    def _status_map_covers_every_category(cls, value: dict[str, str]) -> dict[str, str]:
+        required = {c.value for c in StatusCategory}
+        missing = required - set(value)
+        if missing:
+            raise ValueError(f"status_map must map every StatusCategory; missing {sorted(missing)}")
+        empty = [k for k, v in value.items() if not v]
+        if empty:
+            raise ValueError(f"status_map has empty external value(s) for: {sorted(empty)}")
+        return value
+
+    @model_validator(mode="after")
+    def _endpoints_non_empty(self) -> GenericAdapterConfig:
+        for name in ("get", "create", "update", "list"):
+            if not getattr(self.endpoints, name):
+                raise ValueError(f"endpoints.{name} must be a non-empty path template")
+        return self
+
+    @model_validator(mode="after")
+    def _priority_map_covers_every_priority_when_field_mapped(self) -> GenericAdapterConfig:
+        # priority_map is only ever consumed (via BaseAdapter.resolve_value, which
+        # raises MappingError with no fallback) when the config maps a
+        # "priority_token" field -- exactly mirroring status_map's eager,
+        # fail-closed completeness requirement above, so a bad config is
+        # rejected at connection-setup time rather than crashing uncaught at
+        # first write.
+        if "priority_token" not in self.fields:
+            return self
+        required = {p.value for p in ForgePriority}
+        missing = required - set(self.priority_map)
+        if missing:
+            raise ValueError(
+                "priority_map must map every ForgePriority when 'priority_token' is in "
+                f"fields; missing {sorted(missing)}"
+            )
+        empty = [k for k, v in self.priority_map.items() if not v]
+        if empty:
+            raise ValueError(f"priority_map has empty external value(s) for: {sorted(empty)}")
+        return self
 
 
 # --------------------------------------------------------------------------- #

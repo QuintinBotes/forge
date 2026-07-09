@@ -305,7 +305,7 @@ function ProviderTile({
       )}
       aria-hidden
     >
-      {provider === "jira" ? "J" : "L"}
+      {providerLabel(provider).charAt(0).toUpperCase()}
     </span>
   );
 }

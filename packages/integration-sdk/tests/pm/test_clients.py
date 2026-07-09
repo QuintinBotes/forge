@@ -9,6 +9,7 @@ import pytest
 
 from forge_contracts.enums import Direction
 from forge_contracts.pm import (
+    AdapterContext,
     ForgePriority,
     ForgeTask,
     HttpResponse,
@@ -16,7 +17,7 @@ from forge_contracts.pm import (
     StatusCategory,
 )
 from forge_integrations.pm import FixturePMTransport
-from forge_integrations.pm.errors import RateLimitError
+from forge_integrations.pm.errors import ProviderError, RateLimitError
 from forge_integrations.pm.jira.client import JiraClient
 
 
@@ -325,3 +326,207 @@ async def test_github_projects_webhook_is_app_level_no_op(github_projects_adapte
     wid = await github_projects_adapter.register_webhook("https://forge/webhook", "secret")
     assert wid.startswith("app-webhook:")
     await github_projects_adapter.unregister_webhook(wid)  # no raise, no network call
+
+
+# --- ClickUp -------------------------------------------------------------- #
+
+
+async def test_clickup_fetch_external(clickup_adapter) -> None:
+    ext = await clickup_adapter.fetch_external("9hz")
+    assert ext.provider is PMProvider.clickup
+    assert ext.status_category is StatusCategory.started
+    assert ext.priority_token == "high"
+    assert ext.assignee_email == "alice@acme.test"
+    assert "backend" in ext.labels
+
+
+async def test_clickup_create_external(clickup_adapter, clickup_transport) -> None:
+    ext = await clickup_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    assert ext.external_id == "9hz2"
+    methods = {(c["method"], c["url"].split("clickup.com")[-1]) for c in clickup_transport.call_log}
+    assert ("POST", "/api/v2/list/lst1/task") in methods
+
+
+async def test_clickup_update_external(clickup_adapter) -> None:
+    ext = await clickup_adapter.update_external(
+        "9hz", _forge_task(status_category=StatusCategory.started)
+    )
+    assert ext.external_id == "9hz"
+
+
+async def test_clickup_list_external(clickup_adapter) -> None:
+    tasks, cursor = await clickup_adapter.list_external()
+    assert len(tasks) == 2
+    assert cursor is None
+
+
+async def test_clickup_health_me(clickup_adapter) -> None:
+    health = await clickup_adapter.get_connection_health()
+    assert health.status == "connected"
+    assert health.account == "alice@acme.test"
+
+
+async def test_clickup_register_unregister_webhook(clickup_adapter) -> None:
+    wid = await clickup_adapter.register_webhook("https://forge/webhook", "secret")
+    assert wid == "wh-cu-1"
+    await clickup_adapter.unregister_webhook(wid)
+
+
+async def test_clickup_register_webhook_requires_team_id(clickup_transport) -> None:
+    from forge_integrations.pm.clickup.adapter import ClickUpAdapter
+    from forge_integrations.pm.clickup.client import ClickUpClient
+
+    ctx = AdapterContext(
+        connection_id=uuid4(),
+        workspace_id=uuid4(),
+        provider=PMProvider.clickup,
+        external_project_key="lst1",
+        external_project_id="lst1",
+    )
+    adapter = ClickUpAdapter(ClickUpClient(clickup_transport), ctx)
+    with pytest.raises(ProviderError):
+        await adapter.register_webhook("https://forge/webhook", "secret")
+
+
+# --- Trello ----------------------------------------------------------------- #
+
+
+async def test_trello_fetch_external(trello_adapter) -> None:
+    ext = await trello_adapter.fetch_external("card1")
+    assert ext.provider is PMProvider.trello
+    assert ext.status_category is StatusCategory.started
+    assert ext.priority_token == "High"
+
+
+async def test_trello_create_external_resolves_list_and_label(
+    trello_adapter, trello_transport
+) -> None:
+    ext = await trello_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    assert ext.external_id == "card2"
+    methods = {(c["method"], c["url"].split("trello.com")[-1]) for c in trello_transport.call_log}
+    assert ("POST", "/1/cards") in methods
+    assert ("PUT", "/1/cards/card2") in methods
+
+
+async def test_trello_update_external(trello_adapter) -> None:
+    ext = await trello_adapter.update_external(
+        "card1", _forge_task(status_category=StatusCategory.started)
+    )
+    assert ext.external_id == "card1"
+
+
+async def test_trello_list_external(trello_adapter) -> None:
+    tasks, _cursor = await trello_adapter.list_external()
+    assert len(tasks) == 2
+
+
+async def test_trello_health_me(trello_adapter) -> None:
+    health = await trello_adapter.get_connection_health()
+    assert health.status == "connected"
+    assert health.account == "alice@acme.test"
+
+
+async def test_trello_register_unregister_webhook(trello_adapter) -> None:
+    wid = await trello_adapter.register_webhook("https://forge/webhook", "secret")
+    assert wid == "wh-trello-1"
+    await trello_adapter.unregister_webhook(wid)
+
+
+async def test_trello_no_matching_list_raises(trello_transport, trello_ctx) -> None:
+    from forge_integrations.pm.errors import ProviderError as TrelloProviderError
+    from forge_integrations.pm.trello.adapter import TrelloAdapter
+    from forge_integrations.pm.trello.client import TrelloClient
+
+    adapter = TrelloAdapter(TrelloClient(trello_transport), trello_ctx)
+    with pytest.raises(TrelloProviderError):
+        await adapter._list_id_for(_forge_task(status_category=StatusCategory.canceled))
+
+
+# --- GitLab issues ------------------------------------------------------------ #
+
+
+async def test_gitlab_fetch_external(gitlab_adapter) -> None:
+    ext = await gitlab_adapter.fetch_external("42")
+    assert ext.provider is PMProvider.gitlab
+    assert ext.status_category is StatusCategory.started
+    assert ext.priority_token == "Priority: High"
+    assert ext.assignee_email == "alice@acme.test"
+
+
+async def test_gitlab_create_external(gitlab_adapter, gitlab_transport) -> None:
+    ext = await gitlab_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    assert ext.external_id == "43"
+    methods = {(c["method"], c["url"].split("gitlab.com")[-1]) for c in gitlab_transport.call_log}
+    assert ("POST", "/api/v4/projects/701/issues") in methods
+
+
+async def test_gitlab_update_external_preserves_unrelated_labels(gitlab_adapter) -> None:
+    ext = await gitlab_adapter.update_external(
+        "42", _forge_task(status_category=StatusCategory.started)
+    )
+    assert ext.external_id == "42"
+    assert "backend" in ext.labels
+
+
+async def test_gitlab_list_external(gitlab_adapter) -> None:
+    tasks, _cursor = await gitlab_adapter.list_external()
+    assert len(tasks) == 2
+    # the closed/unlabeled issue falls back to state-derived status.
+    assert any(t.status_category is StatusCategory.completed for t in tasks)
+
+
+async def test_gitlab_health_user(gitlab_adapter) -> None:
+    health = await gitlab_adapter.get_connection_health()
+    assert health.status == "connected"
+    assert health.account == "alice@acme.test"
+
+
+async def test_gitlab_register_unregister_webhook(gitlab_adapter) -> None:
+    wid = await gitlab_adapter.register_webhook("https://forge/webhook", "secret")
+    assert wid == "77"
+    await gitlab_adapter.unregister_webhook(wid)
+
+
+# --- Generic / BYO-board connector -------------------------------------------- #
+
+
+async def test_generic_fetch_external(generic_adapter) -> None:
+    ext = await generic_adapter.fetch_external("t-1")
+    assert ext.provider is PMProvider.generic
+    assert ext.status_category is StatusCategory.started
+    assert ext.priority_token == "P2"
+    assert ext.assignee_email == "alice@acme.test"
+    assert "backend" in ext.labels
+    assert ext.external_key == "BYO-1"
+    assert ext.url == "https://byo.example/tickets/t-1"
+
+
+async def test_generic_create_external(generic_adapter, generic_transport) -> None:
+    ext = await generic_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    assert ext.external_id == "t-2"
+    methods = {(c["method"], c["url"].split("byo.example")[-1]) for c in generic_transport.call_log}
+    assert ("POST", "/projects/proj1/tickets") in methods
+
+
+async def test_generic_update_external(generic_adapter) -> None:
+    ext = await generic_adapter.update_external(
+        "t-1", _forge_task(status_category=StatusCategory.started)
+    )
+    assert ext.external_id == "t-1"
+
+
+async def test_generic_list_external(generic_adapter) -> None:
+    tasks, cursor = await generic_adapter.list_external()
+    assert len(tasks) == 2
+    assert cursor is None
+
+
+async def test_generic_health_me(generic_adapter) -> None:
+    health = await generic_adapter.get_connection_health()
+    assert health.status == "connected"
+
+
+async def test_generic_register_unregister_webhook(generic_adapter) -> None:
+    wid = await generic_adapter.register_webhook("https://forge/webhook", "secret")
+    assert wid == "wh-byo-1"
+    await generic_adapter.unregister_webhook(wid)

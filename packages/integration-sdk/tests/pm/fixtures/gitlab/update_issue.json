@@ -1,0 +1,11 @@
+{
+  "iid": 42,
+  "id": 5001,
+  "title": "Fix pagination bug",
+  "description": "conformance body",
+  "state": "opened",
+  "labels": ["Doing", "Priority: High", "backend"],
+  "web_url": "https://gitlab.com/acme/eng/-/issues/42",
+  "updated_at": "2024-01-01T00:10:00.000Z",
+  "assignee": { "id": 9, "username": "alice", "email": "alice@acme.test" }
+}
