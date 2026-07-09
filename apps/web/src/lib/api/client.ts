@@ -87,6 +87,7 @@ import type {
   TeamMemberInput,
   TeamRole,
   SpecDashboard,
+  SpecDraft,
   SpecManifest,
   Sprint,
   SprintDTO,
@@ -501,6 +502,21 @@ export class ForgeApiClient {
       `/spec/tasks/${encodeURIComponent(taskId)}/validate`,
       { method: "POST" },
     );
+  }
+
+  /**
+   * BYOK AI spec drafting (`ss-draft` / `ss-ai-panel`): draft a `spec.md` from
+   * a one-line goal via the workspace's model router + `ModelClient`, seeded
+   * with the project constitution when `project_id` is given. Draft-only —
+   * nothing is persisted; the caller streams `spec_md` into the Guided or
+   * Markdown editor for a human to refine and save.
+   */
+  draftSpec(body: {
+    goal: string;
+    epic_id?: string;
+    project_id?: string;
+  }): Promise<SpecDraft> {
+    return this.request<SpecDraft>("/spec/draft", { method: "POST", body });
   }
 
   /** Read a project's constitution (404 if it was never initialised). */

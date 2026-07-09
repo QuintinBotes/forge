@@ -428,6 +428,35 @@ export interface SpecDashboard {
   specs: SpecOverview[];
 }
 
+/**
+ * Token/cost accounting for one model call (`forge_agent.providers`'s
+ * `UsageAccumulator.to_artifact` shape — mirrored here, not reimplemented).
+ */
+export interface ModelUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
+  calls?: number;
+  cache_read_input_tokens?: number;
+}
+
+/**
+ * The draft-only result of `POST /spec/draft` (ss-draft / ss-ai-panel): a BYOK
+ * model turns a one-line goal into a `spec.md`, seeded with the project
+ * constitution. Nothing is persisted — `manifest` is a parsed *preview* (or
+ * `null` with `parse_error` set when the drafted markdown didn't parse) for a
+ * human to refine before saving via the normal spec-editing endpoints.
+ */
+export interface SpecDraft {
+  goal: string;
+  epic_id?: string | null;
+  model: string;
+  spec_md: string;
+  manifest?: SpecManifest | null;
+  parse_error?: string | null;
+  usage?: ModelUsage;
+}
+
 // --- Observability: run traces -------------------------------------------- //
 // Mirrors forge_api.observability.trace.RunTrace + forge_contracts.Step, the
 // response shape of GET /observability/runs/{run_id}/trace.

@@ -7,10 +7,13 @@ import { Button } from "@/components/ui/button";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { useEpics } from "@/lib/api/hooks";
 import { useCreateSpec } from "@/lib/api/spec";
-import type { SpecManifest } from "@/lib/api/types";
+import type { SpecDraft, SpecManifest } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
+import { AiDraftPanel } from "./ai-draft-panel";
 import { GuidedMode } from "./guided-mode";
+
+type EntryMode = "scratch" | "ai";
 
 export interface NewSpecPageProps {
   client?: ForgeApiClient;
@@ -41,8 +44,18 @@ export function NewSpecPage({
 
   const [epicId, setEpicId] = useState("");
   const [draft, setDraft] = useState<SpecManifest>({ id: "", name: "" });
+  const [entryMode, setEntryMode] = useState<EntryMode>("scratch");
 
   const epics = epicsQuery.data ?? [];
+
+  function handleAiDraft(result: SpecDraft) {
+    if (result.manifest) {
+      // Draft-only preview: keep the draft's own placeholder id blank until
+      // the spec is actually created — everything else the model wrote
+      // (name, requirements, acceptance criteria, ...) seeds Guided mode.
+      setDraft({ ...result.manifest, id: "" });
+    }
+  }
   const canCreate =
     Boolean(epicId) && draft.name.trim().length > 0 && !createSpec.isPending;
 
@@ -81,6 +94,41 @@ export function NewSpecPage({
           switch to Markdown or YAML any time after it&rsquo;s created.
         </p>
       </header>
+
+      <div
+        role="tablist"
+        aria-label="New spec entry mode"
+        className="inline-flex w-fit items-center gap-1 rounded-lg border border-border bg-muted/50 p-1"
+      >
+        {(
+          [
+            { id: "scratch", label: "Start from scratch" },
+            { id: "ai", label: "Draft with AI" },
+          ] as const
+        ).map((option) => (
+          <button
+            key={option.id}
+            role="tab"
+            type="button"
+            aria-selected={entryMode === option.id}
+            onClick={() => setEntryMode(option.id)}
+            data-testid={`new-spec-entry-${option.id}`}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              entryMode === option.id
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {entryMode === "ai" ? (
+        <AiDraftPanel epicId={epicId || undefined} client={client} onDraft={handleAiDraft} />
+      ) : null}
 
       <label className="flex flex-col gap-1.5 text-sm">
         <span className="font-medium text-foreground">Epic</span>

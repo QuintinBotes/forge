@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ForgeApiClient } from "@/lib/api/client";
-import type { EpicDTO, SpecManifest } from "@/lib/api/types";
+import type { EpicDTO, SpecDraft, SpecManifest } from "@/lib/api/types";
 
 import { NewSpecPage } from "./new-spec-page";
 
@@ -17,6 +17,18 @@ const epics: EpicDTO[] = [
   { id: "e2", title: "Billing v2" },
 ];
 
+const aiDraft: SpecDraft = {
+  goal: "Passwordless auth",
+  model: "claude-opus-4-8",
+  spec_md: "---\nid: SPEC-DRAFT\nstatus: draft\n---\n\n## Goal\n\nPasswordless auth\n",
+  manifest: {
+    id: "SPEC-DRAFT",
+    name: "Passwordless auth",
+    requirements: [{ id: "R1", text: "Sign in without a password" }],
+  },
+  usage: { cost_usd: 0.01 },
+};
+
 function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
   return {
     listEpics: vi.fn(() => Promise.resolve(epics)),
@@ -26,6 +38,7 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
     putSpecManifest: vi.fn((specId: string, manifest: SpecManifest) =>
       Promise.resolve({ ...manifest, id: specId } as SpecManifest),
     ),
+    draftSpec: vi.fn(() => Promise.resolve(aiDraft)),
     ...overrides,
   } as unknown as ForgeApiClient;
 }
@@ -114,5 +127,41 @@ describe("NewSpecPage", () => {
       ),
     );
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("s-new"));
+  });
+
+  describe("Draft with AI entry", () => {
+    it("hides the AI panel until 'Draft with AI' is selected", async () => {
+      const client = makeClient();
+      renderPage(client);
+      await screen.findByText("Auth overhaul");
+      expect(screen.queryByTestId("ai-draft-panel")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("new-spec-entry-ai"));
+      expect(screen.getByTestId("ai-draft-panel")).toBeInTheDocument();
+    });
+
+    it("streams a drafted spec into the Guided form", async () => {
+      const client = makeClient();
+      renderPage(client);
+      await screen.findByText("Auth overhaul");
+
+      fireEvent.change(screen.getByTestId("new-spec-epic"), { target: { value: "e1" } });
+      fireEvent.click(screen.getByTestId("new-spec-entry-ai"));
+      fireEvent.change(screen.getByTestId("ai-draft-goal"), {
+        target: { value: "Passwordless auth" },
+      });
+      fireEvent.click(screen.getByTestId("ai-draft-submit"));
+
+      await waitFor(() =>
+        expect(client.draftSpec).toHaveBeenCalledWith(
+          expect.objectContaining({ goal: "Passwordless auth" }),
+        ),
+      );
+
+      // The parsed manifest preview seeds the Guided form once the AI panel's
+      // live reveal has fully streamed the drafted text in.
+      await waitFor(() => expect(screen.getByTestId("guided-name")).toHaveValue("Passwordless auth"));
+      expect(screen.getByTestId("create-spec")).toBeEnabled();
+    });
   });
 });

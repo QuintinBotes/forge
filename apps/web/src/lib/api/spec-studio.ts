@@ -21,7 +21,7 @@ import {
 } from "@tanstack/react-query";
 
 import { apiClient, type ForgeApiClient } from "./client";
-import type { SpecManifest } from "./types";
+import type { SpecDraft, SpecManifest } from "./types";
 
 export const specStudioKeys = {
   manifest: (specId: string) => ["spec-studio", "manifest", specId] as const,
@@ -108,5 +108,24 @@ export function useSaveSpecManifestYaml(
   return useMutation({
     mutationFn: (content: string) => client.putSpecManifestYaml(specId, content),
     onSuccess: (updated) => sync(updated, "yaml"),
+  });
+}
+
+export interface DraftSpecVariables {
+  goal: string;
+  epic_id?: string;
+  project_id?: string;
+}
+
+/**
+ * `ss-ai-panel`: draft a `spec.md` from a one-line goal (`POST /spec/draft`).
+ * Draft-only — nothing is persisted or cached; the caller (`AiDraftPanel`)
+ * owns streaming the result into the Guided/Markdown editor.
+ */
+export function useDraftSpec(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<SpecDraft, Error, DraftSpecVariables> {
+  return useMutation({
+    mutationFn: (body: DraftSpecVariables) => client.draftSpec(body),
   });
 }
