@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ForgeApiClient } from "./client";
-import { queryKeys, useSetTaskStatus } from "./hooks";
-import type { TaskDTO } from "./types";
+import { queryKeys, useCreateEpic, useSetTaskStatus } from "./hooks";
+import type { EpicDTO, TaskDTO } from "./types";
 
 function makeWrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -77,5 +77,31 @@ describe("useSetTaskStatus (optimistic)", () => {
 
     const tasks = queryClient.getQueryData<TaskDTO[]>(queryKeys.tasks());
     expect(tasks?.[0].status).toBe("backlog");
+  });
+});
+
+describe("useCreateEpic", () => {
+  it("creates the epic and invalidates the epics list", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    const created: EpicDTO = { id: "e-new", title: "New epic" };
+    const client = {
+      createEpic: vi.fn(() => Promise.resolve(created)),
+    } as unknown as ForgeApiClient;
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useCreateEpic(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ title: "New epic" });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.createEpic).toHaveBeenCalledWith({ title: "New epic" });
+    expect(result.current.data).toEqual(created);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.epics() });
   });
 });

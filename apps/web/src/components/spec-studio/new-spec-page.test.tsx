@@ -1,15 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ForgeApiClient } from "@/lib/api/client";
 import type { EpicDTO, SpecDraft, SpecManifest } from "@/lib/api/types";
 
 import { NewSpecPage } from "./new-spec-page";
 
+const mockSearchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => mockSearchParams,
 }));
 
 const epics: EpicDTO[] = [
@@ -32,6 +34,9 @@ const aiDraft: SpecDraft = {
 function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
   return {
     listEpics: vi.fn(() => Promise.resolve(epics)),
+    createEpic: vi.fn((epic: EpicDTO) =>
+      Promise.resolve({ ...epic, id: "e-new" } as EpicDTO),
+    ),
     createSpec: vi.fn((body: { epic_id: string; name: string }) =>
       Promise.resolve({ id: "s-new", name: body.name, status: "draft" } as SpecManifest),
     ),
@@ -42,6 +47,12 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
     ...overrides,
   } as unknown as ForgeApiClient;
 }
+
+afterEach(() => {
+  for (const key of [...mockSearchParams.keys()]) {
+    mockSearchParams.delete(key);
+  }
+});
 
 function renderPage(client: ForgeApiClient, onCreated = vi.fn()) {
   const queryClient = new QueryClient({
@@ -162,6 +173,82 @@ describe("NewSpecPage", () => {
       // live reveal has fully streamed the drafted text in.
       await waitFor(() => expect(screen.getByTestId("guided-name")).toHaveValue("Passwordless auth"));
       expect(screen.getByTestId("create-spec")).toBeEnabled();
+    });
+  });
+
+  describe("starter templates", () => {
+    it("seeds a requirement and acceptance criterion when a template is picked", async () => {
+      const client = makeClient();
+      renderPage(client);
+      await screen.findByText("Auth overhaul");
+
+      fireEvent.click(screen.getByTestId("spec-template-bugfix"));
+
+      expect(screen.getByTestId("spec-template-bugfix")).toHaveAttribute("aria-pressed", "true");
+      expect(
+        screen.getByDisplayValue(/Describe the incorrect behavior/),
+      ).toBeInTheDocument();
+    });
+
+    it("does not clobber requirements already drafted before picking a template", async () => {
+      const client = makeClient();
+      renderPage(client);
+      await screen.findByText("Auth overhaul");
+
+      fireEvent.click(screen.getByTestId("guided-add-requirement"));
+      const reqInput = screen.getByLabelText(/text$/i);
+      fireEvent.change(reqInput, { target: { value: "My own requirement" } });
+
+      fireEvent.click(screen.getByTestId("spec-template-feature"));
+
+      expect(screen.getByDisplayValue("My own requirement")).toBeInTheDocument();
+      expect(
+        screen.queryByDisplayValue(/Describe the new capability/),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("epic entry", () => {
+    it("preselects the epic from an ?epicId= query param (board epic 'Create spec' entry)", async () => {
+      mockSearchParams.set("epicId", "e2");
+      const client = makeClient();
+      renderPage(client);
+      await screen.findByText("Auth overhaul");
+
+      expect(screen.getByTestId("new-spec-epic")).toHaveValue("e2");
+    });
+
+    it("creates a new epic then the spec when 'Create new epic' is chosen (standalone /specs/new entry)", async () => {
+      const client = makeClient();
+      const { onCreated } = renderPage(client);
+      await screen.findByText("Auth overhaul");
+
+      fireEvent.change(screen.getByTestId("new-spec-epic"), {
+        target: { value: "__new_epic__" },
+      });
+      expect(screen.getByTestId("create-spec")).toBeDisabled();
+
+      fireEvent.change(screen.getByTestId("new-spec-new-epic-title"), {
+        target: { value: "Fresh epic" },
+      });
+      fireEvent.change(screen.getByTestId("guided-name"), {
+        target: { value: "Passwordless auth" },
+      });
+      expect(screen.getByTestId("create-spec")).toBeEnabled();
+
+      fireEvent.click(screen.getByTestId("create-spec"));
+
+      await waitFor(() =>
+        expect(client.createEpic).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Fresh epic" }),
+        ),
+      );
+      await waitFor(() =>
+        expect(client.createSpec).toHaveBeenCalledWith(
+          expect.objectContaining({ epic_id: "e-new", name: "Passwordless auth" }),
+        ),
+      );
+      await waitFor(() => expect(onCreated).toHaveBeenCalledWith("s-new"));
     });
   });
 });

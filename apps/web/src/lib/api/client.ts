@@ -264,6 +264,11 @@ export class ForgeApiClient {
     return this.request<EpicDTO[]>("/board/epics", { query });
   }
 
+  /** Create an epic (e.g. the standalone `/specs/new` entry, which creates its own epic). */
+  createEpic(epic: EpicDTO): Promise<EpicDTO> {
+    return this.request<EpicDTO>("/board/epics", { method: "POST", body: epic });
+  }
+
   listSprints(query?: RequestOptions["query"]): Promise<SprintDTO[]> {
     return this.request<SprintDTO[]>("/board/sprints", { query });
   }
