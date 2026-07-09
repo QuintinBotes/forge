@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
-import { useMemo, useRef, useState, type ChangeEvent, type UIEvent } from "react";
+import { useMemo, useRef, useState, type ChangeEvent, type ReactNode, type UIEvent } from "react";
 
 import { cn } from "@/lib/utils";
 import { hasErrors, validateManifestYaml } from "@/lib/spec-studio/yaml-schema";
@@ -16,6 +16,10 @@ export interface YamlModeProps {
   /** True once `value` differs from the last saved/loaded text. */
   dirty?: boolean;
   saveError?: string | null;
+  /** Live-collaboration presence bar rendered in the header (CRDT mode). */
+  presence?: ReactNode;
+  /** Report the local cursor/selection for remote presence (CRDT mode). */
+  onSelectionChange?: (anchor: number, head: number) => void;
 }
 
 /**
@@ -25,7 +29,16 @@ export interface YamlModeProps {
  * `lib/spec-studio/yaml-schema`). Edits are the same `SpecManifest` the
  * Guided and Markdown modes edit — this only changes the surface.
  */
-export function YamlMode({ value, onChange, onSave, saving = false, dirty = false, saveError }: YamlModeProps) {
+export function YamlMode({
+  value,
+  onChange,
+  onSave,
+  saving = false,
+  dirty = false,
+  saveError,
+  presence,
+  onSelectionChange,
+}: YamlModeProps) {
   const issues = useMemo(() => validateManifestYaml(value), [value]);
   const invalid = hasErrors(issues);
   const lineCount = useMemo(() => Math.max(1, value.split("\n").length), [value]);
@@ -57,6 +70,7 @@ export function YamlMode({ value, onChange, onSave, saving = false, dirty = fals
             </span>
           )}
           {dirty ? <span className="text-muted-foreground/70">Unsaved changes</span> : null}
+          {presence}
         </div>
         <Button
           size="sm"
@@ -86,6 +100,9 @@ export function YamlMode({ value, onChange, onSave, saving = false, dirty = fals
           value={value}
           onChange={onTextChange}
           onScroll={onScroll}
+          onSelect={(event) =>
+            onSelectionChange?.(event.currentTarget.selectionStart, event.currentTarget.selectionEnd)
+          }
           className="min-h-[24rem] flex-1 resize-none bg-transparent px-3 py-3 font-mono text-xs leading-5 text-foreground outline-none"
         />
       </div>
