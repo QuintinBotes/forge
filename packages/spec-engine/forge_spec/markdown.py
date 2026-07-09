@@ -153,14 +153,25 @@ def _frontmatter(manifest: SpecManifest) -> str:
     return f"---\n{body}---"
 
 
-def _acceptance_line(criterion: AcceptanceCriterion) -> str:
+def _acceptance_lines(criterion: AcceptanceCriterion) -> list[str]:
+    """Render one criterion, spanning multiple lines when ``text`` is multi-line.
+
+    The bullet header carries the id, the ``(refs)`` parenthetical and the first
+    line of ``text``; any further lines (e.g. a checklist's ``- [ ] item``
+    entries) are emitted as 2-space *continuation* lines and folded back on
+    parse — so multi-line criterion styles round-trip without a schema change.
+    """
     inner: list[str] = []
     if criterion.req_refs:
         inner.append(", ".join(criterion.req_refs))
     if criterion.spec_ref:
         inner.append(f"spec={criterion.spec_ref}")
     paren = f" ({'; '.join(inner)})" if inner else ""
-    return f"- **{criterion.id}**{paren}: {criterion.text}"
+    text_lines = criterion.text.split("\n")
+    head = text_lines[0] if text_lines else ""
+    lines = [f"- **{criterion.id}**{paren}: {head}"]
+    lines += [f"  {cont}" for cont in text_lines[1:]]
+    return lines
 
 
 def _decision_block(adr: ADR) -> list[str]:
@@ -184,7 +195,8 @@ def render_spec_md(manifest: SpecManifest) -> str:
 
     if manifest.acceptance_criteria:
         parts += ["", f"{_H2}Acceptance Criteria", ""]
-        parts += [_acceptance_line(a) for a in manifest.acceptance_criteria]
+        for a in manifest.acceptance_criteria:
+            parts += _acceptance_lines(a)
 
     if manifest.constraints:
         parts += ["", f"{_H2}Constraints", ""]
@@ -304,6 +316,14 @@ def _parse_refs(refs: str | None) -> tuple[list[str], str | None]:
 def _parse_acceptance(section: _Section) -> list[AcceptanceCriterion]:
     out: list[AcceptanceCriterion] = []
     for line_no, text in _nonblank(section):
+        if text.startswith("  "):  # 2-space continuation of the preceding bullet
+            if not out:
+                raise SpecParseError(
+                    "acceptance continuation line before any criterion", line=line_no
+                )
+            prev = out[-1]
+            out[-1] = prev.model_copy(update={"text": f"{prev.text}\n{text[2:]}"})
+            continue
         match = _ACCEPT_BULLET.match(text)
         if not match:
             raise SpecParseError(

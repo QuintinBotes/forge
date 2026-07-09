@@ -18,10 +18,15 @@ import {
   addAcceptanceCriterion,
   addAdr,
   addRequirement,
+  classifyCriterionStyle,
+  composeChecklist,
   composeGivenWhenThen,
   computeChecklist,
   computeCoverage,
   computeNudges,
+  convertCriterionText,
+  type CriterionStyle,
+  parseChecklist,
   parseGivenWhenThen,
 } from "./guided-helpers";
 
@@ -49,8 +54,18 @@ const EXECUTION_MODES: { value: ExecutionMode; label: string }[] = [
  * Validation is surfaced as non-blocking nudges, alongside a Ready-to-create
  * checklist and a requirement-coverage meter.
  */
+const CRITERION_STYLES: { value: CriterionStyle; label: string }[] = [
+  { value: "gherkin", label: "Given/When/Then" },
+  { value: "assertion", label: "Plain assertion" },
+  { value: "checklist", label: "Checklist" },
+];
+
 export function GuidedMode({ value, onChange, onSave, saving = false, dirty = false, saveError }: GuidedModeProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Style is derived from each criterion's text, but an explicit pick (keyed by
+  // criterion id) wins so an empty "assertion" doesn't snap back to the Gherkin
+  // default. Editing the text never clears the pick — R# links are unaffected.
+  const [styleOverrides, setStyleOverrides] = useState<Record<string, CriterionStyle>>({});
   const requirements = value.requirements ?? [];
   const criteria = value.acceptance_criteria ?? [];
   const constraints = value.constraints ?? [];
@@ -167,14 +182,19 @@ export function GuidedMode({ value, onChange, onSave, saving = false, dirty = fa
         </h3>
         <ul className="flex flex-col gap-3" data-testid="guided-acceptance-criteria">
           {criteria.map((ac, index) => {
-            const gwt = parseGivenWhenThen(ac.text);
             const refs = ac.req_refs ?? [];
             const linkable = requirements.filter((r) => !refs.includes(r.id));
+            const style = styleOverrides[ac.id] ?? classifyCriterionStyle(ac.text);
 
-            function updateGwt(patch: Partial<typeof gwt>) {
+            function setText(text: string) {
               const next = [...criteria];
-              next[index] = { ...next[index], text: composeGivenWhenThen({ ...gwt, ...patch }) };
+              next[index] = { ...next[index], text };
               setCriteria(next);
+            }
+
+            function changeStyle(nextStyle: CriterionStyle) {
+              setStyleOverrides((prev) => ({ ...prev, [ac.id]: nextStyle }));
+              setText(convertCriterionText(ac.text, nextStyle));
             }
 
             return (
@@ -190,7 +210,19 @@ export function GuidedMode({ value, onChange, onSave, saving = false, dirty = fa
                   >
                     {ac.id}
                   </span>
-                  <span className="text-xs text-muted-foreground">Acceptance criterion</span>
+                  <select
+                    aria-label={`${ac.id} style`}
+                    data-testid={`ac-style-${index}`}
+                    value={style}
+                    onChange={(event) => changeStyle(event.target.value as CriterionStyle)}
+                    className="rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground outline-none"
+                  >
+                    {CRITERION_STYLES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     aria-label={`Remove ${ac.id}`}
@@ -201,35 +233,22 @@ export function GuidedMode({ value, onChange, onSave, saving = false, dirty = fa
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {style === "gherkin" ? (
+                  <GherkinEditor id={ac.id} text={ac.text} onChange={setText} />
+                ) : style === "checklist" ? (
+                  <ChecklistEditor id={ac.id} text={ac.text} onChange={setText} />
+                ) : (
                   <label className="flex flex-col gap-1 text-xs">
-                    <span className="text-muted-foreground">Given</span>
+                    <span className="text-muted-foreground">Assertion</span>
                     <input
-                      aria-label={`${ac.id} given`}
-                      value={gwt.given}
-                      onChange={(event) => updateGwt({ given: event.target.value })}
+                      aria-label={`${ac.id} assertion`}
+                      value={ac.text}
+                      onChange={(event) => setText(event.target.value)}
+                      placeholder="The system does X"
                       className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground outline-none"
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-xs">
-                    <span className="text-muted-foreground">When</span>
-                    <input
-                      aria-label={`${ac.id} when`}
-                      value={gwt.when}
-                      onChange={(event) => updateGwt({ when: event.target.value })}
-                      className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground outline-none"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-xs">
-                    <span className="text-muted-foreground">Then</span>
-                    <input
-                      aria-label={`${ac.id} then`}
-                      value={gwt.then}
-                      onChange={(event) => updateGwt({ then: event.target.value })}
-                      className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground outline-none"
-                    />
-                  </label>
-                </div>
+                )}
 
                 <div className="flex flex-wrap items-center gap-1.5">
                   {refs.map((refId) => (
@@ -553,6 +572,80 @@ function StringListField({
       >
         <Plus className="h-4 w-4" aria-hidden />
         Add
+      </Button>
+    </div>
+  );
+}
+
+/** Given/When/Then editor — three inputs composing the criterion's `text`. */
+function GherkinEditor({ id, text, onChange }: { id: string; text: string; onChange: (text: string) => void }) {
+  const gwt = parseGivenWhenThen(text);
+  const update = (patch: Partial<typeof gwt>) => onChange(composeGivenWhenThen({ ...gwt, ...patch }));
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      {(["given", "when", "then"] as const).map((clause) => (
+        <label key={clause} className="flex flex-col gap-1 text-xs">
+          <span className="capitalize text-muted-foreground">{clause}</span>
+          <input
+            aria-label={`${id} ${clause}`}
+            value={gwt[clause]}
+            onChange={(event) => update({ [clause]: event.target.value })}
+            className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground outline-none"
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/** Checklist editor — a togglable, editable list of check items in `text`. */
+function ChecklistEditor({ id, text, onChange }: { id: string; text: string; onChange: (text: string) => void }) {
+  const items = parseChecklist(text);
+  const commit = (next: typeof items) => onChange(composeChecklist(next));
+  return (
+    <div className="flex flex-col gap-1.5" data-testid={`ac-checklist-${id}`}>
+      <ul className="flex flex-col gap-1.5">
+        {items.map((item, index) => (
+          <li key={index} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              aria-label={`${id} item ${index + 1} done`}
+              checked={item.checked}
+              onChange={(event) =>
+                commit(items.map((it, i) => (i === index ? { ...it, checked: event.target.checked } : it)))
+              }
+              className="h-4 w-4 shrink-0 accent-primary"
+            />
+            <input
+              aria-label={`${id} item ${index + 1}`}
+              value={item.label}
+              onChange={(event) =>
+                commit(items.map((it, i) => (i === index ? { ...it, label: event.target.value } : it)))
+              }
+              placeholder="Checklist item"
+              className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground outline-none"
+            />
+            <button
+              type="button"
+              aria-label={`Remove ${id} item ${index + 1}`}
+              onClick={() => commit(items.filter((_, i) => i !== index))}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-fit"
+        data-testid={`ac-checklist-add-${id}`}
+        onClick={() => commit([...items, { label: "", checked: false }])}
+      >
+        <Plus className="h-4 w-4" aria-hidden />
+        Add item
       </Button>
     </div>
   );

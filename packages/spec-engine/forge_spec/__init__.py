@@ -15,6 +15,19 @@ Public surface (plan Task 1.7):
 
 from __future__ import annotations
 
+from forge_spec.criteria import (
+    ASSERTION,
+    CHECKLIST,
+    GHERKIN,
+    ChecklistItem,
+    CriterionStyle,
+    GivenWhenThen,
+    classify_criterion,
+    compose_checklist,
+    compose_gherkin,
+    parse_checklist,
+    parse_gherkin,
+)
 from forge_spec.dashboard import (
     build_criterion_links,
     build_requirement_rows,
@@ -80,16 +93,22 @@ __version__ = "0.1.0"
 SpecEngineService = FileSpecEngine
 
 __all__ = [
+    "ASSERTION",
+    "CHECKLIST",
     "DEFAULT_GUARDRAILS",
     "DEFAULT_PRINCIPLES",
+    "GHERKIN",
     "IMPLEMENTABLE_STATUSES",
     "CellStatus",
+    "ChecklistItem",
+    "CriterionStyle",
     "CriterionVerdict",
     "DashboardService",
     "EvidenceIndex",
     "EvidencePort",
     "FileSpecEngine",
     "GapKind",
+    "GivenWhenThen",
     "InMemoryProjectionRepository",
     "ListItemChange",
     "ManifestDiff",
@@ -116,6 +135,9 @@ __all__ = [
     "build_validation_report",
     "check_implementation_gate",
     "classify_cell",
+    "classify_criterion",
+    "compose_checklist",
+    "compose_gherkin",
     "compute_spec_rollup",
     "constitution_id_for",
     "detect_gaps",
@@ -125,6 +147,8 @@ __all__ = [
     "generate_tasks",
     "load_manifest",
     "manifest_to_dict",
+    "parse_checklist",
+    "parse_gherkin",
     "parse_spec_md",
     "render_spec_md",
     "slugify",

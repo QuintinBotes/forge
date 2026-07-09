@@ -62,6 +62,82 @@ export function composeGivenWhenThen({ given, when, then }: GivenWhenThen): stri
   return parts.join(" ");
 }
 
+/**
+ * The three first-class acceptance-criterion authoring styles. Every style is
+ * encoded losslessly inside the criterion's single `text` field, so switching
+ * style never touches its `req_refs` (R#) links. Mirrors
+ * `forge_spec.criteria.classify_criterion` on the backend.
+ */
+export type CriterionStyle = "gherkin" | "assertion" | "checklist";
+
+/** `- [ ] label` / `- [x] label` — the checked box is case-insensitive. */
+const CHECK_ITEM = /^- \[([ xX])\] ?(.*)$/;
+const GHERKIN_KEYWORD = /\b(?:given|when|then)\b/i;
+
+/** One checklist entry: a `label` and whether its box is `checked`. */
+export interface CheckItem {
+  label: string;
+  checked: boolean;
+}
+
+function nonBlankLines(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+/**
+ * Infer a criterion's authoring style from its `text` (never throws). Blank
+ * text defaults to `"gherkin"` (the editor's default shape); a `text` whose
+ * every non-blank line is a check item is a `"checklist"` even if a label
+ * contains a Gherkin keyword; otherwise Gherkin keywords => `"gherkin"`, and
+ * anything else is a plain `"assertion"`.
+ */
+export function classifyCriterionStyle(text: string): CriterionStyle {
+  const lines = nonBlankLines(text);
+  if (lines.length === 0) return "gherkin";
+  if (lines.every((line) => CHECK_ITEM.test(line))) return "checklist";
+  if (GHERKIN_KEYWORD.test(text)) return "gherkin";
+  return "assertion";
+}
+
+/** Parse checklist `text` into items (a non-item line becomes an unchecked item). */
+export function parseChecklist(text: string): CheckItem[] {
+  return nonBlankLines(text).map((line) => {
+    const match = CHECK_ITEM.exec(line);
+    if (!match) return { label: line, checked: false };
+    return { label: match[2].trim(), checked: match[1] === "x" || match[1] === "X" };
+  });
+}
+
+/** Render checklist `items` back to canonical `- [ ] label` lines. */
+export function composeChecklist(items: readonly CheckItem[]): string {
+  return items.map((item) => `- [${item.checked ? "x" : " "}] ${item.label}`.trimEnd()).join("\n");
+}
+
+/**
+ * Re-encode a criterion's `text` for a new `target` style, preserving prose
+ * where it makes sense so switching styles doesn't silently lose content.
+ */
+export function convertCriterionText(text: string, target: CriterionStyle): string {
+  const current = classifyCriterionStyle(text);
+  if (current === target) return text;
+  if (target === "checklist") {
+    const label = text.trim();
+    return composeChecklist([{ label, checked: false }]);
+  }
+  if (current === "checklist") {
+    const labels = parseChecklist(text)
+      .map((item) => item.label)
+      .filter(Boolean);
+    // Gherkin editor will re-parse the joined prose; assertion keeps it flat.
+    return labels.join(target === "gherkin" ? " " : "; ");
+  }
+  // gherkin <-> assertion share the same flat prose encoding.
+  return text;
+}
+
 /** A single soft-validation nudge — never blocking, just surfaced guidance. */
 export interface Nudge {
   id: string;

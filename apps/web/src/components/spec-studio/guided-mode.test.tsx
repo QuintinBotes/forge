@@ -46,6 +46,69 @@ describe("GuidedMode", () => {
     expect(screen.getByLabelText("AC1 then")).toHaveValue("they land on the board");
   });
 
+  it("defaults a new acceptance criterion to the Given/When/Then style", () => {
+    render(<Harness initial={baseManifest} />);
+    fireEvent.click(screen.getByTestId("guided-add-acceptance-criterion"));
+    expect(screen.getByTestId("ac-style-0")).toHaveValue("gherkin");
+    expect(screen.getByLabelText("AC1 given")).toBeInTheDocument();
+  });
+
+  it("switches an acceptance criterion to the plain-assertion style", () => {
+    render(<Harness initial={baseManifest} />);
+    fireEvent.click(screen.getByTestId("guided-add-acceptance-criterion"));
+    fireEvent.change(screen.getByTestId("ac-style-0"), { target: { value: "assertion" } });
+    expect(screen.queryByLabelText("AC1 given")).not.toBeInTheDocument();
+    const input = screen.getByLabelText("AC1 assertion");
+    fireEvent.change(input, { target: { value: "The endpoint returns 200" } });
+    expect(input).toHaveValue("The endpoint returns 200");
+  });
+
+  it("switches to the checklist style and edits check items", () => {
+    render(<Harness initial={baseManifest} />);
+    fireEvent.click(screen.getByTestId("guided-add-acceptance-criterion"));
+    fireEvent.change(screen.getByTestId("ac-style-0"), { target: { value: "checklist" } });
+    // Converting an empty criterion seeds one empty item.
+    fireEvent.change(screen.getByLabelText("AC1 item 1"), { target: { value: "Email validates" } });
+    fireEvent.click(screen.getByTestId("ac-checklist-add-AC1"));
+    fireEvent.change(screen.getByLabelText("AC1 item 2"), { target: { value: "Password masked" } });
+    fireEvent.click(screen.getByLabelText("AC1 item 2 done"));
+    expect(screen.getByLabelText("AC1 item 1")).toHaveValue("Email validates");
+    expect(screen.getByLabelText("AC1 item 2 done")).toBeChecked();
+  });
+
+  it("renders a loaded checklist criterion in the checklist editor", () => {
+    render(
+      <Harness
+        initial={{
+          ...baseManifest,
+          acceptance_criteria: [
+            { id: "AC1", text: "- [ ] a\n- [x] b", req_refs: ["R1"] },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("ac-style-0")).toHaveValue("checklist");
+    expect(screen.getByLabelText("AC1 item 1")).toHaveValue("a");
+    expect(screen.getByLabelText("AC1 item 2 done")).toBeChecked();
+  });
+
+  it("keeps a requirement link when the criterion style changes", () => {
+    render(
+      <Harness
+        initial={{
+          ...baseManifest,
+          acceptance_criteria: [{ id: "AC1", text: "Given x When y Then z", req_refs: ["R1"] }],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("ac-linked-req-0-R1")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("ac-style-0"), { target: { value: "checklist" } });
+    // R# linking is unaffected by the style switch.
+    expect(screen.getByTestId("ac-linked-req-0-R1")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("ac-style-0"), { target: { value: "assertion" } });
+    expect(screen.getByTestId("ac-linked-req-0-R1")).toBeInTheDocument();
+  });
+
   it("links an acceptance criterion to a requirement via the dropdown, not free text", () => {
     render(<Harness initial={baseManifest} />);
     fireEvent.click(screen.getByTestId("guided-add-acceptance-criterion"));

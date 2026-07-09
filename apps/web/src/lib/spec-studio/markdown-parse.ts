@@ -171,6 +171,17 @@ function parseRefs(refs: string | undefined): { reqRefs: string[]; specRef: stri
 function parseAcceptance(section: Section, issues: MarkdownIssue[]): AcceptanceCriterion[] {
   const out: AcceptanceCriterion[] = [];
   for (const [lineNo, text] of nonBlank(section)) {
+    if (text.startsWith("  ")) {
+      // 2-space continuation line — folds into the preceding criterion's text
+      // (e.g. a multi-line checklist criterion's `- [ ] item` entries).
+      if (out.length === 0) {
+        issues.push({ line: lineNo, message: "acceptance continuation line before any criterion", severity: "error" });
+        continue;
+      }
+      const prev = out[out.length - 1];
+      out[out.length - 1] = { ...prev, text: `${prev.text}\n${text.slice(2)}` };
+      continue;
+    }
     const match = ACCEPT_BULLET.exec(text);
     if (!match) {
       issues.push({

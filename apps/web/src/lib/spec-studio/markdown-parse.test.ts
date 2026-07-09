@@ -114,6 +114,23 @@ describe("parseSpecMarkdown", () => {
     expect(issues.some((i) => /acceptance criterion must be/.test(i.message))).toBe(true);
   });
 
+  it("folds 2-space continuation lines into a multi-line checklist criterion", () => {
+    const text =
+      "---\nid: SPEC-1\n---\n\n## Goal\n\nX\n\n## Acceptance Criteria\n\n" +
+      "- **AC1** (R1): - [ ] Email validates\n  - [x] Password masked\n";
+    const { manifest, issues } = parseSpecMarkdown(text);
+    expect(hasMarkdownErrors(issues)).toBe(false);
+    expect(manifest.acceptance_criteria).toEqual([
+      { id: "AC1", text: "- [ ] Email validates\n- [x] Password masked", req_refs: ["R1"], spec_ref: null },
+    ]);
+  });
+
+  it("flags an acceptance continuation line before any criterion", () => {
+    const text = "---\nid: SPEC-1\n---\n\n## Goal\n\nX\n\n## Acceptance Criteria\n\n  - [ ] orphan\n";
+    const { issues } = parseSpecMarkdown(text);
+    expect(issues.some((i) => /continuation line before any criterion/.test(i.message))).toBe(true);
+  });
+
   it("flags a resolution with no preceding open question", () => {
     const text = "---\nid: SPEC-1\n---\n\n## Goal\n\nX\n\n## Open Questions\n\n  - Resolution: orphan\n";
     const { issues } = parseSpecMarkdown(text);

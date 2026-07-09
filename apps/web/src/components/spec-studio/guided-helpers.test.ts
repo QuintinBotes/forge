@@ -6,11 +6,15 @@ import {
   addAcceptanceCriterion,
   addAdr,
   addRequirement,
+  classifyCriterionStyle,
+  composeChecklist,
   composeGivenWhenThen,
   computeChecklist,
   computeCoverage,
   computeNudges,
+  convertCriterionText,
   nextSequentialId,
+  parseChecklist,
   parseGivenWhenThen,
 } from "./guided-helpers";
 
@@ -46,6 +50,60 @@ describe("Given/When/Then round trip", () => {
 
   it("omits empty parts when composing", () => {
     expect(composeGivenWhenThen({ given: "", when: "", then: "it works" })).toBe("Then it works");
+  });
+});
+
+describe("classifyCriterionStyle", () => {
+  it("defaults blank text to gherkin (the editor's default shape)", () => {
+    expect(classifyCriterionStyle("")).toBe("gherkin");
+    expect(classifyCriterionStyle("   ")).toBe("gherkin");
+  });
+
+  it("classifies Given/When/Then prose as gherkin", () => {
+    expect(classifyCriterionStyle("Given a user When they sign in Then the board loads")).toBe("gherkin");
+    expect(classifyCriterionStyle("Then it works")).toBe("gherkin");
+  });
+
+  it("classifies a keyword-free sentence as a plain assertion", () => {
+    expect(classifyCriterionStyle("The endpoint returns 200 for a valid token")).toBe("assertion");
+  });
+
+  it("classifies check-item lines as a checklist, even when a label says 'when'", () => {
+    expect(classifyCriterionStyle("- [ ] Logs an event when it runs\n- [x] Retries on failure")).toBe(
+      "checklist",
+    );
+  });
+});
+
+describe("checklist (de)serialisation", () => {
+  it("composes then parses back to the same items", () => {
+    const items = [
+      { label: "Email field validates", checked: false },
+      { label: "Password is masked", checked: true },
+    ];
+    const text = composeChecklist(items);
+    expect(text).toBe("- [ ] Email field validates\n- [x] Password is masked");
+    expect(parseChecklist(text)).toEqual(items);
+  });
+
+  it("renders an empty label without a trailing space", () => {
+    expect(composeChecklist([{ label: "", checked: false }])).toBe("- [ ]");
+  });
+});
+
+describe("convertCriterionText", () => {
+  it("wraps prose into a single unchecked item when switching to a checklist", () => {
+    expect(convertCriterionText("Then it works", "checklist")).toBe("- [ ] Then it works");
+  });
+
+  it("joins checklist labels back into prose when leaving the checklist style", () => {
+    const text = "- [ ] first\n- [x] second";
+    expect(convertCriterionText(text, "assertion")).toBe("first; second");
+    expect(convertCriterionText(text, "gherkin")).toBe("first second");
+  });
+
+  it("is a no-op between gherkin and assertion (shared flat prose)", () => {
+    expect(convertCriterionText("The system does X", "gherkin")).toBe("The system does X");
   });
 });
 
