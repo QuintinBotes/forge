@@ -12,6 +12,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
+import { apiClient } from "@/lib/api/client";
+
 /** Minimal structural type for the bits of `WebSocket` this hook uses. */
 export interface WebSocketLike {
   readyState: number;
@@ -34,6 +36,12 @@ export type SocketFactory = (url: string) => WebSocketLike;
 export interface UseBoardRealtimeOptions {
   url?: string;
   enabled?: boolean;
+  /**
+   * Bearer token forwarded as the `?token=` WS auth query param (mirrors the
+   * spec-collab hook). Defaults to the same token source `apiClient` uses
+   * (`ForgeApiClient#token`), so board and REST auth never drift apart.
+   */
+  token?: string;
   /** Inject a socket (tests); defaults to the global `WebSocket`. */
   socketFactory?: SocketFactory;
   /** Optional side-channel for parsed events (toasts, trace viewer, …). */
@@ -46,6 +54,23 @@ export interface BoardRealtimeState {
 
 export const DEFAULT_WS_URL =
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
+
+/**
+ * Append `?token=` to a WS URL for the server's WS auth dependency (query
+ * param, since WS upgrade requests can't carry an `Authorization` header).
+ * String-based rather than `URL`-based so it tolerates whatever the caller
+ * passes (relative test fixtures, `ws://`/`wss://`, existing query strings)
+ * without a scheme-parsing edge case swallowing the token.
+ */
+export function withAuthToken(url: string, token?: string): string {
+  if (!token) {
+    return url;
+  }
+  const [beforeHash, hash] = url.split("#", 2);
+  const separator = beforeHash.includes("?") ? "&" : "?";
+  const withToken = `${beforeHash}${separator}token=${encodeURIComponent(token)}`;
+  return hash !== undefined ? `${withToken}#${hash}` : withToken;
+}
 
 function defaultSocketFactory(url: string): WebSocketLike {
   if (typeof WebSocket === "undefined") {
@@ -71,6 +96,12 @@ function queryKeysForEvent(type: string): readonly unknown[][] {
   if (type.startsWith("epic")) {
     return [["epics"], ["tasks"]];
   }
+  if (type.startsWith("run")) {
+    return [["runs"]];
+  }
+  if (type.startsWith("approval")) {
+    return [["approvals"]];
+  }
   // Default (including task.*): refresh task lists/detail.
   return [["tasks"]];
 }
@@ -78,8 +109,13 @@ function queryKeysForEvent(type: string): readonly unknown[][] {
 export function useBoardRealtime(
   options: UseBoardRealtimeOptions = {},
 ): BoardRealtimeState {
-  const { url = DEFAULT_WS_URL, enabled = true, socketFactory, onEvent } =
-    options;
+  const {
+    url = DEFAULT_WS_URL,
+    enabled = true,
+    token = apiClient.token,
+    socketFactory,
+    onEvent,
+  } = options;
   const queryClient = useQueryClient();
   const [connected, setConnected] = useState(false);
 
@@ -91,7 +127,7 @@ export function useBoardRealtime(
     const factory = socketFactory ?? defaultSocketFactory;
     let socket: WebSocketLike;
     try {
-      socket = factory(url);
+      socket = factory(withAuthToken(url, token));
     } catch {
       return;
     }
@@ -127,7 +163,7 @@ export function useBoardRealtime(
       socket.removeEventListener("message", handleMessage);
       socket.close();
     };
-  }, [enabled, url, socketFactory, onEvent, queryClient]);
+  }, [enabled, url, token, socketFactory, onEvent, queryClient]);
 
   return { connected };
 }

@@ -121,6 +121,9 @@ import type {
 export const DEFAULT_API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+/** Default bearer token for the shared `apiClient` singleton (REST + WS auth). */
+export const DEFAULT_API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
+
 export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
@@ -171,19 +174,29 @@ function buildUrl(
 
 export class ForgeApiClient {
   readonly baseUrl: string;
-  private readonly token?: string;
+  private readonly authToken?: string;
   private readonly fetchImpl: typeof fetch;
 
   constructor(config: ApiClientConfig = {}) {
     this.baseUrl = config.baseUrl ?? DEFAULT_API_BASE_URL;
-    this.token = config.token;
+    this.authToken = config.token ?? DEFAULT_API_TOKEN;
     this.fetchImpl = config.fetch ?? globalThis.fetch;
+  }
+
+  /**
+   * The token this client authenticates with (per-instance override, else
+   * `NEXT_PUBLIC_API_TOKEN`). Other realtime transports (board WS, spec
+   * collab WS) key off this same value for their `?token=` query param, so
+   * REST and WebSocket auth never drift apart.
+   */
+  get token(): string | undefined {
+    return this.authToken;
   }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const url = buildUrl(this.baseUrl, path, options.query);
     const headers: Record<string, string> = { Accept: "application/json" };
-    const token = options.token ?? this.token;
+    const token = options.token ?? this.authToken;
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }

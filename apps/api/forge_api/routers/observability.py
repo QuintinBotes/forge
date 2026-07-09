@@ -12,14 +12,20 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
 
-from forge_api.deps import CurrentPrincipal, get_current_principal
+from forge_api.auth.rbac import Permission
+from forge_api.deps import CurrentPrincipal, Principal, get_current_principal
 from forge_api.observability.audit import AuditCategory, AuditEntry
 from forge_api.observability.service import (
     ObservabilityService,
     RunNotFoundError,
     get_observability_service,
+    run_event_type_for_status,
 )
 from forge_api.observability.trace import RunTrace
+from forge_api.realtime.broadcaster import Broadcaster, emit_event, get_broadcaster
+from forge_api.routers._rbac import require_permission
+from forge_api.schemas.observability import RecordRunRequest
+from forge_contracts import RealtimeEvent
 from forge_obs.metrics import RecordingMetrics, get_metrics, render_prometheus
 
 router = APIRouter(
@@ -29,6 +35,14 @@ router = APIRouter(
 )
 
 ServiceDep = Annotated[ObservabilityService, Depends(get_observability_service)]
+
+# Recording a run trace is the run producer's write (agent/workflow runtime),
+# so it is RUN_AGENT-gated (the ``agent-runner`` role, which lacks WRITE, can
+# still post its own run's trace) rather than the generic WRITE permission.
+RunnerDep = Annotated[Principal, Depends(require_permission(Permission.RUN_AGENT))]
+
+# RT-7: fan run-trace updates out to the workspace's live ``/ws`` sockets.
+BroadcasterDep = Annotated[Broadcaster, Depends(get_broadcaster)]
 
 
 @router.get(
@@ -98,3 +112,42 @@ def get_run_trace(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No run trace recorded for run {run_id}",
         ) from exc
+
+
+@router.post(
+    "/runs/{run_id}/trace",
+    response_model=RunTrace,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record/update a run's step trace and fan out its run.* event.",
+)
+async def record_run_trace(
+    run_id: uuid.UUID,
+    principal: RunnerDep,
+    service: ServiceDep,
+    broadcaster: BroadcasterDep,
+    body: RecordRunRequest,
+) -> RunTrace:
+    """The run-trace producer: agent/workflow runtimes post step updates here.
+
+    Assembles (or re-assembles) the run's trace, scoped to the caller's
+    workspace, then fans a ``run.*`` realtime event out to the workspace's live
+    ``/ws`` sockets — ``run.started``/``run.updated`` while in flight,
+    ``run.completed``/``run.failed`` once ``status`` reaches a terminal state.
+    """
+    trace = service.record_run(
+        run_id,
+        steps=body.steps,
+        status=body.status,
+        confidence=body.confidence,
+        workspace_id=principal.workspace_id,
+    )
+    await emit_event(
+        broadcaster,
+        RealtimeEvent(
+            type=run_event_type_for_status(body.status),
+            workspace_id=principal.workspace_id,
+            run_id=run_id,
+            payload={"status": body.status.value if body.status else None},
+        ),
+    )
+    return trace
