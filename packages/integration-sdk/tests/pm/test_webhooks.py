@@ -130,3 +130,111 @@ def test_parse_linear_actions() -> None:
         assert ev.event_type == expected
         assert ev.external_id == "uuid-1"
         assert ev.external_key == "ENG-1"
+
+
+# --- Asana HMAC (F40) -------------------------------------------------------- #
+
+
+def test_verify_asana_valid_and_tampered() -> None:
+    from forge_integrations.pm.asana.webhooks import sign_asana, verify_asana
+
+    body = json.dumps(
+        {"events": [{"action": "changed", "resource": {"gid": "10001", "resource_type": "task"}}]}
+    ).encode()
+    sig = sign_asana(SECRET, body)
+    assert verify_asana(SECRET, body, sig) is True
+    assert verify_asana(SECRET, body[:-1] + b"x", sig) is False
+    assert verify_asana(SECRET, body, None) is False
+    assert verify_asana("", body, sig) is False
+
+
+def test_parse_asana_events() -> None:
+    from forge_integrations.pm.asana.webhooks import parse_asana
+
+    for action, expected in [
+        ("added", "issue.created"),
+        ("changed", "issue.updated"),
+        ("deleted", "issue.deleted"),
+    ]:
+        body = {"events": [{"action": action, "resource": {"gid": "10001"}}]}
+        ev = parse_asana(body, delivery_id="a1", signature_valid=True)
+        assert ev.event_type == expected
+        assert ev.external_id == "10001"
+
+
+def test_parse_asana_empty_events_defaults_to_updated() -> None:
+    from forge_integrations.pm.asana.webhooks import parse_asana
+
+    ev = parse_asana({"events": []}, delivery_id="a2", signature_valid=False)
+    assert ev.event_type == "issue.updated"
+    assert ev.external_id is None
+
+
+# --- monday.com secret header + handshake (F40) ------------------------------ #
+
+
+def test_verify_monday_secret_match_mismatch() -> None:
+    from forge_integrations.pm.monday.webhooks import verify_monday
+
+    assert verify_monday(SECRET, SECRET) is True
+    assert verify_monday(SECRET, "wrong") is False
+    assert verify_monday(SECRET, None) is False
+
+
+def test_monday_challenge_handshake() -> None:
+    from forge_integrations.pm.monday.webhooks import challenge_response, is_challenge
+
+    body = {"challenge": "abc123"}
+    assert is_challenge(body) is True
+    assert challenge_response(body) == {"challenge": "abc123"}
+    assert is_challenge({"event": {"type": "create_pulse"}}) is False
+
+
+def test_parse_monday_events() -> None:
+    from forge_integrations.pm.monday.webhooks import parse_monday
+
+    for event_type, expected in [
+        ("create_pulse", "issue.created"),
+        ("update_column_value", "issue.updated"),
+        ("delete_pulse", "issue.deleted"),
+    ]:
+        body = {"event": {"type": event_type, "pulseId": 1001, "boardId": 500}}
+        ev = parse_monday(body, delivery_id="m1", signature_valid=True)
+        assert ev.event_type == expected
+        assert ev.external_id == "1001"
+
+
+# --- GitHub Projects v2 — reuses the shared X-Hub-Signature-256 verifier ---- #
+
+
+def test_verify_github_projects_reuses_shared_hmac_helper() -> None:
+    from forge_integrations.pm.github_projects.webhooks import (
+        sign_github_payload,
+        verify_github_projects,
+    )
+    from forge_integrations.webhooks import sign_github_payload as shared_sign
+    from forge_integrations.webhooks import verify_github_signature as shared_verify
+
+    body = json.dumps({"action": "created", "projects_v2_item": {"node_id": "PVTI_1"}}).encode()
+    sig = sign_github_payload(SECRET, body)
+    assert sig == shared_sign(SECRET, body)  # identical signing, not reimplemented
+    assert verify_github_projects(SECRET, body, sig) is True
+    assert verify_github_projects(SECRET, body, sig) == shared_verify(SECRET, body, sig)
+    assert verify_github_projects(SECRET, body[:-1] + b"x", sig) is False
+
+
+def test_parse_github_projects_actions() -> None:
+    from forge_integrations.pm.github_projects.webhooks import parse_github_projects
+
+    for action, expected in [
+        ("created", "issue.created"),
+        ("edited", "issue.updated"),
+        ("deleted", "issue.deleted"),
+    ]:
+        body = {
+            "action": action,
+            "projects_v2_item": {"node_id": "PVTI_1", "content_type": "DraftIssue"},
+        }
+        ev = parse_github_projects(body, delivery_id="g1", signature_valid=True)
+        assert ev.event_type == expected
+        assert ev.external_id == "PVTI_1"

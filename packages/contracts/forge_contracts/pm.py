@@ -54,10 +54,17 @@ __all__ = [
 
 
 class PMProvider(StrEnum):
-    """Supported external project-management providers (F18: Jira, Linear)."""
+    """Supported external project-management providers.
+
+    F18 shipped Jira + Linear; F40-PM-ADAPTERS-1 adds Asana, Monday.com, and
+    GitHub Projects (v2) behind the same ``PMAdapter`` seam.
+    """
 
     jira = "jira"
     linear = "linear"
+    asana = "asana"
+    monday = "monday"
+    github_projects = "github_projects"
 
 
 class SyncDirection(StrEnum):

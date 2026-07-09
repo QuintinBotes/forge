@@ -178,3 +178,150 @@ async def test_unexpected_call_raises_loudly() -> None:
 
 def test_map_fields_via_protocol(jira_adapter) -> None:
     assert jira_adapter.map_fields({"summary": "T"}, Direction.IN) == {"title": "T"}
+
+
+# --- Asana -------------------------------------------------------------- #
+
+
+async def test_asana_fetch_external(asana_adapter) -> None:
+    ext = await asana_adapter.fetch_external("10001")
+    assert ext.provider is PMProvider.asana
+    assert ext.status_category is StatusCategory.started
+    assert ext.priority_token == "High"
+    assert ext.assignee_email == "alice@acme.test"
+    assert "backend" in ext.labels
+
+
+async def test_asana_create_external_moves_to_matching_section(
+    asana_adapter, asana_transport
+) -> None:
+    ext = await asana_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    assert ext.external_id == "10001"
+    methods = {(c["method"], c["url"].split("asana.com")[-1]) for c in asana_transport.call_log}
+    assert ("POST", "/api/1.0/tasks") in methods
+    assert ("POST", "/api/1.0/sections/s2/addTask") in methods
+
+
+async def test_asana_update_external(asana_adapter) -> None:
+    ext = await asana_adapter.update_external(
+        "10001", _forge_task(status_category=StatusCategory.started)
+    )
+    assert ext.external_id == "10001"
+
+
+async def test_asana_list_external(asana_adapter) -> None:
+    tasks, cursor = await asana_adapter.list_external()
+    assert len(tasks) == 2
+    assert cursor is None
+
+
+async def test_asana_health_me(asana_adapter) -> None:
+    health = await asana_adapter.get_connection_health()
+    assert health.status == "connected"
+    assert health.account == "alice@acme.test"
+
+
+async def test_asana_register_unregister_webhook(asana_adapter) -> None:
+    wid = await asana_adapter.register_webhook("https://forge/webhook", "secret")
+    assert wid == "wh1"
+    await asana_adapter.unregister_webhook(wid)
+
+
+async def test_asana_no_matching_section_raises(asana_transport, asana_ctx) -> None:
+    from forge_integrations.pm.asana.adapter import AsanaAdapter
+    from forge_integrations.pm.asana.client import AsanaClient
+    from forge_integrations.pm.errors import ProviderError
+
+    adapter = AsanaAdapter(AsanaClient(asana_transport), asana_ctx)
+    with pytest.raises(ProviderError):
+        await adapter._section_gid_for(_forge_task(status_category=StatusCategory.canceled))
+
+
+# --- Monday.com --------------------------------------------------------- #
+
+
+async def test_monday_fetch_external(monday_adapter) -> None:
+    ext = await monday_adapter.fetch_external("1001")
+    assert ext.provider is PMProvider.monday
+    assert ext.status_category is StatusCategory.started
+    assert ext.priority_token == "High"
+
+
+async def test_monday_create_external(monday_adapter, monday_transport) -> None:
+    ext = await monday_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    assert ext.external_id == "1002"
+    ops = [c["json"].get("query", "") for c in monday_transport.call_log if c.get("json")]
+    assert any("CreateItem" in q for q in ops)
+    assert any("BoardGroups" in q for q in ops)
+
+
+async def test_monday_update_external(monday_adapter) -> None:
+    ext = await monday_adapter.update_external(
+        "1001", _forge_task(status_category=StatusCategory.started)
+    )
+    assert ext.external_id == "1001"
+
+
+async def test_monday_list_external(monday_adapter) -> None:
+    tasks, cursor = await monday_adapter.list_external()
+    assert len(tasks) == 2
+    assert cursor is None
+
+
+async def test_monday_health_me(monday_adapter) -> None:
+    health = await monday_adapter.get_connection_health()
+    assert health.status == "connected"
+    assert health.account == "alice@acme.test"
+
+
+async def test_monday_register_unregister_webhook(monday_adapter) -> None:
+    wid = await monday_adapter.register_webhook("https://forge/webhook", "secret")
+    assert wid == "wh1"
+    await monday_adapter.unregister_webhook(wid)
+
+
+# --- GitHub Projects (v2) ------------------------------------------------ #
+
+
+async def test_github_projects_fetch_external(github_projects_adapter) -> None:
+    ext = await github_projects_adapter.fetch_external("PVTI_1")
+    assert ext.provider is PMProvider.github_projects
+    assert ext.status_category is StatusCategory.started
+    assert ext.priority_token == "High"
+
+
+async def test_github_projects_create_external_sets_fields(
+    github_projects_adapter, github_projects_transport
+) -> None:
+    ext = await github_projects_adapter.create_external(
+        _forge_task(status_category=StatusCategory.started)
+    )
+    assert ext.external_id == "PVTI_1"
+    ops = [c["json"].get("query", "") for c in github_projects_transport.call_log if c.get("json")]
+    assert any("AddDraftIssue" in q for q in ops)
+    assert any("UpdateItemFieldValue" in q for q in ops)
+
+
+async def test_github_projects_update_external(github_projects_adapter) -> None:
+    ext = await github_projects_adapter.update_external(
+        "PVTI_1", _forge_task(status_category=StatusCategory.started)
+    )
+    assert ext.external_id == "PVTI_1"
+
+
+async def test_github_projects_list_external(github_projects_adapter) -> None:
+    tasks, cursor = await github_projects_adapter.list_external()
+    assert len(tasks) == 2
+    assert cursor is None
+
+
+async def test_github_projects_health_viewer(github_projects_adapter) -> None:
+    health = await github_projects_adapter.get_connection_health()
+    assert health.status == "connected"
+    assert health.account == "octocat"
+
+
+async def test_github_projects_webhook_is_app_level_no_op(github_projects_adapter) -> None:
+    wid = await github_projects_adapter.register_webhook("https://forge/webhook", "secret")
+    assert wid.startswith("app-webhook:")
+    await github_projects_adapter.unregister_webhook(wid)  # no raise, no network call

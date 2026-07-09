@@ -1,0 +1,15 @@
+{
+  "data": {
+    "node": {
+      "id": "PVTI_1",
+      "updatedAt": "2026-01-02T10:00:00Z",
+      "content": {"id": "DI_1", "title": "Add pagination", "body": "body"},
+      "fieldValues": {
+        "nodes": [
+          {"name": "In Progress", "field": {"id": "F_STATUS", "name": "Status"}},
+          {"name": "High", "field": {"id": "F_PRIORITY", "name": "Priority"}}
+        ]
+      }
+    }
+  }
+}
