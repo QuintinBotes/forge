@@ -116,6 +116,15 @@ jobs:
             docker build -t forge/$svc:0.1.0 -f deploy/docker/$svc.Dockerfile .
           done
 
+      # The chart declares postgresql/redis/minio subchart deps in Chart.yaml, so
+      # `helm install`/`upgrade` needs them vendored into charts/ before it runs —
+      # even though the kind overlay disables them (it stands up external in-cluster
+      # datastores). Without this, install fails "missing in charts/ directory".
+      - name: Add subchart repos + build chart dependencies
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm dependency build ${CHART}
+
       - name: Run kind smoke tests (install + helm test + upgrade/rollback)
         env:
           FORGE_KIND_CLUSTER: forge-ci   # reuse the kind-action cluster
