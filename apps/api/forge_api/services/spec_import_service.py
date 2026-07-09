@@ -206,8 +206,12 @@ def _manifest_from_loose_yaml(data: dict[str, Any]) -> SpecManifest:
 # Loose-markdown normalization                                                #
 # --------------------------------------------------------------------------- #
 
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
-_BULLET_RE = re.compile(r"^\s*[-*]\s+(.+?)\s*$")
+# Linear-time patterns: a greedy `(.+)` to end-of-line (no lazy `.+?` + trailing
+# `\s*$` overlap, which CodeQL flags as polynomial/ReDoS on user-supplied text),
+# with `[ \t]` separators so whitespace classes don't overlap the capture. The
+# callers already `.strip()` the captured group, so trailing spaces are handled.
+_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+)$", re.MULTILINE)
+_BULLET_RE = re.compile(r"^[ \t]*[-*][ \t]+(.+)$")
 
 #: Heading text (lowercased, trailing ':' stripped) -> the bucket it feeds.
 _SECTION_ALIASES: dict[str, str] = {
