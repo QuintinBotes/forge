@@ -16,6 +16,11 @@ from forge_contracts import (
     ValidationReport,
 )
 
+# ``spec.md`` is the dual-format prose surface; its render/parse pair lives in
+# ``markdown`` so the two stay exact inverses. Re-exported here (and from the
+# package root) for the historical import site.
+from forge_spec.markdown import render_spec_md
+
 
 def _bullets(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items) if items else "_None_"
@@ -32,19 +37,6 @@ def render_constitution_md(constitution: Constitution) -> str:
         _bullets(constitution.architecture_guardrails),
         "",
     ]
-    return "\n".join(lines) + "\n"
-
-
-def render_spec_md(manifest: SpecManifest) -> str:
-    lines = [f"# {manifest.id} — {manifest.name}", "", f"Status: **{manifest.status.value}**", ""]
-    lines += ["## Requirements", ""]
-    lines += [f"- **{r.id}**: {r.text}" for r in manifest.requirements] or ["_None_"]
-    lines += ["", "## Acceptance Criteria", ""]
-    lines += [
-        f"- **{a.id}** (refs: {', '.join(a.req_refs) or '—'}): {a.text}"
-        for a in manifest.acceptance_criteria
-    ] or ["_None_"]
-    lines += ["", "## Constraints", "", _bullets(manifest.constraints), ""]
     return "\n".join(lines) + "\n"
 
 

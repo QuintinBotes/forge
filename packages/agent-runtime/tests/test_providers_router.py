@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from forge_orchestration_policy import ComplexitySizing, SizingSignals, score_complexity
 
 from forge_agent.providers import (
     DEFAULT_TIER_MODELS,
@@ -32,6 +31,7 @@ from forge_contracts import (
     TaskKind,
     TokenUsage,
 )
+from forge_orchestration_policy import ComplexitySizing, SizingSignals, score_complexity
 
 
 # --------------------------------------------------------------------------- #

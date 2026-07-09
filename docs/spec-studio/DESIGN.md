@@ -1,12 +1,15 @@
 # Spec Studio + Adaptive Orchestration — Design
 
-Status: **Adaptive Orchestration is built and merged** (see
-`docs/ADAPTIVE_SPEC_PROGRESS.md` for the slice-by-slice ledger). **Spec Studio**
-(dual-format spec authoring UI, `spec.md` round-trip, and real-time
-co-editing) is **design-approved but not yet implemented** — this document is
-the design the next build phase implements against. It records the decisions
-so implementation can proceed in independently-shippable slices, the same way
-Adaptive Orchestration did.
+Status: **Adaptive Orchestration is built and merged**, and **Spec Studio's
+dual-format authoring + web editor are now also built and merged** — `spec.md`
+↔ `manifest.yaml` round-trip (`parse_spec_md`/`render_spec_md`), the
+Guided/Markdown/YAML/Read/History editor, BYOK AI drafting
+(`POST /spec/draft`), external import (`POST /spec/import`), acceptance
+criterion styles, and version history + diff all shipped across 14 slices
+(see `docs/ADAPTIVE_SPEC_PROGRESS.md` for the full ledger of both phases).
+**Real-time co-editing (§4) remains design-approved but not yet
+implemented** — this document (§4 particularly) is still the design that
+follow-up slice implements against.
 
 ## 1. Why one document for two features
 
@@ -88,32 +91,21 @@ upgrades the file to the new round-trippable shape on first save.
 |---|---|
 | `SpecManifest` canonical DTO | **Shipped** (`forge_contracts`) |
 | `manifest.yaml` round-trip (`dump_manifest`/`load_manifest`) | **Shipped** (`forge_spec.manifest`) |
-| `spec.md` rendering (`render_spec_md`) | **Shipped, but one-way** — manifest → markdown only; no frontmatter, no `## Goal`, no Given/When/Then AC phrasing, no `## Decisions` section |
-| `spec.md` **parsing** (`parse_spec_md`) | **Not implemented** — no code path reads edits back out of `spec.md` |
-| Round-trip sync (edit either → both stay current) | **Not implemented** |
-| `POST /spec/draft` (BYOK AI draft from a one-line goal) | **Not implemented** — no route, schema, or service exists |
-| Spec Studio web UI (split/synced editor) | **Not implemented** — `apps/web` has a read-only `spec-dashboard` (validation view), not an editor |
+| `spec.md` rendering (`render_spec_md`) | **Shipped**, full shape — frontmatter, `## Goal`, Given/When/Then (+ assertion/checklist styles, `ss-criteria`), `## Decisions` |
+| `spec.md` **parsing** (`parse_spec_md`) | **Shipped** (`ss-parser`) — `forge_spec.markdown.parse_spec_md` |
+| Round-trip sync (edit either → both stay current) | **Shipped** (`ss-engine`) — `FileSpecEngine.save_spec_md`/`save_manifest_yaml` re-render the other file from one `SpecManifest` |
+| `POST /spec/draft` (BYOK AI draft from a one-line goal) | **Shipped** (`ss-draft`) |
+| `POST /spec/import` (external markdown/YAML → draft) | **Shipped** (`ss-import`, not originally scoped below — added during the build) |
+| Spec Studio web UI (Guided/Markdown/YAML/Read/History editor) | **Shipped** (`ss-yaml`, `ss-guided`, `ss-markdown`, `ss-read`, `ss-versioning`) — `apps/web/src/components/spec-studio` |
+| Version history + diff | **Shipped** (`ss-versioning`) — `spec_version` table + diff endpoints |
 | Real-time co-editing | **Not implemented** — no CRDT/OT dependency, no `/ws` route exists anywhere in `apps/api` |
 
-The gap is intentionally scoped as follow-up slices:
+The table above reflects `docs/ADAPTIVE_SPEC_PROGRESS.md`'s Phase 2 ledger
+(14 `ss-*` slices, all committed). Only real-time co-editing remains:
 
-- **`spec-md-roundtrip`** — add `parse_spec_md(text) -> SpecManifest`
-  (frontmatter + section parser, tolerant of the legacy one-way shape) and
-  extend `render_spec_md` to emit the full section set above; wire both
-  through `FileSpecEngine` so `save_spec_md`/`save_manifest` converge on the
-  same `SpecManifest.model_dump()` before writing either file, matching the
-  existing `_write` pattern in `engine.py`.
-- **`spec-draft-api`** — `POST /spec/draft` takes `{goal: str, project_id}`,
-  resolves the `spec_author` role via the Adaptive Orchestration model
-  router (§3), streams a constitution-seeded draft through the BYOK
-  `ModelClient`, and returns a `spec.md` draft (never auto-saved — a human
-  must accept it through the normal spec-engine write path). Tests mock
-  `ModelClient`; no live key is exercised in CI.
-- **`spec-studio-ui`** — a two-pane (rendered `spec.md` / editable form over
-  the same fields) editor in `apps/web`, reusing `spec-dashboard`'s
-  validation-report rendering for inline AC/requirement lint feedback.
-- **`spec-studio-realtime`** — real-time co-editing (§4) once the editor
-  above exists to co-edit.
+- **`spec-studio-realtime`** — real-time co-editing (§4), now unblocked: the
+  editor it co-edits (Guided/Markdown/YAML modes, `parse_spec_md` round-trip)
+  is built.
 
 ### 2.3 Round-trip contract
 
@@ -209,11 +201,10 @@ None of the above is implemented yet; this section is the target design the
 
 ## 5. Open questions carried into implementation
 
-- **Q1**: Should `parse_spec_md` accept partial edits (e.g., a human deletes
-  the `## Open Questions` section entirely) as "no open questions" or as
-  invalid input requiring the section header to stay present with `_None_`?
-  Leaning: absent section = empty list, matching `_bullets([])` already
-  rendering `_None_` today.
+- **Q1** — **Resolved by `ss-parser`**: `parse_spec_md` accepts partial
+  edits; a missing `## Open Questions` (or any other list) section parses as
+  an empty list rather than a validation error, matching the "absent
+  section = empty list" leaning above.
 - **Q2**: Presence/typing indicators for co-editing (who else is viewing) —
   Yjs's awareness protocol (`y-protocols/awareness`) covers this for free
   once the transport lands; not a separate build item, just needs enabling.

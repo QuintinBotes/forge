@@ -27,6 +27,7 @@ import type {
   ChainVerifyResult,
   BurndownSeries,
   CompleteSprintRequest,
+  Constitution,
   DeploymentDecisionRequest,
   DeploymentDetail,
   DeploymentListQuery,
@@ -68,6 +69,7 @@ import type {
   ProjectTeamAccessInput,
   ProjectVisibilityInput,
   RemediationPlanView,
+  Requirement,
   RetrievedChunk,
   RoleConfigListResponse,
   RoleConfigOut,
@@ -85,12 +87,18 @@ import type {
   TeamMemberInput,
   TeamRole,
   SpecDashboard,
+  SpecDraft,
+  SpecImport,
   SpecManifest,
+  SpecVersionDetail,
+  SpecVersionDiff,
+  SpecVersionSummary,
   Sprint,
   SprintDTO,
   SprintReport,
   TaskDTO,
   TaskStatus,
+  ValidationReport,
   VelocityDashboard,
   HrdDiscoverRequest,
   HrdDiscoverResponse,
@@ -260,6 +268,11 @@ export class ForgeApiClient {
     return this.request<EpicDTO[]>("/board/epics", { query });
   }
 
+  /** Create an epic (e.g. the standalone `/specs/new` entry, which creates its own epic). */
+  createEpic(epic: EpicDTO): Promise<EpicDTO> {
+    return this.request<EpicDTO>("/board/epics", { method: "POST", body: epic });
+  }
+
   listSprints(query?: RequestOptions["query"]): Promise<SprintDTO[]> {
     return this.request<SprintDTO[]>("/board/sprints", { query });
   }
@@ -399,11 +412,168 @@ export class ForgeApiClient {
     );
   }
 
+  /**
+   * Persist a full spec manifest (Spec Studio's Guided mode save path).
+   * Re-renders both `spec.md` and `manifest.yaml` to match, same as the
+   * markdown/YAML save endpoints.
+   */
+  putSpecManifest(specId: string, manifest: SpecManifest): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}`,
+      { method: "PUT", body: manifest },
+    );
+  }
+
+  /** Create a draft spec for an epic (SDD lifecycle entry point). */
+  createSpec(body: {
+    epic_id: string;
+    name: string;
+    requirements?: Requirement[];
+  }): Promise<SpecManifest> {
+    return this.request<SpecManifest>("/spec/specs", { method: "POST", body });
+  }
+
+  /**
+   * Read a spec's ``spec.md`` prose serialization — one of the two
+   * first-class editable formats (kept in sync with `manifest.yaml`).
+   */
+  getSpecMarkdown(specId: string): Promise<string> {
+    return this.request<string>(
+      `/spec/specs/${encodeURIComponent(specId)}/markdown`,
+    );
+  }
+
+  /** Save a spec edited as ``spec.md`` prose; re-renders `manifest.yaml` to match. */
+  putSpecMarkdown(specId: string, content: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/markdown`,
+      { method: "PUT", body: { content } },
+    );
+  }
+
+  /**
+   * Read a spec's ``manifest.yaml`` serialization — the precise machine/CI/agent
+   * format (kept in sync with `spec.md`).
+   */
+  getSpecManifestYaml(specId: string): Promise<string> {
+    return this.request<string>(
+      `/spec/specs/${encodeURIComponent(specId)}/manifest`,
+    );
+  }
+
+  /**
+   * Save a spec edited (or created) as ``manifest.yaml``; re-renders `spec.md`
+   * to match. Both formats are first-class: a spec can be created and edited
+   * from either.
+   */
+  putSpecManifestYaml(specId: string, content: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/manifest`,
+      { method: "PUT", body: { content } },
+    );
+  }
+
+  /**
+   * List a spec's version history, newest first. A version is recorded on
+   * every save (Guided / Markdown / YAML), so this reflects every edit ever
+   * made to the spec, not just lifecycle transitions.
+   */
+  listSpecVersions(specId: string): Promise<SpecVersionSummary[]> {
+    return this.request<SpecVersionSummary[]>(
+      `/spec/specs/${encodeURIComponent(specId)}/versions`,
+    );
+  }
+
+  /** Read one version's full snapshot (manifest + both serializations). */
+  getSpecVersion(specId: string, versionNumber: number): Promise<SpecVersionDetail> {
+    return this.request<SpecVersionDetail>(
+      `/spec/specs/${encodeURIComponent(specId)}/versions/${versionNumber}`,
+    );
+  }
+
+  /** Diff two versions of a spec: line-level markdown + structured manifest. */
+  diffSpecVersions(
+    specId: string,
+    fromVersion: number,
+    toVersion: number,
+  ): Promise<SpecVersionDiff> {
+    return this.request<SpecVersionDiff>(
+      `/spec/specs/${encodeURIComponent(specId)}/versions/${fromVersion}/diff/${toVersion}`,
+    );
+  }
+
+  /** Run the clarification pass: surface + resolve open questions. */
+  clarifySpec(specId: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/clarify`,
+      { method: "POST" },
+    );
+  }
+
+  /** Generate the technical plan + ADRs. */
+  planSpec(specId: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/plan`,
+      { method: "POST" },
+    );
+  }
+
   /** Approve a spec — the human gate that advances it out of clarification. */
   approveSpec(specId: string): Promise<SpecManifest> {
     return this.request<SpecManifest>(
       `/spec/specs/${encodeURIComponent(specId)}/approve`,
       { method: "POST" },
+    );
+  }
+
+  /** Generate implementation tasks from an *approved* spec (409 if not). */
+  generateTasks(specId: string): Promise<TaskDTO[]> {
+    return this.request<TaskDTO[]>(
+      `/spec/specs/${encodeURIComponent(specId)}/tasks`,
+      { method: "POST" },
+    );
+  }
+
+  /** Validate a task against its spec (requirement-to-test traceability). */
+  validateTask(taskId: string): Promise<ValidationReport> {
+    return this.request<ValidationReport>(
+      `/spec/tasks/${encodeURIComponent(taskId)}/validate`,
+      { method: "POST" },
+    );
+  }
+
+  /**
+   * BYOK AI spec drafting (`ss-draft` / `ss-ai-panel`): draft a `spec.md` from
+   * a one-line goal via the workspace's model router + `ModelClient`, seeded
+   * with the project constitution when `project_id` is given. Draft-only —
+   * nothing is persisted; the caller streams `spec_md` into the Guided or
+   * Markdown editor for a human to refine and save.
+   */
+  draftSpec(body: {
+    goal: string;
+    epic_id?: string;
+    project_id?: string;
+  }): Promise<SpecDraft> {
+    return this.request<SpecDraft>("/spec/draft", { method: "POST", body });
+  }
+
+  /**
+   * `ss-import`: import an existing markdown or YAML spec (uploaded/pasted from
+   * outside Forge) as a `spec.md` draft. Parse/normalize only — no model call.
+   * Draft-only, like `draftSpec` — nothing is persisted; the caller reviews the
+   * result in the Markdown/Guided editor before saving.
+   */
+  importSpec(body: {
+    content: string;
+    source_format?: "markdown" | "yaml" | "auto";
+  }): Promise<SpecImport> {
+    return this.request<SpecImport>("/spec/import", { method: "POST", body });
+  }
+
+  /** Read a project's constitution (404 if it was never initialised). */
+  getConstitution(projectId: string): Promise<Constitution> {
+    return this.request<Constitution>(
+      `/spec/constitution/${encodeURIComponent(projectId)}`,
     );
   }
 

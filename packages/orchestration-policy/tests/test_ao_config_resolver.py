@@ -12,14 +12,13 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
-from forge_orchestration_policy import resolve_effective_config
-
 from forge_contracts.orchestration_config import (
     DEFAULT_ROLE_CONFIG,
     AgentRole,
     Effort,
     RoleConfigOverride,
 )
+from forge_orchestration_policy import resolve_effective_config
 
 WORKSPACE = uuid.uuid4()
 PROJECT = uuid.uuid4()

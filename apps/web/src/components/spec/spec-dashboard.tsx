@@ -5,11 +5,14 @@ import {
   FileText,
   Landmark,
   ListChecks,
+  Pencil,
+  Plus,
   Route,
   ShieldCheck,
   Stamp,
   XCircle,
 } from "lucide-react";
+import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -21,6 +24,7 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
+import { SpecStudio } from "@/components/spec-studio/spec-studio";
 import { Button } from "@/components/ui/button";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { useApproveSpec, useSpecOverview } from "@/lib/api/spec";
@@ -28,7 +32,7 @@ import type { SpecOverview } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 import { ConstitutionPanel } from "./constitution-panel";
-import { LifecycleRail } from "./lifecycle-rail";
+import { LifecycleStepper } from "./lifecycle-stepper";
 import { ManifestPanel } from "./manifest-panel";
 import {
   formatCoverage,
@@ -43,12 +47,13 @@ import { TraceabilityMatrix } from "./traceability-matrix";
 /** Placeholder project until project routing lands (F02). */
 export const DEFAULT_PROJECT_ID = "default";
 
-type TabId = "traceability" | "manifest" | "constitution";
+type TabId = "traceability" | "manifest" | "constitution" | "studio";
 
 const TABS: { id: TabId; label: string; icon: typeof Route }[] = [
   { id: "traceability", label: "Traceability", icon: Route },
   { id: "manifest", label: "Manifest", icon: FileText },
   { id: "constitution", label: "Constitution", icon: Landmark },
+  { id: "studio", label: "Studio", icon: Pencil },
 ];
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -163,7 +168,14 @@ export function SpecDashboard({
             {specs.length} {specs.length === 1 ? "spec" : "specs"}
           </span>
         </div>
-        {selected ? (
+        <div className="flex items-center gap-3">
+          <Button asChild size="sm" variant="outline" data-testid="new-spec-link">
+            <Link href="/specs/new">
+              <Plus className="h-4 w-4" aria-hidden />
+              New spec
+            </Link>
+          </Button>
+          {selected ? (
           <div className="flex items-center gap-3">
             <span
               data-testid="selected-status"
@@ -186,7 +198,8 @@ export function SpecDashboard({
               </Button>
             ) : null}
           </div>
-        ) : null}
+          ) : null}
+        </div>
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(15rem,20rem)_1fr]">
@@ -222,7 +235,7 @@ export function SpecDashboard({
                 <h2 className="font-display text-lg font-semibold leading-tight text-foreground">
                   {selected.name}
                 </h2>
-                <LifecycleRail status={selected.status} />
+                <LifecycleStepper spec={selected} client={client} />
               </div>
 
               <div className="border-b border-border px-6 py-4">
@@ -241,6 +254,7 @@ export function SpecDashboard({
                   {tab === "constitution" ? (
                     <ConstitutionPanel constitution={constitution} />
                   ) : null}
+                  {tab === "studio" ? <SpecStudio specId={selected.id} client={client} /> : null}
                 </div>
               </div>
             </div>
@@ -503,6 +517,12 @@ function EmptyList() {
         Create a spec from an epic to start the SDD lifecycle — draft,
         clarify, approve, then validate.
       </p>
+      <Button asChild size="sm" variant="outline" data-testid="empty-new-spec-link">
+        <Link href="/specs/new">
+          <Plus className="h-4 w-4" aria-hidden />
+          New spec
+        </Link>
+      </Button>
     </div>
   );
 }

@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from forge_orchestration_policy import Strategy, Tier
 from pydantic import BaseModel, Field
 
 from forge_agent.providers.config import ProviderName
 from forge_contracts.orchestration_config import AgentRole, Effort, RoleConfigSource
+from forge_orchestration_policy import Strategy, Tier
 
 __all__ = [
     "AoSettingsOut",
