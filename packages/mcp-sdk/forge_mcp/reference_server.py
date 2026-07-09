@@ -83,6 +83,29 @@ def _default_contents() -> dict[str, str]:
     }
 
 
+def _default_prompts() -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "summarize_page",
+            "description": "Summarize a Confluence page",
+            "arguments": [{"name": "uri", "description": "resource uri", "required": True}],
+        }
+    ]
+
+
+def _default_prompt_messages() -> dict[str, list[dict[str, Any]]]:
+    return {
+        # A planted fake secret so the redaction path runs on prompt content too.
+        "summarize_page": [
+            {"role": "system", "content": {"type": "text", "text": "You summarize pages."}},
+            {
+                "role": "user",
+                "content": {"type": "text", "text": f"Summarize the page. {PLANTED_SECRET}"},
+            },
+        ]
+    }
+
+
 def _default_tools() -> list[dict[str, Any]]:
     return [
         {
@@ -120,6 +143,10 @@ class ReferenceMCPServer:
     resources: list[dict[str, Any]] = field(default_factory=_default_resources)
     contents: dict[str, str] = field(default_factory=_default_contents)
     tools: list[dict[str, Any]] = field(default_factory=_default_tools)
+    prompts: list[dict[str, Any]] = field(default_factory=_default_prompts)
+    prompt_messages: dict[str, list[dict[str, Any]]] = field(
+        default_factory=_default_prompt_messages
+    )
     session_id: str = "forge-reference-session"
     inspection: Inspection = field(default_factory=Inspection)
 
@@ -150,7 +177,7 @@ class ReferenceMCPServer:
             )
             return {
                 "protocolVersion": SERVER_PROTOCOL_VERSION,
-                "capabilities": {"resources": {}, "tools": {}},
+                "capabilities": {"resources": {}, "tools": {}, "prompts": {}},
                 "serverInfo": SERVER_INFO,
             }
         if method == "resources/list":
@@ -170,6 +197,13 @@ class ReferenceMCPServer:
             if name not in known:
                 raise _RpcError(-32602, f"unknown tool: {name}")
             return {"content": [{"type": "text", "text": f"invoked {name}"}], "isError": False}
+        if method == "prompts/list":
+            return {"prompts": list(self.prompts)}
+        if method == "prompts/get":
+            name = params.get("name")
+            if name not in self.prompt_messages:
+                raise _RpcError(-32602, f"unknown prompt: {name}")
+            return {"messages": list(self.prompt_messages[name])}
         if method == "_forge/inspect":
             return self.inspect_dict()
         raise _RpcError(-32601, f"method not found: {method}")

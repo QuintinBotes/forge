@@ -342,6 +342,89 @@ def test_rank_delta_zero_on_identity() -> None:
     assert debug.monotonic is True
 
 
+# --------------------------------------------------------------------------- #
+# F40 MCP ACL: namespace entitlement re-checked at query time                  #
+# --------------------------------------------------------------------------- #
+
+
+def _mcp_source(session_factory: sessionmaker[Session], workspace_id: uuid.UUID) -> uuid.UUID:
+    with session_factory() as session:
+        source = KnowledgeSource(
+            workspace_id=workspace_id, kind="mcp", name="confluence", uri="mcp://confluence"
+        )
+        session.add(source)
+        session.flush()
+        src_id = source.id
+        session.commit()
+    return src_id
+
+
+_MCP_CORPUS = [
+    Chunk(
+        content="engineering vault rotation runbook procedure",
+        path="mcp://confluence/engineering/p1",
+        metadata={"mcp_namespace": "engineering"},
+    ),
+    Chunk(
+        content="finance quarterly budget figures and forecast",
+        path="mcp://confluence/finance/p2",
+        metadata={"mcp_namespace": "finance"},
+    ),
+]
+
+
+def test_namespace_acl_filters_disallowed_namespace_at_query_time(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    # An MCP chunk is returned only if its namespace is in the scope allow-list,
+    # so a revoked/foreign namespace can never leak through the index (delta 5).
+    source_id = _mcp_source(session_factory, workspace_id)
+    _index(session_factory, source_id, _MCP_CORPUS)
+    retriever = _retriever(session_factory)
+
+    scoped = KnowledgeScope(workspace_id=workspace_id, namespaces=["engineering"])
+    for query in ("vault rotation runbook", "quarterly budget forecast"):
+        for ranked in (
+            retriever.semantic(query, scoped, k=10),
+            retriever.keyword(query, scoped, k=10),
+        ):
+            namespaces = {r.chunk.metadata.get("mcp_namespace") for r in ranked if r.chunk}
+            assert "finance" not in namespaces
+
+
+def test_namespace_acl_absent_returns_all_namespaces(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    # No allow-list -> the ACL predicate is inert (backward compatible).
+    source_id = _mcp_source(session_factory, workspace_id)
+    _index(session_factory, source_id, _MCP_CORPUS)
+    retriever = _retriever(session_factory)
+
+    scope = KnowledgeScope(workspace_id=workspace_id)
+    ranked = retriever.keyword("budget runbook", scope, k=10)
+    namespaces = {r.chunk.metadata.get("mcp_namespace") for r in ranked if r.chunk}
+    assert namespaces == {"engineering", "finance"}
+
+
+def test_namespace_acl_keeps_non_mcp_chunks(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    # A chunk with no ``mcp_namespace`` (repo content) is never filtered by the
+    # namespace ACL — only namespaced MCP chunks are entitlement-checked.
+    source_id = _make_source(session_factory, workspace_id)
+    _index(
+        session_factory,
+        source_id,
+        [Chunk(content="database connection pooling helper", path="db.py")],
+    )
+    retriever = _retriever(session_factory)
+
+    scope = KnowledgeScope(workspace_id=workspace_id, namespaces=["engineering"])
+    ranked = retriever.keyword("database connection pooling", scope, k=10)
+    assert ranked
+    assert ranked[0].chunk is not None and ranked[0].chunk.path == "db.py"
+
+
 def test_rerank_degrades_on_raw_unavailable_error() -> None:
     # AC3 (defense-in-depth): a bare client that RAISES RerankerUnavailableError
     # (no GracefulReranker) is still caught by the retriever -> weighted-RRF.

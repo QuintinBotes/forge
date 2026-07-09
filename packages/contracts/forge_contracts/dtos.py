@@ -104,6 +104,13 @@ class KnowledgeScope(_Model):
     mcp_sources: list[str] = Field(default_factory=list)
     source_types: list[str] = Field(default_factory=list)
     freshness_min_hours: int | None = None
+    #: F40 MCP ACL: a namespace entitlement allow-list re-checked at *query* time.
+    #: When non-empty, an indexed MCP chunk is returned only if its
+    #: ``mcp_namespace`` is in this set — so a connection's ``allowed_namespaces``
+    #: is re-enforced against the index (indexing entitlement can be revoked
+    #: between sync and query, and it blocks cross-tenant namespace leakage).
+    #: Chunks with no ``mcp_namespace`` (e.g. repo content) are unaffected.
+    namespaces: list[str] = Field(default_factory=list)
 
 
 class IndexResult(_Model):

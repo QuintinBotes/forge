@@ -33,8 +33,10 @@ from forge_contracts import (
 from forge_contracts.exceptions import ApprovalRequiredError
 from forge_mcp.audit import AuditSink, InMemoryAuditLog, build_audit_entry
 from forge_mcp.exceptions import (
+    MCPElicitationRequiredError,
     MCPInputError,
     MCPNamespaceError,
+    MCPRateLimitedError,
     MCPSecurityError,
 )
 from forge_mcp.security import (
@@ -43,13 +45,21 @@ from forge_mcp.security import (
     namespace_of,
     payload_hash,
     redact,
+    redact_text,
     resource_in_scope,
     token_binding,
 )
-from forge_mcp.transport import NullTransport, ToolSpec, Transport
+from forge_mcp.transport import (
+    NullTransport,
+    PromptMessage,
+    PromptSpec,
+    ToolSpec,
+    Transport,
+)
 
 if TYPE_CHECKING:
     from forge_contracts import Policy, PolicyEvaluator
+    from forge_mcp.ratelimit import RateLimiter
 
 
 class MCPGatewayClient:
@@ -62,6 +72,7 @@ class MCPGatewayClient:
         audit_log: AuditSink | None = None,
         policy: Policy | None = None,
         evaluator: PolicyEvaluator | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         # Explicit None checks: an empty InMemoryAuditLog is falsy (``__len__``
         # returns 0), so ``audit_log or ...`` would silently drop a shared log.
@@ -69,6 +80,7 @@ class MCPGatewayClient:
         self._audit: AuditSink = audit_log if audit_log is not None else InMemoryAuditLog()
         self._policy = policy
         self._evaluator = evaluator
+        self._rate_limiter = rate_limiter
         self._connection: MCPConnection | None = None
         self._token_binding: str | None = None
         self._tool_specs: dict[str, ToolSpec] | None = None
@@ -159,6 +171,39 @@ class MCPGatewayClient:
         return content.model_copy(update={"content": redact(content.content)})
 
     # ------------------------------------------------------------------ #
+    # Prompts (audited reads; F40 delta 2)                               #
+    # ------------------------------------------------------------------ #
+
+    def list_prompts(self) -> list[PromptSpec]:
+        """List the server's advertised prompts (``prompts/list``), audited."""
+        conn = self._require_connection()
+        start = time.perf_counter()
+        try:
+            prompts = self._transport.list_prompts()
+        except Exception:
+            self._record(conn.id, "prompts/list", {}, "error", self._elapsed_ms(start))
+            raise
+        self._record(conn.id, "prompts/list", {}, "ok", self._elapsed_ms(start))
+        return list(prompts)
+
+    def get_prompt(
+        self, name: str, arguments: Mapping[str, object] | None = None
+    ) -> list[PromptMessage]:
+        """Render a prompt (``prompts/get``); message content is redacted (rule 6)."""
+        conn = self._require_connection()
+        if not isinstance(name, str) or not name.strip():
+            raise MCPInputError("prompt name must be a non-empty string")
+        args = dict(arguments) if arguments is not None else {}
+        start = time.perf_counter()
+        try:
+            messages = self._transport.get_prompt(name, args)
+        except Exception:
+            self._record(conn.id, f"prompts/get:{name}", args, "error", self._elapsed_ms(start))
+            raise
+        self._record(conn.id, f"prompts/get:{name}", args, "ok", self._elapsed_ms(start))
+        return [m.model_copy(update={"content": redact_text(m.content)}) for m in messages]
+
+    # ------------------------------------------------------------------ #
     # Tools (write-gated, policy-checked, audited)                       #
     # ------------------------------------------------------------------ #
 
@@ -189,6 +234,11 @@ class MCPGatewayClient:
                 "is read-only (allow_write=false)"
             )
 
+        # F40 delta 4: per-connection rate limit — a typed, retryable error that
+        # is NOT a run/tool failure. Checked before policy + live traffic so an
+        # over-budget caller never reaches the server.
+        self._rate_limit_gate(conn, name, arguments)
+
         # Rule 7: same policy evaluation as any other agent tool call.
         self._policy_gate(conn, name, arguments)
 
@@ -207,6 +257,16 @@ class MCPGatewayClient:
                 payload_hash=payload_hash(arguments),
             )
 
+        # F40 delta 3: a server-initiated elicitation request is surfaced to the
+        # human approver (typed error) rather than silently auto-answered.
+        elicitation = _elicitation_of(raw)
+        if elicitation is not None:
+            self._record(conn.id, name, arguments, "needs_input", self._elapsed_ms(start))
+            raise MCPElicitationRequiredError(
+                str(elicitation.get("message") or f"tool {name!r} requires additional input"),
+                schema=elicitation.get("requestedSchema") or elicitation.get("schema"),
+            )
+
         latency = self._elapsed_ms(start)
         self._record(conn.id, name, arguments, "ok", latency)
         return MCPToolResult(
@@ -220,6 +280,16 @@ class MCPGatewayClient:
     # ------------------------------------------------------------------ #
     # Internals                                                          #
     # ------------------------------------------------------------------ #
+
+    def _rate_limit_gate(self, conn: MCPConnection, name: str, arguments: dict[str, Any]) -> None:
+        if self._rate_limiter is None:
+            return
+        if not self._rate_limiter.allow(conn.id):
+            self._record(conn.id, name, arguments, "rate_limited", None)
+            raise MCPRateLimitedError(
+                f"connection {conn.id!r} exceeded its MCP tool-call rate limit",
+                retry_after_s=self._rate_limiter.retry_after_s(),
+            )
 
     def _policy_gate(self, conn: MCPConnection, name: str, arguments: dict[str, Any]) -> None:
         if self._evaluator is None or self._policy is None:
@@ -254,6 +324,24 @@ class MCPGatewayClient:
     @staticmethod
     def _elapsed_ms(start: float) -> int:
         return int((time.perf_counter() - start) * 1000)
+
+
+def _elicitation_of(raw: Any) -> Mapping[str, Any] | None:
+    """Extract a server elicitation request from a tool result, if present.
+
+    An MCP server can ask the caller for more input mid-tool-call. The reference
+    shape carries an ``elicitation`` object (``message`` + ``requestedSchema``)
+    on the result, optionally nested under ``_meta``. Returns the request mapping
+    or ``None`` when the result carries no elicitation.
+    """
+    if not isinstance(raw, Mapping):
+        return None
+    candidate = raw.get("elicitation")
+    if candidate is None:
+        meta = raw.get("_meta")
+        if isinstance(meta, Mapping):
+            candidate = meta.get("elicitation")
+    return candidate if isinstance(candidate, Mapping) else None
 
 
 # Structural-conformance guard: fail type-check if the class drifts from the

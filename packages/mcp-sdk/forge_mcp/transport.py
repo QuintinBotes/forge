@@ -36,6 +36,26 @@ class ToolSpec(BaseModel):
     annotations: dict[str, Any] = {}
 
 
+class PromptSpec(BaseModel):
+    """A reusable prompt advertised by an MCP server (``prompts/list``)."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    name: str
+    description: str | None = None
+    #: Declared prompt arguments (``{"name", "description", "required"}`` each).
+    arguments: list[dict[str, Any]] = []
+
+
+class PromptMessage(BaseModel):
+    """One rendered message of a prompt (``prompts/get``)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    role: str = "user"
+    content: str = ""
+
+
 @runtime_checkable
 class Transport(Protocol):
     """The minimal surface the client needs from a live MCP connection."""
@@ -47,6 +67,12 @@ class Transport(Protocol):
     def list_tools(self) -> list[ToolSpec]: ...
 
     def call_tool(self, name: str, arguments: Mapping[str, Any]) -> Any: ...
+
+    def list_prompts(self) -> list[PromptSpec]: ...
+
+    def get_prompt(
+        self, name: str, arguments: Mapping[str, Any] | None = None
+    ) -> list[PromptMessage]: ...
 
 
 class NullTransport:
@@ -71,5 +97,13 @@ class NullTransport:
     def call_tool(self, name: str, arguments: Mapping[str, Any]) -> Any:
         raise MCPTransportUnavailableError("no live MCP transport configured")
 
+    def list_prompts(self) -> list[PromptSpec]:
+        return []
 
-__all__ = ["NullTransport", "ToolSpec", "Transport"]
+    def get_prompt(
+        self, name: str, arguments: Mapping[str, Any] | None = None
+    ) -> list[PromptMessage]:
+        raise MCPTransportUnavailableError("no live MCP transport configured")
+
+
+__all__ = ["NullTransport", "PromptMessage", "PromptSpec", "ToolSpec", "Transport"]

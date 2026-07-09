@@ -36,7 +36,7 @@ import httpx
 
 from forge_contracts import MCPResource, MCPResourceContent
 from forge_mcp.exceptions import MCPSecurityError, MCPTransportUnavailableError
-from forge_mcp.transport import ToolSpec
+from forge_mcp.transport import PromptMessage, PromptSpec, ToolSpec
 from forge_mcp.transports.jsonrpc import (
     IdGenerator,
     build_notification,
@@ -212,6 +212,18 @@ class HttpMcpTransport:
     def call_tool(self, name: str, arguments: Mapping[str, Any]) -> Any:
         return self._rpc("tools/call", {"name": name, "arguments": dict(arguments)})
 
+    def list_prompts(self) -> list[PromptSpec]:
+        result = self._rpc("prompts/list", {})
+        raw = (result or {}).get("prompts", []) if isinstance(result, Mapping) else []
+        return [_to_prompt_spec(item) for item in raw if isinstance(item, Mapping)]
+
+    def get_prompt(
+        self, name: str, arguments: Mapping[str, Any] | None = None
+    ) -> list[PromptMessage]:
+        result = self._rpc("prompts/get", {"name": name, "arguments": dict(arguments or {})})
+        raw = (result or {}).get("messages", []) if isinstance(result, Mapping) else []
+        return [_to_prompt_message(item) for item in raw if isinstance(item, Mapping)]
+
     def close(self) -> None:
         if self._owns_client:
             self._client.close()
@@ -260,6 +272,28 @@ def _to_tool_spec(item: Mapping[str, Any]) -> ToolSpec:
         destructive=annotations.get("destructiveHint"),
         annotations=annotations,
     )
+
+
+def _to_prompt_spec(item: Mapping[str, Any]) -> PromptSpec:
+    arguments = item.get("arguments")
+    arguments = (
+        [dict(a) for a in arguments if isinstance(a, Mapping)]
+        if isinstance(arguments, list)
+        else []
+    )
+    return PromptSpec(
+        name=str(item.get("name", "")),
+        description=item.get("description"),
+        arguments=arguments,
+    )
+
+
+def _to_prompt_message(item: Mapping[str, Any]) -> PromptMessage:
+    content = item.get("content")
+    # MCP prompt content is a ``{"type": "text", "text": ...}`` object (or a bare
+    # string in lenient servers); extract the text so the client can redact it.
+    text = str(content.get("text") or "") if isinstance(content, Mapping) else str(content or "")
+    return PromptMessage(role=str(item.get("role", "user")), content=text)
 
 
 __all__ = ["DEFAULT_PROTOCOL_VERSION", "MAX_RESPONSE_BYTES", "HttpMcpTransport"]
