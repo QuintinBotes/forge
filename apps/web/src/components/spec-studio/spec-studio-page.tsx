@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { LifecycleStepper } from "@/components/spec/lifecycle-stepper";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { useSpecStudioManifest } from "@/lib/api/spec-studio";
 
@@ -38,6 +39,9 @@ export function SpecStudioPage({ specId, client = apiClient }: SpecStudioPagePro
           {name ?? "Spec"}
         </h1>
       </div>
+      {manifestQuery.data ? (
+        <LifecycleStepper spec={manifestQuery.data} client={client} />
+      ) : null}
       <SpecStudio specId={specId} client={client} />
     </div>
   );

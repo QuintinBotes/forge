@@ -21,6 +21,7 @@ import {
 } from "@tanstack/react-query";
 
 import { apiClient, type ForgeApiClient } from "./client";
+import { specStudioKeys } from "./spec-studio";
 import type {
   ADR,
   AcceptanceCriterion,
@@ -29,6 +30,8 @@ import type {
   Requirement,
   SpecDashboard,
   SpecManifest,
+  TaskDTO,
+  ValidationReport,
 } from "./types";
 
 export const specKeys = {
@@ -190,5 +193,136 @@ export function useApproveSpec(
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: specKeys.all() });
     },
+  });
+}
+
+// --------------------------------------------------------------------------- //
+// ss-lifecycle: the plain-language stepper's inline actions                   //
+//                                                                              //
+// Describe->Refine->Approve->Build->Verify, each backed by one existing       //
+// `/spec` engine call (Clarify/Plan/Approve/Generate tasks/Validate — see     //
+// `components/spec/spec-meta.ts`). Clarify is a simple, single-field status   //
+// flip like Approve, so it gets the same optimistic treatment; Plan/Generate  //
+// tasks/Validate touch richer manifest state (plans, tasks, gated validation) //
+// that would be unsafe to fake, so those settle from the engine's response.   //
+// --------------------------------------------------------------------------- //
+
+interface SpecIdVariables {
+  specId: string;
+}
+
+interface OptimisticStatusContext {
+  previous: [readonly unknown[], SpecDashboard | undefined][];
+}
+
+/** Snapshot every cached dashboard and flip one spec's status ahead of the request. */
+function optimisticallySetStatus(
+  queryClient: ReturnType<typeof useQueryClient>,
+  specId: string,
+  status: SpecManifest["status"],
+): OptimisticStatusContext["previous"] {
+  const previous = queryClient.getQueriesData<SpecDashboard>({
+    queryKey: specKeys.overviews(),
+  });
+  queryClient.setQueriesData<SpecDashboard>(
+    { queryKey: specKeys.overviews() },
+    (old) =>
+      old
+        ? {
+            ...old,
+            specs: old.specs.map((spec) => (spec.id === specId ? { ...spec, status } : spec)),
+          }
+        : old,
+  );
+  return previous;
+}
+
+function rollbackStatus(
+  queryClient: ReturnType<typeof useQueryClient>,
+  context: OptimisticStatusContext | undefined,
+) {
+  if (!context) return;
+  for (const [key, data] of context.previous) {
+    queryClient.setQueryData(key, data);
+  }
+}
+
+/** After any lifecycle action settles, the studio's cached surfaces are stale. */
+function invalidateSpecCaches(queryClient: ReturnType<typeof useQueryClient>, specId: string) {
+  void queryClient.invalidateQueries({ queryKey: specKeys.all() });
+  void queryClient.invalidateQueries({ queryKey: specStudioKeys.manifest(specId) });
+  void queryClient.invalidateQueries({ queryKey: specStudioKeys.markdown(specId) });
+  void queryClient.invalidateQueries({ queryKey: specStudioKeys.yaml(specId) });
+}
+
+/**
+ * **Describe** step: run the clarification pass (`POST /spec/{id}/clarify`).
+ * Optimistic — flips the spec to `clarifying` immediately, like `useApproveSpec`.
+ */
+export function useClarifySpec(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<SpecManifest, Error, SpecIdVariables, OptimisticStatusContext> {
+  const queryClient = useQueryClient();
+  return useMutation<SpecManifest, Error, SpecIdVariables, OptimisticStatusContext>({
+    mutationFn: ({ specId }) => client.clarifySpec(specId),
+    onMutate: async ({ specId }) => {
+      await queryClient.cancelQueries({ queryKey: specKeys.overviews() });
+      return { previous: optimisticallySetStatus(queryClient, specId, "clarifying") };
+    },
+    onError: (_error, _variables, context) => rollbackStatus(queryClient, context),
+    onSettled: (_data, _error, { specId }) => invalidateSpecCaches(queryClient, specId),
+  });
+}
+
+/**
+ * **Refine** step: generate the technical plan + ADRs (`POST /spec/{id}/plan`).
+ * Not optimistic — `plan_ref`/`decisions` are new manifest content, not a status
+ * flip, so the UI waits for the engine's response.
+ */
+export function usePlanSpec(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<SpecManifest, Error, SpecIdVariables> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ specId }: SpecIdVariables) => client.planSpec(specId),
+    onSettled: (_data, _error, { specId }) => invalidateSpecCaches(queryClient, specId),
+  });
+}
+
+/**
+ * **Build** step: generate implementation tasks from an approved spec
+ * (`POST /spec/{id}/tasks`, 409 if not yet approved). Not optimistic — the
+ * response is the task list, not the manifest, and the action is gated.
+ */
+export function useGenerateTasks(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<TaskDTO[], Error, SpecIdVariables> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ specId }: SpecIdVariables) => client.generateTasks(specId),
+    onSettled: (_data, _error, { specId }) => invalidateSpecCaches(queryClient, specId),
+  });
+}
+
+/**
+ * **Verify** step: validate the spec's (deterministic) generated tasks
+ * (`POST /spec/tasks/{task_id}/validate`). Task generation is idempotent, so
+ * this re-runs `generateTasks` to resolve a task id rather than requiring the
+ * Build step to have run first in this session.
+ */
+export function useValidateSpec(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<ValidationReport, Error, SpecIdVariables> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ specId }: SpecIdVariables) => {
+      const tasks = await client.generateTasks(specId);
+      const taskId = tasks.find((task) => task.id)?.id;
+      if (!taskId) {
+        throw new Error("No tasks to validate yet — generate tasks first.");
+      }
+      return client.validateTask(taskId);
+    },
+    onSettled: (_data, _error, { specId }) => invalidateSpecCaches(queryClient, specId),
   });
 }

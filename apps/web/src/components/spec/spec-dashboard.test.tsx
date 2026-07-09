@@ -92,7 +92,7 @@ describe("SpecDashboard", () => {
     expect(
       await screen.findByRole("heading", { level: 2, name: /passwordless auth/i }),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("lifecycle-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("lifecycle-stepper")).toBeInTheDocument();
     expect(screen.getByTestId("gate-tiles")).toBeInTheDocument();
     expect(screen.getByTestId("traceability-matrix")).toBeInTheDocument();
     expect(screen.getByText(/2\s*specs/i)).toBeInTheDocument();

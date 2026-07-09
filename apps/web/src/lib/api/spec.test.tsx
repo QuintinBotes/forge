@@ -4,8 +4,17 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ForgeApiClient } from "./client";
-import { specKeys, useApproveSpec, useCreateSpec, useSpecOverview } from "./spec";
-import type { SpecDashboard, SpecManifest } from "./types";
+import {
+  specKeys,
+  useApproveSpec,
+  useClarifySpec,
+  useCreateSpec,
+  useGenerateTasks,
+  usePlanSpec,
+  useSpecOverview,
+  useValidateSpec,
+} from "./spec";
+import type { SpecDashboard, SpecManifest, TaskDTO, ValidationReport } from "./types";
 
 function makeWrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -96,6 +105,170 @@ describe("useApproveSpec (optimistic)", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     const data = queryClient.getQueryData<SpecDashboard>(specKeys.overview("p1"));
     expect(data?.specs.find((s) => s.id === "s1")?.status).toBe("clarifying");
+  });
+});
+
+describe("useClarifySpec (optimistic, Describe step)", () => {
+  it("flips the spec's status to clarifying before the request resolves", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    queryClient.setQueryData(specKeys.overview("p1"), {
+      ...dashboard,
+      specs: [{ id: "s1", name: "Passwordless auth", status: "draft" as const }],
+    });
+
+    let resolve!: (value: SpecManifest) => void;
+    const pending = new Promise<SpecManifest>((r) => {
+      resolve = r;
+    });
+    const client = {
+      clarifySpec: vi.fn(() => pending),
+    } as unknown as ForgeApiClient;
+
+    const { result } = renderHook(() => useClarifySpec(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ specId: "s1" });
+    });
+
+    await waitFor(() => {
+      const data = queryClient.getQueryData<SpecDashboard>(specKeys.overview("p1"));
+      expect(data?.specs.find((s) => s.id === "s1")?.status).toBe("clarifying");
+    });
+
+    act(() => {
+      resolve({ id: "s1", name: "Passwordless auth", status: "clarifying" });
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.clarifySpec).toHaveBeenCalledWith("s1");
+  });
+
+  it("rolls the dashboard back when clarification fails", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    queryClient.setQueryData(specKeys.overview("p1"), dashboard);
+    const client = {
+      clarifySpec: vi.fn(() => Promise.reject(new Error("boom"))),
+    } as unknown as ForgeApiClient;
+
+    const { result } = renderHook(() => useClarifySpec(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ specId: "s1" });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    const data = queryClient.getQueryData<SpecDashboard>(specKeys.overview("p1"));
+    expect(data?.specs.find((s) => s.id === "s1")?.status).toBe("clarifying");
+  });
+});
+
+describe("usePlanSpec (Refine step, not optimistic)", () => {
+  it("calls planSpec and invalidates the spec caches on settle", async () => {
+    const planned: SpecManifest = {
+      id: "s1",
+      name: "Passwordless auth",
+      status: "clarifying",
+      plan_ref: "plan.md",
+    };
+    const client = {
+      planSpec: vi.fn(() => Promise.resolve(planned)),
+    } as unknown as ForgeApiClient;
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => usePlanSpec(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ specId: "s1" });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.planSpec).toHaveBeenCalledWith("s1");
+    expect(result.current.data).toEqual(planned);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: specKeys.all() });
+  });
+});
+
+describe("useGenerateTasks (Build step, not optimistic)", () => {
+  it("calls generateTasks and returns the task list", async () => {
+    const tasks: TaskDTO[] = [{ id: "t1", title: "Implement R1" }];
+    const client = {
+      generateTasks: vi.fn(() => Promise.resolve(tasks)),
+    } as unknown as ForgeApiClient;
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+
+    const { result } = renderHook(() => useGenerateTasks(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ specId: "s1" });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.generateTasks).toHaveBeenCalledWith("s1");
+    expect(result.current.data).toEqual(tasks);
+  });
+});
+
+describe("useValidateSpec (Verify step, not optimistic)", () => {
+  it("regenerates tasks to resolve a task id, then validates it", async () => {
+    const tasks: TaskDTO[] = [{ id: "t1", title: "Implement R1" }];
+    const report: ValidationReport = { task_id: "t1", passed: true };
+    const client = {
+      generateTasks: vi.fn(() => Promise.resolve(tasks)),
+      validateTask: vi.fn(() => Promise.resolve(report)),
+    } as unknown as ForgeApiClient;
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+
+    const { result } = renderHook(() => useValidateSpec(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ specId: "s1" });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.generateTasks).toHaveBeenCalledWith("s1");
+    expect(client.validateTask).toHaveBeenCalledWith("t1");
+    expect(result.current.data).toEqual(report);
+  });
+
+  it("fails with a clear message when there are no tasks to validate", async () => {
+    const client = {
+      generateTasks: vi.fn(() => Promise.resolve([])),
+      validateTask: vi.fn(),
+    } as unknown as ForgeApiClient;
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+
+    const { result } = renderHook(() => useValidateSpec(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ specId: "s1" });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(client.validateTask).not.toHaveBeenCalled();
   });
 });
 

@@ -32,7 +32,7 @@ import type { SpecOverview } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 import { ConstitutionPanel } from "./constitution-panel";
-import { LifecycleRail } from "./lifecycle-rail";
+import { LifecycleStepper } from "./lifecycle-stepper";
 import { ManifestPanel } from "./manifest-panel";
 import {
   formatCoverage,
@@ -235,7 +235,7 @@ export function SpecDashboard({
                 <h2 className="font-display text-lg font-semibold leading-tight text-foreground">
                   {selected.name}
                 </h2>
-                <LifecycleRail status={selected.status} />
+                <LifecycleStepper spec={selected} client={client} />
               </div>
 
               <div className="border-b border-border px-6 py-4">
