@@ -515,6 +515,24 @@ export interface SpecDraft {
   usage?: ModelUsage;
 }
 
+/**
+ * The draft-only result of `POST /spec/import` (`ss-import`): an existing
+ * markdown or YAML spec pasted/uploaded from outside Forge, parsed or
+ * best-effort normalized into a `spec.md` draft. No model call — `normalized`
+ * is `true` when the source needed loose-shape mapping (arbitrary headings,
+ * alternate YAML keys) rather than parsing directly as a canonical Forge
+ * document. `manifest` is `null` (with `parse_error` set) only for genuinely
+ * unparseable content. Nothing is persisted — a human refines the result via
+ * the normal spec-editing endpoints.
+ */
+export interface SpecImport {
+  source_format: "markdown" | "yaml";
+  spec_md: string;
+  manifest?: SpecManifest | null;
+  parse_error?: string | null;
+  normalized: boolean;
+}
+
 // --- Observability: run traces -------------------------------------------- //
 // Mirrors forge_api.observability.trace.RunTrace + forge_contracts.Step, the
 // response shape of GET /observability/runs/{run_id}/trace.

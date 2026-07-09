@@ -31,6 +31,7 @@ from forge_api.routers._rbac import require_permission
 from forge_api.routers.board import BoardServiceDep
 from forge_api.services import spec_version_service
 from forge_api.services.spec_draft_service import SpecDraft, draft_spec
+from forge_api.services.spec_import_service import SpecImport, SpecImportRequest, import_spec
 from forge_api.settings import get_settings
 from forge_contracts import (
     BoardFilter,
@@ -576,6 +577,22 @@ def draft_spec_endpoint(
 
 
 # --------------------------------------------------------------------------- #
+# ss-import: external spec import (POST /spec/import)                        #
+# --------------------------------------------------------------------------- #
+#
+# Turns an existing markdown or YAML spec (pasted or uploaded from outside
+# Forge) into a spec.md draft — parse/normalize only, no model call. Draft-only
+# like ``POST /spec/draft``: nothing is persisted; a human refines the result
+# via the normal spec-editing endpoints.
+
+
+@router.post("/import", response_model=SpecImport, dependencies=[WriteGate])
+def import_spec_endpoint(request: SpecImportRequest) -> SpecImport:
+    """Import an external markdown/YAML spec as a ``spec.md`` draft (draft-only)."""
+    return import_spec(request.content, source_format=request.source_format)
+
+
+# --------------------------------------------------------------------------- #
 # F23 spec-validation dashboard: GET /projects/{project_id}/specs             #
 # --------------------------------------------------------------------------- #
 #
@@ -654,6 +671,8 @@ __all__ = [
     "SpecCreateRequest",
     "SpecDashboard",
     "SpecEngineRegistry",
+    "SpecImport",
+    "SpecImportRequest",
     "SpecOverview",
     "SpecVersionDetail",
     "SpecVersionDiff",

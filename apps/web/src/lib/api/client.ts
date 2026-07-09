@@ -88,6 +88,7 @@ import type {
   TeamRole,
   SpecDashboard,
   SpecDraft,
+  SpecImport,
   SpecManifest,
   SpecVersionDetail,
   SpecVersionDiff,
@@ -554,6 +555,19 @@ export class ForgeApiClient {
     project_id?: string;
   }): Promise<SpecDraft> {
     return this.request<SpecDraft>("/spec/draft", { method: "POST", body });
+  }
+
+  /**
+   * `ss-import`: import an existing markdown or YAML spec (uploaded/pasted from
+   * outside Forge) as a `spec.md` draft. Parse/normalize only — no model call.
+   * Draft-only, like `draftSpec` — nothing is persisted; the caller reviews the
+   * result in the Markdown/Guided editor before saving.
+   */
+  importSpec(body: {
+    content: string;
+    source_format?: "markdown" | "yaml" | "auto";
+  }): Promise<SpecImport> {
+    return this.request<SpecImport>("/spec/import", { method: "POST", body });
   }
 
   /** Read a project's constitution (404 if it was never initialised). */

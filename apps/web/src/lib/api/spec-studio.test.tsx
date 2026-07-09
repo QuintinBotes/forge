@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ForgeApiClient } from "./client";
-import { useDraftSpec } from "./spec-studio";
-import type { SpecDraft } from "./types";
+import { useDraftSpec, useImportSpec } from "./spec-studio";
+import type { SpecDraft, SpecImport } from "./types";
 
 function makeWrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -60,6 +60,59 @@ describe("useDraftSpec", () => {
       wrapper: makeWrapper(queryClient),
     });
     hook.current.mutate({ goal: "g" });
+    await waitFor(() => expect(hook.current.isSuccess).toBe(true));
+
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+  });
+});
+
+describe("useImportSpec", () => {
+  it("posts the content (+ optional source_format) to the client and returns the import", async () => {
+    const result: SpecImport = {
+      source_format: "markdown",
+      spec_md: "---\nid: SPEC-IMPORT\n---\n\n## Goal\n\nImported feature\n",
+      manifest: { id: "SPEC-IMPORT", name: "Imported feature" },
+      normalized: true,
+    };
+    const client = {
+      importSpec: vi.fn(() => Promise.resolve(result)),
+    } as unknown as ForgeApiClient;
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+
+    const { result: hook } = renderHook(() => useImportSpec(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    hook.current.mutate({ content: "# Imported feature\n", source_format: "markdown" });
+
+    await waitFor(() => expect(hook.current.isSuccess).toBe(true));
+    expect(hook.current.data).toEqual(result);
+    expect(client.importSpec).toHaveBeenCalledWith({
+      content: "# Imported feature\n",
+      source_format: "markdown",
+    });
+  });
+
+  it("nothing is persisted or cached — an import is never written to a query key", async () => {
+    const client = {
+      importSpec: vi.fn(() =>
+        Promise.resolve({
+          source_format: "yaml",
+          spec_md: "---\nid: SPEC-IMPORT\n---\n\n## Goal\n\ng\n",
+          normalized: false,
+        } as SpecImport),
+      ),
+    } as unknown as ForgeApiClient;
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+
+    const { result: hook } = renderHook(() => useImportSpec(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+    hook.current.mutate({ content: "id: x\nname: g\n" });
     await waitFor(() => expect(hook.current.isSuccess).toBe(true));
 
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);

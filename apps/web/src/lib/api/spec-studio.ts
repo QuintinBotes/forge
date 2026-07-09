@@ -22,7 +22,7 @@ import {
 
 import { apiClient, type ForgeApiClient } from "./client";
 import { specVersionKeys } from "./spec-versions";
-import type { SpecDraft, SpecManifest } from "./types";
+import type { SpecDraft, SpecImport, SpecManifest } from "./types";
 
 export const specStudioKeys = {
   manifest: (specId: string) => ["spec-studio", "manifest", specId] as const,
@@ -130,5 +130,24 @@ export function useDraftSpec(
 ): UseMutationResult<SpecDraft, Error, DraftSpecVariables> {
   return useMutation({
     mutationFn: (body: DraftSpecVariables) => client.draftSpec(body),
+  });
+}
+
+export interface ImportSpecVariables {
+  content: string;
+  source_format?: "markdown" | "yaml" | "auto";
+}
+
+/**
+ * `ss-import`: import an existing markdown or YAML spec (pasted/uploaded from
+ * outside Forge) as a `spec.md` draft (`POST /spec/import`). Draft-only —
+ * nothing is persisted or cached; the caller reviews/refines the result in the
+ * Markdown or Guided editor before saving, mirroring `useDraftSpec`.
+ */
+export function useImportSpec(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<SpecImport, Error, ImportSpecVariables> {
+  return useMutation({
+    mutationFn: (body: ImportSpecVariables) => client.importSpec(body),
   });
 }

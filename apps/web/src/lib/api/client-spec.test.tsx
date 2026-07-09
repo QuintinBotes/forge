@@ -146,4 +146,34 @@ describe("ForgeApiClient spec-engine surface", () => {
     const [url] = fetchImpl.mock.calls[0];
     expect(String(url)).toContain("/spec/constitution/proj-1");
   });
+
+  it("importSpec posts content (+ optional source_format) to /spec/import", async () => {
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        json({
+          source_format: "markdown",
+          spec_md: "---\nid: SPEC-IMPORT\n---\n\n## Goal\n\nImported feature\n",
+          manifest: { id: "SPEC-IMPORT", name: "Imported feature" },
+          normalized: true,
+        }),
+      ),
+    );
+    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+
+    const result = await client.importSpec({
+      content: "# Imported feature\n",
+      source_format: "markdown",
+    });
+
+    expect(result.source_format).toBe("markdown");
+    expect(result.normalized).toBe(true);
+    expect(result.manifest?.name).toBe("Imported feature");
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toContain("/spec/import");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      content: "# Imported feature\n",
+      source_format: "markdown",
+    });
+  });
 });
