@@ -191,6 +191,13 @@ from forge_contracts.protocols import (
     State,
     WorkflowEngine,
 )
+from forge_contracts.realtime import (
+    Broadcaster,
+    CursorRange,
+    PresenceState,
+    RealtimeEvent,
+    RealtimeEventType,
+)
 from forge_contracts.sandbox import (
     CONTAINER_BACKED_KINDS,
     SANDBOX_KIND_RANK,
@@ -236,6 +243,7 @@ __all__ = [
     "ApprovalStatus",
     "BoardFilter",
     "BoardService",
+    "Broadcaster",
     "BulkUpdate",
     "CIState",
     "CIStatus",
@@ -252,6 +260,7 @@ __all__ = [
     "Constitution",
     "CoordinationPattern",
     "CrossPRLink",
+    "CursorRange",
     "CycleError",
     "Decision",
     "DecisionEffect",
@@ -319,10 +328,13 @@ __all__ = [
     "PolicySandboxBlock",
     "PolicySkillProfiles",
     "PolicyViolationError",
+    "PresenceState",
     "Priority",
     "PullRequest",
     "PullRequestRequest",
     "Ranked",
+    "RealtimeEvent",
+    "RealtimeEventType",
     "RepoChangeSet",
     "RepoMergeStatus",
     "RepoProvider",
