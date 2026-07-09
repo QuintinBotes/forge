@@ -11,7 +11,7 @@ dependencies = [
     "forge-mcp",
     # F38 — metrics facade (forge_mcp_* emission) + telemetry init.
     "forge-obs",
-    "fastapi>=0.110",
+    "fastapi>=0.139.0",
     "uvicorn[standard]>=0.29",
 ]
 
