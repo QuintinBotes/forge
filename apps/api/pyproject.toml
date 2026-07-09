@@ -49,6 +49,9 @@ dependencies = [
     "signxml>=5.1.0",
     "lxml>=5.3",
     "python-multipart>=0.0.9",
+    # RT-2 optional Redis pub/sub fan-out for the realtime broadcaster
+    # (redis.asyncio); the in-process backend needs no live Redis.
+    "redis>=5.0",
 ]
 
 [build-system]

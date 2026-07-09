@@ -162,16 +162,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     to ``FORGE_SHUTDOWN_DRAIN_SECONDS`` for in-flight work, dispose the DB engine,
     close the Redis pool, flush the telemetry exporters.
     """
+    from forge_api.realtime.broadcaster import shutdown_realtime, startup_realtime
     from forge_api.settings import get_settings
 
+    settings = get_settings()
     state = ShutdownState(serving=True)
     set_current_state(state)
     app.state.shutdown_state = state
+    # RT-2: wire the Redis pub/sub broadcaster when selected (no-op for the
+    # in-process default), connecting app.state.redis for the shared teardown.
+    await startup_realtime(app, settings)
     try:
         yield
     finally:
+        # RT-2: stop the subscriber loop + close the Redis client before the
+        # generic teardown (which then sees app.state.redis already cleared).
+        await shutdown_realtime(app)
         state.begin_drain()
-        drain_seconds = float(getattr(get_settings(), "shutdown_drain_seconds", 30))
+        drain_seconds = float(getattr(settings, "shutdown_drain_seconds", 30))
         await _drain(state, timeout_s=drain_seconds)
         dispose_db_engine()
         shutdown_close_redis(getattr(app.state, "redis", None))

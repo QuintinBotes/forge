@@ -30,6 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from forge_api.auth.rbac import Permission
 from forge_api.deps import Principal, get_current_principal
+from forge_api.realtime.broadcaster import Broadcaster, emit_event, get_broadcaster
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.approvals import ApprovalCount, CreateApprovalRequest
 from forge_api.services.approval_service import (
@@ -53,6 +54,7 @@ from forge_approval.models import (
     GateStatus,
     GateType,
 )
+from forge_contracts import RealtimeEvent, RealtimeEventType
 
 router = APIRouter(
     prefix="/approvals",
@@ -68,6 +70,9 @@ ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
 WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 
 ServiceDep = Annotated[ApprovalService, Depends(get_approval_service)]
+
+# RT-2: fan approval decisions out to the workspace's live ``/ws`` sockets.
+BroadcasterDep = Annotated[Broadcaster, Depends(get_broadcaster)]
 
 
 def _not_found(approval_id: uuid.UUID) -> HTTPException:
@@ -173,6 +178,7 @@ async def list_approval_decisions(
 async def decide_approval(
     service: ServiceDep,
     principal: ReaderDep,
+    broadcaster: BroadcasterDep,
     approval_id: uuid.UUID,
     body: ApprovalDecisionRequest,
 ) -> ApprovalResolution:
@@ -183,7 +189,7 @@ async def decide_approval(
     one every other surface calls), so accountability cannot be forged.
     """
     try:
-        return await service.resolve(
+        resolution = await service.resolve(
             approval_id,
             body,
             to_approval_principal(principal),
@@ -203,6 +209,17 @@ async def decide_approval(
             status_code=status.HTTP_409_CONFLICT,
             detail="this approver has already voted on this gate",
         ) from None
+
+    await emit_event(
+        broadcaster,
+        RealtimeEvent(
+            type=RealtimeEventType.APPROVAL_DECIDED,
+            workspace_id=principal.workspace_id,
+            approval_id=resolution.approval_id,
+            payload={"status": resolution.status.value},
+        ),
+    )
+    return resolution
 
 
 __all__ = ["router"]

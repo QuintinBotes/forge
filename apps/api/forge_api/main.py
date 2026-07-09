@@ -130,6 +130,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Health/liveness at the root; feature routers under the configurable prefix.
     app.include_router(HEALTH_ROUTER)
+
+    # RT-1: the board-push WebSocket mounts at the app ROOT (``/ws``), not under
+    # the API prefix — it must match the URL the web board hook opens
+    # (``NEXT_PUBLIC_WS_URL`` / ``ws://localhost:8000/ws``), exactly like the
+    # root-mounted health probes.
+    from forge_api.routers.realtime import router as realtime_router
+
+    app.include_router(realtime_router)
     prefix = cfg.api_prefix.rstrip("/")
     for router in FEATURE_ROUTERS:
         app.include_router(router, prefix=prefix)
