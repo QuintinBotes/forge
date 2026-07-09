@@ -39,7 +39,7 @@ dependencies = [
     # (ao-settings-api's routing-preview resolves a concrete model through it).
     "forge-agent",
     "fastapi>=0.139.0",
-    "uvicorn[standard]>=0.29",
+    "uvicorn[standard]>=0.51.0",
     "pydantic-settings>=2.2",
     "sqlalchemy>=2.0",
     "cryptography>=43",
