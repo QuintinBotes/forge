@@ -264,6 +264,15 @@ class Settings(BaseSettings):
     # survive a restart and dedup across processes. Read via
     # ``FORGE_IDEMPOTENCY_BACKEND``.
     idempotency_backend: str = "memory"
+
+    # RT-2 realtime fan-out backend selection. ``memory`` (default) forwards
+    # emitted ``RealtimeEvent``s straight to the in-process ``ConnectionManager``
+    # (single-worker, no external infra — the unit-test default); ``redis`` wires
+    # the Redis pub/sub broadcaster (connecting to ``redis_url``) so a broadcast
+    # on one API worker reaches sockets pinned to another. Read via
+    # ``FORGE_REALTIME_BACKEND``.
+    realtime_backend: str = "memory"
+
     # Graceful-shutdown request drain grace: on SIGTERM readiness flips to 503 and
     # the app waits up to this long for in-flight requests before tearing down.
     shutdown_drain_seconds: int = 30

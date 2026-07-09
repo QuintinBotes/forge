@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from forge_api.auth.rbac import Permission
 from forge_api.deps import Principal, get_current_principal
+from forge_api.realtime.broadcaster import Broadcaster, emit_event, get_broadcaster
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.incidents import (
     IncidentDeclareRequest,
@@ -38,6 +39,7 @@ from forge_board.incidents.errors import (
     BlastRadiusExceeded,
     IncidentNotFound,
 )
+from forge_contracts import RealtimeEvent, RealtimeEventType
 from forge_workflow import InvalidTransitionError
 
 router = APIRouter(
@@ -88,6 +90,21 @@ def get_incident_service(
 
 
 ServiceDep = Annotated[IncidentService, Depends(get_incident_service)]
+
+# RT-2: fan incident lifecycle changes out to the workspace's live ``/ws`` sockets.
+BroadcasterDep = Annotated[Broadcaster, Depends(get_broadcaster)]
+
+
+def _incident_event(
+    principal: Principal, record: IncidentRecord, event_type: RealtimeEventType
+) -> RealtimeEvent:
+    """Build the realtime envelope for an incident lifecycle change."""
+    return RealtimeEvent(
+        type=event_type,
+        workspace_id=principal.workspace_id,
+        incident_id=record.id,
+        payload={"state": record.state.value, "lifecycle_state": record.lifecycle_state},
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -176,8 +193,11 @@ def _detail(service: IncidentService, record: IncidentRecord) -> IncidentDetailV
 
 
 @router.post("", response_model=IncidentView, status_code=status.HTTP_201_CREATED)
-def declare_incident(
-    service: ServiceDep, principal: WriterDep, body: IncidentDeclareRequest
+async def declare_incident(
+    service: ServiceDep,
+    principal: WriterDep,
+    broadcaster: BroadcasterDep,
+    body: IncidentDeclareRequest,
 ) -> IncidentView:
     """Declare a manual incident (FSM starts at ``incident_created``)."""
     record = service.declare(
@@ -188,6 +208,9 @@ def declare_incident(
         repo_id=body.repo_id,
         commander_id=body.commander_id,
         actor=f"user:{principal.user_id}",
+    )
+    await emit_event(
+        broadcaster, _incident_event(principal, record, RealtimeEventType.INCIDENT_CREATED)
     )
     return _view(service, record)
 
@@ -237,9 +260,10 @@ def incident_timeline(
 
 
 @router.post("/{incident_id}/events", response_model=IncidentDetailView)
-def send_incident_event(
+async def send_incident_event(
     service: ServiceDep,
     principal: WriterDep,
+    broadcaster: BroadcasterDep,
     incident_id: uuid.UUID,
     body: IncidentEventRequest,
 ) -> IncidentDetailView:
@@ -252,7 +276,10 @@ def send_incident_event(
             context=body.context,
             note=body.note,
         )
-        return _detail(service, record)
+    await emit_event(
+        broadcaster, _incident_event(principal, record, RealtimeEventType.INCIDENT_STATE_CHANGED)
+    )
+    return _detail(service, record)
 
 
 @router.post("/{incident_id}/remediation", response_model=RemediationPlanView)

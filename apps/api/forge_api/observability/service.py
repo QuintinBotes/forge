@@ -15,8 +15,29 @@ from forge_api.observability.audit import AuditCategory, AuditEntry, AuditLog
 from forge_api.observability.audit_db import default_audit_log
 from forge_api.observability.otel import SpanRecorder, get_span_recorder
 from forge_api.observability.trace import RunTrace, RunTraceAssembler
-from forge_contracts import AgentRunResult, Step
+from forge_contracts import AgentRunResult, RealtimeEventType, Step
 from forge_contracts.enums import RunStatus
+
+#: Terminal-success / terminal-failure status sets driving the ``run.*``
+#: realtime event a recorded run fans out (RT-7). Non-terminal statuses
+#: (``pending``/``running``) map to ``RUN_STARTED``; ``None`` (a step-only
+#: update with no status change) maps to ``RUN_UPDATED``.
+_FAILURE_STATUSES = frozenset({RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.ESCALATED})
+
+
+def run_event_type_for_status(status: RunStatus | None) -> RealtimeEventType:
+    """Map a recorded run's status to the ``run.*`` realtime event it fans out.
+
+    Pure/stateless so the router can build the :class:`RealtimeEvent` envelope
+    without the service knowing anything about broadcasting.
+    """
+    if status is None:
+        return RealtimeEventType.RUN_UPDATED
+    if status == RunStatus.SUCCEEDED:
+        return RealtimeEventType.RUN_COMPLETED
+    if status in _FAILURE_STATUSES:
+        return RealtimeEventType.RUN_FAILED
+    return RealtimeEventType.RUN_STARTED
 
 
 class RunNotFoundError(KeyError):

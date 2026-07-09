@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, ListTree, Eye as EyeIcon, Route } from "lucide-react";
-import { useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type UIEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { TraceabilityMatrix } from "@/components/spec/traceability-matrix";
@@ -18,6 +18,10 @@ export interface MarkdownModeProps {
   saving?: boolean;
   dirty?: boolean;
   saveError?: string | null;
+  /** Live-collaboration presence bar rendered in the header (CRDT mode). */
+  presence?: ReactNode;
+  /** Report the local cursor/selection for remote presence (CRDT mode). */
+  onSelectionChange?: (anchor: number, head: number) => void;
 }
 
 type PanelTab = "structure" | "preview" | "traceability";
@@ -249,6 +253,8 @@ export function MarkdownMode({
   saving = false,
   dirty = false,
   saveError,
+  presence,
+  onSelectionChange,
 }: MarkdownModeProps) {
   const [panel, setPanel] = useState<PanelTab>("structure");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -294,6 +300,7 @@ export function MarkdownMode({
             </span>
           )}
           {dirty ? <span className="text-muted-foreground/70">Unsaved changes</span> : null}
+          {presence}
         </div>
         <Button size="sm" onClick={onSave} disabled={saving || !dirty} data-testid="markdown-save">
           {saving ? "Saving…" : "Save spec.md"}
@@ -321,6 +328,9 @@ export function MarkdownMode({
             onChange={(event) => onChange(event.target.value)}
             onScroll={onScroll}
             onKeyDown={onKeyDown}
+            onSelect={(event) =>
+              onSelectionChange?.(event.currentTarget.selectionStart, event.currentTarget.selectionEnd)
+            }
             className="min-h-[28rem] flex-1 resize-none bg-transparent px-3 py-3 font-mono text-xs leading-5 text-foreground outline-none"
           />
         </div>

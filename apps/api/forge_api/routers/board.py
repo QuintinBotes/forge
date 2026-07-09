@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from forge_api.auth.rbac import Permission
 from forge_api.db import get_session_factory
 from forge_api.deps import Principal, get_current_principal
+from forge_api.realtime.broadcaster import Broadcaster, emit_event, get_broadcaster
 from forge_api.routers._rbac import require_permission
 from forge_api.settings import get_settings
 from forge_board import InMemoryBoardService, SqlAlchemyBoardService
@@ -41,6 +42,8 @@ from forge_contracts import (
     IncidentDTO,
     MilestoneDTO,
     Priority,
+    RealtimeEvent,
+    RealtimeEventType,
     SprintDTO,
     TaskDTO,
     TaskKind,
@@ -135,6 +138,12 @@ def get_board_service(
 
 
 BoardServiceDep = Annotated[BoardService, Depends(get_board_service)]
+
+# RT-2: the caller's principal (for the ``workspace_id`` a broadcast is scoped
+# to) and the realtime broadcaster, injected into the mutating handlers so a
+# board write fans out a ``task.*`` event to that workspace's live ``/ws`` sockets.
+PrincipalDep = Annotated[Principal, Depends(get_current_principal)]
+BroadcasterDep = Annotated[Broadcaster, Depends(get_broadcaster)]
 
 
 # --------------------------------------------------------------------------- #
@@ -237,8 +246,24 @@ def list_tasks(
     status_code=status.HTTP_201_CREATED,
     dependencies=[_REQUIRE_WRITE],
 )
-def create_task(svc: BoardServiceDep, data: TaskDTO) -> TaskDTO:
-    return svc.create_task(data)
+async def create_task(
+    svc: BoardServiceDep,
+    principal: PrincipalDep,
+    broadcaster: BroadcasterDep,
+    data: TaskDTO,
+) -> TaskDTO:
+    task = svc.create_task(data)
+    await emit_event(
+        broadcaster,
+        RealtimeEvent(
+            type=RealtimeEventType.TASK_CREATED,
+            workspace_id=principal.workspace_id,
+            task_id=task.id,
+            epic_id=task.epic_id,
+            payload={"status": task.status.value},
+        ),
+    )
+    return task
 
 
 @router.post("/tasks/bulk", response_model=list[TaskDTO], dependencies=[_REQUIRE_WRITE])
@@ -254,9 +279,26 @@ def get_task(svc: BoardServiceDep, task_id: uuid.UUID) -> TaskDTO:
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskDTO, dependencies=[_REQUIRE_WRITE])
-def update_task(svc: BoardServiceDep, task_id: uuid.UUID, data: TaskDTO) -> TaskDTO:
+async def update_task(
+    svc: BoardServiceDep,
+    principal: PrincipalDep,
+    broadcaster: BroadcasterDep,
+    task_id: uuid.UUID,
+    data: TaskDTO,
+) -> TaskDTO:
     with _domain_errors():
-        return svc.update_task(task_id, data)
+        task = svc.update_task(task_id, data)
+    await emit_event(
+        broadcaster,
+        RealtimeEvent(
+            type=RealtimeEventType.TASK_UPDATED,
+            workspace_id=principal.workspace_id,
+            task_id=task.id,
+            epic_id=task.epic_id,
+            payload={"status": task.status.value},
+        ),
+    )
+    return task
 
 
 @router.delete(
@@ -264,17 +306,45 @@ def update_task(svc: BoardServiceDep, task_id: uuid.UUID, data: TaskDTO) -> Task
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[_REQUIRE_WRITE],
 )
-def delete_task(svc: BoardServiceDep, task_id: uuid.UUID) -> None:
+async def delete_task(
+    svc: BoardServiceDep,
+    principal: PrincipalDep,
+    broadcaster: BroadcasterDep,
+    task_id: uuid.UUID,
+) -> None:
     with _domain_errors():
         svc.delete_task(task_id)
+    await emit_event(
+        broadcaster,
+        RealtimeEvent(
+            type=RealtimeEventType.TASK_DELETED,
+            workspace_id=principal.workspace_id,
+            task_id=task_id,
+        ),
+    )
 
 
 @router.post("/tasks/{task_id}/status", response_model=TaskDTO, dependencies=[_REQUIRE_WRITE])
-def set_task_status(
-    svc: BoardServiceDep, task_id: uuid.UUID, payload: StatusUpdateRequest
+async def set_task_status(
+    svc: BoardServiceDep,
+    principal: PrincipalDep,
+    broadcaster: BroadcasterDep,
+    task_id: uuid.UUID,
+    payload: StatusUpdateRequest,
 ) -> TaskDTO:
     with _domain_errors():
-        return svc.set_status(task_id, payload.status)
+        task = svc.set_status(task_id, payload.status)
+    await emit_event(
+        broadcaster,
+        RealtimeEvent(
+            type=RealtimeEventType.TASK_STATUS_CHANGED,
+            workspace_id=principal.workspace_id,
+            task_id=task.id,
+            epic_id=task.epic_id,
+            payload={"status": task.status.value},
+        ),
+    )
+    return task
 
 
 @router.post(

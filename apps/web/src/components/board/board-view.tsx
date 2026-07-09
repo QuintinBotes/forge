@@ -12,7 +12,7 @@ import {
   useTasks,
 } from "@/lib/api/hooks";
 import type { TaskDTO, TaskStatus } from "@/lib/api/types";
-import { useBoardRealtime } from "@/lib/realtime/use-board-realtime";
+import { BoardRealtimeStatus } from "@/lib/realtime/board-realtime-status";
 import { cn } from "@/lib/utils";
 
 import { KanbanBoard } from "./kanban-board";
@@ -45,8 +45,6 @@ export function BoardView({
   const tasksQuery = useTasks(filters, client);
   const setStatus = useSetTaskStatus(client);
   const createTask = useCreateTask(client);
-
-  useBoardRealtime({ enabled: enableRealtime });
 
   const boardCommands = useMemo(
     () => buildBoardCommands({ onCreateTask: () => setCreateOpen(true) }),
@@ -93,10 +91,13 @@ export function BoardView({
             onClick={() => setView("board")}
           />
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" />
-          New task
-        </Button>
+        <div className="flex items-center gap-3">
+          <BoardRealtimeStatus enabled={enableRealtime} />
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" />
+            New task
+          </Button>
+        </div>
       </div>
 
       {tasksQuery.isError ? (

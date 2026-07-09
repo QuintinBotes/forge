@@ -16,6 +16,7 @@ import {
 import type { SpecManifest } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
+import { CollabMarkdownMode, CollabYamlMode, type SpecCollabConfig } from "./collab-editors";
 import { GuidedMode } from "./guided-mode";
 import { MarkdownMode } from "./markdown-mode";
 import { ReadMode } from "./read-mode";
@@ -35,6 +36,13 @@ const MODES: { id: SpecStudioMode; label: string; icon: typeof ListTree }[] = [
 export interface SpecStudioProps {
   specId: string;
   client?: ForgeApiClient;
+  /**
+   * Live co-editing config. When `collab.enabled`, the Markdown and YAML modes
+   * switch from whole-document PUT-on-save to CRDT-synced editing over
+   * `/ws/spec/{specId}` (Guided + legacy PUT still work). Absent/disabled keeps
+   * the single-editor behaviour — the default for tests and API clients.
+   */
+  collab?: SpecCollabConfig;
 }
 
 function errorMessage(error: unknown): string {
@@ -58,8 +66,9 @@ function errorMessage(error: unknown): string {
  * *other* two modes' queries, so the next visit reloads the freshly synced
  * text rather than stale content.
  */
-export function SpecStudio({ specId, client = apiClient }: SpecStudioProps) {
+export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioProps) {
   const [mode, setMode] = useState<SpecStudioMode>("guided");
+  const collabEnabled = Boolean(collab?.enabled);
 
   // Reset per-spec overrides during render when `specId` changes (React's
   // "adjust state while rendering" pattern for resetting state on a prop
@@ -170,6 +179,15 @@ export function SpecStudio({ specId, client = apiClient }: SpecStudioProps) {
               <p className="text-sm text-muted-foreground" data-testid="markdown-loading">
                 Loading spec.md…
               </p>
+            ) : collabEnabled && collab ? (
+              <CollabMarkdownMode
+                specId={specId}
+                collab={collab}
+                savedText={markdownValue}
+                onSave={(text) => saveMarkdown.mutate(text)}
+                saving={saveMarkdown.isPending}
+                saveError={saveMarkdown.isError ? errorMessage(saveMarkdown.error) : null}
+              />
             ) : (
               <MarkdownMode
                 value={markdownValue}
@@ -192,6 +210,15 @@ export function SpecStudio({ specId, client = apiClient }: SpecStudioProps) {
               <p className="text-sm text-muted-foreground" data-testid="yaml-loading">
                 Loading manifest.yaml…
               </p>
+            ) : collabEnabled && collab ? (
+              <CollabYamlMode
+                specId={specId}
+                collab={collab}
+                savedText={yamlValue}
+                onSave={(text) => saveYaml.mutate(text)}
+                saving={saveYaml.isPending}
+                saveError={saveYaml.isError ? errorMessage(saveYaml.error) : null}
+              />
             ) : (
               <YamlMode
                 value={yamlValue}
