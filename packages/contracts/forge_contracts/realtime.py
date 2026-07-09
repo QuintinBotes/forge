@@ -5,9 +5,9 @@ This module is the single source of truth for the dotted event-type strings
 that cross the wire to the web client. ``RealtimeEventType`` values MUST stay
 byte-for-byte identical to the strings
 ``apps/web/src/lib/realtime/use-board-realtime.ts`` branches on
-(``queryKeysForEvent``: it prefix-matches ``task``/``incident``/``epic`` and
-falls back to the task query keys for anything else, e.g. ``run.*`` /
-``approval.*``). No behavior lives here — this is transport shape only.
+(``queryKeysForEvent``: it prefix-matches ``task``/``incident``/``epic``/``run``/
+``approval``, falling back to the task query keys for anything else). No
+behavior lives here — this is transport shape only.
 """
 
 from __future__ import annotations
@@ -36,9 +36,8 @@ class RealtimeEventType(enum.StrEnum):
 
     Values mirror the prefixes the board realtime hook dispatches on
     (``task.*`` -> ``["tasks"]``, ``incident.*`` -> ``["incidents"]``,
-    ``epic.*`` -> ``["epics", "tasks"]``) plus ``run.*`` / ``approval.*``,
-    which fall through to the hook's default (task) invalidation today and
-    are reserved here for the run-trace / approval-UI slices.
+    ``epic.*`` -> ``["epics", "tasks"]``, ``run.*`` -> ``["runs"]``,
+    ``approval.*`` -> ``["approvals"]``).
     """
 
     TASK_CREATED = "task.created"

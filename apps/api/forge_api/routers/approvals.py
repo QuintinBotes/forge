@@ -83,10 +83,13 @@ def _not_found(approval_id: uuid.UUID) -> HTTPException:
 
 @router.post("", response_model=ApprovalRequest, status_code=status.HTTP_201_CREATED)
 async def create_approval(
-    service: ServiceDep, principal: WriterDep, body: CreateApprovalRequest
+    service: ServiceDep,
+    principal: WriterDep,
+    broadcaster: BroadcasterDep,
+    body: CreateApprovalRequest,
 ) -> ApprovalRequest:
     """Open a gate in the caller's workspace (idempotent while pending)."""
-    return await service.create(
+    request = await service.create(
         workspace_id=principal.workspace_id,
         gate_type=body.gate_type,
         subject_type=body.subject_type,
@@ -102,6 +105,16 @@ async def create_approval(
         gate_payload=body.gate_payload,
         expires_at=body.expires_at,
     )
+    await emit_event(
+        broadcaster,
+        RealtimeEvent(
+            type=RealtimeEventType.APPROVAL_REQUESTED,
+            workspace_id=principal.workspace_id,
+            approval_id=request.id,
+            payload={"gate_type": body.gate_type.value},
+        ),
+    )
+    return request
 
 
 @router.get("", response_model=list[ApprovalSummary])
