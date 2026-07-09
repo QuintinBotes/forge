@@ -14,10 +14,19 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import StaticPool, create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
+from forge_api.db import get_db
 from forge_api.main import create_app
 from forge_api.routers.spec import get_spec_engine
+from forge_db.base import Base
+from forge_db.models import Workspace
 from forge_spec import FileSpecEngine, spec_id_for_key
+
+#: Mirrors ``conftest.py``'s deterministic test workspace (tests mirror rather
+#: than cross-import conftest constants, per repo convention).
+_TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 
 
 @pytest.fixture
@@ -25,7 +34,28 @@ def client(tmp_path: Path, authenticate_app: Callable[..., FastAPI]) -> Iterator
     app = create_app()
     authenticate_app(app)
     engine = FileSpecEngine(root=tmp_path / "specs")
+
+    # ss-versioning: every save also records a ``spec_version`` row, so the
+    # write endpoints now need a DB session (SQLite in-memory here, mirroring
+    # ``test_project_spec_overview.py``'s hermetic fixture).
+    db_engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(db_engine)
+    db_factory = sessionmaker(bind=db_engine, expire_on_commit=False, class_=Session)
+    with db_factory() as session:
+        session.add(Workspace(id=_TEST_WORKSPACE_ID, name="Acme", slug="acme"))
+        session.commit()
+
+    def _override_db() -> Iterator[Session]:
+        session = db_factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
     app.dependency_overrides[get_spec_engine] = lambda: engine
+    app.dependency_overrides[get_db] = _override_db
     with TestClient(app) as c:
         yield c
 

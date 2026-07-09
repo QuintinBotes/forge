@@ -89,6 +89,9 @@ import type {
   SpecDashboard,
   SpecDraft,
   SpecManifest,
+  SpecVersionDetail,
+  SpecVersionDiff,
+  SpecVersionSummary,
   Sprint,
   SprintDTO,
   SprintReport,
@@ -466,6 +469,35 @@ export class ForgeApiClient {
     return this.request<SpecManifest>(
       `/spec/specs/${encodeURIComponent(specId)}/manifest`,
       { method: "PUT", body: { content } },
+    );
+  }
+
+  /**
+   * List a spec's version history, newest first. A version is recorded on
+   * every save (Guided / Markdown / YAML), so this reflects every edit ever
+   * made to the spec, not just lifecycle transitions.
+   */
+  listSpecVersions(specId: string): Promise<SpecVersionSummary[]> {
+    return this.request<SpecVersionSummary[]>(
+      `/spec/specs/${encodeURIComponent(specId)}/versions`,
+    );
+  }
+
+  /** Read one version's full snapshot (manifest + both serializations). */
+  getSpecVersion(specId: string, versionNumber: number): Promise<SpecVersionDetail> {
+    return this.request<SpecVersionDetail>(
+      `/spec/specs/${encodeURIComponent(specId)}/versions/${versionNumber}`,
+    );
+  }
+
+  /** Diff two versions of a spec: line-level markdown + structured manifest. */
+  diffSpecVersions(
+    specId: string,
+    fromVersion: number,
+    toVersion: number,
+  ): Promise<SpecVersionDiff> {
+    return this.request<SpecVersionDiff>(
+      `/spec/specs/${encodeURIComponent(specId)}/versions/${fromVersion}/diff/${toVersion}`,
     );
   }
 

@@ -21,6 +21,7 @@ import {
 } from "@tanstack/react-query";
 
 import { apiClient, type ForgeApiClient } from "./client";
+import { specVersionKeys } from "./spec-versions";
 import type { SpecDraft, SpecManifest } from "./types";
 
 export const specStudioKeys = {
@@ -75,6 +76,8 @@ function useSyncAfterSave(specId: string) {
     if (savedFrom !== "yaml") {
       void queryClient.invalidateQueries({ queryKey: specStudioKeys.yaml(specId) });
     }
+    // ss-versioning: every save records a new version; refresh the history list.
+    void queryClient.invalidateQueries({ queryKey: specVersionKeys.list(specId) });
   };
 }
 

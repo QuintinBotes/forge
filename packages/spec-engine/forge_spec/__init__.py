@@ -37,6 +37,14 @@ from forge_spec.dashboard_schemas import (
     ValidationStatus,
 )
 from forge_spec.dashboard_service import DashboardService
+from forge_spec.diff import (
+    ListItemChange,
+    ManifestDiff,
+    ScalarFieldChange,
+    TextDiffLine,
+    diff_manifest,
+    diff_markdown,
+)
 from forge_spec.engine import (
     DEFAULT_GUARDRAILS,
     DEFAULT_PRINCIPLES,
@@ -83,9 +91,12 @@ __all__ = [
     "FileSpecEngine",
     "GapKind",
     "InMemoryProjectionRepository",
+    "ListItemChange",
+    "ManifestDiff",
     "NoOpEvidencePort",
     "ProjectValidationSummary",
     "ProjectionRepository",
+    "ScalarFieldChange",
     "SpecEngineService",
     "SpecNotFoundError",
     "SpecParseError",
@@ -93,6 +104,7 @@ __all__ = [
     "SpecSourcePort",
     "SpecTraceabilityMatrix",
     "SpecValidationRow",
+    "TextDiffLine",
     "TraceCell",
     "TraceabilityGap",
     "TraceabilityProjector",
@@ -107,6 +119,8 @@ __all__ = [
     "compute_spec_rollup",
     "constitution_id_for",
     "detect_gaps",
+    "diff_manifest",
+    "diff_markdown",
     "dump_manifest",
     "generate_tasks",
     "load_manifest",

@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
@@ -29,6 +29,7 @@ from forge_api.auth.rbac import Permission
 from forge_api.deps import DbSession, Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
 from forge_api.routers.board import BoardServiceDep
+from forge_api.services import spec_version_service
 from forge_api.services.spec_draft_service import SpecDraft, draft_spec
 from forge_api.settings import get_settings
 from forge_contracts import (
@@ -41,9 +42,16 @@ from forge_contracts import (
     ValidationReport,
 )
 from forge_contracts.exceptions import SpecGateError
-from forge_db.models import Project
+from forge_db.models import Project, SpecVersion
 from forge_orchestration_policy import Tier
-from forge_spec import FileSpecEngine, SpecNotFoundError
+from forge_spec import (
+    FileSpecEngine,
+    ManifestDiff,
+    SpecNotFoundError,
+    diff_manifest,
+    diff_markdown,
+    spec_id_for_key,
+)
 
 router = APIRouter(
     prefix="/spec",
@@ -121,6 +129,33 @@ def _spec_errors() -> Iterator[None]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
+def _record_version(
+    engine: FileSpecEngine,
+    db: DbSession,
+    principal: Principal,
+    manifest: SpecManifest,
+) -> SpecVersion:
+    """Snapshot ``manifest`` (+ its rendered serializations) as the next version.
+
+    Called after every successful save (``spec_create`` / ``write_manifest`` /
+    ``write_spec_markdown`` / ``write_spec_manifest_yaml``); reads back the
+    just-persisted ``spec.md``/``manifest.yaml`` (always in sync post-save)
+    rather than re-rendering them independently, so the recorded snapshot is
+    byte-identical to what a reader of the engine sees right now.
+    """
+    spec_id = spec_id_for_key(manifest.id)
+    spec_md = engine.read_spec_md(spec_id)
+    manifest_yaml = engine.read_manifest_yaml(spec_id)
+    return spec_version_service.record_version(
+        db,
+        workspace_id=principal.workspace_id,
+        manifest=manifest,
+        spec_md=spec_md,
+        manifest_yaml=manifest_yaml,
+        created_by=principal.user_id,
+    )
+
+
 class ConstitutionInitRequest(BaseModel):
     """Body for ``POST /spec/constitution``."""
 
@@ -173,9 +208,16 @@ def constitution_init(engine: EngineDep, request: ConstitutionInitRequest) -> Co
     status_code=status.HTTP_201_CREATED,
     dependencies=[WriteGate],
 )
-def spec_create(engine: EngineDep, request: SpecCreateRequest) -> SpecManifest:
-    """Create a draft spec for an epic."""
-    return engine.spec_create(request.epic_id, request.name, request.requirements)
+def spec_create(
+    engine: EngineDep,
+    request: SpecCreateRequest,
+    db: DbSession,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+) -> SpecManifest:
+    """Create a draft spec for an epic (recorded as version 1)."""
+    manifest = engine.spec_create(request.epic_id, request.name, request.requirements)
+    _record_version(engine, db, principal, manifest)
+    return manifest
 
 
 @router.get("/specs/{spec_id}", response_model=SpecManifest, dependencies=[ReadGate])
@@ -186,10 +228,18 @@ def read_manifest(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
 
 
 @router.put("/specs/{spec_id}", response_model=SpecManifest, dependencies=[WriteGate])
-def write_manifest(engine: EngineDep, spec_id: uuid.UUID, manifest: SpecManifest) -> SpecManifest:
-    """Persist (create or update) a spec manifest."""
+def write_manifest(
+    engine: EngineDep,
+    spec_id: uuid.UUID,
+    manifest: SpecManifest,
+    db: DbSession,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+) -> SpecManifest:
+    """Persist (create or update) a spec manifest; records a new version."""
     with _spec_errors():
-        return engine.write_manifest(manifest)
+        updated = engine.write_manifest(manifest)
+    _record_version(engine, db, principal, updated)
+    return updated
 
 
 @router.get(
@@ -205,16 +255,24 @@ def read_spec_markdown(engine: EngineDep, spec_id: uuid.UUID) -> PlainTextRespon
 
 
 @router.put("/specs/{spec_id}/markdown", response_model=SpecManifest, dependencies=[WriteGate])
-def write_spec_markdown(engine: EngineDep, spec_id: uuid.UUID, body: TextContent) -> SpecManifest:
+def write_spec_markdown(
+    engine: EngineDep,
+    spec_id: uuid.UUID,
+    body: TextContent,
+    db: DbSession,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+) -> SpecManifest:
     """Save a spec edited as ``spec.md`` prose; re-renders ``manifest.yaml`` to match.
 
     The spec being edited must already exist at ``spec_id`` (404 otherwise);
     the document's own frontmatter id governs which spec is written, mirroring
-    ``PUT /spec/specs/{spec_id}``.
+    ``PUT /spec/specs/{spec_id}``. Records a new version on success.
     """
     with _spec_errors():
         engine.read_manifest(spec_id)
-        return engine.save_spec_md(body.content)
+        updated = engine.save_spec_md(body.content)
+    _record_version(engine, db, principal, updated)
+    return updated
 
 
 @router.get(
@@ -231,17 +289,23 @@ def read_spec_manifest_yaml(engine: EngineDep, spec_id: uuid.UUID) -> PlainTextR
 
 @router.put("/specs/{spec_id}/manifest", response_model=SpecManifest, dependencies=[WriteGate])
 def write_spec_manifest_yaml(
-    engine: EngineDep, spec_id: uuid.UUID, body: TextContent
+    engine: EngineDep,
+    spec_id: uuid.UUID,
+    body: TextContent,
+    db: DbSession,
+    principal: Annotated[Principal, Depends(get_current_principal)],
 ) -> SpecManifest:
     """Save a spec edited as ``manifest.yaml``; re-renders ``spec.md`` to match.
 
     Unlike the markdown endpoint, this may also *create* a new spec: when no
     spec resolves to ``spec_id`` yet, the YAML's own id governs where it is
     written (mirroring ``PUT /spec/specs/{spec_id}``'s create-or-update
-    semantics).
+    semantics). Records a new version on success.
     """
     with _spec_errors():
-        return engine.save_manifest_yaml(body.content)
+        updated = engine.save_manifest_yaml(body.content)
+    _record_version(engine, db, principal, updated)
+    return updated
 
 
 @router.get(
@@ -294,6 +358,134 @@ def validate(engine: EngineDep, task_id: uuid.UUID) -> ValidationReport:
     """Validate a task against its spec (requirement-to-test traceability)."""
     with _spec_errors():
         return engine.validate(task_id)
+
+
+# --------------------------------------------------------------------------- #
+# ss-versioning: spec version history + diff                                  #
+# --------------------------------------------------------------------------- #
+#
+# A version is recorded (see ``_record_version``) on every save through the
+# editing endpoints above. These read-only routes list a spec's version
+# history and diff any two of its versions — both the raw ``spec.md`` prose
+# (line-level) and the structured manifest (id-keyed adds/removes/changes per
+# list field). Versions are looked up by ``spec_id`` (the same deterministic
+# uuid as everywhere else in this router) + a 1-based ``version_number``.
+
+
+class SpecVersionSummary(BaseModel):
+    """One row of a spec's version history (no snapshot payload)."""
+
+    version_number: int
+    name: str
+    status: str
+    created_at: str
+    created_by: uuid.UUID | None = None
+
+
+class SpecVersionDetail(SpecVersionSummary):
+    """A single version's full snapshot."""
+
+    manifest: SpecManifest
+    spec_md: str
+    manifest_yaml: str
+
+
+class SpecVersionDiff(BaseModel):
+    """The diff between two versions of a spec."""
+
+    from_version: int
+    to_version: int
+    markdown: list[Any] = Field(default_factory=list)
+    manifest: ManifestDiff
+
+
+def _version_summary(version: SpecVersion) -> SpecVersionSummary:
+    return SpecVersionSummary(
+        version_number=version.version_number,
+        name=version.name,
+        status=version.status,
+        created_at=version.created_at.isoformat(),
+        created_by=version.created_by,
+    )
+
+
+@router.get(
+    "/specs/{spec_id}/versions",
+    response_model=list[SpecVersionSummary],
+    dependencies=[ReadGate],
+)
+def list_spec_versions(
+    spec_id: uuid.UUID,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: DbSession,
+) -> list[SpecVersionSummary]:
+    """List a spec's versions, newest first (empty if never saved)."""
+    versions = spec_version_service.list_versions(
+        db, workspace_id=principal.workspace_id, spec_id=spec_id
+    )
+    return [_version_summary(v) for v in versions]
+
+
+def _get_version_or_404(
+    db: DbSession, principal: Principal, spec_id: uuid.UUID, version_number: int
+) -> SpecVersion:
+    version = spec_version_service.get_version(
+        db, workspace_id=principal.workspace_id, spec_id=spec_id, version_number=version_number
+    )
+    if version is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"spec version {version_number} not found",
+        )
+    return version
+
+
+@router.get(
+    "/specs/{spec_id}/versions/{version_number}",
+    response_model=SpecVersionDetail,
+    dependencies=[ReadGate],
+)
+def read_spec_version(
+    spec_id: uuid.UUID,
+    version_number: int,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: DbSession,
+) -> SpecVersionDetail:
+    """Read one version's full snapshot (manifest + both serializations)."""
+    version = _get_version_or_404(db, principal, spec_id, version_number)
+    return SpecVersionDetail(
+        **_version_summary(version).model_dump(),
+        manifest=SpecManifest.model_validate(version.manifest),
+        spec_md=version.spec_md,
+        manifest_yaml=version.manifest_yaml,
+    )
+
+
+@router.get(
+    "/specs/{spec_id}/versions/{from_version}/diff/{to_version}",
+    response_model=SpecVersionDiff,
+    dependencies=[ReadGate],
+)
+def diff_spec_versions(
+    spec_id: uuid.UUID,
+    from_version: int,
+    to_version: int,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: DbSession,
+) -> SpecVersionDiff:
+    """Diff two versions of a spec: line-level markdown + structured manifest."""
+    older = _get_version_or_404(db, principal, spec_id, from_version)
+    newer = _get_version_or_404(db, principal, spec_id, to_version)
+    markdown_diff = diff_markdown(older.spec_md, newer.spec_md)
+    manifest_diff = diff_manifest(
+        SpecManifest.model_validate(older.manifest), SpecManifest.model_validate(newer.manifest)
+    )
+    return SpecVersionDiff(
+        from_version=from_version,
+        to_version=to_version,
+        markdown=[line.model_dump() for line in markdown_diff],
+        manifest=manifest_diff,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -463,6 +655,9 @@ __all__ = [
     "SpecDashboard",
     "SpecEngineRegistry",
     "SpecOverview",
+    "SpecVersionDetail",
+    "SpecVersionDiff",
+    "SpecVersionSummary",
     "TextContent",
     "get_spec_engine",
     "get_spec_registry",

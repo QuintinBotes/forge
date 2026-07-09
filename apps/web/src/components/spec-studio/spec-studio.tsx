@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, FileCode2, FileText, ListTree } from "lucide-react";
+import { Eye, FileCode2, FileText, History, ListTree } from "lucide-react";
 import { useState } from "react";
 
 import { apiClient, ApiError, type ForgeApiClient } from "@/lib/api/client";
@@ -19,15 +19,17 @@ import { cn } from "@/lib/utils";
 import { GuidedMode } from "./guided-mode";
 import { MarkdownMode } from "./markdown-mode";
 import { ReadMode } from "./read-mode";
+import { VersionHistory } from "./version-history";
 import { YamlMode } from "./yaml-mode";
 
-export type SpecStudioMode = "guided" | "markdown" | "yaml" | "read";
+export type SpecStudioMode = "guided" | "markdown" | "yaml" | "read" | "history";
 
 const MODES: { id: SpecStudioMode; label: string; icon: typeof ListTree }[] = [
   { id: "guided", label: "Guided", icon: ListTree },
   { id: "markdown", label: "Markdown", icon: FileText },
   { id: "yaml", label: "YAML", icon: FileCode2 },
   { id: "read", label: "Read", icon: Eye },
+  { id: "history", label: "History", icon: History },
 ];
 
 export interface SpecStudioProps {
@@ -213,6 +215,7 @@ export function SpecStudio({ specId, client = apiClient }: SpecStudioProps) {
               approveError={approveSpec.isError ? errorMessage(approveSpec.error) : null}
             />
           ) : null}
+          {mode === "history" ? <VersionHistory specId={specId} client={client} /> : null}
         </>
       )}
     </div>

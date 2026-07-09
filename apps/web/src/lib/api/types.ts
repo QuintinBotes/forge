@@ -428,6 +428,64 @@ export interface SpecDashboard {
   specs: SpecOverview[];
 }
 
+// --- ss-versioning: spec version history + diff --------------------------- //
+
+/** One row of a spec's version history (GET /spec/specs/{id}/versions). */
+export interface SpecVersionSummary {
+  version_number: number;
+  name: string;
+  status: string;
+  created_at: string;
+  created_by?: string | null;
+}
+
+/** A single version's full snapshot (GET /spec/specs/{id}/versions/{n}). */
+export interface SpecVersionDetail extends SpecVersionSummary {
+  manifest: SpecManifest;
+  spec_md: string;
+  manifest_yaml: string;
+}
+
+/** One line of a unified line-diff between two `spec.md` texts. */
+export interface TextDiffLine {
+  op: "equal" | "insert" | "delete";
+  text: string;
+}
+
+/** One id-keyed add/remove/modify entry within a manifest list field. */
+export interface ListItemChange {
+  id: string;
+  change: "added" | "removed" | "modified";
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+}
+
+/** A changed top-level scalar field (e.g. `name`, `status`). */
+export interface ScalarFieldChange {
+  field: string;
+  before: unknown;
+  after: unknown;
+}
+
+/** The structured diff between two spec manifest snapshots. */
+export interface ManifestDiff {
+  scalar_changes: ScalarFieldChange[];
+  requirements: ListItemChange[];
+  acceptance_criteria: ListItemChange[];
+  open_questions: ListItemChange[];
+  decisions: ListItemChange[];
+  constraints_added: string[];
+  constraints_removed: string[];
+}
+
+/** The diff between two versions of a spec (GET .../versions/{a}/diff/{b}). */
+export interface SpecVersionDiff {
+  from_version: number;
+  to_version: number;
+  markdown: TextDiffLine[];
+  manifest: ManifestDiff;
+}
+
 /**
  * Token/cost accounting for one model call (`forge_agent.providers`'s
  * `UsageAccumulator.to_artifact` shape — mirrored here, not reimplemented).

@@ -245,12 +245,40 @@ def test_workflow_run_is_workspace_scoped() -> None:
 
 
 def test_spec_is_workspace_scoped(tmp_path) -> None:
+    from sqlalchemy import StaticPool, create_engine
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from forge_api.db import get_db
     from forge_api.routers.spec import SpecEngineRegistry, get_spec_registry
+    from forge_db.base import Base
+    from forge_db.models import Workspace
     from forge_spec import spec_id_for_key
 
     app = create_app()
     registry = SpecEngineRegistry(tmp_path / "specs")
     app.dependency_overrides[get_spec_registry] = lambda: registry
+
+    # ss-versioning: spec saves now also record a ``spec_version`` row, so
+    # this needs a real DB session (SQLite in-memory, mirroring the other
+    # hermetic spec-router test fixtures).
+    db_engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(db_engine)
+    db_factory = sessionmaker(bind=db_engine, expire_on_commit=False, class_=Session)
+    with db_factory() as session:
+        session.add(Workspace(id=TEST_WORKSPACE_ID, name="Acme", slug="acme"))
+        session.add(Workspace(id=OTHER_WORKSPACE_ID, name="Other", slug="other"))
+        session.commit()
+
+    def _override_db() -> Iterator[Session]:
+        session = db_factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = _override_db
 
     _as(app, make_test_principal(role=UserRole.MEMBER, workspace_id=TEST_WORKSPACE_ID))
     with TestClient(app) as client:
