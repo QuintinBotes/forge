@@ -210,8 +210,8 @@ def _manifest_from_loose_yaml(data: dict[str, Any]) -> SpecManifest:
 # `\s*$` overlap, which CodeQL flags as polynomial/ReDoS on user-supplied text),
 # with `[ \t]` separators so whitespace classes don't overlap the capture. The
 # callers already `.strip()` the captured group, so trailing spaces are handled.
-_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+)$", re.MULTILINE)
-_BULLET_RE = re.compile(r"^[ \t]*[-*][ \t]+(.+)$")
+_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(\S.*)$", re.MULTILINE)
+_BULLET_RE = re.compile(r"^[ \t]*[-*][ \t]+(\S.*)$")
 
 #: Heading text (lowercased, trailing ':' stripped) -> the bucket it feeds.
 _SECTION_ALIASES: dict[str, str] = {

@@ -59,7 +59,7 @@ DEFAULT_MAX_CHARS: int = 1200
 # Greedy capture to end-of-line (no lazy `.*?` + trailing `\s*` overlap, which
 # CodeQL flags as polynomial/ReDoS); the closing ATX `#`s + spaces are stripped
 # from group(2) in code below, which is linear.
-_HEADING_RE = re.compile(r"^[ ]{0,3}(#{1,6})[ \t]+(.*)$")
+_HEADING_RE = re.compile(r"^[ ]{0,3}(#{1,6})[ \t]+(\S.*)$")
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 # File extensions treated as source code for path classification.
