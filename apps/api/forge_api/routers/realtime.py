@@ -145,7 +145,11 @@ async def spec_collab_ws(
         while True:
             data = await websocket.receive_bytes()
             allowed = await room.receive(
-                websocket, data, can_write=can_write, user_id=principal.user_id
+                websocket,
+                data,
+                can_write=can_write,
+                user_id=principal.user_id,
+                email=principal.email,
             )
             if not allowed:
                 # A READ-only principal attempted a write — policy violation.
