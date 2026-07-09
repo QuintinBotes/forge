@@ -7,25 +7,12 @@ import {
   formatCoverage,
   gateSummary,
   isApprovable,
-  stageIndex,
-  stageState,
+  PLAIN_LIFECYCLE_STEPS,
+  plainCurrentStep,
+  plainStepCompletion,
+  plainStepState,
   traceSealed,
 } from "./spec-meta";
-
-describe("stageIndex / stageState", () => {
-  it("orders the lifecycle and defaults unknown status to draft", () => {
-    expect(stageIndex("draft")).toBe(0);
-    expect(stageIndex("validated")).toBe(4);
-    expect(stageIndex(undefined)).toBe(0);
-  });
-
-  it("classifies nodes relative to the current stage", () => {
-    // current = approved (index 2)
-    expect(stageState(0, "approved")).toBe("done");
-    expect(stageState(2, "approved")).toBe("current");
-    expect(stageState(4, "approved")).toBe("upcoming");
-  });
-});
 
 describe("coverage helpers", () => {
   it("normalises a 0–1 fraction to a percent", () => {
@@ -50,6 +37,91 @@ describe("isApprovable", () => {
     expect(isApprovable("clarifying")).toBe(true);
     expect(isApprovable("approved")).toBe(false);
     expect(isApprovable("validated")).toBe(false);
+  });
+});
+
+describe("plain-language lifecycle stepper", () => {
+  it("has five steps whose actions match the /spec engine calls", () => {
+    expect(PLAIN_LIFECYCLE_STEPS.map((s) => s.label)).toEqual([
+      "Describe",
+      "Refine",
+      "Approve",
+      "Build",
+      "Verify",
+    ]);
+    expect(PLAIN_LIFECYCLE_STEPS.map((s) => s.actionLabel)).toEqual([
+      "Clarify",
+      "Plan",
+      "Approve",
+      "Generate tasks",
+      "Validate",
+    ]);
+  });
+
+  it("marks nothing done for a fresh draft, current = Describe", () => {
+    const completion = plainStepCompletion({ status: "draft" });
+    expect(completion).toEqual([false, false, false, false, false]);
+    expect(plainCurrentStep(completion)).toBe(0);
+  });
+
+  it("marks Describe done once clarified, current = Refine", () => {
+    const completion = plainStepCompletion({ status: "clarifying" });
+    expect(completion).toEqual([true, false, false, false, false]);
+    expect(plainCurrentStep(completion)).toBe(1);
+  });
+
+  it("marks Refine done once a plan exists, independent of status", () => {
+    const completion = plainStepCompletion({ status: "clarifying", plan_ref: "plan.md" });
+    expect(completion).toEqual([true, true, false, false, false]);
+    expect(plainCurrentStep(completion)).toBe(2);
+  });
+
+  it("marks Approve done once the spec is approved (or beyond)", () => {
+    const completion = plainStepCompletion({
+      status: "approved",
+      plan_ref: "plan.md",
+    });
+    expect(completion).toEqual([true, true, true, false, false]);
+    expect(plainCurrentStep(completion)).toBe(3);
+  });
+
+  it("marks Build done once tasks are generated", () => {
+    const completion = plainStepCompletion({
+      status: "approved",
+      plan_ref: "plan.md",
+      tasks_ref: "tasks.md",
+    });
+    expect(completion).toEqual([true, true, true, true, false]);
+    expect(plainCurrentStep(completion)).toBe(4);
+  });
+
+  it("marks Verify done once validated status or a passing report lands", () => {
+    const byStatus = plainStepCompletion({
+      status: "validated",
+      plan_ref: "plan.md",
+      tasks_ref: "tasks.md",
+    });
+    expect(byStatus).toEqual([true, true, true, true, true]);
+    expect(plainCurrentStep(byStatus)).toBe(4);
+
+    const byReport = plainStepCompletion({
+      status: "approved",
+      plan_ref: "plan.md",
+      tasks_ref: "tasks.md",
+      validation: { passed: true },
+    });
+    expect(byReport[4]).toBe(true);
+  });
+
+  it("falls back to draft-like state for an unknown status", () => {
+    expect(plainStepCompletion({})).toEqual([false, false, false, false, false]);
+  });
+
+  it("classifies nodes as done/current/upcoming relative to the current step", () => {
+    const completion = [true, false, false, false, false];
+    expect(plainStepState(0, completion, 1)).toBe("done");
+    expect(plainStepState(1, completion, 1)).toBe("current");
+    expect(plainStepState(4, completion, 1)).toBe("upcoming");
   });
 });
 

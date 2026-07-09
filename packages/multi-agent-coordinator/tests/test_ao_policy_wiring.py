@@ -14,11 +14,11 @@ import uuid
 from pathlib import Path
 
 from _helpers import AgentScript, ScriptingHub, make_objective, obj_parent
-from forge_orchestration_policy import SizingSignals
 
 from forge_agent import ModelRouter, ProviderName, plan_execution
 from forge_contracts import AcceptanceCriterion
 from forge_contracts.orchestration_config import AgentRole, RoleConfigOverride
+from forge_orchestration_policy import SizingSignals
 
 
 class _DefaultsOnlyStore:

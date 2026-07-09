@@ -15,6 +15,19 @@ Public surface (plan Task 1.7):
 
 from __future__ import annotations
 
+from forge_spec.criteria import (
+    ASSERTION,
+    CHECKLIST,
+    GHERKIN,
+    ChecklistItem,
+    CriterionStyle,
+    GivenWhenThen,
+    classify_criterion,
+    compose_checklist,
+    compose_gherkin,
+    parse_checklist,
+    parse_gherkin,
+)
 from forge_spec.dashboard import (
     build_criterion_links,
     build_requirement_rows,
@@ -37,12 +50,20 @@ from forge_spec.dashboard_schemas import (
     ValidationStatus,
 )
 from forge_spec.dashboard_service import DashboardService
+from forge_spec.diff import (
+    ListItemChange,
+    ManifestDiff,
+    ScalarFieldChange,
+    TextDiffLine,
+    diff_manifest,
+    diff_markdown,
+)
 from forge_spec.engine import (
     DEFAULT_GUARDRAILS,
     DEFAULT_PRINCIPLES,
     FileSpecEngine,
 )
-from forge_spec.errors import SpecNotFoundError
+from forge_spec.errors import SpecNotFoundError, SpecReconcileWarning
 from forge_spec.gates import IMPLEMENTABLE_STATUSES, check_implementation_gate
 from forge_spec.ids import (
     constitution_id_for,
@@ -54,6 +75,7 @@ from forge_spec.ids import (
     task_key,
 )
 from forge_spec.manifest import dump_manifest, load_manifest, manifest_to_dict
+from forge_spec.markdown import SpecParseError, parse_spec_md, render_spec_md
 from forge_spec.projection import (
     EvidencePort,
     InMemoryProjectionRepository,
@@ -71,25 +93,37 @@ __version__ = "0.1.0"
 SpecEngineService = FileSpecEngine
 
 __all__ = [
+    "ASSERTION",
+    "CHECKLIST",
     "DEFAULT_GUARDRAILS",
     "DEFAULT_PRINCIPLES",
+    "GHERKIN",
     "IMPLEMENTABLE_STATUSES",
     "CellStatus",
+    "ChecklistItem",
+    "CriterionStyle",
     "CriterionVerdict",
     "DashboardService",
     "EvidenceIndex",
     "EvidencePort",
     "FileSpecEngine",
     "GapKind",
+    "GivenWhenThen",
     "InMemoryProjectionRepository",
+    "ListItemChange",
+    "ManifestDiff",
     "NoOpEvidencePort",
     "ProjectValidationSummary",
     "ProjectionRepository",
+    "ScalarFieldChange",
     "SpecEngineService",
     "SpecNotFoundError",
+    "SpecParseError",
+    "SpecReconcileWarning",
     "SpecSourcePort",
     "SpecTraceabilityMatrix",
     "SpecValidationRow",
+    "TextDiffLine",
     "TraceCell",
     "TraceabilityGap",
     "TraceabilityProjector",
@@ -101,13 +135,22 @@ __all__ = [
     "build_validation_report",
     "check_implementation_gate",
     "classify_cell",
+    "classify_criterion",
+    "compose_checklist",
+    "compose_gherkin",
     "compute_spec_rollup",
     "constitution_id_for",
     "detect_gaps",
+    "diff_manifest",
+    "diff_markdown",
     "dump_manifest",
     "generate_tasks",
     "load_manifest",
     "manifest_to_dict",
+    "parse_checklist",
+    "parse_gherkin",
+    "parse_spec_md",
+    "render_spec_md",
     "slugify",
     "spec_dirname",
     "spec_id_for_key",

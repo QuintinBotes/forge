@@ -1,23 +1,29 @@
 # Forge — Progress Summary (2026-07-08)
 
-_Autonomous run. Priority #1 = finalise the full solution for distribution._
+_Autonomous finalise run. Priority #1 = finish the full solution for distribution._
 
-## ✅ Landed on `main` (green in CI)
-- **CI is real and green.** The GitHub Actions gate had never actually run (a `secrets`-in-`if:` crash at 0s); found + fixed the whole first-run tail plus the gate dimensions the swarms never enforced (mypy 135→0, eslint, ruff-format, semgrep, bandit). All blocking checks pass.
-- **PR #28 merged** — persistence (Postgres repos) + every CI fix.
-- **PR #30 merged — PUBLIC-READINESS.** ⚠️ Under-development banner + honest README Status (15 screens shipped, ~3,700 tests green), live CI badge; **live spec dashboard** (`GET /projects/{id}/specs`); adaptive-orchestration foundation (complexity sizing + model router).
-- **→ The repo is SAFE TO MARK PUBLIC now** (with the under-development notice, as intended).
+## ✅ Landed on `main` (green in CI) — repo is now **PUBLIC**
+- **CI is real and green**; the whole GitHub Actions gate was fixed and now runs (incl. CodeQL/code-scanning on the public repo).
+- **PR #28** — persistence (Postgres repos) + CI fixes.
+- **PR #30 — public-readiness**: under-development banner + honest README status + live spec dashboard (`GET /projects/{id}/specs`). **→ You marked the repo public.** 🎉
+- **PR #32 — Adaptive Orchestration**: automatic model routing (Anthropic junior=Haiku / medior=Sonnet / senior=Opus, provider-agnostic), per-role effort levels, a "Models & Effort" settings API + UI with live routing preview, and cost-by-tier observability. Local gate: mypy 0, **3,868 tests**, web lint/build/test clean.
 - Dependabot #25 auto-merged when green.
 
-## ▶ In progress — the hard finalise (chunked across the weekly limit)
-Resuming the adaptive-spec build (Spec Studio, adaptive orchestration, real-time/CRDT). It **delivers the deferred public-readiness items properly**: the server-side `/ws` websocket (as the `rt-ws` real-time slice) and the "coming soon" UI labels (frontend-UX phase). Then: F40 backlog → IaC → frontend-UX (ui-ux-pro) → docs + real screenshots. One swarm at a time; each chunk synced via PR + auto-merged when green; resumes across each weekly-limit reset.
+## ▶ In progress — the hard finalise, chunk by chunk
+- **Spec Studio** (building now, ~14 slices): dual-format `spec.md` ⇄ `manifest.yaml` round-trip, the Guided/Markdown/YAML/Read modes, BYOK AI draft (`POST /spec/draft`), the full SDD lifecycle, versioning/diff, import. Design doc: `docs/spec-studio/DESIGN.md`.
+- **Then:** Realtime co-editing (delivers the real `/ws` websocket + Yjs CRDT) → F40 backlog → IaC (OpenTofu) → frontend-UX pass (ui-ux-pro, incl. the deferred "coming soon" labels) → docs site + real screenshots.
 
-## ⚠️ Notes / lessons
-- A two-swarm race and a seams-gatekeeper misfire were caught and recovered with no damage (main stayed green). Iron rule now enforced: only one swarm on `main` at a time.
-- **Deferred (banner-covered), being built properly in the finalise:** `/ws` live real-time push; a few gated-UI "coming soon" labels.
+## ⚠️ Pipeline lessons (all fixed, main stayed green)
+- Spurious green-slice reverts → gate now treats a green full suite as authoritative.
+- Workflow `args` don't pass → slice filter hardcoded in the script.
+- A verifier `git stash`'d WIP → verify prompt forbids touching git state; recovered via `git stash pop`.
+- One two-swarm race + a seams-gatekeeper misfire → caught, no damage; iron rule = one swarm at a time.
+
+## 📌 Tracked follow-up
+- **Wire `ExecutionPlan` tier/strategy into `ModelUsage`** at the live model-client call sites — the cost-by-tier observability is built and ready but not yet populated from real agent runs (pre-existing gap, documented in `docs/ADAPTIVE_SPEC_PROGRESS.md`).
 
 ## ❓ Open questions
-- None blocking. The finalise is compute-bound by the weekly limit and will land in chunks over the next day(s).
+- None blocking. The finalise is compute-bound by the weekly limit and lands in chunks over the next day(s).
 
 ## Honest ceiling (cannot close autonomously)
 - Cred-gated live integrations (GitHub App / model BYOK / reranker / MCP / Slack) — code + tests + runbooks exist; need your keys to verify live.

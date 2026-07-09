@@ -11,12 +11,11 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
-from forge_orchestration_policy import SizingSignals, score_complexity
-
 from forge_agent import ExecutionPlan, ModelRouter, ProviderName, plan_execution
 from forge_agent.execution_plan import plan_role_execution
 from forge_contracts import Priority, TaskKind
 from forge_contracts.orchestration_config import AgentRole, Effort, RoleConfigOverride
+from forge_orchestration_policy import SizingSignals, score_complexity
 
 WORKSPACE = uuid.uuid4()
 PROJECT = uuid.uuid4()

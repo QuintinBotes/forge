@@ -7,11 +7,16 @@ green gate (ruff + ruff-format + mypy + full pytest on real pgvector + bandit +
 gitleaks + web lint/build/test/typecheck).
 
 **Phase 1 — Adaptive Orchestration: shipped, all six slices committed to
-`main`.** **Phase 2 — Spec Studio (dual-format `spec.md` round-trip,
-BYOK spec draft, real-time co-editing): not yet started** — design-approved
-and written up in `docs/spec-studio/DESIGN.md` for the next build phase.
+`main`.** **Phase 2 — Spec Studio: shipped, all fourteen slices committed to
+`main`** — dual-format `spec.md`↔`manifest.yaml` round-trip, the five-mode
+Spec Studio web editor (Guided/Markdown/YAML/Read/History), BYOK AI drafting,
+external import, acceptance-criterion styles, and version history + diff all
+landed. **Real-time co-editing is still design-only** (Yjs chosen, nothing
+wired) — see "What's parked" below. Full design: `docs/spec-studio/DESIGN.md`.
 
 ## Slice ledger
+
+### Phase 1 — Adaptive Orchestration
 
 | id | phase | refuted | repaired | decision | commit |
 |---|---|---|---|---|---|
@@ -36,6 +41,39 @@ verification, not a refuted finding; the commit body records the gate as green
 at 3863 tests before landing.
 
 **Committed:** all six. **Reverted:** none.
+
+### Phase 2 — Spec Studio
+
+| id | refuted | repaired | decision | commit | parked |
+|---|---|---|---|---|---|
+| ss-parser | 0 | no | committed | `19d165a` | — |
+| ss-engine | 1 | no | committed | `dee72e1` | — |
+| ss-endpoints | 3 | yes | committed | `26c938f` | — |
+| ss-yaml | 1 | no | committed | `899a5e9` | — |
+| ss-draft | 3 | yes | committed | `bec9813` | — |
+| ss-guided | 2 | yes | committed | `13ae1ce` | — |
+| ss-markdown | 1 | no | committed | `08af69e` | — |
+| ss-read | 1 | no | committed | `d8bfb51` | reject/request-changes have no backend persistence |
+| ss-lifecycle | 2 | yes | committed | `a9f381f` | kubeconform network tests (pre-existing, unrelated) |
+| ss-ai-panel | 2 | yes | committed | `777e51f` | — |
+| ss-entry | 1 | no | committed | `c081a3c` | — |
+| ss-versioning | 2 | yes | committed | `24f5601` | final full-repo pytest confirmation |
+| ss-import | 2 | yes | committed | `7f1bebc` | final full-repo pytest confirmation |
+| ss-criteria | 0 | no | committed | `804a840` | — |
+
+`refuted`/`repaired` are taken verbatim from each slice's own completion
+report at build time (21 findings raised across the 14 slices; 7 slices had
+at least one repaired before commit — `ss-endpoints`, `ss-draft`,
+`ss-guided`, `ss-lifecycle`, `ss-ai-panel`, `ss-versioning`, `ss-import` — the
+other 7 had findings investigated and held as not requiring a change, or none
+raised). **Committed:** all fourteen. **Reverted:** none. The two
+"final full-repo pytest confirmation" parked items (`ss-versioning`,
+`ss-import`) asked for an uncontaminated full-suite rerun after a background
+run hadn't finished before their own report was due — that rerun is the one
+recorded in "Gate confirmation" below, performed for *this* report with
+nothing else concurrently touching the test database; see that section for
+the result. The `ss-read` and `ss-lifecycle` parked items are unresolved by
+design/scope respectively — carried forward, see "What's parked" below.
 
 ## What shipped — Adaptive Orchestration
 
@@ -146,97 +184,222 @@ path. The `ao-observability` slice's schema/API/dashboard are ready to receive
 that wires `ExecutionPlan.for_role(...).tier`/`.strategy` into the
 `ModelUsage` built at each model-client call site.
 
-## What's parked — Spec Studio (not yet started)
+## What shipped — Spec Studio
 
-Design is written up in full in `docs/spec-studio/DESIGN.md`; nothing in this
-section has code yet. Repo-evidence check performed for this report: no
-`parse_spec_md`, no `POST /spec/draft` route/schema/service, no
-`spec-studio`-named web component, and no websocket/CRDT dependency exist
-anywhere in the tree (`git log --all` has no `spec-studio`, `co-editing`, or
-`websocket` commit either — this phase has not begun on any branch).
+The dual-format design (`SpecManifest` canonical, `spec.md`/`manifest.yaml`
+both first-class editable views) is now fully wired end-to-end, plus the web
+editor, BYOK drafting, external import, criterion styles, and version
+history:
 
-- **Dual-format spec authoring** — `manifest.yaml` round-trip
-  (`dump_manifest`/`load_manifest`) is shipped and has been for several
-  phases; `spec.md` rendering (`render_spec_md`) is shipped but **one-way**
-  (manifest → markdown only, and without the frontmatter/`## Goal`/
-  Given-When-Then/`## Decisions` shape the approved design calls for).
-  `parse_spec_md` (markdown → manifest) does not exist, so editing `spec.md`
-  today does not update the canonical `SpecManifest` or re-render
-  `manifest.yaml`. Unblock: the `spec-md-roundtrip` slice in
-  `docs/spec-studio/DESIGN.md` §2.2.
-- **`POST /spec/draft` (BYOK AI draft)** — no route, schema, or service
-  exists. Unblock: the `spec-draft-api` slice (§2.2), which resolves the
-  `spec_author` role through the Adaptive Orchestration router built above
-  and streams through the existing BYOK `ModelClient` (mocked in tests, per
-  the approved design — no live key in CI).
-- **Spec Studio web UI** — `apps/web` has a read-only validation dashboard
-  (`components/spec/spec-dashboard.tsx`) but no editor. Unblock:
-  `spec-studio-ui` (§2.2).
-- **Real-time co-editing** — no `/ws` route, no CRDT/OT dependency anywhere
-  in `apps/api` or `apps/web`. **Library choice (design decision, not yet
-  wired): Yjs** — CRDT, no central sequencing server, mature markdown/
-  text-editor bindings, zero-runtime-dep core; rejected Automerge (heavier
-  WASM payload for this use case), Operational Transform (needs a central
-  sequencing server that conflicts with the stateless API/worker split and
-  with an agent editing the same file outside the OT server's view), and
-  vendor real-time services (external network dependency incompatible with
-  the self-hosted/BYOK deploy story). Full rationale and the relay-transport
+- **`ss-parser`** (`19d165a`) — `forge_spec.markdown.parse_spec_md`: parses
+  the frontmatter + `## Goal`/`## Requirements`/`## Acceptance Criteria`
+  (Given/When/Then)/`## Constraints`/`## Open Questions`/`## Decisions`
+  shape back into a `SpecManifest`, completing the round-trip the design
+  called for (`render_spec_md` already emitted this shape). `SpecParseError`
+  reports malformed input.
+- **`ss-engine`** (`dee72e1`) — `FileSpecEngine` gains `save_spec_md`/
+  `read_spec_md`/`save_manifest_yaml`/`read_manifest_yaml`: editing either
+  serialization parses it back to a `SpecManifest`, then re-renders and
+  writes *both* files from that single manifest, so `spec.md` and
+  `manifest.yaml` never drift apart. Legacy manifest-only specs still load.
+- **`ss-endpoints`** (`26c938f`) — `apps/api` `GET/PUT /spec/specs/{id}` (raw
+  manifest), `GET/PUT /spec/specs/{id}/markdown`, and
+  `GET/PUT /spec/specs/{id}/manifest` — the HTTP surface for
+  create/edit-from-either-format, plus a typed web API client
+  (`apps/web/src/lib/api/client.ts`).
+- **`ss-yaml`** (`899a5e9`) — the first cut of the Spec Studio web component
+  (`apps/web/src/components/spec-studio`): a mode-switching shell plus the
+  YAML editor mode with client-side schema validation
+  (`lib/spec-studio/yaml-schema.ts`).
+- **`ss-draft`** (`bec9813`) — `POST /spec/draft`: resolves the
+  `spec_author` role through the Adaptive Orchestration model router built
+  in Phase 1, streams a constitution-seeded draft through the BYOK
+  `ModelClient`, and returns a parsed `SpecManifest` preview plus token/cost
+  accounting. Draft-only — nothing is persisted until a human saves it
+  through the normal editing endpoints. `ModelClient` is mocked in tests.
+- **`ss-guided`** (`13ae1ce`) — the Guided-mode form editor (structured
+  requirement/AC/constraint fields, no raw text), `/specs/new` and
+  `/specs/{id}` pages, and the `spec-studio-page` wrapper that wires the
+  editor to a real spec id.
+- **`ss-markdown`** (`08af69e`) — the Markdown editor mode plus
+  `lib/spec-studio/markdown-parse.ts` (the web-side mirror of
+  `parse_spec_md`, used for client-side live preview/validation before the
+  save round-trips through the API).
+- **`ss-read`** (`d8bfb51`) — the Read mode: a rendered, non-editable view
+  of a spec with a keyboard-driven approval gate (`a`/`x`/`r` for
+  approve/reject/request-changes + a note). Approve calls the real
+  `POST /spec/specs/{id}/approve`; reject/request-changes are recorded
+  locally only (see "What's parked").
+- **`ss-lifecycle`** (`a9f381f`) — replaced `lifecycle-rail` with
+  `lifecycle-stepper`, a clearer draft→clarified→planned→approved status
+  stepper wired into `spec-dashboard` and the Spec Studio page header.
+- **`ss-ai-panel`** (`777e51f`) — the `AiDraftPanel`: a streaming "typing"
+  reveal of a `POST /spec/draft` response with an accept action that seeds
+  the Guided/Markdown editor from the draft, wired into `/specs/new`.
+- **`ss-entry`** (`c081a3c`) — the `/specs/new` entry flow: choose an epic
+  (or create one inline), pick a starter template (feature/bugfix/spike —
+  `lib/spec-studio/templates.ts`) or start from an AI draft, then land in
+  Guided mode with the seed applied.
+- **`ss-versioning`** (`24f5601`) — `spec_version` table (migration `0032`,
+  additive/reversible): every save through the editing endpoints records an
+  immutable snapshot (manifest + both serializations). `GET
+  /spec/specs/{id}/versions`, `.../versions/{n}`, and
+  `.../versions/{from}/diff/{to}` (line-level markdown diff +
+  id-keyed structured manifest diff, `forge_spec.diff`) back the web
+  `VersionHistory` panel.
+- **`ss-import`** (`7f1bebc`) — `POST /spec/import`: turns an
+  externally-authored markdown or YAML spec into a `spec.md` draft via
+  direct parse → best-effort normalize → graceful-failure-with-`parse_error`
+  fallback, so existing docs can enter the SDD lifecycle without retyping.
+  Draft-only, same contract as `ss-draft`.
+- **`ss-criteria`** (`804a840`) — `forge_spec.criteria`: acceptance criteria
+  can be authored in three styles — Gherkin (Given/When/Then, the default),
+  a plain declarative assertion, or a `- [ ]`/`- [x]` checklist — all
+  encoded losslessly in the existing `AcceptanceCriterion.text` field
+  (style is derived via `classify_criterion`, never stored, so the frozen
+  contract and `req_refs` linking are untouched). Wired into Guided mode and
+  `spec.md` rendering/parsing.
+
+Net result: a spec can be created from scratch, a template, an AI draft, or
+an external import; edited in Guided, Markdown, or YAML mode with both files
+always in sync; reviewed in Read mode; approved through the real gate; and
+every save is a recoverable, diffable version.
+
+### Known limitation, by design (not a gap)
+
+`POST /spec/draft` and `POST /spec/import` are both **draft-only** — neither
+persists anything. This matches the approved design exactly (a human always
+refines and explicitly saves through the normal spec-editing endpoints), not
+an oversight.
+
+## What's parked — Spec Studio
+
+- **Reject / Request-changes have no backend persistence.** Read mode's
+  approval gate is fully keyboard-driven (`a`/`x`/`r`) and calls optional
+  `onReject`/`onRequestChanges` callbacks, but records the decision + note
+  only in the browser — `forge_spec.FileSpecEngine` exposes `approve_spec`
+  (wired to the real `POST /spec/specs/{id}/approve`) with no
+  `reject_spec`/`request_changes` counterpart, and the frozen `SpecStatus`
+  enum has no such values. Unblock: add
+  `POST /spec/specs/{id}/reject` and `.../request-changes` to
+  `forge_spec/engine.py` + `apps/api/forge_api/routers/spec.py` (mirroring
+  `approve_spec`), or wire the existing F36 `/approvals` generic gate
+  (`gate_type='spec'`) once `ApprovalSummary`/`ApprovalRequest` gain a way to
+  resolve the pending gate for a given `spec_id`.
+- **Real-time co-editing — still design-only, nothing wired.** Repo-evidence
+  check performed for this report: no `yjs`/`y-websocket` dependency in
+  `apps/web/package.json`, no `/ws` route or CRDT/OT dependency anywhere in
+  `apps/api`. **Library choice (design decision, unchanged from Phase 1):
+  Yjs** — CRDT, no central sequencing server, mature markdown/text-editor
+  bindings, zero-runtime-dep core; rejected Automerge (heavier WASM payload
+  for this use case), Operational Transform (needs a central sequencing
+  server that conflicts with the stateless API/worker split and with an
+  agent editing the same file outside the OT server's view), and vendor
+  real-time services (external network dependency incompatible with the
+  self-hosted/BYOK deploy story). Full rationale and the relay-transport
   shape: `docs/spec-studio/DESIGN.md` §4. This is the same deferred `/ws`
   websocket noted in `docs/MORNING_SUMMARY-2026-07-08.md` as the "`rt-ws`
-  real-time slice" — one relay substrate serves both that public-readiness
-  item and Spec Studio co-editing. Unblock: `spec-studio-realtime` (§2.2),
-  sequenced after `spec-md-roundtrip` and `spec-studio-ui` exist to co-edit.
+  real-time slice" — one relay substrate would serve both that
+  public-readiness item and Spec Studio co-editing. Unblock:
+  `spec-studio-realtime` (`docs/spec-studio/DESIGN.md` §2.2) — the editor it
+  co-edits (Guided/Markdown/YAML modes, `parse_spec_md` round-trip) now
+  exists, so this slice is unblocked and ready to start.
+- **Historical note, now resolved for this environment** (carried from
+  `ss-lifecycle`'s own report): that report saw
+  `deploy/helm/tests/test_render_contract.py::test_kubeconform_conformance[...]`
+  fail in its sandbox for lack of network access to fetch k8s JSON schemas.
+  Re-run explicitly for this report's gate confirmation, those same tests
+  **passed** (`kubeconform` was on `PATH` and reached its schema store here)
+  — not touched by any Spec Studio slice either way; flagged only so the
+  discrepancy between the two sandboxes' network posture is on record.
 
 ## Gate confirmation
 
-Full green-gate run performed for this report (2026-07-08, working tree
-clean at `1c048d8`):
+### Phase 1 (Adaptive Orchestration) — as originally recorded
+
+Full green-gate run performed at the time (2026-07-08, working tree clean at
+`1c048d8`): `uv run ruff check .` clean; `uv run ruff format --check .` clean
+(953 files); `make typecheck` 0 errors across 486 source files;
+full pytest **3868 passed, 53 skipped, 0 failed** in 814.37s; `bandit` exit
+0; `gitleaks` no leaks (169 commits); `pnpm lint` 0 errors (6 pre-existing
+warnings); `pnpm build` 19 routes; `pnpm test` 507 passed (66 files); `pnpm
+typecheck` clean; no hardcoded hex/rgb in the Adaptive Orchestration web
+files.
+
+### Phase 2 (Spec Studio) — this report, whole repo re-verified
+
+Full green-gate run performed for **this** report, working tree clean at
+`804a840` (all 14 `ss-*` slices):
 
 - `uv run ruff check .` — clean.
-- `uv run ruff format --check .` — clean (953 files already formatted).
-- `make typecheck` (mypy, all 18 first-party packages) — 0 errors across 486
+- `uv run ruff format --check .` — clean (967 files already formatted).
+- `make typecheck` (mypy, all 18 first-party packages) — 0 errors across 493
   source files.
 - `FORGE_TEST_DATABASE_URL=postgresql+psycopg://forge:forge@localhost:5433/forge
-  uv run pytest -q` — full suite against real pgvector on `:5433`: **3868
-  passed, 53 skipped, 0 failed, 23 warnings in 814.37s (13m34s)**. Every skip
-  is a documented opt-in/live-cred/virtualization-gated lane (e.g.
-  `FORGE_RUN_SOAK`/`FORGE_RUN_PERF`/`FORGE_BUILD_INTEGRATION_TESTS`,
-  live GitHub/Slack/MCP/reranker/model-provider creds, gVisor/Firecracker
-  kernel-boundary tests, `promtool`/`amtool` not on `PATH`) — none are
-  Adaptive Orchestration or Spec Studio related.
+  uv run pytest -q` — full suite against real pgvector on `:5433`, run
+  standalone (nothing else touching the DB concurrently) to avoid the
+  DB-contention artifacts noted in the `ss-versioning` slice's own report:
+  **3980 passed, 53 skipped, 0 failed, 23 warnings in 942.73s (15m42s)**.
+  This resolves the `ss-versioning`/`ss-import` parked "final full-repo
+  pytest confirmation" items. Every skip is a documented opt-in/live-cred/
+  virtualization-gated lane (e.g. `FORGE_RUN_SOAK`/`FORGE_RUN_PERF`/
+  `FORGE_BUILD_INTEGRATION_TESTS`, live GitHub/Slack/MCP/reranker/
+  model-provider creds, gVisor/Firecracker kernel-boundary tests,
+  `promtool`/`amtool` not on `PATH`) — none are Spec Studio related. The
+  `deploy/helm` kubeconform tests `ss-lifecycle`'s own report carried
+  forward as network-blocked in a different sandbox were re-run explicitly
+  in *this* environment (`pytest deploy/helm/tests/test_render_contract.py
+  -k kubeconform`) and **passed** (3 passed) — `kubeconform` is on `PATH`
+  and reached its schema store here, so that note no longer applies to this
+  gate run (kept in "What's parked" only as historical context).
 - `uv run bandit -c pyproject.toml -r packages apps --severity-level high -q`
   — exit 0.
 - `gitleaks detect --source . --config .gitleaks.toml --no-banner --redact` —
-  no leaks (169 commits scanned).
-- `pnpm --filter @forge/web lint` — 0 errors (6 pre-existing warnings,
-  unrelated to Adaptive Orchestration files).
-- `pnpm --filter @forge/web build` — succeeds (19 routes, including
-  `/settings/models`).
-- `pnpm --filter @forge/web test` — 507 passed (66 test files).
+  no leaks (188 commits scanned).
+- `pnpm --filter @forge/web lint` — 0 errors (12 pre-existing warnings,
+  unrelated to Spec Studio files — `pm-integrations-view.tsx`,
+  `members-panel.tsx`, `step-meta.ts`, `walkthrough-view.tsx`,
+  `workflow-canvas.tsx`).
+- `pnpm --filter @forge/web build` — succeeds (20 routes, including
+  `/specs`, `/specs/new`, `/specs/[id]`).
+- `pnpm --filter @forge/web test` — 673 passed (81 test files).
 - `pnpm --filter @forge/web typecheck` — clean.
-- No hardcoded hex/rgb color literals in the Adaptive Orchestration web files
-  (`ao-settings-view.tsx`, `settings/models/page.tsx`, `lib/api/ao-settings.ts`)
-  — design tokens only.
+- No hardcoded hex/rgb color literals across the full Spec Studio web diff
+  (all `apps/web/src/components/spec-studio/**`, `apps/web/src/lib/
+  spec-studio/**`, and the touched `spec`/`lib/api` files) — design tokens
+  only.
+- Migration `0032_ss_versioning_spec_version` (the one new migration
+  introduced across all 14 slices) applies and reverses cleanly against real
+  Postgres on `:5433`: verified in an isolated scratch database on the same
+  server (`forge_migration_check`, dropped after) so the shared test DB's
+  fixture-managed state was never touched — `alembic upgrade
+  0031_ao_observability_cost_tier` (full baseline chain, 0001→0031) then
+  `upgrade head` created `spec_version` with its indexes/unique constraint/
+  FK exactly as declared; `downgrade 0031_ao_observability_cost_tier`
+  dropped it cleanly (`\d spec_version` → "did not find any relation"); a
+  final `upgrade head` re-created it, confirming a full round-trip.
 
 `git log --oneline | head`:
 
 ```
-1c048d8 feat(ao-observability): Adaptive Orchestration
-1cedd4e feat(ao-settings-ui): Adaptive Orchestration
-213a1b4 feat(ao-settings-api): per-role model+effort settings endpoints, store, migration + web client
-37428c2 feat(ao-effort): Adaptive Orchestration
-b539082 feat(ao-policy): Adaptive Orchestration
-ba33d6d feat(ao-config): Adaptive Orchestration
-98bfab7 docs: progress summary — public-readiness merged, hard finalise starting
-4a2dac0 feat: public-readiness — under-dev banner, honest status, live spec dashboard (#30)
-2afb8f7 chore(deps): bump astral-sh/setup-uv from 5.4.2 to 8.3.1 (#24)
-25732b9 chore(deps): bump actions/checkout from 4.2.2 to 7.0.0 (#25)
+804a840 feat(ss-criteria): Spec Studio
+7f1bebc feat(ss-import): Spec Studio
+24f5601 feat(ss-versioning): Spec Studio
+c081a3c feat(ss-entry): Spec Studio
+777e51f feat(ss-ai-panel): Spec Studio
+a9f381f feat(ss-lifecycle): Spec Studio
+d8bfb51 feat(ss-read): Spec Studio
+08af69e feat(ss-markdown): Spec Studio
+13ae1ce feat(ss-guided): Spec Studio
+bec9813 feat(ss-draft): Spec Studio
 ```
 
-## Next steps (Phase 2)
+## Next steps
 
-In priority order, per `docs/spec-studio/DESIGN.md` §2.2: `spec-md-roundtrip`
-→ `spec-draft-api` → `spec-studio-ui` → `spec-studio-realtime`. The `rt-ws`
-real-time slice noted as deferred in `docs/MORNING_SUMMARY-2026-07-08.md`
-should land as the same relay substrate `spec-studio-realtime` needs, not as
-a second websocket implementation.
+Phase 2's remaining item, per `docs/spec-studio/DESIGN.md` §2.2/§4:
+`spec-studio-realtime` (Yjs co-editing over the shared `/ws` relay — the
+same substrate as the `rt-ws` slice noted as deferred in
+`docs/MORNING_SUMMARY-2026-07-08.md`, so it should land once, serving both).
+Its prerequisites (`spec-md-roundtrip`, the Guided/Markdown/YAML editor) are
+now shipped, so it is unblocked. Independently: the `ss-read` reject/
+request-changes backend persistence gap above.

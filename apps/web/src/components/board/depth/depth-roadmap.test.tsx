@@ -31,4 +31,20 @@ describe("DepthRoadmap", () => {
     expect(screen.getByTestId("milestone-m1")).toHaveTextContent("Beta");
     expect(within(screen.getByTestId("cell-e1-s1")).getByText("Login")).toBeInTheDocument();
   });
+
+  it("gives every real epic lane a 'Create spec' action pointing at /specs/new", () => {
+    render(
+      <DepthRoadmap tasks={tasks} epics={epics} sprints={sprints} milestones={milestones} />,
+    );
+    const link = screen.getByTestId("lane-create-spec-e1");
+    expect(link).toHaveAttribute("href", "/specs/new?epicId=e1");
+  });
+
+  it("does not offer 'Create spec' on the synthetic 'No epic' lane", () => {
+    const unepiced: TaskDTO[] = [{ id: "t2", title: "Stray", status: "backlog" }];
+    render(
+      <DepthRoadmap tasks={unepiced} epics={epics} sprints={sprints} milestones={milestones} />,
+    );
+    expect(screen.queryByTestId(/lane-create-spec-__no_epic__/)).not.toBeInTheDocument();
+  });
 });

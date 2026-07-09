@@ -153,6 +153,9 @@ EXPECTED_MODELS = [
     # ao-settings-api: workspace-wide Adaptive Orchestration settings
     # (auto-route toggle, tier-model overrides, complexity thresholds).
     "AoWorkspaceSettings",
+    # ss-versioning: immutable per-save spec snapshot (Spec Studio version
+    # history + diff), keyed by the FileSpecEngine's own deterministic spec_id.
+    "SpecVersion",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

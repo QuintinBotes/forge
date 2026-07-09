@@ -56,7 +56,10 @@ __all__ = [
 #: embedding context window. Code chunks follow AST units and are never split.
 DEFAULT_MAX_CHARS: int = 1200
 
-_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+# Greedy capture to end-of-line (no lazy `.*?` + trailing `\s*` overlap, which
+# CodeQL flags as polynomial/ReDoS); the closing ATX `#`s + spaces are stripped
+# from group(2) in code below, which is linear.
+_HEADING_RE = re.compile(r"^[ ]{0,3}(#{1,6})[ \t]+(\S.*)$")
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 # File extensions treated as source code for path classification.
@@ -385,7 +388,8 @@ def chunk_markdown(
 
         if heading_match is not None:
             level = len(heading_match.group(1))
-            text = heading_match.group(2).strip()
+            # Strip the optional closing ATX run of `#`s and surrounding spaces.
+            text = heading_match.group(2).strip().rstrip("#").strip()
             while heading_stack and heading_stack[-1][0] >= level:
                 heading_stack.pop()
             heading_stack.append((level, text))

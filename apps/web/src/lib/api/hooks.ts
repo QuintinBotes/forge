@@ -77,6 +77,23 @@ export function useEpics(
   });
 }
 
+/**
+ * Create an epic. Used by the standalone `/specs/new` entry point when the
+ * author starts from the `/specs` dashboard empty state with no epic yet to
+ * pick — it creates the epic, then the spec underneath it.
+ */
+export function useCreateEpic(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<EpicDTO, Error, EpicDTO> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (epic: EpicDTO) => client.createEpic(epic),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.epics() });
+    },
+  });
+}
+
 export function useIncidents(
   client: ForgeApiClient = apiClient,
 ): UseQueryResult<IncidentDTO[]> {

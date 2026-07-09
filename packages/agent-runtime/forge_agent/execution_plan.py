@@ -37,15 +37,6 @@ from dataclasses import dataclass, field
 from typing import Literal, cast
 from uuid import UUID
 
-from forge_orchestration_policy import (
-    ComplexitySizing,
-    SizingSignals,
-    Strategy,
-    Tier,
-    score_complexity,
-)
-from forge_orchestration_policy.role_config import resolve_effective_config
-
 from forge_agent.providers.config import ProviderName
 from forge_agent.providers.router import ModelRouter
 from forge_contracts.orchestration_config import (
@@ -54,6 +45,14 @@ from forge_contracts.orchestration_config import (
     RoleConfigSource,
     RoleConfigStore,
 )
+from forge_orchestration_policy import (
+    ComplexitySizing,
+    SizingSignals,
+    Strategy,
+    Tier,
+    score_complexity,
+)
+from forge_orchestration_policy.role_config import resolve_effective_config
 
 __all__ = [
     "ExecutionPlan",

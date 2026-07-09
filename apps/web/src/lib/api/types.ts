@@ -428,6 +428,111 @@ export interface SpecDashboard {
   specs: SpecOverview[];
 }
 
+// --- ss-versioning: spec version history + diff --------------------------- //
+
+/** One row of a spec's version history (GET /spec/specs/{id}/versions). */
+export interface SpecVersionSummary {
+  version_number: number;
+  name: string;
+  status: string;
+  created_at: string;
+  created_by?: string | null;
+}
+
+/** A single version's full snapshot (GET /spec/specs/{id}/versions/{n}). */
+export interface SpecVersionDetail extends SpecVersionSummary {
+  manifest: SpecManifest;
+  spec_md: string;
+  manifest_yaml: string;
+}
+
+/** One line of a unified line-diff between two `spec.md` texts. */
+export interface TextDiffLine {
+  op: "equal" | "insert" | "delete";
+  text: string;
+}
+
+/** One id-keyed add/remove/modify entry within a manifest list field. */
+export interface ListItemChange {
+  id: string;
+  change: "added" | "removed" | "modified";
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+}
+
+/** A changed top-level scalar field (e.g. `name`, `status`). */
+export interface ScalarFieldChange {
+  field: string;
+  before: unknown;
+  after: unknown;
+}
+
+/** The structured diff between two spec manifest snapshots. */
+export interface ManifestDiff {
+  scalar_changes: ScalarFieldChange[];
+  requirements: ListItemChange[];
+  acceptance_criteria: ListItemChange[];
+  open_questions: ListItemChange[];
+  decisions: ListItemChange[];
+  constraints_added: string[];
+  constraints_removed: string[];
+}
+
+/** The diff between two versions of a spec (GET .../versions/{a}/diff/{b}). */
+export interface SpecVersionDiff {
+  from_version: number;
+  to_version: number;
+  markdown: TextDiffLine[];
+  manifest: ManifestDiff;
+}
+
+/**
+ * Token/cost accounting for one model call (`forge_agent.providers`'s
+ * `UsageAccumulator.to_artifact` shape — mirrored here, not reimplemented).
+ */
+export interface ModelUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
+  calls?: number;
+  cache_read_input_tokens?: number;
+}
+
+/**
+ * The draft-only result of `POST /spec/draft` (ss-draft / ss-ai-panel): a BYOK
+ * model turns a one-line goal into a `spec.md`, seeded with the project
+ * constitution. Nothing is persisted — `manifest` is a parsed *preview* (or
+ * `null` with `parse_error` set when the drafted markdown didn't parse) for a
+ * human to refine before saving via the normal spec-editing endpoints.
+ */
+export interface SpecDraft {
+  goal: string;
+  epic_id?: string | null;
+  model: string;
+  spec_md: string;
+  manifest?: SpecManifest | null;
+  parse_error?: string | null;
+  usage?: ModelUsage;
+}
+
+/**
+ * The draft-only result of `POST /spec/import` (`ss-import`): an existing
+ * markdown or YAML spec pasted/uploaded from outside Forge, parsed or
+ * best-effort normalized into a `spec.md` draft. No model call — `normalized`
+ * is `true` when the source needed loose-shape mapping (arbitrary headings,
+ * alternate YAML keys) rather than parsing directly as a canonical Forge
+ * document. `manifest` is `null` (with `parse_error` set) only for genuinely
+ * unparseable content. Nothing is persisted — a human refines the result via
+ * the normal spec-editing endpoints.
+ */
+export interface SpecImport {
+  source_format: "markdown" | "yaml";
+  spec_md: string;
+  manifest?: SpecManifest | null;
+  parse_error?: string | null;
+  normalized: boolean;
+}
+
 // --- Observability: run traces -------------------------------------------- //
 // Mirrors forge_api.observability.trace.RunTrace + forge_contracts.Step, the
 // response shape of GET /observability/runs/{run_id}/trace.

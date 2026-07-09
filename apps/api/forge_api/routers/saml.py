@@ -109,8 +109,21 @@ def _require_enabled(config: SsoConfiguration) -> None:
 
 
 def _safe_next(target: str | None) -> str:
-    """Only same-origin relative paths are honoured (open-redirect guard)."""
-    if target and target.startswith("/") and not target.startswith("//"):
+    """Only same-origin relative paths are honoured (open-redirect guard).
+
+    Rejects protocol-relative (``//host``) and backslash-normalised
+    (``/\\host``) targets — browsers treat ``\\`` as ``/``, so ``/\\evil.com``
+    would otherwise redirect off-origin — plus any embedded control characters.
+    """
+    if (
+        target
+        and target.startswith("/")
+        and not target.startswith("//")
+        and "\\" not in target
+        and "\r" not in target
+        and "\n" not in target
+        and "\t" not in target
+    ):
         return target
     return "/"
 

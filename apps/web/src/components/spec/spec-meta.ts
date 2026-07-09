@@ -11,44 +11,10 @@ import type {
   RequirementTrace,
   SpecOverview,
   SpecStatus,
+  ValidationReport,
 } from "@/lib/api/types";
 
-export interface StageMeta {
-  status: SpecStatus;
-  label: string;
-  /** One-line description of what reaching this stage means. */
-  blurb: string;
-}
-
-/** The SDD lifecycle in order — the spine of the forge heat rail. */
-export const LIFECYCLE_STAGES: readonly StageMeta[] = [
-  { status: "draft", label: "Draft", blurb: "Requirements captured" },
-  { status: "clarifying", label: "Clarifying", blurb: "Questions resolved" },
-  { status: "approved", label: "Approved", blurb: "Human gate passed" },
-  { status: "implementing", label: "Implementing", blurb: "Tasks in flight" },
-  { status: "validated", label: "Validated", blurb: "Traceability sealed" },
-  { status: "closed", label: "Closed", blurb: "Shipped & archived" },
-];
-
-/** Zero-based position of a status in the lifecycle (defaults to draft). */
-export function stageIndex(status: SpecStatus | undefined): number {
-  if (!status) return 0;
-  const index = SPEC_STATUSES.indexOf(status);
-  return index < 0 ? 0 : index;
-}
-
 export type StageState = "done" | "current" | "upcoming";
-
-/** Where a lifecycle node sits relative to the spec's current stage. */
-export function stageState(
-  nodeIndex: number,
-  status: SpecStatus | undefined,
-): StageState {
-  const current = stageIndex(status);
-  if (nodeIndex < current) return "done";
-  if (nodeIndex === current) return "current";
-  return "upcoming";
-}
 
 export const STATUS_LABELS: Record<SpecStatus, string> = {
   draft: "Draft",
@@ -136,4 +102,72 @@ export function gateSummary(spec: SpecOverview): GateSummary {
 /** A satisfied requirement is only truly "sealed" when it also has tests. */
 export function traceSealed(trace: RequirementTrace): boolean {
   return Boolean(trace.satisfied) && (trace.test_refs?.length ?? 0) > 0;
+}
+
+// --------------------------------------------------------------------------- //
+// Plain-language lifecycle stepper (ss-lifecycle)                             //
+//                                                                              //
+// The SDD lifecycle wired inline as five everyday verbs, each backed by one   //
+// `/spec` engine action: Describe<-Clarify, Refine<-Plan, Approve<-Approve,   //
+// Build<-Generate tasks, Verify<-Validate. `SpecStatus` alone can't place a   //
+// spec on this rail (the engine never sets an "implementing"/"planned"       //
+// status — `plan`/`tasks` just populate `plan_ref`/`tasks_ref`), so           //
+// completion is read straight off the manifest fields each action produces.  //
+// --------------------------------------------------------------------------- //
+
+export interface PlainStepMeta {
+  id: string;
+  label: string;
+  blurb: string;
+  /** The `/spec` engine action this step's inline button runs. */
+  actionLabel: string;
+}
+
+export const PLAIN_LIFECYCLE_STEPS: readonly PlainStepMeta[] = [
+  { id: "describe", label: "Describe", blurb: "Requirements captured", actionLabel: "Clarify" },
+  { id: "refine", label: "Refine", blurb: "Questions & plan resolved", actionLabel: "Plan" },
+  { id: "approve", label: "Approve", blurb: "Human gate passed", actionLabel: "Approve" },
+  { id: "build", label: "Build", blurb: "Tasks generated", actionLabel: "Generate tasks" },
+  { id: "verify", label: "Verify", blurb: "Traceability sealed", actionLabel: "Validate" },
+];
+
+/** The manifest fields the stepper needs to place a spec on the rail. */
+export interface PlainStepInput {
+  status?: SpecStatus;
+  plan_ref?: string | null;
+  tasks_ref?: string | null;
+  validation?: ValidationReport | null;
+}
+
+function statusAtLeast(status: SpecStatus | undefined, floor: SpecStatus): boolean {
+  if (!status) return false;
+  return SPEC_STATUSES.indexOf(status) >= SPEC_STATUSES.indexOf(floor);
+}
+
+/** Whether each of the five plain steps' underlying action has run. */
+export function plainStepCompletion(spec: PlainStepInput): boolean[] {
+  const describeDone = statusAtLeast(spec.status, "clarifying");
+  const refineDone = Boolean(spec.plan_ref);
+  const approveDone = statusAtLeast(spec.status, "approved");
+  const buildDone = Boolean(spec.tasks_ref);
+  const verifyDone =
+    spec.status === "validated" || spec.status === "closed" || spec.validation?.passed === true;
+  return [describeDone, refineDone, approveDone, buildDone, verifyDone];
+}
+
+/** The first not-yet-complete step, or the last step once everything is done. */
+export function plainCurrentStep(completion: boolean[]): number {
+  const index = completion.findIndex((done) => !done);
+  return index === -1 ? completion.length - 1 : index;
+}
+
+/** Where a plain-language node sits relative to the stepper's current step. */
+export function plainStepState(
+  index: number,
+  completion: boolean[],
+  current: number,
+): StageState {
+  if (completion[index]) return "done";
+  if (index === current) return "current";
+  return "upcoming";
 }

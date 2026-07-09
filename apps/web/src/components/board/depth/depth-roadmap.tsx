@@ -1,6 +1,7 @@
 "use client";
 
-import { Flag } from "lucide-react";
+import { FilePlus2, Flag } from "lucide-react";
+import Link from "next/link";
 
 import type {
   EpicDTO,
@@ -10,7 +11,7 @@ import type {
   TaskStatus,
 } from "@/lib/api/types";
 import { STATUS_LABELS } from "@/lib/board/status";
-import { buildRoadmap, type RoadmapColumn } from "@/lib/board/roadmap";
+import { buildRoadmap, NO_EPIC_ID, type RoadmapColumn } from "@/lib/board/roadmap";
 import { cn } from "@/lib/utils";
 
 export interface DepthRoadmapProps {
@@ -167,13 +168,25 @@ interface RoadmapLaneRowProps {
 }
 
 function RoadmapLaneRow({ laneId, label, columns, cells }: RoadmapLaneRowProps) {
+  const isRealEpic = laneId !== NO_EPIC_ID;
   return (
     <>
       <div
         data-testid={`lane-${laneId}`}
-        className="sticky left-0 z-10 flex items-center border-b border-r border-border bg-card px-3 py-3 text-sm font-medium"
+        className="sticky left-0 z-10 flex items-center justify-between gap-2 border-b border-r border-border bg-card px-3 py-3 text-sm font-medium"
       >
         <span className="truncate">{label}</span>
+        {isRealEpic ? (
+          <Link
+            href={`/specs/new?epicId=${encodeURIComponent(laneId)}`}
+            data-testid={`lane-create-spec-${laneId}`}
+            title={`Create a spec for ${label}`}
+            aria-label={`Create a spec for ${label}`}
+            className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <FilePlus2 className="h-3.5 w-3.5" aria-hidden />
+          </Link>
+        ) : null}
       </div>
       {columns.map((column) => {
         const cellTasks = cells[column.id] ?? [];

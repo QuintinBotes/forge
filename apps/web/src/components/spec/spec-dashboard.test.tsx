@@ -65,6 +65,9 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
     approveSpec: vi.fn((id: string) =>
       Promise.resolve({ id, name: "Passwordless auth", status: "approved" as const }),
     ),
+    getSpecManifest: vi.fn((id: string) =>
+      Promise.resolve(dashboard.specs.find((s) => s.id === id) ?? dashboard.specs[0]),
+    ),
     ...overrides,
   } as unknown as ForgeApiClient;
 }
@@ -89,7 +92,7 @@ describe("SpecDashboard", () => {
     expect(
       await screen.findByRole("heading", { level: 2, name: /passwordless auth/i }),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("lifecycle-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("lifecycle-stepper")).toBeInTheDocument();
     expect(screen.getByTestId("gate-tiles")).toBeInTheDocument();
     expect(screen.getByTestId("traceability-matrix")).toBeInTheDocument();
     expect(screen.getByText(/2\s*specs/i)).toBeInTheDocument();
@@ -130,6 +133,18 @@ describe("SpecDashboard", () => {
     fireEvent.click(screen.getByRole("tab", { name: /constitution/i }));
     expect(await screen.findByTestId("constitution-panel")).toBeInTheDocument();
     expect(screen.getByText(/smallest correct change/i)).toBeInTheDocument();
+  });
+
+  it("switches to the Studio tab and opens Spec Studio for the selected spec", async () => {
+    const client = makeClient();
+    renderDashboard(client);
+    await screen.findByRole("heading", { level: 2, name: /passwordless auth/i });
+
+    fireEvent.click(screen.getByRole("tab", { name: /studio/i }));
+
+    expect(await screen.findByTestId("spec-studio")).toBeInTheDocument();
+    expect(await screen.findByTestId("guided-mode")).toBeInTheDocument();
+    expect(client.getSpecManifest).toHaveBeenCalledWith("s1");
   });
 
   it("shows the empty state when the project has no specs", async () => {
