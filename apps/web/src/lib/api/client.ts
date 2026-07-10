@@ -57,6 +57,8 @@ import type {
   Listing,
   ListingDetail,
   MilestoneDTO,
+  OidcConfig,
+  OidcConfigInput,
   OnboardingProgress,
   PipelineRead,
   PostmortemView,
@@ -1048,6 +1050,24 @@ export class ForgeApiClient {
       method: "POST",
       body,
     });
+  }
+
+  /** The workspace OIDC configuration (admin-only; 404 when unconfigured). */
+  getOidcConfig(workspaceId: string): Promise<OidcConfig> {
+    return this.request<OidcConfig>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/oidc`,
+    );
+  }
+
+  /** Create or replace the workspace OIDC configuration (admin-only). */
+  putOidcConfig(
+    workspaceId: string,
+    body: OidcConfigInput,
+  ): Promise<OidcConfig> {
+    return this.request<OidcConfig>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/oidc`,
+      { method: "PUT", body },
+    );
   }
 
   // --- External PM adapters (F18 /integrations/pm router) ----------------- //

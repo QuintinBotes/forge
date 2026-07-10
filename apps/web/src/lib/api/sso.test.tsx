@@ -7,10 +7,12 @@ import { ApiError, type ForgeApiClient } from "./client";
 import {
   ssoKeys,
   useCreateScimToken,
+  useOidcConfig,
+  usePutOidcConfig,
   useSetSsoEnabled,
   useSsoConfig,
 } from "./sso";
-import type { ScimTokenCreated, SsoConfig } from "./types";
+import type { OidcConfig, ScimTokenCreated, SsoConfig } from "./types";
 
 function makeWrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -50,6 +52,31 @@ function config(): SsoConfig {
     default_role: "member",
     group_role_map: {},
     jit_provisioning: true,
+  };
+}
+
+function oidcConfig(): OidcConfig {
+  return {
+    id: "oc1",
+    workspace_id: "w1",
+    protocol: "oidc",
+    enabled: true,
+    issuer: "https://idp.example.com",
+    discovery_url: null,
+    client_id: "forge-oidc-client",
+    has_client_secret: true,
+    scopes: ["openid", "email", "profile"],
+    email_claim: "email",
+    name_claim: "name",
+    groups_claim: "groups",
+    default_role: "member",
+    group_role_map: {},
+    authorization_endpoint: null,
+    token_endpoint: null,
+    jwks_uri: null,
+    jit_provisioning: true,
+    redirect_uri: "https://forge.example.com/auth/oidc/acme/callback",
+    login_url: "https://forge.example.com/auth/oidc/acme/login",
   };
 }
 
@@ -117,6 +144,74 @@ describe("useSetSsoEnabled", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.disableSso).toHaveBeenCalledWith("w1");
+  });
+});
+
+describe("useOidcConfig", () => {
+  it("resolves a 404 (not configured) to null rather than erroring", async () => {
+    const client = {
+      getOidcConfig: vi.fn(() =>
+        Promise.reject(new ApiError(404, "no oidc config", null)),
+      ),
+    } as unknown as ForgeApiClient;
+
+    const { result } = renderHook(() => useOidcConfig("w1", client), {
+      wrapper: makeWrapper(newClient()),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBeNull();
+    expect(result.current.isError).toBe(false);
+  });
+
+  it("propagates non-404 errors", async () => {
+    const client = {
+      getOidcConfig: vi.fn(() => Promise.reject(new ApiError(500, "boom", null))),
+    } as unknown as ForgeApiClient;
+
+    const { result } = renderHook(() => useOidcConfig("w1", client), {
+      wrapper: makeWrapper(newClient()),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("resolves the config on success", async () => {
+    const client = {
+      getOidcConfig: vi.fn(() => Promise.resolve(oidcConfig())),
+    } as unknown as ForgeApiClient;
+
+    const { result } = renderHook(() => useOidcConfig("w1", client), {
+      wrapper: makeWrapper(newClient()),
+    });
+
+    await waitFor(() => expect(result.current.data).toEqual(oidcConfig()));
+  });
+});
+
+describe("usePutOidcConfig", () => {
+  it("seeds the OIDC config cache with the returned config", async () => {
+    const saved = oidcConfig();
+    const client = {
+      putOidcConfig: vi.fn(() => Promise.resolve(saved)),
+    } as unknown as ForgeApiClient;
+    const queryClient = newClient();
+
+    const { result } = renderHook(() => usePutOidcConfig(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      workspaceId: "w1",
+      body: { issuer: "https://idp.example.com", client_id: "forge-oidc-client" },
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.putOidcConfig).toHaveBeenCalledWith("w1", {
+      issuer: "https://idp.example.com",
+      client_id: "forge-oidc-client",
+    });
+    expect(queryClient.getQueryData(ssoKeys.oidcConfig("w1"))).toEqual(saved);
   });
 });
 

@@ -29,11 +29,18 @@ import { toast } from "@/components/ui/toast";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useDiscoverSso,
+  useOidcConfig,
+  usePutOidcConfig,
   usePutSsoConfig,
   useSetSsoEnabled,
   useSsoConfig,
 } from "@/lib/api/sso";
-import { SSO_ROLES, type SsoConfig, type SsoRole } from "@/lib/api/types";
+import {
+  SSO_ROLES,
+  type OidcConfig,
+  type SsoConfig,
+  type SsoRole,
+} from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 import { CopyField } from "./copy-field";
@@ -135,6 +142,75 @@ function saveErrorMessage(error: unknown): string {
       return "Some SAML details look invalid. Check the IdP fields and try again.";
   }
   return "Couldn't save the configuration. Please try again.";
+}
+
+/** The SSO protocol tab currently shown in the "Identity provider" card. */
+type SsoProtocol = "saml" | "oidc";
+
+const DEFAULT_OIDC_SCOPES = "openid, email, profile";
+
+interface GroupRoleMapping {
+  group: string;
+  role: SsoRole;
+}
+
+interface OidcForm {
+  issuer: string;
+  discoveryUrl: string;
+  clientId: string;
+  /** New secret to save; empty means "keep the previously-saved one". */
+  clientSecret: string;
+  scopes: string;
+  emailClaim: string;
+  nameClaim: string;
+  groupsClaim: string;
+  defaultRole: SsoRole;
+  groupRoleMap: GroupRoleMapping[];
+  enabled: boolean;
+  jitProvisioning: boolean;
+}
+
+function configToOidcForm(config: OidcConfig | null): OidcForm {
+  if (!config) {
+    return {
+      issuer: "",
+      discoveryUrl: "",
+      clientId: "",
+      clientSecret: "",
+      scopes: DEFAULT_OIDC_SCOPES,
+      emailClaim: "email",
+      nameClaim: "name",
+      groupsClaim: "groups",
+      defaultRole: "member",
+      groupRoleMap: [],
+      enabled: false,
+      jitProvisioning: true,
+    };
+  }
+  const role = (SSO_ROLES as readonly string[]).includes(config.default_role)
+    ? (config.default_role as SsoRole)
+    : "member";
+  return {
+    issuer: config.issuer,
+    discoveryUrl: config.discovery_url ?? "",
+    clientId: config.client_id,
+    clientSecret: "",
+    scopes: config.scopes.join(", "),
+    emailClaim: config.email_claim,
+    nameClaim: config.name_claim,
+    groupsClaim: config.groups_claim,
+    defaultRole: role,
+    groupRoleMap: Object.entries(config.group_role_map).map(
+      ([group, mappedRole]) => ({
+        group,
+        role: (SSO_ROLES as readonly string[]).includes(mappedRole)
+          ? (mappedRole as SsoRole)
+          : "member",
+      }),
+    ),
+    enabled: config.enabled,
+    jitProvisioning: config.jit_provisioning,
+  };
 }
 
 export interface SsoSettingsViewProps {
@@ -269,6 +345,113 @@ export function SsoSettingsView({
     [],
   );
 
+  // --- OIDC: a second, independent identity-provider configuration ---------- //
+  const [protocol, setProtocol] = useState<SsoProtocol>("saml");
+
+  const oidcConfigQuery = useOidcConfig(workspaceId, client);
+  const oidcConfig = oidcConfigQuery.data ?? null;
+  const putOidc = usePutOidcConfig(client);
+
+  const [oidcForm, setOidcForm] = useState<OidcForm>(() =>
+    configToOidcForm(null),
+  );
+  const [oidcSeededId, setOidcSeededId] = useState<string | null>(null);
+  const [oidcSaveError, setOidcSaveError] = useState<string | null>(null);
+
+  const oidcConfigId = oidcConfig?.id ?? null;
+  if (oidcConfigId !== oidcSeededId) {
+    setOidcSeededId(oidcConfigId);
+    setOidcForm(configToOidcForm(oidcConfig));
+    setOidcSaveError(null);
+  }
+
+  const patchOidc = useCallback(
+    <K extends keyof OidcForm>(key: K, value: OidcForm[K]) =>
+      setOidcForm((prev) => ({ ...prev, [key]: value })),
+    [],
+  );
+
+  const oidcDirty = useMemo(
+    () => JSON.stringify(oidcForm) !== JSON.stringify(configToOidcForm(oidcConfig)),
+    [oidcForm, oidcConfig],
+  );
+
+  const oidcCanSave =
+    oidcForm.issuer.trim().length > 0 &&
+    oidcForm.clientId.trim().length > 0 &&
+    (Boolean(oidcConfig) || oidcForm.clientSecret.trim().length > 0) &&
+    !putOidc.isPending;
+
+  const saveOidc = useCallback(() => {
+    if (
+      !oidcForm.issuer.trim() ||
+      !oidcForm.clientId.trim() ||
+      (!oidcConfig && !oidcForm.clientSecret.trim()) ||
+      putOidc.isPending
+    ) {
+      return;
+    }
+    setOidcSaveError(null);
+    const scopes = oidcForm.scopes
+      .split(/[,\s]+/)
+      .map((scope) => scope.trim())
+      .filter(Boolean);
+    const groupRoleMap = Object.fromEntries(
+      oidcForm.groupRoleMap
+        .filter((entry) => entry.group.trim().length > 0)
+        .map((entry) => [entry.group.trim(), entry.role]),
+    );
+    putOidc.mutate(
+      {
+        workspaceId,
+        body: {
+          enabled: oidcForm.enabled,
+          issuer: oidcForm.issuer.trim(),
+          discovery_url: oidcForm.discoveryUrl.trim() || null,
+          client_id: oidcForm.clientId.trim(),
+          client_secret: oidcForm.clientSecret.trim() || null,
+          scopes: scopes.length > 0 ? scopes : undefined,
+          email_claim: oidcForm.emailClaim.trim() || "email",
+          name_claim: oidcForm.nameClaim.trim() || "name",
+          groups_claim: oidcForm.groupsClaim.trim() || "groups",
+          default_role: oidcForm.defaultRole,
+          group_role_map: groupRoleMap,
+          jit_provisioning: oidcForm.jitProvisioning,
+        },
+      },
+      {
+        onSuccess: () => toast.success("OIDC configuration saved."),
+        onError: (err) => setOidcSaveError(saveErrorMessage(err)),
+      },
+    );
+  }, [oidcForm, oidcConfig, putOidc, workspaceId]);
+
+  const addGroupRoleMapping = useCallback(() => {
+    setOidcForm((prev) => ({
+      ...prev,
+      groupRoleMap: [...prev.groupRoleMap, { group: "", role: "member" }],
+    }));
+  }, []);
+
+  const updateGroupRoleMapping = useCallback(
+    (index: number, patchValue: Partial<GroupRoleMapping>) => {
+      setOidcForm((prev) => ({
+        ...prev,
+        groupRoleMap: prev.groupRoleMap.map((entry, i) =>
+          i === index ? { ...entry, ...patchValue } : entry,
+        ),
+      }));
+    },
+    [],
+  );
+
+  const removeGroupRoleMapping = useCallback((index: number) => {
+    setOidcForm((prev) => ({
+      ...prev,
+      groupRoleMap: prev.groupRoleMap.filter((_, i) => i !== index),
+    }));
+  }, []);
+
   // Save via the command palette (keyboard-first).
   const saveRef = useRef(save);
   useEffect(() => {
@@ -342,13 +525,17 @@ export function SsoSettingsView({
         <TrustLink state={state} config={config} idpEntityId={form.idpEntityId} />
       </header>
 
-      {/* Identity provider (SAML) */}
+      {/* Identity provider (SAML or OIDC) */}
       <Card
         icon={<PlugZap className="h-5 w-5" aria-hidden />}
         title="Identity provider"
-        description="The SAML details Forge uses to trust and validate your IdP."
+        description={
+          protocol === "oidc"
+            ? "The OpenID Connect details Forge uses to trust and validate your IdP."
+            : "The SAML details Forge uses to trust and validate your IdP."
+        }
       >
-        {!config ? (
+        {protocol === "saml" && !config ? (
           <div
             data-testid="sso-onboarding"
             className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
@@ -357,85 +544,260 @@ export function SsoSettingsView({
             establish the trust link — you can enable SSO once it&apos;s in place.
           </div>
         ) : null}
-
-        <ProtocolPicker />
-
-        <form
-          onSubmit={(e: FormEvent) => {
-            e.preventDefault();
-            save();
-          }}
-          className="flex flex-col gap-4"
-        >
-          <Field label="IdP Entity ID" required>
-            <input
-              value={form.idpEntityId}
-              onChange={(e) => patch("idpEntityId", e.target.value)}
-              placeholder="https://idp.example.com/saml/metadata"
-              className={cn(FIELD, "font-mono text-xs")}
-            />
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="IdP SSO URL" required>
-              <input
-                value={form.idpSsoUrl}
-                onChange={(e) => patch("idpSsoUrl", e.target.value)}
-                placeholder="https://idp.example.com/sso"
-                className={cn(FIELD, "font-mono text-xs")}
-              />
-            </Field>
-            <Field label="IdP SLO URL" hint="optional">
-              <input
-                value={form.idpSloUrl}
-                onChange={(e) => patch("idpSloUrl", e.target.value)}
-                placeholder="https://idp.example.com/slo"
-                className={cn(FIELD, "font-mono text-xs")}
-              />
-            </Field>
-          </div>
-
-          <Field
-            label="IdP signing certificate"
-            required
-            hint={
-              countCerts(form.idpCert) > 0
-                ? `${countCerts(form.idpCert)} PEM block${countCerts(form.idpCert) === 1 ? "" : "s"}`
-                : "PEM"
-            }
+        {protocol === "oidc" && !oidcConfig ? (
+          <div
+            data-testid="oidc-onboarding"
+            className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
           >
-            <textarea
-              value={form.idpCert}
-              onChange={(e) => patch("idpCert", e.target.value)}
-              placeholder={"-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"}
-              rows={4}
-              className={cn(FIELD, "resize-y font-mono text-[11px] leading-relaxed")}
-            />
-          </Field>
+            Not configured yet. Enter your IdP&apos;s OpenID Connect details and
+            save to establish the trust link — you can enable OIDC sign-in once
+            it&apos;s in place.
+          </div>
+        ) : null}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="NameID format">
-              <select
-                value={form.nameIdFormat}
-                onChange={(e) => patch("nameIdFormat", e.target.value)}
-                className={FIELD}
-              >
-                {NAMEID_FORMATS.map((f) => (
-                  <option key={f.value} value={f.value}>
-                    {f.label}
-                  </option>
-                ))}
-                {NAMEID_FORMATS.every((f) => f.value !== form.nameIdFormat) ? (
-                  <option value={form.nameIdFormat}>
-                    {nameIdFormatLabel(form.nameIdFormat)}
-                  </option>
-                ) : null}
-              </select>
+        <ProtocolPicker value={protocol} onChange={setProtocol} />
+
+        {protocol === "saml" ? (
+          <form
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              save();
+            }}
+            className="flex flex-col gap-4"
+          >
+            <Field label="IdP Entity ID" required>
+              <input
+                value={form.idpEntityId}
+                onChange={(e) => patch("idpEntityId", e.target.value)}
+                placeholder="https://idp.example.com/saml/metadata"
+                className={cn(FIELD, "font-mono text-xs")}
+              />
             </Field>
+  
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="IdP SSO URL" required>
+                <input
+                  value={form.idpSsoUrl}
+                  onChange={(e) => patch("idpSsoUrl", e.target.value)}
+                  placeholder="https://idp.example.com/sso"
+                  className={cn(FIELD, "font-mono text-xs")}
+                />
+              </Field>
+              <Field label="IdP SLO URL" hint="optional">
+                <input
+                  value={form.idpSloUrl}
+                  onChange={(e) => patch("idpSloUrl", e.target.value)}
+                  placeholder="https://idp.example.com/slo"
+                  className={cn(FIELD, "font-mono text-xs")}
+                />
+              </Field>
+            </div>
+  
+            <Field
+              label="IdP signing certificate"
+              required
+              hint={
+                countCerts(form.idpCert) > 0
+                  ? `${countCerts(form.idpCert)} PEM block${countCerts(form.idpCert) === 1 ? "" : "s"}`
+                  : "PEM"
+              }
+            >
+              <textarea
+                value={form.idpCert}
+                onChange={(e) => patch("idpCert", e.target.value)}
+                placeholder={"-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"}
+                rows={4}
+                className={cn(FIELD, "resize-y font-mono text-[11px] leading-relaxed")}
+              />
+            </Field>
+  
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="NameID format">
+                <select
+                  value={form.nameIdFormat}
+                  onChange={(e) => patch("nameIdFormat", e.target.value)}
+                  className={FIELD}
+                >
+                  {NAMEID_FORMATS.map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                  {NAMEID_FORMATS.every((f) => f.value !== form.nameIdFormat) ? (
+                    <option value={form.nameIdFormat}>
+                      {nameIdFormatLabel(form.nameIdFormat)}
+                    </option>
+                  ) : null}
+                </select>
+              </Field>
+              <Field label="Default role" hint="for JIT-provisioned users">
+                <select
+                  value={form.defaultRole}
+                  onChange={(e) => patch("defaultRole", e.target.value as SsoRole)}
+                  className={FIELD}
+                >
+                  {SSO_ROLES.map((role) => (
+                    <option key={role} value={role}>
+                      {ROLE_LABELS[role]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+  
+            <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Security
+              </h3>
+              <SsoSwitch
+                checked={form.signAuthnRequests}
+                onCheckedChange={(v) => patch("signAuthnRequests", v)}
+                label="Sign authentication requests"
+                description="Forge signs the AuthnRequest it sends to your IdP."
+              />
+              <SsoSwitch
+                checked={form.wantAssertionsSigned}
+                onCheckedChange={(v) => patch("wantAssertionsSigned", v)}
+                label="Require signed assertions"
+                description="Reject any SAML response whose assertion isn't signed."
+              />
+              <SsoSwitch
+                checked={form.allowIdpInitiated}
+                onCheckedChange={(v) => patch("allowIdpInitiated", v)}
+                label="Allow IdP-initiated login"
+                description="Accept logins started from your IdP's app dashboard."
+              />
+              <SsoSwitch
+                checked={form.jitProvisioning}
+                onCheckedChange={(v) => patch("jitProvisioning", v)}
+                label="Just-in-time provisioning"
+                description="Create a Forge account on a user's first SSO login."
+              />
+            </div>
+  
+            {saveError ? (
+              <p role="alert" className="text-sm text-danger">
+                {saveError}
+              </p>
+            ) : null}
+  
+            <div className="flex items-center justify-between gap-3">
+              <span
+                data-testid="sso-dirty"
+                role="status"
+                aria-live="polite"
+                className="text-xs text-muted-foreground"
+              >
+                {put.isPending
+                  ? "Saving…"
+                  : dirty
+                    ? "Unsaved changes"
+                    : config
+                      ? "All changes saved"
+                      : ""}
+              </span>
+              <button
+                type="submit"
+                data-testid="sso-save"
+                disabled={!canSave}
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Save className="h-4 w-4" aria-hidden />
+                {config ? "Save configuration" : "Save & establish trust"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              saveOidc();
+            }}
+            className="flex flex-col gap-4"
+          >
+            <Field label="Issuer" required hint="the OIDC issuer identifier">
+              <input
+                value={oidcForm.issuer}
+                onChange={(e) => patchOidc("issuer", e.target.value)}
+                placeholder="https://idp.example.com"
+                className={cn(FIELD, "font-mono text-xs")}
+              />
+            </Field>
+  
+            <Field
+              label="Discovery URL"
+              hint="optional — defaults to {issuer}/.well-known/openid-configuration"
+            >
+              <input
+                value={oidcForm.discoveryUrl}
+                onChange={(e) => patchOidc("discoveryUrl", e.target.value)}
+                placeholder="https://idp.example.com/.well-known/openid-configuration"
+                className={cn(FIELD, "font-mono text-xs")}
+              />
+            </Field>
+  
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Client ID" required>
+                <input
+                  value={oidcForm.clientId}
+                  onChange={(e) => patchOidc("clientId", e.target.value)}
+                  placeholder="forge-oidc-client"
+                  className={cn(FIELD, "font-mono text-xs")}
+                />
+              </Field>
+              <Field
+                label="Client secret"
+                required={!oidcConfig}
+                hint={oidcConfig ? "leave blank to keep the saved secret" : "write-only"}
+              >
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={oidcForm.clientSecret}
+                  onChange={(e) => patchOidc("clientSecret", e.target.value)}
+                  placeholder={oidcConfig ? "••••••••" : "client secret"}
+                  className={cn(FIELD, "font-mono text-xs")}
+                />
+              </Field>
+            </div>
+  
+            <Field label="Scopes" hint="space or comma separated">
+              <input
+                value={oidcForm.scopes}
+                onChange={(e) => patchOidc("scopes", e.target.value)}
+                placeholder={DEFAULT_OIDC_SCOPES}
+                className={cn(FIELD, "font-mono text-xs")}
+              />
+            </Field>
+  
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Email claim">
+                <input
+                  value={oidcForm.emailClaim}
+                  onChange={(e) => patchOidc("emailClaim", e.target.value)}
+                  className={cn(FIELD, "font-mono text-xs")}
+                />
+              </Field>
+              <Field label="Name claim">
+                <input
+                  value={oidcForm.nameClaim}
+                  onChange={(e) => patchOidc("nameClaim", e.target.value)}
+                  className={cn(FIELD, "font-mono text-xs")}
+                />
+              </Field>
+              <Field label="Groups claim">
+                <input
+                  value={oidcForm.groupsClaim}
+                  onChange={(e) => patchOidc("groupsClaim", e.target.value)}
+                  className={cn(FIELD, "font-mono text-xs")}
+                />
+              </Field>
+            </div>
+  
             <Field label="Default role" hint="for JIT-provisioned users">
               <select
-                value={form.defaultRole}
-                onChange={(e) => patch("defaultRole", e.target.value as SsoRole)}
+                value={oidcForm.defaultRole}
+                onChange={(e) => patchOidc("defaultRole", e.target.value as SsoRole)}
                 className={FIELD}
               >
                 {SSO_ROLES.map((role) => (
@@ -445,79 +807,157 @@ export function SsoSettingsView({
                 ))}
               </select>
             </Field>
-          </div>
-
-          <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Security
-            </h3>
-            <SsoSwitch
-              checked={form.signAuthnRequests}
-              onCheckedChange={(v) => patch("signAuthnRequests", v)}
-              label="Sign authentication requests"
-              description="Forge signs the AuthnRequest it sends to your IdP."
-            />
-            <SsoSwitch
-              checked={form.wantAssertionsSigned}
-              onCheckedChange={(v) => patch("wantAssertionsSigned", v)}
-              label="Require signed assertions"
-              description="Reject any SAML response whose assertion isn't signed."
-            />
-            <SsoSwitch
-              checked={form.allowIdpInitiated}
-              onCheckedChange={(v) => patch("allowIdpInitiated", v)}
-              label="Allow IdP-initiated login"
-              description="Accept logins started from your IdP's app dashboard."
-            />
-            <SsoSwitch
-              checked={form.jitProvisioning}
-              onCheckedChange={(v) => patch("jitProvisioning", v)}
-              label="Just-in-time provisioning"
-              description="Create a Forge account on a user's first SSO login."
-            />
-          </div>
-
-          {saveError ? (
-            <p role="alert" className="text-sm text-danger">
-              {saveError}
-            </p>
-          ) : null}
-
-          <div className="flex items-center justify-between gap-3">
-            <span
-              data-testid="sso-dirty"
-              role="status"
-              aria-live="polite"
-              className="text-xs text-muted-foreground"
-            >
-              {put.isPending
-                ? "Saving…"
-                : dirty
-                  ? "Unsaved changes"
-                  : config
-                    ? "All changes saved"
-                    : ""}
-            </span>
-            <button
-              type="submit"
-              data-testid="sso-save"
-              disabled={!canSave}
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-            >
-              <Save className="h-4 w-4" aria-hidden />
-              {config ? "Save configuration" : "Save & establish trust"}
-            </button>
-          </div>
-        </form>
+  
+            <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Access
+              </h3>
+              <SsoSwitch
+                checked={oidcForm.enabled}
+                onCheckedChange={(v) => patchOidc("enabled", v)}
+                label="Enable OIDC sign-in"
+                description="Allow members to sign in through this identity provider."
+              />
+              <SsoSwitch
+                checked={oidcForm.jitProvisioning}
+                onCheckedChange={(v) => patchOidc("jitProvisioning", v)}
+                label="Just-in-time provisioning"
+                description="Create a Forge account on a user's first OIDC login."
+              />
+            </div>
+  
+            <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Role mapping
+                </h3>
+                <button
+                  type="button"
+                  data-testid="oidc-add-mapping"
+                  onClick={addGroupRoleMapping}
+                  className="inline-flex h-7 items-center rounded-md border border-border px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Add mapping
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Grant a role automatically when the groups claim contains a
+                matching IdP group. Unmapped users get the default role above.
+              </p>
+              {oidcForm.groupRoleMap.length === 0 ? (
+                <p
+                  data-testid="role-map-empty"
+                  className="text-xs text-muted-foreground"
+                >
+                  No group mappings yet.
+                </p>
+              ) : (
+                <ul data-testid="role-map-list" className="flex flex-col gap-2">
+                  {oidcForm.groupRoleMap.map((entry, index) => (
+                    <li key={index} className="flex items-center gap-2">
+                      <label className="sr-only" htmlFor={`role-map-group-${index}`}>
+                        Group name
+                      </label>
+                      <input
+                        id={`role-map-group-${index}`}
+                        value={entry.group}
+                        onChange={(e) =>
+                          updateGroupRoleMapping(index, { group: e.target.value })
+                        }
+                        placeholder="forge-admins"
+                        className={cn(FIELD, "font-mono text-xs")}
+                      />
+                      <select
+                        aria-label={`Role for mapping ${index + 1}`}
+                        value={entry.role}
+                        onChange={(e) =>
+                          updateGroupRoleMapping(index, {
+                            role: e.target.value as SsoRole,
+                          })
+                        }
+                        className={cn(FIELD, "max-w-[10rem]")}
+                      >
+                        {SSO_ROLES.map((role) => (
+                          <option key={role} value={role}>
+                            {ROLE_LABELS[role]}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        aria-label={`Remove mapping ${index + 1}`}
+                        onClick={() => removeGroupRoleMapping(index)}
+                        className="rounded-full text-muted-foreground transition-colors hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+  
+            {oidcSaveError ? (
+              <p role="alert" className="text-sm text-danger">
+                {oidcSaveError}
+              </p>
+            ) : null}
+  
+            <div className="flex items-center justify-between gap-3">
+              <span
+                data-testid="oidc-dirty"
+                role="status"
+                aria-live="polite"
+                className="text-xs text-muted-foreground"
+              >
+                {putOidc.isPending
+                  ? "Saving…"
+                  : oidcDirty
+                    ? "Unsaved changes"
+                    : oidcConfig
+                      ? "All changes saved"
+                      : ""}
+              </span>
+              <button
+                type="submit"
+                data-testid="oidc-save"
+                disabled={!oidcCanSave}
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Save className="h-4 w-4" aria-hidden />
+                {oidcConfig ? "Save configuration" : "Save & establish trust"}
+              </button>
+            </div>
+          </form>
+        )}
       </Card>
 
       {/* Service provider (Forge) — what the admin pastes back into the IdP */}
       <Card
         icon={<ServerCog className="h-5 w-5" aria-hidden />}
         title="Service provider"
-        description="Forge's SAML details. Hand these back to your IdP to complete the trust."
+        description={
+          protocol === "oidc"
+            ? "Forge's OIDC details. Hand these back to your IdP to complete the trust."
+            : "Forge's SAML details. Hand these back to your IdP to complete the trust."
+        }
       >
-        {config ? (
+        {protocol === "oidc" ? (
+          oidcConfig ? (
+            <div className="flex flex-col gap-4">
+              <CopyField label="Redirect URI" value={oidcConfig.redirect_uri} />
+              <CopyField label="Login URL" value={oidcConfig.login_url} />
+            </div>
+          ) : (
+            <p
+              data-testid="oidc-sp-pending"
+              className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-6 text-center text-sm text-muted-foreground"
+            >
+              Forge generates its redirect URI once you save your first OIDC
+              configuration.
+            </p>
+          )
+        ) : config ? (
           <div className="flex flex-col gap-4">
             <CopyField label="SP Entity ID" value={config.sp_entity_id} />
             <CopyField label="ACS URL" value={config.sp_acs_url} />
@@ -880,26 +1320,49 @@ function Field({
   );
 }
 
-function ProtocolPicker() {
+function ProtocolPicker({
+  value,
+  onChange,
+}: {
+  value: SsoProtocol;
+  onChange: (protocol: SsoProtocol) => void;
+}) {
   return (
     <div
       className="inline-flex items-center gap-1 self-start rounded-md border border-border bg-muted/40 p-0.5 text-sm"
       role="group"
       aria-label="SSO protocol"
     >
-      <span className="inline-flex items-center gap-1.5 rounded bg-background px-3 py-1 font-medium text-foreground shadow-sm">
+      <button
+        type="button"
+        data-testid="protocol-saml"
+        aria-pressed={value === "saml"}
+        onClick={() => onChange("saml")}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded px-3 py-1 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          value === "saml"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
         <KeyRound className="h-3.5 w-3.5 text-primary" aria-hidden />
         SAML 2.0
-      </span>
-      <span
-        className="inline-flex cursor-not-allowed items-center px-3 py-1 text-muted-foreground"
-        title="OIDC support is coming soon"
+      </button>
+      <button
+        type="button"
+        data-testid="protocol-oidc"
+        aria-pressed={value === "oidc"}
+        onClick={() => onChange("oidc")}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded px-3 py-1 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          value === "oidc"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground",
+        )}
       >
+        <Globe className="h-3.5 w-3.5 text-primary" aria-hidden />
         OIDC
-        <span className="ml-1.5 rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase">
-          Soon
-        </span>
-      </span>
+      </button>
     </div>
   );
 }

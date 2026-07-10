@@ -1505,6 +1505,59 @@ export interface SsoConfigInput {
   jit_provisioning?: boolean;
 }
 
+/**
+ * Public view of a workspace OIDC configuration (`OidcConfigOut`). The client
+ * secret is never exposed — only `has_client_secret`. `redirect_uri` /
+ * `login_url` are the values handed back to the IdP (the OIDC sibling of the
+ * SAML `sp_acs_url` / SP-details card).
+ */
+export interface OidcConfig {
+  id: string;
+  workspace_id: string;
+  protocol: "oidc";
+  enabled: boolean;
+  issuer: string;
+  discovery_url?: string | null;
+  client_id: string;
+  has_client_secret: boolean;
+  scopes: string[];
+  email_claim: string;
+  name_claim: string;
+  groups_claim: string;
+  default_role: string;
+  group_role_map: Record<string, string>;
+  authorization_endpoint?: string | null;
+  token_endpoint?: string | null;
+  jwks_uri?: string | null;
+  jit_provisioning: boolean;
+  redirect_uri: string;
+  login_url: string;
+}
+
+/**
+ * Create/replace payload for a workspace OIDC configuration (`OidcConfigIn`).
+ * `client_secret` is plaintext and write-only — omit it (or send `null`) on an
+ * update to keep the previously-saved secret unchanged; it is required the
+ * first time a workspace's OIDC config is created.
+ */
+export interface OidcConfigInput {
+  enabled?: boolean;
+  issuer: string;
+  discovery_url?: string | null;
+  client_id: string;
+  client_secret?: string | null;
+  scopes?: string[];
+  email_claim?: string;
+  name_claim?: string;
+  groups_claim?: string;
+  default_role?: SsoRole;
+  group_role_map?: Record<string, string>;
+  authorization_endpoint?: string | null;
+  token_endpoint?: string | null;
+  jwks_uri?: string | null;
+  jit_provisioning?: boolean;
+}
+
 /** Redacted SCIM-token view — never the raw token or its hash. */
 export interface ScimTokenInfo {
   id: string;

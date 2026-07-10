@@ -41,6 +41,7 @@ from forge_api.sso.provisioning import count_local_active_admins, emit_sso_audit
 from forge_api.sso.saml_metadata import normalize_cert_pem, parse_idp_metadata
 from forge_contracts.sso import (
     AttributeMapping,
+    OidcConfigOut,
     OidcIdpConfig,
     SamlIdpConfig,
     SsoConfigIn,
@@ -414,16 +415,24 @@ class SsoConfigService:
         workspace_id: uuid.UUID,
         payload: OidcIdpConfig,
         *,
-        client_secret: str,
+        client_secret: str | None = None,
         enabled: bool = False,
         jit_provisioning: bool = True,
         domains: list[str] | None = None,
         actor_id: uuid.UUID | None = None,
     ) -> OidcConfiguration:
-        """Create/replace a workspace OIDC config; the client secret is encrypted."""
+        """Create/replace a workspace OIDC config; the client secret is encrypted.
+
+        ``client_secret`` is optional on an update: omitting it (``None``)
+        keeps the previously-saved encrypted secret untouched (the admin API's
+        "don't resend the secret" affordance). It is required the first time a
+        workspace's OIDC config is created.
+        """
         self._workspace(workspace_id)
         config = self.get_oidc_config(workspace_id)
         if config is None:
+            if client_secret is None:
+                raise SsoConfigError("client secret is required for a new OIDC configuration")
             config = OidcConfiguration(
                 workspace_id=workspace_id,
                 issuer=payload.issuer,
@@ -432,7 +441,7 @@ class SsoConfigService:
                 client_secret_encrypted=self._oidc_cipher.encrypt(client_secret),
             )
             self._session.add(config)
-        else:
+        elif client_secret is not None:
             config.client_secret_encrypted = self._oidc_cipher.encrypt(client_secret)
         config.enabled = enabled
         config.issuer = payload.issuer
@@ -481,6 +490,32 @@ class SsoConfigService:
             authorization_endpoint=config.authorization_endpoint,
             token_endpoint=config.token_endpoint,
             jwks_uri=config.jwks_uri,
+        )
+
+    def to_oidc_out(self, config: OidcConfiguration) -> OidcConfigOut:
+        """Admin-facing view of a stored OIDC config (no secret material)."""
+        slug = self.workspace_slug(config.workspace_id)
+        urls = self.oidc_urls(slug)
+        return OidcConfigOut(
+            id=str(config.id),
+            workspace_id=str(config.workspace_id),
+            enabled=config.enabled,
+            issuer=config.issuer,
+            discovery_url=config.discovery_url,
+            client_id=config.client_id,
+            has_client_secret=True,
+            scopes=list(config.scopes or []),
+            email_claim=config.email_claim,
+            name_claim=config.name_claim,
+            groups_claim=config.groups_claim,
+            default_role=config.default_role.value,
+            group_role_map=dict(config.group_role_map or {}),
+            authorization_endpoint=config.authorization_endpoint,
+            token_endpoint=config.token_endpoint,
+            jwks_uri=config.jwks_uri,
+            jit_provisioning=config.jit_provisioning,
+            redirect_uri=urls["redirect_uri"],
+            login_url=urls["login_url"],
         )
 
     # -- HRD ---------------------------------------------------------------------- #
