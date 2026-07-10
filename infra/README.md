@@ -115,9 +115,15 @@ gate. `validate` runs offline — it does **not** contact Hetzner/Cloudflare/R2.
 
 ## Apply runbook (from blueprint → live)
 
+The full step-by-step runbook — prerequisites, state bootstrap, secrets,
+per-env `init`/`fmt`/`validate`/`plan`/`apply`, the Fly agent deploy, and
+teardown — lives in
+[`docs/self-hosting/iac.md`](../docs/self-hosting/iac.md). Short version:
+
 > Prerequisites: a Hetzner Cloud project + API token, a Cloudflare account
-> with the target zone + a scoped API token, and an R2 bucket + access keys
-> for state. None of these exist in this repo — this is the manual bootstrap.
+> with the target zone + a scoped API token, an R2 bucket + access keys for
+> state, and a Fly.io account + token. None of these exist in this repo —
+> this is the manual bootstrap.
 
 1. **Create the state bucket** (one-time, out-of-band): create the
    `forge-tfstate` R2 bucket and an R2 access key pair.
@@ -128,7 +134,7 @@ gate. `validate` runs offline — it does **not** contact Hetzner/Cloudflare/R2.
    export TF_VAR_hcloud_token=...                          # Hetzner token
    export TF_VAR_cloudflare_api_token=...                  # Cloudflare token
    ```
-3. **Per-env vars:** `cp infra/terraform.tfvars.example infra/envs/prod/prod.auto.tfvars` and edit (non-secret values).
+3. **Per-env vars:** `cp infra/envs/prod/terraform.tfvars.example infra/envs/prod/prod.auto.tfvars` and edit (non-secret values — see that env's own README for its sizing defaults).
 4. **Init with per-env state key:**
    ```bash
    cd infra/envs/prod
@@ -136,8 +142,12 @@ gate. `validate` runs offline — it does **not** contact Hetzner/Cloudflare/R2.
              -backend-config="key=forge/prod/terraform.tfstate"
    ```
 5. **Plan / apply:** `tofu plan -out tfplan` → review → `tofu apply tfplan`.
-6. **Fly apps:** `make fly-deploy ENV=prod` (renders `fly.toml`, runs
-   `flyctl deploy`) — see `infra/modules/fly/`.
+6. **Fly apps:** `make -C infra/modules/fly-agents deploy ENV=prod` (renders
+   `fly.toml`, runs `flyctl deploy`) — see `infra/modules/fly-agents/README.md`.
+
+Local gate: `make infra-validate` runs `fmt -check` plus an offline
+`validate` across the root and all three envs (see the repo-root
+`Makefile`).
 
 ## CI wiring (follow-up — not committed here)
 
