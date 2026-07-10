@@ -10,8 +10,8 @@ This module is the **frozen contract** shared by ``forge_authz`` (the pure
 resolver SDK), ``forge_db`` (the ORM + migration), and ``forge_api`` (the
 service/router/deps layer) so they all speak one object set.
 
-Foundation deviations (the in-tree foundation differs from the idealized slice
-doc — see ``docs/implementation-slices/v3/F30-multi-team-rbac.md`` §3/§4):
+Foundation deviations (the in-tree foundation differs from the idealized
+multi-team-RBAC design in ``docs/FORGE_SPEC.md``):
 
 * The idealized doc reuses ``forge_contracts.auth.PrincipalType`` from the F37
   auth foundation. That module does not exist in-tree, so :class:`PrincipalType`

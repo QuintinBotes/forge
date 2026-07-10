@@ -65,7 +65,7 @@ variable "environments" {
     prod = {
       app_name             = "forge-agents-prod"
       image                = "registry.fly.io/forge-agents-prod:latest"
-      primary_region       = "iad" # NA/EU per docs/hosting/cloud-cost-analysis.md region discipline
+      primary_region       = "iad" # pick a region close to your control plane
       extra_regions        = ["ord"]
       vm_size              = "performance-1x" # one Fly Machine per task; bump to performance-2x/4x if tasks are CPU-heavier
       vm_memory_mb         = 4096

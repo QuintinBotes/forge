@@ -1,9 +1,7 @@
 # Module: `fly-agents`
 
 Models the Forge **agent-execution layer** — Firecracker microVMs,
-scale-to-zero, "one Fly Machine per task" (see
-[`docs/hosting/cloud-cost-analysis.md`](../../../docs/hosting/cloud-cost-analysis.md))
-— on **Fly.io**.
+scale-to-zero, "one Fly Machine per task" — on **Fly.io**.
 
 > **CEILING (same as the rest of `infra/`):** this is written, `fmt`-clean,
 > `validate`-clean configuration plus a deploy runbook. There is no Fly.io

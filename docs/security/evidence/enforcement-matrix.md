@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | `rbac-default-deny` | RBAC role matrix is least-privilege / default-deny | offline | FORGE_SPEC Security: "RBAC — admin, member, viewer, agent-runner roles per workspace" | `check_rbac_default_deny` |
 | `rbac-wired-403` | Wired routes return 403 for under-privileged roles | offline | FORGE_SPEC Security (RBAC) / Task 2.3-fix-r2 | `check_rbac_wired_403` |
-| `auth-required-401` | Every feature router rejects unauthenticated calls | offline | FORGE_SPEC Security / MORNING_REPORT 2.3 (auth wired) | `check_auth_required_401` |
+| `auth-required-401` | Every feature router rejects unauthenticated calls | offline | FORGE_SPEC Security (auth wired) | `check_auth_required_401` |
 | `mcp-write-default-deny` | MCP tools are read-only by default; writes fail closed | offline | FORGE_SPEC MCP Security Rules | `check_mcp_write_default_deny` |
 | `policy-default-deny` | Repo policy evaluation is default-deny | offline | FORGE_SPEC Repo Policy System | `check_policy_default_deny` |
 | `agent-policy-gate` | Agent dispatch never executes a policy-denied tool | offline | FORGE_SPEC Security / Repo Policy System | `check_agent_policy_gate` |

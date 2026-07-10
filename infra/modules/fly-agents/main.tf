@@ -1,9 +1,8 @@
 # main.tf — fly-agents module.
 #
 # Models the Forge agent-execution layer (the Firecracker-microVM,
-# scale-to-zero "one Fly Machine per task" tier described in
-# docs/hosting/cloud-cost-analysis.md) as data, NOT as Tofu-managed cloud
-# resources.
+# scale-to-zero "one Fly Machine per task" tier) as data, NOT as Tofu-managed
+# cloud resources.
 #
 # WHY NO fly PROVIDER: the community Fly Terraform provider is thin, lags
 # the platform, and cannot express Fly Machines' per-second/scale-to-zero

@@ -24,8 +24,8 @@ never implicit.
 > URL. HARD-05 proves the path against it; a hosted Confluence/Jira/GitHub MCP
 > connector + a human SSRF/transport pentest are explicitly HARD-09's punch-list.
 
-See the slice doc `docs/implementation-slices/hardening/HARD-05-live-mcp-server.md`
-for the acceptance criteria this runbook verifies.
+This runbook is exercised by the live-MCP integration job in CI
+(`mcp-integration`, against a self-hosted reference server).
 
 ---
 
