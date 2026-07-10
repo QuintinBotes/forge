@@ -25,6 +25,7 @@ dependencies = [
     "forge-deploy",
     "celery>=5.3",
     "redis>=5.0",
+    "forge-approval",
 ]
 
 [build-system]
@@ -33,3 +34,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["forge_worker"]
+
+[tool.uv.sources]
+forge-approval = { workspace = true }

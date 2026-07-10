@@ -29,7 +29,17 @@ from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.sprint import (
     BurndownSeriesView,
+    CapacityReportResponse,
+    CFDResponse,
     CompleteSprintRequest,
+    CycleLeadTimeResponse,
+    EstimateChange,
+    EstimationScaleCreate,
+    EstimationScaleUpdate,
+    EstimationScaleView,
+    GoalAlignmentResponse,
+    MemberCapacityUpdate,
+    PortfolioVelocityResponse,
     RecomputeResponse,
     SprintCreate,
     SprintReportView,
@@ -37,6 +47,7 @@ from forge_api.schemas.sprint import (
     SprintView,
     VelocityDashboardView,
 )
+from forge_api.services.automations import ApiAutomationDispatcher
 from forge_board.exceptions import ActiveSprintExistsError, SprintStateError
 from forge_board.sprint_service import (
     InvalidSprintRequest,
@@ -53,7 +64,9 @@ WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 
 @lru_cache(maxsize=1)
 def _service_singleton() -> SprintService:
-    return SprintService(session_factory=get_session_factory())
+    return SprintService(
+        session_factory=get_session_factory(), dispatcher=ApiAutomationDispatcher()
+    )
 
 
 def get_sprint_service() -> SprintService:
@@ -108,6 +121,8 @@ def create_sprint(
             start_date=body.start_date,
             end_date=body.end_date,
             capacity_points=body.capacity_points,
+            calendar_weekend_days=body.calendar_weekend_days,
+            calendar_holidays=body.calendar_holidays,
         )
 
 
@@ -190,6 +205,8 @@ def update_sprint(
             start_date=body.start_date,
             end_date=body.end_date,
             capacity_points=body.capacity_points,
+            calendar_weekend_days=body.calendar_weekend_days,
+            calendar_holidays=body.calendar_holidays,
         )
 
 
@@ -269,6 +286,146 @@ def sprint_report(
 ) -> SprintReportView:
     with _errors():
         return service.report(workspace_id=principal.workspace_id, sprint_id=sprint_id)
+
+
+@router.get("/tasks/{task_id}/estimate-history", response_model=list[EstimateChange])
+def task_estimate_history(
+    service: ServiceDep, principal: ReaderDep, task_id: uuid.UUID
+) -> list[EstimateChange]:
+    with _errors():
+        return service.estimate_history(workspace_id=principal.workspace_id, task_id=task_id)
+
+
+# --------------------------------------------------------------------------- #
+# F40 PM depth: per-member capacity, sprint-goal alignment, portfolio rollups  #
+# --------------------------------------------------------------------------- #
+
+
+@router.post(
+    "/estimation-scales", response_model=EstimationScaleView, status_code=status.HTTP_201_CREATED
+)
+def create_estimation_scale(
+    service: ServiceDep, principal: WriterDep, body: EstimationScaleCreate
+) -> EstimationScaleView:
+    with _errors():
+        return service.create_estimation_scale(
+            workspace_id=principal.workspace_id,
+            project_id=body.project_id,
+            name=body.name,
+            unit=body.unit,
+            values=body.values,
+            is_default=body.is_default,
+        )
+
+
+@router.get("/estimation-scales", response_model=list[EstimationScaleView])
+def list_estimation_scales(
+    service: ServiceDep,
+    principal: ReaderDep,
+    project_id: uuid.UUID | None = None,
+) -> list[EstimationScaleView]:
+    return service.list_estimation_scales(
+        workspace_id=principal.workspace_id, project_id=project_id
+    )
+
+
+@router.patch("/estimation-scales/{scale_id}", response_model=EstimationScaleView)
+def update_estimation_scale(
+    service: ServiceDep,
+    principal: WriterDep,
+    scale_id: uuid.UUID,
+    body: EstimationScaleUpdate,
+) -> EstimationScaleView:
+    with _errors():
+        return service.update_estimation_scale(
+            workspace_id=principal.workspace_id,
+            scale_id=scale_id,
+            name=body.name,
+            unit=body.unit,
+            values=body.values,
+            is_default=body.is_default,
+        )
+
+
+@router.get("/sprints/{sprint_id}/capacity", response_model=CapacityReportResponse)
+def sprint_capacity(
+    service: ServiceDep, principal: ReaderDep, sprint_id: uuid.UUID
+) -> CapacityReportResponse:
+    with _errors():
+        members = service.capacity_report(workspace_id=principal.workspace_id, sprint_id=sprint_id)
+        return CapacityReportResponse(sprint_id=sprint_id, members=members)
+
+
+@router.put("/sprints/{sprint_id}/capacity", status_code=status.HTTP_204_NO_CONTENT)
+def set_sprint_member_capacity(
+    service: ServiceDep, principal: WriterDep, sprint_id: uuid.UUID, body: MemberCapacityUpdate
+) -> None:
+    with _errors():
+        service.set_member_capacity(
+            workspace_id=principal.workspace_id,
+            sprint_id=sprint_id,
+            member_id=body.member_id,
+            capacity_points=body.capacity_points,
+        )
+
+
+@router.get("/sprints/{sprint_id}/goal-alignment", response_model=GoalAlignmentResponse)
+def sprint_goal_alignment(
+    service: ServiceDep, principal: ReaderDep, sprint_id: uuid.UUID
+) -> GoalAlignmentResponse:
+    with _errors():
+        result = service.goal_alignment(workspace_id=principal.workspace_id, sprint_id=sprint_id)
+        return GoalAlignmentResponse(sprint_id=sprint_id, **result.model_dump())
+
+
+@router.get("/projects/{project_id}/cfd", response_model=CFDResponse)
+def project_cfd(
+    service: ServiceDep,
+    principal: ReaderDep,
+    project_id: uuid.UUID,
+    start: Annotated[str, Query()],
+    end: Annotated[str, Query()],
+) -> CFDResponse:
+    from datetime import date as _date
+
+    try:
+        start_d, end_d = _date.fromisoformat(start), _date.fromisoformat(end)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid start/end"
+        ) from exc
+    points = service.cfd(
+        workspace_id=principal.workspace_id, project_id=project_id, start=start_d, end=end_d
+    )
+    return CFDResponse(project_id=project_id, start=start_d, end=end_d, points=points)
+
+
+@router.get("/projects/{project_id}/cycle-lead-time", response_model=CycleLeadTimeResponse)
+def project_cycle_lead_time(
+    service: ServiceDep, principal: ReaderDep, project_id: uuid.UUID
+) -> CycleLeadTimeResponse:
+    tasks, avg_lead, avg_cycle = service.cycle_lead_time(
+        workspace_id=principal.workspace_id, project_id=project_id
+    )
+    return CycleLeadTimeResponse(
+        project_id=project_id,
+        tasks=tasks,
+        average_lead_time_days=avg_lead,
+        average_cycle_time_days=avg_cycle,
+    )
+
+
+@router.get("/portfolio/velocity", response_model=PortfolioVelocityResponse)
+def portfolio_velocity(
+    service: ServiceDep,
+    principal: ReaderDep,
+    project_ids: Annotated[list[uuid.UUID], Query()],
+    last: Annotated[int, Query(ge=1, le=26)] = 6,
+) -> PortfolioVelocityResponse:
+    summary = service.portfolio_velocity(
+        workspace_id=principal.workspace_id, project_ids=project_ids, last=last
+    )
+    return PortfolioVelocityResponse(**summary.model_dump())
 
 
 __all__ = ["get_sprint_service", "router"]

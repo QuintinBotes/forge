@@ -1,0 +1,12 @@
+{
+  "id": "9hz2",
+  "name": "Conformance task",
+  "description": "conformance body",
+  "text_content": "conformance body",
+  "status": { "status": "in progress", "color": "#d3d3d3", "type": "custom" },
+  "priority": { "id": "2", "priority": "high", "color": "#ffcc00" },
+  "assignees": [],
+  "tags": [],
+  "url": "https://app.clickup.com/t/9hz2",
+  "date_updated": "1704000100000"
+}

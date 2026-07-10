@@ -30,7 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.auth.rbac import Permission
+from forge_api.auth.rbac import Permission, can
 from forge_api.db import get_session_factory
 from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
@@ -47,13 +47,26 @@ from forge_contracts import (
     PolicyViolationError,
 )
 from forge_contracts.enums import MCPIndexStrategy
-from forge_mcp import AuditSink, MCPConnectionManager, TeeAuditLog, live_transport_factory
+from forge_mcp import (
+    AuditSink,
+    MCPConnectionManager,
+    MCPWriteApprovalEvaluator,
+    RateLimiter,
+    TeeAuditLog,
+    default_mcp_policy,
+    is_write_tool,
+    live_transport_factory,
+    redis_rate_limiter,
+)
 from forge_mcp.exceptions import (
     MCPConnectionNotFoundError,
+    MCPElicitationRequiredError,
     MCPInputError,
     MCPNamespaceError,
+    MCPRateLimitedError,
     MCPTransportUnavailableError,
 )
+from forge_mcp.transport import PromptMessage, PromptSpec
 
 router = APIRouter(
     prefix="/mcp",
@@ -126,13 +139,40 @@ def _mcp_audit_sink() -> AuditSink | None:
     return MCPAuditSink(default_audit_log())
 
 
+def _mcp_rate_limiter() -> RateLimiter | None:
+    """Build the per-connection Redis token bucket when ``MCP_RATE_LIMIT`` is set.
+
+    ``MCP_RATE_LIMIT`` is a ``"capacity/refill_per_sec"`` budget (e.g. ``"60/1"``).
+    Returns ``None`` — so tool calls stay unthrottled — when unset or when Redis
+    is unreachable (the limiter degrades cleanly instead of hard-failing).
+    """
+    spec = os.environ.get("MCP_RATE_LIMIT", "").strip()
+    if not spec:
+        return None
+    capacity_str, _, refill_str = spec.partition("/")
+    try:
+        capacity = int(capacity_str)
+        refill = float(refill_str) if refill_str else 1.0
+    except ValueError:
+        return None
+    url = os.environ.get("MCP_REDIS_URL") or os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    return redis_rate_limiter(url, capacity=capacity, refill_per_sec=refill)
+
+
 @lru_cache(maxsize=1)
 def _mcp_manager_singleton() -> MCPConnectionManager:
+    # F40 delta 1: every manager routes write tool calls through the approval
+    # gate (an allow_write connection's write tool raises ApprovalRequiredError
+    # -> 403). F40 delta 4: an optional per-connection Redis rate limiter.
+    policy = default_mcp_policy()
+    evaluator = MCPWriteApprovalEvaluator()
+    rate_limiter = _mcp_rate_limiter()
+
     # ALPHA default: NullTransport — registration + metadata work, but any
     # operation needing a live server raises 503 (no real external calls). The
     # live transport is opt-in behind MCP_LIVE_TRANSPORT so it is never implicit.
     if not _env_true("MCP_LIVE_TRANSPORT"):
-        return MCPConnectionManager()
+        return MCPConnectionManager(policy=policy, evaluator=evaluator, rate_limiter=rate_limiter)
 
     factory = live_transport_factory(
         token_resolver=_mcp_token_resolver,
@@ -143,7 +183,13 @@ def _mcp_manager_singleton() -> MCPConnectionManager:
     # TeeAuditLog keeps the in-memory trail (so GET …/audit reads back) while
     # forwarding to the durable platform sink when configured.
     audit_log = TeeAuditLog(sink) if sink is not None else None
-    return MCPConnectionManager(transport_factory=factory, audit_log=audit_log)
+    return MCPConnectionManager(
+        transport_factory=factory,
+        audit_log=audit_log,
+        policy=policy,
+        evaluator=evaluator,
+        rate_limiter=rate_limiter,
+    )
 
 
 def get_mcp_manager() -> MCPConnectionManager:
@@ -176,6 +222,26 @@ def _mcp_errors() -> Iterator[None]:
     except MCPInputError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except MCPRateLimitedError as exc:
+        # A typed, retryable budget exhaustion — NOT a run failure. 429 + Retry-After.
+        headers = (
+            {"Retry-After": str(int(exc.retry_after_s + 0.999))}
+            if exc.retry_after_s is not None
+            else None
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc), headers=headers
+        ) from exc
+    except MCPElicitationRequiredError as exc:
+        # Surface the server's elicitation request to the human approver (428).
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail={
+                "error": "elicitation_required",
+                "message": exc.elicit_message,
+                "schema": exc.schema,
+            },
         ) from exc
     except MCPTransportUnavailableError as exc:
         raise HTTPException(
@@ -261,8 +327,56 @@ def call_tool(
     connection_id: str,
     request: ToolCallRequest,
 ) -> MCPToolResult:
+    # F40 delta 1: a *write* MCP tool call is an admin-only action (a RUN_AGENT
+    # member gets 403) AND is routed through the approval gate below. Read tools
+    # stay RUN_AGENT.
+    if is_write_tool(request.name) and not can(principal.role, Permission.ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"write MCP tool {request.name!r} requires the admin role",
+        )
     with _mcp_errors():
         return manager.call_tool(
+            connection_id,
+            request.name,
+            request.arguments,
+            workspace_id=principal.workspace_id,
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Prompts (audited reads; F40 delta 2)                                         #
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    "/connections/{connection_id}/prompts",
+    response_model=list[PromptSpec],
+)
+def list_prompts(manager: ManagerDep, principal: ReaderDep, connection_id: str) -> list[PromptSpec]:
+    with _mcp_errors():
+        return manager.list_prompts(connection_id, workspace_id=principal.workspace_id)
+
+
+class GetPromptRequest(BaseModel):
+    """Body for ``POST /mcp/connections/{connection_id}/prompts/get``."""
+
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post(
+    "/connections/{connection_id}/prompts/get",
+    response_model=list[PromptMessage],
+)
+def get_prompt(
+    manager: ManagerDep,
+    principal: ReaderDep,
+    connection_id: str,
+    request: GetPromptRequest,
+) -> list[PromptMessage]:
+    with _mcp_errors():
+        return manager.get_prompt(
             connection_id,
             request.name,
             request.arguments,

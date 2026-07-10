@@ -28,10 +28,11 @@ from forge_contracts import (
 from forge_mcp.audit import AuditSink, InMemoryAuditLog
 from forge_mcp.client import MCPGatewayClient
 from forge_mcp.exceptions import MCPConnectionNotFoundError
-from forge_mcp.transport import NullTransport, Transport
+from forge_mcp.transport import NullTransport, PromptMessage, PromptSpec, Transport
 
 if TYPE_CHECKING:
     from forge_contracts import Policy, PolicyEvaluator
+    from forge_mcp.ratelimit import RateLimiter
 
 #: A factory that produces a transport for a given connection.
 TransportFactory = Callable[[MCPConnection], Transport]
@@ -52,12 +53,14 @@ class MCPConnectionManager:
         audit_log: AuditSink | None = None,
         policy: Policy | None = None,
         evaluator: PolicyEvaluator | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         self._transport_factory = transport_factory or _null_transport_factory
         # Explicit None check: an empty InMemoryAuditLog is falsy.
         self._audit: AuditSink = audit_log if audit_log is not None else InMemoryAuditLog()
         self._policy = policy
         self._evaluator = evaluator
+        self._rate_limiter = rate_limiter
         self._clients: dict[str, MCPGatewayClient] = {}
         self._connections: dict[str, MCPConnection] = {}
         # Per-workspace ownership of each connection (Phase-2 bug fix r3). The
@@ -85,6 +88,7 @@ class MCPConnectionManager:
             audit_log=self._audit,
             policy=self._policy,
             evaluator=self._evaluator,
+            rate_limiter=self._rate_limiter,
         )
         client.connect(conn)
         self._clients[conn.id] = client
@@ -147,6 +151,21 @@ class MCPConnectionManager:
         workspace_id: uuid.UUID | None = None,
     ) -> MCPToolResult:
         return self.get(connection_id, workspace_id=workspace_id).call_tool(name, arguments)
+
+    def list_prompts(
+        self, connection_id: str, *, workspace_id: uuid.UUID | None = None
+    ) -> list[PromptSpec]:
+        return self.get(connection_id, workspace_id=workspace_id).list_prompts()
+
+    def get_prompt(
+        self,
+        connection_id: str,
+        name: str,
+        arguments: dict[str, object] | None = None,
+        *,
+        workspace_id: uuid.UUID | None = None,
+    ) -> list[PromptMessage]:
+        return self.get(connection_id, workspace_id=workspace_id).get_prompt(name, arguments)
 
     def audit_entries(
         self, connection_id: str | None = None, *, workspace_id: uuid.UUID | None = None

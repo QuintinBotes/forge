@@ -24,10 +24,13 @@ import type {
   AuditQuery,
   AuditVocabulary,
   BulkUpdate,
+  CapacityReport,
+  CFDSeries,
   ChainVerifyResult,
   BurndownSeries,
   CompleteSprintRequest,
   Constitution,
+  CycleLeadTimeReport,
   DeploymentDecisionRequest,
   DeploymentDetail,
   DeploymentListQuery,
@@ -38,6 +41,7 @@ import type {
   CostTimeseries,
   CostTimeseriesQuery,
   EpicDTO,
+  GoalAlignment,
   HealthResponse,
   IncidentDeclareRequest,
   IncidentDetailView,
@@ -63,6 +67,7 @@ import type {
   PmHealthResult,
   PmLink,
   PmSyncState,
+  PortfolioVelocity,
   Principal,
   ProjectAccess,
   ProjectTeamAccess,
@@ -839,6 +844,58 @@ export class ForgeApiClient {
     return this.request<SprintReport>(
       `/sprints/${encodeURIComponent(sprintId)}/complete`,
       { method: "POST", body },
+    );
+  }
+
+  /** Each member's declared capacity vs. their assigned committed-task points. */
+  getSprintCapacity(sprintId: string): Promise<CapacityReport> {
+    return this.request<CapacityReport>(
+      `/sprints/${encodeURIComponent(sprintId)}/capacity`,
+    );
+  }
+
+  /** The sprint goal's keyword coverage across its current tasks (F40 PM depth). */
+  getSprintGoalAlignment(sprintId: string): Promise<GoalAlignment> {
+    return this.request<GoalAlignment>(
+      `/sprints/${encodeURIComponent(sprintId)}/goal-alignment`,
+    );
+  }
+
+  /** A project's Cumulative Flow Diagram over `[start, end]` (F40 PM depth). */
+  getProjectCfd(
+    projectId: string,
+    start: string,
+    end: string,
+  ): Promise<CFDSeries> {
+    return this.request<CFDSeries>(
+      `/projects/${encodeURIComponent(projectId)}/cfd`,
+      { query: { start, end } },
+    );
+  }
+
+  /** A project's per-task cycle/lead time + averages (F40 PM depth). */
+  getProjectCycleLeadTime(projectId: string): Promise<CycleLeadTimeReport> {
+    return this.request<CycleLeadTimeReport>(
+      `/projects/${encodeURIComponent(projectId)}/cycle-lead-time`,
+    );
+  }
+
+  /**
+   * Combined throughput/predictability trend across a set of projects
+   * (F40 PM depth). `project_ids` is repeated (not comma-joined) per the
+   * FastAPI `Query(list[UUID])` binding, so it's built into the path rather
+   * than the scalar `query` map.
+   */
+  getPortfolioVelocity(
+    projectIds: string[],
+    last?: number,
+  ): Promise<PortfolioVelocity> {
+    const ids = projectIds
+      .map((id) => `project_ids=${encodeURIComponent(id)}`)
+      .join("&");
+    return this.request<PortfolioVelocity>(
+      `/portfolio/velocity?${ids}`,
+      { query: last ? { last } : undefined },
     );
   }
 

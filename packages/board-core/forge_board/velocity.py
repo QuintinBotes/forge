@@ -19,6 +19,23 @@ from forge_contracts.enums import SprintScopeEventType
 _RATIO_DP = 4
 
 
+class WorkCalendar(BaseModel):
+    """Working-day calendar the burndown ideal-line reads (F40 PM depth).
+
+    ``weekend_days`` is a denylist of ISO weekdays (Monday=0..Sunday=6) treated
+    as non-working; ``holidays`` is a set of ad-hoc non-working dates. Both
+    default empty, which makes every day working — byte-identical to the
+    pre-F40 calendar-free ideal line.
+    """
+
+    weekend_days: frozenset[int] = frozenset()
+    holidays: frozenset[date] = frozenset()
+
+    def is_working_day(self, day: date) -> bool:
+        """True iff ``day`` is neither a configured weekend weekday nor a holiday."""
+        return day.weekday() not in self.weekend_days and day not in self.holidays
+
+
 class SprintWindow(BaseModel):
     """The sprint's calendar window + lifecycle timestamps."""
 
@@ -149,13 +166,43 @@ def _days(start: date, end: date) -> list[date]:
     return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
 
-def ideal_line(committed_points: int, start: date, end: date) -> dict[date, float]:
-    """Linear committed->0 across inclusive calendar days; end-day == 0.0."""
+def ideal_line(
+    committed_points: int,
+    start: date,
+    end: date,
+    calendar: WorkCalendar | None = None,
+) -> dict[date, float]:
+    """Linear committed->0 across inclusive *working* calendar days; end-day == 0.0.
+
+    Non-working days (per ``calendar``, if given) hold flat at the prior
+    working day's value — no burn is expected on a weekend/holiday, so days
+    *before* the first working day still read the initial committed value
+    (nothing has started burning yet). With no calendar (or one with no
+    configured weekend days/holidays) every day is working, reproducing the
+    plain linear line byte-for-byte. A window with a single working day burns
+    straight to zero on that day (it is simultaneously the window's first and
+    last working day). A window with *no* working days never starts burning,
+    so it holds flat at the committed value for its entire length.
+    """
+    cal = calendar or WorkCalendar()
     days = _days(start, end)
-    n = len(days) - 1
-    if n <= 0:
-        return {start: 0.0}
-    return {days[i]: round(committed_points * (n - i) / n, 2) for i in range(len(days))}
+    work_days = [d for d in days if cal.is_working_day(d)]
+    n = len(work_days) - 1
+    if not work_days:
+        work_value: dict[date, float] = {}
+    elif n == 0:
+        work_value = {work_days[0]: 0.0}
+    else:
+        work_value = {
+            wd: round(committed_points * (n - k) / n, 2) for k, wd in enumerate(work_days)
+        }
+    result: dict[date, float] = {}
+    carry = float(committed_points)
+    for d in days:
+        if d in work_value:
+            carry = work_value[d]
+        result[d] = carry
+    return result
 
 
 def _reconstruct_counts(
@@ -191,6 +238,7 @@ def compute_burndown(
     *,
     as_of: date | None = None,
     committed_task_count: int = 0,
+    calendar: WorkCalendar | None = None,
 ) -> list[BurndownPoint]:
     """One :class:`BurndownPoint` per calendar day, end-of-day state from the
     last event on/before that day (pure)."""
@@ -200,7 +248,7 @@ def compute_burndown(
     if last_day < start:
         last_day = start
 
-    ideal = ideal_line(committed_points, start, end)
+    ideal = ideal_line(committed_points, start, end, calendar)
     ordered = sorted(events, key=lambda e: e.occurred_at)
 
     points: list[BurndownPoint] = []
@@ -258,6 +306,7 @@ __all__ = [
     "SprintWindow",
     "VelocityResult",
     "VelocitySummary",
+    "WorkCalendar",
     "compute_burndown",
     "compute_velocity",
     "compute_velocity_summary",

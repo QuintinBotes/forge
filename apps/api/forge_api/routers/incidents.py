@@ -40,6 +40,7 @@ from forge_board.incidents.errors import (
     IncidentNotFound,
 )
 from forge_contracts import RealtimeEvent, RealtimeEventType
+from forge_obs.analytics.incidents import IncidentReliabilityMetrics
 from forge_workflow import InvalidTransitionError
 
 router = APIRouter(
@@ -228,6 +229,20 @@ def list_incidents(
     sev = IncidentSeverity(severity) if severity else None
     records = service.list(project_id=project_id, state=state, severity=sev)
     return [_view(service, r) for r in records]
+
+
+@router.get(
+    "/reliability",
+    response_model=IncidentReliabilityMetrics,
+    summary="MTTA/MTTR/remediation-accept-rate over this workspace's incidents (F40).",
+)
+def incident_reliability(
+    service: ServiceDep,
+    principal: ReaderDep,
+    project_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> IncidentReliabilityMetrics:
+    del principal  # READ-gated; the service is already workspace-scoped
+    return service.reliability_metrics(project_id=project_id)
 
 
 @router.get("/{incident_id}", response_model=IncidentDetailView)

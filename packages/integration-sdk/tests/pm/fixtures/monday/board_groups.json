@@ -1,0 +1,13 @@
+{
+  "data": {
+    "boards": [
+      {
+        "groups": [
+          {"id": "g1", "title": "Not Started"},
+          {"id": "g2", "title": "Working on it"},
+          {"id": "g3", "title": "Done"}
+        ]
+      }
+    ]
+  }
+}

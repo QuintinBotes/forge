@@ -13,6 +13,11 @@ import { CommandPaletteProvider } from "@/components/command-palette";
 import type { ForgeApiClient } from "@/lib/api/client";
 import type {
   BurndownSeries,
+  CapacityReport,
+  CFDSeries,
+  CycleLeadTimeReport,
+  GoalAlignment,
+  PortfolioVelocity,
   Sprint,
   TaskDTO,
   VelocityDashboard,
@@ -133,6 +138,54 @@ const BURNDOWN: BurndownSeries = {
   ],
 };
 
+const CAPACITY: CapacityReport = {
+  sprint_id: "s-active",
+  members: [
+    {
+      member_id: "alice",
+      capacity_points: 5,
+      assigned_points: 8,
+      utilization: 1.6,
+      status: "over",
+    },
+  ],
+};
+
+const GOAL_ALIGNMENT: GoalAlignment = {
+  sprint_id: "s-active",
+  goal_tokens: ["ship", "forge"],
+  total_count: 4,
+  aligned_count: 3,
+  alignment_ratio: 0.75,
+  unaligned_task_ids: ["t-9"],
+};
+
+const CFD: CFDSeries = {
+  project_id: "default",
+  start: "2026-06-01",
+  end: "2026-06-03",
+  points: [
+    { snapshot_date: "2026-06-01", status_counts: { backlog: 4, done: 0 } },
+    { snapshot_date: "2026-06-02", status_counts: { backlog: 3, done: 1 } },
+    { snapshot_date: "2026-06-03", status_counts: { backlog: 2, done: 2 } },
+  ],
+};
+
+const CYCLE_LEAD_TIME: CycleLeadTimeReport = {
+  project_id: "default",
+  tasks: [],
+  average_lead_time_days: 5.5,
+  average_cycle_time_days: 2.5,
+};
+
+const PORTFOLIO_VELOCITY: PortfolioVelocity = {
+  project_count: 1,
+  total_average_velocity: 26.5,
+  total_forecast_avg: 26.5,
+  weighted_predictability: 0.85,
+  per_project: {},
+};
+
 const TASKS: TaskDTO[] = [
   {
     id: "t-1",
@@ -157,6 +210,11 @@ function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
     listProjectSprints: vi.fn(() => Promise.resolve([ACTIVE, PLANNED])),
     getVelocityDashboard: vi.fn(() => Promise.resolve(VELOCITY)),
     getSprintBurndown: vi.fn(() => Promise.resolve(BURNDOWN)),
+    getSprintCapacity: vi.fn(() => Promise.resolve(CAPACITY)),
+    getSprintGoalAlignment: vi.fn(() => Promise.resolve(GOAL_ALIGNMENT)),
+    getProjectCfd: vi.fn(() => Promise.resolve(CFD)),
+    getProjectCycleLeadTime: vi.fn(() => Promise.resolve(CYCLE_LEAD_TIME)),
+    getPortfolioVelocity: vi.fn(() => Promise.resolve(PORTFOLIO_VELOCITY)),
     listTasks: vi.fn(() => Promise.resolve(TASKS)),
     setTaskStatus: vi.fn((taskId: string, status: string) =>
       Promise.resolve({ ...TASKS[0], id: taskId, status }),
@@ -215,6 +273,16 @@ describe("SprintsView", () => {
     // Both charts land.
     expect(await screen.findByTestId("velocity-chart")).toBeInTheDocument();
     expect(await screen.findByTestId("burndown-chart")).toBeInTheDocument();
+
+    // Capacity bars land too (F40 PM depth).
+    expect(await screen.findByTestId("capacity-bars")).toHaveTextContent("alice");
+
+    // Goal alignment, CFD and cycle/lead-time surface too (F40 PM depth).
+    expect(await screen.findByTestId("goal-alignment-meter")).toHaveTextContent("75%");
+    expect(await screen.findByTestId("cfd-chart")).toBeInTheDocument();
+    expect(await screen.findByTestId("kpi-lead-time")).toHaveTextContent("5.5d");
+    expect(await screen.findByTestId("kpi-cycle-time")).toHaveTextContent("2.5d");
+    expect(await screen.findByTestId("kpi-portfolio-forecast")).toHaveTextContent("26.5 pts");
 
     // The one ember action reflects the active lifecycle (complete).
     expect(screen.getByTestId("lifecycle-action")).toHaveTextContent("Complete sprint");
@@ -326,5 +394,31 @@ describe("SprintsView", () => {
     });
     renderView(client);
     expect(await screen.findByTestId("empty-burndown")).toBeInTheDocument();
+  });
+
+  it("shows an empty capacity state when no member capacity is declared", async () => {
+    const client = makeClient({
+      getSprintCapacity: vi.fn(() => Promise.resolve({ ...CAPACITY, members: [] })),
+    });
+    renderView(client);
+    expect(await screen.findByTestId("empty-capacity")).toBeInTheDocument();
+  });
+
+  it("shows an empty goal-alignment state when the sprint has no goal", async () => {
+    const client = makeClient({
+      getSprintGoalAlignment: vi.fn(() =>
+        Promise.resolve({ ...GOAL_ALIGNMENT, total_count: 0, aligned_count: 0 }),
+      ),
+    });
+    renderView(client);
+    expect(await screen.findByTestId("empty-goal-alignment")).toBeInTheDocument();
+  });
+
+  it("shows an empty cumulative-flow state before any status transitions exist", async () => {
+    const client = makeClient({
+      getProjectCfd: vi.fn(() => Promise.resolve({ ...CFD, points: [] })),
+    });
+    renderView(client);
+    expect(await screen.findByTestId("empty-cfd")).toBeInTheDocument();
   });
 });

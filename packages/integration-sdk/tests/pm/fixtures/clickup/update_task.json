@@ -1,0 +1,12 @@
+{
+  "id": "9hz",
+  "name": "Fix pagination bug (updated)",
+  "description": "conformance body",
+  "text_content": "conformance body",
+  "status": { "status": "in progress", "color": "#d3d3d3", "type": "custom" },
+  "priority": { "id": "2", "priority": "high", "color": "#ffcc00" },
+  "assignees": [{ "id": 183, "username": "alice", "email": "alice@acme.test" }],
+  "tags": [{ "name": "backend" }],
+  "url": "https://app.clickup.com/t/9hz",
+  "date_updated": "1704000200000"
+}

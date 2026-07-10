@@ -1,0 +1,35 @@
+{
+  "data": {
+    "boards": [
+      {
+        "items_page": {
+          "cursor": null,
+          "items": [
+            {
+              "id": "1001",
+              "name": "Add pagination",
+              "url": "https://forge.monday.com/boards/500/pulses/1001",
+              "updated_at": "2026-01-02T10:00:00Z",
+              "group": {"id": "g2", "title": "Working on it"},
+              "column_values": [
+                {"id": "status", "text": "Working on it", "value": "{}", "type": "color"},
+                {"id": "priority", "text": "High", "value": "{}", "type": "color"}
+              ]
+            },
+            {
+              "id": "1003",
+              "name": "Ship release",
+              "url": "https://forge.monday.com/boards/500/pulses/1003",
+              "updated_at": "2026-01-03T10:00:00Z",
+              "group": {"id": "g3", "title": "Done"},
+              "column_values": [
+                {"id": "status", "text": "Done", "value": "{}", "type": "color"},
+                {"id": "priority", "text": "Low", "value": "{}", "type": "color"}
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

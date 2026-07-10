@@ -16,8 +16,20 @@ import type {
 /** Semantic tone keys; the view maps these to token-based classes. */
 export type Tone = "success" | "warning" | "danger" | "info" | "muted";
 
+const PROVIDER_LABELS: Record<PmProvider, string> = {
+  jira: "Jira",
+  linear: "Linear",
+  asana: "Asana",
+  monday: "monday.com",
+  github_projects: "GitHub Projects",
+  clickup: "ClickUp",
+  trello: "Trello",
+  gitlab: "GitLab",
+  generic: "Custom (generic)",
+};
+
 export function providerLabel(provider: PmProvider): string {
-  return provider === "jira" ? "Jira" : "Linear";
+  return PROVIDER_LABELS[provider];
 }
 
 const SYNC_DIRECTION_LABELS: Record<PmSyncDirection, string> = {

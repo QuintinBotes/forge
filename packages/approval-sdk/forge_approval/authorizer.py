@@ -12,8 +12,11 @@ so the rules cannot be bypassed by choosing a different surface:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Protocol, runtime_checkable
+from uuid import UUID
 
+from forge_approval.codeowners import parse_codeowners, required_owners_for_paths
 from forge_approval.models import (
     ApprovalDecisionRequest,
     ApprovalRequest,
@@ -44,9 +47,22 @@ class PolicyReader(Protocol):
 
 
 class DefaultPolicyReader:
-    """Spec defaults: default rules; workspace members hold deploy permission."""
+    """Spec defaults, with the gate's own ``review_rules`` honoured when present.
+
+    A PR-gate producer may stamp the repo's resolved ``review_rules`` into the
+    gate payload (``gate_payload['review_rules']``); this reader surfaces them so
+    the single authorizer applies the repo's ``min_approvals`` quorum and
+    ``require_code_owners`` rule without a separate policy round-trip. Absent that,
+    the spec defaults apply. Workspace members hold deploy permission.
+    """
 
     def review_rules_for(self, request: ApprovalRequest) -> ReviewRules:
+        raw = request.gate_payload.get("review_rules")
+        if isinstance(raw, dict):
+            try:
+                return ReviewRules.model_validate(raw)
+            except ValueError:
+                return ReviewRules()
         return ReviewRules()
 
     def deploy_rules_for(self, request: ApprovalRequest) -> DeployRules:
@@ -113,6 +129,7 @@ class ApprovalAuthorizer:
 
         if request.gate_type is GateType.PR:
             self._check_review_rules(actor, request)
+            self._check_code_owners(actor, request)
         if request.gate_type is GateType.DEPLOY:
             environment = request.gate_payload.get("environment")
             env = environment if isinstance(environment, str) else None
@@ -135,6 +152,57 @@ class ApprovalAuthorizer:
                 "repo review_rules restrict this pr gate to its required reviewers"
             )
 
+    def min_approvals_for(self, request: ApprovalRequest) -> int:
+        """The distinct-approver quorum this gate needs, from repo ``review_rules``.
+
+        Maps ``review_rules.min_approvals`` onto the gate so a policy raising the
+        bar above 1 turns the PR gate into a quorum (via :func:`required_approvals`).
+        Non-PR gates never carry a policy quorum (``1``).
+        """
+        if request.gate_type is not GateType.PR:
+            return 1
+        return required_approvals(self._policy.review_rules_for(request))
+
+    def _check_code_owners(self, actor: Principal, request: ApprovalRequest) -> None:
+        """Enforce path-scoped ``CODEOWNERS`` approval for a PR gate.
+
+        Active only when the repo ``review_rules.require_code_owners`` is set and
+        the gate payload carries the repo's ``codeowners`` text plus the change's
+        ``changed_paths``. The resolving actor must be an owner of the changed
+        paths; owners are matched against the actor's id (the same convention as
+        ``required_reviewers``), optionally via an ``owner_identities`` map that
+        resolves a CODEOWNERS handle to a Forge user id.
+        """
+        rules = self._policy.review_rules_for(request)
+        if not getattr(rules, "require_code_owners", False):
+            return
+        payload = request.gate_payload
+        text = payload.get("codeowners")
+        if not isinstance(text, str) or not text.strip():
+            return
+        paths = [p for p in payload.get("changed_paths", []) if isinstance(p, str)]
+        required = required_owners_for_paths(parse_codeowners(text), paths)
+        if not required:
+            return
+        identities = payload.get("owner_identities")
+        identities = identities if isinstance(identities, dict) else {}
+        if not self._actor_is_owner(actor, required, identities):
+            raise AuthorizationError(
+                "repo CODEOWNERS require an owner of the changed paths to approve this pr gate"
+            )
+
+    @staticmethod
+    def _actor_is_owner(
+        actor: Principal, required_owners: list[str], identities: dict[str, str]
+    ) -> bool:
+        actor_id = str(actor.id)
+        for owner in required_owners:
+            if owner == actor_id or owner.lstrip("@") == actor_id:
+                return True
+            if identities.get(owner) == actor_id:
+                return True
+        return False
+
     def _check_self_approval(self, actor: Principal, request: ApprovalRequest) -> None:
         # The producing agent's identity can never approve its own run's gate,
         # regardless of configuration.
@@ -146,10 +214,28 @@ class ApprovalAuthorizer:
             raise AuthorizationError("self-approval of one's own request is forbidden")
 
 
+def required_approvals(review_rules: ReviewRules | None) -> int:
+    """The number of distinct approvals a PR gate needs (``min_approvals`` >= 1).
+
+    A repo raising ``review_rules.min_approvals`` above 1 turns the PR gate into a
+    multi-approver quorum: a single approve no longer resolves it.
+    """
+    if review_rules is None:
+        return 1
+    return max(1, int(getattr(review_rules, "min_approvals", 1) or 1))
+
+
+def quorum_met(approver_ids: Iterable[UUID], required: int) -> bool:
+    """True once ``required`` *distinct* approvers have approved (min 1)."""
+    return len(set(approver_ids)) >= max(1, required)
+
+
 __all__ = [
     "GATE_MIN_ROLE",
     "ApprovalAuthorizer",
     "AuthorizationError",
     "DefaultPolicyReader",
     "PolicyReader",
+    "quorum_met",
+    "required_approvals",
 ]

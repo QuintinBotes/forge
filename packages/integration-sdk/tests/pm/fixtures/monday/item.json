@@ -1,0 +1,17 @@
+{
+  "data": {
+    "items": [
+      {
+        "id": "1001",
+        "name": "Add pagination",
+        "url": "https://forge.monday.com/boards/500/pulses/1001",
+        "updated_at": "2026-01-02T10:00:00Z",
+        "group": {"id": "g2", "title": "Working on it"},
+        "column_values": [
+          {"id": "status", "text": "Working on it", "value": "{\"index\":1,\"label\":\"Working on it\"}", "type": "color"},
+          {"id": "priority", "text": "High", "value": "{\"index\":2,\"label\":\"High\"}", "type": "color"}
+        ]
+      }
+    ]
+  }
+}

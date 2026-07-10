@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "custom_field": {
+        "gid": "cf1",
+        "name": "Priority",
+        "resource_subtype": "enum",
+        "enum_options": [
+          {"gid": "o1", "name": "Low"},
+          {"gid": "o2", "name": "Medium"},
+          {"gid": "o3", "name": "High"},
+          {"gid": "o4", "name": "Urgent"}
+        ]
+      }
+    }
+  ]
+}

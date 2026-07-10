@@ -7,12 +7,15 @@ trace viewer. Both endpoints are authenticated and return secret-redacted data.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
+from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
 
 from forge_api.auth.rbac import Permission
+from forge_api.db import get_session_factory
 from forge_api.deps import CurrentPrincipal, Principal, get_current_principal
 from forge_api.observability.audit import AuditCategory, AuditEntry
 from forge_api.observability.service import (
@@ -25,7 +28,22 @@ from forge_api.observability.trace import RunTrace
 from forge_api.realtime.broadcaster import Broadcaster, emit_event, get_broadcaster
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.observability import RecordRunRequest
+from forge_api.services.cost_service import SqlScopeResolver
+from forge_api.services.observability_analytics_service import (
+    ObservabilityAnalyticsService,
+    ScopeNotFoundError,
+)
 from forge_contracts import RealtimeEvent
+from forge_obs.analytics.budgets import BudgetStatus, SqlBudgetReader
+from forge_obs.analytics.coverage import (
+    CoverageSnapshotDTO,
+    CoverageTrendPoint,
+    SqlCoverageRepository,
+)
+from forge_obs.analytics.dora import DoraMetrics, SqlDoraReader
+from forge_obs.analytics.fx import DbFxRateBook
+from forge_obs.analytics.incidents import IncidentReliabilityMetrics, SqlIncidentReliabilityReader
+from forge_obs.cost.repository import SqlCostReader
 from forge_obs.metrics import RecordingMetrics, get_metrics, render_prometheus
 
 router = APIRouter(
@@ -35,6 +53,37 @@ router = APIRouter(
 )
 
 ServiceDep = Annotated[ObservabilityService, Depends(get_observability_service)]
+ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
+
+
+def get_observability_analytics_service() -> ObservabilityAnalyticsService:
+    """Build the DB-backed F40 deep-analytics service (overridable in tests via DI)."""
+    factory = get_session_factory()
+    return ObservabilityAnalyticsService(
+        incidents=SqlIncidentReliabilityReader(factory),
+        dora=SqlDoraReader(factory),
+        budgets=SqlBudgetReader(factory),
+        coverage=SqlCoverageRepository(factory),
+        cost_reader=SqlCostReader(factory),
+        fx=DbFxRateBook(factory),
+        scopes=SqlScopeResolver(factory),
+    )
+
+
+AnalyticsDep = Annotated[
+    ObservabilityAnalyticsService, Depends(get_observability_analytics_service)
+]
+
+
+def _guard[T](call: Callable[[], T]) -> T:
+    """Translate a cross-workspace/unknown scope into the API's 404 contract."""
+    try:
+        return call()
+    except ScopeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="scope not found"
+        ) from exc
+
 
 # Recording a run trace is the run producer's write (agent/workflow runtime),
 # so it is RUN_AGENT-gated (the ``agent-runner`` role, which lacks WRITE, can
@@ -151,3 +200,106 @@ async def record_run_trace(
         ),
     )
     return trace
+
+
+# --------------------------------------------------------------------------- #
+# F40-OBS-ANALYTICS: deep-analytics backends                                  #
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    "/analytics/incidents/reliability",
+    response_model=IncidentReliabilityMetrics,
+    summary="MTTA/MTTR/remediation-accept-rate over the persisted incident tables.",
+)
+def incident_reliability_sql(
+    principal: ReaderDep,
+    service: AnalyticsDep,
+    project_id: Annotated[uuid.UUID | None, Query()] = None,
+    from_: Annotated[datetime | None, Query(alias="from")] = None,
+    to: Annotated[datetime | None, Query()] = None,
+) -> IncidentReliabilityMetrics:
+    return _guard(
+        lambda: service.incident_reliability(
+            workspace_id=principal.workspace_id, project_id=project_id, frm=from_, to=to
+        )
+    )
+
+
+@router.get(
+    "/analytics/dora",
+    response_model=DoraMetrics,
+    summary="DORA metrics: deploy frequency, lead time, change-failure rate, MTTR.",
+)
+def dora_metrics(
+    principal: ReaderDep,
+    service: AnalyticsDep,
+    project_id: Annotated[uuid.UUID | None, Query()] = None,
+    from_: Annotated[datetime | None, Query(alias="from")] = None,
+    to: Annotated[datetime | None, Query()] = None,
+) -> DoraMetrics:
+    return _guard(
+        lambda: service.dora_metrics(
+            workspace_id=principal.workspace_id, project_id=project_id, frm=from_, to=to
+        )
+    )
+
+
+@router.get(
+    "/analytics/budgets/{budget_id}/status",
+    response_model=BudgetStatus,
+    summary="Evaluate a budget's current-period spend against its cap.",
+)
+def budget_status(
+    budget_id: uuid.UUID, principal: ReaderDep, service: AnalyticsDep
+) -> BudgetStatus:
+    return _guard(
+        lambda: service.budget_status(workspace_id=principal.workspace_id, budget_id=budget_id)
+    )
+
+
+@router.get(
+    "/analytics/budgets",
+    response_model=list[BudgetStatus],
+    summary="Evaluate every budget defined for this workspace.",
+)
+def list_budget_statuses(principal: ReaderDep, service: AnalyticsDep) -> list[BudgetStatus]:
+    return service.list_budget_statuses(workspace_id=principal.workspace_id)
+
+
+@router.get(
+    "/analytics/coverage/trend",
+    response_model=list[CoverageSnapshotDTO],
+    summary="Per-day test-coverage trend for a project (optionally scoped to a repo).",
+)
+def coverage_trend(
+    project_id: uuid.UUID,
+    principal: ReaderDep,
+    service: AnalyticsDep,
+    repo_id: str | None = None,
+    from_: Annotated[date | None, Query(alias="from")] = None,
+    to: Annotated[date | None, Query()] = None,
+) -> list[CoverageSnapshotDTO]:
+    return _guard(
+        lambda: service.coverage_trend(
+            workspace_id=principal.workspace_id,
+            project_id=project_id,
+            repo_id=repo_id,
+            frm=from_,
+            to=to,
+        )
+    )
+
+
+@router.get(
+    "/analytics/coverage/rollup",
+    response_model=list[CoverageTrendPoint],
+    summary="Workspace-wide per-day coverage rollup, weighted by lines across repos.",
+)
+def coverage_rollup(
+    principal: ReaderDep,
+    service: AnalyticsDep,
+    from_: Annotated[date | None, Query(alias="from")] = None,
+    to: Annotated[date | None, Query()] = None,
+) -> list[CoverageTrendPoint]:
+    return service.coverage_rollup(workspace_id=principal.workspace_id, frm=from_, to=to)

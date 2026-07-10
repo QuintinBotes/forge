@@ -1,0 +1,7 @@
+{
+  "id": "wh-cu-1",
+  "webhook": {
+    "id": "wh-cu-1",
+    "endpoint": "https://forge.example/webhook"
+  }
+}

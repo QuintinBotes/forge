@@ -1,0 +1,18 @@
+{
+  "data": {
+    "gid": "10001",
+    "name": "Add pagination",
+    "notes": "body",
+    "completed": false,
+    "permalink_url": "https://app.asana.com/0/999/10001",
+    "modified_at": "2026-01-02T10:00:00.000Z",
+    "assignee": {"gid": "u1", "email": "alice@acme.test"},
+    "tags": [{"name": "backend"}],
+    "memberships": [
+      {"project": {"gid": "999"}, "section": {"gid": "s2", "name": "In Progress"}}
+    ],
+    "custom_fields": [
+      {"name": "Priority", "resource_subtype": "enum", "enum_value": {"name": "High"}}
+    ]
+  }
+}

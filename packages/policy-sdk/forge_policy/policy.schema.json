@@ -67,6 +67,7 @@
         "not_contains",
         "is_null",
         "is_not_null",
+        "changed",
         "matches_glob",
         "in_time_window",
         "not_in_time_window"
@@ -394,6 +395,11 @@
           "default": 1,
           "title": "Min Approvals",
           "type": "integer"
+        },
+        "require_code_owners": {
+          "default": false,
+          "title": "Require Code Owners",
+          "type": "boolean"
         },
         "required_reviewers": {
           "items": {

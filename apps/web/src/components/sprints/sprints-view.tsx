@@ -2,14 +2,18 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  Boxes,
   CalendarRange,
   Flag,
   Gauge,
   KanbanSquare,
+  Layers,
   LineChart,
   Play,
   Target,
+  Timer,
   TrendingUp,
+  Users,
 } from "lucide-react";
 import {
   useEffect,
@@ -26,15 +30,27 @@ import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { queryKeys, useSetTaskStatus } from "@/lib/api/hooks";
 import {
   useCompleteSprint,
+  useGoalAlignment,
+  usePortfolioVelocity,
+  useProjectCfd,
+  useProjectCycleLeadTime,
   useProjectSprints,
   useSprintBurndown,
+  useSprintCapacity,
   useStartSprint,
   useVelocityDashboard,
 } from "@/lib/api/sprints";
 import type { Sprint, TaskDTO, TaskStatus } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
-import { BurndownChart, StatTile, VelocityChart } from "./sprint-charts";
+import {
+  BurndownChart,
+  CapacityBars,
+  CFDChart,
+  GoalAlignmentMeter,
+  StatTile,
+  VelocityChart,
+} from "./sprint-charts";
 import {
   formatDateShort,
   formatDecimal,
@@ -91,6 +107,24 @@ export function SprintsView({
   const sprint = sprints.find((s) => s.id === effectiveId) ?? null;
 
   const burndownQuery = useSprintBurndown(effectiveId, client);
+  const capacityQuery = useSprintCapacity(effectiveId, client);
+  const goalAlignmentQuery = useGoalAlignment(effectiveId, client);
+
+  // Cumulative Flow Diagram window: the focused sprint's own dates, else a
+  // trailing-30-day fallback so the panel still has something to query.
+  const fallbackCfdWindow = useMemo(() => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return [start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)] as const;
+  }, []);
+  const [cfdStart, cfdEnd] =
+    sprint?.start_date && sprint?.end_date
+      ? ([sprint.start_date, sprint.end_date] as const)
+      : fallbackCfdWindow;
+  const cfdQuery = useProjectCfd(projectId, cfdStart, cfdEnd, client);
+  const cycleLeadTimeQuery = useProjectCycleLeadTime(projectId, client);
+  const portfolioQuery = usePortfolioVelocity([projectId], VELOCITY_WINDOW, client);
+
   const tasksQuery = useQuery({
     queryKey: queryKeys.tasks({ sprint_id: effectiveId ?? "" }),
     queryFn: () => client.listTasks({ sprint_id: effectiveId as string }),
@@ -352,6 +386,118 @@ export function SprintsView({
               )}
             </Panel>
           </div>
+
+          {/* Per-member capacity + sprint-goal alignment (F40 PM depth) */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Panel
+              title="Capacity"
+              icon={<Users className="h-4 w-4" aria-hidden />}
+              action={
+                <span className="text-xs text-muted-foreground">assigned vs. declared</span>
+              }
+            >
+              {capacityQuery.isLoading ? (
+                <ChartSkeleton testId="capacity-skeleton" />
+              ) : capacityQuery.isError ? (
+                <PanelNote testId="capacity-error">Capacity is unavailable right now.</PanelNote>
+              ) : capacityQuery.data && capacityQuery.data.members.length > 0 ? (
+                <CapacityBars testId="capacity-bars" members={capacityQuery.data.members} />
+              ) : (
+                <EmptyState
+                  testId="empty-capacity"
+                  icon={<Users className="h-7 w-7 text-muted-foreground" aria-hidden />}
+                  title="No capacity declared"
+                  body="Declare each member's capacity for this sprint to see over/under-allocation."
+                />
+              )}
+            </Panel>
+
+            <Panel
+              title="Goal alignment"
+              icon={<Target className="h-4 w-4" aria-hidden />}
+              action={
+                <span className="text-xs text-muted-foreground">goal vs. committed tasks</span>
+              }
+            >
+              {goalAlignmentQuery.isLoading ? (
+                <ChartSkeleton testId="goal-alignment-skeleton" />
+              ) : goalAlignmentQuery.isError ? (
+                <PanelNote testId="goal-alignment-error">
+                  Goal alignment is unavailable right now.
+                </PanelNote>
+              ) : goalAlignmentQuery.data && goalAlignmentQuery.data.total_count > 0 ? (
+                <GoalAlignmentMeter
+                  testId="goal-alignment-meter"
+                  alignment={goalAlignmentQuery.data}
+                />
+              ) : (
+                <EmptyState
+                  testId="empty-goal-alignment"
+                  icon={<Target className="h-7 w-7 text-muted-foreground" aria-hidden />}
+                  title="No goal to score"
+                  body="Set a sprint goal and commit tasks to see how well they line up."
+                />
+              )}
+            </Panel>
+          </div>
+
+          {/* Portfolio: Cumulative Flow Diagram + cycle/lead time (F40 PM depth) */}
+          <Panel
+            title="Cumulative flow"
+            icon={<Layers className="h-4 w-4" aria-hidden />}
+            action={
+              <span className="text-xs text-muted-foreground">
+                {formatDateShort(cfdStart)} – {formatDateShort(cfdEnd)}
+              </span>
+            }
+          >
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <StatTile
+                testId="kpi-lead-time"
+                label="Avg lead time"
+                value={
+                  cycleLeadTimeQuery.data
+                    ? `${formatDecimal(cycleLeadTimeQuery.data.average_lead_time_days)}d`
+                    : "—"
+                }
+                icon={<Timer className="h-3.5 w-3.5" aria-hidden />}
+              />
+              <StatTile
+                testId="kpi-cycle-time"
+                label="Avg cycle time"
+                value={
+                  cycleLeadTimeQuery.data
+                    ? `${formatDecimal(cycleLeadTimeQuery.data.average_cycle_time_days)}d`
+                    : "—"
+                }
+                icon={<Timer className="h-3.5 w-3.5" aria-hidden />}
+              />
+              <StatTile
+                testId="kpi-portfolio-forecast"
+                label="Portfolio forecast"
+                value={
+                  portfolioQuery.data
+                    ? `${formatDecimal(portfolioQuery.data.total_forecast_avg)} pts`
+                    : "—"
+                }
+                icon={<Boxes className="h-3.5 w-3.5" aria-hidden />}
+              />
+            </div>
+            {cfdQuery.isLoading ? (
+              <ChartSkeleton testId="cfd-skeleton" />
+            ) : cfdQuery.isError ? (
+              <PanelNote testId="cfd-error">Cumulative flow is unavailable right now.</PanelNote>
+            ) : cfdQuery.data && cfdQuery.data.points.length > 1 ? (
+              <CFDChart testId="cfd-chart" points={cfdQuery.data.points} />
+            ) : (
+              <EmptyState
+                testId="empty-cfd"
+                icon={<Layers className="h-7 w-7 text-muted-foreground" aria-hidden />}
+                title="No flow data yet"
+                body="Status changes will chart here as tasks move across the workflow."
+              />
+            )}
+          </Panel>
         </div>
       ) : null}
     </div>

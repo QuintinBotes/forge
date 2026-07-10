@@ -9,6 +9,7 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "forge-db",
+    "forge-policy",
     "forge-skill",
     "forge-workflow",
     "sqlalchemy>=2.0",
@@ -20,3 +21,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["forge_board"]
+
+[tool.uv.sources]
+forge-policy = { workspace = true }

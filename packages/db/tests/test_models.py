@@ -156,6 +156,20 @@ EXPECTED_MODELS = [
     # ss-versioning: immutable per-save spec snapshot (Spec Studio version
     # history + diff), keyed by the FileSpecEngine's own deterministic spec_id.
     "SpecVersion",
+    # F40 PM-depth: per-member sprint capacity, configurable estimation scales,
+    # and the append-only estimate/status history logs backing cycle/lead time
+    # + the portfolio Cumulative Flow Diagram.
+    "SprintMemberCapacity",
+    "EstimationScale",
+    "TaskEstimateEvent",
+    "TaskStatusEvent",
+    # F40 observability-analytics: DORA/MTTR/MTTA aggregation backing tables --
+    # an append-only per-agent-run skill-profile snapshot, a per-day coverage
+    # snapshot, a hard-cap budget, and a global multi-currency FX rate book.
+    "SkillProfileSnapshot",
+    "CoverageSnapshot",
+    "Budget",
+    "FxRate",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
@@ -183,6 +197,10 @@ NON_WORKSPACE_SCOPED = {
     # (``forge:idem:<tenant>:<header>``, anonymous falls back to client IP), so the
     # tenant lives in the key itself — there is no ``workspace`` FK to hang it on.
     "idempotency_key",
+    # The FX rate table is a global multi-currency price book (F40
+    # observability-analytics): rates are not tenant data, mirroring
+    # F38's ``model_price``.
+    "fx_rate",
 }
 
 

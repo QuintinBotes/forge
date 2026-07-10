@@ -16,16 +16,38 @@
  * reference, not a categorical hue.
  */
 
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
-import type { BurndownPoint, VelocitySprintBar } from "@/lib/api/types";
+import type {
+  BurndownPoint,
+  CFDPoint,
+  GoalAlignment,
+  MemberAllocation,
+  VelocitySprintBar,
+} from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
-import { formatDateShort, formatPct, formatPoints } from "./sprint-meta";
+import {
+  ALLOCATION_STATUS_LABELS,
+  allocationStatusBadgeClass,
+  formatDateShort,
+  formatPct,
+  formatPoints,
+} from "./sprint-meta";
 
 const COMMITTED_COLOR = "hsl(var(--chart-2))";
 const COMPLETED_COLOR = "hsl(var(--chart-1))";
 const IDEAL_COLOR = "hsl(var(--muted-foreground))";
+
+/** Categorical ramp the CFD's per-status bands cycle through (token-only). */
+const CFD_COLORS = [
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-5))",
+  "hsl(var(--chart-6))",
+];
 
 // --- Stat tile ------------------------------------------------------------ //
 
@@ -553,6 +575,295 @@ function BurndownTable({ points }: { points: BurndownPoint[] }) {
               <td className="px-3 py-1.5 text-right font-mono tabular-nums text-foreground">
                 {formatPoints(p.scope_points)}
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// --- Capacity: per-member assigned-vs-declared bars (F40 PM depth) -------- //
+
+/**
+ * One horizontal bar per member: assigned points against declared capacity,
+ * coloured by allocation status (token-only — success/warning/danger, the
+ * same tri-state ramp the predictability KPI uses). No hardcoded hex.
+ */
+export function CapacityBars({
+  members,
+  testId,
+}: {
+  members: MemberAllocation[];
+  testId?: string;
+}) {
+  if (members.length === 0) return null;
+  const maxPoints = Math.max(1, ...members.map((m) => Math.max(m.capacity_points, m.assigned_points)));
+  return (
+    <ul data-testid={testId} className="flex flex-col gap-3">
+      {members.map((m) => {
+        const pct = Math.min(100, Math.round((m.assigned_points / maxPoints) * 100));
+        const capPct = Math.min(100, Math.round((m.capacity_points / maxPoints) * 100));
+        return (
+          <li key={m.member_id} className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate font-medium text-foreground">{m.member_id}</span>
+              <span
+                className={cn(
+                  "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 font-medium",
+                  allocationStatusBadgeClass(m.status),
+                )}
+              >
+                {ALLOCATION_STATUS_LABELS[m.status]}
+              </span>
+            </div>
+            <div className="relative h-2 rounded-full bg-muted">
+              <span
+                aria-hidden
+                className="absolute inset-y-0 left-0 rounded-full border-r-2 border-foreground/40"
+                style={{ width: `${capPct}%` }}
+              />
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute inset-y-0 left-0 rounded-full",
+                  m.status === "over"
+                    ? "bg-danger"
+                    : m.status === "under"
+                      ? "bg-warning"
+                      : "bg-success",
+                )}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {formatPoints(m.assigned_points)} / {formatPoints(m.capacity_points)} pts
+              </span>
+              <span className="font-mono tabular-nums">{formatPct(m.utilization)}</span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// --- Goal alignment: sprint-goal <-> acceptance-criteria coverage (F40) --- //
+
+/**
+ * The sprint goal's keyword coverage across its committed tasks: a ratio
+ * meter plus the count of tasks that share no meaningful token with the
+ * goal. Token-only colour (success/warning/danger on the same band the
+ * predictability KPI uses) — no hardcoded hex.
+ */
+export function GoalAlignmentMeter({
+  alignment,
+  testId,
+}: {
+  alignment: GoalAlignment;
+  testId?: string;
+}) {
+  const pct = Math.min(100, Math.round(alignment.alignment_ratio * 100));
+  const tone =
+    alignment.alignment_ratio >= 0.9
+      ? "success"
+      : alignment.alignment_ratio >= 0.6
+        ? "warning"
+        : "danger";
+  return (
+    <div data-testid={testId} className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-muted-foreground">
+          {alignment.aligned_count} of {alignment.total_count} tasks aligned
+        </span>
+        <span
+          className={cn(
+            "font-mono tabular-nums",
+            tone === "success"
+              ? "text-success"
+              : tone === "warning"
+                ? "text-warning"
+                : "text-danger",
+          )}
+        >
+          {formatPct(alignment.alignment_ratio)}
+        </span>
+      </div>
+      <div className="h-2 rounded-full bg-muted">
+        <span
+          aria-hidden
+          className={cn(
+            "block h-full rounded-full",
+            tone === "success" ? "bg-success" : tone === "warning" ? "bg-warning" : "bg-danger",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {alignment.unaligned_task_ids.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {alignment.unaligned_task_ids.length}{" "}
+          {alignment.unaligned_task_ids.length === 1 ? "task shares" : "tasks share"} no
+          keyword with the goal.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// --- Portfolio: Cumulative Flow Diagram (F40 PM depth) --------------------- //
+
+const CFD_W = 760;
+const CFD_H = 240;
+const CFD_PAD = { top: 16, right: 16, bottom: 28, left: 44 };
+
+/**
+ * Stacked-area task count per status over a date range. Statuses keep a
+ * stable order (first-seen across the series) so a band's colour never
+ * shifts day to day; each is drawn from the validated `--chart-*` ramp.
+ */
+export function CFDChart({ points, testId }: { points: CFDPoint[]; testId?: string }) {
+  const [showTable, setShowTable] = useState(false);
+
+  const statuses = useMemo(() => {
+    const seen: string[] = [];
+    for (const p of points) {
+      for (const key of Object.keys(p.status_counts)) {
+        if (!seen.includes(key)) seen.push(key);
+      }
+    }
+    return seen;
+  }, [points]);
+
+  const n = points.length;
+  const plotW = CFD_W - CFD_PAD.left - CFD_PAD.right;
+  const plotH = CFD_H - CFD_PAD.top - CFD_PAD.bottom;
+
+  // Cumulative stack per day: stacks[i] is one running total per status.
+  const stacks = points.map((p) => {
+    let running = 0;
+    return statuses.map((s) => {
+      running += p.status_counts[s] ?? 0;
+      return running;
+    });
+  });
+  const maxY = Math.max(1, ...stacks.map((s) => s[s.length - 1] ?? 0));
+  const niceMax = niceCeil(maxY);
+  const xAt = (i: number) => CFD_PAD.left + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const yAt = (v: number) => CFD_PAD.top + plotH - (v / niceMax) * plotH;
+  const yTicks = [0, 0.5, 1].map((f) => f * niceMax);
+
+  const bandPath = (statusIndex: number): string => {
+    if (n < 2) return "";
+    const top = points.map((_p, i) => stacks[i]?.[statusIndex] ?? 0);
+    const bottom = points.map((_p, i) =>
+      statusIndex === 0 ? 0 : (stacks[i]?.[statusIndex - 1] ?? 0),
+    );
+    const upper = top.map(
+      (v, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)} ${yAt(v).toFixed(1)}`,
+    );
+    const lower = bottom
+      .map((v, i) => `L${xAt(i).toFixed(1)} ${yAt(v).toFixed(1)}`)
+      .reverse();
+    return `${upper.join(" ")} ${lower.join(" ")} Z`;
+  };
+
+  if (statuses.length === 0 || n === 0) return null;
+
+  return (
+    <div data-testid={testId} className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Legend
+          items={statuses.map((s, i) => ({
+            key: s,
+            label: s,
+            color: CFD_COLORS[i % CFD_COLORS.length] as string,
+          }))}
+        />
+        <TableToggle pressed={showTable} onToggle={() => setShowTable((v) => !v)} />
+      </div>
+
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${CFD_W} ${CFD_H}`}
+          className="w-full"
+          role="img"
+          aria-label={`Cumulative flow diagram across ${n} days and ${statuses.length} statuses`}
+        >
+          {yTicks.map((t) => (
+            <g key={t}>
+              <line
+                x1={CFD_PAD.left}
+                x2={CFD_W - CFD_PAD.right}
+                y1={yAt(t)}
+                y2={yAt(t)}
+                stroke="hsl(var(--border))"
+                strokeWidth={1}
+              />
+              <text
+                x={CFD_PAD.left - 8}
+                y={yAt(t)}
+                textAnchor="end"
+                dominantBaseline="middle"
+                className="fill-muted-foreground"
+                style={{ fontSize: 11 }}
+              >
+                {formatPoints(t)}
+              </text>
+            </g>
+          ))}
+
+          {statuses.map((s, i) => (
+            <path key={s} d={bandPath(i)} fill={CFD_COLORS[i % CFD_COLORS.length]} opacity={0.85} />
+          ))}
+
+          {n > 0
+            ? uniqueTicks(n).map((i) => (
+                <text
+                  key={i}
+                  x={xAt(i)}
+                  y={CFD_H - 8}
+                  textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"}
+                  className="fill-muted-foreground"
+                  style={{ fontSize: 11 }}
+                >
+                  {formatDateShort(points[i]?.snapshot_date)}
+                </text>
+              ))
+            : null}
+        </svg>
+      </div>
+
+      {showTable ? <CFDTable points={points} statuses={statuses} /> : null}
+    </div>
+  );
+}
+
+function CFDTable({ points, statuses }: { points: CFDPoint[]; statuses: string[] }) {
+  return (
+    <div className="max-h-56 overflow-auto rounded-md border border-border">
+      <table className="w-full text-xs" aria-label="Cumulative flow by day (data table)">
+        <thead className="sticky top-0 bg-muted/80 text-muted-foreground backdrop-blur">
+          <tr>
+            <th scope="col" className="px-3 py-1.5 text-left font-medium">Day</th>
+            {statuses.map((s) => (
+              <th key={s} scope="col" className="px-3 py-1.5 text-right font-medium">
+                {s}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {points.map((p) => (
+            <tr key={p.snapshot_date}>
+              <th scope="row" className="whitespace-nowrap px-3 py-1.5 text-left font-normal text-muted-foreground">
+                {formatDateShort(p.snapshot_date)}
+              </th>
+              {statuses.map((s) => (
+                <td key={s} className="px-3 py-1.5 text-right font-mono tabular-nums text-foreground">
+                  {formatPoints(p.status_counts[s] ?? 0)}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>

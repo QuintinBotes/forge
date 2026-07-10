@@ -82,6 +82,15 @@ def _scope_filter(stmt: Select, scope: KnowledgeScope | None) -> Select:
         repo_match = [KnowledgeSource.uri.contains(repo) for repo in scope.repos]
         repo_match.append(KnowledgeSource.name.in_(list(scope.repos)))
         stmt = stmt.where(or_(*repo_match))
+    if scope.namespaces:
+        # F40 MCP ACL re-check: an indexed MCP chunk records its origin namespace
+        # in ``metadata.mcp_namespace`` (see McpResourceChunker). Re-enforce the
+        # connection's namespace entitlement at query time — an MCP chunk survives
+        # only if its namespace is allow-listed. Chunks with no ``mcp_namespace``
+        # (repo/other content) are unaffected. ``->>`` on Postgres JSONB /
+        # ``json_extract`` on SQLite; NULL when the key is absent.
+        mcp_ns = RetrievalChunk.chunk_metadata["mcp_namespace"].as_string()
+        stmt = stmt.where(or_(mcp_ns.is_(None), mcp_ns.in_(list(scope.namespaces))))
     return stmt
 
 

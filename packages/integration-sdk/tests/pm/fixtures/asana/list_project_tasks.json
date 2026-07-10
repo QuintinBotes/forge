@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "gid": "10001",
+      "name": "Add pagination",
+      "notes": "body",
+      "modified_at": "2026-01-02T10:00:00.000Z",
+      "assignee": {"gid": "u1", "email": "alice@acme.test"},
+      "tags": [{"name": "backend"}],
+      "memberships": [
+        {"project": {"gid": "999"}, "section": {"gid": "s2", "name": "In Progress"}}
+      ],
+      "custom_fields": []
+    },
+    {
+      "gid": "10003",
+      "name": "Ship release",
+      "notes": "",
+      "modified_at": "2026-01-03T10:00:00.000Z",
+      "assignee": {},
+      "tags": [],
+      "memberships": [
+        {"project": {"gid": "999"}, "section": {"gid": "s3", "name": "Done"}}
+      ],
+      "custom_fields": []
+    }
+  ],
+  "next_page": null
+}

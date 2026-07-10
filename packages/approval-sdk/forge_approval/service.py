@@ -13,7 +13,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from forge_approval.audit import ApprovalAuditSink, NullAuditSink
-from forge_approval.authorizer import ApprovalAuthorizer, AuthorizationError
+from forge_approval.authorizer import ApprovalAuthorizer, AuthorizationError, quorum_met
+from forge_approval.delegation import DelegationDirectory
+from forge_approval.escalation import (
+    EscalationDecision,
+    EscalationOutcome,
+    SlaPolicy,
+    route_escalation,
+)
 from forge_approval.events import (
     APPROVAL_REQUESTED_TOPIC,
     APPROVAL_RESOLVED_TOPIC,
@@ -123,6 +130,11 @@ class ApprovalService:
             requested_actor=requested_actor,
             expires_at=expires_at,
             requested_at=datetime.now(UTC),
+        )
+        # Policy-driven quorum: a repo raising review_rules.min_approvals turns the
+        # PR gate into a multi-approver quorum even if the caller passed 1.
+        request.required_approvals = max(
+            request.required_approvals, self._authorizer.min_approvals_for(request)
         )
         stored = await self._repo.add(request)
 
@@ -281,6 +293,11 @@ class ApprovalService:
         if decision.decision is ApprovalAction.ESCALATE:
             return await self._escalate(request, decision, actor)
 
+        if decision.decision is ApprovalAction.APPROVE and request.required_approvals > 1:
+            partial = await self._partial_approval(request, decision, actor)
+            if partial is not None:
+                return partial
+
         now = datetime.now(UTC)
         request.status = _STATUS_FOR_ACTION[decision.decision]
         request.resolved_at = now
@@ -368,6 +385,101 @@ class ApprovalService:
             )
         return resolutions
 
+    async def sweep_sla(
+        self,
+        *,
+        sla: SlaPolicy,
+        now: datetime | None = None,
+        delegation: DelegationDirectory | None = None,
+    ) -> builtins.list[EscalationDecision]:
+        """Route / escalate / expire aging pending gates per the SLA ladder.
+
+        For each pending gate this computes :func:`route_escalation` and applies
+        the first-hit action: an OOO assignee (per ``delegation``) is re-routed to
+        their delegate, an over-SLA gate is escalated (bar raised to admin), and a
+        gate past its hard deadline is expired. Returns the actionable decisions.
+        The gate's assignee is read from (and a route writes back to) the payload
+        ``assignee`` key, so routing survives a reload without a schema change.
+        """
+        now = now or datetime.now(UTC)
+        applied: list[EscalationDecision] = []
+        for request in await self._all_pending():
+            assignee = _payload_assignee(request)
+            decision = route_escalation(
+                request, now=now, sla=sla, delegation=delegation, assignee=assignee
+            )
+            if not decision.is_actionable:
+                continue
+            if decision.outcome is EscalationOutcome.EXPIRE:
+                await self._apply_expiry(request, now)
+            elif decision.outcome is EscalationOutcome.ROUTE_TO_DELEGATE:
+                await self._apply_route(request, decision)
+            elif decision.outcome is EscalationOutcome.ESCALATE_TO_ADMIN:
+                if request.escalated:
+                    continue  # already escalated — idempotent no-op
+                await self._apply_escalation(request, decision)
+            applied.append(decision)
+        return applied
+
+    async def _apply_expiry(self, request: ApprovalRequest, now: datetime) -> None:
+        request.status = GateStatus.EXPIRED
+        request.resolved_at = now
+        await self._repo.update(request)
+        outcome = ResolutionOutcome(
+            completed=False,
+            blocking_reasons=["approval expired before a decision"],
+            follow_up_state="needs_human_input",
+        )
+        self._audit.record_approval(
+            request.gate_type.value,
+            status=GateStatus.EXPIRED.value,
+            actor="system",
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+        )
+        self._events.publish(
+            APPROVAL_RESOLVED_TOPIC,
+            ApprovalResolvedEvent(
+                approval_id=request.id,
+                workspace_id=request.workspace_id,
+                gate_type=request.gate_type,
+                status=GateStatus.EXPIRED,
+                resolver_user_id=None,
+                outcome=outcome,
+                resolved_at=now,
+            ),
+        )
+
+    async def _apply_route(self, request: ApprovalRequest, decision: EscalationDecision) -> None:
+        request.gate_payload = {
+            **request.gate_payload,
+            "assignee": str(decision.route_to) if decision.route_to else None,
+        }
+        await self._repo.update(request)
+        self._audit.record_approval(
+            request.gate_type.value,
+            status="routed_to_delegate",
+            actor="system",
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+            detail=decision.reason,
+        )
+
+    async def _apply_escalation(
+        self, request: ApprovalRequest, decision: EscalationDecision
+    ) -> None:
+        request.escalated = True
+        request.risk_level = "critical"
+        await self._repo.update(request)
+        self._audit.record_approval(
+            request.gate_type.value,
+            status="escalated",
+            actor="system",
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+            detail=decision.reason,
+        )
+
     # ------------------------------------------------------------------ #
     # helpers                                                             #
     # ------------------------------------------------------------------ #
@@ -408,6 +520,43 @@ class ApprovalService:
             gate_payload=self._redact(request.gate_payload),
         )
 
+    async def _partial_approval(
+        self,
+        request: ApprovalRequest,
+        decision: ApprovalDecisionRequest,
+        actor: Principal,
+    ) -> ApprovalResolution | None:
+        """Hold a multi-approver gate ``pending`` until the quorum is reached.
+
+        Returns a ``pending`` resolution while fewer than
+        ``required_approvals`` distinct reviewers have approved; ``None`` once the
+        quorum is met so the caller finalizes the gate as ``approved``.
+        """
+        records = await self._repo.decisions_for(request.id)
+        approvers = {r.approver_user_id for r in records if r.decision is ApprovalAction.APPROVE}
+        if quorum_met(approvers, request.required_approvals):
+            return None
+        self._audit.record_approval(
+            request.gate_type.value,
+            status="approval_recorded",
+            actor=actor.actor_ref,
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+            detail=decision.note,
+        )
+        return ApprovalResolution(
+            approval_id=request.id,
+            status=GateStatus.PENDING,
+            outcome=ResolutionOutcome(
+                completed=False,
+                follow_up_state="awaiting_more_approvals",
+                details={
+                    "approvals": len(approvers),
+                    "required_approvals": request.required_approvals,
+                },
+            ),
+        )
+
     async def _escalate(
         self,
         request: ApprovalRequest,
@@ -442,6 +591,17 @@ class ApprovalService:
         if items is None:  # pragma: no cover — DB-backed repos sweep in the worker
             return []
         return [i.model_copy(deep=True) for i in items.values() if i.status is GateStatus.PENDING]
+
+
+def _payload_assignee(request: ApprovalRequest) -> uuid.UUID | None:
+    """The gate's currently-assigned approver id from its payload, if any."""
+    raw = request.gate_payload.get("assignee")
+    if not isinstance(raw, str):
+        return None
+    try:
+        return uuid.UUID(raw)
+    except ValueError:
+        return None
 
 
 _STATUS_FOR_ACTION: dict[ApprovalAction, GateStatus] = {

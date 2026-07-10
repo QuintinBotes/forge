@@ -43,14 +43,20 @@ from forge_board.automation import CONDITION_FIELDS
 from forge_board.automation.errors import ActionForbiddenError, RuleValidationError
 from forge_board.automation.schemas import (
     AddCommentAction,
+    AutoMergeAction,
     CloseLinkedSpecTasksAction,
+    CreateExternalIssueAction,
     CreateTaskAction,
+    DeclareIncidentAction,
     SendNotificationAction,
     SendWorkflowEventAction,
     SetAssigneeAction,
     SetFieldAction,
     SetPriorityAction,
     SetStatusAction,
+    StartSprintAction,
+    TriggerDeployAction,
+    WebhookPostAction,
 )
 from forge_contracts.automation import (
     AutomationActionType,
@@ -125,10 +131,18 @@ _ACTION_MODELS: dict[AutomationActionType, type[BaseModel]] = {
     AutomationActionType.SEND_WORKFLOW_EVENT: SendWorkflowEventAction,
     AutomationActionType.SEND_NOTIFICATION: SendNotificationAction,
     AutomationActionType.CREATE_TASK: CreateTaskAction,
+    # F40-AUT-ACTIONS: external + incident + sprint + merge actions.
+    AutomationActionType.WEBHOOK_POST: WebhookPostAction,
+    AutomationActionType.CREATE_EXTERNAL_ISSUE: CreateExternalIssueAction,
+    AutomationActionType.TRIGGER_DEPLOY: TriggerDeployAction,
+    AutomationActionType.DECLARE_INCIDENT: DeclareIncidentAction,
+    AutomationActionType.START_SPRINT: StartSprintAction,
+    AutomationActionType.AUTO_MERGE: AutoMergeAction,
 }
 
 _REQUIRED_TRIGGER_CONFIG: dict[AutomationTriggerType, list[str]] = {
     AutomationTriggerType.WORKFLOW_STATE_CHANGED: ["to_state"],
+    AutomationTriggerType.SCHEDULED: ["cron"],
 }
 
 

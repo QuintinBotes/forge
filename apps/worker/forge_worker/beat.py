@@ -17,6 +17,8 @@ from forge_worker.celery_app import celery_app
 SANDBOX_REAP_TASK = "sandbox.reap_orphans"
 MCP_REFRESH_TASK = "forge.knowledge.refresh_stale_mcp_sources"
 AUTOMATION_SWEEP_TASK = "forge.automations.sweep_unprocessed_triggers"
+# F40: minute-resolution cron dispatch for SCHEDULED automation rules.
+AUTOMATION_SCHEDULED_TASK = "forge.automations.dispatch_due_scheduled"
 # F26: daily burndown snapshot for every active sprint (workspace-naive UTC).
 SPRINT_SNAPSHOT_TASK = "sprint.snapshot_burndown"
 # F30: purge expired role grants every 5m (hygiene + audit; expiry is
@@ -112,6 +114,11 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": AUTOMATION_SWEEP_TASK,
             "schedule": automation_sweep_seconds(),
         },
+        # F40: dispatch SCHEDULED (cron) automation rules due this minute.
+        "automation-dispatch-due-scheduled": {
+            "task": AUTOMATION_SCHEDULED_TASK,
+            "schedule": crontab(minute="*"),
+        },
         # F26: snapshot every active sprint's burndown daily at 23:55 UTC.
         "sprint-snapshot-burndown": {
             "task": SPRINT_SNAPSHOT_TASK,
@@ -174,6 +181,7 @@ __all__ = [
     "AUDIT_VERIFY_TASK",
     "AUTHZ_PURGE_TASK",
     "AUTH_PURGE_KEYS_TASK",
+    "AUTOMATION_SCHEDULED_TASK",
     "AUTOMATION_SWEEP_TASK",
     "BEAT_SCHEDULE",
     "MARKETPLACE_REFRESH_TASK",

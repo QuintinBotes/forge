@@ -6,7 +6,7 @@
  * most recent). No hardcoded colour — every class resolves a Forge token.
  */
 
-import type { Sprint, SprintState } from "@/lib/api/types";
+import type { AllocationStatus, Sprint, SprintState } from "@/lib/api/types";
 
 export const SPRINT_STATE_LABELS: Record<SprintState, string> = {
   planned: "Planned",
@@ -99,4 +99,24 @@ export function pickDefaultSprintId(sprints: Sprint[]): string | null {
   const active = sprints.find((s) => s.state === "active");
   if (active) return active.id;
   return sortSprintsNewestFirst(sprints)[0]?.id ?? null;
+}
+
+// --- F40 PM depth: per-member capacity ------------------------------------ //
+
+export const ALLOCATION_STATUS_LABELS: Record<AllocationStatus, string> = {
+  under: "Under-allocated",
+  balanced: "Balanced",
+  over: "Over-allocated",
+};
+
+/** Token-only badge classes per allocation status (ember reserved for "over"). */
+export function allocationStatusBadgeClass(status: AllocationStatus): string {
+  switch (status) {
+    case "over":
+      return "border-danger/30 bg-danger/10 text-danger";
+    case "under":
+      return "border-warning/30 bg-warning/10 text-warning";
+    default:
+      return "border-success/30 bg-success/10 text-success";
+  }
 }

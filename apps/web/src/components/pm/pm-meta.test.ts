@@ -18,6 +18,13 @@ describe("labels", () => {
   it("names providers and policies for humans", () => {
     expect(providerLabel("jira")).toBe("Jira");
     expect(providerLabel("linear")).toBe("Linear");
+    expect(providerLabel("asana")).toBe("Asana");
+    expect(providerLabel("monday")).toBe("monday.com");
+    expect(providerLabel("github_projects")).toBe("GitHub Projects");
+    expect(providerLabel("clickup")).toBe("ClickUp");
+    expect(providerLabel("trello")).toBe("Trello");
+    expect(providerLabel("gitlab")).toBe("GitLab");
+    expect(providerLabel("generic")).toBe("Custom (generic)");
     expect(conflictPolicyLabel("newest_wins")).toBe("Newest wins");
     expect(conflictPolicyLabel("external_wins")).toBe("Provider wins");
   });

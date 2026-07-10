@@ -851,6 +851,7 @@ dependencies = [
     { name = "docker" },
     { name = "forge-contracts" },
     { name = "forge-orchestration-policy" },
+    { name = "forge-policy" },
     { name = "langgraph" },
 ]
 
@@ -866,6 +867,7 @@ requires-dist = [
     { name = "docker", specifier = ">=7.1,<8" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-orchestration-policy", editable = "packages/orchestration-policy" },
+    { name = "forge-policy", editable = "packages/policy-sdk" },
     { name = "langgraph", specifier = ">=1.2.8,<2" },
     { name = "openai", marker = "extra == 'providers'", specifier = ">=1.60" },
 ]
@@ -887,6 +889,7 @@ dependencies = [
     { name = "forge-db" },
     { name = "forge-deploy" },
     { name = "forge-eval" },
+    { name = "forge-integrations" },
     { name = "forge-knowledge" },
     { name = "forge-marketplace" },
     { name = "forge-mcp" },
@@ -919,6 +922,7 @@ requires-dist = [
     { name = "forge-db", editable = "packages/db" },
     { name = "forge-deploy", editable = "packages/deploy-core" },
     { name = "forge-eval", editable = "packages/evaluation" },
+    { name = "forge-integrations", editable = "packages/integration-sdk" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
     { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
@@ -986,6 +990,7 @@ source = { editable = "packages/board-core" }
 dependencies = [
     { name = "forge-contracts" },
     { name = "forge-db" },
+    { name = "forge-policy" },
     { name = "forge-skill" },
     { name = "forge-workflow" },
     { name = "sqlalchemy" },
@@ -995,6 +1000,7 @@ dependencies = [
 requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
+    { name = "forge-policy", editable = "packages/policy-sdk" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "sqlalchemy", specifier = ">=2.0" },
@@ -1304,6 +1310,7 @@ dependencies = [
     { name = "celery" },
     { name = "forge-agent" },
     { name = "forge-api" },
+    { name = "forge-approval" },
     { name = "forge-board" },
     { name = "forge-contracts" },
     { name = "forge-db" },
@@ -1322,6 +1329,7 @@ requires-dist = [
     { name = "celery", specifier = ">=5.3" },
     { name = "forge-agent", editable = "packages/agent-runtime" },
     { name = "forge-api", editable = "apps/api" },
+    { name = "forge-approval", editable = "packages/approval-sdk" },
     { name = "forge-board", editable = "packages/board-core" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },

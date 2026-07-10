@@ -423,6 +423,21 @@ class ScimResourceType(enum.StrEnum):
     GROUP = "Group"
 
 
+class BudgetScope(enum.StrEnum):
+    """F40 observability-analytics: the scope a spend budget guards (§ Budgets)."""
+
+    WORKSPACE = "workspace"
+    PROJECT = "project"
+
+
+class BudgetPeriod(enum.StrEnum):
+    """F40 observability-analytics: the recurring window a budget's cap resets on."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
 __all__ = [
     "APIKeyKind",
     "AccessLevel",
@@ -434,6 +449,8 @@ __all__ = [
     "AutomationExecutionStatus",
     "AutomationTriggerSource",
     "AutomationTriggerType",
+    "BudgetPeriod",
+    "BudgetScope",
     "CarryoverTarget",
     "ChunkType",
     "CostEventKind",

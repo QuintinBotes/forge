@@ -1,0 +1,7 @@
+{
+  "data": [
+    {"gid": "s1", "name": "To Do"},
+    {"gid": "s2", "name": "In Progress"},
+    {"gid": "s3", "name": "Done"}
+  ]
+}

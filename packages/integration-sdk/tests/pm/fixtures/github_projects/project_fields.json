@@ -1,0 +1,31 @@
+{
+  "data": {
+    "node": {
+      "fields": {
+        "nodes": [
+          {
+            "id": "F_STATUS",
+            "name": "Status",
+            "options": [
+              {"id": "O_BACKLOG", "name": "Backlog"},
+              {"id": "O_TODO", "name": "Todo"},
+              {"id": "O_INPROGRESS", "name": "In Progress"},
+              {"id": "O_DONE", "name": "Done"},
+              {"id": "O_CANCELLED", "name": "Cancelled"}
+            ]
+          },
+          {
+            "id": "F_PRIORITY",
+            "name": "Priority",
+            "options": [
+              {"id": "O_LOW", "name": "Low"},
+              {"id": "O_MEDIUM", "name": "Medium"},
+              {"id": "O_HIGH", "name": "High"},
+              {"id": "O_URGENT", "name": "Urgent"}
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

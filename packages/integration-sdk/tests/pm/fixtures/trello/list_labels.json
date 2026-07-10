@@ -1,0 +1,6 @@
+[
+  { "id": "lab-low", "name": "Low", "color": "green" },
+  { "id": "lab-med", "name": "Medium", "color": "yellow" },
+  { "id": "lab-high", "name": "High", "color": "orange" },
+  { "id": "lab-urgent", "name": "Urgent", "color": "red" }
+]

@@ -1,0 +1,11 @@
+{
+  "iid": 43,
+  "id": 5002,
+  "title": "Conformance task",
+  "description": "conformance body",
+  "state": "opened",
+  "labels": ["Doing", "Priority: High"],
+  "web_url": "https://gitlab.com/acme/eng/-/issues/43",
+  "updated_at": "2024-01-01T00:05:00.000Z",
+  "assignee": null
+}

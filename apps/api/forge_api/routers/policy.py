@@ -32,6 +32,9 @@ from forge_api.schemas.policy import (
     PolicyTestResponse,
     SimulateRequest,
     SimulationResult,
+    StaticGateRequest,
+    StaticGateResponse,
+    StaticGateViolationOut,
 )
 from forge_api.services.policy_audit_sink_db import build_policy_audit_sink
 from forge_api.services.policy_service import PolicyService
@@ -40,6 +43,7 @@ from forge_policy import (
     ConditionalPolicyEvaluator,
     PolicyContext,
     resolve_policy_path,
+    scan_forbidden_shortcuts,
     suite_path_for,
 )
 from forge_policy.tests_runner import load_test_suite
@@ -200,6 +204,30 @@ def test(
             ) from exc
     report = service.run_tests(policy, suite)
     return PolicyTestResponse.model_validate(report.model_dump())
+
+
+@router.post("/static-gate", response_model=StaticGateResponse)
+def static_gate(request: StaticGateRequest, _principal: SimulateDep) -> StaticGateResponse:
+    """Run the static forbidden-shortcuts scanner over produced files.
+
+    A clean scan returns ``passed=True``; any forbidden shortcut fails the check
+    with HTTP 422 and the located violations, so a run that took a banned shortcut
+    cannot pass verification. Privileged (viewer denied), like ``/simulate``.
+    """
+    result = scan_forbidden_shortcuts(request.files, request.forbidden_shortcuts)
+    payload = StaticGateResponse(
+        passed=result.passed,
+        summary=result.summary,
+        violations=[
+            StaticGateViolationOut.model_validate(v.model_dump()) for v in result.violations
+        ],
+    )
+    if not result.passed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=payload.model_dump(mode="json"),
+        )
+    return payload
 
 
 @router.get("/rule-evaluations", response_model=list[PolicyRuleEvaluationOut])

@@ -165,3 +165,56 @@ def test_cross_workspace_is_404(
     sid = created["id"]
     other = client_factory(role=UserRole.ADMIN, workspace_id=_OTHER_WS)
     assert other.get(f"{API}/sprints/{sid}").status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# F40 PM depth: calendar, capacity, goal alignment, portfolio rollups          #
+# --------------------------------------------------------------------------- #
+
+
+def test_create_with_calendar_round_trips(client: TestClient, project_id: uuid.UUID) -> None:
+    created = _create(client, project_id, calendar_weekend_days=[5, 6])
+    assert created["calendar_weekend_days"] == [5, 6]
+    got = client.get(f"{API}/sprints/{created['id']}").json()
+    assert got["calendar_weekend_days"] == [5, 6]
+
+
+def test_capacity_report_round_trips(client: TestClient, project_id: uuid.UUID) -> None:
+    created = _create(client, project_id)
+    sid = created["id"]
+    member_id = str(uuid.uuid4())
+    resp = client.put(
+        f"{API}/sprints/{sid}/capacity", json={"member_id": member_id, "capacity_points": 8}
+    )
+    assert resp.status_code == 204, resp.text
+    report = client.get(f"{API}/sprints/{sid}/capacity")
+    assert report.status_code == 200
+    members = report.json()["members"]
+    assert any(m["member_id"] == member_id for m in members)
+
+
+def test_goal_alignment_endpoint(client: TestClient, project_id: uuid.UUID) -> None:
+    created = _create(client, project_id, goal="Ship the new onboarding flow")
+    resp = client.get(f"{API}/sprints/{created['id']}/goal-alignment")
+    assert resp.status_code == 200
+    assert resp.json()["total_count"] == 0  # no tasks assigned to this fresh sprint
+
+
+def test_project_cfd_and_cycle_lead_time(client: TestClient, project_id: uuid.UUID) -> None:
+    cfd = client.get(
+        f"{API}/projects/{project_id}/cfd",
+        params={"start": "2026-06-01", "end": "2026-06-02"},
+    )
+    assert cfd.status_code == 200
+    assert len(cfd.json()["points"]) == 2
+
+    clt = client.get(f"{API}/projects/{project_id}/cycle-lead-time")
+    assert clt.status_code == 200
+    assert clt.json()["average_lead_time_days"] == 0.0
+
+
+def test_portfolio_velocity_endpoint(client: TestClient, project_id: uuid.UUID) -> None:
+    resp = client.get(f"{API}/portfolio/velocity", params={"project_ids": [str(project_id)]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["project_count"] == 1

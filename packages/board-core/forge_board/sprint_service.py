@@ -29,28 +29,70 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from forge_board.capacity import (
+    MemberAllocation,
+    MemberAssignment,
+    MemberCapacityInput,
+    compute_capacity_report,
+)
+from forge_board.estimation import (
+    EstimateChange,
+    is_valid_estimate,
+    nearest_scale_value,
+)
+from forge_board.estimation import EstimationScale as EstimationScaleRule
 from forge_board.exceptions import ActiveSprintExistsError, SprintStateError
+from forge_board.goal_alignment import (
+    GoalAlignmentResult,
+    TaskAlignmentInput,
+    compute_goal_alignment,
+)
+from forge_board.portfolio import (
+    CFDPoint,
+    CycleLeadTime,
+    PortfolioVelocitySummary,
+    TaskStatusEventInput,
+    average_cycle_lead_time,
+    compute_cfd,
+    compute_cycle_lead_time,
+    compute_portfolio_velocity,
+)
 from forge_board.sprint_state import SprintStateMachine
 from forge_board.velocity import (
     BurndownPoint,
     VelocityResult,
     VelocitySummary,
+    WorkCalendar,
     compute_velocity_summary,
     ideal_line,
+)
+from forge_contracts.automation import (
+    AutomationDispatcher,
+    AutomationEntityType,
+    AutomationTriggerEnvelope,
+    AutomationTriggerSource,
+    AutomationTriggerType,
+    NullAutomationDispatcher,
 )
 
 # Import the enums from forge_db.models.enums so they are the *same* classes the
 # ORM columns use (forge_db re-exports the F26 sprint enums from the frozen
 # contracts; ``TaskStatus`` is forge_db's own — matching ``Task.status``).
 from forge_db.models import (
+    EstimationScale as EstimationScaleRow,
+)
+from forge_db.models import (
     Sprint,
     SprintBurndownSnapshot,
+    SprintMemberCapacity,
     SprintScopeEvent,
     SprintVelocity,
     Task,
+    TaskEstimateEvent,
+    TaskStatusEvent,
 )
 from forge_db.models.enums import (
     CarryoverTarget,
@@ -125,6 +167,9 @@ class SprintView(BaseModel):
     predictability: float = 0.0
     scope_change_ratio: float = 0.0
     velocity_version: int = 0
+    # F40 PM depth: the working-day/holiday calendar (see ``WorkCalendar``).
+    calendar_weekend_days: list[int] = []
+    calendar_holidays: list[date] = []
 
 
 class SprintReportTaskView(BaseModel):
@@ -167,12 +212,52 @@ class VelocityDashboardView(BaseModel):
     summary: VelocitySummary = VelocitySummary()
 
 
+class EstimationScaleView(BaseModel):
+    """A configurable estimation scale row (F40 PM depth).
+
+    ``project_id is None`` is the workspace-wide default scale that
+    :meth:`SprintService.set_task_estimate` falls back to when a task's
+    project has none of its own.
+    """
+
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    project_id: uuid.UUID | None = None
+    name: str
+    unit: str = "points"
+    values: list[float] = []
+    is_default: bool = False
+
+
 class SprintService:
     """Sprint lifecycle, scope capture, velocity/burndown — over a sync session."""
 
-    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        *,
+        dispatcher: AutomationDispatcher | None = None,
+    ) -> None:
         self._sf = session_factory
         self._sm = SprintStateMachine()
+        # F40: fires SPRINT_STARTED / SPRINT_COMPLETED post-commit — the
+        # automation engine's sprint-lifecycle producer (see ``start``/
+        # ``complete``). Callers that don't care about automations (tests, the
+        # CLI) get the no-op default; the API router wires the real dispatcher.
+        self._dispatcher = dispatcher or NullAutomationDispatcher()
+
+    def _dispatch_sprint_event(self, sprint: Sprint, trigger_type: AutomationTriggerType) -> None:
+        envelope = AutomationTriggerEnvelope(
+            trigger_type=trigger_type,
+            trigger_source=AutomationTriggerSource.BOARD_ACTIVITY,
+            trigger_event_id=uuid.uuid4(),
+            workspace_id=sprint.workspace_id,
+            project_id=sprint.project_id,
+            entity_type=AutomationEntityType.SPRINT,
+            entity_id=sprint.id,
+            change={"state": sprint.status},
+        )
+        self._dispatcher.dispatch(envelope)
 
     # ------------------------------------------------------------------ #
     # internal loaders                                                    #
@@ -189,6 +274,28 @@ class SprintService:
         if row is None or row.workspace_id != workspace_id:
             raise SprintNotFound(str(task_id))
         return row
+
+    @staticmethod
+    def _calendar_for(sprint: Sprint) -> WorkCalendar:
+        """Build the sprint's :class:`WorkCalendar` from its stored columns.
+
+        Malformed holiday entries are skipped rather than raising — the
+        calendar is a planning aid, not a source of truth the burndown must
+        fail closed on.
+        """
+        holidays: set[date] = set()
+        for entry in sprint.calendar_holidays or []:
+            if isinstance(entry, date):
+                holidays.add(entry)
+                continue
+            try:
+                holidays.add(date.fromisoformat(str(entry)))
+            except ValueError:
+                continue
+        weekend_days = {
+            int(d) for d in (sprint.calendar_weekend_days or []) if str(d).lstrip("-").isdigit()
+        }
+        return WorkCalendar(weekend_days=frozenset(weekend_days), holidays=frozenset(holidays))
 
     def _events(self, session: Session, sprint_id: uuid.UUID) -> list[SprintScopeEvent]:
         rows = list(
@@ -379,7 +486,7 @@ class SprintService:
             scope = remaining = committed
             remaining_tc = committed_tc
             completed_tc = 0
-        ideal = ideal_line(committed, start, end).get(day, 0.0)
+        ideal = ideal_line(committed, start, end, self._calendar_for(sprint)).get(day, 0.0)
 
         existing = session.execute(
             select(SprintBurndownSnapshot).where(
@@ -435,6 +542,11 @@ class SprintService:
             predictability=float(v.predictability) if v else 0.0,
             scope_change_ratio=float(v.scope_change_ratio) if v else 0.0,
             velocity_version=sprint.velocity_version,
+            calendar_weekend_days=list(sprint.calendar_weekend_days or []),
+            calendar_holidays=[
+                d if isinstance(d, date) else date.fromisoformat(str(d))
+                for d in (sprint.calendar_holidays or [])
+            ],
         )
 
     # ------------------------------------------------------------------ #
@@ -451,6 +563,8 @@ class SprintService:
         start_date: date,
         end_date: date,
         capacity_points: int | None = None,
+        calendar_weekend_days: list[int] | None = None,
+        calendar_holidays: list[date] | None = None,
     ) -> SprintView:
         if end_date < start_date:
             raise InvalidSprintRequest("end_date must be >= start_date")
@@ -464,6 +578,8 @@ class SprintService:
                 end_date=_as_dt(end_date),
                 status=SprintState.PLANNED.value,
                 capacity_points=capacity_points,
+                calendar_weekend_days=list(calendar_weekend_days or []),
+                calendar_holidays=[d.isoformat() for d in (calendar_holidays or [])],
             )
             session.add(sprint)
             session.commit()
@@ -480,6 +596,8 @@ class SprintService:
         start_date: date | None = None,
         end_date: date | None = None,
         capacity_points: int | None = None,
+        calendar_weekend_days: list[int] | None = None,
+        calendar_holidays: list[date] | None = None,
     ) -> SprintView:
         with self._sf() as session:
             sprint = self._sprint(session, workspace_id, sprint_id)
@@ -495,6 +613,10 @@ class SprintService:
                 sprint.end_date = _as_dt(end_date)
             if capacity_points is not None:
                 sprint.capacity_points = capacity_points
+            if calendar_weekend_days is not None:
+                sprint.calendar_weekend_days = list(calendar_weekend_days)
+            if calendar_holidays is not None:
+                sprint.calendar_holidays = [d.isoformat() for d in calendar_holidays]
             new_start = _as_date(sprint.start_date)
             new_end = _as_date(sprint.end_date)
             if new_start and new_end and new_end < new_start:
@@ -553,6 +675,7 @@ class SprintService:
             self._snapshot_for_day(session, sprint, rows, day0)
             session.commit()
             session.refresh(sprint)
+            self._dispatch_sprint_event(sprint, AutomationTriggerType.SPRINT_STARTED)
             return self._view(session, sprint)
 
     def cancel(
@@ -630,6 +753,7 @@ class SprintService:
             # LEAVE: keep as-is.
             session.commit()
             session.refresh(sprint)
+            self._dispatch_sprint_event(sprint, AutomationTriggerType.SPRINT_COMPLETED)
             return self._report(session, sprint)
 
     def recompute(
@@ -719,6 +843,24 @@ class SprintService:
             sprint = session.get(Sprint, task.sprint_id) if task.sprint_id else None
             task.status = status
             session.flush()
+            # F40 PM depth: append-only status-transition log, recorded on *every*
+            # move regardless of sprint membership/state — the source the
+            # portfolio CFD and cycle/lead-time rollups read from (distinct from
+            # the F26 scope event above, which only fires while the sprint is
+            # active and only around the DONE boundary).
+            if old != status:
+                session.add(
+                    TaskStatusEvent(
+                        workspace_id=workspace_id,
+                        task_id=task.id,
+                        project_id=task.project_id,
+                        sprint_id=task.sprint_id,
+                        from_status=str(old),
+                        to_status=str(status),
+                        actor_id=actor_id,
+                        changed_at=_now(),
+                    )
+                )
             if sprint is not None and SprintState(sprint.status) == SprintState.ACTIVE:
                 crossed_in = old not in COMPLETED_STATUSES and status in COMPLETED_STATUSES
                 crossed_out = old in COMPLETED_STATUSES and status not in COMPLETED_STATUSES
@@ -746,6 +888,56 @@ class SprintService:
                     self._recompute(session, sprint)
             session.commit()
 
+    def _applicable_estimation_scale(
+        self, session: Session, workspace_id: uuid.UUID, project_id: uuid.UUID
+    ) -> EstimationScaleRow | None:
+        """The scale governing ``project_id``: its own default, else the
+        workspace-wide default, else ``None`` (unrestricted)."""
+        row = session.execute(
+            select(EstimationScaleRow).where(
+                EstimationScaleRow.workspace_id == workspace_id,
+                EstimationScaleRow.project_id == project_id,
+                EstimationScaleRow.is_default.is_(True),
+            )
+        ).scalar_one_or_none()
+        if row is not None:
+            return row
+        return session.execute(
+            select(EstimationScaleRow).where(
+                EstimationScaleRow.workspace_id == workspace_id,
+                EstimationScaleRow.project_id.is_(None),
+                EstimationScaleRow.is_default.is_(True),
+            )
+        ).scalar_one_or_none()
+
+    def _snap_estimate_to_scale(
+        self,
+        session: Session,
+        workspace_id: uuid.UUID,
+        project_id: uuid.UUID,
+        estimate: int | None,
+    ) -> int | None:
+        """Snap ``estimate`` to the project's configured scale, if any.
+
+        No default scale configured (for the project or the workspace), or a
+        scale with no declared ``values`` -> unrestricted, ``estimate`` passes
+        through untouched (this is the case every pre-F40 caller hits).
+        """
+        if estimate is None:
+            return None
+        row = self._applicable_estimation_scale(session, workspace_id, project_id)
+        if row is None or not row.values:
+            return estimate
+        rule = EstimationScaleRule(
+            name=row.name,
+            unit=row.unit,
+            values=[float(v) for v in row.values],
+            is_default=row.is_default,
+        )
+        if is_valid_estimate(rule, float(estimate)):
+            return estimate
+        return round(nearest_scale_value(rule, float(estimate)))
+
     def set_task_estimate(
         self,
         *,
@@ -759,9 +951,28 @@ class SprintService:
             task = self._task(session, workspace_id, task_id)
             before = task.estimate or 0
             sprint = session.get(Sprint, task.sprint_id) if task.sprint_id else None
+            estimate = self._snap_estimate_to_scale(
+                session, workspace_id, task.project_id, estimate
+            )
             task.estimate = estimate
             after = estimate or 0
             session.flush()
+            if before != after:
+                # F40 PM depth: durable, always-on estimate-change history —
+                # recorded regardless of sprint state (unlike the F26
+                # ESTIMATE_CHANGED scope event below, which only fires while the
+                # task's sprint is active).
+                session.add(
+                    TaskEstimateEvent(
+                        workspace_id=workspace_id,
+                        task_id=task.id,
+                        sprint_id=task.sprint_id,
+                        points_before=before,
+                        points_after=after,
+                        actor_id=actor_id,
+                        changed_at=_now(),
+                    )
+                )
             if (
                 sprint is not None
                 and SprintState(sprint.status) == SprintState.ACTIVE
@@ -779,6 +990,254 @@ class SprintService:
                 )
                 self._recompute(session, sprint)
             session.commit()
+
+    def estimate_history(
+        self, *, workspace_id: uuid.UUID, task_id: uuid.UUID
+    ) -> list[EstimateChange]:
+        """A task's full estimate-change history, oldest first."""
+        with self._sf() as session:
+            self._task(session, workspace_id, task_id)  # 404 if foreign/missing
+            rows = session.execute(
+                select(TaskEstimateEvent)
+                .where(TaskEstimateEvent.task_id == task_id)
+                .order_by(TaskEstimateEvent.changed_at)
+            ).scalars()
+            return [
+                EstimateChange(
+                    task_id=str(task_id),
+                    points_before=r.points_before,
+                    points_after=r.points_after,
+                    changed_at=r.changed_at,
+                    actor_id=str(r.actor_id) if r.actor_id else None,
+                )
+                for r in rows
+            ]
+
+    # ------------------------------------------------------------------ #
+    # configurable estimation scales (F40 PM depth)                        #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _estimation_scale_view(row: EstimationScaleRow) -> EstimationScaleView:
+        return EstimationScaleView(
+            id=row.id,
+            workspace_id=row.workspace_id,
+            project_id=row.project_id,
+            name=row.name,
+            unit=row.unit,
+            values=[float(v) for v in (row.values or [])],
+            is_default=row.is_default,
+        )
+
+    def create_estimation_scale(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        project_id: uuid.UUID | None = None,
+        name: str,
+        unit: str = "points",
+        values: list[float] | None = None,
+        is_default: bool = False,
+    ) -> EstimationScaleView:
+        with self._sf() as session:
+            row = EstimationScaleRow(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                name=name,
+                unit=unit,
+                values=list(values or []),
+                is_default=is_default,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return self._estimation_scale_view(row)
+
+    def list_estimation_scales(
+        self, *, workspace_id: uuid.UUID, project_id: uuid.UUID | None = None
+    ) -> list[EstimationScaleView]:
+        """Scales visible to ``project_id``: its own plus the workspace-wide
+        ones. ``project_id=None`` lists only the workspace-wide scales."""
+        with self._sf() as session:
+            q = select(EstimationScaleRow).where(EstimationScaleRow.workspace_id == workspace_id)
+            if project_id is None:
+                q = q.where(EstimationScaleRow.project_id.is_(None))
+            else:
+                q = q.where(
+                    or_(
+                        EstimationScaleRow.project_id == project_id,
+                        EstimationScaleRow.project_id.is_(None),
+                    )
+                )
+            q = q.order_by(EstimationScaleRow.created_at)
+            return [self._estimation_scale_view(r) for r in session.execute(q).scalars()]
+
+    def update_estimation_scale(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        scale_id: uuid.UUID,
+        name: str | None = None,
+        unit: str | None = None,
+        values: list[float] | None = None,
+        is_default: bool | None = None,
+    ) -> EstimationScaleView:
+        with self._sf() as session:
+            row = session.get(EstimationScaleRow, scale_id)
+            if row is None or row.workspace_id != workspace_id:
+                raise SprintNotFound(str(scale_id))
+            if name is not None:
+                row.name = name
+            if unit is not None:
+                row.unit = unit
+            if values is not None:
+                row.values = list(values)
+            if is_default is not None:
+                row.is_default = is_default
+            session.commit()
+            session.refresh(row)
+            return self._estimation_scale_view(row)
+
+    # ------------------------------------------------------------------ #
+    # per-member capacity (F40 PM depth)                                   #
+    # ------------------------------------------------------------------ #
+
+    def set_member_capacity(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        sprint_id: uuid.UUID,
+        member_id: uuid.UUID,
+        capacity_points: float,
+    ) -> None:
+        with self._sf() as session:
+            sprint = self._sprint(session, workspace_id, sprint_id)
+            row = session.execute(
+                select(SprintMemberCapacity).where(
+                    SprintMemberCapacity.sprint_id == sprint.id,
+                    SprintMemberCapacity.member_id == member_id,
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                row = SprintMemberCapacity(
+                    workspace_id=workspace_id, sprint_id=sprint.id, member_id=member_id
+                )
+                session.add(row)
+            row.capacity_points = capacity_points
+            session.commit()
+
+    def capacity_report(
+        self, *, workspace_id: uuid.UUID, sprint_id: uuid.UUID
+    ) -> list[MemberAllocation]:
+        """Each member's declared capacity vs. their assigned committed-task points."""
+        with self._sf() as session:
+            sprint = self._sprint(session, workspace_id, sprint_id)
+            capacities = [
+                MemberCapacityInput(
+                    member_id=str(r.member_id), capacity_points=float(r.capacity_points)
+                )
+                for r in session.execute(
+                    select(SprintMemberCapacity).where(SprintMemberCapacity.sprint_id == sprint.id)
+                ).scalars()
+            ]
+            assignments = [
+                MemberAssignment(member_id=str(t.assignee_id), points=t.estimate or 0)
+                for t in session.execute(
+                    select(Task).where(Task.sprint_id == sprint.id, Task.assignee_id.is_not(None))
+                ).scalars()
+            ]
+            return compute_capacity_report(capacities, assignments)
+
+    # ------------------------------------------------------------------ #
+    # portfolio: CFD, cycle/lead time, cross-project velocity (F40)        #
+    # ------------------------------------------------------------------ #
+
+    def cfd(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        project_id: uuid.UUID,
+        start: date,
+        end: date,
+    ) -> list[CFDPoint]:
+        """Cumulative Flow Diagram over ``[start, end]`` for a project."""
+        with self._sf() as session:
+            rows = session.execute(
+                select(TaskStatusEvent)
+                .where(
+                    TaskStatusEvent.workspace_id == workspace_id,
+                    TaskStatusEvent.project_id == project_id,
+                )
+                .order_by(TaskStatusEvent.changed_at)
+            ).scalars()
+            events = [
+                TaskStatusEventInput(
+                    task_id=str(r.task_id), to_status=r.to_status, changed_at=r.changed_at
+                )
+                for r in rows
+            ]
+            return compute_cfd(events, start, end)
+
+    def cycle_lead_time(
+        self, *, workspace_id: uuid.UUID, project_id: uuid.UUID
+    ) -> tuple[list[CycleLeadTime], float, float]:
+        """Per-task cycle/lead time + (avg lead, avg cycle) for a project."""
+        with self._sf() as session:
+            rows = session.execute(
+                select(TaskStatusEvent)
+                .where(
+                    TaskStatusEvent.workspace_id == workspace_id,
+                    TaskStatusEvent.project_id == project_id,
+                )
+                .order_by(TaskStatusEvent.changed_at)
+            ).scalars()
+            events_by_task: dict[str, list[TaskStatusEventInput]] = {}
+            for r in rows:
+                events_by_task.setdefault(str(r.task_id), []).append(
+                    TaskStatusEventInput(
+                        task_id=str(r.task_id), to_status=r.to_status, changed_at=r.changed_at
+                    )
+                )
+            created_at_by_task = {
+                str(t.id): t.created_at
+                for t in session.execute(
+                    select(Task).where(
+                        Task.workspace_id == workspace_id, Task.project_id == project_id
+                    )
+                ).scalars()
+            }
+            rows_out = compute_cycle_lead_time(events_by_task, created_at_by_task)
+            avg_lead, avg_cycle = average_cycle_lead_time(rows_out)
+            return rows_out, avg_lead, avg_cycle
+
+    def portfolio_velocity(
+        self, *, workspace_id: uuid.UUID, project_ids: list[uuid.UUID], last: int = 6
+    ) -> PortfolioVelocitySummary:
+        """Aggregate each project's independent velocity summary into one view."""
+        per_project = {
+            str(pid): self.velocity_dashboard(
+                workspace_id=workspace_id, project_id=pid, last=last
+            ).summary
+            for pid in project_ids
+        }
+        return compute_portfolio_velocity(per_project)
+
+    def goal_alignment(
+        self, *, workspace_id: uuid.UUID, sprint_id: uuid.UUID
+    ) -> GoalAlignmentResult:
+        """Score the sprint goal's keyword coverage across its current tasks."""
+        with self._sf() as session:
+            sprint = self._sprint(session, workspace_id, sprint_id)
+            tasks = session.execute(select(Task).where(Task.sprint_id == sprint.id)).scalars()
+            inputs = [
+                TaskAlignmentInput(
+                    task_id=str(t.id),
+                    title=t.title,
+                    acceptance_criteria=[str(c) for c in (t.acceptance_criteria or [])],
+                )
+                for t in tasks
+            ]
+            return compute_goal_alignment(sprint.goal, inputs)
 
     # ------------------------------------------------------------------ #
     # worker entrypoints (snapshot / reconcile)                           #
@@ -918,7 +1377,9 @@ class SprintService:
             scope_points=scope,
             remaining_points=remaining,
             completed_points=scope - remaining,
-            ideal_points=ideal_line(committed, start, end).get(day, 0.0),
+            ideal_points=ideal_line(committed, start, end, self._calendar_for(sprint)).get(
+                day, 0.0
+            ),
             completed_task_count=completed_tc,
             remaining_task_count=remaining_tc,
         )
@@ -1082,6 +1543,7 @@ class SprintService:
 
 __all__ = [
     "BurndownSeriesView",
+    "EstimationScaleView",
     "InvalidSprintRequest",
     "SprintNotFound",
     "SprintReportTaskView",

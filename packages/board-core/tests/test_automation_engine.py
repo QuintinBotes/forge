@@ -8,6 +8,7 @@ Covers conditions, triggers, validators, loop guard, and engine orchestration
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -25,9 +26,11 @@ from forge_board.automation import (
     RecordingActionExecutor,
     RuleValidationError,
     SendWorkflowEventAction,
+    SetPriorityAction,
     SetStatusAction,
     TriggerSpec,
     evaluate_condition,
+    snapshot_for_task,
     trigger_matches,
     trigger_type_for,
     validate_rule,
@@ -169,6 +172,84 @@ def test_condition_empty_group_is_true() -> None:
     assert evaluate_condition(ConditionGroup(), _snapshot()) is True
 
 
+def test_conditions_use_shared_contracts_primitive() -> None:
+    """F40 consolidation: the engine rides the ONE shared condition DSL.
+
+    ``Condition``/``ConditionGroup``/``ConditionOp`` are the identical objects the
+    policy engine uses — no drifted F21-private copies remain.
+    """
+    from forge_contracts import conditions as shared
+
+    assert Condition is shared.Condition
+    assert ConditionGroup is shared.ConditionGroup
+    assert ConditionOp is shared.ConditionOp
+
+
+def test_condition_aggregate_all_subtasks_done() -> None:
+    """F40 aggregate condition: ``all_subtasks_done`` derived over subtasks."""
+    done = SimpleNamespace(status=TaskStatus.DONE.value)
+    open_ = SimpleNamespace(status=TaskStatus.IN_PROGRESS.value)
+
+    parent_all_done = SimpleNamespace(
+        id=uuid.uuid4(), status=TaskStatus.IN_REVIEW.value, subtasks=[done, done]
+    )
+    parent_open = SimpleNamespace(
+        id=uuid.uuid4(), status=TaskStatus.IN_REVIEW.value, subtasks=[done, open_]
+    )
+
+    g = ConditionGroup(
+        conditions=[Condition(field="all_subtasks_done", op=ConditionOp.EQ, value=True)]
+    )
+    assert evaluate_condition(g, snapshot_for_task(parent_all_done)) is True
+    assert evaluate_condition(g, snapshot_for_task(parent_open)) is False
+
+    # The numeric aggregates are exposed too.
+    open_count = ConditionGroup(
+        conditions=[Condition(field="open_subtask_count", op=ConditionOp.GTE, value=1)]
+    )
+    assert evaluate_condition(open_count, snapshot_for_task(parent_open)) is True
+    assert evaluate_condition(open_count, snapshot_for_task(parent_all_done)) is False
+
+
+def test_condition_aggregate_from_explicit_subtask_statuses() -> None:
+    """F40 aggregate condition off explicit child *statuses* — the real DB path.
+
+    The DB-backed worker has no ``.subtasks`` attribute on the ``Task`` ORM row;
+    it resolves the children from the ``task_dependency`` graph and passes their
+    status values via ``subtasks=``. This exercises exactly that shape.
+    """
+    parent = SimpleNamespace(id=uuid.uuid4(), status=TaskStatus.IN_REVIEW.value)
+    all_done = snapshot_for_task(
+        parent, subtasks=[TaskStatus.DONE.value, TaskStatus.CANCELLED.value]
+    )
+    one_open = snapshot_for_task(
+        parent, subtasks=[TaskStatus.DONE.value, TaskStatus.IN_PROGRESS.value]
+    )
+    none = snapshot_for_task(parent, subtasks=[])
+
+    done_gate = ConditionGroup(
+        conditions=[Condition(field="all_subtasks_done", op=ConditionOp.EQ, value=True)]
+    )
+    assert evaluate_condition(done_gate, all_done) is True
+    assert evaluate_condition(done_gate, one_open) is False
+    # A childless task is vacuously "all done" (nothing open).
+    assert evaluate_condition(done_gate, none) is True
+
+    count_gate = ConditionGroup(
+        conditions=[Condition(field="subtask_count", op=ConditionOp.EQ, value=2)]
+    )
+    assert evaluate_condition(count_gate, all_done) is True
+    assert (
+        evaluate_condition(
+            ConditionGroup(
+                conditions=[Condition(field="open_subtask_count", op=ConditionOp.EQ, value=1)]
+            ),
+            one_open,
+        )
+        is True
+    )
+
+
 def test_condition_unknown_field_raises() -> None:
     g = ConditionGroup(conditions=[Condition(field="nope", op=ConditionOp.EQ, value=1)])
     with pytest.raises(ValueError):
@@ -256,6 +337,27 @@ def test_validate_unknown_condition_field() -> None:
     )
     with pytest.raises(RuleValidationError):
         validate_rule(spec)
+
+
+def test_validate_malformed_cron_rejected() -> None:
+    spec = AutomationRuleSpec(
+        name="x",
+        trigger=TriggerSpec(type=AutomationTriggerType.SCHEDULED, config={"cron": "not a cron"}),
+        actions=[SetPriorityAction(priority=Priority.HIGH)],
+    )
+    with pytest.raises(RuleValidationError):
+        validate_rule(spec)
+
+
+def test_validate_well_formed_cron_ok() -> None:
+    spec = AutomationRuleSpec(
+        name="x",
+        trigger=TriggerSpec(
+            type=AutomationTriggerType.SCHEDULED, config={"cron": "*/15 9 * * 1-5"}
+        ),
+        actions=[SetPriorityAction(priority=Priority.HIGH)],
+    )
+    assert validate_rule(spec) == []
 
 
 def test_validate_possible_self_trigger_warning() -> None:
