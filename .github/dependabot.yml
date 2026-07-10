@@ -61,6 +61,12 @@ updates:
       # Remove this once the React/Next eslint plugins support eslint v10.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # typescript 7 is the native (Go) compiler rewrite; the Next 16 web app +
+      # build toolchain don't support it yet (`web` build + image build fail).
+      # Hold at 6.x — still get 6.x minors/patches. Remove when the toolchain
+      # supports v7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # ---------------------------------------------------------------- #
   # GitHub Actions — first-party workflows                            #
