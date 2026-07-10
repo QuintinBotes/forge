@@ -22,6 +22,14 @@ agents in your codebase, and a native board tracks it all. It is designed to be
 **self-hosted first** — every component ships in a single, hardened Docker
 Compose stack (or a Helm chart) that you own end to end.
 
+![The Forge in-app walkthrough — the loop every change travels through: create a
+spec, run an agent, review the PR, merge &
+ship.](./docs/assets/screenshots/walkthrough.png)
+
+New here? Start with **[Getting started](./docs/getting-started.md)**, then the
+**[Concepts](./docs/concepts.md)** and **[Architecture](./docs/architecture.md)**
+guides.
+
 ## Status
 
 Forge is **pre-1.0 and under active development** — usable for evaluation and
@@ -36,10 +44,10 @@ marked gaps** where a backend projection or live credential is still landing
 (e.g. a couple of dashboard projections, OIDC), and the
 third-party integrations (GitHub App, model BYOK, reranker, MCP, Slack) are
 code-complete with tests + runbooks but need **your keys** to verify live. We
-try hard not to advertise anything that is only parked — the in-app
-"under development" banners and
-[`docs/RELEASE_READINESS.md`](./docs/RELEASE_READINESS.md) track the honest
-status.
+try hard not to advertise anything that is only parked — the pre-1.0 notice at
+the top of this README, this Status section, and
+[`RELEASE_READINESS.md`](./RELEASE_READINESS.md) track the honest status, and
+individual screens mark in-progress areas inline.
 
 ## Key features
 
@@ -57,10 +65,10 @@ status.
 - **Native project board** — a board core for tracking runs and work items.
 - **Policy, skill, integration & MCP SDKs** — declarative `.forge/policy.yaml`,
   skill profiles, integration definitions, and an MCP gateway for tool sources.
-- **Integration marketplace** — publish and install integrations (backend +
-  offline author CLI today; **UI in progress**).
-- **Enterprise SSO / SCIM** — SAML SSO and SCIM provisioning on the API
-  (**UI in progress**).
+- **Integration marketplace** — browse and install integrations (UI shipped;
+  publishing still via the offline author CLI).
+- **Enterprise SSO / SCIM** — SAML SSO and SCIM provisioning with an admin UI
+  (OIDC and live IdP verification still landing).
 - **Human approval system** — gated approvals for sensitive agent actions.
 - **Benchmark leaderboard** — submit, verify, and rank agent benchmark runs
   (backend; **UI in progress**).
@@ -79,7 +87,7 @@ Requires Docker Engine 24+ and the Docker Compose v2 plugin, plus `make`.
 ```bash
 git clone https://github.com/QuintinBotes/forge.git
 cd forge
-cp .env.example .env     # then set SECRET_KEY, POSTGRES_PASSWORD, DOMAIN, ...
+cp .env.example .env     # then set FORGE_SECRET_KEY, POSTGRES_PASSWORD, DOMAIN, ...
 make dev                 # build + start the full stack, migrate, seed, wait healthy
 ```
 
@@ -184,11 +192,22 @@ the full workflow.
 
 ## Documentation
 
+Full docs index: **[`docs/`](./docs/README.md)**.
+
+- [Getting started](./docs/getting-started.md) — from a clone to your first
+  orchestrated run.
+- [Concepts](./docs/concepts.md) — specs, workflows, agents, runs, knowledge,
+  approvals, and a glossary.
+- [Architecture](./docs/architecture.md) — services, package map, and how a
+  change flows through the platform.
+- [BYOK & bring-your-own board](./docs/integrations/byok-and-boards.md) — model
+  keys plus Jira / Linear / Asana / Monday / GitHub Projects / ClickUp / Trello /
+  GitLab sync.
 - [Self-hosting](./docs/self-hosting/quickstart.md) — quickstart, Docker Compose,
   Kubernetes/Helm, backup, restore, upgrade, security, troubleshooting.
 - [Infrastructure as Code](./docs/self-hosting/iac.md) — OpenTofu apply runbook
   for Hetzner + Cloudflare + Fly.io (dev/staging/prod).
-- [Architecture & spec](./docs/FORGE_SPEC.md) — the platform specification.
+- [Platform specification](./docs/FORGE_SPEC.md) — the full Forge spec.
 - [Security policy](./SECURITY.md) and the
   [threat model](./docs/security/threat-model.md).
 - [Examples](./examples/README.md) — copy-paste, schema-validated configuration.
