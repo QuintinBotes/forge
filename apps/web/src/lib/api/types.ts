@@ -768,6 +768,45 @@ export interface MarketplaceListingQuery {
   offset?: number;
 }
 
+/** A registry source the workspace can browse/sync — and, if owned, publish into. */
+export interface Registry {
+  id: string;
+  slug: string;
+  name: string;
+  type: RegistryType;
+  url: string;
+  ref?: string | null;
+  trust_level: TrustLevel;
+  enabled: boolean;
+  has_public_key: boolean;
+  last_sync_at?: string | null;
+  last_sync_status?: string | null;
+  last_sync_error?: string | null;
+  created_at: string;
+}
+
+/**
+ * Body of POST /marketplace/publish — the in-app equivalent of the offline
+ * `forge marketplace package` CLI authoring step. `artifact` is the raw F09
+ * `mcp_connector` / F11 `skill_profile` body; the server validates it through
+ * the same authoritative installer schema before persisting anything.
+ */
+export interface ListingPublishRequest {
+  registry_id: string;
+  kind: ArtifactKind;
+  slug: string;
+  name: string;
+  version: string;
+  summary: string;
+  description?: string | null;
+  license?: string;
+  homepage?: string | null;
+  repository?: string | null;
+  tags?: string[];
+  min_forge_version?: string | null;
+  artifact: Record<string, unknown>;
+}
+
 // --- Incidents (F17 /incidents workflow surface) -------------------------- //
 
 /** The ten forward incident lifecycle states (matches IncidentState). */

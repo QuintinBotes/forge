@@ -13,6 +13,7 @@ import {
   Scale,
   Search,
   Store,
+  Upload,
 } from "lucide-react";
 import {
   useCallback,
@@ -54,6 +55,7 @@ import {
 } from "./marketplace-badges";
 import { InstallDialog } from "./install-dialog";
 import { filterListings, formatDate, kindLabel } from "./marketplace-meta";
+import { PublishDialog } from "./publish-dialog";
 
 type TabId = "browse" | "installed";
 type KindFilter = ArtifactKind | "all";
@@ -98,6 +100,7 @@ export function MarketplaceView({ client = apiClient }: MarketplaceViewProps) {
   const [kind, setKind] = useState<KindFilter>("all");
   const [selected, setSelected] = useState<Selection | null>(null);
   const [installTarget, setInstallTarget] = useState<Listing | null>(null);
+  const [publishOpen, setPublishOpen] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -218,34 +221,45 @@ export function MarketplaceView({ client = apiClient }: MarketplaceViewProps) {
           </span>
         </div>
 
-        <div
-          role="tablist"
-          aria-label="Marketplace views"
-          onKeyDown={onTabKeyDown}
-          className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1"
-        >
-          {(["browse", "installed"] as TabId[]).map((id) => {
-            const isActive = tab === id;
-            return (
-              <button
-                key={id}
-                role="tab"
-                type="button"
-                aria-selected={isActive}
-                tabIndex={isActive ? 0 : -1}
-                onClick={() => onSelectTab(id)}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  isActive
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {id}
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-3">
+          <div
+            role="tablist"
+            aria-label="Marketplace views"
+            onKeyDown={onTabKeyDown}
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1"
+          >
+            {(["browse", "installed"] as TabId[]).map((id) => {
+              const isActive = tab === id;
+              return (
+                <button
+                  key={id}
+                  role="tab"
+                  type="button"
+                  aria-selected={isActive}
+                  tabIndex={isActive ? 0 : -1}
+                  onClick={() => onSelectTab(id)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    isActive
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {id}
+                </button>
+              );
+            })}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="open-publish"
+            onClick={() => setPublishOpen(true)}
+          >
+            <Upload className="h-4 w-4" aria-hidden />
+            Publish
+          </Button>
         </div>
       </header>
 
@@ -282,6 +296,10 @@ export function MarketplaceView({ client = apiClient }: MarketplaceViewProps) {
           listing={installTarget}
           client={client}
         />
+      ) : null}
+
+      {publishOpen ? (
+        <PublishDialog open onOpenChange={setPublishOpen} client={client} />
       ) : null}
     </div>
   );

@@ -56,6 +56,7 @@ import type {
   KnowledgeSearchRequest,
   Listing,
   ListingDetail,
+  ListingPublishRequest,
   MilestoneDTO,
   OidcConfig,
   OidcConfigInput,
@@ -75,6 +76,7 @@ import type {
   ProjectTeamAccess,
   ProjectTeamAccessInput,
   ProjectVisibilityInput,
+  Registry,
   RemediationPlanView,
   Requirement,
   RetrievedChunk,
@@ -750,6 +752,23 @@ export class ForgeApiClient {
       `/marketplace/installations/${encodeURIComponent(installationId)}/update`,
       { method: "POST", query: version ? { version } : undefined },
     );
+  }
+
+  /** Registry sources the workspace can publish into (picker for the publish form). */
+  listRegistries(): Promise<Registry[]> {
+    return this.request<Registry[]>("/marketplace/registries");
+  }
+
+  /**
+   * Author a package straight into the workspace's catalog — the in-app
+   * counterpart to the offline `forge marketplace package` CLI step. Any
+   * member may publish; the artifact is validated server-side before persist.
+   */
+  publishListing(body: ListingPublishRequest): Promise<ListingDetail> {
+    return this.request<ListingDetail>("/marketplace/publish", {
+      method: "POST",
+      body,
+    });
   }
 
   // --- Audit log (F39 canonical /audit query surface) --------------------- //
