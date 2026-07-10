@@ -53,6 +53,14 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # eslint 10 needs eslint-plugin-react / eslint-config-next support that has
+      # not shipped yet (eslint-plugin-react@7.37.5 still calls the removed
+      # context.getFilename(), so `pnpm lint` crashes under v10; its peer range
+      # is eslint "… || ^9.7"). Hold eslint at 9.x — still get 9.x minors/patches.
+      # Remove this once the React/Next eslint plugins support eslint v10.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
 
   # ---------------------------------------------------------------- #
   # GitHub Actions — first-party workflows                            #
