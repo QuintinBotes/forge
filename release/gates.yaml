@@ -141,7 +141,7 @@ gates:
     bar: production
     blocker: 5
     workstream: HARD-11
-    title: Every MORNING_REPORT §5 PARKED item closed or has a dated owned deferral
+    title: Every parked V1 item is closed or has a dated, owned deferral
     check:
       kind: evidence
       artifact: release/evidence/parked-closed.md

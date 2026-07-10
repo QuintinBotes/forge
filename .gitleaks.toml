@@ -47,7 +47,9 @@ paths = [
   '''tests/security/matrix_checks\.py''',
   # Integration ENV TEMPLATE — key names only, all values empty. "Never commit values."
   '''\.env\.integration\.example''',
-  # Spec/docs prose that pattern-matches generic-api-key (no real values).
+  # Spec/docs prose that pattern-matched generic-api-key (no real values). These
+  # docs were removed from the working tree; the entry is retained for the
+  # full-history gitleaks scan (the files still exist in earlier commits).
   '''docs/implementation-slices/.*\.md''',
   # Documented DEV-ONLY compose defaults (header says NOT for production);
   # committed so `docker compose -f deploy/docker-compose.dev.yml up` works

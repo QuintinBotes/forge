@@ -36,7 +36,7 @@ controls:
 
   - id: auth-required-401
     title: Every feature router rejects unauthenticated calls
-    spec: FORGE_SPEC Security / MORNING_REPORT 2.3 (auth wired)
+    spec: FORGE_SPEC Security (auth wired)
     mode: offline
     check: check_auth_required_401
     asserts: >

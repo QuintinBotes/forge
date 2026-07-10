@@ -50,7 +50,6 @@ Start here and follow the path that fits you.
 | **[Platform specification](./FORGE_SPEC.md)** | The full Forge spec |
 | **[Release readiness](../RELEASE_READINESS.md)** | Automated gate status at the beta bar |
 | **[Eval results](./EVAL_RESULTS.md)** | Real-corpus retrieval evaluation |
-| **[Implementation slices](./implementation-slices/INDEX.md)** | Feature-by-feature build history |
 
 ## Contributing
 

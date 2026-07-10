@@ -8,9 +8,8 @@ from forge_eval.release.model import load_gates
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MANIFEST = REPO_ROOT / "release" / "gates.yaml"
-SPEC = REPO_ROOT / "docs" / "implementation-slices" / "hardening" / "SPEC-PRODUCTION-HARDENING.md"
 
-# The 18 lettered gates named in SPEC-PRODUCTION-HARDENING.md's readiness model.
+# The 18 lettered gates in the production readiness model (release/gates.yaml).
 SPEC_GATES = {
     "G-DB",
     "G-MODEL",
@@ -43,14 +42,6 @@ def test_manifest_covers_every_spec_gate() -> None:
     ids = {g.id for g in load_gates(MANIFEST)}
     missing = SPEC_GATES - ids
     assert not missing, f"gates.yaml is missing spec gates: {sorted(missing)}"
-
-
-def test_spec_constant_matches_the_actual_spec_document() -> None:
-    # Guards SPEC_GATES against drift: every id we claim is a spec gate must
-    # actually appear in the spec document.
-    text = SPEC.read_text(encoding="utf-8")
-    for gid in SPEC_GATES:
-        assert gid in text, f"{gid} is not named in SPEC-PRODUCTION-HARDENING.md"
 
 
 def test_human_only_gates_present_and_manual() -> None:

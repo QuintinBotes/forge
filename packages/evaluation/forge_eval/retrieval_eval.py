@@ -17,11 +17,10 @@ nDCG@10 + an ablation), see :mod:`forge_eval.corpus_eval` and
 ``docs/EVAL_RESULTS.md``. A production run swaps in a BYOK embedding client +
 Jina reranker behind the same frozen interfaces.
 
-Track 1.4 adversarial-refutation resolution (re-reviewed HARD-04, 2026-07-04):
-  INVALID / SUPERSEDED. The refutation recorded in ``MORNING_REPORT.md`` §6 ("1
-  refutation, repaired=false") was that these deterministic 1.000 scores did not
-  prove real-world retrieval quality — an eval *realism* gap, not a defect in
-  ``forge_knowledge.sync`` or this module. HARD-04 closes that gap by measuring
+Track 1.4 realism note: an earlier concern held that these deterministic 1.000
+  scores did not prove real-world retrieval quality — an eval *realism* gap,
+  not a defect in ``forge_knowledge.sync`` or this module. That gap is closed by
+  measuring
   the same pipeline on a real, heterogeneous corpus with a learned embedder
   (:mod:`forge_eval.corpus_eval`, ``docs/EVAL_RESULTS.md``). The sync ingestion
   path is unchanged and green; no code defect was surfaced, so nothing to repair
