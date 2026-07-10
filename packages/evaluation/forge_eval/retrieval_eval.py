@@ -17,7 +17,7 @@ nDCG@10 + an ablation), see :mod:`forge_eval.corpus_eval` and
 ``docs/EVAL_RESULTS.md``. A production run swaps in a BYOK embedding client +
 Jina reranker behind the same frozen interfaces.
 
-Eval realism note: an earlier concern held that these deterministic 1.000
+Track 1.4 realism note: an earlier concern held that these deterministic 1.000
   scores did not prove real-world retrieval quality — an eval *realism* gap,
   not a defect in ``forge_knowledge.sync`` or this module. That gap is closed by
   measuring
