@@ -1,0 +1,21 @@
+# terraform.tfvars.example — copy to <env>.auto.tfvars (gitignored) and fill in.
+#
+#   cp terraform.tfvars.example envs/prod/prod.auto.tfvars
+#
+# NON-SECRET values only. Secrets (API tokens, R2 keys) MUST come from the
+# environment as TF_VAR_* — never write them into a tfvars file:
+#
+#   export TF_VAR_hcloud_token="..."          # Hetzner Cloud API token
+#   export TF_VAR_cloudflare_api_token="..."  # Cloudflare scoped token
+#   export AWS_ACCESS_KEY_ID="..."            # R2 access key (state backend)
+#   export AWS_SECRET_ACCESS_KEY="..."        # R2 secret key (state backend)
+
+environment = "prod"
+project     = "forge"
+region      = "nbg1"
+domain      = "forge.example.com"
+
+tags = {
+  owner   = "platform-team"
+  cost_ct = "engineering"
+}

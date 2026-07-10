@@ -1,0 +1,40 @@
+# terraform.tfvars.example — dev environment, non-secret values only.
+#
+#   cp terraform.tfvars.example dev.auto.tfvars   # then edit
+#
+# dev.auto.tfvars is gitignored (see infra/.gitignore's *.tfvars /
+# *.auto.tfvars rule) — only this .example is tracked.
+#
+# SECRETS DO NOT GO IN THIS FILE. Export them as TF_VAR_* before running
+# tofu init/plan/apply:
+#
+#   export TF_VAR_hcloud_token="..."          # Hetzner Cloud API token
+#   export TF_VAR_cloudflare_api_token="..."  # Cloudflare scoped API token
+#   export AWS_ACCESS_KEY_ID="..."            # R2 access key (state backend, not a TF var)
+#   export AWS_SECRET_ACCESS_KEY="..."        # R2 secret key (state backend, not a TF var)
+
+project = "forge"
+domain  = "dev.forge.example.com"
+
+# Cloudflare account + zone ids (Cloudflare dashboard -> Overview, right
+# sidebar). Not secret, but specific to your account — no sane default.
+cloudflare_account_id = "0123456789abcdef0123456789abcdef"
+cloudflare_zone_id    = "fedcba9876543210fedcba9876543210"
+
+# At least one SSH public key so the dev box is reachable.
+ssh_public_keys = {
+  "you" = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... you@laptop"
+}
+
+# Restrict to your own IP(s) — never leave this open in a shared env.
+admin_ssh_cidrs = ["203.0.113.4/32"]
+
+tags = {
+  owner = "you"
+}
+
+# --- Sizing overrides (optional — dev defaults already fit a minimal
+#     single-node deployment; uncomment only to deviate) ---
+# server_type          = "cpx21"
+# postgres_volume_size = 20
+# minio_volume_size    = 20

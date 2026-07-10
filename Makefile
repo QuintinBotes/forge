@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test lint fmt typecheck migrate seed build clean \
 	compose-build build-images pin-digests sbom smoke security load-smoke perf soak \
+	infra-validate \
 	bump changelog hooks release-readiness source-sbom
 
 # Every typed first-party package/app, one mypy module each. mypy runs in
@@ -95,6 +96,19 @@ clean: ## Remove python caches and build artifacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	find . -type d -name '*.egg-info' -prune -exec rm -rf {} +
 	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build
+
+# --------------------------------------------------------------------------- #
+# Infrastructure as Code (OpenTofu) — see docs/self-hosting/iac.md            #
+# --------------------------------------------------------------------------- #
+infra-validate: ## fmt-check + offline validate for infra/ root + every env (dev/staging/prod)
+	@command -v terraform >/dev/null 2>&1 || command -v tofu >/dev/null 2>&1 || \
+		{ echo "terraform or tofu not installed — see docs/self-hosting/iac.md"; exit 1; }
+	$(eval TF := $(shell command -v tofu >/dev/null 2>&1 && echo tofu || echo terraform))
+	$(TF) fmt -check -recursive infra
+	@for d in infra infra/envs/dev infra/envs/staging infra/envs/prod; do \
+		echo "--- $$d ---"; \
+		(cd "$$d" && $(TF) init -backend=false -input=false >/dev/null && $(TF) validate) || exit 1; \
+	done
 
 # --------------------------------------------------------------------------- #
 # HARD-12 — Release engineering                                               #

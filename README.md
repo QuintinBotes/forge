@@ -186,6 +186,8 @@ the full workflow.
 
 - [Self-hosting](./docs/self-hosting/quickstart.md) — quickstart, Docker Compose,
   Kubernetes/Helm, backup, restore, upgrade, security, troubleshooting.
+- [Infrastructure as Code](./docs/self-hosting/iac.md) — OpenTofu apply runbook
+  for Hetzner + Cloudflare + Fly.io (dev/staging/prod).
 - [Architecture & spec](./docs/FORGE_SPEC.md) — the platform specification.
 - [Security policy](./SECURITY.md) and the
   [threat model](./docs/security/threat-model.md).
