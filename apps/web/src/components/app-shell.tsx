@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Store,
   TrendingUp,
+  Trophy,
   Users,
   Workflow,
   type LucideIcon,
@@ -75,6 +76,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Observability", href: "/observability", icon: Gauge },
       { label: "Incidents", href: "/incidents", icon: AlertTriangle },
+      { label: "Leaderboard", href: "/leaderboard", icon: Trophy },
       { label: "Audit", href: "/audit", icon: ScrollText },
     ],
   },

@@ -76,6 +76,8 @@ import type {
   ProjectTeamAccess,
   ProjectTeamAccessInput,
   ProjectVisibilityInput,
+  PublicBenchmark,
+  PublicLeaderboard,
   Registry,
   RemediationPlanView,
   Requirement,
@@ -769,6 +771,22 @@ export class ForgeApiClient {
       method: "POST",
       body,
     });
+  }
+
+  // --- Public benchmark leaderboard (F35 /public router) ------------------ //
+  // Unauthenticated, read-only, payload-free. 404s (not disabled/enabled) when
+  // `FORGE_PUBLIC_LEADERBOARD_ENABLED` is off, same as every other route here.
+
+  /** Every published benchmark suite, most recent first server-side. */
+  listPublicBenchmarks(): Promise<PublicBenchmark[]> {
+    return this.request<PublicBenchmark[]>("/public/benchmarks");
+  }
+
+  /** A suite's ranked, verified-first public leaderboard. */
+  getPublicLeaderboard(slug: string, version: string): Promise<PublicLeaderboard> {
+    return this.request<PublicLeaderboard>(
+      `/public/leaderboard/${encodeURIComponent(slug)}/${encodeURIComponent(version)}`,
+    );
   }
 
   // --- Audit log (F39 canonical /audit query surface) --------------------- //

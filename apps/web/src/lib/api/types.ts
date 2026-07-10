@@ -2193,3 +2193,53 @@ export interface RoutingPreviewResponse {
   medior_max: number;
   auto_route_enabled: boolean;
 }
+
+// --- Public benchmark leaderboard (F35 /public router) --------------------- //
+// Payload-free, unauthenticated projections: no submitter contact, raw config,
+// or raw payloads ever appear on these shapes (mirrors the API's `Public*`
+// response models exactly).
+
+/** One benchmark suite as listed on the public catalog. */
+export interface PublicBenchmark {
+  slug: string;
+  version: string;
+  title: string;
+  description: string;
+  task_count: number;
+  primary_metric: string;
+  content_hash: string;
+}
+
+/** Per-category score breakdown within a submission's composite. */
+export interface CategoryScore {
+  category: string;
+  score: number;
+  weight: number;
+  case_count: number;
+}
+
+/** One ranked, published entry on a suite's public leaderboard. */
+export interface PublicLeaderboardEntry {
+  rank: number;
+  model_label: string;
+  agent_mode: string;
+  composite_score: number;
+  verified: boolean;
+  forge_version: string | null;
+  submitter_name: string;
+  submitter_org: string | null;
+  per_category: CategoryScore[];
+  submitted_at: string;
+  submission_id: string;
+}
+
+/** A suite's full public leaderboard: ranked entries + suite identity. */
+export interface PublicLeaderboard {
+  slug: string;
+  version: string;
+  title: string;
+  primary_metric: string;
+  content_hash: string;
+  generated_at: string;
+  entries: PublicLeaderboardEntry[];
+}
