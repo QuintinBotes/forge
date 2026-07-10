@@ -99,7 +99,7 @@ export function TraceStepRow({
           className={cn(
             "relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
             TONE_NODE_CLASS[tone],
-            isPlayhead && "animate-pulse ring-2 ring-primary/40",
+            isPlayhead && "ring-2 ring-primary/40 motion-reduce:animate-none animate-pulse",
           )}
         >
           <Icon aria-hidden className="h-3 w-3" />

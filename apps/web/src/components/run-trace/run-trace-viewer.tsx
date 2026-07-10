@@ -2,7 +2,6 @@
 
 import {
   Activity,
-  AlertTriangle,
   Clock,
   Coins,
   Copy,
@@ -28,6 +27,9 @@ import {
 
 import { useRegisterCommands } from "@/components/command-palette";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Loading, Skeleton } from "@/components/ui/skeleton";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { useRunTrace } from "@/lib/api/observability";
 import type { RunTrace, StepKind } from "@/lib/api/types";
@@ -279,7 +281,7 @@ export function RunTraceViewer({
   if (query.isError) {
     const notFound = query.error instanceof ApiError && query.error.status === 404;
     return (
-      <ErrorState
+      <TraceErrorState
         runId={runId}
         notFound={notFound}
         onRetry={() => query.refetch()}
@@ -540,7 +542,7 @@ function ReplayControls({
     <div className="flex items-center gap-3">
       <span
         className={cn(
-          "inline-flex h-2 w-2 shrink-0 rounded-full",
+          "inline-flex h-2 w-2 shrink-0 rounded-full motion-reduce:animate-none",
           isPlaying ? "animate-pulse bg-primary" : "bg-muted-foreground/40",
         )}
         aria-hidden
@@ -614,20 +616,17 @@ function EntryScreen({ onOpenRun }: { onOpenRun: (id: string) => void }) {
 
 function EmptyTimeline() {
   return (
-    <div
+    <EmptyState
       data-testid="empty-timeline"
-      className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border p-10 text-center"
-    >
-      <ListTree className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm font-medium text-foreground">No steps recorded</p>
-      <p className="text-xs text-muted-foreground">
-        This run finished without emitting any trace steps.
-      </p>
-    </div>
+      icon={<ListTree />}
+      title="No steps recorded"
+      description="This run finished without emitting any trace steps."
+      className="flex-1"
+    />
   );
 }
 
-function ErrorState({
+function TraceErrorState({
   runId,
   notFound,
   onRetry,
@@ -643,70 +642,64 @@ function ErrorState({
       data-testid="trace-error"
       className="flex h-full flex-col items-center justify-center p-6"
     >
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center">
-        <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-lg border border-danger/40 bg-danger/10">
-          <AlertTriangle aria-hidden className="h-5 w-5 text-danger" />
-        </div>
-        <h1 className="font-display text-lg font-semibold tracking-tight">
-          {notFound ? "Run not found" : "Couldn't load the trace"}
-        </h1>
-        <p className="mt-1 break-words text-sm text-muted-foreground">
-          {notFound ? (
+      <ErrorState
+        className="w-full max-w-md"
+        title={notFound ? "Run not found" : "Couldn't load the trace"}
+        description={
+          notFound ? (
             <>
               No trace was recorded for run{" "}
               <code className="font-mono text-foreground">{runId}</code>.
             </>
           ) : (
             "The run trace is temporarily unavailable. Please try again."
-          )}
-        </p>
-        <div className="mt-5 flex items-center justify-center gap-2">
-          {notFound ? (
+          )
+        }
+        onRetry={notFound ? undefined : onRetry}
+        retryLabel="Retry"
+        action={
+          notFound ? (
             <Button type="button" variant="outline" onClick={() => onOpenRun("")}>
               Try another run
             </Button>
-          ) : (
-            <Button type="button" onClick={onRetry}>
-              Retry
-            </Button>
-          )}
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
     </div>
   );
 }
 
 function TraceSkeleton(): ReactNode {
   return (
-    <div
+    <Loading
+      label="Loading run trace…"
       data-testid="trace-skeleton"
-      aria-busy="true"
       className="flex h-full flex-col gap-5"
     >
       <div className="flex items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <div className="h-6 w-40 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-64 animate-pulse rounded bg-muted/60" />
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-3 w-64" />
         </div>
-        <div className="h-10 w-28 animate-pulse rounded-md bg-muted" />
+        <Skeleton className="h-10 w-28 rounded-md" />
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-16 animate-pulse rounded-lg bg-muted" />
+          <Skeleton key={i} className="h-16 rounded-lg" />
         ))}
       </div>
       <div className="flex flex-1 flex-col gap-2 rounded-xl border border-border bg-card/40 p-3">
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="flex items-start gap-3 px-2 py-2">
-            <div className="h-6 w-6 shrink-0 animate-pulse rounded-full bg-muted" />
+            <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
             <div className="flex flex-1 flex-col gap-1.5">
-              <div className="h-3 w-1/3 animate-pulse rounded bg-muted/70" />
-              <div className="h-3 w-2/3 animate-pulse rounded bg-muted/50" />
+              <Skeleton className="h-3 w-1/3" />
+              <Skeleton className="h-3 w-2/3" />
             </div>
           </div>
         ))}
       </div>
-    </div>
+    </Loading>
   );
 }
 
