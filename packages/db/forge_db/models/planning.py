@@ -153,6 +153,16 @@ class Sprint(WorkspaceScopedModel):
     # service round-trips verbatim (distinct from the F26 ``committed_task_ids``
     # velocity snapshot frozen at sprint start).
     task_ids: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
+    # F40 PM-depth: the working-day/holiday calendar the burndown ideal-line
+    # reads (``forge_board.velocity.WorkCalendar``). ``calendar_weekend_days``
+    # is a denylist of ISO weekdays (Monday=0..Sunday=6) treated as non-working;
+    # ``calendar_holidays`` is a list of ISO date strings. Both default to an
+    # empty list, which is byte-identical to the pre-F40 calendar-free ideal
+    # line (every day counts as a working day).
+    calendar_weekend_days: Mapped[list[Any]] = mapped_column(
+        json_type(), default=list, nullable=False
+    )
+    calendar_holidays: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="sprints")
     tasks: Mapped[list[Task]] = relationship(back_populates="sprint")

@@ -37,6 +37,10 @@ from forge_contracts.incident import (
     Runbook,
     RunbookStep,
 )
+from forge_obs.analytics.incidents import (
+    IncidentReliabilityMetrics,
+    compute_incident_reliability,
+)
 from forge_skill import SkillProfileRegistry, to_directives
 from forge_workflow import allowed_incident_events, drive_incident
 from forge_workflow.incident.fsm import PAUSED_FROM_KEY
@@ -175,6 +179,22 @@ class IncidentService:
             retry_count=record.retry_count,
             max_retries=_MAX_RETRIES,
         )
+
+    def reliability_metrics(
+        self, *, project_id: uuid.UUID | None = None
+    ) -> IncidentReliabilityMetrics:
+        """MTTA/MTTR/remediation-accept-rate over this workspace's incidents (F40).
+
+        Reads straight off the in-memory ``detected_at``/``acknowledged_at``/
+        ``resolved_at`` timestamps and each incident's proposed remediation
+        plans — no new state, purely an aggregation over what F17 already
+        tracks (mirrors ``forge_obs.analytics.incidents.compute_incident_
+        reliability``, which a DB-backed service would call over the ``incident``
+        / ``remediation_plan`` tables behind the same surface).
+        """
+        records = self.list(project_id=project_id)
+        plans = [plan for record in records for plan in record.plans]
+        return compute_incident_reliability(records, plans)
 
     # -- creation --------------------------------------------------------- #
 

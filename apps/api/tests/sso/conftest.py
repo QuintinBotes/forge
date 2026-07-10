@@ -99,6 +99,13 @@ def _instant(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Frozen once at import so build_saml_response and validate_response share a
+# single clock reference. The full suite runs 20+ minutes; a fresh
+# datetime.now() default here would drift past the test's NOW and trip the
+# assertion validity window, producing spurious "not_yet_valid" failures.
+NOW = datetime.now(UTC)
+
+
 def build_saml_response(
     *,
     name_id: str = "dana@acme.com",
@@ -113,7 +120,7 @@ def build_saml_response(
     not_on_or_after: datetime | None = None,
 ) -> etree._Element:
     """Build an unsigned ``samlp:Response`` element with full control."""
-    now = now or datetime.now(UTC)
+    now = now or NOW
     not_before = not_before or (now - timedelta(minutes=5))
     not_on_or_after = not_on_or_after or (now + timedelta(minutes=5))
     assertion_id = assertion_id or f"_a{uuid.uuid4().hex}"
