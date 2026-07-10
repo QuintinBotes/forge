@@ -17,6 +17,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from forge_board.exceptions import ActiveSprintExistsError
 from forge_board.sprint_service import SprintService
+from forge_contracts.automation import (
+    AutomationEntityType,
+    AutomationTriggerEnvelope,
+    AutomationTriggerType,
+)
 from forge_contracts.enums import CarryoverTarget, SprintScopeEventType, SprintState, TaskStatus
 from forge_db.base import Base
 from forge_db.models import (
@@ -433,3 +438,63 @@ def test_reconcile_byte_identical(sf: sessionmaker[Session]) -> None:
     # Every originally-captured day reconciles byte-identically.
     for day, vals in before_snaps.items():
         assert after_snaps[day] == vals
+
+
+class _RecordingDispatcher:
+    """Test double for :class:`forge_contracts.automation.AutomationDispatcher`."""
+
+    def __init__(self) -> None:
+        self.dispatched: list[AutomationTriggerEnvelope] = []
+
+    def dispatch(self, envelope: AutomationTriggerEnvelope) -> None:
+        self.dispatched.append(envelope)
+
+
+def test_start_dispatches_a_sprint_started_automation_trigger(sf: sessionmaker[Session]) -> None:
+    """F40: ``start`` fires the sprint-lifecycle producer the automation engine
+    needs to ever run a ``sprint_started``-triggered rule in production."""
+    with sf() as session:
+        sprint = _make_sprint(session)
+        sid, pid = sprint.id, sprint.project_id
+        session.commit()
+
+    dispatcher = _RecordingDispatcher()
+    svc = SprintService(sf, dispatcher=dispatcher)
+    svc.start(workspace_id=WS, sprint_id=sid)
+
+    assert len(dispatcher.dispatched) == 1
+    envelope = dispatcher.dispatched[0]
+    assert envelope.trigger_type == AutomationTriggerType.SPRINT_STARTED
+    assert envelope.entity_type == AutomationEntityType.SPRINT
+    assert envelope.entity_id == sid
+    assert envelope.workspace_id == WS
+    assert envelope.project_id == pid
+
+
+def test_complete_dispatches_a_sprint_completed_automation_trigger(
+    sf: sessionmaker[Session],
+) -> None:
+    with sf() as session:
+        sprint = _make_sprint(session, status=SprintState.ACTIVE)
+        sid = sprint.id
+        session.commit()
+
+    dispatcher = _RecordingDispatcher()
+    svc = SprintService(sf, dispatcher=dispatcher)
+    svc.complete(workspace_id=WS, sprint_id=sid)
+
+    assert len(dispatcher.dispatched) == 1
+    assert dispatcher.dispatched[0].trigger_type == AutomationTriggerType.SPRINT_COMPLETED
+    assert dispatcher.dispatched[0].entity_id == sid
+
+
+def test_default_dispatcher_is_a_no_op(sf: sessionmaker[Session]) -> None:
+    """No ``dispatcher=`` kwarg (the CLI, most tests) never raises or blocks."""
+    with sf() as session:
+        sprint = _make_sprint(session)
+        sid = sprint.id
+        session.commit()
+
+    svc = SprintService(sf)
+    view = svc.start(workspace_id=WS, sprint_id=sid)
+    assert view.state == SprintState.ACTIVE

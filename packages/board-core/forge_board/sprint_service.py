@@ -41,6 +41,14 @@ from forge_board.velocity import (
     compute_velocity_summary,
     ideal_line,
 )
+from forge_contracts.automation import (
+    AutomationDispatcher,
+    AutomationEntityType,
+    AutomationTriggerEnvelope,
+    AutomationTriggerSource,
+    AutomationTriggerType,
+    NullAutomationDispatcher,
+)
 
 # Import the enums from forge_db.models.enums so they are the *same* classes the
 # ORM columns use (forge_db re-exports the F26 sprint enums from the frozen
@@ -170,9 +178,32 @@ class VelocityDashboardView(BaseModel):
 class SprintService:
     """Sprint lifecycle, scope capture, velocity/burndown — over a sync session."""
 
-    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        *,
+        dispatcher: AutomationDispatcher | None = None,
+    ) -> None:
         self._sf = session_factory
         self._sm = SprintStateMachine()
+        # F40: fires SPRINT_STARTED / SPRINT_COMPLETED post-commit — the
+        # automation engine's sprint-lifecycle producer (see ``start``/
+        # ``complete``). Callers that don't care about automations (tests, the
+        # CLI) get the no-op default; the API router wires the real dispatcher.
+        self._dispatcher = dispatcher or NullAutomationDispatcher()
+
+    def _dispatch_sprint_event(self, sprint: Sprint, trigger_type: AutomationTriggerType) -> None:
+        envelope = AutomationTriggerEnvelope(
+            trigger_type=trigger_type,
+            trigger_source=AutomationTriggerSource.BOARD_ACTIVITY,
+            trigger_event_id=uuid.uuid4(),
+            workspace_id=sprint.workspace_id,
+            project_id=sprint.project_id,
+            entity_type=AutomationEntityType.SPRINT,
+            entity_id=sprint.id,
+            change={"state": sprint.status},
+        )
+        self._dispatcher.dispatch(envelope)
 
     # ------------------------------------------------------------------ #
     # internal loaders                                                    #
@@ -553,6 +584,7 @@ class SprintService:
             self._snapshot_for_day(session, sprint, rows, day0)
             session.commit()
             session.refresh(sprint)
+            self._dispatch_sprint_event(sprint, AutomationTriggerType.SPRINT_STARTED)
             return self._view(session, sprint)
 
     def cancel(
@@ -630,6 +662,7 @@ class SprintService:
             # LEAVE: keep as-is.
             session.commit()
             session.refresh(sprint)
+            self._dispatch_sprint_event(sprint, AutomationTriggerType.SPRINT_COMPLETED)
             return self._report(session, sprint)
 
     def recompute(

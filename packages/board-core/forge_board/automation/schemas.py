@@ -30,7 +30,7 @@ from forge_contracts.automation import (
 # F21 previously carried its own ``Condition``/``ConditionGroup`` copy; they are
 # re-exported here so the engine, the API, and the policy engine share one model.
 from forge_contracts.conditions import Condition, ConditionGroup
-from forge_contracts.enums import Priority, TaskKind, TaskStatus
+from forge_contracts.enums import IncidentSeverity, Priority, TaskKind, TaskStatus
 
 # --------------------------------------------------------------------------- #
 # Conditions (evaluation inputs)                                               #
@@ -110,6 +110,75 @@ class CreateTaskAction(_ActionBase):
     kind: TaskKind = TaskKind.CHORE
 
 
+# --------------------------------------------------------------------------- #
+# F40-AUT-ACTIONS: external + incident + sprint + merge actions                #
+# --------------------------------------------------------------------------- #
+#
+# These are dispatched by ``forge_board.automation.executor.ExternalActionExecutor``
+# rather than the worker's DB executor: each performs (or requests) a side effect
+# outside the board DB — a webhook, a PM-adapter issue, a deploy, an incident
+# declaration, a sprint start, or a merge — and is policy-gated + audited there.
+
+
+class WebhookPostAction(_ActionBase):
+    """POST a JSON payload to an arbitrary URL (e.g. a CI/chat webhook)."""
+
+    type: Literal[AutomationActionType.WEBHOOK_POST] = AutomationActionType.WEBHOOK_POST
+    url: str = Field(max_length=2000)
+    payload_template: dict[str, Any] = Field(default_factory=dict)
+
+
+class CreateExternalIssueAction(_ActionBase):
+    """Create an issue in a connected external PM system (F40-PM-ADAPTERS)."""
+
+    type: Literal[AutomationActionType.CREATE_EXTERNAL_ISSUE] = (
+        AutomationActionType.CREATE_EXTERNAL_ISSUE
+    )
+    provider: str = Field(max_length=32)  # forge_contracts.pm.PMProvider value
+    title_template: str = Field(default="{{rule.name}}", max_length=512)
+
+
+class TriggerDeployAction(_ActionBase):
+    """Trigger a deploy (outbound side mocked until a real CD webhook lands).
+
+    Gated by ``deploy_rules`` (``forge_policy``): denied unless the target
+    environment is explicitly whitelisted and agent deploys are enabled.
+    """
+
+    type: Literal[AutomationActionType.TRIGGER_DEPLOY] = AutomationActionType.TRIGGER_DEPLOY
+    environment: str = Field(max_length=32)
+    ref_template: str = Field(default="{{entity.id}}", max_length=256)
+
+
+class DeclareIncidentAction(_ActionBase):
+    """Declare an incident (wired to the incident service) — e.g. on SLA breach."""
+
+    type: Literal[AutomationActionType.DECLARE_INCIDENT] = AutomationActionType.DECLARE_INCIDENT
+    severity: IncidentSeverity = IncidentSeverity.MEDIUM
+    title_template: str = Field(default="SLA breach: {{entity.id}}", max_length=200)
+
+
+class StartSprintAction(_ActionBase):
+    """Auto-start the next planned sprint in the triggering project."""
+
+    type: Literal[AutomationActionType.START_SPRINT] = AutomationActionType.START_SPRINT
+
+
+class AutoMergeAction(_ActionBase):
+    """Merge a pull request automatically.
+
+    DEFAULT OFF: ``enabled`` must be explicitly set ``True`` by the rule author,
+    *and* the runtime executor re-checks the repo policy's
+    ``review_rules.approval_required_for_merge`` (double-enforced, mirroring the
+    ``HUMAN_GATE_EVENTS`` guard) — an automation can never merge on a repo whose
+    policy still requires human approval, regardless of this flag.
+    """
+
+    type: Literal[AutomationActionType.AUTO_MERGE] = AutomationActionType.AUTO_MERGE
+    enabled: bool = False
+    merge_method: Literal["merge", "squash", "rebase"] = "squash"
+
+
 ActionSpec = Annotated[
     SetStatusAction
     | SetPriorityAction
@@ -119,7 +188,13 @@ ActionSpec = Annotated[
     | CloseLinkedSpecTasksAction
     | SendWorkflowEventAction
     | SendNotificationAction
-    | CreateTaskAction,
+    | CreateTaskAction
+    | WebhookPostAction
+    | CreateExternalIssueAction
+    | TriggerDeployAction
+    | DeclareIncidentAction
+    | StartSprintAction
+    | AutoMergeAction,
     Field(discriminator="type"),
 ]
 
@@ -186,12 +261,15 @@ __all__ = [
     "ActionResult",
     "ActionSpec",
     "AddCommentAction",
+    "AutoMergeAction",
     "AutomationRuleSpec",
     "AutomationRuleSpecWithMeta",
     "CloseLinkedSpecTasksAction",
     "Condition",
     "ConditionGroup",
+    "CreateExternalIssueAction",
     "CreateTaskAction",
+    "DeclareIncidentAction",
     "EntitySnapshot",
     "ExecutionResult",
     "SendNotificationAction",
@@ -200,5 +278,8 @@ __all__ = [
     "SetFieldAction",
     "SetPriorityAction",
     "SetStatusAction",
+    "StartSprintAction",
+    "TriggerDeployAction",
     "TriggerSpec",
+    "WebhookPostAction",
 ]

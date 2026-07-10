@@ -889,6 +889,7 @@ dependencies = [
     { name = "forge-db" },
     { name = "forge-deploy" },
     { name = "forge-eval" },
+    { name = "forge-integrations" },
     { name = "forge-knowledge" },
     { name = "forge-marketplace" },
     { name = "forge-mcp" },
@@ -921,6 +922,7 @@ requires-dist = [
     { name = "forge-db", editable = "packages/db" },
     { name = "forge-deploy", editable = "packages/deploy-core" },
     { name = "forge-eval", editable = "packages/evaluation" },
+    { name = "forge-integrations", editable = "packages/integration-sdk" },
     { name = "forge-knowledge", editable = "packages/knowledge-core" },
     { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
@@ -988,6 +990,7 @@ source = { editable = "packages/board-core" }
 dependencies = [
     { name = "forge-contracts" },
     { name = "forge-db" },
+    { name = "forge-policy" },
     { name = "forge-skill" },
     { name = "forge-workflow" },
     { name = "sqlalchemy" },
@@ -997,6 +1000,7 @@ dependencies = [
 requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
+    { name = "forge-policy", editable = "packages/policy-sdk" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "sqlalchemy", specifier = ">=2.0" },

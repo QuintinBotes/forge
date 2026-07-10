@@ -33,6 +33,9 @@ _BOARD_EVENT_MAP: dict[str, AutomationTriggerType] = {
     "sla_breached": AutomationTriggerType.TASK_SLA_BREACHED,
     "pr_merged": AutomationTriggerType.PR_MERGED,
     "approval_resolved": AutomationTriggerType.APPROVAL_RESOLVED,
+    # F40: sprint lifecycle events (forge_board.sprint_service.SprintService).
+    "sprint_started": AutomationTriggerType.SPRINT_STARTED,
+    "sprint_completed": AutomationTriggerType.SPRINT_COMPLETED,
 }
 
 

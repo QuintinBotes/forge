@@ -25,6 +25,7 @@ import uuid
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
+from functools import lru_cache
 from typing import Literal, Protocol
 
 from celery.schedules import crontab
@@ -32,6 +33,19 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from forge_api.observability.audit import AuditLog
+from forge_api.observability.audit_db import build_audit_store
+from forge_api.services.automation_actions import (
+    AutomationActionAuditSink,
+    HttpxWebhookSender,
+    IncidentServiceDeclarer,
+    MockDeployDispatcher,
+    MockGitHubMergeDispatcher,
+    PmAdapterIssueCreator,
+    SprintServiceAutoStarter,
+)
+from forge_api.services.incident_service import IncidentService
+from forge_api.services.pm_service import PMConnectionService
 from forge_board.automation import (
     ActionContext,
     ActionResult,
@@ -40,8 +54,11 @@ from forge_board.automation import (
     AutomationRuleSpec,
     AutomationRuleSpecWithMeta,
     ConditionGroup,
+    EntitySnapshot,
+    ExternalActionExecutor,
     LoopGuard,
     TriggerSpec,
+    snapshot_for_sprint,
     snapshot_for_task,
 )
 from forge_board.automation.schemas import (
@@ -55,6 +72,7 @@ from forge_board.automation.schemas import (
     SetPriorityAction,
     SetStatusAction,
 )
+from forge_board.sprint_service import SprintService
 from forge_board.workflow import InvalidStatusTransitionError, validate_transition
 from forge_contracts.automation import (
     HUMAN_GATE_EVENTS,
@@ -66,7 +84,8 @@ from forge_contracts.automation import (
     AutomationTriggerType,
 )
 from forge_contracts.enums import TaskKind, TaskStatus
-from forge_db.models import AutomationExecution, AutomationRule, Task, TaskDependency
+from forge_contracts.pm import PMAdapter
+from forge_db.models import AutomationExecution, AutomationRule, Sprint, Task, TaskDependency
 from forge_db.models.enums import Priority as DbPriority
 from forge_db.models.enums import TaskStatus as DbTaskStatus
 from forge_worker.celery_app import celery_app
@@ -224,6 +243,120 @@ def _render_template(template: str, task: Task, ctx: ActionContext) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# F40-AUT-ACTIONS: composing ExternalActionExecutor onto DbActionExecutor      #
+# --------------------------------------------------------------------------- #
+
+#: Process-wide, per-workspace in-memory incident service. Mirrors the API's
+#: ``IncidentServiceRegistry`` (``forge_api/routers/incidents.py``) — F17's
+#: incident service has no DB persistence in this foundation (see its module
+#: docstring), so incidents the worker declares live only in *this* worker
+#: process's memory, separate from the API process's registry. A pre-existing
+#: foundation limitation (not introduced by this wiring); a DB-backed
+#: ``IncidentService`` would close it for both call sites at once.
+_INCIDENT_SERVICES: dict[uuid.UUID, IncidentService] = {}
+
+
+def _incident_service_for(workspace_id: uuid.UUID) -> IncidentService:
+    service = _INCIDENT_SERVICES.get(workspace_id)
+    if service is None:
+        service = IncidentService()
+        _INCIDENT_SERVICES[workspace_id] = service
+    return service
+
+
+@lru_cache(maxsize=1)
+def _pm_connection_service() -> PMConnectionService:  # pragma: no cover - prod seam
+    from forge_api.auth.service import get_auth_service
+
+    return PMConnectionService(
+        session_factory=_session_factory(), vault=get_auth_service().vault, audit=AuditLog()
+    )
+
+
+def _resolve_pm_adapter(
+    workspace_id: uuid.UUID, project_id: uuid.UUID, provider: str
+) -> PMAdapter:  # pragma: no cover - prod seam (network + DB)
+    return _pm_connection_service().get_adapter_for_project(workspace_id, project_id, provider)
+
+
+@lru_cache(maxsize=1)
+def _automation_audit_log() -> AuditLog:  # pragma: no cover - prod seam
+    """The process-wide audit log every dispatched F40 action is recorded to.
+
+    Cached (not rebuilt per envelope) so the ``memory`` backend's entries
+    actually accumulate for the life of the worker process instead of each
+    evaluation writing to a throwaway store that is immediately discarded —
+    the ``db`` backend (``FORGE_AUDIT_BACKEND=db``) is durable across
+    processes either way.
+    """
+    return AuditLog(build_audit_store())
+
+
+def _build_executor(
+    session: Session,
+    session_factory: sessionmaker[Session],
+    envelope: AutomationTriggerEnvelope,
+    *,
+    project_id: uuid.UUID,
+) -> ExternalActionExecutor:
+    """Compose the F40 external/incident/sprint/merge actions onto the DB executor.
+
+    ``DbActionExecutor`` still owns the F21 action set (status/priority/field/
+    comment/...); ``ExternalActionExecutor`` adds the six F40 action types
+    (webhook / create-external-issue / trigger-deploy / declare-incident /
+    start-sprint / auto-merge) and falls back to ``DbActionExecutor`` for
+    everything else — see ``executor.py``'s module docstring. Every port here
+    is a real integration except the deploy/merge dispatchers, which are
+    documented mocks: no CD webhook or GitHub merge call exists in this
+    foundation yet (see ``automation_actions.py``'s module docstring). Both
+    remain policy-gated (fail-closed) regardless.
+    """
+    audit = AutomationActionAuditSink(_automation_audit_log(), workspace_id=envelope.workspace_id)
+    issues = PmAdapterIssueCreator(
+        lambda provider: _resolve_pm_adapter(envelope.workspace_id, project_id, provider)
+    )
+    incidents = IncidentServiceDeclarer(
+        _incident_service_for(envelope.workspace_id), project_id=project_id
+    )
+    sprints = SprintServiceAutoStarter(
+        SprintService(session_factory), workspace_id=envelope.workspace_id
+    )
+    return ExternalActionExecutor(
+        fallback=DbActionExecutor(session),
+        webhook=HttpxWebhookSender(),
+        issues=issues,
+        deploys=MockDeployDispatcher(),
+        incidents=incidents,
+        sprints=sprints,
+        merges=MockGitHubMergeDispatcher(),
+        audit=audit,
+    )
+
+
+def _load_entity(
+    session: Session, envelope: AutomationTriggerEnvelope
+) -> tuple[uuid.UUID, EntitySnapshot] | None:
+    """Resolve the envelope's entity + build its snapshot.
+
+    ``None`` means the entity is missing or foreign to the envelope's
+    workspace — nothing to evaluate. A ``SPRINT`` trigger (F40 sprint
+    lifecycle) resolves a ``Sprint`` row instead of a ``Task``; every other
+    trigger type resolves the ``Task`` the envelope names, exactly as before.
+    """
+    if envelope.entity_type is AutomationEntityType.SPRINT:
+        sprint = session.get(Sprint, envelope.entity_id)
+        if sprint is None or sprint.workspace_id != envelope.workspace_id:
+            return None
+        return sprint.project_id, snapshot_for_sprint(sprint, envelope.change)
+
+    task = session.get(Task, envelope.entity_id)
+    if task is None or task.workspace_id != envelope.workspace_id:
+        return None
+    snapshot = snapshot_for_task(task, envelope.change, subtasks=_subtask_statuses(session, task))
+    return task.project_id, snapshot
+
+
+# --------------------------------------------------------------------------- #
 # Rule loading + evaluation                                                    #
 # --------------------------------------------------------------------------- #
 
@@ -290,9 +423,10 @@ def evaluate_envelope(
 ) -> list[AutomationExecution]:
     """Evaluate ``envelope`` against matching rules; persist execution rows."""
     with session_factory() as session:
-        task = session.get(Task, envelope.entity_id)
-        if task is None or task.workspace_id != envelope.workspace_id:
+        loaded = _load_entity(session, envelope)
+        if loaded is None:
             return []
+        project_id, snapshot = loaded
 
         rule_rows = _matching_rules(session, envelope)
 
@@ -310,13 +444,11 @@ def evaluate_envelope(
             return []
 
         metas = [_meta_from_row(r) for r in pending]
-        snapshot = snapshot_for_task(
-            task, envelope.change, subtasks=_subtask_statuses(session, task)
-        )
         engine = AutomationEngine(LoopGuard(max_depth))
+        executor = _build_executor(session, session_factory, envelope, project_id=project_id)
 
         started = time.perf_counter()
-        results = engine.evaluate(envelope, metas, DbActionExecutor(session), snapshot)
+        results = engine.evaluate(envelope, metas, executor, snapshot)
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         # Flush the action-induced task mutations before the per-row inserts so a

@@ -65,6 +65,29 @@ def _aggregate_subtasks(subtasks: Sequence[Any]) -> dict[str, Any]:
     }
 
 
+def snapshot_for_sprint(sprint: Any, change: dict[str, Any] | None = None) -> EntitySnapshot:
+    """Build a snapshot from a sprint-like object (DB ``Sprint`` or DTO).
+
+    Sprint lifecycle triggers (``SPRINT_STARTED`` / ``SPRINT_COMPLETED``, F40)
+    fire against a :class:`~forge_db.models.Sprint` row, not a ``Task`` — this
+    projects the handful of sprint fields a rule's ``condition`` can reasonably
+    reference. None of :data:`CONDITION_FIELDS`'s task-only fields (``status``,
+    ``priority``, ...) are populated here, so a condition referencing them
+    degrades to ``None`` (never a crash) — the documented behaviour for a field
+    the entity does not carry.
+    """
+    fields: dict[str, Any] = {
+        "sprint_id": _value(getattr(sprint, "id", None)),
+        "project_id": _value(getattr(sprint, "project_id", None)),
+    }
+    return EntitySnapshot(
+        entity_type=AutomationEntityType.SPRINT,
+        entity_id=sprint.id,
+        fields=fields,
+        change=dict(change or {}),
+    )
+
+
 def snapshot_for_task(
     task: Any,
     change: dict[str, Any] | None = None,
@@ -92,4 +115,4 @@ def snapshot_for_task(
     )
 
 
-__all__ = ["snapshot_for_task"]
+__all__ = ["snapshot_for_sprint", "snapshot_for_task"]

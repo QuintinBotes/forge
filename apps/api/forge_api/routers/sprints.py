@@ -37,6 +37,7 @@ from forge_api.schemas.sprint import (
     SprintView,
     VelocityDashboardView,
 )
+from forge_api.services.automations import ApiAutomationDispatcher
 from forge_board.exceptions import ActiveSprintExistsError, SprintStateError
 from forge_board.sprint_service import (
     InvalidSprintRequest,
@@ -53,7 +54,9 @@ WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 
 @lru_cache(maxsize=1)
 def _service_singleton() -> SprintService:
-    return SprintService(session_factory=get_session_factory())
+    return SprintService(
+        session_factory=get_session_factory(), dispatcher=ApiAutomationDispatcher()
+    )
 
 
 def get_sprint_service() -> SprintService:

@@ -13,8 +13,10 @@ is 404, no existence leak).
 from __future__ import annotations
 
 import builtins
+import os
 import uuid
 from datetime import datetime
+from functools import lru_cache
 
 from pydantic import TypeAdapter
 from sqlalchemy import select
@@ -51,6 +53,36 @@ from forge_db.models import AutomationExecution, AutomationRule, Milestone, Spri
 _ACTIONS_ADAPTER: TypeAdapter[list[ActionSpec]] = TypeAdapter(list[ActionSpec])
 
 _WORKFLOW_TRIGGERS = frozenset({"workflow_state_changed"})
+
+#: Must match ``apps/worker/forge_worker/tasks/automations.py::EVALUATE_TASK`` —
+#: duplicated (not imported) because ``forge-api`` cannot depend on
+#: ``forge-worker`` (the dependency runs the other way); mirrors the existing
+#: ``FULL_SYNC_TASK`` pattern in ``mcp_index_service.py``.
+_EVALUATE_TRIGGER_TASK = "forge.automations.evaluate_trigger"
+
+
+@lru_cache(maxsize=1)
+def _celery_app() -> object:
+    from celery import Celery
+
+    url = os.environ.get("FORGE_REDIS_URL", "redis://localhost:6379/0")
+    return Celery("forge-api-enqueue", broker=url, backend=url)
+
+
+class ApiAutomationDispatcher:
+    """Concrete :class:`forge_contracts.automation.AutomationDispatcher`.
+
+    Enqueues onto the worker's ``evaluate_trigger`` Celery task by name (never
+    imports ``forge_worker``) — the seam API-side producers (e.g. the sprint
+    router's :class:`~forge_board.sprint_service.SprintService`) dispatch
+    through so a fired ``AutomationTriggerEnvelope`` actually reaches the real
+    ``evaluate_envelope`` dispatch path.
+    """
+
+    def dispatch(self, envelope: AutomationTriggerEnvelope) -> None:
+        _celery_app().send_task(  # type: ignore[attr-defined]
+            _EVALUATE_TRIGGER_TASK, args=[envelope.model_dump(mode="json")]
+        )
 
 
 class RuleNotFound(LookupError):
@@ -383,6 +415,7 @@ class AutomationRuleService:
 
 
 __all__ = [
+    "ApiAutomationDispatcher",
     "AutomationRuleService",
     "RuleNotFound",
     "VersionConflict",
