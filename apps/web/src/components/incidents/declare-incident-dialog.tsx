@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { useDeclareIncident } from "@/lib/api/incidents";
+import { toast } from "@/components/ui/toast";
 import { INCIDENT_SEVERITIES, type IncidentSeverity, type IncidentView } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +94,7 @@ export function DeclareIncidentDialog({
       },
       {
         onSuccess: (incident) => {
+          toast.success(`Declared ${incident.key ?? "incident"}`);
           onDeclared?.(incident);
           onOpenChange(false);
         },
