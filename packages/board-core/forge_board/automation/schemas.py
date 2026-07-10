@@ -24,29 +24,17 @@ from forge_contracts.automation import (
     AutomationEntityType,
     AutomationExecutionStatus,
     AutomationTriggerType,
-    ConditionOp,
 )
+
+# Conditions are the shared, whitelisted primitive (``forge_contracts.conditions``).
+# F21 previously carried its own ``Condition``/``ConditionGroup`` copy; they are
+# re-exported here so the engine, the API, and the policy engine share one model.
+from forge_contracts.conditions import Condition, ConditionGroup
 from forge_contracts.enums import Priority, TaskKind, TaskStatus
 
 # --------------------------------------------------------------------------- #
-# Conditions                                                                   #
+# Conditions (evaluation inputs)                                               #
 # --------------------------------------------------------------------------- #
-
-
-class Condition(BaseModel):
-    """A single predicate: ``field op value`` evaluated against a snapshot."""
-
-    field: str
-    op: ConditionOp
-    value: Any = None
-
-
-class ConditionGroup(BaseModel):
-    """A boolean tree of conditions. An empty group is always ``True``."""
-
-    match: Literal["all", "any"] = "all"
-    conditions: list[Condition] = Field(default_factory=list)
-    groups: list[ConditionGroup] = Field(default_factory=list)
 
 
 class EntitySnapshot(BaseModel):

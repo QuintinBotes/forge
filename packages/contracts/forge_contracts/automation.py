@@ -24,6 +24,12 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
+# The condition DSL is defined ONCE in ``forge_contracts.conditions`` (the shared,
+# whitelisted primitive lifted in F29). F21 previously carried its own drifted
+# ``ConditionOp`` copy; it now re-exports the shared enum so producers, the rule
+# engine, the API, and the policy engine all speak one vocabulary.
+from forge_contracts.conditions import ConditionOp
+
 
 class AutomationTriggerType(enum.StrEnum):
     """Domain events an automation rule can react to."""
@@ -36,6 +42,8 @@ class AutomationTriggerType(enum.StrEnum):
     WORKFLOW_STATE_CHANGED = "workflow_state_changed"  # config: {to_state: "merged"}
     PR_MERGED = "pr_merged"
     APPROVAL_RESOLVED = "approval_resolved"
+    #: Fired by Celery Beat on a cron cadence; config: {cron: "0 9 * * *"}.
+    SCHEDULED = "scheduled"
 
 
 class AutomationActionType(enum.StrEnum):
@@ -69,6 +77,8 @@ class AutomationTriggerSource(enum.StrEnum):
 
     BOARD_ACTIVITY = "board_activity"
     WORKFLOW_TRANSITION = "workflow_transition"
+    #: A Celery Beat cron tick (the F40 scheduled-trigger producer).
+    SCHEDULER = "scheduler"
 
 
 class AutomationEntityType(enum.StrEnum):
@@ -77,24 +87,6 @@ class AutomationEntityType(enum.StrEnum):
     TASK = "task"
     EPIC = "epic"
     INCIDENT = "incident"
-
-
-class ConditionOp(enum.StrEnum):
-    """The whitelisted predicate operators (evaluated in-memory; never SQL)."""
-
-    EQ = "eq"
-    NE = "ne"
-    IN = "in"
-    NOT_IN = "not_in"
-    LT = "lt"
-    LTE = "lte"
-    GT = "gt"
-    GTE = "gte"
-    CONTAINS = "contains"
-    NOT_CONTAINS = "not_contains"
-    IS_NULL = "is_null"
-    IS_NOT_NULL = "is_not_null"
-    CHANGED = "changed"
 
 
 #: Workflow events that grant a human approval — an automation may NEVER send

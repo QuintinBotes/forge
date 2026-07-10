@@ -43,6 +43,8 @@ def trigger_type_for(*, source: AutomationTriggerSource, event_type: str) -> Aut
     """
     if source is AutomationTriggerSource.WORKFLOW_TRANSITION:
         return AutomationTriggerType.WORKFLOW_STATE_CHANGED
+    if source is AutomationTriggerSource.SCHEDULER:
+        return AutomationTriggerType.SCHEDULED
     mapped = _BOARD_EVENT_MAP.get(event_type)
     if mapped is None:
         raise UnknownTriggerError(event_type)

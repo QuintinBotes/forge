@@ -129,6 +129,7 @@ _ACTION_MODELS: dict[AutomationActionType, type[BaseModel]] = {
 
 _REQUIRED_TRIGGER_CONFIG: dict[AutomationTriggerType, list[str]] = {
     AutomationTriggerType.WORKFLOW_STATE_CHANGED: ["to_state"],
+    AutomationTriggerType.SCHEDULED: ["cron"],
 }
 
 

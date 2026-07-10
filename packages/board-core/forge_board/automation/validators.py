@@ -11,6 +11,7 @@ executor, so a rule crafted via direct DB insert still cannot approve anything.
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -53,7 +54,22 @@ class RuleWarning:
 #: Trigger types that require specific config keys.
 _REQUIRED_TRIGGER_CONFIG: dict[AutomationTriggerType, tuple[str, ...]] = {
     AutomationTriggerType.WORKFLOW_STATE_CHANGED: ("to_state",),
+    AutomationTriggerType.SCHEDULED: ("cron",),
 }
+
+#: One standard cron field: ``*``/number, optional ``-b`` range, optional ``/n``
+#: step, comma-listed. Grammar-only (the worker's Celery parser is authoritative
+#: and fault-isolated per rule at dispatch); this rejects garbage at save time so
+#: a malformed cron never reaches persistence.
+_CRON_FIELD = re.compile(r"^(\*|\d+)(-\d+)?(/\d+)?(,(\*|\d+)(-\d+)?(/\d+)?)*$")
+
+
+def _is_well_formed_cron(expr: object) -> bool:
+    """True iff ``expr`` is a well-formed 5-field cron string (``m h dom mon dow``)."""
+    if not isinstance(expr, str):
+        return False
+    fields = expr.split()
+    return len(fields) == 5 and all(_CRON_FIELD.match(f) for f in fields)
 
 
 def _collect_condition_fields(group: ConditionGroup, out: list[Condition]) -> None:
@@ -76,6 +92,20 @@ def validate_rule(spec: AutomationRuleSpec, ctx: RuleRefContext | None = None) -
                     "path": f"trigger.config.{key}",
                     "code": "missing_trigger_config",
                     "message": f"trigger {spec.trigger.type.value} requires config '{key}'",
+                }
+            )
+
+    # 1a. Scheduled cron well-formedness: reject a malformed expression at save
+    #     time (defence-in-depth; the dispatch loop also isolates a bad cron per
+    #     rule so one tenant's garbage never denies scheduled service to others).
+    if spec.trigger.type is AutomationTriggerType.SCHEDULED:
+        cron = spec.trigger.config.get("cron")
+        if cron not in (None, "") and not _is_well_formed_cron(cron):
+            issues.append(
+                {
+                    "path": "trigger.config.cron",
+                    "code": "malformed_cron",
+                    "message": f"cron expression {cron!r} is not a valid 5-field cron string",
                 }
             )
 

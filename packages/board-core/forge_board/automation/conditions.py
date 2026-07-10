@@ -1,21 +1,29 @@
-"""Pure, in-memory condition evaluation for the automation engine (F21).
+"""Condition evaluation for the automation engine (F21), consolidated in F40.
 
-Conditions are evaluated against an :class:`EntitySnapshot` — never compiled to
-SQL — so user input cannot reach the database. ``field`` names are whitelisted
-(:data:`CONDITION_FIELDS`) and resolved against ``snapshot.fields`` /
-``snapshot.change``.
+The boolean predicate language is the shared, whitelisted primitive lifted into
+the frozen contracts (:mod:`forge_contracts.conditions`) — F21 no longer carries
+its own drifted copy. This module keeps the automation-specific *projection*:
+
+* the whitelisted :data:`CONDITION_FIELDS` (task fields + derived ``has_spec`` +
+  the trigger-local ``to_*``/``from_*`` change context + F40 aggregate fields);
+* :func:`evaluate_condition`, which flattens an :class:`EntitySnapshot` into the
+  ``fields`` mapping the shared evaluator consumes and then delegates to it.
+
+Conditions are evaluated against the snapshot — never compiled to SQL — so user
+input cannot reach the database.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from forge_board.automation.schemas import Condition, ConditionGroup, EntitySnapshot
-from forge_contracts.automation import ConditionOp
+from forge_board.automation.schemas import ConditionGroup, EntitySnapshot
+from forge_contracts.conditions import evaluate_condition as _evaluate_shared
 
 #: Whitelisted condition fields. Conforms to the real ``Task`` model (status is
 #: an enum; no label/team tables). ``has_spec`` is derived; ``to_*``/``from_*``
-#: read trigger-local change context.
+#: read trigger-local change context; the ``*subtask*`` fields are F40 aggregates
+#: derived over the entity's children (see :mod:`forge_board.automation.snapshot`).
 CONDITION_FIELDS: frozenset[str] = frozenset(
     {
         "status",
@@ -35,6 +43,10 @@ CONDITION_FIELDS: frozenset[str] = frozenset(
         "from_priority",
         "approval_kind",
         "approval_status",
+        # F40 aggregate conditions (derived over the entity's subtasks).
+        "all_subtasks_done",
+        "subtask_count",
+        "open_subtask_count",
     }
 )
 
@@ -53,74 +65,43 @@ _CHANGE_FIELDS: frozenset[str] = frozenset(
 
 
 class UnknownConditionFieldError(ValueError):
-    """A condition referenced a field outside :data:`CONDITION_FIELDS`."""
+    """A condition referenced a field outside :data:`CONDITION_FIELDS`.
+
+    Retained for back-compat. The shared evaluator raises a plain
+    :class:`ValueError` (a supertype) for the same failure, so callers that catch
+    ``ValueError`` — as the engine does — are unaffected.
+    """
 
 
-def _resolve(field: str, snapshot: EntitySnapshot) -> Any:
-    if field not in CONDITION_FIELDS:
-        raise UnknownConditionFieldError(field)
-    if field == "has_spec":
-        return snapshot.fields.get("spec_id") is not None
-    if field in _CHANGE_FIELDS:
-        return snapshot.change.get(field)
-    return snapshot.fields.get(field)
+def _flatten(snapshot: EntitySnapshot) -> dict[str, Any]:
+    """Project a snapshot into the flat ``fields`` mapping the shared DSL reads.
 
-
-def _as_str(value: Any) -> Any:
-    """Normalize enums to their value for stable comparison against JSON input."""
-    return getattr(value, "value", value)
-
-
-def _eval_condition(cond: Condition, snapshot: EntitySnapshot) -> bool:
-    op = cond.op
-    if cond.field == "changed":  # defensive; "changed" is an op, not a field
-        raise UnknownConditionFieldError("changed")
-
-    if op is ConditionOp.CHANGED:
-        # True when the trigger-local change carries this field with a value.
-        return _resolve(cond.field, snapshot) is not None
-
-    actual = _as_str(_resolve(cond.field, snapshot))
-    expected = _as_str(cond.value)
-
-    if op is ConditionOp.IS_NULL:
-        return actual is None
-    if op is ConditionOp.IS_NOT_NULL:
-        return actual is not None
-    if op is ConditionOp.EQ:
-        return actual == expected
-    if op is ConditionOp.NE:
-        return actual != expected
-    if op in (ConditionOp.IN, ConditionOp.NOT_IN):
-        if not isinstance(cond.value, list):
-            raise ValueError(f"op {op.value} requires a list value")
-        members = [_as_str(v) for v in cond.value]
-        present = actual in members
-        return present if op is ConditionOp.IN else not present
-    if op in (ConditionOp.CONTAINS, ConditionOp.NOT_CONTAINS):
-        container = actual if isinstance(actual, (list, tuple, set, str)) else []
-        present = expected in container
-        return present if op is ConditionOp.CONTAINS else not present
-    if op in (ConditionOp.LT, ConditionOp.LTE, ConditionOp.GT, ConditionOp.GTE):
-        if actual is None or expected is None:
-            return False
-        if op is ConditionOp.LT:
-            return actual < expected
-        if op is ConditionOp.LTE:
-            return actual <= expected
-        if op is ConditionOp.GT:
-            return actual > expected
-        return actual >= expected
-    raise ValueError(f"unsupported op: {op}")  # pragma: no cover
+    Mirrors the historical ``_resolve`` semantics exactly: ``has_spec`` is derived
+    from ``spec_id``; the change-context fields come from ``snapshot.change``; every
+    other whitelisted field comes from ``snapshot.fields``.
+    """
+    flat: dict[str, Any] = {}
+    for field in CONDITION_FIELDS:
+        if field == "has_spec":
+            flat[field] = snapshot.fields.get("spec_id") is not None
+        elif field in _CHANGE_FIELDS:
+            flat[field] = snapshot.change.get(field)
+        else:
+            flat[field] = snapshot.fields.get(field)
+    return flat
 
 
 def evaluate_condition(group: ConditionGroup, snapshot: EntitySnapshot) -> bool:
-    """Evaluate a (possibly nested) condition group. Empty group == ``True``."""
-    results: list[bool] = [_eval_condition(c, snapshot) for c in group.conditions]
-    results.extend(evaluate_condition(g, snapshot) for g in group.groups)
-    if not results:
-        return True
-    return all(results) if group.match == "all" else any(results)
+    """Evaluate a (possibly nested) condition group against ``snapshot``.
+
+    Delegates to the shared :func:`forge_contracts.conditions.evaluate_condition`
+    with :data:`CONDITION_FIELDS` as the whitelist. An empty group is ``True``.
+
+    Raises:
+        ValueError: for an unknown field or a malformed operator value (e.g. an
+            ``in`` without a list), raised fail-closed by the shared evaluator.
+    """
+    return _evaluate_shared(group, _flatten(snapshot), field_whitelist=CONDITION_FIELDS)
 
 
 __all__ = ["CONDITION_FIELDS", "UnknownConditionFieldError", "evaluate_condition"]

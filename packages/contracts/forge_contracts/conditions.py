@@ -51,6 +51,10 @@ class ConditionOp(StrEnum):
     NOT_CONTAINS = "not_contains"
     IS_NULL = "is_null"
     IS_NOT_NULL = "is_not_null"
+    #: True iff the operand is present (non-``None``). The F21 automation engine
+    #: uses this against trigger-local change fields (e.g. ``to_status changed``);
+    #: in the flat-field model "changed" is exactly "present". Value is ignored.
+    CHANGED = "changed"
     #: gitwildmatch-ish (fnmatch) glob for path/branch values; value: str | list[str].
     MATCHES_GLOB = "matches_glob"
     #: operand must be a datetime (e.g. ``now``); value:
@@ -153,6 +157,10 @@ def _eval_condition(cond: Condition, fields: Mapping[str, Any], whitelist: froze
     if op is ConditionOp.IS_NULL:
         return actual is None
     if op is ConditionOp.IS_NOT_NULL:
+        return actual is not None
+    if op is ConditionOp.CHANGED:
+        # "changed" == "present" in the flat-field model (the automation engine
+        # projects trigger-local change fields into ``fields``).
         return actual is not None
 
     if actual is None:

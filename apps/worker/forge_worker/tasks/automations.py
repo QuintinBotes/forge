@@ -24,8 +24,10 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import suppress
-from typing import Literal
+from datetime import UTC, datetime
+from typing import Literal, Protocol
 
+from celery.schedules import crontab
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -57,17 +59,26 @@ from forge_board.workflow import InvalidStatusTransitionError, validate_transiti
 from forge_contracts.automation import (
     HUMAN_GATE_EVENTS,
     AutomationActionType,
+    AutomationEntityType,
     AutomationExecutionStatus,
     AutomationTriggerEnvelope,
+    AutomationTriggerSource,
+    AutomationTriggerType,
 )
 from forge_contracts.enums import TaskKind, TaskStatus
-from forge_db.models import AutomationExecution, AutomationRule, Task
+from forge_db.models import AutomationExecution, AutomationRule, Task, TaskDependency
 from forge_db.models.enums import Priority as DbPriority
 from forge_db.models.enums import TaskStatus as DbTaskStatus
 from forge_worker.celery_app import celery_app
 
 EVALUATE_TASK = "forge.automations.evaluate_trigger"
 SWEEP_TASK = "forge.automations.sweep_unprocessed_triggers"
+SCHEDULED_DISPATCH_TASK = "forge.automations.dispatch_due_scheduled"
+
+#: Deterministic namespace for a scheduled tick's ``trigger_event_id`` — stable
+#: per (rule, entity, minute) so a re-run of the same Beat minute dedupes via the
+#: existing ``(rule_id, trigger_event_id)`` idempotency key.
+_SCHEDULED_NS = uuid.UUID("f4000000-0000-0000-0000-000000000021")
 
 #: Mutating outcomes that warrant a fan-out to the central audit log.
 _MUTATING = frozenset(
@@ -235,6 +246,30 @@ def _meta_from_row(row: AutomationRule) -> AutomationRuleSpecWithMeta:
     )
 
 
+def _subtask_statuses(session: Session, task: Task) -> list[str]:
+    """Resolve the status of every subtask of ``task`` for aggregate conditions.
+
+    The ``Task`` model has no in-model parent/child relationship; a task's
+    "subtasks" are the tasks it depends on — the ``task_dependency`` edges
+    ``(task_id -> depends_on_id)`` the board service already persists. This reads
+    those children's statuses so the F40 aggregate fields
+    (``all_subtasks_done`` / ``subtask_count`` / ``open_subtask_count``) reflect
+    the real graph rather than an attribute no ORM row carries. Returns ``[]``
+    when the task has no dependencies (aggregate is vacuously "all done").
+    """
+    dep_ids = list(
+        session.execute(
+            select(TaskDependency.depends_on_id).where(
+                TaskDependency.workspace_id == task.workspace_id,
+                TaskDependency.task_id == task.id,
+            )
+        ).scalars()
+    )
+    if not dep_ids:
+        return []
+    return list(session.execute(select(Task.status).where(Task.id.in_(dep_ids))).scalars())
+
+
 def _matching_rules(session: Session, env: AutomationTriggerEnvelope) -> list[AutomationRule]:
     q = select(AutomationRule).where(
         AutomationRule.workspace_id == env.workspace_id,
@@ -275,7 +310,9 @@ def evaluate_envelope(
             return []
 
         metas = [_meta_from_row(r) for r in pending]
-        snapshot = snapshot_for_task(task, envelope.change)
+        snapshot = snapshot_for_task(
+            task, envelope.change, subtasks=_subtask_statuses(session, task)
+        )
         engine = AutomationEngine(LoopGuard(max_depth))
 
         started = time.perf_counter()
@@ -366,8 +403,121 @@ def sweep_unprocessed_triggers(
     return redispatched
 
 
-class AutomationDispatcherLike:  # pragma: no cover - typing aid
+class AutomationDispatcherLike(Protocol):  # pragma: no cover - typing aid
     def dispatch(self, envelope: AutomationTriggerEnvelope) -> None: ...
+
+
+# --------------------------------------------------------------------------- #
+# Scheduled (cron) trigger dispatch (F40)                                      #
+# --------------------------------------------------------------------------- #
+
+
+def parse_cron(expr: str) -> crontab:
+    """Parse a standard 5-field cron string (``m h dom mon dow``) via Celery.
+
+    Reuses Celery's field parser (ranges ``a-b``, steps ``*/n``, lists ``a,b``)
+    rather than reimplementing one. Raises :class:`ValueError` on a malformed
+    expression (wrong field count or unparseable field).
+    """
+    parts = expr.split()
+    if len(parts) != 5:
+        raise ValueError(f"cron expression must have 5 fields, got {len(parts)}: {expr!r}")
+    minute, hour, day_of_month, month_of_year, day_of_week = parts
+    return crontab(
+        minute=minute,
+        hour=hour,
+        day_of_month=day_of_month,
+        month_of_year=month_of_year,
+        day_of_week=day_of_week,
+    )
+
+
+def cron_matches(expr: str, when: datetime) -> bool:
+    """True iff the cron ``expr`` is due at ``when`` (minute resolution, UTC).
+
+    Pure — the clock is supplied by the caller (the Beat task passes ``now``; tests
+    pass a fake clock), so scheduled-trigger firing is deterministic and testable
+    without real time. A naive ``when`` is treated as UTC.
+    """
+    sched = parse_cron(expr)
+    if when.tzinfo is not None:
+        when = when.astimezone(UTC)
+    # Celery day-of-week is 0=Sunday..6=Saturday; Python isoweekday is 1=Mon..7=Sun.
+    celery_dow = when.isoweekday() % 7
+    return (
+        when.minute in sched.minute
+        and when.hour in sched.hour
+        and when.day in sched.day_of_month
+        and when.month in sched.month_of_year
+        and celery_dow in sched.day_of_week
+    )
+
+
+def _scheduled_rules(session: Session) -> list[AutomationRule]:
+    q = select(AutomationRule).where(
+        AutomationRule.trigger_type == AutomationTriggerType.SCHEDULED,
+        AutomationRule.enabled.is_(True),
+    )
+    return list(session.execute(q).scalars())
+
+
+def _scope_tasks(session: Session, rule: AutomationRule) -> list[Task]:
+    q = select(Task).where(Task.workspace_id == rule.workspace_id)
+    if rule.project_id is not None:
+        q = q.where(Task.project_id == rule.project_id)
+    return list(session.execute(q).scalars())
+
+
+def dispatch_due_scheduled_automations(
+    session_factory: sessionmaker[Session],
+    *,
+    now: datetime,
+    dispatcher: AutomationDispatcherLike,
+) -> int:
+    """Dispatch a trigger envelope for every SCHEDULED rule due at ``now``.
+
+    Each due rule fans out to the tasks in its scope (workspace-wide, or the
+    rule's project). The ``trigger_event_id`` is deterministic per
+    ``(rule, task, minute)`` so a re-run of the same Beat minute is deduped by the
+    existing idempotency key and never double-fires. Returns the number of
+    envelopes dispatched.
+
+    The Celery Beat wiring (``beat.py``) drives this each minute; the actual rule
+    evaluation still runs through :func:`evaluate_envelope`, so all condition /
+    loop-guard / audit guarantees apply unchanged to scheduled firings.
+    """
+    floor = now.astimezone(UTC) if now.tzinfo else now
+    minute_key = floor.replace(second=0, microsecond=0).isoformat()
+    dispatched = 0
+    with session_factory() as session:
+        for rule in _scheduled_rules(session):
+            cron = (rule.trigger_config or {}).get("cron")
+            if not isinstance(cron, str):
+                continue
+            try:
+                due = cron_matches(cron, now)
+            except ValueError:
+                # A malformed cron persisted in ONE tenant's rule must never abort
+                # the whole minute's dispatch and deny scheduled service to every
+                # other tenant — skip this rule (fault isolation) and keep going.
+                continue
+            if not due:
+                continue
+            for task in _scope_tasks(session, rule):
+                event_id = uuid.uuid5(_SCHEDULED_NS, f"{rule.id}:{task.id}:{minute_key}")
+                envelope = AutomationTriggerEnvelope(
+                    trigger_type=AutomationTriggerType.SCHEDULED,
+                    trigger_source=AutomationTriggerSource.SCHEDULER,
+                    trigger_event_id=event_id,
+                    workspace_id=rule.workspace_id,
+                    project_id=task.project_id,
+                    entity_type=AutomationEntityType.TASK,
+                    entity_id=task.id,
+                    change={"scheduled_at": minute_key},
+                )
+                dispatcher.dispatch(envelope)
+                dispatched += 1
+    return dispatched
 
 
 # --------------------------------------------------------------------------- #
@@ -395,9 +545,24 @@ def evaluate_trigger_task(envelope: dict) -> int:  # pragma: no cover - prod sea
     return len(rows)
 
 
+def dispatch_due_scheduled_task() -> int:  # pragma: no cover - prod seam
+    """Celery task body: dispatch every SCHEDULED rule due this minute.
+
+    Driven by the ``automation-dispatch-due-scheduled`` Beat entry (``beat.py``)
+    at minute resolution. The clock is ``now`` in UTC; each fan-out envelope is
+    evaluated by :func:`evaluate_trigger_task` through the normal engine path.
+    """
+    return dispatch_due_scheduled_automations(
+        _session_factory(),
+        now=datetime.now(UTC),
+        dispatcher=CeleryAutomationDispatcher(),
+    )
+
+
 def register_automation_tasks() -> None:
     """Register the automation Celery tasks (idempotent)."""
     celery_app.task(name=EVALUATE_TASK)(evaluate_trigger_task)
+    celery_app.task(name=SCHEDULED_DISPATCH_TASK)(dispatch_due_scheduled_task)
 
 
 register_automation_tasks()
@@ -405,12 +570,17 @@ register_automation_tasks()
 
 __all__ = [
     "EVALUATE_TASK",
+    "SCHEDULED_DISPATCH_TASK",
     "SWEEP_TASK",
     "AutomationDispatcherLike",
     "CeleryAutomationDispatcher",
     "DbActionExecutor",
+    "cron_matches",
+    "dispatch_due_scheduled_automations",
+    "dispatch_due_scheduled_task",
     "evaluate_envelope",
     "evaluate_trigger_task",
+    "parse_cron",
     "register_automation_tasks",
     "sweep_unprocessed_triggers",
 ]
