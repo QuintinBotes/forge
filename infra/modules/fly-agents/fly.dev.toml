@@ -1,0 +1,29 @@
+# GENERATED from infra/modules/fly-agents/templates/fly.toml.tftpl via
+# variables.tf's `environments` map — do not hand-edit the drift out from
+# under this template. To regenerate after changing variables.tf:
+#   tofu -chdir=infra/modules/fly-agents output -json rendered_fly_toml | jq -j '."<env>"' > fly.<env>.toml
+#
+# NOTE: Fly's fly.toml schema evolves; validate with `flyctl config validate`
+# before any real deploy (this repo has no Fly account attached — see the
+# module README's ceiling note).
+
+app            = "forge-agents-dev"
+primary_region = "iad"
+
+[build]
+  image = "registry.fly.io/forge-agents-dev:latest"
+
+[env]
+  FORGE_ENV = "dev"
+
+[http_service]
+  internal_port       = 8080
+  force_https         = true
+  auto_stop_machines   = true
+  auto_start_machines  = true
+  min_machines_running = 0
+  processes            = ["app"]
+
+[[vm]]
+  size   = "shared-cpu-2x"
+  memory = "1024mb"

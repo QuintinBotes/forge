@@ -1,0 +1,70 @@
+#cloud-config
+# Forge control-plane bootstrap — rendered by the hetzner-control-plane
+# module (templatefile). Installs Docker Engine + the compose plugin,
+# mounts the attached data volumes, and (optionally) brings up the Forge
+# compose stack. Secrets are NOT baked in here — inject an env file
+# out-of-band before `docker compose up` in production.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - jq
+
+write_files:
+  # Marker so operators can confirm cloud-init ran and which ref shipped.
+  - path: /etc/forge/bootstrap.env
+    permissions: "0644"
+    content: |
+      FORGE_REPO_URL=${repo_url}
+      FORGE_REPO_REF=${repo_ref}
+      FORGE_COMPOSE_FILE=${compose_file}
+      FORGE_BOOTSTRAP_AT=cloud-init
+
+runcmd:
+  # --- Docker Engine (official convenience repo) ---------------------- #
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update -y
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+
+  # --- Data volumes: mount by Hetzner-stable /dev/disk/by-id path ----- #
+  # Volumes are formatted (${volume_format}) at attach time by Hetzner.
+  # by-id names are of the form scsi-0HC_Volume_<id>; we mount whatever
+  # data volumes are present under /mnt/forge-data-*.
+  - mkdir -p /mnt/forge/postgres /mnt/forge/minio
+%{ for name, dev in volume_mounts ~}
+  - |
+    if [ -e "${dev}" ]; then
+      grep -q "${dev}" /etc/fstab || echo "${dev} /mnt/forge/${name} ${volume_format} discard,nofail,defaults 0 0" >> /etc/fstab
+      mount /mnt/forge/${name} || true
+    fi
+%{ endfor ~}
+
+  # --- Forge compose stack ------------------------------------------- #
+%{ if repo_url != "" ~}
+  - git clone --branch ${repo_ref} --depth 1 ${repo_url} /opt/forge || (cd /opt/forge && git fetch --depth 1 origin ${repo_ref} && git checkout ${repo_ref})
+%{ if compose_autostart ~}
+  # NOTE: expects /opt/forge/.env (or deploy secrets) to be present.
+  - cd /opt/forge && docker compose -f ${compose_file} pull && docker compose -f ${compose_file} up -d --remove-orphans
+%{ else ~}
+  # compose_autostart=false: stack cloned but NOT started. Inject secrets,
+  # then: cd /opt/forge && docker compose -f ${compose_file} up -d
+%{ endif ~}
+%{ endif ~}
+
+%{ if length(extra_commands) > 0 ~}
+  # --- Operator-supplied extra_user_data ----------------------------- #
+%{ for cmd in extra_commands ~}
+  - ${cmd}
+%{ endfor ~}
+%{ endif ~}
+
+final_message: "Forge control-plane cloud-init complete after $UPTIME s (ref ${repo_ref})"

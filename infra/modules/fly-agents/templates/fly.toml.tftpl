@@ -1,0 +1,40 @@
+# GENERATED from infra/modules/fly-agents/templates/fly.toml.tftpl via
+# variables.tf's `environments` map — do not hand-edit the drift out from
+# under this template. To regenerate after changing variables.tf:
+#   tofu -chdir=infra/modules/fly-agents output -json rendered_fly_toml | jq -j '."<env>"' > fly.<env>.toml
+#
+# NOTE: Fly's fly.toml schema evolves; validate with `flyctl config validate`
+# before any real deploy (this repo has no Fly account attached — see the
+# module README's ceiling note).
+
+app            = "${app_name}"
+primary_region = "${primary_region}"
+%{ if length(extra_regions) > 0 ~}
+
+# This app also runs in: ${join(", ", extra_regions)}
+# fly.toml has no top-level "regions" list for Machines-based apps -- Fly
+# tracks an app's region set out-of-band via `flyctl regions`, not manifest
+# content. These extra regions are applied by `flyctl regions set` (run
+# automatically by deploy.sh's "deploy" command, or explicitly via
+# deploy.sh's "regions" command); see the module README.
+%{ endif ~}
+
+[build]
+  image = "${image}"
+
+[env]
+%{ for k, v in env ~}
+  ${k} = "${v}"
+%{ endfor ~}
+
+[http_service]
+  internal_port       = ${internal_port}
+  force_https         = true
+  auto_stop_machines   = ${autostop_machines}
+  auto_start_machines  = ${autostart_machines}
+  min_machines_running = ${min_machines_running}
+  processes            = ["app"]
+
+[[vm]]
+  size   = "${vm_size}"
+  memory = "${vm_memory_mb}mb"
