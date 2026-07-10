@@ -19,6 +19,8 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useAuditLog,
@@ -203,9 +205,13 @@ export function AuditView({ client = apiClient }: AuditViewProps) {
       const ndjson = await client.exportAuditNdjson({ from: query.from, to: query.to });
       const count = ndjson.trim() ? ndjson.trim().split("\n").length : 0;
       downloadText(ndjson, "audit-export.ndjson");
-      setStatus(`Exported ${count} ${count === 1 ? "entry" : "entries"} as NDJSON.`);
+      const message = `Exported ${count} ${count === 1 ? "entry" : "entries"} as NDJSON.`;
+      setStatus(message);
+      toast.success(message);
     } catch {
-      setStatus("Export failed — please try again.");
+      const message = "Export failed — please try again.";
+      setStatus(message);
+      toast.error(message);
     } finally {
       setExporting(false);
     }
@@ -215,13 +221,19 @@ export function AuditView({ client = apiClient }: AuditViewProps) {
     if (verify.isPending) return;
     setStatus(null);
     verify.mutate(undefined, {
-      onSuccess: (result) =>
-        setStatus(
-          result.ok
-            ? `Chain verified — ${result.entries_checked} entries intact.`
-            : `Chain integrity broken at entry #${result.broken_at_seq}.`,
-        ),
-      onError: () => setStatus("Couldn't verify the chain right now."),
+      onSuccess: (result) => {
+        const message = result.ok
+          ? `Chain verified — ${result.entries_checked} entries intact.`
+          : `Chain integrity broken at entry #${result.broken_at_seq}.`;
+        setStatus(message);
+        if (result.ok) toast.success(message);
+        else toast.error(message);
+      },
+      onError: () => {
+        const message = "Couldn't verify the chain right now.";
+        setStatus(message);
+        toast.error(message);
+      },
     });
   }, [verify]);
 
@@ -345,25 +357,18 @@ export function AuditView({ client = apiClient }: AuditViewProps) {
                 : `Broken at #${verdict.broken_at_seq}`}
             </span>
           ) : null}
-          <button
-            type="button"
-            onClick={onVerify}
-            disabled={verify.isPending}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-          >
+          <Button variant="outline" onClick={onVerify} disabled={verify.isPending}>
             <ShieldCheck aria-hidden className="h-4 w-4" />
             {verify.isPending ? "Verifying…" : "Verify chain"}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             data-testid="export-ndjson"
             onClick={() => void onExport()}
             disabled={exporting}
-            className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
           >
             <Download aria-hidden className="h-4 w-4" />
             {exporting ? "Exporting…" : "Export"}
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -392,15 +397,16 @@ export function AuditView({ client = apiClient }: AuditViewProps) {
           </div>
 
           {hasActiveFilters ? (
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               data-testid="clear-filters"
               onClick={clearFilters}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="text-muted-foreground"
             >
               <X aria-hidden className="h-3.5 w-3.5" />
               Clear
-            </button>
+            </Button>
           ) : null}
         </div>
 
@@ -502,15 +508,14 @@ export function AuditView({ client = apiClient }: AuditViewProps) {
 
             {listQuery.hasNextPage ? (
               <div className="flex justify-center border-t border-border p-3">
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
                   data-testid="load-more"
                   onClick={() => void listQuery.fetchNextPage()}
                   disabled={listQuery.isFetchingNextPage}
-                  className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                 >
                   {listQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-                </button>
+                </Button>
               </div>
             ) : null}
           </div>
@@ -678,14 +683,10 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
           We couldn&apos;t load audit entries just now.
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
+      <Button variant="outline" size="sm" onClick={onRetry}>
         <RotateCw aria-hidden className="h-3.5 w-3.5" />
         Retry
-      </button>
+      </Button>
     </div>
   );
 }
@@ -703,14 +704,10 @@ function EmptyFiltered({ onClear }: { onClear: () => void }) {
           No audit activity matches these filters.
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onClear}
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
+      <Button variant="outline" size="sm" onClick={onClear}>
         <X aria-hidden className="h-3.5 w-3.5" />
         Clear filters
-      </button>
+      </Button>
     </div>
   );
 }

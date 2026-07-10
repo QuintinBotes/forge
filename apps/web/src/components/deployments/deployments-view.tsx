@@ -18,6 +18,8 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useCancelDeployment,
@@ -51,6 +53,12 @@ function isEditableTarget(target: EventTarget | null): boolean {
     target.isContentEditable
   );
 }
+
+const DECISION_TOAST: Record<DeploymentDecision, string> = {
+  approve: "Approved.",
+  reject: "Rejected.",
+  changes_requested: "Changes requested.",
+};
 
 function actionErrorMessage(error: unknown, verb: string): string {
   if (error instanceof ApiError) {
@@ -163,6 +171,7 @@ export function DeploymentsView({
       decide.mutate(
         { deploymentId: selectedId, body: { decision, note: note ?? null } },
         {
+          onSuccess: () => toast.success(DECISION_TOAST[decision]),
           onError: (err) =>
             setActionError(actionErrorMessage(err, "decide on")),
         },
@@ -175,6 +184,7 @@ export function DeploymentsView({
     if (!selectedId || cancel.isPending) return;
     setActionError(null);
     cancel.mutate(selectedId, {
+      onSuccess: () => toast.success("Deployment cancelled."),
       onError: (err) => setActionError(actionErrorMessage(err, "cancel")),
     });
   }, [selectedId, cancel]);
@@ -183,6 +193,7 @@ export function DeploymentsView({
     if (!selectedId || rollback.isPending) return;
     setActionError(null);
     rollback.mutate(selectedId, {
+      onSuccess: () => toast.success("Rolled back to the previous deployment."),
       onError: (err) => setActionError(actionErrorMessage(err, "roll back")),
     });
   }, [selectedId, rollback]);
@@ -291,15 +302,10 @@ export function DeploymentsView({
           </div>
         </div>
 
-        <button
-          type="button"
-          data-testid="promote-button"
-          onClick={() => openPromote(null)}
-          className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
+        <Button data-testid="promote-button" onClick={() => openPromote(null)}>
           <Rocket className="h-4 w-4" aria-hidden />
           Promote
-        </button>
+        </Button>
       </header>
 
       <span data-testid="deployments-status" role="status" aria-live="polite" className="sr-only">
@@ -410,14 +416,10 @@ function EmptyDeployments({ onPromote }: { onPromote: () => void }) {
           Promote a commit into the first environment to start the pipeline.
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onPromote}
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
+      <Button variant="outline" size="sm" onClick={onPromote}>
         <Rocket className="h-3.5 w-3.5" aria-hidden />
         Promote
-      </button>
+      </Button>
     </div>
   );
 }
