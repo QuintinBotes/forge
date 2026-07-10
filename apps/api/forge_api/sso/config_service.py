@@ -39,8 +39,14 @@ from forge_api.sso.errors import (
 )
 from forge_api.sso.provisioning import count_local_active_admins, emit_sso_audit
 from forge_api.sso.saml_metadata import normalize_cert_pem, parse_idp_metadata
-from forge_contracts.sso import AttributeMapping, SamlIdpConfig, SsoConfigIn, SsoConfigOut
-from forge_db.models import ScimToken, SsoConfiguration, SsoDomain, Workspace
+from forge_contracts.sso import (
+    AttributeMapping,
+    OidcIdpConfig,
+    SamlIdpConfig,
+    SsoConfigIn,
+    SsoConfigOut,
+)
+from forge_db.models import OidcConfiguration, ScimToken, SsoConfiguration, SsoDomain, Workspace
 from forge_db.models.enums import SsoProtocol, UserRole
 
 #: Cap for fetched IdP metadata documents (SSRF/resource guard).
@@ -52,6 +58,13 @@ def _sp_key_cipher() -> SecretCipher:
     """Process-wide cipher for SP private keys (own subkey of the master secret)."""
     master = _resolve_master_key(None)
     return default_cipher(_subkey(master, b"forge-sso-sp-key"))
+
+
+@lru_cache(maxsize=1)
+def _oidc_secret_cipher() -> SecretCipher:
+    """Process-wide cipher for OIDC client secrets (own subkey — key separation)."""
+    master = _resolve_master_key(None)
+    return default_cipher(_subkey(master, b"forge-sso-oidc-secret"))
 
 
 def generate_sp_keypair(common_name: str) -> tuple[str, str]:
@@ -368,6 +381,106 @@ class SsoConfigService:
             group_role_map=dict(config.group_role_map or {}),
             jit_provisioning=config.jit_provisioning,
             last_metadata_refresh_at=config.last_metadata_refresh_at,
+        )
+
+    # -- OIDC config ------------------------------------------------------------- #
+
+    @property
+    def _oidc_cipher(self) -> SecretCipher:
+        return _oidc_secret_cipher()
+
+    def oidc_urls(self, slug: str) -> dict[str, str]:
+        base = f"{self._public_url}/auth/oidc/{slug}"
+        return {"redirect_uri": f"{base}/callback", "login_url": f"{base}/login"}
+
+    def get_oidc_config(self, workspace_id: uuid.UUID) -> OidcConfiguration | None:
+        return self._session.execute(
+            select(OidcConfiguration).where(OidcConfiguration.workspace_id == workspace_id)
+        ).scalar_one_or_none()
+
+    def get_oidc_config_by_slug(self, slug: str) -> tuple[Workspace, OidcConfiguration] | None:
+        workspace = self._session.execute(
+            select(Workspace).where(Workspace.slug == slug)
+        ).scalar_one_or_none()
+        if workspace is None:
+            return None
+        config = self.get_oidc_config(workspace.id)
+        if config is None:
+            return None
+        return workspace, config
+
+    def put_oidc_config(
+        self,
+        workspace_id: uuid.UUID,
+        payload: OidcIdpConfig,
+        *,
+        client_secret: str,
+        enabled: bool = False,
+        jit_provisioning: bool = True,
+        domains: list[str] | None = None,
+        actor_id: uuid.UUID | None = None,
+    ) -> OidcConfiguration:
+        """Create/replace a workspace OIDC config; the client secret is encrypted."""
+        self._workspace(workspace_id)
+        config = self.get_oidc_config(workspace_id)
+        if config is None:
+            config = OidcConfiguration(
+                workspace_id=workspace_id,
+                issuer=payload.issuer,
+                client_id=payload.client_id,
+                client_secret_ref=payload.client_secret_ref,
+                client_secret_encrypted=self._oidc_cipher.encrypt(client_secret),
+            )
+            self._session.add(config)
+        else:
+            config.client_secret_encrypted = self._oidc_cipher.encrypt(client_secret)
+        config.enabled = enabled
+        config.issuer = payload.issuer
+        config.discovery_url = payload.discovery_url
+        config.client_id = payload.client_id
+        config.client_secret_ref = payload.client_secret_ref
+        config.authorization_endpoint = payload.authorization_endpoint
+        config.token_endpoint = payload.token_endpoint
+        config.jwks_uri = payload.jwks_uri
+        config.scopes = list(payload.scopes)
+        config.email_claim = payload.email_claim
+        config.name_claim = payload.name_claim
+        config.groups_claim = payload.groups_claim
+        config.default_role = UserRole(payload.default_role)
+        config.group_role_map = dict(payload.group_role_map)
+        config.jit_provisioning = jit_provisioning
+        config.domains = sorted({d.strip().lower() for d in (domains or []) if d.strip()})
+        self._session.flush()
+        emit_sso_audit(
+            self._session,
+            workspace_id=workspace_id,
+            action="sso.config_updated",
+            actor_id=actor_id,
+            target_type="oidc_configuration",
+            target_id=config.id,
+            details={"enabled": config.enabled, "issuer": config.issuer, "protocol": "oidc"},
+        )
+        return config
+
+    def decrypt_oidc_secret(self, config: OidcConfiguration) -> str:
+        return self._oidc_cipher.decrypt(config.client_secret_encrypted)
+
+    def oidc_config_dto(self, config: OidcConfiguration) -> OidcIdpConfig:
+        """Rebuild the :class:`OidcIdpConfig` DTO from a stored row (no secret)."""
+        return OidcIdpConfig(
+            issuer=config.issuer,
+            discovery_url=config.discovery_url,
+            client_id=config.client_id,
+            client_secret_ref=config.client_secret_ref,
+            scopes=list(config.scopes or []),
+            email_claim=config.email_claim,
+            name_claim=config.name_claim,
+            groups_claim=config.groups_claim,
+            default_role=config.default_role.value,
+            group_role_map=dict(config.group_role_map or {}),
+            authorization_endpoint=config.authorization_endpoint,
+            token_endpoint=config.token_endpoint,
+            jwks_uri=config.jwks_uri,
         )
 
     # -- HRD ---------------------------------------------------------------------- #

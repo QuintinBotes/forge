@@ -31,6 +31,7 @@ from forge_api.routers import (
     marketplace,
     mcp,
     observability,
+    oidc,
     pm,
     policy,
     project_access,
@@ -79,6 +80,7 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     project_access.router,
     sso_admin.router,
     saml.router,
+    oidc.router,
     scim.router,
 )
 
@@ -105,6 +107,7 @@ __all__ = [
     "marketplace",
     "mcp",
     "observability",
+    "oidc",
     "pm",
     "policy",
     "project_access",

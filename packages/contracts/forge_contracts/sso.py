@@ -49,14 +49,50 @@ class SamlIdpConfig(BaseModel):
     name_id_format: str = NAMEID_FORMAT_EMAIL
 
 
-class SsoConfigIn(BaseModel):
-    """Create/replace payload for a workspace SAML configuration."""
+#: Default OIDC scopes — ``openid`` is mandatory; ``email``/``profile`` back the
+#: identity claims Forge maps.
+OIDC_DEFAULT_SCOPES = ["openid", "email", "profile"]
 
-    protocol: Literal["saml"] = "saml"
+
+class OidcIdpConfig(BaseModel):
+    """The identity-provider half of an OpenID Connect federation.
+
+    Endpoints are resolved from OpenID discovery
+    (``{issuer}/.well-known/openid-configuration`` or an explicit
+    ``discovery_url``); the optional ``*_endpoint`` / ``jwks_uri`` overrides let
+    an admin pin them when an IdP does not publish discovery. The client secret
+    is **never** carried in this DTO — only ``client_secret_ref``, an opaque
+    handle to the ciphertext the config service holds in the vault.
+    """
+
+    issuer: str
+    discovery_url: str | None = None
+    client_id: str
+    #: Vault handle for the OAuth client secret (never the plaintext).
+    client_secret_ref: str
+    scopes: list[str] = Field(default_factory=lambda: list(OIDC_DEFAULT_SCOPES))
+    #: ID-token / userinfo claim names Forge maps onto its identity fields.
+    email_claim: str = "email"
+    name_claim: str = "name"
+    groups_claim: str = "groups"
+    #: Optional role mapping (mirrors the SAML config's group→role resolution).
+    default_role: Literal["admin", "member", "viewer", "agent-runner"] = "member"
+    group_role_map: dict[str, str] = Field(default_factory=dict)
+    #: Discovery overrides (used verbatim when present; else discovery is fetched).
+    authorization_endpoint: str | None = None
+    token_endpoint: str | None = None
+    jwks_uri: str | None = None
+
+
+class SsoConfigIn(BaseModel):
+    """Create/replace payload for a workspace SSO configuration (SAML or OIDC)."""
+
+    protocol: Literal["saml", "oidc"] = "saml"
     enabled: bool = False
     metadata_url: str | None = None
     metadata_xml: str | None = None
     idp: SamlIdpConfig | None = None
+    oidc: OidcIdpConfig | None = None
     domains: list[str] = Field(default_factory=list)
     allow_idp_initiated: bool = False
     sign_authn_requests: bool = True
@@ -77,9 +113,10 @@ class SsoConfigOut(BaseModel):
 
     id: str
     workspace_id: str
-    protocol: Literal["saml"]
+    protocol: Literal["saml", "oidc"]
     enabled: bool
-    idp: SamlIdpConfig
+    idp: SamlIdpConfig | None = None
+    oidc: OidcIdpConfig | None = None
     sp_entity_id: str
     sp_acs_url: str
     sp_slo_url: str
@@ -304,10 +341,12 @@ __all__ = [
     "GROUP_SCHEMA",
     "LIST_SCHEMA",
     "NAMEID_FORMAT_EMAIL",
+    "OIDC_DEFAULT_SCOPES",
     "PATCHOP_SCHEMA",
     "USER_SCHEMA",
     "AttributeMapping",
     "MappedIdentity",
+    "OidcIdpConfig",
     "ReplayGuard",
     "SamlAssertion",
     "SamlIdpConfig",
