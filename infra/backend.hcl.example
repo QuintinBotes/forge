@@ -1,0 +1,20 @@
+# backend.hcl.example — copy to backend.hcl (gitignored) and fill in.
+#
+# Partial backend config shared by every environment. The per-env `key`
+# is passed separately on the init command line so it can't be forgotten:
+#
+#   cp backend.hcl.example backend.hcl
+#   cd envs/prod
+#   tofu init \
+#     -backend-config=../../backend.hcl \
+#     -backend-config="key=forge/prod/terraform.tfstate"
+#
+# R2 credentials are NOT set here — they come from the environment:
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+
+bucket = "forge-tfstate"
+
+# Replace <accountid> with your Cloudflare account id.
+endpoints = {
+  s3 = "https://<accountid>.r2.cloudflarestorage.com"
+}

@@ -1,0 +1,36 @@
+# OpenTofu / Terraform — never commit state, secrets, or provider caches.
+
+# State files (may contain secrets) and backups.
+*.tfstate
+*.tfstate.*
+*.tflock
+
+# Crash / debug logs.
+crash.log
+crash.*.log
+
+# Provider plugins, lockfile mirrors, module cache.
+.terraform/
+.terraform.lock.hcl.bak
+
+# Variable files with real values — secrets come from TF_VAR_* / *.auto.tfvars.
+# Only the *.example templates are tracked.
+*.tfvars
+*.auto.tfvars
+!*.tfvars.example
+
+# Gitignored partial backend config (endpoint/bucket); backend.hcl.example is tracked.
+backend.hcl
+!backend.hcl.example
+
+# Saved plan outputs.
+*.tfplan
+tfplan
+tfplan.*
+
+# Editor / OS cruft.
+.DS_Store
+*.swp
+
+# NOTE: .terraform.lock.hcl (the dependency lockfile) SHOULD be committed
+# per environment — it is intentionally NOT ignored here.
