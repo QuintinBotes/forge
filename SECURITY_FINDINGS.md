@@ -8,7 +8,7 @@ a reason and, where it gates CI, a dated entry in
 Scanners run: `bandit` (SAST), `pip-audit` (Python CVE), `semgrep` with custom
 Forge rules (`.semgrep/forge.yml`), `gitleaks` (secret scan over full history),
 and `cyclonedx-py` (SBOM). Baseline date: **2026-07-04**. Reproduce with
-`make security` (or the individual commands in §7 of the slice doc).
+`make security` (or run the individual scanners listed above).
 
 ---
 
@@ -102,8 +102,10 @@ allowlisted narrowly in [`.gitleaks.toml`](.gitleaks.toml):
   redaction layer (e.g. `test_obs_redaction.py`, `test_mcp_redaction.py`,
   `forge_mcp/testing.py`) — redaction tests are worthless without a realistic
   fake secret to redact.
-- 2 are **spec/prose** in `docs/implementation-slices/**` that pattern-match the
-  generic-api-key rule but contain no real value.
+- 2 are **spec/prose** in earlier-commit docs (`docs/implementation-slices/**`,
+  since removed from the working tree) that pattern-match the generic-api-key
+  rule but contain no real value; the allowlist is retained for the full-history
+  scan.
 - 1 is `deploy/.env.dev:22` — a documented **DEV-ONLY** `FORGE_SECRET_KEY` whose
   file header states it must never be used in production; the production
   compose/helm paths require an operator-provided secret, and the API refuses to

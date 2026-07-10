@@ -1,6 +1,6 @@
 # Forge Retrieval Eval — Honest Real-Corpus Numbers (HARD-04)
 
-> These are the **real** retrieval-quality numbers: the production hybrid pipeline (semantic pgvector leg + BM25 keyword leg -> RRF k=60 -> cross-encoder rerank) run with a **learned local `sentence-transformers` embedder** over a **real, heterogeneous corpus** (the Forge monorepo). They supersede the deterministic `recall@5 = 1.000` headline in `docs/MORNING_REPORT.md` §4, which is a **wiring check only**.
+> These are the **real** retrieval-quality numbers: the production hybrid pipeline (semantic pgvector leg + BM25 keyword leg -> RRF k=60 -> cross-encoder rerank) run with a **learned local `sentence-transformers` embedder** over a **real, heterogeneous corpus** (the Forge monorepo). They supersede an earlier **deterministic wiring-check** baseline — an offline embedder + fixture reranker over small golden sets, whose `recall@5 = 1.000` proved only that the pipeline was wired, not its real-world quality.
 
 ## Configuration
 
@@ -53,7 +53,7 @@ Fused recall - best single leg = **+0.042** (hybrid >= each leg: fusion adds rec
 
 ## Track 1.4 adversarial refutation — resolution
 
-Re-reviewed the `forge_knowledge.sync` + `forge_eval.retrieval_eval` refutation flagged in `MORNING_REPORT.md` §6 ("1 refutation, repaired=false"). **Outcome: invalid/superseded.** The refutation was that the deterministic eval's 1.000 scores did not prove real retrieval quality — a *realism* gap, not a code defect in sync/eval. HARD-04 closes that gap by measuring the same pipeline on a real corpus with a learned embedder (this report). The sync ingestion path is unchanged and remains green; no code defect was surfaced. See the note in `forge_eval/retrieval_eval.py`.
+An earlier concern held that the deterministic eval's 1.000 scores did not prove real retrieval quality — a *realism* gap, not a code defect in `forge_knowledge.sync` or `forge_eval.retrieval_eval`. This real-corpus run with a learned embedder closes that gap. The sync ingestion path is unchanged and remains green; no code defect was surfaced. See the note in `forge_eval/retrieval_eval.py`.
 
 ## Appendix — full scorecard
 

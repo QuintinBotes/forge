@@ -18,8 +18,7 @@ The reranker is a swappable implementation of the frozen
 - `GracefulReranker` — the production decorator: a hard **latency budget**,
   **graceful fallback** to weighted-RRF, and a redacted telemetry record.
 
-This runbook covers turning the live path on. See the slice doc
-`docs/implementation-slices/hardening/HARD-03-live-reranker.md` for the ACs.
+This runbook covers turning the live path on.
 
 ---
 
