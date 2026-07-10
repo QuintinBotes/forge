@@ -12,7 +12,7 @@ API. For the production hardening details see
 - Docker Engine 24+ and the Docker Compose v2 plugin (`docker compose version`).
 - 4 CPU cores and 8 GB RAM available to Docker (the default resource limits in
   the production compose file assume roughly this).
-- For local development from source instead of images: Python 3.12 with
+- For local development from source instead of images: Python 3.14 with
   [uv](https://docs.astral.sh/uv/), Node 22 with `pnpm`, and `make`.
 
 ## 1. Clone and configure
