@@ -29,6 +29,7 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
+import { toast } from "@/components/ui/toast";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useCreatePmConnection,
@@ -350,7 +351,10 @@ function ConnectionDetail({
     setMapError(null);
     patch.mutate(
       { connectionId, body: { status_map: draftMap } },
-      { onError: (err) => setMapError(mutationMessage(err)) },
+      {
+        onSuccess: () => toast.success("Status mapping saved."),
+        onError: (err) => setMapError(mutationMessage(err)),
+      },
     );
   }, [mapDirty, patch, connectionId, draftMap]);
 
@@ -406,7 +410,18 @@ function ConnectionDetail({
     setActionError(null);
     patch.mutate(
       { connectionId, body },
-      { onError: (err) => setActionError(mutationMessage(err)) },
+      {
+        onSuccess: () => {
+          if (body.enabled !== undefined) {
+            toast.success(body.enabled ? "Sync enabled." : "Sync paused.");
+          } else if (body.sync_direction !== undefined) {
+            toast.success("Sync direction updated.");
+          } else if (body.conflict_policy !== undefined) {
+            toast.success("Conflict policy updated.");
+          }
+        },
+        onError: (err) => setActionError(mutationMessage(err)),
+      },
     );
   };
 
@@ -471,6 +486,7 @@ function ConnectionDetail({
               onClick={() => {
                 setActionError(null);
                 disconnect.mutate(connectionId, {
+                  onSuccess: () => toast.success("Connection disconnected."),
                   onError: (err) => setActionError(mutationMessage(err)),
                 });
               }}
@@ -960,7 +976,10 @@ function ConnectionForm({
       conflict_policy: form.conflictPolicy,
     };
     create.mutate(body, {
-      onSuccess: (conn) => onConnected(conn),
+      onSuccess: (conn) => {
+        toast.success(`Connected to ${conn.name}.`);
+        onConnected(conn);
+      },
       onError: (err) => setError(mutationMessage(err)),
     });
   }, [canConnect, form, usesToken, isJira, create, onConnected]);

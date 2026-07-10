@@ -3,6 +3,7 @@
 import { ChevronRight, Lock, PackageOpen, ShieldCheck } from "lucide-react";
 import { Fragment } from "react";
 
+import { Button } from "@/components/ui/button";
 import type { EnvironmentRead } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
@@ -158,21 +159,16 @@ function Stage({
       )}
 
       {hasNext ? (
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           data-testid="stage-promote"
           disabled={!live}
           onClick={onPromote}
-          className={cn(
-            "inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition-colors",
-            "hover:bg-accent hover:text-accent-foreground",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            "disabled:pointer-events-none disabled:opacity-50",
-          )}
         >
           Promote
           <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-        </button>
+        </Button>
       ) : null}
     </section>
   );

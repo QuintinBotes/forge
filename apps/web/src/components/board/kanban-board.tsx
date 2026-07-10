@@ -57,14 +57,23 @@ export function KanbanBoard({
               </span>
             </header>
             <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
-              {columnTasks.map((task) => (
-                <KanbanCard
-                  key={task.id}
-                  task={task}
-                  onStatusChange={onStatusChange}
-                  onSelect={onSelect}
-                />
-              ))}
+              {columnTasks.length === 0 ? (
+                <p
+                  data-testid={`column-empty-${status}`}
+                  className="rounded-md border border-dashed border-border px-2 py-4 text-center text-xs text-muted-foreground"
+                >
+                  No tasks
+                </p>
+              ) : (
+                columnTasks.map((task) => (
+                  <KanbanCard
+                    key={task.id}
+                    task={task}
+                    onStatusChange={onStatusChange}
+                    onSelect={onSelect}
+                  />
+                ))
+              )}
             </div>
           </section>
         );
@@ -93,7 +102,7 @@ function KanbanCard({ task, onStatusChange, onSelect }: KanbanCardProps) {
       <button
         type="button"
         onClick={() => onSelect?.(task)}
-        className="block w-full text-left text-sm font-medium hover:underline"
+        className="block w-full rounded text-left text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {task.title}
       </button>
@@ -110,6 +119,7 @@ function KanbanCard({ task, onStatusChange, onSelect }: KanbanCardProps) {
             onClick={() => back && taskId && onStatusChange?.(taskId, back)}
             className={cn(
               "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               (!back || !taskId) && "cursor-not-allowed opacity-40",
             )}
           >
@@ -122,6 +132,7 @@ function KanbanCard({ task, onStatusChange, onSelect }: KanbanCardProps) {
             onClick={() => forward && taskId && onStatusChange?.(taskId, forward)}
             className={cn(
               "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               (!forward || !taskId) && "cursor-not-allowed opacity-40",
             )}
           >

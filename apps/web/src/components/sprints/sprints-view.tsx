@@ -26,6 +26,7 @@ import {
 import { useRegisterCommands } from "@/components/command-palette";
 import { KanbanBoard } from "@/components/board/kanban-board";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { queryKeys, useSetTaskStatus } from "@/lib/api/hooks";
 import {
@@ -139,7 +140,11 @@ export function SprintsView({
     setTaskStatus.mutate(
       { taskId, status: next },
       {
-        onError: () => setStatus("Could not move the task — the change was rolled back."),
+        onError: () => {
+          const message = "Could not move the task — the change was rolled back.";
+          setStatus(message);
+          toast.error(message);
+        },
       },
     );
   };
@@ -147,8 +152,16 @@ export function SprintsView({
   const onStart = () => {
     if (!sprint || sprint.state !== "planned") return;
     startSprint.mutate(sprint.id, {
-      onSuccess: () => setStatus(`Started ${sprint.name}.`),
-      onError: () => setStatus("Could not start the sprint."),
+      onSuccess: () => {
+        const message = `Started ${sprint.name}.`;
+        setStatus(message);
+        toast.success(message);
+      },
+      onError: () => {
+        const message = "Could not start the sprint.";
+        setStatus(message);
+        toast.error(message);
+      },
     });
   };
 
@@ -157,8 +170,16 @@ export function SprintsView({
     completeSprint.mutate(
       { sprintId: sprint.id, body: { carryover: "backlog" } },
       {
-        onSuccess: () => setStatus(`Completed ${sprint.name}. Carryover returned to the backlog.`),
-        onError: () => setStatus("Could not complete the sprint."),
+        onSuccess: () => {
+          const message = `Completed ${sprint.name}. Carryover returned to the backlog.`;
+          setStatus(message);
+          toast.success(message);
+        },
+        onError: () => {
+          const message = "Could not complete the sprint.";
+          setStatus(message);
+          toast.error(message);
+        },
       },
     );
   };

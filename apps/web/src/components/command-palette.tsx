@@ -1,9 +1,12 @@
 "use client";
 
 import {
+  Activity,
   AlertTriangle,
+  Cable,
   Compass,
   Cpu,
+  Gauge,
   KanbanSquare,
   KeyRound,
   Layers,
@@ -16,6 +19,7 @@ import {
   ShieldCheck,
   Store,
   TrendingUp,
+  Users,
   Workflow,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -61,6 +65,15 @@ export function useCommandPalette(): CommandPaletteContextValue {
 }
 
 /**
+ * Non-throwing variant: returns the palette context or `null` when no provider
+ * is mounted. Lets chrome (e.g. the top-bar hint) degrade gracefully in
+ * isolated renders/tests instead of crashing.
+ */
+export function useCommandPaletteOptional(): CommandPaletteContextValue | null {
+  return useContext(CommandPaletteContext);
+}
+
+/**
  * Register a set of page-scoped commands while the calling component is mounted
  * (e.g. the board view contributes "Create task" / "Search knowledge"). Pass a
  * **stable** `commands` reference (memoize it) to avoid re-registration loops.
@@ -88,101 +101,134 @@ export interface CommandAction {
  * {@link useRegisterCommands}.
  */
 export const DEFAULT_COMMANDS: CommandAction[] = [
+  // Work
   {
     id: "go-list",
     label: "Go to List",
-    group: "Navigate",
+    group: "Work",
     icon: <LayoutList />,
     run: (router) => router.push("/"),
   },
   {
     id: "go-board",
     label: "Go to Board",
-    group: "Navigate",
+    group: "Work",
     icon: <KanbanSquare />,
     run: (router) => router.push("/board"),
   },
   {
     id: "go-depth",
     label: "Go to Board depth",
-    group: "Navigate",
+    group: "Work",
     icon: <Layers />,
     run: (router) => router.push("/depth"),
   },
   {
-    id: "go-sprints",
-    label: "Go to Sprints",
-    group: "Navigate",
-    icon: <TrendingUp />,
-    run: (router) => router.push("/sprints"),
-  },
-  {
-    id: "go-incidents",
-    label: "Go to Incidents",
-    group: "Navigate",
-    icon: <AlertTriangle />,
-    run: (router) => router.push("/incidents"),
-  },
-  {
-    id: "go-specs",
-    label: "Go to Specs",
-    group: "Navigate",
-    icon: <Route />,
-    run: (router) => router.push("/specs"),
-  },
-  {
-    id: "go-workflow",
-    label: "Go to Workflow editor",
-    group: "Navigate",
-    icon: <Workflow />,
-    run: (router) => router.push("/workflow"),
+    id: "go-runs",
+    label: "Go to Runs",
+    group: "Work",
+    icon: <Activity />,
+    run: (router) => router.push("/runs"),
   },
   {
     id: "go-approvals",
     label: "Go to Approvals",
-    group: "Navigate",
+    group: "Work",
     icon: <ShieldCheck />,
     run: (router) => router.push("/approvals"),
   },
+  // Plan
   {
-    id: "go-deployments",
-    label: "Go to Deployments",
-    group: "Navigate",
-    icon: <Rocket />,
-    run: (router) => router.push("/deployments"),
+    id: "go-specs",
+    label: "Go to Specs",
+    group: "Plan",
+    icon: <Route />,
+    run: (router) => router.push("/specs"),
+  },
+  {
+    id: "go-sprints",
+    label: "Go to Sprints",
+    group: "Plan",
+    icon: <TrendingUp />,
+    run: (router) => router.push("/sprints"),
+  },
+  {
+    id: "go-workflow",
+    label: "Go to Workflows",
+    group: "Plan",
+    icon: <Workflow />,
+    run: (router) => router.push("/workflow"),
+  },
+  // Insight
+  {
+    id: "go-observability",
+    label: "Go to Observability",
+    group: "Insight",
+    icon: <Gauge />,
+    run: (router) => router.push("/observability"),
+  },
+  {
+    id: "go-incidents",
+    label: "Go to Incidents",
+    group: "Insight",
+    icon: <AlertTriangle />,
+    run: (router) => router.push("/incidents"),
   },
   {
     id: "go-audit",
     label: "Go to Audit log",
-    group: "Navigate",
+    group: "Insight",
     icon: <ScrollText />,
     run: (router) => router.push("/audit"),
+  },
+  // Admin
+  {
+    id: "go-deployments",
+    label: "Go to Deployments",
+    group: "Admin",
+    icon: <Rocket />,
+    run: (router) => router.push("/deployments"),
   },
   {
     id: "go-marketplace",
     label: "Go to Marketplace",
-    group: "Navigate",
+    group: "Admin",
     icon: <Store />,
     run: (router) => router.push("/marketplace"),
   },
   {
-    id: "go-sso",
-    label: "Go to SSO settings",
-    group: "Navigate",
-    icon: <KeyRound />,
-    run: (router) => router.push("/settings/sso"),
-  },
-  {
     id: "go-ao-settings",
     label: "Go to Models & Effort settings",
-    group: "Navigate",
+    group: "Admin",
     icon: <Cpu />,
     run: (router) => router.push("/settings/models"),
   },
   {
+    id: "go-rbac",
+    label: "Go to Access & roles",
+    group: "Admin",
+    icon: <Users />,
+    run: (router) => router.push("/settings/rbac"),
+  },
+  {
+    id: "go-sso",
+    label: "Go to SSO settings",
+    group: "Admin",
+    icon: <KeyRound />,
+    run: (router) => router.push("/settings/sso"),
+  },
+  {
+    id: "go-integrations",
+    label: "Go to Integrations",
+    group: "Admin",
+    icon: <Cable />,
+    run: (router) => router.push("/settings/integrations"),
+  },
+  // Help
+  {
     id: "go-walkthrough",
     label: "Open guided walkthrough",
-    group: "Navigate",
+    group: "Help",
     icon: <Compass />,
     run: (router) => router.push("/walkthrough"),
   },
@@ -269,8 +315,9 @@ export function CommandPaletteProvider({
     [open, toggle, registerCommands, unregisterCommands],
   );
 
+  // Page-contributed actions (e.g. "Create task") lead, then base navigation.
   const allCommands = useMemo(
-    () => [...commands, ...Object.values(dynamic).flat()],
+    () => [...Object.values(dynamic).flat(), ...commands],
     [commands, dynamic],
   );
 

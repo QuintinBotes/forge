@@ -3,6 +3,7 @@
 import { Rocket } from "lucide-react";
 import { useId, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "@/components/ui/toast";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { useRequestDeployment } from "@/lib/api/deployments";
 import type { DeploymentRead, EnvironmentRead } from "@/lib/api/types";
@@ -121,6 +123,7 @@ export function PromoteDialog({
       },
       {
         onSuccess: (deployment) => {
+          toast.success(`Promotion to ${deployment.environment_name} requested.`);
           onPromoted?.(deployment);
           onOpenChange(false);
         },
@@ -185,21 +188,17 @@ export function PromoteDialog({
           ) : null}
 
           <div className="flex items-center justify-end gap-2">
-            <button
+            <Button
               type="button"
+              variant="ghost"
               onClick={() => onOpenChange(false)}
-              className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={!canSubmit}>
               <Rocket className="h-4 w-4" aria-hidden />
               {promote.isPending ? "Promoting…" : "Promote"}
-            </button>
+            </Button>
           </div>
         </form>
       </DialogContent>

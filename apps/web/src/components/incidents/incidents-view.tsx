@@ -11,6 +11,11 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Loading, Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toast";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useIncidentDetail,
@@ -28,7 +33,7 @@ import { cn } from "@/lib/utils";
 import { DeclareIncidentDialog } from "./declare-incident-dialog";
 import { IncidentDetail } from "./incident-detail";
 import { IncidentQueue } from "./incident-queue";
-import { severityMeta } from "./incident-meta";
+import { eventMeta, severityMeta } from "./incident-meta";
 
 const OPEN_TERMINAL = new Set([
   "resolved",
@@ -144,7 +149,10 @@ export function IncidentsView({ client = apiClient }: IncidentsViewProps) {
       setActionError(null);
       sendEvent.mutate(
         { incidentId: selectedIncidentId, body: { event } },
-        { onError: (err) => setActionError(eventErrorMessage(err)) },
+        {
+          onSuccess: () => toast.success(eventMeta(event).label),
+          onError: (err) => setActionError(eventErrorMessage(err)),
+        },
       );
     },
     [selectedIncidentId, sendEvent],
@@ -152,7 +160,9 @@ export function IncidentsView({ client = apiClient }: IncidentsViewProps) {
 
   const onPublish = useCallback(() => {
     if (!selectedIncidentId || publish.isPending) return;
-    publish.mutate(selectedIncidentId);
+    publish.mutate(selectedIncidentId, {
+      onSuccess: () => toast.success("Postmortem published"),
+    });
   }, [selectedIncidentId, publish]);
 
   const openDeclare = useCallback(() => setDeclareOpen(true), []);
@@ -299,12 +309,13 @@ export function IncidentsView({ client = apiClient }: IncidentsViewProps) {
             />
           )}
           {incidentsQuery.isError ? (
-            <p
-              role="status"
-              className="mt-2 rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground"
-            >
-              Live incidents are unavailable — showing an empty queue.
-            </p>
+            <ErrorState
+              data-testid="incidents-error"
+              title="Live incidents are unavailable"
+              description="The incident service may be offline — showing an empty queue."
+              onRetry={() => incidentsQuery.refetch()}
+              className="mt-2 border-none bg-transparent p-3 text-left"
+            />
           ) : null}
         </div>
 
@@ -400,56 +411,47 @@ function EmptyQueue({
   onDeclare: () => void;
 }) {
   return (
-    <div
+    <EmptyState
       data-testid="empty-queue"
-      className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
-    >
-      <Siren className="h-8 w-8 text-muted-foreground" />
-      <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-foreground">
-          {openOnly ? "No open incidents" : "No incidents yet"}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {openOnly
-            ? "Everything's resolved. Declare one if something's on fire."
-            : "Declare an incident to start a response timeline."}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={onDeclare}
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <Siren className="h-3.5 w-3.5" />
-        Declare incident
-      </button>
-    </div>
+      icon={<Siren />}
+      title={openOnly ? "No open incidents" : "No incidents yet"}
+      description={
+        openOnly
+          ? "Everything's resolved. Declare one if something's on fire."
+          : "Declare an incident to start a response timeline."
+      }
+      action={
+        <Button size="sm" variant="outline" onClick={onDeclare}>
+          <Siren className="h-3.5 w-3.5" aria-hidden />
+          Declare incident
+        </Button>
+      }
+      className="flex-1 border-none bg-transparent"
+    />
   );
 }
 
 function NoSelection({ empty }: { empty: boolean }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 p-10 text-center">
-      <AlertTriangle className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm text-muted-foreground">
-        {empty
-          ? "No incidents to review."
-          : "Select an incident to see its lifecycle, timeline and remediation."}
-      </p>
-    </div>
+    <EmptyState
+      icon={<AlertTriangle />}
+      title={empty ? "No incidents to review" : "Select an incident"}
+      description={empty ? undefined : "See its lifecycle, timeline and remediation."}
+      className="h-full border-none bg-transparent"
+    />
   );
 }
 
 function QueueSkeleton() {
   return (
-    <div className="flex flex-col gap-1" data-testid="queue-skeleton" aria-busy="true">
+    <Loading data-testid="queue-skeleton" label="Loading incidents…" className="flex flex-col gap-1">
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="flex flex-col gap-2 rounded-md px-3 py-2.5">
-          <div className="h-2.5 w-1/3 animate-pulse rounded bg-muted/60" />
-          <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-          <div className="h-4 w-24 animate-pulse rounded-full bg-muted/60" />
+          <Skeleton className="h-2.5 w-1/3" />
+          <Skeleton className="h-3 w-3/4" />
+          <Skeleton className="h-4 w-24 rounded-full" />
         </div>
       ))}
-    </div>
+    </Loading>
   );
 }

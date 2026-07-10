@@ -24,6 +24,7 @@ import {
   type CommandAction,
 } from "@/components/command-palette";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useCostSummary,
@@ -162,7 +163,9 @@ export function ObservabilityView({ client = apiClient }: ObservabilityViewProps
       // Download is best-effort; the status line is the confirmation.
     }
     const count = buckets_.length;
-    setStatus(`Exported ${count} ${count === 1 ? "row" : "rows"} to CSV.`);
+    const message = `Exported ${count} ${count === 1 ? "row" : "rows"} to CSV.`;
+    setStatus(message);
+    toast.success(message);
   }, [summary, groupBy]);
 
   // --- command palette (stable refs -> latest handlers) --- //

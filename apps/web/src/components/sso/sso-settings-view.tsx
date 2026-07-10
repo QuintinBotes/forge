@@ -25,6 +25,7 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
+import { toast } from "@/components/ui/toast";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useDiscoverSso,
@@ -225,7 +226,10 @@ export function SsoSettingsView({
           jit_provisioning: form.jitProvisioning,
         },
       },
-      { onError: (err) => setSaveError(saveErrorMessage(err)) },
+      {
+        onSuccess: () => toast.success("SSO configuration saved."),
+        onError: (err) => setSaveError(saveErrorMessage(err)),
+      },
     );
   }, [form, config, put, workspaceId]);
 
@@ -235,7 +239,11 @@ export function SsoSettingsView({
       setToggleError(null);
       setEnabled.mutate(
         { workspaceId, enabled: next },
-        { onError: (err) => setToggleError(saveErrorMessage(err)) },
+        {
+          onSuccess: () =>
+            toast.success(next ? "SSO enabled." : "SSO disabled."),
+          onError: (err) => setToggleError(saveErrorMessage(err)),
+        },
       );
     },
     [config, setEnabled, workspaceId],

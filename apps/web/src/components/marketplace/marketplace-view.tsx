@@ -26,6 +26,10 @@ import {
 
 import { useRegisterCommands } from "@/components/command-palette";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Loading, Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toast";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useInstallations,
@@ -377,7 +381,7 @@ function BrowsePanel({
           {isLoading ? (
             <CatalogSkeleton />
           ) : listingsQuery.isError ? (
-            <CatalogError />
+            <CatalogError onRetry={() => listingsQuery.refetch()} />
           ) : !hasListings ? (
             <EmptyCatalog />
           ) : filtered.length === 0 ? (
@@ -677,14 +681,12 @@ function InstalledPanel({ client }: { client: ForgeApiClient }) {
       {installationsQuery.isLoading ? (
         <InstalledSkeleton />
       ) : installationsQuery.isError ? (
-        <div
-          role="status"
+        <ErrorState
           data-testid="installed-error"
-          className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
-        >
-          Installed packages are unavailable — the marketplace service may be
-          offline.
-        </div>
+          title="Installed packages are unavailable"
+          description="The marketplace service may be offline. Check your connection and try again."
+          onRetry={() => installationsQuery.refetch()}
+        />
       ) : installations.length === 0 ? (
         <EmptyInstalled />
       ) : (
@@ -694,10 +696,20 @@ function InstalledPanel({ client }: { client: ForgeApiClient }) {
               key={inst.id}
               installation={inst}
               onUpdate={() =>
-                update.mutate({
-                  installationId: inst.id,
-                  version: inst.available_version ?? undefined,
-                })
+                update.mutate(
+                  {
+                    installationId: inst.id,
+                    version: inst.available_version ?? undefined,
+                  },
+                  {
+                    onSuccess: () =>
+                      toast.success(
+                        `Updated ${inst.listing_slug}${
+                          inst.available_version ? ` to v${inst.available_version}` : ""
+                        }`,
+                      ),
+                  },
+                )
               }
               updating={
                 update.isPending && update.variables?.installationId === inst.id
@@ -773,9 +785,9 @@ function InstalledRow({
 
 function CatalogSkeleton() {
   return (
-    <div
+    <Loading
       data-testid="catalog-skeleton"
-      aria-busy="true"
+      label="Loading packages…"
       className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
     >
       {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -783,108 +795,77 @@ function CatalogSkeleton() {
           key={i}
           className="flex h-36 flex-col gap-3 rounded-lg border border-border bg-card p-4"
         >
-          <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />
-          <div className="h-3.5 w-2/3 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-full animate-pulse rounded bg-muted/60" />
-          <div className="mt-auto h-3 w-1/3 animate-pulse rounded bg-muted/60" />
+          <Skeleton className="h-8 w-8" />
+          <Skeleton className="h-3.5 w-2/3" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="mt-auto h-3 w-1/3" />
         </div>
       ))}
-    </div>
+    </Loading>
   );
 }
 
 function InstalledSkeleton() {
   return (
-    <div
-      data-testid="installed-skeleton"
-      aria-busy="true"
-      className="flex flex-col gap-2"
-    >
+    <Loading data-testid="installed-skeleton" label="Loading installed packages…" className="flex flex-col gap-2">
       {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          className="h-16 animate-pulse rounded-lg border border-border bg-card"
-        />
+        <Skeleton key={i} className="h-16 rounded-lg" />
       ))}
-    </div>
+    </Loading>
   );
 }
 
 function EmptyCatalog() {
   return (
-    <div
+    <EmptyState
       data-testid="empty-catalog"
-      className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border p-10 text-center"
-    >
-      <PackageOpen className="h-8 w-8 text-muted-foreground" aria-hidden />
-      <p className="text-sm font-medium text-foreground">No packages yet</p>
-      <p className="max-w-sm text-xs text-muted-foreground">
-        Add and sync a registry to populate the catalog with community skill
-        profiles and MCP connectors.
-      </p>
-    </div>
+      icon={<PackageOpen />}
+      title="No packages yet"
+      description="Add and sync a registry to populate the catalog with community skill profiles and MCP connectors."
+    />
   );
 }
 
 function EmptySearch({ query }: { query: string }) {
   return (
-    <div
+    <EmptyState
       data-testid="empty-search"
-      className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border p-10 text-center"
-    >
-      <Search className="h-8 w-8 text-muted-foreground" aria-hidden />
-      <p className="text-sm font-medium text-foreground">No packages match</p>
-      <p className="text-xs text-muted-foreground">
-        Nothing matches “{query}”. Try a different term or clear the search.
-      </p>
-    </div>
+      icon={<Search />}
+      title="No packages match"
+      description={`Nothing matches "${query}". Try a different term or clear the search.`}
+    />
   );
 }
 
 function EmptyInstalled() {
   return (
-    <div
+    <EmptyState
       data-testid="empty-installed"
-      className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border p-10 text-center"
-    >
-      <Boxes className="h-8 w-8 text-muted-foreground" aria-hidden />
-      <p className="text-sm font-medium text-foreground">
-        Nothing installed yet
-      </p>
-      <p className="text-xs text-muted-foreground">
-        Browse the catalog and install a package to see it here.
-      </p>
-    </div>
+      icon={<Boxes />}
+      title="Nothing installed yet"
+      description="Browse the catalog and install a package to see it here."
+    />
   );
 }
 
-function CatalogError() {
+function CatalogError({ onRetry }: { onRetry?: () => void }) {
   return (
-    <div
-      role="status"
+    <ErrorState
       data-testid="catalog-error"
-      className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border p-10 text-center"
-    >
-      <PackageOpen className="h-8 w-8 text-muted-foreground" aria-hidden />
-      <p className="text-sm font-medium text-foreground">
-        Catalog unavailable
-      </p>
-      <p className="text-xs text-muted-foreground">
-        The marketplace registry is unreachable — check back shortly.
-      </p>
-    </div>
+      title="Catalog unavailable"
+      description="The marketplace registry is unreachable — check back shortly."
+      onRetry={onRetry}
+    />
   );
 }
 
 function NoDetail({ loading }: { loading: boolean }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 p-10 text-center">
-      <PackageOpen className="h-8 w-8 text-muted-foreground" aria-hidden />
-      <p className="text-sm text-muted-foreground">
-        {loading
-          ? "Loading the catalog…"
-          : "Select a package to inspect its manifest and verification."}
-      </p>
-    </div>
+    <EmptyState
+      icon={<PackageOpen />}
+      title={loading ? "Loading the catalog…" : "Select a package"}
+      description={loading ? undefined : "Inspect its manifest and verification, then install it."}
+      className="h-full border-none bg-transparent"
+    />
   );
 }

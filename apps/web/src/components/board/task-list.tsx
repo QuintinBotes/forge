@@ -2,6 +2,7 @@
 
 import { useCallback, useState, type KeyboardEvent } from "react";
 
+import { EmptyState } from "@/components/ui/empty-state";
 import type { TaskDTO } from "@/lib/api/types";
 import {
   PRIORITY_LABELS,
@@ -68,12 +69,16 @@ export function TaskList({ tasks, onSelect }: TaskListProps) {
 
   if (tasks.length === 0) {
     return (
-      <div
+      <EmptyState
         data-testid="task-list"
-        className="rounded-md border border-dashed border-border p-10 text-center text-sm text-muted-foreground"
-      >
-        No tasks yet. Press <kbd className="font-mono">⌘K</kbd> to create one.
-      </div>
+        title="No tasks yet"
+        description={
+          <>
+            Use the New task button above, or press <kbd className="font-mono">⌘K</kbd>, to
+            add the first one.
+          </>
+        }
+      />
     );
   }
 

@@ -19,6 +19,7 @@ import {
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { type ForgeApiClient } from "@/lib/api/client";
 import {
   useAddTeamMember,
@@ -96,6 +97,7 @@ export function TeamsPanel({ client }: TeamsPanelProps) {
         onSuccess: (team) => {
           closeCreate();
           setSelectedId(team.id);
+          toast.success(`Team ${team.name} created.`);
         },
         onError: (e) => setCreateError(describeRbacError(e, "create that team")),
       },
@@ -287,6 +289,7 @@ function TeamDetail({
           setAdding(false);
           setUserId("");
           setTeamRole("member");
+          toast.success("Member added to team.");
         },
         onError: (e) => setAddError(describeRbacError(e, "add that member")),
       },
@@ -429,13 +432,18 @@ function TeamDetail({
                 value={m.team_role}
                 onChange={(e) => {
                   setRowError(null);
+                  const nextRole = e.target.value as TeamRole;
                   setRole.mutate(
                     {
                       teamId: team.id,
                       userId: m.user_id,
-                      teamRole: e.target.value as TeamRole,
+                      teamRole: nextRole,
                     },
                     {
+                      onSuccess: () =>
+                        toast.success(
+                          `Role updated to ${TEAM_ROLE_LABEL[nextRole]}.`,
+                        ),
                       onError: (err) =>
                         setRowError(describeRbacError(err, "change that role")),
                     },
@@ -461,6 +469,7 @@ function TeamDetail({
                   remove.mutate(
                     { teamId: team.id, userId: m.user_id },
                     {
+                      onSuccess: () => toast.success("Member removed from team."),
                       onError: (err) =>
                         setRowError(describeRbacError(err, "remove that member")),
                     },

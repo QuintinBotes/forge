@@ -5,6 +5,8 @@ import { useCallback, useMemo, useState } from "react";
 
 import { buildBoardCommands, useRegisterCommands } from "@/components/command-palette";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
+import { Loading, Skeleton } from "@/components/ui/skeleton";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useCreateTask,
@@ -100,17 +102,17 @@ export function BoardView({
         </div>
       </div>
 
-      {tasksQuery.isError ? (
-        <p
-          role="status"
-          className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground"
-        >
-          Live board data is not available yet — showing an empty board.
-        </p>
-      ) : null}
-
       <div className="min-h-0 flex-1">
-        {view === "list" ? (
+        {tasksQuery.isLoading ? (
+          <BoardSkeleton view={view} />
+        ) : tasksQuery.isError ? (
+          <ErrorState
+            title="Board data is unavailable"
+            description="We couldn't load your tasks. Check your connection and try again."
+            onRetry={() => tasksQuery.refetch()}
+            className="h-full"
+          />
+        ) : view === "list" ? (
           <TaskList tasks={tasks} />
         ) : (
           <KanbanBoard tasks={tasks} onStatusChange={handleStatusChange} />
@@ -143,6 +145,7 @@ function ViewTab({ active, label, icon, onClick }: ViewTabProps) {
       onClick={onClick}
       className={cn(
         "inline-flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:text-foreground",
@@ -151,5 +154,40 @@ function ViewTab({ active, label, icon, onClick }: ViewTabProps) {
       {icon}
       {label}
     </button>
+  );
+}
+
+/** Reserves the list/board's shape while tasks are in flight — no layout shift. */
+function BoardSkeleton({ view }: { view: BoardViewMode }) {
+  if (view === "board") {
+    return (
+      <Loading
+        label="Loading board…"
+        data-testid="board-skeleton"
+        className="flex h-full gap-3 overflow-x-auto pb-2"
+      >
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="flex w-72 shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2"
+          >
+            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        ))}
+      </Loading>
+    );
+  }
+  return (
+    <Loading
+      label="Loading tasks…"
+      data-testid="board-skeleton"
+      className="flex flex-col gap-2 rounded-md border border-border p-3"
+    >
+      {[0, 1, 2, 3, 4].map((i) => (
+        <Skeleton key={i} className="h-9 w-full" />
+      ))}
+    </Loading>
   );
 }

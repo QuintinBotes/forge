@@ -20,6 +20,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { type ForgeApiClient } from "@/lib/api/client";
 import {
   useCreateRoleGrant,
@@ -119,7 +120,10 @@ export function MembersPanel({ workspaceId, client }: MembersPanelProps) {
         role: formRole,
       },
       {
-        onSuccess: closeForm,
+        onSuccess: () => {
+          toast.success("Member added.");
+          closeForm();
+        },
         onError: (e) => setFormError(describeRbacError(e, "add that member")),
       },
     );
@@ -130,14 +134,20 @@ export function MembersPanel({ workspaceId, client }: MembersPanelProps) {
     setRowError(null);
     setRole.mutate(
       { grant: member.grant, role },
-      { onError: (e) => setRowError(describeRbacError(e, "change that role")) },
+      {
+        onSuccess: () => toast.success(`Role updated to ${ROLE_LABEL[role]}.`),
+        onError: (e) => setRowError(describeRbacError(e, "change that role")),
+      },
     );
   };
 
   const doRevoke = (member: WorkspaceMember) => {
     setRowError(null);
     revoke.mutate(member.grant.id, {
-      onSuccess: () => setConfirming(null),
+      onSuccess: () => {
+        setConfirming(null);
+        toast.success("Member revoked.");
+      },
       onError: (e) => {
         setRowError(describeRbacError(e, "revoke that member"));
         setConfirming(null);

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useId, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import type {
   DeploymentDecision,
   DeploymentDetail,
@@ -76,13 +77,9 @@ export function GatePanel({
         title="Gate unavailable"
         body="The deployment's gate could not be loaded."
         action={
-          <button
-            type="button"
-            onClick={onRetry}
-            className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
+          <Button variant="outline" size="sm" onClick={onRetry}>
             Retry
-          </button>
+          </Button>
         }
       />
     );

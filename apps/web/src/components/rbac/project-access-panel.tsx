@@ -19,6 +19,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { ApiError, type ForgeApiClient } from "@/lib/api/client";
 import {
   useProjectAccess,
@@ -217,7 +218,11 @@ function ProjectAccessDetail({
     setVisError(null);
     setVisibility.mutate(
       { projectId, body: { visibility, owner_team_id: access.owner_team_id ?? null } },
-      { onError: (e) => setVisError(describeRbacError(e, "change visibility")) },
+      {
+        onSuccess: () =>
+          toast.success(`Visibility set to ${VIS_META[visibility].label}.`),
+        onError: (e) => setVisError(describeRbacError(e, "change visibility")),
+      },
     );
   };
 
@@ -233,6 +238,7 @@ function ProjectAccessDetail({
           setGranting(false);
           setGrantTeam("");
           setGrantLevel("read");
+          toast.success("Access granted.");
         },
         onError: (e) => setGrantError(describeRbacError(e, "grant that access")),
       },
@@ -449,15 +455,20 @@ function ProjectAccessDetail({
                 value={a.access_level}
                 onChange={(e) => {
                   setRowError(null);
+                  const nextLevel = e.target.value as AccessLevel;
                   upsert.mutate(
                     {
                       projectId,
                       body: {
                         team_id: a.team_id,
-                        access_level: e.target.value as AccessLevel,
+                        access_level: nextLevel,
                       },
                     },
                     {
+                      onSuccess: () =>
+                        toast.success(
+                          `Access updated to ${ACCESS_LABEL[nextLevel]}.`,
+                        ),
                       onError: (err) =>
                         setRowError(describeRbacError(err, "change that access")),
                     },
@@ -483,6 +494,7 @@ function ProjectAccessDetail({
                   removeAccess.mutate(
                     { projectId, teamId: a.team_id },
                     {
+                      onSuccess: () => toast.success("Access removed."),
                       onError: (err) =>
                         setRowError(describeRbacError(err, "remove that access")),
                     },
