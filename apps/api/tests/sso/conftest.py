@@ -100,9 +100,12 @@ def _instant(dt: datetime) -> str:
 
 
 # Frozen once at import so build_saml_response and validate_response share a
-# single clock reference. The full suite runs 20+ minutes; a fresh
-# datetime.now() default here would drift past the test's NOW and trip the
-# assertion validity window, producing spurious "not_yet_valid" failures.
+# single clock reference. The full suite runs 20+ minutes, so the default
+# assertion-validity window below is deliberately WIDE (±1h around NOW): a
+# narrow (±5min) window drifts out of range over that runtime and trips the
+# real-clock validator, producing spurious "not_yet_valid" (early) or "expired"
+# (late) failures. Tests that assert on the window itself pass explicit
+# not_before / not_on_or_after values, so widening the default is safe.
 NOW = datetime.now(UTC)
 
 
@@ -121,8 +124,8 @@ def build_saml_response(
 ) -> etree._Element:
     """Build an unsigned ``samlp:Response`` element with full control."""
     now = now or NOW
-    not_before = not_before or (now - timedelta(minutes=5))
-    not_on_or_after = not_on_or_after or (now + timedelta(minutes=5))
+    not_before = not_before or (now - timedelta(hours=1))
+    not_on_or_after = not_on_or_after or (now + timedelta(hours=1))
     assertion_id = assertion_id or f"_a{uuid.uuid4().hex}"
     samlp, saml = NS["samlp"], NS["saml"]
 
