@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { Sprint } from "@/lib/api/types";
 
 import {
+  ALLOCATION_STATUS_LABELS,
+  allocationStatusBadgeClass,
   formatDateShort,
   formatDecimal,
   formatPct,
@@ -102,5 +104,17 @@ describe("sprint-meta", () => {
     expect(pickDefaultSprintId(noActive)).toBe("y");
 
     expect(pickDefaultSprintId([])).toBeNull();
+  });
+
+  it("labels and token-classes every allocation status", () => {
+    expect(ALLOCATION_STATUS_LABELS.over).toBe("Over-allocated");
+    expect(ALLOCATION_STATUS_LABELS.under).toBe("Under-allocated");
+    expect(ALLOCATION_STATUS_LABELS.balanced).toBe("Balanced");
+    for (const status of ["under", "balanced", "over"] as const) {
+      const cls = allocationStatusBadgeClass(status);
+      expect(cls).not.toMatch(/#[0-9a-f]{3,}/i);
+      expect(cls).not.toMatch(/rgb\(/i);
+    }
+    expect(allocationStatusBadgeClass("over")).toContain("text-danger");
   });
 });

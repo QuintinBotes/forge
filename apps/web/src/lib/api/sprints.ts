@@ -23,7 +23,12 @@ import {
 import { apiClient, type ForgeApiClient } from "./client";
 import type {
   BurndownSeries,
+  CapacityReport,
+  CFDSeries,
   CompleteSprintRequest,
+  CycleLeadTimeReport,
+  GoalAlignment,
+  PortfolioVelocity,
   Sprint,
   SprintReport,
   VelocityDashboard,
@@ -38,6 +43,16 @@ export const sprintKeys = {
     ["project-sprints", "burndown", sprintId] as const,
   report: (sprintId: string) =>
     ["project-sprints", "report", sprintId] as const,
+  capacity: (sprintId: string) =>
+    ["project-sprints", "capacity", sprintId] as const,
+  goalAlignment: (sprintId: string) =>
+    ["project-sprints", "goal-alignment", sprintId] as const,
+  cfd: (projectId: string, start: string, end: string) =>
+    ["project-sprints", "cfd", projectId, start, end] as const,
+  cycleLeadTime: (projectId: string) =>
+    ["project-sprints", "cycle-lead-time", projectId] as const,
+  portfolioVelocity: (projectIds: string[], last: number) =>
+    ["project-sprints", "portfolio-velocity", [...projectIds].sort(), last] as const,
 } as const;
 
 /** Every sprint for a project (planned / active / completed / cancelled). */
@@ -78,6 +93,74 @@ export function useSprintBurndown(
     queryKey: sprintKeys.burndown(sprintId ?? ""),
     queryFn: () => client.getSprintBurndown(sprintId as string),
     enabled: Boolean(sprintId),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Each member's declared capacity vs. their assigned committed-task points. */
+export function useSprintCapacity(
+  sprintId: string | null | undefined,
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<CapacityReport> {
+  return useQuery({
+    queryKey: sprintKeys.capacity(sprintId ?? ""),
+    queryFn: () => client.getSprintCapacity(sprintId as string),
+    enabled: Boolean(sprintId),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** The sprint goal's keyword coverage across its current tasks. */
+export function useGoalAlignment(
+  sprintId: string | null | undefined,
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<GoalAlignment> {
+  return useQuery({
+    queryKey: sprintKeys.goalAlignment(sprintId ?? ""),
+    queryFn: () => client.getSprintGoalAlignment(sprintId as string),
+    enabled: Boolean(sprintId),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** A project's Cumulative Flow Diagram over `[start, end]`. */
+export function useProjectCfd(
+  projectId: string | null | undefined,
+  start: string,
+  end: string,
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<CFDSeries> {
+  return useQuery({
+    queryKey: sprintKeys.cfd(projectId ?? "", start, end),
+    queryFn: () => client.getProjectCfd(projectId as string, start, end),
+    enabled: Boolean(projectId && start && end),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** A project's per-task cycle/lead time + averages. */
+export function useProjectCycleLeadTime(
+  projectId: string | null | undefined,
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<CycleLeadTimeReport> {
+  return useQuery({
+    queryKey: sprintKeys.cycleLeadTime(projectId ?? ""),
+    queryFn: () => client.getProjectCycleLeadTime(projectId as string),
+    enabled: Boolean(projectId),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Combined throughput/predictability trend across a set of projects. */
+export function usePortfolioVelocity(
+  projectIds: string[],
+  last = 6,
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<PortfolioVelocity> {
+  return useQuery({
+    queryKey: sprintKeys.portfolioVelocity(projectIds, last),
+    queryFn: () => client.getPortfolioVelocity(projectIds, last),
+    enabled: projectIds.length > 0,
     placeholderData: keepPreviousData,
   });
 }

@@ -1,0 +1,12 @@
+{
+  "id": "card2",
+  "name": "Conformance task",
+  "desc": "conformance body",
+  "idList": "list-2",
+  "idMembers": [],
+  "url": "https://trello.com/c/card2/conformance-task",
+  "shortUrl": "https://trello.com/c/card2",
+  "dateLastActivity": "2024-01-01T00:05:00.000Z",
+  "list": { "id": "list-2", "name": "Doing" },
+  "labels": [{ "id": "lab-high", "name": "High", "color": "orange" }]
+}

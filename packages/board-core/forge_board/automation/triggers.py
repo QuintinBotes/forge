@@ -33,6 +33,9 @@ _BOARD_EVENT_MAP: dict[str, AutomationTriggerType] = {
     "sla_breached": AutomationTriggerType.TASK_SLA_BREACHED,
     "pr_merged": AutomationTriggerType.PR_MERGED,
     "approval_resolved": AutomationTriggerType.APPROVAL_RESOLVED,
+    # F40: sprint lifecycle events (forge_board.sprint_service.SprintService).
+    "sprint_started": AutomationTriggerType.SPRINT_STARTED,
+    "sprint_completed": AutomationTriggerType.SPRINT_COMPLETED,
 }
 
 
@@ -43,6 +46,8 @@ def trigger_type_for(*, source: AutomationTriggerSource, event_type: str) -> Aut
     """
     if source is AutomationTriggerSource.WORKFLOW_TRANSITION:
         return AutomationTriggerType.WORKFLOW_STATE_CHANGED
+    if source is AutomationTriggerSource.SCHEDULER:
+        return AutomationTriggerType.SCHEDULED
     mapped = _BOARD_EVENT_MAP.get(event_type)
     if mapped is None:
         raise UnknownTriggerError(event_type)

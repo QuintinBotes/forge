@@ -21,7 +21,17 @@ def test_direction_is_reused_from_frozen_enums() -> None:
 
 
 def test_provider_enum_values() -> None:
-    assert {p.value for p in pm.PMProvider} == {"jira", "linear"}
+    assert {p.value for p in pm.PMProvider} == {
+        "jira",
+        "linear",
+        "asana",
+        "monday",
+        "github_projects",
+        "clickup",
+        "trello",
+        "gitlab",
+        "generic",
+    }
 
 
 def test_status_categories_match_spec() -> None:

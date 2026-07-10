@@ -1003,6 +1003,9 @@ export interface Sprint {
   /** (added + removed) / committed, 0..1. */
   scope_change_ratio: number;
   velocity_version: number;
+  /** F40 PM depth: the working-day/holiday calendar the burndown ideal-line reads. */
+  calendar_weekend_days?: number[];
+  calendar_holidays?: string[];
 }
 
 /** One task in a sprint report, bucketed by outcome. */
@@ -1085,6 +1088,74 @@ export interface VelocityDashboard {
   project_id: string;
   sprints: VelocitySprintBar[];
   summary: VelocitySummary;
+}
+
+// --- F40 PM depth: capacity, CFD, cycle/lead time, portfolio, alignment --- //
+
+/** Whether a member is over, under, or roughly at their declared capacity. */
+export type AllocationStatus = "under" | "balanced" | "over";
+
+/** One member's capacity-vs-assigned rollup for a sprint. */
+export interface MemberAllocation {
+  member_id: string;
+  capacity_points: number;
+  assigned_points: number;
+  utilization: number;
+  status: AllocationStatus;
+}
+
+/** Per-member capacity report for a sprint (GET /sprints/{id}/capacity). */
+export interface CapacityReport {
+  sprint_id: string;
+  members: MemberAllocation[];
+}
+
+/** One calendar day's task count per status (Cumulative Flow Diagram input). */
+export interface CFDPoint {
+  snapshot_date: string;
+  status_counts: Record<string, number>;
+}
+
+/** A project's Cumulative Flow Diagram over a date range. */
+export interface CFDSeries {
+  project_id: string;
+  start: string;
+  end: string;
+  points: CFDPoint[];
+}
+
+/** A task's lead time (created->done) and cycle time (in-progress->done). */
+export interface CycleLeadTime {
+  task_id: string;
+  lead_time_days: number | null;
+  cycle_time_days: number | null;
+}
+
+/** A project's per-task cycle/lead time + averages. */
+export interface CycleLeadTimeReport {
+  project_id: string;
+  tasks: CycleLeadTime[];
+  average_lead_time_days: number;
+  average_cycle_time_days: number;
+}
+
+/** Combined throughput/predictability trend across a workspace's projects. */
+export interface PortfolioVelocity {
+  project_count: number;
+  total_average_velocity: number;
+  total_forecast_avg: number;
+  weighted_predictability: number;
+  per_project: Record<string, VelocitySummary>;
+}
+
+/** The sprint goal's keyword coverage across its current tasks. */
+export interface GoalAlignment {
+  sprint_id: string;
+  goal_tokens: string[];
+  total_count: number;
+  aligned_count: number;
+  alignment_ratio: number;
+  unaligned_task_ids: string[];
 }
 
 /** Body of POST /sprints/{id}/complete. */
@@ -1603,7 +1674,17 @@ export interface ProjectAccess {
 
 // --- External PM adapters (F18 `/integrations/pm` routers) ----------------- //
 
-export const PM_PROVIDERS = ["jira", "linear"] as const;
+export const PM_PROVIDERS = [
+  "jira",
+  "linear",
+  "asana",
+  "monday",
+  "github_projects",
+  "clickup",
+  "trello",
+  "gitlab",
+  "generic",
+] as const;
 export type PmProvider = (typeof PM_PROVIDERS)[number];
 
 export const PM_AUTH_TYPES = ["oauth", "api_token"] as const;

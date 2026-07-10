@@ -185,6 +185,23 @@ class PMConnectionService:
                 session.expunge(r)
             return list(rows)
 
+    def get_adapter_for_project(
+        self, workspace_id: uuid.UUID, project_id: uuid.UUID, provider: str
+    ) -> PMAdapter:
+        """Resolve the connected adapter for ``provider`` scoped to one project.
+
+        Bridges the F40 ``CREATE_EXTERNAL_ISSUE`` automation action (see
+        ``forge_worker.tasks.automations`` / ``automation_actions.py``) to the
+        already-connected adapter for the rule's project, never leaking
+        connections across workspaces or projects.
+        """
+        for conn in self.list(workspace_id):
+            if conn.project_id == project_id and conn.provider.value == provider:
+                return self._build_adapter(conn)
+        raise PMConnectionNotFound(
+            f"no PM connection for provider {provider!r} in project {project_id}"
+        )
+
     def get(self, workspace_id: uuid.UUID, connection_id: uuid.UUID) -> PMConnection:
         with self._sf() as session:
             conn = self._load(session, workspace_id, connection_id)

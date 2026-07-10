@@ -17,6 +17,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from forge_board.exceptions import ActiveSprintExistsError
 from forge_board.sprint_service import SprintService
+from forge_contracts.automation import (
+    AutomationEntityType,
+    AutomationTriggerEnvelope,
+    AutomationTriggerType,
+)
 from forge_contracts.enums import CarryoverTarget, SprintScopeEventType, SprintState, TaskStatus
 from forge_db.base import Base
 from forge_db.models import (
@@ -26,6 +31,9 @@ from forge_db.models import (
     SprintScopeEvent,
     SprintVelocity,
     Task,
+    TaskEstimateEvent,
+    TaskStatusEvent,
+    User,
     Workspace,
 )
 
@@ -433,3 +441,230 @@ def test_reconcile_byte_identical(sf: sessionmaker[Session]) -> None:
     # Every originally-captured day reconciles byte-identically.
     for day, vals in before_snaps.items():
         assert after_snaps[day] == vals
+
+
+class _RecordingDispatcher:
+    """Test double for :class:`forge_contracts.automation.AutomationDispatcher`."""
+
+    def __init__(self) -> None:
+        self.dispatched: list[AutomationTriggerEnvelope] = []
+
+    def dispatch(self, envelope: AutomationTriggerEnvelope) -> None:
+        self.dispatched.append(envelope)
+
+
+def test_start_dispatches_a_sprint_started_automation_trigger(sf: sessionmaker[Session]) -> None:
+    """F40: ``start`` fires the sprint-lifecycle producer the automation engine
+    needs to ever run a ``sprint_started``-triggered rule in production."""
+    with sf() as session:
+        sprint = _make_sprint(session)
+        sid, pid = sprint.id, sprint.project_id
+        session.commit()
+
+    dispatcher = _RecordingDispatcher()
+    svc = SprintService(sf, dispatcher=dispatcher)
+    svc.start(workspace_id=WS, sprint_id=sid)
+
+    assert len(dispatcher.dispatched) == 1
+    envelope = dispatcher.dispatched[0]
+    assert envelope.trigger_type == AutomationTriggerType.SPRINT_STARTED
+    assert envelope.entity_type == AutomationEntityType.SPRINT
+    assert envelope.entity_id == sid
+    assert envelope.workspace_id == WS
+    assert envelope.project_id == pid
+
+
+def test_complete_dispatches_a_sprint_completed_automation_trigger(
+    sf: sessionmaker[Session],
+) -> None:
+    with sf() as session:
+        sprint = _make_sprint(session, status=SprintState.ACTIVE)
+        sid = sprint.id
+        session.commit()
+
+    dispatcher = _RecordingDispatcher()
+    svc = SprintService(sf, dispatcher=dispatcher)
+    svc.complete(workspace_id=WS, sprint_id=sid)
+
+    assert len(dispatcher.dispatched) == 1
+    assert dispatcher.dispatched[0].trigger_type == AutomationTriggerType.SPRINT_COMPLETED
+    assert dispatcher.dispatched[0].entity_id == sid
+
+
+def test_default_dispatcher_is_a_no_op(sf: sessionmaker[Session]) -> None:
+    """No ``dispatcher=`` kwarg (the CLI, most tests) never raises or blocks."""
+    with sf() as session:
+        sprint = _make_sprint(session)
+        sid = sprint.id
+        session.commit()
+
+    svc = SprintService(sf)
+    view = svc.start(workspace_id=WS, sprint_id=sid)
+    assert view.state == SprintState.ACTIVE
+
+
+# --------------------------------------------------------------------------- #
+# F40 PM depth: calendar, capacity, estimate history, status log, portfolio    #
+# --------------------------------------------------------------------------- #
+
+
+def test_create_persists_calendar_and_burndown_skips_weekend(
+    sf: sessionmaker[Session],
+) -> None:
+    svc = SprintService(sf)
+    view = svc.create(
+        workspace_id=WS,
+        project_id=_PROJECT,
+        name="Cal Sprint",
+        start_date=date(2026, 6, 1),  # Monday
+        end_date=date(2026, 6, 6),  # Saturday
+        calendar_weekend_days=[5, 6],
+    )
+    assert view.calendar_weekend_days == [5, 6]
+
+    with sf() as session:
+        _make_task(session, points=20, status=TaskStatus.IN_PROGRESS, sprint_id=view.id)
+        session.commit()
+    svc.start(workspace_id=WS, sprint_id=view.id)
+    series = svc.burndown(workspace_id=WS, sprint_id=view.id, as_of=date(2026, 6, 6))
+    by_day = {p.snapshot_date: p for p in series.points}
+    # Friday (the last working day) reaches ideal 0; Saturday holds flat there.
+    assert by_day[date(2026, 6, 5)].ideal_points == 0.0
+    assert by_day[date(2026, 6, 6)].ideal_points == 0.0
+
+
+def test_update_replaces_calendar_holidays(sf: sessionmaker[Session]) -> None:
+    svc = SprintService(sf)
+    created = svc.create(
+        workspace_id=WS,
+        project_id=_PROJECT,
+        name="Holiday Sprint",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 14),
+    )
+    updated = svc.update(
+        workspace_id=WS, sprint_id=created.id, calendar_holidays=[date(2026, 6, 4)]
+    )
+    assert updated.calendar_holidays == [date(2026, 6, 4)]
+
+
+def test_member_capacity_report_over_under_balanced(sf: sessionmaker[Session]) -> None:
+    with sf() as session:
+        sprint = _make_sprint(session)
+        sid = sprint.id
+        alice = uuid.uuid4()
+        bob = uuid.uuid4()
+        session.add_all(
+            [
+                User(id=alice, workspace_id=WS, email="alice@acme.test"),
+                User(id=bob, workspace_id=WS, email="bob@acme.test"),
+            ]
+        )
+        session.flush()
+        _make_task(session, points=8, status=TaskStatus.IN_PROGRESS, sprint_id=sid)
+        for points, assignee in ((3, alice), (5, alice), (2, bob)):
+            t = _make_task(session, points=points, status=TaskStatus.IN_PROGRESS, sprint_id=sid)
+            t.assignee_id = assignee
+        session.commit()
+
+    svc = SprintService(sf)
+    svc.set_member_capacity(workspace_id=WS, sprint_id=sid, member_id=alice, capacity_points=5.0)
+    svc.set_member_capacity(workspace_id=WS, sprint_id=sid, member_id=bob, capacity_points=8.0)
+
+    report = svc.capacity_report(workspace_id=WS, sprint_id=sid)
+    by_member = {m.member_id: m for m in report}
+    assert by_member[str(alice)].assigned_points == 8  # 3 + 5
+    assert by_member[str(alice)].status == "over"  # 8/5 = 1.6
+    assert by_member[str(bob)].assigned_points == 2
+    assert by_member[str(bob)].status == "under"  # 2/8 = 0.25
+
+
+def test_set_task_estimate_always_logs_history_even_when_sprint_not_active(
+    sf: sessionmaker[Session],
+) -> None:
+    with sf() as session:
+        task = _make_task(session, points=2, status=TaskStatus.BACKLOG)
+        tid = task.id
+        session.commit()
+
+    svc = SprintService(sf)
+    svc.set_task_estimate(workspace_id=WS, task_id=tid, estimate=8)
+
+    with sf() as session:
+        rows = list(session.execute(select(TaskEstimateEvent)).scalars())
+        assert len(rows) == 1
+        assert rows[0].points_before == 2
+        assert rows[0].points_after == 8
+
+    history = svc.estimate_history(workspace_id=WS, task_id=tid)
+    assert len(history) == 1
+    assert history[0].points_before == 2
+    assert history[0].points_after == 8
+
+
+def test_set_task_status_always_logs_status_event(sf: sessionmaker[Session]) -> None:
+    with sf() as session:
+        task = _make_task(session, points=3, status=TaskStatus.BACKLOG)
+        tid = task.id
+        session.commit()
+
+    svc = SprintService(sf)
+    svc.set_task_status(workspace_id=WS, task_id=tid, status=TaskStatus.IN_PROGRESS)
+    svc.set_task_status(workspace_id=WS, task_id=tid, status=TaskStatus.DONE)
+
+    with sf() as session:
+        rows = list(
+            session.execute(select(TaskStatusEvent).order_by(TaskStatusEvent.changed_at)).scalars()
+        )
+        assert [r.to_status for r in rows] == ["in_progress", "done"]
+
+
+def test_cfd_and_cycle_lead_time(sf: sessionmaker[Session]) -> None:
+    with sf() as session:
+        task = _make_task(session, points=3, status=TaskStatus.BACKLOG)
+        tid = task.id
+        session.commit()
+
+    svc = SprintService(sf)
+    svc.set_task_status(workspace_id=WS, task_id=tid, status=TaskStatus.IN_PROGRESS)
+    svc.set_task_status(workspace_id=WS, task_id=tid, status=TaskStatus.DONE)
+
+    points = svc.cfd(workspace_id=WS, project_id=_PROJECT, start=date.today(), end=date.today())
+    assert points[0].status_counts.get("done") == 1
+
+    rows, avg_lead, avg_cycle = svc.cycle_lead_time(workspace_id=WS, project_id=_PROJECT)
+    assert len(rows) == 1
+    assert rows[0].lead_time_days is not None
+    assert avg_lead >= 0.0
+    assert avg_cycle >= 0.0
+
+
+def test_portfolio_velocity_aggregates_projects(sf: sessionmaker[Session]) -> None:
+    with sf() as session:
+        other_project = uuid.uuid4()
+        session.add(Project(id=other_project, workspace_id=WS, name="Other", key="OTH"))
+        session.commit()
+
+    svc = SprintService(sf)
+    summary = svc.portfolio_velocity(workspace_id=WS, project_ids=[_PROJECT, other_project])
+    assert summary.project_count == 2
+    assert str(_PROJECT) in summary.per_project
+    assert str(other_project) in summary.per_project
+
+
+def test_goal_alignment_flags_unrelated_tasks(sf: sessionmaker[Session]) -> None:
+    with sf() as session:
+        sprint = _make_sprint(session)
+        sid = sprint.id
+        sprint.goal = "Ship the checkout redesign"
+        aligned = _make_task(session, points=3, status=TaskStatus.IN_PROGRESS, sprint_id=sid)
+        aligned.title = "Redesign the checkout flow"
+        unrelated = _make_task(session, points=2, status=TaskStatus.IN_PROGRESS, sprint_id=sid)
+        unrelated.title = "Fix a typo in the footer"
+        session.commit()
+
+    svc = SprintService(sf)
+    result = svc.goal_alignment(workspace_id=WS, sprint_id=sid)
+    assert result.total_count == 2
+    assert result.aligned_count == 1
+    assert str(unrelated.id) in result.unaligned_task_ids

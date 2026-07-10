@@ -1,0 +1,15 @@
+{
+  "data": {
+    "create_item": {
+      "id": "1002",
+      "name": "New item",
+      "url": "https://forge.monday.com/boards/500/pulses/1002",
+      "updated_at": "2026-01-02T10:00:00Z",
+      "group": {"id": "g1", "title": "Not Started"},
+      "column_values": [
+        {"id": "status", "text": "Not Started", "value": "{\"index\":0,\"label\":\"Not Started\"}", "type": "color"},
+        {"id": "priority", "text": "Medium", "value": "{\"index\":1,\"label\":\"Medium\"}", "type": "color"}
+      ]
+    }
+  }
+}

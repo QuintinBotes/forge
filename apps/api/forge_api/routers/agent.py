@@ -21,6 +21,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import ValidationError
 
 from forge_agent import AgentRunner
 from forge_agent.testing import ScriptedModelClient, finish_response
@@ -28,6 +29,11 @@ from forge_api.auth.rbac import Permission
 from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
 from forge_contracts import AgentObjective, AgentRunResult
+from forge_policy import (
+    SkillProfileNotAllowedError,
+    enforce_skill_profile_allowed,
+    load_policy,
+)
 
 router = APIRouter(
     prefix="/agent",
@@ -118,6 +124,42 @@ StoreDep = Annotated[AgentRunStore, Depends(get_agent_store)]
 # --------------------------------------------------------------------------- #
 
 
+def _requested_skill_profiles(objective: AgentObjective) -> list[str]:
+    """The distinct skill-profile names this run requests (objective + targets)."""
+    names: dict[str, None] = {}
+    if objective.skill_profile is not None:
+        names.setdefault(objective.skill_profile.name, None)
+    for target in objective.repo_targets:
+        if target.skill_profile:
+            names.setdefault(target.skill_profile, None)
+    return list(names)
+
+
+def _enforce_skill_profiles(objective: AgentObjective) -> None:
+    """Hard-enforce ``policy.skill_profiles.allowed`` before a run is admitted.
+
+    The policy is loaded from ``context['repo_root']`` when supplied; a run that
+    requests a profile the repo policy does not allow is rejected with HTTP 422
+    (fail-closed governance). No resolvable policy means no restriction to apply.
+    """
+    repo_root = objective.context.get("repo_root")
+    if not isinstance(repo_root, str) or not repo_root:
+        return
+    try:
+        policy = load_policy(repo_root)
+    except (FileNotFoundError, ValueError, ValidationError):
+        return
+    names = _requested_skill_profiles(objective)
+    requested: list[str | None] = list(names) if names else [None]
+    for name in requested:
+        try:
+            enforce_skill_profile_allowed(policy, name)
+        except SkillProfileNotAllowedError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+            ) from exc
+
+
 @router.post("/runs", response_model=AgentRunResult, status_code=status.HTTP_201_CREATED)
 def run(
     runner: RunnerDep,
@@ -126,6 +168,7 @@ def run(
     objective: AgentObjective,
 ) -> AgentRunResult:
     """Run an agent objective (plan -> act -> observe) and record the result."""
+    _enforce_skill_profiles(objective)
     result = runner.run(objective)
     return store.put(result, workspace_id=principal.workspace_id)
 

@@ -14,6 +14,12 @@ Foundation deviation note: the idealized F21 slice assumed an ``status_id``/
 (``forge_db.models.Task``) uses a ``status`` *enum* and has no label/team tables,
 so the enum/field vocabulary below conforms to the real model (status enum;
 no label triggers/actions). See the slice notes.
+
+F40-AUT-ACTIONS adds the sprint lifecycle triggers (``SPRINT_STARTED`` /
+``SPRINT_COMPLETED``) and the external/incident/merge action vocabulary
+(``WEBHOOK_POST`` / ``CREATE_EXTERNAL_ISSUE`` / ``TRIGGER_DEPLOY`` /
+``DECLARE_INCIDENT`` / ``START_SPRINT`` / ``AUTO_MERGE``) — see
+``forge_board.automation.executor.ExternalActionExecutor``.
 """
 
 from __future__ import annotations
@@ -23,6 +29,12 @@ import uuid
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
+
+# The condition DSL is defined ONCE in ``forge_contracts.conditions`` (the shared,
+# whitelisted primitive lifted in F29). F21 previously carried its own drifted
+# ``ConditionOp`` copy; it now re-exports the shared enum so producers, the rule
+# engine, the API, and the policy engine all speak one vocabulary.
+from forge_contracts.conditions import ConditionOp
 
 
 class AutomationTriggerType(enum.StrEnum):
@@ -36,6 +48,12 @@ class AutomationTriggerType(enum.StrEnum):
     WORKFLOW_STATE_CHANGED = "workflow_state_changed"  # config: {to_state: "merged"}
     PR_MERGED = "pr_merged"
     APPROVAL_RESOLVED = "approval_resolved"
+    #: Fired by Celery Beat on a cron cadence; config: {cron: "0 9 * * *"}.
+    SCHEDULED = "scheduled"
+    #: F40: a sprint transitioned to ``active`` / ``completed`` (``forge_board``
+    #: ``SprintService``).
+    SPRINT_STARTED = "sprint_started"
+    SPRINT_COMPLETED = "sprint_completed"
 
 
 class AutomationActionType(enum.StrEnum):
@@ -50,6 +68,13 @@ class AutomationActionType(enum.StrEnum):
     SEND_WORKFLOW_EVENT = "send_workflow_event"  # non-human-gate events ONLY
     SEND_NOTIFICATION = "send_notification"
     CREATE_TASK = "create_task"
+    # -- F40-AUT-ACTIONS: external + incident + sprint + merge actions -------- #
+    WEBHOOK_POST = "webhook_post"
+    CREATE_EXTERNAL_ISSUE = "create_external_issue"  # via a connected PM adapter
+    TRIGGER_DEPLOY = "trigger_deploy"  # policy-gated via deploy_rules
+    DECLARE_INCIDENT = "declare_incident"  # wired to the incident service
+    START_SPRINT = "start_sprint"  # auto-start the next planned sprint
+    AUTO_MERGE = "auto_merge"  # DEFAULT OFF; double-gated (opt-in + policy)
 
 
 class AutomationExecutionStatus(enum.StrEnum):
@@ -69,6 +94,8 @@ class AutomationTriggerSource(enum.StrEnum):
 
     BOARD_ACTIVITY = "board_activity"
     WORKFLOW_TRANSITION = "workflow_transition"
+    #: A Celery Beat cron tick (the F40 scheduled-trigger producer).
+    SCHEDULER = "scheduler"
 
 
 class AutomationEntityType(enum.StrEnum):
@@ -77,24 +104,7 @@ class AutomationEntityType(enum.StrEnum):
     TASK = "task"
     EPIC = "epic"
     INCIDENT = "incident"
-
-
-class ConditionOp(enum.StrEnum):
-    """The whitelisted predicate operators (evaluated in-memory; never SQL)."""
-
-    EQ = "eq"
-    NE = "ne"
-    IN = "in"
-    NOT_IN = "not_in"
-    LT = "lt"
-    LTE = "lte"
-    GT = "gt"
-    GTE = "gte"
-    CONTAINS = "contains"
-    NOT_CONTAINS = "not_contains"
-    IS_NULL = "is_null"
-    IS_NOT_NULL = "is_not_null"
-    CHANGED = "changed"
+    SPRINT = "sprint"
 
 
 #: Workflow events that grant a human approval — an automation may NEVER send

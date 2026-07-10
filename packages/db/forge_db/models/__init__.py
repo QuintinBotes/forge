@@ -33,6 +33,8 @@ from forge_db.models.enums import (
     AutomationExecutionStatus,
     AutomationTriggerSource,
     AutomationTriggerType,
+    BudgetPeriod,
+    BudgetScope,
     ChunkType,
     CostEventKind,
     DeploymentEventType,
@@ -110,6 +112,7 @@ from forge_db.models.mcp_index import (
 )
 from forge_db.models.multi_repo import AgentRepoWorkspace, PRGroup
 from forge_db.models.oauth_account import OAuthAccount
+from forge_db.models.obs_analytics import Budget, CoverageSnapshot, FxRate, SkillProfileSnapshot
 from forge_db.models.observability_audit import (
     ObservabilityAuditChainHead,
     ObservabilityAuditEntry,
@@ -125,6 +128,12 @@ from forge_db.models.planning import (
 )
 from forge_db.models.platform_api_key import PlatformAPIKey
 from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
+from forge_db.models.pm_depth import (
+    EstimationScale,
+    SprintMemberCapacity,
+    TaskEstimateEvent,
+    TaskStatusEvent,
+)
 from forge_db.models.policy_rule_evaluation import PolicyRuleEvaluation
 from forge_db.models.profiles import PolicyProfile, SkillProfile
 from forge_db.models.project import Constitution, Project
@@ -191,10 +200,14 @@ __all__ = [
     "AutomationTriggerType",
     "BenchmarkSubmission",
     "BenchmarkSuite",
+    "Budget",
+    "BudgetPeriod",
+    "BudgetScope",
     "ChunkType",
     "Constitution",
     "CostEvent",
     "CostEventKind",
+    "CoverageSnapshot",
     "Deployment",
     "DeploymentApproval",
     "DeploymentCheckResult",
@@ -208,9 +221,11 @@ __all__ = [
     "Environment",
     "EnvironmentPipeline",
     "Epic",
+    "EstimationScale",
     "ExecutionMode",
     "ExternalIdentity",
     "ExternalIdentityProvider",
+    "FxRate",
     "GateCheckName",
     "GateCheckStatus",
     "HealthStatus",
@@ -285,11 +300,13 @@ __all__ = [
     "ScopeType",
     "Secret",
     "SkillProfile",
+    "SkillProfileSnapshot",
     "SpecDocument",
     "SpecStatus",
     "SpecVersion",
     "Sprint",
     "SprintBurndownSnapshot",
+    "SprintMemberCapacity",
     "SprintScopeEvent",
     "SprintVelocity",
     "SsoConfiguration",
@@ -299,8 +316,10 @@ __all__ = [
     "SyncMode",
     "Task",
     "TaskDependency",
+    "TaskEstimateEvent",
     "TaskKind",
     "TaskStatus",
+    "TaskStatusEvent",
     "Team",
     "TeamMember",
     "TeamRole",

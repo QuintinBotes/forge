@@ -26,8 +26,13 @@ from typing import Any
 
 from forge_contracts import MCPResource, MCPResourceContent
 from forge_mcp.exceptions import MCPSecurityError, MCPTransportUnavailableError
-from forge_mcp.transport import ToolSpec
-from forge_mcp.transports.http import _to_resource, _to_tool_spec
+from forge_mcp.transport import PromptMessage, PromptSpec, ToolSpec
+from forge_mcp.transports.http import (
+    _to_prompt_message,
+    _to_prompt_spec,
+    _to_resource,
+    _to_tool_spec,
+)
 from forge_mcp.transports.jsonrpc import (
     IdGenerator,
     build_notification,
@@ -166,6 +171,18 @@ class StdioMcpTransport:
 
     def call_tool(self, name: str, arguments: Mapping[str, Any]) -> Any:
         return self._rpc("tools/call", {"name": name, "arguments": dict(arguments)})
+
+    def list_prompts(self) -> list[PromptSpec]:
+        result = self._rpc("prompts/list", {})
+        raw = (result or {}).get("prompts", []) if isinstance(result, Mapping) else []
+        return [_to_prompt_spec(item) for item in raw if isinstance(item, Mapping)]
+
+    def get_prompt(
+        self, name: str, arguments: Mapping[str, Any] | None = None
+    ) -> list[PromptMessage]:
+        result = self._rpc("prompts/get", {"name": name, "arguments": dict(arguments or {})})
+        raw = (result or {}).get("messages", []) if isinstance(result, Mapping) else []
+        return [_to_prompt_message(item) for item in raw if isinstance(item, Mapping)]
 
     def close(self) -> None:
         proc = self._proc

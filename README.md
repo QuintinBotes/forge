@@ -33,13 +33,13 @@ viewer, spec dashboard, marketplace, incidents, observability, sprints, audit,
 deployment gates, SSO/SCIM, RBAC admin, PM integrations, workflow editor, and a
 guided walkthrough) on the Forge design system. Some screens carry **honestly
 marked gaps** where a backend projection or live credential is still landing
-(e.g. live real-time updates, a couple of dashboard projections, OIDC), and the
+(e.g. a couple of dashboard projections, OIDC), and the
 third-party integrations (GitHub App, model BYOK, reranker, MCP, Slack) are
 code-complete with tests + runbooks but need **your keys** to verify live. We
-try hard not to advertise anything that is only parked; see
-[`docs/SLICES_PROGRESS.md`](./docs/SLICES_PROGRESS.md) and
-[`docs/FRONTEND_PROGRESS.md`](./docs/FRONTEND_PROGRESS.md) for the honest
-per-feature ledger.
+try hard not to advertise anything that is only parked — the in-app
+"under development" banners and
+[`docs/RELEASE_READINESS.md`](./docs/RELEASE_READINESS.md) track the honest
+status.
 
 ## Key features
 

@@ -63,7 +63,12 @@ from forge_agent.sandbox.selection import (
     resolve_sandbox_settings,
 )
 from forge_agent.sandbox.settings import SandboxSettings
-from forge_agent.sandbox.worktree import WorktreeSandbox, _git, load_agents_md
+from forge_agent.sandbox.worktree import (
+    WorktreeSandbox,
+    _git,
+    discover_agents_md,
+    load_agents_md,
+)
 
 __all__ = [
     "KERNEL_BOUNDARY_KINDS",
@@ -93,6 +98,7 @@ __all__ = [
     "_git",
     "build_sandbox_provider",
     "detect_registered_runtimes",
+    "discover_agents_md",
     "isolation_class_for",
     "load_agents_md",
     "parse_memory_mb",
