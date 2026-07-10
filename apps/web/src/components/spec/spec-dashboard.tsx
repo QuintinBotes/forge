@@ -26,6 +26,10 @@ import {
 import { useRegisterCommands } from "@/components/command-palette";
 import { SpecStudio } from "@/components/spec-studio/spec-studio";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Loading, Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toast";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { useApproveSpec, useSpecOverview } from "@/lib/api/spec";
 import type { SpecOverview } from "@/lib/api/types";
@@ -110,7 +114,10 @@ export function SpecDashboard({
 
   const onApprove = useCallback(() => {
     if (!selected || !isApprovable(selected.status) || approve.isPending) return;
-    approve.mutate({ specId: selected.id });
+    approve.mutate(
+      { specId: selected.id },
+      { onSuccess: () => toast.success("Spec approved") },
+    );
   }, [approve, selected]);
 
   const onKeyDown = useCallback(
@@ -217,13 +224,13 @@ export function SpecDashboard({
             />
           )}
           {overviewQuery.isError ? (
-            <p
-              role="status"
+            <ErrorState
               data-testid="specs-error"
-              className="mt-2 rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground"
-            >
-              Live specs are unavailable — the SDD engine may be offline.
-            </p>
+              title="Live specs are unavailable"
+              description="The SDD engine may be offline. Check your connection and try again."
+              onRetry={() => overviewQuery.refetch()}
+              className="mt-2 border-none bg-transparent p-3 text-left"
+            />
           ) : null}
         </div>
 
@@ -507,48 +514,46 @@ function TabBar({ active, onChange }: { active: TabId; onChange: (id: TabId) => 
 
 function EmptyList() {
   return (
-    <div
+    <EmptyState
       data-testid="empty-specs"
-      className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center"
-    >
-      <ListChecks className="h-8 w-8 text-muted-foreground" aria-hidden />
-      <p className="text-sm font-medium text-foreground">No specs yet</p>
-      <p className="text-xs text-muted-foreground">
-        Create a spec from an epic to start the SDD lifecycle — draft,
-        clarify, approve, then validate.
-      </p>
-      <Button asChild size="sm" variant="outline" data-testid="empty-new-spec-link">
-        <Link href="/specs/new">
-          <Plus className="h-4 w-4" aria-hidden />
-          New spec
-        </Link>
-      </Button>
-    </div>
+      icon={<ListChecks />}
+      title="No specs yet"
+      description="Create a spec from an epic to start the SDD lifecycle — draft, clarify, approve, then validate."
+      action={
+        <Button asChild size="sm" variant="outline" data-testid="empty-new-spec-link">
+          <Link href="/specs/new">
+            <Plus className="h-4 w-4" aria-hidden />
+            New spec
+          </Link>
+        </Button>
+      }
+      className="flex-1 border-none bg-transparent"
+    />
   );
 }
 
 function NoSelection({ loading }: { loading: boolean }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 p-10 text-center">
-      <Route className="h-8 w-8 text-muted-foreground" aria-hidden />
-      <p className="text-sm text-muted-foreground">
-        {loading
-          ? "Loading specs…"
-          : "Select a spec to trace its requirements, tasks and tests."}
-      </p>
-    </div>
+    <EmptyState
+      icon={<Route />}
+      title={loading ? "Loading specs…" : "Select a spec"}
+      description={
+        loading ? undefined : "Trace its requirements, tasks and tests, or open Spec Studio to edit it."
+      }
+      className="h-full border-none bg-transparent"
+    />
   );
 }
 
 function ListSkeleton() {
   return (
-    <div className="flex flex-col gap-1" data-testid="list-skeleton" aria-busy="true">
+    <Loading data-testid="list-skeleton" label="Loading specs…" className="flex flex-col gap-1">
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="flex flex-col gap-2 rounded-md px-3 py-2.5">
-          <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
-          <div className="h-1.5 w-full animate-pulse rounded bg-muted/60" />
+          <Skeleton className="h-3.5 w-3/4" />
+          <Skeleton className="h-1.5 w-full" />
         </div>
       ))}
-    </div>
+    </Loading>
   );
 }

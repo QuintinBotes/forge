@@ -18,6 +18,7 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
+import { toast } from "@/components/ui/toast";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useForkBundledWorkflow,
@@ -291,6 +292,7 @@ export function WorkflowEditor({ client = apiClient }: WorkflowEditorProps) {
           setIssues(revision.validation_issues);
           setValidationState(revision.validation_status);
           setSavedDraftExists(true);
+          toast.success("Draft saved.");
         },
         onError: (err) => setActionError(actionMessage(err, "save the draft")),
       },
@@ -329,6 +331,7 @@ export function WorkflowEditor({ client = apiClient }: WorkflowEditorProps) {
         setIssues(revision.validation_issues);
         setValidationState("valid");
         setSavedDraftExists(false);
+        toast.success("Workflow published.");
       },
       onError: (err) => setActionError(publishMessage(err)),
     });
@@ -338,6 +341,7 @@ export function WorkflowEditor({ client = apiClient }: WorkflowEditorProps) {
     if (!selectedName || fork.isPending) return;
     setActionError(null);
     fork.mutate(selectedName, {
+      onSuccess: () => toast.success("Forked to an editable copy."),
       onError: (err) => setActionError(actionMessage(err, "fork this workflow")),
     });
   }, [selectedName, fork]);

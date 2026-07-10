@@ -3,6 +3,7 @@
 import { Eye, FileCode2, FileText, History, ListTree } from "lucide-react";
 import { useState } from "react";
 
+import { toast } from "@/components/ui/toast";
 import { apiClient, ApiError, type ForgeApiClient } from "@/lib/api/client";
 import { useApproveSpec } from "@/lib/api/spec";
 import {
@@ -25,12 +26,42 @@ import { YamlMode } from "./yaml-mode";
 
 export type SpecStudioMode = "guided" | "markdown" | "yaml" | "read" | "history";
 
-const MODES: { id: SpecStudioMode; label: string; icon: typeof ListTree }[] = [
-  { id: "guided", label: "Guided", icon: ListTree },
-  { id: "markdown", label: "Markdown", icon: FileText },
-  { id: "yaml", label: "YAML", icon: FileCode2 },
-  { id: "read", label: "Read", icon: Eye },
-  { id: "history", label: "History", icon: History },
+const MODES: {
+  id: SpecStudioMode;
+  label: string;
+  icon: typeof ListTree;
+  description: string;
+}[] = [
+  {
+    id: "guided",
+    label: "Guided",
+    icon: ListTree,
+    description: "A structured form — the friendliest way to write requirements and acceptance criteria.",
+  },
+  {
+    id: "markdown",
+    label: "Markdown",
+    icon: FileText,
+    description: "spec.md prose — the default surface humans and agents read and write.",
+  },
+  {
+    id: "yaml",
+    label: "YAML",
+    icon: FileCode2,
+    description: "manifest.yaml — the precise machine/CI surface, schema-validated as you type.",
+  },
+  {
+    id: "read",
+    label: "Read",
+    icon: Eye,
+    description: "The rendered, read-only spec — review it here and approve at the human gate.",
+  },
+  {
+    id: "history",
+    label: "History",
+    icon: History,
+    description: "Every save recorded as an immutable version — compare any two.",
+  },
 ];
 
 export interface SpecStudioProps {
@@ -147,6 +178,9 @@ export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioPro
           );
         })}
       </div>
+      <p className="text-xs text-muted-foreground" data-testid="studio-mode-description">
+        {MODES.find((m) => m.id === mode)?.description}
+      </p>
 
       {loadError ? (
         <p role="status" data-testid="studio-error" className="text-xs text-muted-foreground">
@@ -166,7 +200,12 @@ export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioPro
               onChange={setGuidedOverride}
               onSave={() => {
                 if (guidedOverride) {
-                  saveGuided.mutate(guidedOverride, { onSuccess: () => setGuidedOverride(null) });
+                  saveGuided.mutate(guidedOverride, {
+                    onSuccess: () => {
+                      setGuidedOverride(null);
+                      toast.success("Saved");
+                    },
+                  });
                 }
               }}
               saving={saveGuided.isPending}
@@ -195,7 +234,10 @@ export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioPro
                 onSave={() => {
                   if (markdownOverride !== null) {
                     saveMarkdown.mutate(markdownOverride, {
-                      onSuccess: () => setMarkdownOverride(null),
+                      onSuccess: () => {
+                        setMarkdownOverride(null);
+                        toast.success("Saved spec.md");
+                      },
                     });
                   }
                 }}
@@ -225,7 +267,12 @@ export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioPro
                 onChange={setYamlOverride}
                 onSave={() => {
                   if (yamlOverride !== null) {
-                    saveYaml.mutate(yamlOverride, { onSuccess: () => setYamlOverride(null) });
+                    saveYaml.mutate(yamlOverride, {
+                      onSuccess: () => {
+                        setYamlOverride(null);
+                        toast.success("Saved manifest.yaml");
+                      },
+                    });
                   }
                 }}
                 saving={saveYaml.isPending}
@@ -237,7 +284,12 @@ export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioPro
           {mode === "read" ? (
             <ReadMode
               spec={manifest}
-              onApprove={() => approveSpec.mutate({ specId })}
+              onApprove={() =>
+                approveSpec.mutate(
+                  { specId },
+                  { onSuccess: () => toast.success("Spec approved") },
+                )
+              }
               approving={approveSpec.isPending}
               approveError={approveSpec.isError ? errorMessage(approveSpec.error) : null}
             />

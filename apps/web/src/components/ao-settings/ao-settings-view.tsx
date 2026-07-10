@@ -20,6 +20,7 @@ import {
   useUpdateAoSettings,
   useUpsertAoRoleConfig,
 } from "@/lib/api/ao-settings";
+import { toast } from "@/components/ui/toast";
 import type {
   AgentRole,
   AoEffort,
@@ -233,6 +234,8 @@ export function AoSettingsView({ projectId, client = apiClient }: AoSettingsView
         projectId,
       },
       {
+        onSuccess: () =>
+          toast.success(`${ROLE_LABELS[role]} model & effort saved.`),
         onError: () =>
           setRoleErrors((prev) => ({
             ...prev,
@@ -244,13 +247,17 @@ export function AoSettingsView({ projectId, client = apiClient }: AoSettingsView
 
   const resetRole = (role: AgentRole) => {
     if (deleteRole.isPending) return;
-    deleteRole.mutate({ role, projectId });
+    deleteRole.mutate(
+      { role, projectId },
+      { onSuccess: () => toast.success(`${ROLE_LABELS[role]} reset to default.`) },
+    );
   };
 
   const saveSettings = () => {
     if (updateSettings.isPending) return;
     setSettingsError(null);
     updateSettings.mutate(buildUpdateBody(settingsForm, settings), {
+      onSuccess: () => toast.success("Workspace settings saved."),
       onError: () =>
         setSettingsError("Couldn't save the workspace settings. Please try again."),
     });

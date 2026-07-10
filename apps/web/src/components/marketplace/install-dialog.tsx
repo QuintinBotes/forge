@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "@/components/ui/toast";
 
 import { HashChip, VerificationBadge } from "./marketplace-badges";
 import { isBlocked, kindLabel, needsAcknowledgement } from "./marketplace-meta";
@@ -138,6 +139,7 @@ export function InstallDialog({
       },
       {
         onSuccess: (result) => {
+          toast.success(`Installed ${listing.name} · v${resolvedVersion}`);
           onInstalled?.(result);
           onOpenChange(false);
         },

@@ -28,6 +28,14 @@ export interface SeverityMeta {
   label: string;
   /** Small status dot (queue rows). */
   dotClass: string;
+  /**
+   * Left-edge severity stripe (queue rows). Written as a literal Tailwind
+   * class per severity — Tailwind's JIT scanner only generates CSS for
+   * class names it finds as literal substrings in source, so this must
+   * NOT be derived at runtime (e.g. via `dotClass.replace("bg-", "border-l-")`)
+   * or the stripe silently renders uncoloured.
+   */
+  stripeClass: string;
   /** Pill badge classes (header / rows). */
   badgeClass: string;
   /** Higher = more severe (queue ranking). */
@@ -38,24 +46,28 @@ const SEVERITY_META: Record<IncidentSeverity, SeverityMeta> = {
   critical: {
     label: "Critical",
     dotClass: "bg-danger",
+    stripeClass: "border-l-danger",
     badgeClass: "border-transparent bg-danger text-danger-foreground",
     weight: 4,
   },
   high: {
     label: "High",
     dotClass: "bg-danger/70",
+    stripeClass: "border-l-danger/70",
     badgeClass: "border-danger/40 bg-danger/10 text-danger",
     weight: 3,
   },
   medium: {
     label: "Medium",
     dotClass: "bg-warning",
+    stripeClass: "border-l-warning",
     badgeClass: "border-warning/40 bg-warning/10 text-warning",
     weight: 2,
   },
   low: {
     label: "Low",
     dotClass: "bg-muted-foreground/50",
+    stripeClass: "border-l-muted-foreground/50",
     badgeClass: "border-border bg-muted text-muted-foreground",
     weight: 1,
   },

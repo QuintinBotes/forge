@@ -11,6 +11,8 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Loading, Skeleton } from "@/components/ui/skeleton";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import {
   useApprovalContext,
@@ -398,33 +400,32 @@ function DetailHeader({
 
 function EmptyQueue({ mine }: { mine: boolean }) {
   return (
-    <div
+    <EmptyState
       data-testid="empty-queue"
-      className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center"
-    >
-      <ShieldCheck className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm font-medium text-foreground">
-        {mine ? "Nothing waiting on you" : "The queue is clear"}
-      </p>
-      <p className="text-xs text-muted-foreground">
-        {mine
+      icon={<ShieldCheck />}
+      title={mine ? "Nothing waiting on you" : "The queue is clear"}
+      description={
+        mine
           ? "No gates are currently assigned to you."
-          : "New gates from spec, plan, PR, deploy, incident and policy reviews land here."}
-      </p>
-    </div>
+          : "New gates from spec, plan, PR, deploy, incident and policy reviews land here."
+      }
+      className="flex-1 border-none bg-transparent"
+    />
   );
 }
 
 function NoSelection({ empty }: { empty: boolean }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 p-10 text-center">
-      <Inbox className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm text-muted-foreground">
-        {empty
-          ? "No pending approvals to review."
-          : "Select an approval to review its goal, diff, checks and risks."}
-      </p>
-    </div>
+    <EmptyState
+      icon={<Inbox />}
+      title={empty ? "No pending approvals" : "Select an approval to review"}
+      description={
+        empty
+          ? "You're all caught up — new gates will appear in the queue on the left."
+          : "See its goal, diff, checks and risks before you decide."
+      }
+      className="h-full border-none bg-transparent"
+    />
   );
 }
 
@@ -432,16 +433,16 @@ function NoSelection({ empty }: { empty: boolean }) {
 
 function QueueSkeleton() {
   return (
-    <div className="flex flex-col gap-1" data-testid="queue-skeleton" aria-busy="true">
+    <Loading label="Loading approvals…" data-testid="queue-skeleton" className="flex flex-col gap-1">
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="flex items-start gap-3 rounded-md px-4 py-2.5">
-          <div className="mt-0.5 h-4 w-4 shrink-0 animate-pulse rounded bg-muted" />
+          <Skeleton className="mt-0.5 h-4 w-4 shrink-0 rounded-full" />
           <div className="flex flex-1 flex-col gap-1.5">
-            <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-            <div className="h-2.5 w-1/2 animate-pulse rounded bg-muted/60" />
+            <Skeleton className="h-3 w-3/4" />
+            <Skeleton className="h-2.5 w-1/2" />
           </div>
         </div>
       ))}
-    </div>
+    </Loading>
   );
 }

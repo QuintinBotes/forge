@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
 import { useCreateEpic, useEpics } from "@/lib/api/hooks";
 import { useCreateSpec } from "@/lib/api/spec";
@@ -98,6 +99,7 @@ export function NewSpecPage({
       },
       {
         onSuccess: (created) => {
+          toast.success(`Created ${created.name || "spec"}`);
           if (onCreated) onCreated(created.id);
           else router.push(`/specs/${encodeURIComponent(created.id)}`);
         },

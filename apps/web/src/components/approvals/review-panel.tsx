@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ErrorState } from "@/components/ui/error-state";
+import { Loading, Skeleton } from "@/components/ui/skeleton";
 import type {
   ApprovalContext,
   ApprovalSummary,
@@ -72,27 +74,13 @@ export function ReviewPanel({
   }
   if (isError || !context) {
     return (
-      <div
-        role="alert"
+      <ErrorState
         data-testid="review-error"
-        className="m-4 rounded-lg border border-dashed border-danger/40 bg-danger/5 p-6 text-center"
-      >
-        <p className="text-sm font-medium text-foreground">
-          Couldn&apos;t load the review context.
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          The gate exists but its context provider is unavailable right now.
-        </p>
-        {onRetry ? (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-3 inline-flex items-center rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"
-          >
-            Retry
-          </button>
-        ) : null}
-      </div>
+        className="m-4"
+        title="Couldn't load the review context"
+        description="The gate exists but its context provider is unavailable right now."
+        onRetry={onRetry}
+      />
     );
   }
 
@@ -587,18 +575,17 @@ function KeyValueGrid({ record }: { record: Record<string, unknown> }) {
 
 function ReviewSkeleton() {
   return (
-    <div
+    <Loading
+      label="Loading review context…"
       data-testid="review-skeleton"
-      aria-busy="true"
-      aria-label="Loading review context"
       className="flex flex-col gap-5 px-6 py-5"
     >
       {[0, 1, 2].map((i) => (
         <div key={i} className="flex flex-col gap-2">
-          <div className="h-3 w-32 animate-pulse rounded bg-muted" />
-          <div className="h-16 w-full animate-pulse rounded-md bg-muted/60" />
+          <Skeleton className="h-3 w-32" />
+          <Skeleton className="h-16 w-full" />
         </div>
       ))}
-    </div>
+    </Loading>
   );
 }
