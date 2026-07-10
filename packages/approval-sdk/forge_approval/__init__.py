@@ -16,6 +16,21 @@ from forge_approval.authorizer import (
     AuthorizationError,
     DefaultPolicyReader,
     PolicyReader,
+    quorum_met,
+    required_approvals,
+)
+from forge_approval.codeowners import (
+    CodeownersRule,
+    CodeownersRuleset,
+    parse_codeowners,
+    required_owners_for_paths,
+)
+from forge_approval.delegation import DelegationDirectory, DelegationEntry
+from forge_approval.escalation import (
+    EscalationDecision,
+    EscalationOutcome,
+    SlaPolicy,
+    route_escalation,
 )
 from forge_approval.events import (
     APPROVAL_REQUESTED_TOPIC,
@@ -81,8 +96,14 @@ __all__ = [
     "ApprovalService",
     "ApprovalSummary",
     "AuthorizationError",
+    "CodeownersRule",
+    "CodeownersRuleset",
     "DefaultPolicyReader",
+    "DelegationDirectory",
+    "DelegationEntry",
     "DuplicateDecisionError",
+    "EscalationDecision",
+    "EscalationOutcome",
     "GateContextProvider",
     "GateRegistry",
     "GateRequirementResolver",
@@ -100,5 +121,11 @@ __all__ = [
     "ResolutionOutcome",
     "RiskFlag",
     "Role",
+    "SlaPolicy",
     "default_actions",
+    "parse_codeowners",
+    "quorum_met",
+    "required_approvals",
+    "required_owners_for_paths",
+    "route_escalation",
 ]

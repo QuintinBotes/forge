@@ -472,6 +472,7 @@ class ReviewRules(_Model):
     required_reviewers: list[str] = Field(default_factory=list)
     approval_required_for_merge: bool = True
     min_approvals: int = 1
+    require_code_owners: bool = False
 
 
 class DeployRules(_Model):

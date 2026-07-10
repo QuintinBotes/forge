@@ -851,6 +851,7 @@ dependencies = [
     { name = "docker" },
     { name = "forge-contracts" },
     { name = "forge-orchestration-policy" },
+    { name = "forge-policy" },
     { name = "langgraph" },
 ]
 
@@ -866,6 +867,7 @@ requires-dist = [
     { name = "docker", specifier = ">=7.1,<8" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-orchestration-policy", editable = "packages/orchestration-policy" },
+    { name = "forge-policy", editable = "packages/policy-sdk" },
     { name = "langgraph", specifier = ">=1.2.8,<2" },
     { name = "openai", marker = "extra == 'providers'", specifier = ">=1.60" },
 ]
@@ -1304,6 +1306,7 @@ dependencies = [
     { name = "celery" },
     { name = "forge-agent" },
     { name = "forge-api" },
+    { name = "forge-approval" },
     { name = "forge-board" },
     { name = "forge-contracts" },
     { name = "forge-db" },
@@ -1322,6 +1325,7 @@ requires-dist = [
     { name = "celery", specifier = ">=5.3" },
     { name = "forge-agent", editable = "packages/agent-runtime" },
     { name = "forge-api", editable = "apps/api" },
+    { name = "forge-approval", editable = "packages/approval-sdk" },
     { name = "forge-board", editable = "packages/board-core" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },

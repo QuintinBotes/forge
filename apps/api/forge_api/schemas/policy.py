@@ -57,6 +57,34 @@ class PolicyTestResponse(PolicyTestReport):
     """Response for ``POST /policy/test`` (the run report)."""
 
 
+class StaticGateRequest(BaseModel):
+    """Body for ``POST /policy/static-gate`` — scan files for forbidden shortcuts.
+
+    ``files`` maps a repo-relative path to its produced text; ``forbidden_shortcuts``
+    are the literal phrases (from the run's skill profile) that must not appear.
+    """
+
+    files: dict[str, str]
+    forbidden_shortcuts: list[str] = Field(default_factory=list)
+
+
+class StaticGateViolationOut(BaseModel):
+    """One forbidden-shortcut hit in the static-gate response."""
+
+    file: str
+    line: int
+    shortcut: str
+    excerpt: str
+
+
+class StaticGateResponse(BaseModel):
+    """Response for ``POST /policy/static-gate`` (the check outcome)."""
+
+    passed: bool
+    summary: str
+    violations: list[StaticGateViolationOut] = Field(default_factory=list)
+
+
 class PolicyRuleEvaluationOut(BaseModel):
     """An append-only ``policy_rule_evaluation`` audit row (read projection)."""
 
@@ -80,4 +108,7 @@ __all__ = [
     "RuleTrace",
     "SimulateRequest",
     "SimulationResult",
+    "StaticGateRequest",
+    "StaticGateResponse",
+    "StaticGateViolationOut",
 ]

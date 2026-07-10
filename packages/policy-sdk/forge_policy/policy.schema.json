@@ -396,6 +396,11 @@
           "title": "Min Approvals",
           "type": "integer"
         },
+        "require_code_owners": {
+          "default": false,
+          "title": "Require Code Owners",
+          "type": "boolean"
+        },
         "required_reviewers": {
           "items": {
             "type": "string"
