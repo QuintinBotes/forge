@@ -12,6 +12,9 @@ dependencies = [
     "forge-auth",
     "pydantic>=2.7",
     "sqlalchemy>=2.0",
+    # Attested Changesets (F41 slice `dsse-signer`): detached Ed25519 over the
+    # DSSE PAE encoding, same crypto dependency forge-auth/forge-marketplace use.
+    "cryptography>=43",
     # HARD-10: real OTLP export path (retires F38's in-memory-only asterisk).
     # Framework auto-instrumentors are optional (wired best-effort at runtime).
     "opentelemetry-sdk>=1.29",

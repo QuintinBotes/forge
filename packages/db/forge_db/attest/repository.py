@@ -30,6 +30,7 @@ class AttestationRepository:
         self,
         workspace_id: UUID,
         *,
+        id: UUID | None = None,
         subject_digest: str,
         predicate_type: str,
         envelope: dict[str, Any],
@@ -43,8 +44,17 @@ class AttestationRepository:
         audit_seq: int | None = None,
         merkle_leaf_hash: str | None = None,
     ) -> Attestation:
-        """Append one attestation row and flush it (visible within the txn)."""
+        """Append one attestation row and flush it (visible within the txn).
+
+        ``id`` may be supplied to pre-generate the primary key: because the table
+        is append-only (BEFORE UPDATE trigger), ``audit_seq`` — which points at
+        an ``audit_log`` row whose own ``detail_ref`` must reference this row's
+        id — can only be recorded in this initial INSERT, never a later UPDATE.
+        Passing ``id`` lets the caller emit the audit event first (with the id in
+        hand) and then insert here with ``audit_seq`` already populated.
+        """
         row = Attestation(
+            **({"id": id} if id is not None else {}),
             workspace_id=workspace_id,
             subject_digest=subject_digest,
             predicate_type=predicate_type,
