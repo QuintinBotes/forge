@@ -59,20 +59,24 @@ class OpenAIModelClient:
         )
 
     def complete(self, request: ModelRequest) -> ModelResponse:
+        model = self._resolve_model(request)
         kwargs = translate.openai_create_kwargs(
-            request, model=self._model, max_tokens=self._max_tokens, effort=self._effort
+            request, model=model, max_tokens=self._max_tokens, effort=self._effort
         )
         try:
             with self._client.chat.completions.stream(**kwargs) as stream:
                 completion = stream.get_final_completion()
         except Exception as exc:
             raise self._error(exc) from exc
-        self._log(completion)
+        self._log(completion, model)
         return translate.from_openai_completion(completion)
 
     def stream(self, request: ModelRequest) -> Iterator[ModelStreamEvent]:
         kwargs = translate.openai_create_kwargs(
-            request, model=self._model, max_tokens=self._max_tokens, effort=self._effort
+            request,
+            model=self._resolve_model(request),
+            max_tokens=self._max_tokens,
+            effort=self._effort,
         )
         try:
             with self._client.chat.completions.stream(**kwargs) as stream:
@@ -84,14 +88,20 @@ class OpenAIModelClient:
             raise self._error(exc) from exc
 
     # ------------------------------------------------------------------ #
+    def _resolve_model(self, request: ModelRequest) -> str:
+        """Honor a per-request model (an Adaptive Orchestration per-role model),
+        falling back to the constructor-bound default when ``request.model`` is
+        unset — so single-agent callers stay pinned to their configured model."""
+        return request.model or self._model
+
     def _error(self, exc: Exception) -> ModelClientError:
         return ModelClientError(self._redactor(str(exc)))
 
-    def _log(self, completion: Any) -> None:
+    def _log(self, completion: Any, model: str) -> None:
         usage = getattr(completion, "usage", None)
         _logger.debug(
             "openai.complete model=%s in=%s out=%s",
-            self._model,
+            model,
             getattr(usage, "prompt_tokens", None),
             getattr(usage, "completion_tokens", None),
         )

@@ -70,6 +70,7 @@ class ScriptingHub:
     def __init__(self) -> None:
         self.scripts: dict[str, list[AgentScript]] = {}
         self.calls: list[CallRecord] = []
+        self.model_clients: list[object] = []
         self._attempts: dict[str, int] = {}
         self._lock = threading.Lock()
         self._active = 0
@@ -94,7 +95,11 @@ class ScriptingHub:
         with self._lock:
             self._active -= 1
 
-    def agent_factory(self):  # -> AgentRuntime
+    def agent_factory(self, model_client=None):  # (ModelClient | None) -> AgentRuntime
+        # Records the per-role model client the coordinator built (or None), so a
+        # test can prove different roles were routed to different models. The
+        # scripted agent itself ignores the client.
+        self.model_clients.append(model_client)
         return ScriptedExecutionAgent(self)
 
     def calls_for(self, role: str) -> list[CallRecord]:
