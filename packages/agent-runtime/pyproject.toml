@@ -20,7 +20,7 @@ dependencies = [
 # with `uv sync --extra providers` to run the `pytest -m live_model` lane.
 providers = [
     "anthropic>=0.49",
-    "openai>=1.60",
+    "openai>=2.45.0",
 ]
 
 [build-system]
