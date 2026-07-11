@@ -1,10 +1,14 @@
 """Marketplace router (F32) — mounted at ``/api/v1/marketplace``.
 
-Browse/list routes require ``member`` (READ); every mutating route (add/sync a
-registry, install/update/uninstall) requires ``admin``. All reads/writes are
-scoped by the authenticated principal's ``workspace_id`` — a cross-workspace id
-surfaces as 404, never a leak (AC19). The controllers are thin: they translate
-service errors to HTTP status codes and DTOs, delegating all logic to
+Browse/list routes require ``member`` (READ); publishing a package (``POST
+/publish``, the in-app authoring flow) requires only ``WRITE`` — like the F35
+benchmark submission path, any workspace member can contribute a package, not
+just an admin; every *installing* mutating route (add/sync a registry,
+install/update/uninstall) requires ``admin`` since it materializes a real F09/
+F11 object into the workspace. All reads/writes are scoped by the authenticated
+principal's ``workspace_id`` — a cross-workspace id surfaces as 404, never a
+leak (AC19). The controllers are thin: they translate service errors to HTTP
+status codes and DTOs, delegating all logic to
 :class:`~forge_api.services.marketplace_service.MarketplaceService`.
 """
 
@@ -25,6 +29,7 @@ from forge_api.schemas.marketplace import (
     InstallRequest,
     InstallResult,
     ListingDetailResponse,
+    ListingPublishRequest,
     ListingResponse,
     ListingVersionResponse,
     MarketplaceAuditResponse,
@@ -39,12 +44,15 @@ from forge_api.services.marketplace_service import (
     ListingNotFoundError,
     MarketplaceService,
     NameConflictError,
+    PublishValidationError,
     RegistryConflictError,
     RegistryNotFoundError,
+    VersionConflictError,
 )
 from forge_db.models.marketplace import (
     MarketplaceInstallation,
     MarketplaceListing,
+    MarketplaceListingVersion,
     MarketplaceRegistry,
 )
 from forge_marketplace.models import ArtifactKind
@@ -56,6 +64,7 @@ router = APIRouter(
 )
 
 ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
+WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 AdminDep = Annotated[Principal, Depends(require_permission(Permission.ADMIN))]
 
 
@@ -109,6 +118,29 @@ def _listing_dto(listing: MarketplaceListing, registry: MarketplaceRegistry) -> 
         repository=listing.repository,
         license=listing.license,
         cached_at=listing.cached_at,
+    )
+
+
+def _listing_detail_dto(
+    listing: MarketplaceListing,
+    registry: MarketplaceRegistry,
+    versions: list[MarketplaceListingVersion],
+) -> ListingDetailResponse:
+    base = _listing_dto(listing, registry)
+    return ListingDetailResponse(
+        **base.model_dump(),
+        versions=[
+            ListingVersionResponse(
+                version=v.version,
+                content_hash=v.content_hash,
+                signed=bool(v.signature),
+                min_forge_version=v.min_forge_version,
+                published_at=v.published_at,
+                yanked=v.yanked,
+                yanked_reason=v.yanked_reason,
+            )
+            for v in versions
+        ],
     )
 
 
@@ -250,22 +282,47 @@ def get_listing(
         )
     except ListingNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    base = _listing_dto(listing, registry)
-    return ListingDetailResponse(
-        **base.model_dump(),
-        versions=[
-            ListingVersionResponse(
-                version=v.version,
-                content_hash=v.content_hash,
-                signed=bool(v.signature),
-                min_forge_version=v.min_forge_version,
-                published_at=v.published_at,
-                yanked=v.yanked,
-                yanked_reason=v.yanked_reason,
-            )
-            for v in versions
-        ],
-    )
+    return _listing_detail_dto(listing, registry, versions)
+
+
+# --------------------------------------------------------------------------- #
+# Publish (in-app authoring — WRITE, mirrors the offline CLI package step)      #
+# --------------------------------------------------------------------------- #
+
+
+@router.post("/publish", response_model=ListingDetailResponse, status_code=status.HTTP_201_CREATED)
+def publish_listing(
+    service: ServiceDep, principal: WriterDep, body: ListingPublishRequest
+) -> ListingDetailResponse:
+    try:
+        listing, registry, versions = service.publish_listing(
+            workspace_id=principal.workspace_id,
+            actor=f"user:{principal.user_id}",
+            registry_id=body.registry_id,
+            kind=body.kind,
+            slug=body.slug,
+            name=body.name,
+            version=body.version,
+            summary=body.summary,
+            description=body.description,
+            license=body.license,
+            homepage=body.homepage,
+            repository=body.repository,
+            tags=body.tags,
+            min_forge_version=body.min_forge_version,
+            artifact=body.artifact,
+        )
+    except RegistryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except RegistryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except PublishValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    return _listing_detail_dto(listing, registry, versions)
 
 
 # --------------------------------------------------------------------------- #

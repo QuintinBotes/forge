@@ -6,9 +6,10 @@
  *
  * Kept in a dedicated module (like the F23 `spec.ts`) so the marketplace surface
  * owns its own query keys + cache policy. Reads: the catalog, one package's
- * detail, and the installed set. Mutations: `preview` (dry-run), `install`, and
- * `update` — each invalidates the installed set so a fresh install/update lights
- * up instantly, and re-reads the catalog so `available_version` is authoritative.
+ * detail, the installed set, and the registry list (the publish form's picker).
+ * Mutations: `preview` (dry-run), `install`, `update`, and `publish` — each
+ * invalidates the marketplace query space so the catalog/installed set stay
+ * authoritative right after the write.
  */
 
 import {
@@ -27,7 +28,9 @@ import type {
   InstallResult,
   Listing,
   ListingDetail,
+  ListingPublishRequest,
   MarketplaceListingQuery,
+  Registry,
 } from "./types";
 
 export const marketplaceKeys = {
@@ -37,6 +40,7 @@ export const marketplaceKeys = {
   listing: (registrySlug: string, slug: string) =>
     ["marketplace", "listing", registrySlug, slug] as const,
   installations: () => ["marketplace", "installations"] as const,
+  registries: () => ["marketplace", "registries"] as const,
 } as const;
 
 /** The catalog. Passing `kind` narrows on the server; text search is client-side. */
@@ -71,6 +75,16 @@ export function useInstallations(
   return useQuery({
     queryKey: marketplaceKeys.installations(),
     queryFn: () => client.listInstallations(),
+  });
+}
+
+/** Registry sources the workspace can publish into (the publish form's picker). */
+export function useRegistries(
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<Registry[]> {
+  return useQuery({
+    queryKey: marketplaceKeys.registries(),
+    queryFn: () => client.listRegistries(),
   });
 }
 
@@ -113,6 +127,19 @@ export function useUpdateInstallation(
   return useMutation({
     mutationFn: ({ installationId, version }: UpdateInstallationVariables) =>
       client.updateInstallation(installationId, version),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: marketplaceKeys.all() });
+    },
+  });
+}
+
+/** Publish a package into the catalog, then revalidate the listings. */
+export function usePublishListing(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<ListingDetail, Error, ListingPublishRequest> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: ListingPublishRequest) => client.publishListing(request),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.all() });
     },

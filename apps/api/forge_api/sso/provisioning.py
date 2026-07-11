@@ -26,7 +26,7 @@ from forge_api.services.audit import SqlAuditWriter
 from forge_api.sso.errors import LastAdminError, SsoConfigError
 from forge_contracts.audit import AuditEvent
 from forge_contracts.sso import MappedIdentity
-from forge_db.models import ExternalIdentity, SsoConfiguration, User
+from forge_db.models import ExternalIdentity, OidcConfiguration, SsoConfiguration, User
 from forge_db.models.enums import ExternalIdentityProvider, UserRole
 
 #: Revokes every session / agent token owned by (workspace_id, user_id).
@@ -98,16 +98,18 @@ def ensure_not_last_admin(session: Session, workspace_id: uuid.UUID, user_id: uu
 def link_or_jit_provision(
     *,
     session: Session,
-    config: SsoConfiguration,
+    config: SsoConfiguration | OidcConfiguration,
     identity: MappedIdentity,
     provider: ExternalIdentityProvider = ExternalIdentityProvider.SAML,
 ) -> User:
     """Resolve a validated identity to a Forge user (link → attach → JIT).
 
-    Role is written to the flat ``app_user.role`` (the F37 substrate; when the
-    F30 grant API becomes the authz source of truth the resolved role is applied
-    there instead). Raises :class:`SsoConfigError` when JIT is disabled and no
-    user exists, or when the target user is deactivated.
+    Shared by the SAML ACS and the OIDC callback (``config`` is either
+    protocol's per-workspace configuration row). Role is written to the flat
+    ``app_user.role`` (the F37 substrate; when the F30 grant API becomes the
+    authz source of truth the resolved role is applied there instead). Raises
+    :class:`SsoConfigError` when JIT is disabled and no user exists, or when the
+    target user is deactivated.
     """
     link = session.execute(
         select(ExternalIdentity).where(
@@ -174,7 +176,9 @@ def link_or_jit_provision(
             workspace_id=config.workspace_id,
             user_id=user.id,
             provider=provider,
-            idp_entity_id=config.idp_entity_id if provider.value == "saml" else None,
+            idp_entity_id=getattr(config, "idp_entity_id", None)
+            if provider.value == "saml"
+            else None,
             external_id=identity.external_id,
             name_id_format=identity.name_id_format,
             last_login_at=_now(),

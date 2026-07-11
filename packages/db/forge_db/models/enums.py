@@ -406,12 +406,14 @@ class SsoProtocol(enum.StrEnum):
     """F33 enterprise SSO sign-in protocols (SCIM is provisioning, not sign-in)."""
 
     SAML = "saml"
+    OIDC = "oidc"
 
 
 class ExternalIdentityProvider(enum.StrEnum):
     """F33: which channel owns an ``external_identity`` link."""
 
     SAML = "saml"
+    OIDC = "oidc"
     SCIM = "scim"
     OAUTH = "oauth"
 

@@ -43,12 +43,14 @@ from forge_db.models.marketplace import (
 )
 from forge_db.models.profiles import SkillProfile
 from forge_marketplace.catalog import (
+    compare_semver,
     find_version,
     has_newer_compatible,
     latest_compatible,
 )
+from forge_marketplace.errors import SchemaInvalid
 from forge_marketplace.installer import build_install_plan
-from forge_marketplace.manifest import canonical_artifact_bytes
+from forge_marketplace.manifest import canonical_artifact_bytes, compute_manifest_hash
 from forge_marketplace.models import (
     ArtifactKind,
     InstallPlan,
@@ -63,6 +65,7 @@ from forge_marketplace.models import (
     TrustLevel,
     VerificationStatus,
 )
+from forge_marketplace.packaging import build_package
 from forge_marketplace.registry_client import HttpIndexRegistryClient
 from forge_marketplace.verifier import verify_version
 
@@ -96,6 +99,14 @@ class RegistryConflictError(MarketplaceServiceError):
 
 class NameConflictError(MarketplaceServiceError):
     """Install would collide with an existing custom object (-> 409)."""
+
+
+class PublishValidationError(MarketplaceServiceError):
+    """A published artifact failed the authoritative installer schema (-> 422)."""
+
+
+class VersionConflictError(MarketplaceServiceError):
+    """That exact version is already published for this listing (-> 409)."""
 
 
 class InstallBlockedError(MarketplaceServiceError):
@@ -540,6 +551,173 @@ class MarketplaceService:
             if row is None:
                 raise ListingNotFoundError(f"listing '{registry_slug}/{slug}' not found")
             listing, registry = row
+            versions = (
+                s.execute(
+                    select(MarketplaceListingVersion)
+                    .where(MarketplaceListingVersion.listing_id == listing.id)
+                    .order_by(MarketplaceListingVersion.published_at.desc())
+                )
+                .scalars()
+                .all()
+            )
+            for v in versions:
+                s.expunge(v)
+            s.expunge(listing)
+            s.expunge(registry)
+            return listing, registry, list(versions)
+
+    # ---- publish (in-app authoring) ---- #
+
+    def publish_listing(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        actor: str,
+        registry_id: uuid.UUID,
+        kind: ArtifactKind | str,
+        slug: str,
+        name: str,
+        version: str,
+        summary: str,
+        description: str | None = None,
+        license: str = "Apache-2.0",
+        homepage: str | None = None,
+        repository: str | None = None,
+        tags: list[str] | None = None,
+        min_forge_version: str | None = None,
+        artifact: dict,
+    ) -> tuple[MarketplaceListing, MarketplaceRegistry, list[MarketplaceListingVersion]]:
+        """Author a package straight into a workspace-owned registry's catalog.
+
+        The in-app counterpart to ``forge marketplace package`` (F32 §2 journey
+        I): runs the artifact through the exact same :func:`build_package`
+        validation the CLI applies (fail-closed via the authoritative F09/F11
+        installer schemas — a package that could never install cannot be
+        published either), then upserts the cached
+        :class:`MarketplaceListing`/:class:`MarketplaceListingVersion` rows in
+        this same transaction. No registry fetch is involved — the workspace
+        itself is the author, not a remote index.
+
+        Known limitation: if ``registry_id`` also gets periodically synced from
+        a remote index (:meth:`sync_registry` / the worker's
+        ``sync_all_registries``), that sync prunes any listing/version absent
+        from the *remote* index — including one published here. Publish into a
+        registry you do not also sync (or set ``enabled=False`` on it first).
+        """
+        with self._sf() as s:
+            registry = self._require_registry(s, workspace_id, registry_id)
+            if registry.slug == "official":
+                raise RegistryConflictError(
+                    "cannot publish directly into the read-only official registry"
+                )
+            try:
+                manifest = build_package(
+                    kind=kind,
+                    artifact=artifact,
+                    slug=slug,
+                    name=name,
+                    version=version,
+                    summary=summary,
+                    description=description,
+                    license=license,
+                    homepage=homepage,
+                    repository=repository,
+                    tags=tags or [],
+                    min_forge_version=min_forge_version,
+                )
+            except SchemaInvalid as exc:
+                self._write_audit(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="listing.publish",
+                    registry_slug=registry.slug,
+                    listing_slug=slug,
+                    version=version,
+                    result_status="denied",
+                    error_code="schema_invalid",
+                    detail=str(exc)[:500],
+                )
+                s.commit()
+                raise PublishValidationError(str(exc)) from exc
+
+            now = datetime.now(UTC)
+            listing = s.execute(
+                select(MarketplaceListing).where(
+                    MarketplaceListing.registry_id == registry.id,
+                    MarketplaceListing.kind == manifest.kind.value,
+                    MarketplaceListing.slug == manifest.slug,
+                )
+            ).scalar_one_or_none()
+
+            if listing is not None:
+                dup = s.execute(
+                    select(MarketplaceListingVersion).where(
+                        MarketplaceListingVersion.listing_id == listing.id,
+                        MarketplaceListingVersion.version == manifest.version,
+                    )
+                ).scalar_one_or_none()
+                if dup is not None:
+                    raise VersionConflictError(
+                        f"version '{manifest.version}' is already published for "
+                        f"'{registry.slug}/{manifest.slug}'"
+                    )
+                listing.name = manifest.name
+                listing.summary = manifest.summary
+                listing.tags = list(manifest.tags)
+                listing.homepage = manifest.homepage
+                listing.repository = manifest.repository
+                listing.license = manifest.license
+                listing.cached_at = now
+                if compare_semver(manifest.version, listing.latest_version) > 0:
+                    listing.latest_version = manifest.version
+            else:
+                listing = MarketplaceListing(
+                    workspace_id=workspace_id,
+                    registry_id=registry.id,
+                    kind=manifest.kind.value,
+                    slug=manifest.slug,
+                    name=manifest.name,
+                    summary=manifest.summary,
+                    tags=list(manifest.tags),
+                    latest_version=manifest.version,
+                    homepage=manifest.homepage,
+                    repository=manifest.repository,
+                    license=manifest.license,
+                    cached_at=now,
+                )
+                s.add(listing)
+                s.flush()
+
+            s.add(
+                MarketplaceListingVersion(
+                    listing_id=listing.id,
+                    version=manifest.version,
+                    content_hash=manifest.content_hash,
+                    manifest_hash=compute_manifest_hash(manifest),
+                    signature=None,
+                    manifest_uri=(
+                        f"{manifest.kind.value}/{manifest.slug}/"
+                        f"{manifest.version}/forge-package.yaml"
+                    ),
+                    min_forge_version=manifest.min_forge_version,
+                    published_at=now,
+                )
+            )
+            self._write_audit(
+                s,
+                workspace_id=workspace_id,
+                actor=actor,
+                operation="listing.publish",
+                registry_slug=registry.slug,
+                listing_slug=manifest.slug,
+                version=manifest.version,
+                content_hash=manifest.content_hash,
+                result_status="ok",
+            )
+            s.commit()
+            s.refresh(listing)
+
             versions = (
                 s.execute(
                     select(MarketplaceListingVersion)
@@ -1237,9 +1415,11 @@ __all__ = [
     "MarketplaceService",
     "MarketplaceServiceError",
     "NameConflictError",
+    "PublishValidationError",
     "RegistryConflictError",
     "RegistryGateway",
     "RegistryNotFoundError",
+    "VersionConflictError",
     "backfill_official_registries",
     "seed_official_registry",
 ]

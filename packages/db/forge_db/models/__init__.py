@@ -151,6 +151,7 @@ from forge_db.models.sprint_velocity import (
 )
 from forge_db.models.sso import (
     ExternalIdentity,
+    OidcConfiguration,
     SamlReplay,
     ScimGroup,
     ScimGroupMember,
@@ -254,6 +255,7 @@ __all__ = [
     "OAuthProvider",
     "ObservabilityAuditChainHead",
     "ObservabilityAuditEntry",
+    "OidcConfiguration",
     "PMAuthType",
     "PMConflictPolicy",
     "PMConnection",

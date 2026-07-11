@@ -768,6 +768,45 @@ export interface MarketplaceListingQuery {
   offset?: number;
 }
 
+/** A registry source the workspace can browse/sync — and, if owned, publish into. */
+export interface Registry {
+  id: string;
+  slug: string;
+  name: string;
+  type: RegistryType;
+  url: string;
+  ref?: string | null;
+  trust_level: TrustLevel;
+  enabled: boolean;
+  has_public_key: boolean;
+  last_sync_at?: string | null;
+  last_sync_status?: string | null;
+  last_sync_error?: string | null;
+  created_at: string;
+}
+
+/**
+ * Body of POST /marketplace/publish — the in-app equivalent of the offline
+ * `forge marketplace package` CLI authoring step. `artifact` is the raw F09
+ * `mcp_connector` / F11 `skill_profile` body; the server validates it through
+ * the same authoritative installer schema before persisting anything.
+ */
+export interface ListingPublishRequest {
+  registry_id: string;
+  kind: ArtifactKind;
+  slug: string;
+  name: string;
+  version: string;
+  summary: string;
+  description?: string | null;
+  license?: string;
+  homepage?: string | null;
+  repository?: string | null;
+  tags?: string[];
+  min_forge_version?: string | null;
+  artifact: Record<string, unknown>;
+}
+
 // --- Incidents (F17 /incidents workflow surface) -------------------------- //
 
 /** The ten forward incident lifecycle states (matches IncidentState). */
@@ -1505,6 +1544,59 @@ export interface SsoConfigInput {
   jit_provisioning?: boolean;
 }
 
+/**
+ * Public view of a workspace OIDC configuration (`OidcConfigOut`). The client
+ * secret is never exposed — only `has_client_secret`. `redirect_uri` /
+ * `login_url` are the values handed back to the IdP (the OIDC sibling of the
+ * SAML `sp_acs_url` / SP-details card).
+ */
+export interface OidcConfig {
+  id: string;
+  workspace_id: string;
+  protocol: "oidc";
+  enabled: boolean;
+  issuer: string;
+  discovery_url?: string | null;
+  client_id: string;
+  has_client_secret: boolean;
+  scopes: string[];
+  email_claim: string;
+  name_claim: string;
+  groups_claim: string;
+  default_role: string;
+  group_role_map: Record<string, string>;
+  authorization_endpoint?: string | null;
+  token_endpoint?: string | null;
+  jwks_uri?: string | null;
+  jit_provisioning: boolean;
+  redirect_uri: string;
+  login_url: string;
+}
+
+/**
+ * Create/replace payload for a workspace OIDC configuration (`OidcConfigIn`).
+ * `client_secret` is plaintext and write-only — omit it (or send `null`) on an
+ * update to keep the previously-saved secret unchanged; it is required the
+ * first time a workspace's OIDC config is created.
+ */
+export interface OidcConfigInput {
+  enabled?: boolean;
+  issuer: string;
+  discovery_url?: string | null;
+  client_id: string;
+  client_secret?: string | null;
+  scopes?: string[];
+  email_claim?: string;
+  name_claim?: string;
+  groups_claim?: string;
+  default_role?: SsoRole;
+  group_role_map?: Record<string, string>;
+  authorization_endpoint?: string | null;
+  token_endpoint?: string | null;
+  jwks_uri?: string | null;
+  jit_provisioning?: boolean;
+}
+
 /** Redacted SCIM-token view — never the raw token or its hash. */
 export interface ScimTokenInfo {
   id: string;
@@ -2100,4 +2192,54 @@ export interface RoutingPreviewResponse {
   junior_max: number;
   medior_max: number;
   auto_route_enabled: boolean;
+}
+
+// --- Public benchmark leaderboard (F35 /public router) --------------------- //
+// Payload-free, unauthenticated projections: no submitter contact, raw config,
+// or raw payloads ever appear on these shapes (mirrors the API's `Public*`
+// response models exactly).
+
+/** One benchmark suite as listed on the public catalog. */
+export interface PublicBenchmark {
+  slug: string;
+  version: string;
+  title: string;
+  description: string;
+  task_count: number;
+  primary_metric: string;
+  content_hash: string;
+}
+
+/** Per-category score breakdown within a submission's composite. */
+export interface CategoryScore {
+  category: string;
+  score: number;
+  weight: number;
+  case_count: number;
+}
+
+/** One ranked, published entry on a suite's public leaderboard. */
+export interface PublicLeaderboardEntry {
+  rank: number;
+  model_label: string;
+  agent_mode: string;
+  composite_score: number;
+  verified: boolean;
+  forge_version: string | null;
+  submitter_name: string;
+  submitter_org: string | null;
+  per_category: CategoryScore[];
+  submitted_at: string;
+  submission_id: string;
+}
+
+/** A suite's full public leaderboard: ranked entries + suite identity. */
+export interface PublicLeaderboard {
+  slug: string;
+  version: string;
+  title: string;
+  primary_metric: string;
+  content_hash: string;
+  generated_at: string;
+  entries: PublicLeaderboardEntry[];
 }

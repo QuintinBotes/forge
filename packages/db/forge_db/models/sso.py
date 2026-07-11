@@ -84,6 +84,53 @@ class SsoConfiguration(WorkspaceScopedModel):
         )
 
 
+class OidcConfiguration(WorkspaceScopedModel):
+    """One OpenID Connect configuration per workspace (V3: single IdP per tenant).
+
+    Mirrors :class:`SsoConfiguration` for the OIDC authorization-code flow. The
+    OAuth client secret is stored encrypted at rest
+    (``client_secret_encrypted``, a dedicated subkey of the instance master
+    secret — the same key-separation scheme the SAML SP key uses) and never
+    leaves the API layer; ``client_secret_ref`` is the opaque handle surfaced in
+    config views. Endpoints are resolved from OpenID discovery at runtime; the
+    ``*_endpoint`` / ``jwks_uri`` columns hold optional admin overrides.
+    """
+
+    __tablename__ = "oidc_configuration"
+    __table_args__ = (UniqueConstraint("workspace_id", name="uq_oidc_configuration_workspace"),)
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    issuer: Mapped[str] = mapped_column(Text, nullable=False)
+    discovery_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_id: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Opaque vault handle for the client secret (never the plaintext).
+    client_secret_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Client secret, encrypted at rest (Fernet under a FORGE_SECRET_KEY subkey).
+    client_secret_encrypted: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    authorization_endpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_endpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    jwks_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scopes: Mapped[list[str]] = mapped_column(json_type(), default=list, nullable=False)
+    email_claim: Mapped[str] = mapped_column(Text, default="email", nullable=False)
+    name_claim: Mapped[str] = mapped_column(Text, default="name", nullable=False)
+    groups_claim: Mapped[str] = mapped_column(Text, default="groups", nullable=False)
+    default_role: Mapped[UserRole] = mapped_column(
+        enum_type(UserRole), default=UserRole.MEMBER, nullable=False
+    )
+    group_role_map: Mapped[dict[str, Any]] = mapped_column(
+        json_type(), default=dict, nullable=False
+    )
+    jit_provisioning: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    #: Editable input; projected into ``sso_domain`` rows for DB-enforced HRD.
+    domains: Mapped[list[str]] = mapped_column(json_type(), default=list, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover - trivial, secret-safe
+        return (
+            f"OidcConfiguration(id={self.id!r}, workspace_id={self.workspace_id!r}, "
+            f"issuer={self.issuer!r}, client_secret=<redacted>)"
+        )
+
+
 class SsoDomain(WorkspaceScopedModel):
     """Home-realm-discovery row: a domain routes to exactly one IdP globally."""
 
@@ -215,6 +262,7 @@ class SamlReplay(ForgeModel):
 
 __all__ = [
     "ExternalIdentity",
+    "OidcConfiguration",
     "SamlReplay",
     "ScimGroup",
     "ScimGroupMember",

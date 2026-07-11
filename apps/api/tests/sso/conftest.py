@@ -35,7 +35,7 @@ from forge_api.sso.config_service import SsoConfigService
 from forge_api.sso.replay import InMemoryReplayGuard
 from forge_api.sso.saml_metadata import NS
 from forge_contracts import UserRole
-from forge_contracts.sso import SamlIdpConfig, SsoConfigIn
+from forge_contracts.sso import OidcConfigIn, SamlIdpConfig, SsoConfigIn
 from forge_db.base import Base
 from forge_db.models import User, Workspace
 
@@ -360,6 +360,19 @@ def make_config_in(keypair: Keypair, **overrides) -> dict:
     return payload
 
 
+def make_oidc_config_in(**overrides) -> dict:
+    """A valid ``OidcConfigIn`` admin-API payload as a JSON-able dict."""
+    payload = OidcConfigIn(
+        enabled=True,
+        issuer="https://idp.oidc.example",
+        client_id="forge-oidc-client",
+        client_secret="s3cr3t-oidc-value",
+        jit_provisioning=True,
+    ).model_dump()
+    payload.update(overrides)
+    return payload
+
+
 def install_config(
     session_factory: sessionmaker[Session],
     keypair: Keypair,
@@ -401,5 +414,6 @@ __all__ = [
     "install_config",
     "make_config_in",
     "make_idp_metadata",
+    "make_oidc_config_in",
     "sign_saml_response",
 ]

@@ -49,14 +49,50 @@ class SamlIdpConfig(BaseModel):
     name_id_format: str = NAMEID_FORMAT_EMAIL
 
 
-class SsoConfigIn(BaseModel):
-    """Create/replace payload for a workspace SAML configuration."""
+#: Default OIDC scopes — ``openid`` is mandatory; ``email``/``profile`` back the
+#: identity claims Forge maps.
+OIDC_DEFAULT_SCOPES = ["openid", "email", "profile"]
 
-    protocol: Literal["saml"] = "saml"
+
+class OidcIdpConfig(BaseModel):
+    """The identity-provider half of an OpenID Connect federation.
+
+    Endpoints are resolved from OpenID discovery
+    (``{issuer}/.well-known/openid-configuration`` or an explicit
+    ``discovery_url``); the optional ``*_endpoint`` / ``jwks_uri`` overrides let
+    an admin pin them when an IdP does not publish discovery. The client secret
+    is **never** carried in this DTO — only ``client_secret_ref``, an opaque
+    handle to the ciphertext the config service holds in the vault.
+    """
+
+    issuer: str
+    discovery_url: str | None = None
+    client_id: str
+    #: Vault handle for the OAuth client secret (never the plaintext).
+    client_secret_ref: str
+    scopes: list[str] = Field(default_factory=lambda: list(OIDC_DEFAULT_SCOPES))
+    #: ID-token / userinfo claim names Forge maps onto its identity fields.
+    email_claim: str = "email"
+    name_claim: str = "name"
+    groups_claim: str = "groups"
+    #: Optional role mapping (mirrors the SAML config's group→role resolution).
+    default_role: Literal["admin", "member", "viewer", "agent-runner"] = "member"
+    group_role_map: dict[str, str] = Field(default_factory=dict)
+    #: Discovery overrides (used verbatim when present; else discovery is fetched).
+    authorization_endpoint: str | None = None
+    token_endpoint: str | None = None
+    jwks_uri: str | None = None
+
+
+class SsoConfigIn(BaseModel):
+    """Create/replace payload for a workspace SSO configuration (SAML or OIDC)."""
+
+    protocol: Literal["saml", "oidc"] = "saml"
     enabled: bool = False
     metadata_url: str | None = None
     metadata_xml: str | None = None
     idp: SamlIdpConfig | None = None
+    oidc: OidcIdpConfig | None = None
     domains: list[str] = Field(default_factory=list)
     allow_idp_initiated: bool = False
     sign_authn_requests: bool = True
@@ -68,6 +104,65 @@ class SsoConfigIn(BaseModel):
     jit_provisioning: bool = True
 
 
+class OidcConfigIn(BaseModel):
+    """Create/replace payload for a workspace OIDC configuration (admin API).
+
+    Sibling of :class:`SsoConfigIn` for the dedicated ``/oidc`` admin surface
+    (the OIDC configuration is its own row — see ``OidcConfiguration`` — rather
+    than a branch of the SAML ``SsoConfiguration``). ``client_secret`` is the
+    plaintext OAuth client secret; it is write-only and never echoed back.
+    Omit it on an update to keep the previously-saved secret unchanged (the
+    config service rejects a first-time save with no secret).
+    """
+
+    enabled: bool = False
+    issuer: str
+    discovery_url: str | None = None
+    client_id: str
+    client_secret: str | None = None
+    scopes: list[str] = Field(default_factory=lambda: list(OIDC_DEFAULT_SCOPES))
+    email_claim: str = "email"
+    name_claim: str = "name"
+    groups_claim: str = "groups"
+    default_role: Literal["admin", "member", "viewer", "agent-runner"] = "member"
+    group_role_map: dict[str, str] = Field(default_factory=dict)
+    authorization_endpoint: str | None = None
+    token_endpoint: str | None = None
+    jwks_uri: str | None = None
+    jit_provisioning: bool = True
+
+
+class OidcConfigOut(BaseModel):
+    """Public view of a workspace OIDC configuration.
+
+    The client secret is **never** part of this model — ``has_client_secret``
+    only reports whether one has been saved. ``redirect_uri`` / ``login_url``
+    are the values an admin hands back to their IdP (mirrors the SAML
+    ``sp_acs_url`` / SP-details card).
+    """
+
+    id: str
+    workspace_id: str
+    protocol: Literal["oidc"] = "oidc"
+    enabled: bool
+    issuer: str
+    discovery_url: str | None = None
+    client_id: str
+    has_client_secret: bool
+    scopes: list[str]
+    email_claim: str
+    name_claim: str
+    groups_claim: str
+    default_role: str
+    group_role_map: dict[str, str]
+    authorization_endpoint: str | None = None
+    token_endpoint: str | None = None
+    jwks_uri: str | None = None
+    jit_provisioning: bool
+    redirect_uri: str
+    login_url: str
+
+
 class SsoConfigOut(BaseModel):
     """Public view of a workspace SAML configuration.
 
@@ -77,9 +172,10 @@ class SsoConfigOut(BaseModel):
 
     id: str
     workspace_id: str
-    protocol: Literal["saml"]
+    protocol: Literal["saml", "oidc"]
     enabled: bool
-    idp: SamlIdpConfig
+    idp: SamlIdpConfig | None = None
+    oidc: OidcIdpConfig | None = None
     sp_entity_id: str
     sp_acs_url: str
     sp_slo_url: str
@@ -304,10 +400,14 @@ __all__ = [
     "GROUP_SCHEMA",
     "LIST_SCHEMA",
     "NAMEID_FORMAT_EMAIL",
+    "OIDC_DEFAULT_SCOPES",
     "PATCHOP_SCHEMA",
     "USER_SCHEMA",
     "AttributeMapping",
     "MappedIdentity",
+    "OidcConfigIn",
+    "OidcConfigOut",
+    "OidcIdpConfig",
     "ReplayGuard",
     "SamlAssertion",
     "SamlIdpConfig",

@@ -129,6 +129,8 @@ def check_rbac_wired_403() -> None:
 #: auth anywhere), so they legitimately expose no 401 route.
 PUBLIC_BY_DESIGN_ROUTERS: dict[str, str] = {
     "saml": "SAML is a pre-authentication SSO protocol (metadata/login/ACS/SLO)",
+    "oidc": "OIDC is a pre-authentication SSO protocol (login/callback); the "
+    "admin config GET/PUT live on the authenticated sso_admin router",
 }
 
 #: Routes that are anonymous BY DESIGN, each with the reviewed reason.

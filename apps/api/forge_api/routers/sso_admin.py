@@ -31,7 +31,14 @@ from forge_api.sso.errors import (
     SsoConfigError,
 )
 from forge_api.sso.saml import SamlSpService
-from forge_contracts.sso import SamlIdpConfig, SsoConfigIn, SsoConfigOut
+from forge_contracts.sso import (
+    OidcConfigIn,
+    OidcConfigOut,
+    OidcIdpConfig,
+    SamlIdpConfig,
+    SsoConfigIn,
+    SsoConfigOut,
+)
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["sso"])
 
@@ -117,6 +124,73 @@ def put_sso_config(
         session.rollback()
         raise _map_config_errors(exc) from exc
     return service.to_out(config)
+
+
+@router.get("/oidc", response_model=OidcConfigOut, summary="Read the workspace OIDC config")
+def get_oidc_config(
+    workspace_id: uuid.UUID,
+    principal: AdminPrincipal,
+    service: ConfigServiceDep,
+) -> OidcConfigOut:
+    _check_workspace(principal, workspace_id)
+    config = service.get_oidc_config(workspace_id)
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no OIDC configuration")
+    return service.to_oidc_out(config)
+
+
+@router.put("/oidc", response_model=OidcConfigOut, summary="Create/replace the OIDC config")
+def put_oidc_config(
+    workspace_id: uuid.UUID,
+    body: OidcConfigIn,
+    principal: AdminPrincipal,
+    service: ConfigServiceDep,
+    session: DbSession,
+) -> OidcConfigOut:
+    _check_workspace(principal, workspace_id)
+    existing = service.get_oidc_config(workspace_id)
+    if body.client_secret is None and existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="client_secret is required for a new OIDC configuration",
+        )
+    # The vault handle is server-generated on first save and preserved on
+    # every subsequent update — the admin never supplies or sees it.
+    client_secret_ref = (
+        existing.client_secret_ref
+        if existing is not None
+        else f"vault://oidc/{service.workspace_slug(workspace_id)}/client_secret"
+    )
+    dto = OidcIdpConfig(
+        issuer=body.issuer,
+        discovery_url=body.discovery_url,
+        client_id=body.client_id,
+        client_secret_ref=client_secret_ref,
+        scopes=body.scopes,
+        email_claim=body.email_claim,
+        name_claim=body.name_claim,
+        groups_claim=body.groups_claim,
+        default_role=body.default_role,
+        group_role_map=body.group_role_map,
+        authorization_endpoint=body.authorization_endpoint,
+        token_endpoint=body.token_endpoint,
+        jwks_uri=body.jwks_uri,
+    )
+    try:
+        config = service.put_oidc_config(
+            workspace_id,
+            dto,
+            client_secret=body.client_secret,
+            enabled=body.enabled,
+            jit_provisioning=body.jit_provisioning,
+            domains=existing.domains if existing is not None else [],
+            actor_id=principal.user_id,
+        )
+        session.commit()
+    except SsoConfigError as exc:
+        session.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return service.to_oidc_out(config)
 
 
 def _set_enabled(

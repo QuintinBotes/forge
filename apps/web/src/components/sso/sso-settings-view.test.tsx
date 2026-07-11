@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandPaletteProvider } from "@/components/command-palette";
 import { ApiError, type ForgeApiClient } from "@/lib/api/client";
 import type {
+  OidcConfig,
   ScimTokenCreated,
   ScimTokenInfo,
   SsoConfig,
@@ -56,6 +57,32 @@ function makeConfig(over: Partial<SsoConfig> = {}): SsoConfig {
   };
 }
 
+function makeOidcConfig(over: Partial<OidcConfig> = {}): OidcConfig {
+  return {
+    id: "oc1",
+    workspace_id: WORKSPACE,
+    protocol: "oidc",
+    enabled: true,
+    issuer: "https://idp.acme.com",
+    discovery_url: null,
+    client_id: "forge-oidc-client",
+    has_client_secret: true,
+    scopes: ["openid", "email", "profile"],
+    email_claim: "email",
+    name_claim: "name",
+    groups_claim: "groups",
+    default_role: "member",
+    group_role_map: {},
+    authorization_endpoint: null,
+    token_endpoint: null,
+    jwks_uri: null,
+    jit_provisioning: true,
+    redirect_uri: "https://forge.example.com/auth/oidc/acme/callback",
+    login_url: "https://forge.example.com/auth/oidc/acme/login",
+    ...over,
+  };
+}
+
 const TOKENS: ScimTokenInfo[] = [
   {
     id: "tok-1",
@@ -93,6 +120,12 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
     ),
     revokeScimToken: vi.fn(() => Promise.resolve(undefined)),
     discoverSso: vi.fn(() => Promise.resolve({ sso: true, redirect: "/x" })),
+    getOidcConfig: vi.fn(() =>
+      Promise.reject(new ApiError(404, "no oidc config", null)),
+    ),
+    putOidcConfig: vi.fn((_w: string, body) =>
+      Promise.resolve(makeOidcConfig(body as Partial<OidcConfig>)),
+    ),
     ...overrides,
   } as unknown as ForgeApiClient;
 }
@@ -315,5 +348,160 @@ describe("SsoSettingsView", () => {
         "https://forge.example.com/auth/saml/acme/acs",
       ),
     );
+  });
+});
+
+describe("OIDC panel", () => {
+  it("has no coming-soon marker — the OIDC tab is a real, clickable toggle", async () => {
+    renderView(makeClient());
+    await screen.findByTestId("sso-view");
+
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^soon$/i)).not.toBeInTheDocument();
+    const oidcTab = screen.getByTestId("protocol-oidc");
+    expect(oidcTab.tagName).toBe("BUTTON");
+    expect(oidcTab).not.toBeDisabled();
+  });
+
+  it("switches to the OIDC tab and shows its onboarding hint when unconfigured", async () => {
+    renderView(makeClient());
+    await screen.findByTestId("sso-view");
+
+    fireEvent.click(screen.getByTestId("protocol-oidc"));
+
+    expect(await screen.findByTestId("oidc-onboarding")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Issuer/i)).toHaveValue("");
+    expect(screen.getByTestId("oidc-sp-pending")).toBeInTheDocument();
+    // Creating requires a secret; the save button starts disabled.
+    expect(screen.getByTestId("oidc-save")).toBeDisabled();
+  });
+
+  it("renders a configured OIDC provider and its service-provider details", async () => {
+    const client = makeClient({
+      getOidcConfig: vi.fn(() => Promise.resolve(makeOidcConfig())),
+    });
+    renderView(client);
+    fireEvent.click(await screen.findByTestId("protocol-oidc"));
+
+    expect(await screen.findByLabelText(/^Issuer/i)).toHaveValue(
+      "https://idp.acme.com",
+    );
+    expect(screen.getByLabelText(/client id/i)).toHaveValue(
+      "forge-oidc-client",
+    );
+    expect(
+      screen.getByRole("button", { name: "Copy Redirect URI" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Copy Login URL" }),
+    ).toBeInTheDocument();
+    // Editing an existing config doesn't require re-entering the secret.
+    expect(screen.getByTestId("oidc-save")).not.toBeDisabled();
+  });
+
+  it("saves a new OIDC configuration with the entered fields", async () => {
+    const client = makeClient();
+    renderView(client);
+    fireEvent.click(await screen.findByTestId("protocol-oidc"));
+
+    fireEvent.change(screen.getByLabelText(/^Issuer/i), {
+      target: { value: "https://idp.acme.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/client id/i), {
+      target: { value: "forge-oidc-client" },
+    });
+    fireEvent.change(screen.getByLabelText(/client secret/i), {
+      target: { value: "s3cr3t" },
+    });
+    expect(screen.getByTestId("oidc-save")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("oidc-save"));
+
+    await waitFor(() =>
+      expect(client.putOidcConfig).toHaveBeenCalledWith(
+        WORKSPACE,
+        expect.objectContaining({
+          issuer: "https://idp.acme.com",
+          client_id: "forge-oidc-client",
+          client_secret: "s3cr3t",
+          email_claim: "email",
+          name_claim: "name",
+          groups_claim: "groups",
+          default_role: "member",
+          jit_provisioning: true,
+        }),
+      ),
+    );
+  });
+
+  it("saves an update to an existing OIDC config without resending the secret", async () => {
+    const client = makeClient({
+      getOidcConfig: vi.fn(() => Promise.resolve(makeOidcConfig())),
+    });
+    renderView(client);
+    fireEvent.click(await screen.findByTestId("protocol-oidc"));
+
+    const issuer = await screen.findByLabelText(/^Issuer/i);
+    fireEvent.change(issuer, {
+      target: { value: "https://idp2.acme.com" },
+    });
+    fireEvent.click(screen.getByTestId("oidc-save"));
+
+    await waitFor(() =>
+      expect(client.putOidcConfig).toHaveBeenCalledWith(
+        WORKSPACE,
+        expect.objectContaining({
+          issuer: "https://idp2.acme.com",
+          client_secret: null,
+        }),
+      ),
+    );
+  });
+
+  it("adds a group role mapping and includes it on save", async () => {
+    const client = makeClient();
+    renderView(client);
+    fireEvent.click(await screen.findByTestId("protocol-oidc"));
+
+    fireEvent.change(await screen.findByLabelText(/^Issuer/i), {
+      target: { value: "https://idp.acme.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/client id/i), {
+      target: { value: "forge-oidc-client" },
+    });
+    fireEvent.change(screen.getByLabelText(/client secret/i), {
+      target: { value: "s3cr3t" },
+    });
+
+    fireEvent.click(screen.getByTestId("oidc-add-mapping"));
+    const row = within(screen.getByTestId("role-map-list")).getByRole(
+      "textbox",
+    );
+    fireEvent.change(row, { target: { value: "forge-admins" } });
+    fireEvent.change(screen.getByRole("combobox", { name: /role for mapping/i }), {
+      target: { value: "admin" },
+    });
+
+    fireEvent.click(screen.getByTestId("oidc-save"));
+
+    await waitFor(() =>
+      expect(client.putOidcConfig).toHaveBeenCalledWith(
+        WORKSPACE,
+        expect.objectContaining({
+          group_role_map: { "forge-admins": "admin" },
+        }),
+      ),
+    );
+  });
+
+  it("removes a group role mapping", async () => {
+    renderView(makeClient());
+    fireEvent.click(await screen.findByTestId("protocol-oidc"));
+
+    fireEvent.click(screen.getByTestId("oidc-add-mapping"));
+    expect(screen.getByTestId("role-map-list")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /remove mapping 1/i }));
+
+    expect(screen.getByTestId("role-map-empty")).toBeInTheDocument();
   });
 });

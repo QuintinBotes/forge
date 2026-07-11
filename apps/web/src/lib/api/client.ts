@@ -56,7 +56,10 @@ import type {
   KnowledgeSearchRequest,
   Listing,
   ListingDetail,
+  ListingPublishRequest,
   MilestoneDTO,
+  OidcConfig,
+  OidcConfigInput,
   OnboardingProgress,
   PipelineRead,
   PostmortemView,
@@ -73,6 +76,9 @@ import type {
   ProjectTeamAccess,
   ProjectTeamAccessInput,
   ProjectVisibilityInput,
+  PublicBenchmark,
+  PublicLeaderboard,
+  Registry,
   RemediationPlanView,
   Requirement,
   RetrievedChunk,
@@ -750,6 +756,39 @@ export class ForgeApiClient {
     );
   }
 
+  /** Registry sources the workspace can publish into (picker for the publish form). */
+  listRegistries(): Promise<Registry[]> {
+    return this.request<Registry[]>("/marketplace/registries");
+  }
+
+  /**
+   * Author a package straight into the workspace's catalog — the in-app
+   * counterpart to the offline `forge marketplace package` CLI step. Any
+   * member may publish; the artifact is validated server-side before persist.
+   */
+  publishListing(body: ListingPublishRequest): Promise<ListingDetail> {
+    return this.request<ListingDetail>("/marketplace/publish", {
+      method: "POST",
+      body,
+    });
+  }
+
+  // --- Public benchmark leaderboard (F35 /public router) ------------------ //
+  // Unauthenticated, read-only, payload-free. 404s (not disabled/enabled) when
+  // `FORGE_PUBLIC_LEADERBOARD_ENABLED` is off, same as every other route here.
+
+  /** Every published benchmark suite, most recent first server-side. */
+  listPublicBenchmarks(): Promise<PublicBenchmark[]> {
+    return this.request<PublicBenchmark[]>("/public/benchmarks");
+  }
+
+  /** A suite's ranked, verified-first public leaderboard. */
+  getPublicLeaderboard(slug: string, version: string): Promise<PublicLeaderboard> {
+    return this.request<PublicLeaderboard>(
+      `/public/leaderboard/${encodeURIComponent(slug)}/${encodeURIComponent(version)}`,
+    );
+  }
+
   // --- Audit log (F39 canonical /audit query surface) --------------------- //
 
   /** A cursor-paginated, redacted page of the immutable audit log. */
@@ -1048,6 +1087,24 @@ export class ForgeApiClient {
       method: "POST",
       body,
     });
+  }
+
+  /** The workspace OIDC configuration (admin-only; 404 when unconfigured). */
+  getOidcConfig(workspaceId: string): Promise<OidcConfig> {
+    return this.request<OidcConfig>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/oidc`,
+    );
+  }
+
+  /** Create or replace the workspace OIDC configuration (admin-only). */
+  putOidcConfig(
+    workspaceId: string,
+    body: OidcConfigInput,
+  ): Promise<OidcConfig> {
+    return this.request<OidcConfig>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/oidc`,
+      { method: "PUT", body },
+    );
   }
 
   // --- External PM adapters (F18 /integrations/pm router) ----------------- //

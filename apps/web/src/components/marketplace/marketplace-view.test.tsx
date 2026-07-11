@@ -9,6 +9,7 @@ import type {
   Installation,
   Listing,
   ListingDetail,
+  Registry,
 } from "@/lib/api/types";
 
 import { MarketplaceView } from "./marketplace-view";
@@ -114,6 +115,20 @@ const INSTALLATIONS: Installation[] = [
   },
 ];
 
+const REGISTRIES: Registry[] = [
+  {
+    id: "reg-2",
+    slug: "acme-registry",
+    name: "Acme Registry",
+    type: "http_index",
+    url: "https://registry.acme.test/index.json",
+    trust_level: "community",
+    enabled: true,
+    has_public_key: false,
+    created_at: "2026-01-01T00:00:00Z",
+  },
+];
+
 function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
   return {
     listListings: vi.fn(() => Promise.resolve(LISTINGS)),
@@ -121,6 +136,8 @@ function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
       Promise.resolve(slug === "github" ? connectorDetail : skillDetail),
     ),
     listInstallations: vi.fn(() => Promise.resolve(INSTALLATIONS)),
+    listRegistries: vi.fn(() => Promise.resolve(REGISTRIES)),
+    publishListing: vi.fn(() => Promise.resolve(skillDetail)),
     previewInstall: vi.fn(() =>
       Promise.resolve({
         registry_id: skill.registry_id,
@@ -318,5 +335,37 @@ describe("MarketplaceView", () => {
     await screen.findByTestId("package-card-python-pro");
     fireEvent.click(screen.getByRole("tab", { name: /installed/i }));
     expect(await screen.findByTestId("installed-error")).toBeInTheDocument();
+  });
+
+  it("opens the publish dialog and publishes a new package", async () => {
+    const client = makeClient();
+    renderView(client);
+    await screen.findByTestId("package-card-python-pro");
+
+    fireEvent.click(screen.getByTestId("open-publish"));
+    expect(await screen.findByTestId("publish-dialog")).toBeInTheDocument();
+    await waitFor(() => expect(client.listRegistries).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText("Slug"), {
+      target: { value: "self-authored" },
+    });
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Self Authored" },
+    });
+    fireEvent.change(screen.getByLabelText("Summary"), {
+      target: { value: "A workspace-authored skill profile." },
+    });
+    fireEvent.change(screen.getByLabelText("Artifact JSON"), {
+      target: { value: '{"name": "self-authored"}' },
+    });
+
+    fireEvent.click(screen.getByTestId("confirm-publish"));
+
+    await waitFor(() => expect(client.publishListing).toHaveBeenCalled());
+    // Success closes the dialog and refetches the catalog.
+    await waitFor(() =>
+      expect(screen.queryByTestId("publish-dialog")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(client.listListings).toHaveBeenCalledTimes(2));
   });
 });

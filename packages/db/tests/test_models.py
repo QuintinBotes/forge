@@ -112,6 +112,7 @@ EXPECTED_MODELS = [
     "MarketplaceAuditLog",
     # F33 enterprise-SSO tables.
     "SsoConfiguration",
+    "OidcConfiguration",
     "SsoDomain",
     "ExternalIdentity",
     "ScimToken",
