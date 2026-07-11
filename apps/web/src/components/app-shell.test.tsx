@@ -34,7 +34,7 @@ describe("AppShell", () => {
   it("marks the current route as active and others not", () => {
     mockPathname = "/board";
     render(<AppShell>content</AppShell>);
-    expect(screen.getByRole("link", { name: /board$/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^board$/i })).toHaveAttribute(
       "aria-current",
       "page",
     );

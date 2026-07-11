@@ -332,6 +332,11 @@ class Settings(BaseSettings):
     saml_clock_skew_seconds: int = 120
     saml_authnrequest_ttl_seconds: int = 600
     scim_token_bytes: int = 32
+    # OIDC authorization-code flow: clock skew for ID-token exp/iat, lifetime of
+    # the outstanding login transaction (state/nonce/PKCE), and JWKS cache TTL.
+    oidc_clock_skew_seconds: int = 120
+    oidc_transaction_ttl_seconds: int = 600
+    oidc_jwks_cache_ttl_seconds: int = 3600
 
     # F35 — benchmark suite & public leaderboard. The public, unauthenticated,
     # read-only ``/public/*`` router is DISABLED by default (self-hosted privacy:

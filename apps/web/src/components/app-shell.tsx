@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Store,
   TrendingUp,
+  Trophy,
   Users,
   Workflow,
   type LucideIcon,
@@ -29,6 +30,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useCommandPaletteOptional } from "@/components/command-palette";
 import { ForgeMark } from "@/components/forge-logo";
 import { Button } from "@/components/ui/button";
+import { DevBanner } from "@/components/ui/dev-banner";
 import { cn } from "@/lib/utils";
 
 export interface NavItem {
@@ -75,6 +77,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Observability", href: "/observability", icon: Gauge },
       { label: "Incidents", href: "/incidents", icon: AlertTriangle },
+      { label: "Leaderboard", href: "/leaderboard", icon: Trophy },
       { label: "Audit", href: "/audit", icon: ScrollText },
     ],
   },
@@ -252,7 +255,7 @@ export function AppShell({ children, actions }: AppShellProps): ReactNode {
   }, [mobileOpen]);
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
       <a
         href="#main-content"
         className="sr-only left-4 top-4 z-50 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:absolute focus:outline-none focus:ring-2 focus:ring-ring"
@@ -260,54 +263,58 @@ export function AppShell({ children, actions }: AppShellProps): ReactNode {
         Skip to content
       </a>
 
-      {/* Desktop rail */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-card md:flex">
-        <SidebarContent />
-      </aside>
+      <DevBanner />
 
-      {/* Mobile drawer */}
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <button
-            type="button"
-            aria-label="Close navigation"
-            onClick={() => setMobileOpen(false)}
-            className="absolute inset-0 bg-background/70 backdrop-blur-sm"
-          />
-          <aside
-            aria-label="Primary navigation"
-            className="absolute inset-y-0 left-0 flex w-64 max-w-[80%] flex-col border-r border-border bg-card shadow-xl"
-          >
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
-          </aside>
-        </div>
-      ) : null}
+      <div className="flex min-h-0 flex-1">
+        {/* Desktop rail */}
+        <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-card md:flex">
+          <SidebarContent />
+        </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between gap-4 border-b border-border px-4 sm:px-6">
-          <div className="flex items-center gap-2">
-            <Button
+        {/* Mobile drawer */}
+        {mobileOpen ? (
+          <div className="fixed inset-0 z-40 md:hidden">
+            <button
               type="button"
-              variant="ghost"
-              size="icon"
-              className="md:hidden"
-              aria-label="Open navigation"
-              aria-expanded={mobileOpen}
-              onClick={() => setMobileOpen(true)}
+              aria-label="Close navigation"
+              onClick={() => setMobileOpen(false)}
+              className="absolute inset-0 bg-background/70 backdrop-blur-sm"
+            />
+            <aside
+              aria-label="Primary navigation"
+              className="absolute inset-y-0 left-0 flex w-64 max-w-[80%] flex-col border-r border-border bg-card shadow-xl"
             >
-              <Menu aria-hidden className="h-5 w-5" />
-            </Button>
-            <span className="text-sm text-muted-foreground">Workspace</span>
+              <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            </aside>
           </div>
-          <div className="flex items-center gap-3">
-            {actions}
-            <CommandPaletteHint />
-          </div>
-        </header>
+        ) : null}
 
-        <main id="main-content" role="main" className="min-w-0 flex-1 overflow-auto p-4 sm:p-6">
-          {children}
-        </main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-14 items-center justify-between gap-4 border-b border-border px-4 sm:px-6">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="md:hidden"
+                aria-label="Open navigation"
+                aria-expanded={mobileOpen}
+                onClick={() => setMobileOpen(true)}
+              >
+                <Menu aria-hidden className="h-5 w-5" />
+              </Button>
+              <span className="text-sm text-muted-foreground">Workspace</span>
+            </div>
+            <div className="flex items-center gap-3">
+              {actions}
+              <CommandPaletteHint />
+            </div>
+          </header>
+
+          <main id="main-content" role="main" className="min-w-0 flex-1 overflow-auto p-4 sm:p-6">
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   );

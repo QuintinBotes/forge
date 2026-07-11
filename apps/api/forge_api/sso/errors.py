@@ -16,6 +16,15 @@ class SamlValidationError(SsoError):
         super().__init__(f"saml validation failed: {reason}" + (f" ({detail})" if detail else ""))
 
 
+class OidcValidationError(SsoError):
+    """An OIDC token/callback failed validation. ``reason`` is a stable code."""
+
+    def __init__(self, reason: str, detail: str | None = None) -> None:
+        self.reason = reason
+        self.detail = detail
+        super().__init__(f"oidc validation failed: {reason}" + (f" ({detail})" if detail else ""))
+
+
 class SsoConfigError(SsoError):
     """Invalid or missing SSO configuration for the requested operation."""
 
@@ -45,6 +54,7 @@ class ScimApiError(SsoError):
 __all__ = [
     "DomainConflictError",
     "LastAdminError",
+    "OidcValidationError",
     "SamlValidationError",
     "ScimApiError",
     "SsoConfigError",

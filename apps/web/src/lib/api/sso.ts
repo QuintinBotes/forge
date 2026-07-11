@@ -2,17 +2,19 @@
 
 /**
  * TanStack Query hooks for the enterprise SSO + SCIM admin surface (F33), over
- * the `/workspaces/{id}/sso`, `/workspaces/{id}/scim/tokens` and
- * `/auth/saml/discover` routers.
+ * the `/workspaces/{id}/sso`, `/workspaces/{id}/oidc`,
+ * `/workspaces/{id}/scim/tokens` and `/auth/saml/discover` routers.
  *
  * Kept in a dedicated module (like `deployments.ts` / `marketplace.ts`) so the
- * SSO surface owns its query keys + cache policy. Reads: the SAML config (a 404
- * is the "not configured yet" empty state, resolved to `null`, not an error) and
- * the SCIM token list. Mutations drive the config lifecycle — save the config,
- * flip the master enable/disable switch, issue and revoke SCIM tokens — and each
- * seeds or invalidates the workspace's SSO cache so the trust-link header, the
- * form and the token table stay coherent the instant a change lands. Home-realm
- * discovery is a mutation (a probe read fired imperatively from the HRD field).
+ * SSO surface owns its query keys + cache policy. Reads: the SAML config and
+ * the OIDC config (each a distinct workspace-scoped configuration — a 404 is
+ * the "not configured yet" empty state, resolved to `null`, not an error) and
+ * the SCIM token list. Mutations drive each config's lifecycle — save the
+ * SAML or OIDC config, flip the master SAML enable/disable switch, issue and
+ * revoke SCIM tokens — and each seeds or invalidates its workspace cache so
+ * the trust-link header, the forms and the token table stay coherent the
+ * instant a change lands. Home-realm discovery is a mutation (a probe read
+ * fired imperatively from the HRD field).
  */
 
 import {
@@ -26,6 +28,8 @@ import {
 import { ApiError, apiClient, type ForgeApiClient } from "./client";
 import type {
   HrdDiscoverResponse,
+  OidcConfig,
+  OidcConfigInput,
   ScimTokenCreated,
   ScimTokenCreateRequest,
   ScimTokenInfo,
@@ -36,6 +40,8 @@ import type {
 export const ssoKeys = {
   all: () => ["sso"] as const,
   config: (workspaceId: string) => ["sso", "config", workspaceId] as const,
+  oidcConfig: (workspaceId: string) =>
+    ["sso", "oidc-config", workspaceId] as const,
   scimTokens: (workspaceId: string) =>
     ["sso", "scim-tokens", workspaceId] as const,
 } as const;
@@ -54,6 +60,31 @@ export function useSsoConfig(
     queryFn: async () => {
       try {
         return await client.getSsoConfig(workspaceId);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    enabled: Boolean(workspaceId),
+  });
+}
+
+/**
+ * The workspace OIDC configuration. Like {@link useSsoConfig}, a 404 (no
+ * config yet) is a normal empty state, not an error, so it resolves to
+ * `null` — the OIDC panel renders its own "set up OIDC" onboarding hint.
+ */
+export function useOidcConfig(
+  workspaceId: string,
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<OidcConfig | null> {
+  return useQuery({
+    queryKey: ssoKeys.oidcConfig(workspaceId),
+    queryFn: async () => {
+      try {
+        return await client.getOidcConfig(workspaceId);
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) {
           return null;
@@ -95,6 +126,30 @@ export function usePutSsoConfig(
     onSettled: (_data, _err, { workspaceId }) => {
       void queryClient.invalidateQueries({
         queryKey: ssoKeys.config(workspaceId),
+      });
+    },
+  });
+}
+
+export interface PutOidcConfigVariables {
+  workspaceId: string;
+  body: OidcConfigInput;
+}
+
+/** Save (create or replace) the OIDC config; seeds + revalidates its cache. */
+export function usePutOidcConfig(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<OidcConfig, Error, PutOidcConfigVariables> {
+  const queryClient = useQueryClient();
+  return useMutation<OidcConfig, Error, PutOidcConfigVariables>({
+    mutationFn: ({ workspaceId, body }) =>
+      client.putOidcConfig(workspaceId, body),
+    onSuccess: (config, { workspaceId }) => {
+      queryClient.setQueryData(ssoKeys.oidcConfig(workspaceId), config);
+    },
+    onSettled: (_data, _err, { workspaceId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: ssoKeys.oidcConfig(workspaceId),
       });
     },
   });

@@ -28,6 +28,7 @@ __all__ = [
     "InstallResult",
     "InstallationResponse",
     "ListingDetailResponse",
+    "ListingPublishRequest",
     "ListingResponse",
     "ListingVersionResponse",
     "MarketplaceAuditResponse",
@@ -103,6 +104,31 @@ class ListingResponse(BaseModel):
 
 class ListingDetailResponse(ListingResponse):
     versions: list[ListingVersionResponse] = Field(default_factory=list)
+
+
+class ListingPublishRequest(BaseModel):
+    """Body for ``POST /publish`` — the in-app equivalent of the offline
+
+    ``forge marketplace package`` CLI authoring step: an author submits a raw
+    F09 ``mcp_connector`` / F11 ``skill_profile`` artifact plus its package
+    metadata directly into a registry the workspace owns. The artifact is run
+    through the same authoritative installer validation the CLI applies before
+    anything is persisted (schema-invalid input -> 422, never silently stored).
+    """
+
+    registry_id: UUID
+    kind: ArtifactKind
+    slug: str
+    name: str
+    version: str
+    summary: str
+    description: str | None = None
+    license: str = "Apache-2.0"
+    homepage: str | None = None
+    repository: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    min_forge_version: str | None = None
+    artifact: dict
 
 
 class InstallationResponse(BaseModel):
