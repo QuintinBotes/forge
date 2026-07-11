@@ -189,7 +189,13 @@ def test_bundled_install_reaches_ready(cluster: str) -> None:
     )
     assert ext.stdout.strip() == "vector", ext.stdout + ext.stderr
 
-    test = _helm(ctx, "test", RELEASE, "--logs")
+    # `helm test --logs` races the connection pod's `hook-delete-policy:
+    # ...,hook-succeeded`: on success the pod is deleted the instant it finishes,
+    # so --logs then 404s ("pods forge-test-connection not found") and helm exits
+    # non-zero even though the test passed. Drop --logs — `helm test` still
+    # returns non-zero iff a hook actually fails, and a *failed* pod is retained
+    # (hook-succeeded only deletes on success) for inspection.
+    test = _helm(ctx, "test", RELEASE)
     assert test.returncode == 0, test.stdout + test.stderr
 
 
