@@ -62,6 +62,37 @@ def test_openai_complete_and_stream() -> None:
     assert [e.text for e in events] == ["h", "i"]
 
 
+def test_anthropic_honors_per_request_model() -> None:
+    # Adaptive Orchestration routes a per-role model via request.model; the client
+    # must send THAT model, not its constructor-bound default.
+    sdk = FakeAnthropicSDK(message=anthropic_message(text="ok"))
+    client = AnthropicModelClient(model="claude-opus-4-8", api_key="k", client=sdk)
+    client.complete(ModelRequest(model="claude-haiku-4-5"))
+    assert sdk.captured_kwargs[0]["model"] == "claude-haiku-4-5"
+
+
+def test_anthropic_falls_back_to_bound_model_when_request_model_unset() -> None:
+    # An empty request.model keeps single-agent callers pinned to the bound model.
+    sdk = FakeAnthropicSDK(message=anthropic_message(text="ok"))
+    client = AnthropicModelClient(model="claude-opus-4-8", api_key="k", client=sdk)
+    client.complete(ModelRequest(model=""))
+    assert sdk.captured_kwargs[0]["model"] == "claude-opus-4-8"
+
+
+def test_openai_honors_per_request_model() -> None:
+    sdk = FakeOpenAISDK(completion=openai_completion(content="ok"))
+    client = OpenAIModelClient(model="gpt-4o", api_key="k", client=sdk)
+    client.complete(ModelRequest(model="gpt-4.1-mini"))
+    assert sdk.captured_kwargs[0]["model"] == "gpt-4.1-mini"
+
+
+def test_openai_falls_back_to_bound_model_when_request_model_unset() -> None:
+    sdk = FakeOpenAISDK(completion=openai_completion(content="ok"))
+    client = OpenAIModelClient(model="gpt-4o", api_key="k", client=sdk)
+    client.complete(ModelRequest(model=""))
+    assert sdk.captured_kwargs[0]["model"] == "gpt-4o"
+
+
 def test_factory_routes_by_provider() -> None:
     anthropic_cfg = ModelClientConfig(
         provider=ProviderName.anthropic, model="claude-opus-4-8", api_key="k"

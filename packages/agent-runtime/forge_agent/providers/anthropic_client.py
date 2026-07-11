@@ -64,9 +64,10 @@ class AnthropicModelClient:
         )
 
     def complete(self, request: ModelRequest) -> ModelResponse:
+        model = self._resolve_model(request)
         kwargs = translate.anthropic_stream_kwargs(
             request,
-            model=self._model,
+            model=model,
             effort=self._effort,
             max_tokens=self._max_tokens,
             prompt_cache=self._prompt_cache,
@@ -76,13 +77,13 @@ class AnthropicModelClient:
                 message = stream.get_final_message()
         except Exception as exc:  # redact + normalise every provider failure
             raise self._error(exc) from exc
-        self._log(message)
+        self._log(message, model)
         return translate.from_anthropic_message(message)
 
     def stream(self, request: ModelRequest) -> Iterator[ModelStreamEvent]:
         kwargs = translate.anthropic_stream_kwargs(
             request,
-            model=self._model,
+            model=self._resolve_model(request),
             effort=self._effort,
             max_tokens=self._max_tokens,
             prompt_cache=self._prompt_cache,
@@ -95,14 +96,22 @@ class AnthropicModelClient:
             raise self._error(exc) from exc
 
     # ------------------------------------------------------------------ #
+    def _resolve_model(self, request: ModelRequest) -> str:
+        """Honor a per-request model (e.g. an Adaptive Orchestration per-role
+        model routed by :class:`~forge_agent.providers.router.ModelRouter`),
+        falling back to the constructor-bound default when ``request.model`` is
+        unset. Keeps single-agent callers that leave ``request.model`` empty
+        pinned to their configured model."""
+        return request.model or self._model
+
     def _error(self, exc: Exception) -> ModelClientError:
         return ModelClientError(self._redactor(str(exc)))
 
-    def _log(self, message: Any) -> None:
+    def _log(self, message: Any, model: str) -> None:
         usage = getattr(message, "usage", None)
         _logger.debug(
             "anthropic.complete model=%s stop=%s in=%s out=%s cache_read=%s req_id=%s",
-            self._model,
+            model,
             getattr(message, "stop_reason", None),
             getattr(usage, "input_tokens", None),
             getattr(usage, "output_tokens", None),

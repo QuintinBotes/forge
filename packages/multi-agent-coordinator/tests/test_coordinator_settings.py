@@ -34,6 +34,6 @@ def test_from_env_defaults_and_bad_values(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_resume_unknown_id_raises() -> None:
-    sup = Supervisor(CoordinatorDeps(agent_factory=lambda: None))  # type: ignore[arg-type]
+    sup = Supervisor(CoordinatorDeps(agent_factory=lambda _client: None))  # type: ignore[arg-type,misc]
     with pytest.raises(KeyError):
         sup.resume(uuid.uuid4(), HumanResumeInput(decision="approve"))
