@@ -215,6 +215,18 @@ gates:
       artifact: pyproject.toml
       predicate: { type: regex, pattern: 'requires-python = ">=3\.14"' }
 
+  - id: G-ATTEST
+    bar: production
+    blocker: 4
+    workstream: F41
+    title: Attested changesets — audit-chain export re-walks clean under forge-verify
+    check:
+      # Offline re-walk of an F39 audit-chain NDJSON export (AuditService.export_ndjson
+      # output) via the shared compute_entry_hash/compute_payload_hash helpers; exit 0
+      # ⇒ GREEN. Mirrors the G-CRYPTO command shape (pure command, no required creds).
+      kind: command
+      run: "forge-verify --audit-export release/evidence/audit-export.ndjson"
+
   # ---------------------- Human-only honest asterisks --------------------- #
   - id: G-PENTEST
     bar: production
