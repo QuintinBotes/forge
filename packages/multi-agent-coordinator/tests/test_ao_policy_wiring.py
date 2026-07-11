@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 from _helpers import AgentScript, ScriptingHub, make_objective, obj_parent
 
@@ -122,6 +123,63 @@ def test_per_role_model_pinned_onto_subagent_objective(
     reviewer_model = plan.for_role(AgentRole.REVIEWER).model
     assert rows["implementer"]["objective"]["model"] == coder_model
     assert rows["reviewer"]["objective"]["model"] == reviewer_model
+
+
+def test_per_role_model_routes_a_distinct_model_client(
+    tmp_git_repo: Path, hub: ScriptingHub, make_supervisor, allow_all_rules
+) -> None:
+    # het-model seam: each subagent must be built from its own per-role model via
+    # the model_client_factory (RoleExecution.model -> ModelClient), not one
+    # constructor-bound constant. A low-complexity swarm plan keeps CODER (medior)
+    # and REVIEWER (senior) on genuinely different models to route.
+    hub.set("implementer", AgentScript(confidence=0.9, files=[("app/f.py", "X=1\n")]))
+    hub.set("reviewer", AgentScript(confidence=0.95, review_verdict="approved"))
+    obj = make_objective(
+        tmp_git_repo,
+        rules=allow_all_rules,
+        review_required=True,
+        acceptance=[AcceptanceCriterion(id="ac1", text="feature", spec_ref="app/f.py")],
+    )
+    plan = plan_execution(
+        signals=SizingSignals(),  # simple task: no complexity escalation of CODER
+        store=_DefaultsOnlyStore(),
+        workspace_id=uuid.uuid4(),
+        router=ModelRouter(provider=ProviderName.anthropic),
+        strategy_override="swarm",  # type: ignore[arg-type]
+    )
+    coder_model = plan.for_role(AgentRole.CODER).model
+    reviewer_model = plan.for_role(AgentRole.REVIEWER).model
+    assert coder_model != reviewer_model  # precondition: genuinely heterogeneous
+
+    built: list[str] = []
+
+    def model_client_factory(model: str) -> object:
+        built.append(model)
+        return SimpleNamespace(model=model)
+
+    make_supervisor(execution_plan=plan, model_client_factory=model_client_factory).run(obj)
+
+    # Every dispatched subagent got a dedicated client built from its role's model
+    # (nothing fell back to the factory default), covering both distinct models.
+    assert coder_model in built and reviewer_model in built
+    assert hub.model_clients and all(c is not None for c in hub.model_clients)
+    routed = {c.model for c in hub.model_clients}  # type: ignore[attr-defined]
+    assert routed >= {coder_model, reviewer_model}
+
+
+def test_no_factory_keeps_single_default_client(
+    tmp_git_repo: Path, hub: ScriptingHub, make_supervisor, allow_all_rules
+) -> None:
+    # Back-compat: without a model_client_factory the coordinator passes ``None``
+    # so agent_factory falls back to its own default client (single-model runtime).
+    hub.set("implementer", AgentScript(confidence=0.9, files=[("app/f.py", "X=1\n")]))
+    hub.set("reviewer", AgentScript(confidence=0.95, review_verdict="approved"))
+    obj = make_objective(tmp_git_repo, rules=allow_all_rules, review_required=True)
+
+    make_supervisor(execution_plan=_plan("swarm")).run(obj)
+
+    assert hub.model_clients  # subagents ran
+    assert all(c is None for c in hub.model_clients)  # no per-role client built
 
 
 def test_review_loop_budget_scales_with_complexity(

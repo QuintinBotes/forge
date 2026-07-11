@@ -171,6 +171,9 @@ EXPECTED_MODELS = [
     "CoverageSnapshot",
     "Budget",
     "FxRate",
+    # attestation-table: append-only DSSE-signed provenance record over a
+    # changeset (Attested Changesets storage substrate).
+    "Attestation",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

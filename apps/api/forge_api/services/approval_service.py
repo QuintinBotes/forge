@@ -23,6 +23,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from sqlalchemy.orm import Session
+
 from forge_api.deps import Principal
 from forge_api.observability.redaction import redact_mapping
 from forge_api.observability.service import get_observability_service
@@ -49,12 +51,26 @@ from forge_contracts import UserRole
 
 def build_gate_registry(grants: GrantStore) -> GateRegistry:
     """Register every available provider/hook (the F36 composition root)."""
+    from forge_api.services.attestation_service import PrAttestationResolutionHook
+
     registry = GateRegistry()
     registry.register_provider(DeployGateProvider())
     registry.register_hook(DeployResolutionHook())
     registry.register_provider(PolicyOverrideGateProvider())
     registry.register_hook(PolicyOverrideResolutionHook(grants))
+    # Attested Changesets: approving a ``pr`` gate that carries a workflow_run_id
+    # signs + records a provenance attestation. A gate without one (the unit
+    # approval tests' pr gates) resolves untouched. The hook opens its own DB
+    # session (the HTTP approval path threads none) via the shared factory.
+    registry.register_hook(PrAttestationResolutionHook(_attestation_session))
     return registry
+
+
+def _attestation_session() -> Session:
+    """Open a DB session for the PR attestation hook (lazy — no DB at import)."""
+    from forge_api.db import get_session_factory
+
+    return get_session_factory()()
 
 
 @lru_cache(maxsize=1)

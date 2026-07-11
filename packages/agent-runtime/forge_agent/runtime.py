@@ -139,7 +139,10 @@ class AgentRunner:
 
     def _call_model(self, state: AgentState, step_kind: StepKind) -> AgentState:
         request = ModelRequest(
-            model=state.objective.model or "forge-fake-model",
+            # Per-role model (Adaptive Orchestration) when the objective pins one;
+            # empty otherwise so the model client keeps its constructor-bound
+            # default rather than routing a bogus placeholder to a live provider.
+            model=state.objective.model or "",
             system=state.system,
             messages=list(state.messages),
             tools=self._tools.schemas(),

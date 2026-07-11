@@ -58,6 +58,11 @@ dependencies = [
     "forge-integrations",
 ]
 
+[project.scripts]
+# Verify attestations and audit-chain exports offline (exit non-zero on any
+# verification failure) — the evidence command behind release gate G-ATTEST.
+forge-verify = "forge_api.cli_verify:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

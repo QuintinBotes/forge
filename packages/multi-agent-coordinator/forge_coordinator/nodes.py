@@ -18,6 +18,7 @@ from forge_contracts import (
     AgentRunResult,
     AgentRuntime,
     MergeResult,
+    ModelClient,
     RepoChangeSet,
     RetrievedChunk,
     RunStatus,
@@ -102,7 +103,15 @@ def _handoff_context(
 
 
 def _run_agent(deps: CoordinatorDeps, objective: AgentObjective) -> AgentRunResult:
-    agent: AgentRuntime = deps.agent_factory()
+    # Route this subagent to its per-role model (Adaptive Orchestration pinned
+    # ``objective.model`` in ``_prepare``): build a dedicated ModelClient when a
+    # factory is wired and a model is set, else hand the factory ``None`` so it
+    # falls back to its default client. The model client the subagent uses honors
+    # ``request.model`` end-to-end, so different roles run against different models.
+    model_client: ModelClient | None = None
+    if deps.model_client_factory is not None and objective.model:
+        model_client = deps.model_client_factory(objective.model)
+    agent: AgentRuntime = deps.agent_factory(model_client)
     return agent.run(objective)
 
 

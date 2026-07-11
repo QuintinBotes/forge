@@ -1222,6 +1222,7 @@ name = "forge-obs"
 version = "0.1.0"
 source = { editable = "packages/observability" }
 dependencies = [
+    { name = "cryptography" },
     { name = "forge-auth" },
     { name = "forge-contracts" },
     { name = "forge-db" },
@@ -1233,6 +1234,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
     { name = "forge-auth", editable = "packages/auth-sdk" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-db", editable = "packages/db" },
