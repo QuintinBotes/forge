@@ -8,7 +8,11 @@ judgement — Multi-Agent Rule).
 Selection precedence (first match wins):
 
 1. explicit ``objective.context["coordination_pattern"]`` hint -> that pattern
-   verbatim (the only path to ``DYNAMIC_HANDOFF`` in V3).
+   verbatim (the only path to ``DYNAMIC_HANDOFF`` in V3). This is also how the
+   supervisor spawns a Red-Team Gate :class:`~forge_contracts.SubAgentRole.ADVERSARY`
+   step: a ``handoff_plan`` entry with ``{"role": "adversary", ...}`` yields an
+   adversary assignment scoped to ``ROLE_TOOLS[ADVERSARY]`` (read + author/run a
+   failing test + SAST, no product-code edits).
 2. ``directives.review_required`` and {implementer, reviewer} allowed
    -> ``MAKER_CHECKER``.
 3. ``task_kind == "feature"`` and the full pipeline role set allowed

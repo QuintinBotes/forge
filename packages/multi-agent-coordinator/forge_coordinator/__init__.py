@@ -26,6 +26,14 @@ from forge_coordinator.persistence import (
     SubAgentRunSink,
 )
 from forge_coordinator.policy_gate import GateDecision, evaluate_gate
+from forge_coordinator.red_team import (
+    FailingTestRef,
+    HomogeneousAdversaryError,
+    RedTeamError,
+    RedTeamResult,
+    SpecViolation,
+    run_red_team,
+)
 from forge_coordinator.selector import (
     DefaultPatternSelector,
     PatternSelector,
@@ -45,10 +53,15 @@ __all__ = [
     "CoordinatorDeps",
     "CoordinatorSettings",
     "DefaultPatternSelector",
+    "FailingTestRef",
     "GateDecision",
+    "HomogeneousAdversaryError",
     "HumanResumeInput",
     "InMemorySubAgentRunSink",
     "PatternSelector",
+    "RedTeamError",
+    "RedTeamResult",
+    "SpecViolation",
     "SqlAlchemySubAgentRunSink",
     "SubAgentRunCreate",
     "SubAgentRunSink",
@@ -63,5 +76,6 @@ __all__ = [
     "evaluate_gate",
     "resolve_allowed_actions",
     "resolve_max_parallel",
+    "run_red_team",
     "validate_acceptance",
 ]

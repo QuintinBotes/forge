@@ -217,6 +217,11 @@ class SubAgentRole(enum.StrEnum):
     TESTER = "tester"
     REVIEWER = "reviewer"
     SECURITY = "security"
+    #: Heterogeneous red-team adversary (Red-Team Gate): attacks a candidate diff
+    #: from a DIFFERENT model/tier than the coder and must produce a failing
+    #: executable test or a structured spec-violation to block it. Writes tests,
+    #: never product code.
+    ADVERSARY = "adversary"
 
 
 class StepKind(enum.StrEnum):

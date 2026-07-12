@@ -282,6 +282,7 @@ def test_subagent_roles_match_spec() -> None:
         "tester",
         "reviewer",
         "security",
+        "adversary",
     }
 
 

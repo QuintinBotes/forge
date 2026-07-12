@@ -35,6 +35,7 @@ ARTIFACT_KIND_BY_ROLE: dict[SubAgentRole, str] = {
     SubAgentRole.TESTER: "test_suite",
     SubAgentRole.REVIEWER: "review",
     SubAgentRole.SECURITY: "security_report",
+    SubAgentRole.ADVERSARY: "red_team_report",
 }
 
 _STATUS_MAP: dict[RunStatus, str] = {

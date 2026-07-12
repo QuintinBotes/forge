@@ -29,6 +29,15 @@ def test_reviewer_is_read_only_plus_comment() -> None:
     assert actions == {"read_repo", "read_spec", "write_review_comment"}
 
 
+def test_adversary_can_write_tests_but_not_product_code() -> None:
+    actions = set(
+        resolve_allowed_actions(SubAgentRole.ADVERSARY, task_allowed=[], skill_allowed=frozenset())
+    )
+    assert actions == {"read_repo", "run_tests", "write_test", "run_sast"}
+    assert "write_code" not in actions
+    assert "open_pr" not in actions
+
+
 def test_task_allowlist_intersects_and_never_widens() -> None:
     # implementer wants {read_repo, write_code, run_tests, open_pr}; task only permits
     # read_repo + write_code -> result is the intersection (open_pr dropped).

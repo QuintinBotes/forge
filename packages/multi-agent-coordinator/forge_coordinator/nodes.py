@@ -57,6 +57,9 @@ _AO_ROLE_BY_SUBAGENT: dict[SubAgentRole, AgentRole] = {
     SubAgentRole.TESTER: AgentRole.CODER,
     SubAgentRole.REVIEWER: AgentRole.REVIEWER,
     SubAgentRole.SECURITY: AgentRole.REVIEWER,
+    # The red-team adversary attacks the diff — it runs under the REVIEWER slot,
+    # but the per-role model router gives it a HETEROGENEOUS model from the coder.
+    SubAgentRole.ADVERSARY: AgentRole.REVIEWER,
 }
 
 

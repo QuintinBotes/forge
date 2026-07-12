@@ -177,6 +177,9 @@ EXPECTED_MODELS = [
     # cassette-persistence: append-only recorded LLM/tool-call cassette backing
     # deterministic record-replay of agent runs (Time-Travel Runs).
     "RunRecording",
+    # red-team-gate: append-only adversarial-review verdict (blocked|survived)
+    # recorded before the human implementation gate, feeding the attestation.
+    "RedTeamRecord",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

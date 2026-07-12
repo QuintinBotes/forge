@@ -310,6 +310,37 @@ export interface ApprovalCount {
   count: number;
 }
 
+// --- Red-Team Gate (GET /workflow/runs/{run_id}/red-team) ----------------- //
+// Hand-maintained mirror of `forge_api.schemas.red_team.*`. Surfaces the
+// adversarial-review verdict on the human approval gate: before a spec/PR
+// reaches a human, a heterogeneous adversary attacks the candidate and either
+// BLOCKS it (an executed failing test, or a structured spec-violation) or the
+// change earns a "survived adversarial review" record.
+
+/** The two terminal verdicts of a red-team scan. */
+export type RedTeamVerdict = "blocked" | "survived";
+
+/** One immutable adversarial-review verdict for a run. */
+export interface RedTeamRecordOut {
+  id: string;
+  verdict: RedTeamVerdict;
+  /** The attack class: `failing_test` | `spec_violation` | `parked`. */
+  kind: string;
+  /** Failing-test output, spec-violation payload, or the parked reason. */
+  evidence: Record<string, unknown>;
+  adversary_model?: string | null;
+  coder_model?: string | null;
+  created_at: string;
+}
+
+/** The Red-Team Gate surface for one workflow run: latest verdict + history. */
+export interface RedTeamGateOut {
+  workflow_run_id: string;
+  /** `null` when the run has not been scanned yet (never a 404). */
+  latest?: RedTeamRecordOut | null;
+  records: RedTeamRecordOut[];
+}
+
 // --- Spec engine / SDD (F02 /spec + F23 spec-validation) ------------------ //
 // Hand-maintained mirror of the spec DTOs in `forge_contracts.dtos` (Pydantic
 // v2). Enum string values match the Python `SpecStatus` StrEnum verbatim.

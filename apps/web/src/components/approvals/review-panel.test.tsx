@@ -1,7 +1,14 @@
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { describe, expect, it, vi } from "vitest";
 
-import type { ApprovalContext, ApprovalSummary } from "@/lib/api/types";
+import type { ForgeApiClient } from "@/lib/api/client";
+import type {
+  ApprovalContext,
+  ApprovalSummary,
+  RedTeamGateOut,
+} from "@/lib/api/types";
 
 import { ReviewPanel } from "./review-panel";
 
@@ -55,15 +62,40 @@ const fullContext: ApprovalContext = {
   available_actions: ["approve", "reject", "request_changes"],
 };
 
-function renderPanel(context: ApprovalContext | undefined, extra = {}) {
+function noRedTeamScan(): Promise<RedTeamGateOut> {
+  return Promise.resolve({ workflow_run_id: "wf-1", latest: null, records: [] });
+}
+
+function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+  return {
+    getWorkflowRunRedTeam: vi.fn(noRedTeamScan),
+    ...overrides,
+  } as unknown as ForgeApiClient;
+}
+
+function renderPanel(
+  context: ApprovalContext | undefined,
+  extra: Record<string, unknown> = {},
+  client: ForgeApiClient = makeClient(),
+) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+  }
   return render(
     <ReviewPanel
       summary={summary}
       context={context}
       isLoading={false}
       isError={false}
+      client={client}
       {...extra}
     />,
+    { wrapper: Wrapper },
   );
 }
 
@@ -107,6 +139,69 @@ describe("ReviewPanel — nine must-show items", () => {
 
     const trace = screen.getByTestId("run-trace");
     expect(within(trace).getByText("wf-1")).toBeInTheDocument();
+  });
+
+  it("surfaces a survived red-team verdict on the run trace section", async () => {
+    const client = makeClient({
+      getWorkflowRunRedTeam: vi.fn(() =>
+        Promise.resolve({
+          workflow_run_id: "wf-1",
+          latest: {
+            id: "rt-1",
+            verdict: "survived" as const,
+            kind: "failing_test",
+            evidence: { ran: true, failed: false },
+            adversary_model: "gpt-5-heavy",
+            coder_model: "claude-sonnet-4",
+            created_at: "2026-07-08T00:00:00Z",
+          },
+          records: [],
+        }),
+      ),
+    });
+    renderPanel(fullContext, {}, client);
+
+    const badge = await screen.findByTestId("red-team-badge");
+    expect(badge).toHaveAttribute("data-verdict", "survived");
+    expect(within(badge).getByText(/survived adversarial review/i)).toBeInTheDocument();
+    expect(client.getWorkflowRunRedTeam).toHaveBeenCalledWith("wf-1");
+  });
+
+  it("surfaces a blocked red-team verdict with expandable evidence", async () => {
+    const client = makeClient({
+      getWorkflowRunRedTeam: vi.fn(() =>
+        Promise.resolve({
+          workflow_run_id: "wf-1",
+          latest: {
+            id: "rt-2",
+            verdict: "blocked" as const,
+            kind: "failing_test",
+            evidence: { stdout: "AssertionError" },
+            adversary_model: "gpt-5-heavy",
+            coder_model: "claude-sonnet-4",
+            created_at: "2026-07-08T00:00:00Z",
+          },
+          records: [],
+        }),
+      ),
+    });
+    renderPanel(fullContext, {}, client);
+
+    const badge = await screen.findByTestId("red-team-badge");
+    expect(badge).toHaveAttribute("data-verdict", "blocked");
+    expect(within(badge).getByText(/blocked by red-team adversary/i)).toBeInTheDocument();
+
+    expect(screen.queryByTestId("red-team-evidence")).not.toBeInTheDocument();
+    fireEvent.click(within(badge).getByRole("button"));
+    expect(await screen.findByTestId("red-team-evidence")).toHaveTextContent(
+      "AssertionError",
+    );
+  });
+
+  it("shows no red-team badge before a scan has landed", async () => {
+    renderPanel(fullContext);
+    await waitFor(() => expect(screen.getByTestId("run-trace")).toBeInTheDocument());
+    expect(screen.queryByTestId("red-team-badge")).not.toBeInTheDocument();
   });
 
   it("hides sections that do not apply but always shows the risks section", () => {

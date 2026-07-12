@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
+import { apiClient, type ForgeApiClient } from "@/lib/api/client";
 import type {
   ApprovalContext,
   ApprovalSummary,
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils";
 
 import { riskBadgeClass, riskLabel } from "./approval-meta";
 import { humanizeKey } from "./format";
+import { RedTeamBadge } from "./red-team-badge";
 
 // --- small `unknown` narrowing helpers ------------------------------------ //
 
@@ -54,6 +56,8 @@ export interface ReviewPanelProps {
   isLoading: boolean;
   isError: boolean;
   onRetry?: () => void;
+  /** Threaded to the Red-Team Gate badge (item 8's own fetch). */
+  client?: ForgeApiClient;
 }
 
 /**
@@ -68,6 +72,7 @@ export function ReviewPanel({
   isLoading,
   isError,
   onRetry,
+  client = apiClient,
 }: ReviewPanelProps) {
   if (isLoading) {
     return <ReviewSkeleton />;
@@ -172,7 +177,7 @@ export function ReviewPanel({
       {/* 8 — Run trace */}
       {runTrace ? (
         <Section n={8} title="Run trace" icon={GitBranch}>
-          <RunTrace runTrace={runTrace} />
+          <RunTrace runTrace={runTrace} client={client} />
         </Section>
       ) : null}
     </div>
@@ -533,22 +538,35 @@ function RiskRow({ flag }: { flag: RiskFlag }) {
 
 // --- 8. Run trace --------------------------------------------------------- //
 
-function RunTrace({ runTrace }: { runTrace: Record<string, unknown> }) {
+function RunTrace({
+  runTrace,
+  client,
+}: {
+  runTrace: Record<string, unknown>;
+  client?: ForgeApiClient;
+}) {
   const entries = Object.entries(runTrace).filter(([, v]) => scalar(v) !== null);
+  const workflowRunId = asString(runTrace.workflow_run_id);
   if (entries.length === 0) {
     return <p className="text-sm text-muted-foreground">No run linked.</p>;
   }
   return (
-    <dl className="flex flex-col gap-1.5" data-testid="run-trace">
-      {entries.map(([key, value]) => (
-        <div key={key} className="flex items-center justify-between gap-3">
-          <dt className="text-xs text-muted-foreground">{humanizeKey(key)}</dt>
-          <dd className="truncate font-mono text-xs text-foreground">
-            {scalar(value)}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <div className="flex flex-col gap-3">
+      {/* Red-Team Gate: the adversarial-review verdict this run earned (or
+          was blocked by) before reaching this human gate. Renders nothing
+          until a scan has landed — see RedTeamBadge. */}
+      <RedTeamBadge workflowRunId={workflowRunId} client={client} />
+      <dl className="flex flex-col gap-1.5" data-testid="run-trace">
+        {entries.map(([key, value]) => (
+          <div key={key} className="flex items-center justify-between gap-3">
+            <dt className="text-xs text-muted-foreground">{humanizeKey(key)}</dt>
+            <dd className="truncate font-mono text-xs text-foreground">
+              {scalar(value)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
