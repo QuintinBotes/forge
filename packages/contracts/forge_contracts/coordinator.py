@@ -73,6 +73,9 @@ ROLE_TOOLS: dict[SubAgentRole, frozenset[str]] = {
     SubAgentRole.TESTER: frozenset({"read_repo", "write_tests", "run_tests"}),
     SubAgentRole.REVIEWER: frozenset({"read_repo", "read_spec", "write_review_comment"}),
     SubAgentRole.SECURITY: frozenset({"read_repo", "run_sast", "audit_dependencies"}),
+    # Red-Team Gate: the adversary may READ the diff, AUTHOR + RUN a failing test,
+    # and run SAST — but never edit product code (no ``write_code``/``open_pr``).
+    SubAgentRole.ADVERSARY: frozenset({"read_repo", "run_tests", "write_test", "run_sast"}),
 }
 
 #: Roles whose output is a code change that must be merged onto the integration
@@ -81,7 +84,16 @@ CODE_PRODUCING_ROLES: frozenset[SubAgentRole] = frozenset(
     {SubAgentRole.IMPLEMENTER, SubAgentRole.TESTER}
 )
 READ_ONLY_ROLES: frozenset[SubAgentRole] = frozenset(
-    {SubAgentRole.PLANNER, SubAgentRole.RESEARCHER, SubAgentRole.REVIEWER, SubAgentRole.SECURITY}
+    {
+        SubAgentRole.PLANNER,
+        SubAgentRole.RESEARCHER,
+        SubAgentRole.REVIEWER,
+        SubAgentRole.SECURITY,
+        # The adversary WRITES a test but that test is executed in a sandbox and
+        # folded into a structured ``red_team_report`` — it is never merged onto
+        # the integration branch, so it is a read-only / structured-artifact role.
+        SubAgentRole.ADVERSARY,
+    }
 )
 
 
@@ -121,6 +133,7 @@ class SubAgentArtifact(_CoordModel):
         "spec_draft",
         "research_brief",
         "security_report",
+        "red_team_report",
     ]
     summary: str = ""
     review_verdict: Literal["approved", "changes_requested"] | None = None

@@ -9,6 +9,7 @@ from forge_contracts import (
     AgentObjective,
     CoordinationPattern,
     SubAgentPolicy,
+    SubAgentRole,
     SubagentRules,
 )
 from forge_coordinator import CoordinatorDeps, DefaultPatternSelector
@@ -91,6 +92,35 @@ def test_explicit_hint_selects_dynamic_handoff_verbatim() -> None:
     plan = _select(obj, rules, SkillDirectives(name="c", review_required=True))
     assert plan.pattern is CoordinationPattern.DYNAMIC_HANDOFF
     assert plan.assignments[1].depends_on == [plan.assignments[0].id]
+
+
+def test_supervisor_can_spawn_adversary_via_handoff() -> None:
+    # Red-Team Gate: the supervisor routes an ADVERSARY step through the
+    # explicit ``handoff_plan`` and it is scoped to ``ROLE_TOOLS[ADVERSARY]``
+    # (read + author/run a failing test + SAST, never product-code edits).
+    rules = SubagentRules(
+        allow_subagents=True,
+        allowed_roles=["implementer", "adversary"],
+        max_parallel=2,
+    )
+    obj = AgentObjective(
+        objective="ship a diff",
+        context={
+            "coordination_pattern": "dynamic_handoff",
+            "handoff_plan": [
+                {"role": "implementer", "objective": "build"},
+                {"role": "adversary", "objective": "attack the diff", "depends_on": [0]},
+            ],
+        },
+    )
+    plan = _select(obj, rules, SkillDirectives(name="c", review_required=True))
+    assert plan.pattern is CoordinationPattern.DYNAMIC_HANDOFF
+    adversary = plan.assignments[1]
+    assert adversary.role.value == "adversary"
+    assert adversary.depends_on == [plan.assignments[0].id]
+    assert set(adversary.allowed_actions) == set(ROLE_TOOLS[SubAgentRole.ADVERSARY])
+    assert "write_code" not in adversary.allowed_actions
+    assert "open_pr" not in adversary.allowed_actions
 
 
 def test_selection_is_deterministic() -> None:
