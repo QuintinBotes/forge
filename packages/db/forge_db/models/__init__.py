@@ -141,6 +141,7 @@ from forge_db.models.project import Constitution, Project
 from forge_db.models.project_team_access import ProjectTeamAccess
 from forge_db.models.role_config import AgentRoleConfig
 from forge_db.models.role_grant import RoleGrant
+from forge_db.models.run_recording import RunRecording
 from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
 from forge_db.models.sandbox import SandboxInstance
 from forge_db.models.secret import Secret
@@ -291,6 +292,7 @@ __all__ = [
     "RevisionStatus",
     "RevisionValidationStatus",
     "RoleGrant",
+    "RunRecording",
     "RunStatus",
     "SamlReplay",
     "SandboxInstance",

@@ -174,6 +174,9 @@ EXPECTED_MODELS = [
     # attestation-table: append-only DSSE-signed provenance record over a
     # changeset (Attested Changesets storage substrate).
     "Attestation",
+    # cassette-persistence: append-only recorded LLM/tool-call cassette backing
+    # deterministic record-replay of agent runs (Time-Travel Runs).
+    "RunRecording",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
