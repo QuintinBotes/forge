@@ -613,6 +613,45 @@ export interface RunTrace {
   summary?: string | null;
 }
 
+// --- Time-Travel Runs: replay (POST /agent/runs/{run_id}/replay) --------- //
+// Mirrors forge_api.schemas.replay.* — a RunRecording cassette holds no
+// objective (see that module's docstring), so the caller supplies the same
+// one that produced the run being replayed.
+
+/** The objective that produced the recording being replayed (minimal — every
+ * other `AgentObjective` field defaults server-side). */
+export interface ReplayObjectiveInput {
+  objective: string;
+}
+
+/** One recorded call (an LLM completion or a tool dispatch) vs. its replay. */
+export interface ReplayCallDiff {
+  boundary: "llm" | "tool";
+  index: number;
+  name?: string | null;
+  matched: boolean;
+  recorded_digest?: string | null;
+  replay_digest?: string | null;
+}
+
+/** Where + why the replay first drifted from the tape. */
+export interface ReplayDivergence {
+  boundary: "llm" | "tool";
+  index: number;
+  name?: string | null;
+  expected?: string | null;
+  actual: string;
+}
+
+/** The outcome of replaying one `RunRecording` — a step-by-step diff. */
+export interface ReplayRunResult {
+  run_recording_id: string;
+  diverged: boolean;
+  divergence?: ReplayDivergence | null;
+  steps: ReplayCallDiff[];
+  result?: Record<string, unknown> | null;
+}
+
 // --- Marketplace (F32 integration marketplace) ---------------------------- //
 // Hand-maintained mirror of `forge_marketplace.models` + the marketplace router
 // DTOs (Pydantic v2). Enum string values match the Python `StrEnum` verbatim.

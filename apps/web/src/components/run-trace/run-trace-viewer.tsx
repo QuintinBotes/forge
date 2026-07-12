@@ -46,6 +46,7 @@ import {
   runStatusMeta,
   traceTotals,
 } from "./step-meta";
+import { TimeTravelReplay } from "./time-travel-replay";
 import { TraceStepRow } from "./trace-step";
 
 export interface RunTraceViewerProps {
@@ -317,6 +318,10 @@ export function RunTraceViewer({
         onRestart={startReplay}
         canReplay={totalSteps > 0}
       />
+
+      <div className="flex justify-end">
+        <TimeTravelReplay runId={runId} client={client} />
+      </div>
 
       <StatRow trace={trace} totals={totals} />
 
