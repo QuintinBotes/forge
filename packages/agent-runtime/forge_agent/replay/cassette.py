@@ -138,6 +138,54 @@ class RunCassette:
             snapshot[str(key)] = redactor.redact(text) if redactor is not None else text
         return cls(env=snapshot, clock=clock)
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> RunCassette:
+        """Reconstruct a cassette from its persisted :meth:`to_dict` snapshot.
+
+        The inverse of :meth:`to_dict`: rebuilds a real
+        :class:`~forge_contracts.ModelResponse` for each LLM call and a real
+        :class:`~forge_agent.tools.ToolResult` for each tool call from their
+        JSON-native form, so a persisted ``RunRecording.cassette`` row (see
+        ``forge_db.models.RunRecording``) can be handed to
+        :class:`~forge_agent.replay.player.ReplayModelClient` /
+        ``ReplayToolRegistry`` for a Time-Travel Runs replay.
+
+        Any key the persistence layer added that is not a ``ToolResult``
+        field (e.g. ``output_artifact_ref`` — see
+        ``forge_worker.agent_runner._shape_cassette_for_persistence``) is
+        dropped: a capped/offloaded tool output replays as its capped inline
+        copy, never the full artifact-backed text.
+        """
+        known_result_fields = {f.name for f in dataclasses.fields(ToolResult)}
+        cassette = cls()
+        for raw in data.get("llm_calls", []):
+            cassette.llm_calls.append(
+                RecordedLLMCall(
+                    index=int(raw["index"]),
+                    request_digest=str(raw["request_digest"]),
+                    response=ModelResponse.model_validate(raw["response"]),
+                    model=raw.get("model"),
+                    ts=float(raw.get("ts", 0.0)),
+                )
+            )
+        for raw in data.get("tool_calls", []):
+            result_data = {
+                key: value
+                for key, value in dict(raw["result"]).items()
+                if key in known_result_fields
+            }
+            cassette.tool_calls.append(
+                RecordedToolCall(
+                    index=int(raw["index"]),
+                    name=str(raw["name"]),
+                    args_digest=str(raw["args_digest"]),
+                    result=ToolResult(**result_data),
+                    ts=float(raw.get("ts", 0.0)),
+                )
+            )
+        cassette.env = {str(k): str(v) for k, v in dict(data.get("env", {})).items()}
+        return cassette
+
     def record_llm(self, request: ModelRequest, response: ModelResponse) -> RecordedLLMCall:
         """Append an LLM call+response and return the recorded entry."""
         entry = RecordedLLMCall(

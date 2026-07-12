@@ -17,7 +17,9 @@
 
 import {
   keepPreviousData,
+  useMutation,
   useQuery,
+  type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 
@@ -32,6 +34,8 @@ import type {
   CostSummaryQuery,
   CostTimeseries,
   CostTimeseriesQuery,
+  ReplayObjectiveInput,
+  ReplayRunResult,
   RunTrace,
 } from "./types";
 
@@ -55,6 +59,21 @@ export function useRunTrace(
     queryFn: () => client.getRunTrace(runId as string),
     enabled: Boolean(runId),
     retry: false,
+  });
+}
+
+/**
+ * Time-Travel Runs: replay a persisted `RunRecording` cassette by
+ * substitution (`POST /agent/runs/{run_id}/replay`) and report whether it
+ * reproduced the tape. A mutation (an on-demand POST), not a query — it runs
+ * from the run-trace view's replay control, keyed by the recording id.
+ */
+export function useReplayRun(
+  runId: string,
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<ReplayRunResult, Error, ReplayObjectiveInput> {
+  return useMutation({
+    mutationFn: (objective: ReplayObjectiveInput) => client.replayRun(runId, objective),
   });
 }
 

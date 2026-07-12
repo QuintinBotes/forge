@@ -62,6 +62,9 @@ dependencies = [
 # Verify attestations and audit-chain exports offline (exit non-zero on any
 # verification failure) — the evidence command behind release gate G-ATTEST.
 forge-verify = "forge_api.cli_verify:main"
+# Time-Travel Runs: replay a persisted RunRecording cassette by substitution
+# and diff it against the tape (exit non-zero on divergence).
+forge-replay = "forge_api.cli_replay:main"
 
 [build-system]
 requires = ["hatchling"]

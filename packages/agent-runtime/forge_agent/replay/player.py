@@ -82,6 +82,11 @@ class ReplayModelClient:
         self._cassette = cassette
         self._index = 0
 
+    @property
+    def index(self) -> int:
+        """How many recorded completions have been replayed (matched) so far."""
+        return self._index
+
     def complete(self, request: ModelRequest) -> ModelResponse:
         index = self._index
         entry = self._cassette.llm_calls[index] if index < len(self._cassette.llm_calls) else None
@@ -119,6 +124,11 @@ class ReplayToolRegistry:
         self._cassette = cassette
         self._inner = tools if tools is not None else ToolRegistry()
         self._index = 0
+
+    @property
+    def index(self) -> int:
+        """How many recorded dispatches have been replayed (matched) so far."""
+        return self._index
 
     def dispatch(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         index = self._index

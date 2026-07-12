@@ -5,6 +5,9 @@ Serves the single-agent loop (plan -> act -> observe) over HTTP:
 * ``POST /agent/runs``           — run an :class:`~forge_contracts.AgentObjective`
   and return the :class:`~forge_contracts.AgentRunResult` (with its step trace).
 * ``GET  /agent/runs/{run_id}``  — fetch a previously-recorded run result.
+* ``POST /agent/runs/{run_id}/replay`` — Time-Travel Runs: replay a persisted
+  ``RunRecording`` cassette by substitution and report a step-by-step diff
+  against the tape (see ``forge_api.services.replay_service``).
 
 Handlers delegate to a process-wide :class:`~forge_agent.AgentRunner`. The default
 runner is driven by an offline-safe scripted model client (deterministic, no live
@@ -22,13 +25,25 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from forge_agent import AgentRunner
+from forge_agent.replay import RunCassette
 from forge_agent.testing import ScriptedModelClient, finish_response
 from forge_api.auth.rbac import Permission
+from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
+from forge_api.schemas.replay import (
+    ReplayCallDiffOut,
+    ReplayDivergenceOut,
+    ReplayRunRequest,
+    ReplayRunResponse,
+)
+from forge_api.services.replay_service import replay_recording
 from forge_contracts import AgentObjective, AgentRunResult
+from forge_db.models import RunRecording
 from forge_policy import (
     SkillProfileNotAllowedError,
     enforce_skill_profile_allowed,
@@ -45,6 +60,7 @@ router = APIRouter(
 # admin); a read-only viewer is denied. Reading a run requires READ.
 RunnerPrincipalDep = Annotated[Principal, Depends(require_permission(Permission.RUN_AGENT))]
 ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
+SessionDep = Annotated[Session, Depends(get_db)]
 
 
 # --------------------------------------------------------------------------- #
@@ -180,6 +196,63 @@ def get_run(store: StoreDep, principal: ReaderDep, run_id: uuid.UUID) -> AgentRu
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"no agent run {run_id}")
     return result
+
+
+@router.post("/runs/{run_id}/replay", response_model=ReplayRunResponse)
+def replay_run(
+    run_id: uuid.UUID,
+    body: ReplayRunRequest,
+    principal: ReaderDep,
+    session: SessionDep,
+) -> ReplayRunResponse:
+    """Time-Travel Runs: replay ``RunRecording`` ``run_id`` and diff it vs. the tape.
+
+    Loads the workspace-scoped cassette (404 for a missing or foreign-tenant
+    recording), reconstructs it via ``RunCassette.from_dict``, then re-runs
+    ``body.objective`` through a fresh ``AgentRunner`` wired with the
+    replay-by-substitution wrappers — no live model or tool is ever touched.
+    Read-only (``Permission.READ``): a replay never mutates the recording or
+    produces a new persisted run.
+    """
+    row = session.execute(
+        select(RunRecording).where(
+            RunRecording.id == run_id,
+            RunRecording.workspace_id == principal.workspace_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"no run recording {run_id}"
+        )
+    cassette = RunCassette.from_dict(row.cassette)
+    outcome = replay_recording(cassette, body.objective)
+    return ReplayRunResponse(
+        run_recording_id=run_id,
+        diverged=outcome.diverged,
+        divergence=(
+            ReplayDivergenceOut(
+                boundary=outcome.divergence.boundary,
+                index=outcome.divergence.index,
+                name=outcome.divergence.name,
+                expected=outcome.divergence.expected,
+                actual=outcome.divergence.actual,
+            )
+            if outcome.divergence is not None
+            else None
+        ),
+        steps=[
+            ReplayCallDiffOut(
+                boundary=step.boundary,
+                index=step.index,
+                name=step.name,
+                matched=step.matched,
+                recorded_digest=step.recorded_digest,
+                replay_digest=step.replay_digest,
+            )
+            for step in outcome.steps
+        ],
+        result=outcome.result,
+    )
 
 
 __all__ = ["AgentRunStore", "get_agent_runner", "get_agent_store", "router"]
