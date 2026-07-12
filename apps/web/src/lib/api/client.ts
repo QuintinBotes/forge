@@ -80,6 +80,8 @@ import type {
   PublicLeaderboard,
   Registry,
   RemediationPlanView,
+  ReplayObjectiveInput,
+  ReplayRunResult,
   Requirement,
   RetrievedChunk,
   RoleConfigListResponse,
@@ -628,6 +630,22 @@ export class ForgeApiClient {
   getRunTrace(runId: string): Promise<RunTrace> {
     return this.request<RunTrace>(
       `/observability/runs/${encodeURIComponent(runId)}/trace`,
+    );
+  }
+
+  /**
+   * Time-Travel Runs: replay a persisted `RunRecording` cassette by
+   * substitution and diff it against the tape. `runId` here is the
+   * `RunRecording` id (a separate id space from the `AgentRunResult.run_id`
+   * this viewer otherwise shows) — see `forge_api.routers.agent.replay_run`.
+   */
+  replayRun(
+    runId: string,
+    objective: ReplayObjectiveInput,
+  ): Promise<ReplayRunResult> {
+    return this.request<ReplayRunResult>(
+      `/agent/runs/${encodeURIComponent(runId)}/replay`,
+      { method: "POST", body: { objective } },
     );
   }
 
