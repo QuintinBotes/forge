@@ -14,11 +14,25 @@ Foundation conformance (deviations from the F35 draft): the draft assumed F12
 ``eval_run``/``replay_bundle`` tables and a MinIO bundle store — neither exists
 in-tree, so there is no ``eval_run_id`` FK and the deterministic replay bundles
 are persisted inline in ``replay_bundles`` (JSON, size-capped at ingest).
-``benchmark_suite`` is global (no ``workspace_id``): a frozen suite is a shared
-community artifact, like the file-based golden sets. Submissions carry a
-*nullable* ``workspace_id`` (NULL = official/system submission). Status /
-visibility are stored as plain strings guarded by CHECK constraints, matching
-the marketplace/deployment precedent.
+``benchmark_suite`` is global (no ``workspace_id``) by default: a frozen suite
+is a shared community artifact, like the file-based golden sets. Submissions
+carry a *nullable* ``workspace_id`` (NULL = official/system submission).
+Status / visibility are stored as plain strings guarded by CHECK constraints,
+matching the marketplace/deployment precedent.
+
+Self-Eval Gate (F41) extends ``benchmark_suite`` with three *nullable*
+columns so an org can mint a PRIVATE, per-repo regression suite from its own
+merged PRs, without disturbing the existing global/public suites (which keep
+``workspace_id``/``repo_id`` NULL and ``private=False``):
+
+* ``workspace_id`` — NULL = shared/community suite (unchanged default);
+  non-NULL = scoped to one workspace's own benchmark.
+* ``repo_id`` — the source repository the suite was minted from (free-form
+  provider identifier, mirroring ``RepositoryConnection.repo_id`` — no FK,
+  since suites can outlive a disconnected repository).
+* ``private`` — when true, the suite (and its submissions) must never be
+  surfaced by ``/public/*`` leaderboard endpoints, regardless of submission
+  ``visibility``.
 """
 
 from __future__ import annotations
@@ -52,6 +66,7 @@ class BenchmarkSuite(ForgeModel):
     __table_args__ = (
         UniqueConstraint("slug", "version", name="uq_benchmark_suite_slug_version"),
         Index("ix_benchmark_suite_published_slug", "published", "slug"),
+        Index("ix_benchmark_suite_workspace_id", "workspace_id"),
     )
 
     slug: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -72,6 +87,17 @@ class BenchmarkSuite(ForgeModel):
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
     )
+    #: NULL = shared/community suite (unscoped, matches prior behavior).
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    #: Source repository the suite was minted from (free-form provider
+    #: identifier, e.g. ``"github:org/repo"``); no FK — outlives disconnects.
+    repo_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    #: Self-Eval Gate suites are private: never surfaced by ``/public/*``.
+    private: Mapped[bool] = mapped_column(default=False, nullable=False)
 
 
 class BenchmarkSubmission(ForgeModel):

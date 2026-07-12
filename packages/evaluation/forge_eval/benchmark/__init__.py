@@ -43,6 +43,7 @@ from forge_eval.benchmark.replay import (
     replay_bundles,
 )
 from forge_eval.benchmark.scoring import compute_benchmark_score
+from forge_eval.benchmark.swe_case import SweCaseFields, parse_swe_case_fields
 from forge_eval.benchmark.verify import verify_submission
 
 __all__ = [
@@ -63,6 +64,7 @@ __all__ = [
     "MetricAggregate",
     "ReplayBundle",
     "SubmissionStatus",
+    "SweCaseFields",
     "VerificationResult",
     "Visibility",
     "compute_benchmark_score",
@@ -71,6 +73,7 @@ __all__ = [
     "freeze",
     "load_manifest",
     "make_bundle",
+    "parse_swe_case_fields",
     "rank_submissions",
     "replay_bundles",
     "validate_freezable",

@@ -53,6 +53,51 @@ def test_create_all_produces_tables_and_leaderboard_index(engine) -> None:
     assert "ix_benchmark_submission_leaderboard" in submission_indexes
     assert "ix_benchmark_submission_workspace_submitted" in submission_indexes
 
+    suite_indexes = {ix["name"] for ix in inspector.get_indexes("benchmark_suite")}
+    assert "ix_benchmark_suite_workspace_id" in suite_indexes
+
+
+def test_suite_defaults_to_global_unscoped(engine) -> None:
+    """F41: pre-existing/global suites keep workspace_id NULL and private=False."""
+    with Session(engine) as session:
+        suite = _suite()
+        session.add(suite)
+        session.commit()
+
+        row = session.get(BenchmarkSuite, suite.id)
+        assert row is not None
+        assert row.workspace_id is None
+        assert row.repo_id is None
+        assert row.private is False
+
+
+def test_suite_can_be_scoped_private_self_eval(engine) -> None:
+    """F41: a minted Self-Eval Gate suite is private and workspace/repo scoped."""
+    with Session(engine) as session:
+        ws = Workspace(name="Acme", slug="acme")
+        session.add(ws)
+        session.flush()
+
+        suite = _suite(
+            slug="self-eval-acme",
+            workspace_id=ws.id,
+            repo_id="github:acme/widgets",
+            private=True,
+        )
+        session.add(suite)
+        session.commit()
+
+        row = session.get(BenchmarkSuite, suite.id)
+        assert row is not None
+        assert row.workspace_id == ws.id
+        assert row.repo_id == "github:acme/widgets"
+        assert row.private is True
+
+
+def test_suite_workspace_fk_cascades_on_delete(engine) -> None:
+    fks = {fk.parent.name: fk.ondelete for fk in BenchmarkSuite.__table__.foreign_keys}
+    assert fks["workspace_id"] == "CASCADE"
+
 
 def test_slug_version_unique(engine) -> None:
     with Session(engine) as session:
