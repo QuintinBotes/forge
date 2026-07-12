@@ -27,6 +27,7 @@ import type {
   ApprovalDecisionRequest,
   ApprovalResolution,
   ApprovalSummary,
+  RedTeamGateOut,
 } from "./types";
 
 export const approvalKeys = {
@@ -40,6 +41,8 @@ export const approvalKeys = {
     ["approvals", "context", approvalId] as const,
   decisions: (approvalId: string) =>
     ["approvals", "decisions", approvalId] as const,
+  redTeam: (workflowRunId: string) =>
+    ["approvals", "red-team", workflowRunId] as const,
 } as const;
 
 export type ApprovalFilters = Record<
@@ -90,6 +93,25 @@ export function useApprovalDecisions(
     queryKey: approvalKeys.decisions(approvalId ?? ""),
     queryFn: () => client.listApprovalDecisions(approvalId as string),
     enabled: Boolean(approvalId),
+  });
+}
+
+/**
+ * The Red-Team Gate verdict + evidence for the gate's linked workflow run
+ * (Red-Team Gate, slice redteam-surface) — disabled until a run id is known
+ * (a gate's `run_trace_ref.workflow_run_id`, from its context). Retries are
+ * disabled: an unscanned run reads as `latest: null`, not an error, so there
+ * is nothing a retry would resolve.
+ */
+export function useRedTeamVerdict(
+  workflowRunId: string | null | undefined,
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<RedTeamGateOut> {
+  return useQuery({
+    queryKey: approvalKeys.redTeam(workflowRunId ?? ""),
+    queryFn: () => client.getWorkflowRunRedTeam(workflowRunId as string),
+    enabled: Boolean(workflowRunId),
+    retry: false,
   });
 }
 

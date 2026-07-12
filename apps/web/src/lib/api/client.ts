@@ -78,6 +78,7 @@ import type {
   ProjectVisibilityInput,
   PublicBenchmark,
   PublicLeaderboard,
+  RedTeamGateOut,
   Registry,
   RemediationPlanView,
   ReplayObjectiveInput,
@@ -416,6 +417,19 @@ export class ForgeApiClient {
       method: "POST",
       body,
     });
+  }
+
+  // --- Red-Team Gate (GET /workflow/runs/{run_id}/red-team) --------------- //
+
+  /**
+   * The adversarial-review verdict + evidence for a workflow run — the badge
+   * on the human approval gate's run-trace section. `latest` is `null` when
+   * the run has not been scanned yet (never a 404).
+   */
+  getWorkflowRunRedTeam(workflowRunId: string): Promise<RedTeamGateOut> {
+    return this.request<RedTeamGateOut>(
+      `/workflow/runs/${encodeURIComponent(workflowRunId)}/red-team`,
+    );
   }
 
   // --- Spec engine / SDD lifecycle (F02 /spec + F23 dashboard) ------------ //
