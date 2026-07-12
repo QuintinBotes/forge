@@ -309,6 +309,7 @@ export function ApprovalInbox({ client = apiClient }: ApprovalInboxProps) {
                   isLoading={contextQuery.isLoading}
                   isError={contextQuery.isError}
                   onRetry={() => contextQuery.refetch()}
+                  client={client}
                 />
               </div>
               <DecisionBar

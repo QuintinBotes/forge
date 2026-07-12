@@ -24,6 +24,7 @@ from temporalio import activity
 from forge_contracts import RunStatus, WorkflowRun, WorkflowState
 from forge_workflow.store import InMemoryWorkflowStore, WorkflowStore
 from forge_workflow.temporal.payloads import (
+    REDTEAM_SURVIVED,
     AgentRunResultDTO,
     ApprovalInput,
     ChecksResult,
@@ -33,6 +34,8 @@ from forge_workflow.temporal.payloads import (
     NotifyInput,
     OpenPrInput,
     OpenPrResult,
+    RedTeamInput,
+    RedTeamResult,
     ResumeAgentInput,
     RunAgentInput,
     RunChecksInput,
@@ -58,6 +61,7 @@ OpenPrFn = Callable[[OpenPrInput], OpenPrResult]
 NotifyFn = Callable[[NotifyInput], bool]
 CleanupFn = Callable[[CleanupInput], bool]
 ApprovalFn = Callable[[ApprovalInput], uuid.UUID]
+RedTeamFn = Callable[[RedTeamInput], RedTeamResult]
 
 
 def _now() -> datetime:
@@ -119,6 +123,18 @@ def _default_approval(_: ApprovalInput) -> uuid.UUID:
     return uuid.uuid4()
 
 
+def _default_red_team(_: RedTeamInput) -> RedTeamResult:
+    # No adversary model / sandbox wired (park-don't-fake): the scan is a
+    # parked-pass so the durable spine runs and the human gate is reached
+    # unchanged. A real deployment injects a red_team_fn that runs a
+    # heterogeneous adversary against the candidate in a sandbox.
+    return RedTeamResult(
+        verdict=REDTEAM_SURVIVED,
+        kind="parked",
+        evidence={"parked": True, "reason": "no adversary model/sandbox wired"},
+    )
+
+
 class WorkflowActivities:
     """All Activity implementations, bound to a store + injected services.
 
@@ -138,6 +154,7 @@ class WorkflowActivities:
         notify_fn: NotifyFn | None = None,
         cleanup_fn: CleanupFn | None = None,
         approval_fn: ApprovalFn | None = None,
+        red_team_fn: RedTeamFn | None = None,
     ) -> None:
         self._store: WorkflowStore = store or InMemoryWorkflowStore()
         self._guard_inputs_fn = guard_inputs_fn or _default_guard_inputs
@@ -148,6 +165,7 @@ class WorkflowActivities:
         self._notify_fn = notify_fn or _default_notify
         self._cleanup_fn = cleanup_fn or _default_cleanup
         self._approval_fn = approval_fn or _default_approval
+        self._red_team_fn = red_team_fn or _default_red_team
 
     @property
     def store(self) -> WorkflowStore:
@@ -165,6 +183,7 @@ class WorkflowActivities:
             self.pause_and_notify,
             self.cleanup_worktree,
             self.create_approval,
+            self.run_red_team_scan,
         ]
 
     # -- projection writer (idempotent) ----------------------------------- #
@@ -242,6 +261,22 @@ class WorkflowActivities:
     @activity.defn(name="forge.create_approval")
     async def create_approval(self, inp: ApprovalInput) -> str:
         return str(self._approval_fn(inp))
+
+    # -- red-team gate (heterogeneous adversary, sandboxed) --------------- #
+
+    @activity.defn(name="forge.run_red_team_scan")
+    async def run_red_team_scan(self, inp: RedTeamInput) -> RedTeamResult:
+        """Attack the candidate change; return a block/survive verdict.
+
+        Idempotent on ``inp.idempotency_key``: the injected ``red_team_fn`` runs
+        the (heterogeneous, sandboxed) adversary and records the verdict; the
+        default is a parked-pass so the spine runs with no adversary/sandbox
+        wired. Persisting the ``RedTeamRecord`` + emitting the ``redteam.survived``
+        audit event is the recorder's job inside ``red_team_fn`` (real wiring);
+        the pure verdict returned here drives the deterministic routing.
+        """
+        activity.heartbeat({"phase": "red_team", "idempotency_key": inp.idempotency_key})
+        return self._red_team_fn(inp)
 
     # -- compensation ----------------------------------------------------- #
 

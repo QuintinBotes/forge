@@ -139,6 +139,7 @@ from forge_db.models.policy_rule_evaluation import PolicyRuleEvaluation
 from forge_db.models.profiles import PolicyProfile, SkillProfile
 from forge_db.models.project import Constitution, Project
 from forge_db.models.project_team_access import ProjectTeamAccess
+from forge_db.models.red_team import RedTeamRecord
 from forge_db.models.role_config import AgentRoleConfig
 from forge_db.models.role_grant import RoleGrant
 from forge_db.models.run_recording import RunRecording
@@ -284,6 +285,7 @@ __all__ = [
     "Project",
     "ProjectTeamAccess",
     "ProjectVisibility",
+    "RedTeamRecord",
     "RemediationPlan",
     "RepoProvider",
     "RepoRole",

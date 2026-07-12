@@ -43,6 +43,7 @@ with workflow.unsafe.imports_passed_through():
         EVENT_REVIEW_APPROVED,
         EVENT_SPEC_APPROVED,
         EVENT_SPEC_CHANGES,
+        REDTEAM_BLOCKED,
         AgentRunResultDTO,
         ApprovalInput,
         ChecksResult,
@@ -51,6 +52,8 @@ with workflow.unsafe.imports_passed_through():
         GuardInputsRequest,
         NotifyInput,
         OpenPrInput,
+        RedTeamInput,
+        RedTeamResult,
         RunAgentInput,
         RunChecksInput,
         TransitionRecord,
@@ -70,6 +73,7 @@ _PR_TIMEOUT = timedelta(seconds=120)
 _NOTIFY_TIMEOUT = timedelta(seconds=30)
 _APPROVAL_TIMEOUT = timedelta(seconds=30)
 _CLEANUP_TIMEOUT = timedelta(seconds=60)
+_REDTEAM_TIMEOUT = timedelta(seconds=900)  # adversary builds + sandboxes a test
 _DEFAULT_AGENT_TIMEOUT = timedelta(seconds=7200)
 _AGENT_HEARTBEAT = timedelta(seconds=120)
 
@@ -126,6 +130,29 @@ class FeatureWorkflow:
             await self._auto("generate_spec_draft")
             await self._auto("gather_clarifications")
             await self._auto("submit_spec_for_review")
+
+            # Red-Team Gate: a distinct adversary (heterogeneous model, sandboxed)
+            # attacks the candidate before the human implementation gate. A BLOCK
+            # routes the change back for changes (→ clarification → spec_review) so
+            # a human must address the adversary's finding; a SURVIVE is recorded
+            # as a "survived adversarial review" (the recorder writes the
+            # RedTeamRecord + a redteam.survived audit event) and the flow
+            # proceeds to the human spec gate unchanged.
+            scan = await self._run_red_team_scan()
+            if scan.verdict == REDTEAM_BLOCKED:
+                await self._apply_event(
+                    WorkflowEventPayload(
+                        type=EVENT_SPEC_CHANGES,
+                        actor="red-team",
+                        payload={
+                            "red_team": True,
+                            "kind": scan.kind,
+                            "evidence": scan.evidence,
+                            "adversary_model": scan.adversary_model,
+                        },
+                    )
+                )  # spec_review → clarification
+                await self._auto("submit_spec_for_review")  # → spec_review
 
             await self._create_approval("spec")
             while True:
@@ -593,6 +620,22 @@ class FeatureWorkflow:
             ),
             start_to_close_timeout=_NOTIFY_TIMEOUT,
             retry_policy=_FIVE,
+        )
+
+    async def _run_red_team_scan(self, phase: str = "spec") -> RedTeamResult:
+        assert self._params is not None
+        return await workflow.execute_activity(
+            "forge.run_red_team_scan",
+            arg=RedTeamInput(
+                workflow_run_id=self._params.workflow_run_id,
+                workspace_id=self._params.workspace_id,
+                task_id=self._params.task_id,
+                phase=phase,
+                idempotency_key=f"{self._params.workflow_run_id}:red_team:{phase}",
+            ),
+            start_to_close_timeout=_REDTEAM_TIMEOUT,
+            retry_policy=_ONCE,
+            result_type=RedTeamResult,
         )
 
     async def _create_approval(self, gate: str) -> None:
