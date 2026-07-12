@@ -19,7 +19,9 @@ store so ``GET /agent/runs/{run_id}`` can return them.
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
+from collections.abc import Callable
 from functools import lru_cache
 from typing import Annotated
 
@@ -29,20 +31,31 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from forge_agent import AgentRunner
+from forge_agent.providers import (
+    ModelClientConfig,
+    ModelClientUnavailable,
+    build_model_client,
+)
 from forge_agent.replay import RunCassette
 from forge_agent.testing import ScriptedModelClient, finish_response
 from forge_api.auth.rbac import Permission
 from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
+from forge_api.observability.redaction import redact_text
 from forge_api.routers._rbac import require_permission
+from forge_api.schemas.fork import ForkRunRequest, ForkRunResponse
 from forge_api.schemas.replay import (
     ReplayCallDiffOut,
     ReplayDivergenceOut,
     ReplayRunRequest,
     ReplayRunResponse,
 )
+from forge_api.services.fork_service import (
+    PromptOverrideModelClient,
+    fork_recording,
+)
 from forge_api.services.replay_service import replay_recording
-from forge_contracts import AgentObjective, AgentRunResult
+from forge_contracts import AgentObjective, AgentRunResult, ModelClient
 from forge_db.models import RunRecording
 from forge_policy import (
     SkillProfileNotAllowedError,
@@ -133,6 +146,51 @@ def get_agent_store() -> AgentRunStore:
 
 RunnerDep = Annotated[AgentRunner, Depends(get_agent_runner)]
 StoreDep = Annotated[AgentRunStore, Depends(get_agent_store)]
+
+
+# --------------------------------------------------------------------------- #
+# Per-role model client factory (Time-Travel Runs — counterfactual fork)       #
+# --------------------------------------------------------------------------- #
+
+#: Turn a concrete model string into a :class:`~forge_contracts.ModelClient` — the
+#: same per-role seam the coordinator uses (``CoordinatorDeps.model_client_factory``)
+#: so a fork can re-run against a *different* model.
+ForkModelFactory = Callable[[str], ModelClient]
+
+
+def _default_fork_model_factory(model: str) -> ModelClient:
+    """Build a client bound to ``model`` from the BYOK env config, else offline.
+
+    Reuses the HARD-02 ``ModelClientConfig`` -> ``build_model_client`` seam,
+    swapping in the requested ``model``. When no provider is configured (or its
+    SDK is absent) it degrades to the offline deterministic
+    :class:`ScriptedModelClient` so the fork endpoint still returns a
+    counterfactual result without any live provider call (hermetic tests / no
+    BYOK creds).
+    """
+    config = ModelClientConfig.from_env()
+    if config is not None:
+        try:
+            return build_model_client(
+                dataclasses.replace(config, model=model), redactor=redact_text
+            )
+        except ModelClientUnavailable:
+            pass
+    return ScriptedModelClient(
+        responses=[],
+        default=finish_response(
+            "Counterfactual fork acknowledged; no offline model actions were required.",
+            confidence=0.9,
+        ),
+    )
+
+
+def get_fork_model_factory() -> ForkModelFactory:
+    """Return the fork model-client factory (override in tests via DI)."""
+    return _default_fork_model_factory
+
+
+ForkModelFactoryDep = Annotated[ForkModelFactory, Depends(get_fork_model_factory)]
 
 
 # --------------------------------------------------------------------------- #
@@ -255,4 +313,72 @@ def replay_run(
     )
 
 
-__all__ = ["AgentRunStore", "get_agent_runner", "get_agent_store", "router"]
+@router.post("/runs/{run_id}/fork", response_model=ForkRunResponse)
+def fork_run(
+    run_id: uuid.UUID,
+    body: ForkRunRequest,
+    principal: RunnerPrincipalDep,
+    session: SessionDep,
+    model_factory: ForkModelFactoryDep,
+) -> ForkRunResponse:
+    """Time-Travel Runs: counterfactually fork ``RunRecording`` ``run_id``.
+
+    Loads the workspace-scoped cassette (404 for a missing or foreign-tenant
+    recording), reconstructs it, then replays the run up to ``body.fork_index``
+    and lets it diverge: from the fork on, LLM completions run against a
+    **different** model (``body.model``, built via the per-role
+    ``model_client_factory`` seam, optionally with ``body.prompt_override``
+    appended to the system prompt) and tool dispatches run live. Requires
+    ``RUN_AGENT`` — a fork executes the agent (and, post-fork, real tools). If
+    the *pre-fork* prefix no longer reproduces the tape the fork aborts and the
+    divergence is reported (mirroring replay).
+    """
+    row = session.execute(
+        select(RunRecording).where(
+            RunRecording.id == run_id,
+            RunRecording.workspace_id == principal.workspace_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"no run recording {run_id}"
+        )
+    cassette = RunCassette.from_dict(row.cassette)
+
+    new_client: ModelClient = model_factory(body.model)
+    if body.prompt_override:
+        new_client = PromptOverrideModelClient(new_client, body.prompt_override)
+
+    outcome = fork_recording(
+        cassette,
+        body.objective,
+        fork_index=body.fork_index,
+        new_client=new_client,
+    )
+    return ForkRunResponse(
+        run_recording_id=run_id,
+        fork_index=outcome.fork_index,
+        model=body.model,
+        diverged=outcome.diverged,
+        divergence=(
+            ReplayDivergenceOut(
+                boundary=outcome.divergence.boundary,
+                index=outcome.divergence.index,
+                name=outcome.divergence.name,
+                expected=outcome.divergence.expected,
+                actual=outcome.divergence.actual,
+            )
+            if outcome.divergence is not None
+            else None
+        ),
+        result=outcome.result,
+    )
+
+
+__all__ = [
+    "AgentRunStore",
+    "get_agent_runner",
+    "get_agent_store",
+    "get_fork_model_factory",
+    "router",
+]

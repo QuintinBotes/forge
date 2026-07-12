@@ -18,6 +18,7 @@ from forge_agent.replay.cassette import (
     args_digest,
     request_digest,
 )
+from forge_agent.replay.fork import ForkModelClient, ForkToolRegistry
 from forge_agent.replay.player import (
     ReplayDivergenceError,
     ReplayModelClient,
@@ -26,6 +27,8 @@ from forge_agent.replay.player import (
 from forge_agent.replay.recorder import RecordingModelClient, RecordingToolRegistry
 
 __all__ = [
+    "ForkModelClient",
+    "ForkToolRegistry",
     "RecordedLLMCall",
     "RecordedToolCall",
     "RecordingModelClient",
