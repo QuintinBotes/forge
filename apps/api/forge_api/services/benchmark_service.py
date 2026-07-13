@@ -170,12 +170,26 @@ class BenchmarkService:
                 registered.append(self.register_suite(manifest, cases, published=published))
         return registered
 
-    def list_suites(self, *, published_only: bool = False) -> list[BenchmarkSuite]:
+    def list_suites(
+        self, *, published_only: bool = False, public_only: bool = False
+    ) -> list[BenchmarkSuite]:
         with self._session_factory() as session:
             stmt = select(BenchmarkSuite).order_by(BenchmarkSuite.slug, BenchmarkSuite.version)
             if published_only:
                 stmt = stmt.where(BenchmarkSuite.published.is_(True))
+            if public_only:
+                # Never expose private per-repo Self-Eval suites publicly: only
+                # global (workspace_id IS NULL), non-private suites are public.
+                stmt = stmt.where(
+                    BenchmarkSuite.workspace_id.is_(None),
+                    BenchmarkSuite.private.is_(False),
+                )
             return list(session.scalars(stmt).all())
+
+    @staticmethod
+    def is_public_suite(suite: BenchmarkSuite) -> bool:
+        """True iff the suite may be exposed via the public (unauthenticated) API."""
+        return suite.workspace_id is None and not suite.private
 
     def get_suite(self, slug: str, version: str) -> BenchmarkSuite:
         with self._session_factory() as session:
@@ -407,7 +421,9 @@ class BenchmarkService:
     ) -> tuple[BenchmarkSuite, list[LeaderboardRow]]:
         with self._session_factory() as session:
             suite = self._require_suite(session, slug, version)
-            if public_only and not suite.published:
+            if public_only and (not suite.published or not self.is_public_suite(suite)):
+                # A private/workspace-scoped Self-Eval suite is invisible to the
+                # public API even if published — 404 as if it does not exist.
                 raise SuiteNotFoundError(f"{slug}@{version}")
             stmt = select(BenchmarkSubmission).where(
                 BenchmarkSubmission.benchmark_suite_id == suite.id,
@@ -437,6 +453,7 @@ class BenchmarkService:
                 or submission.visibility != Visibility.public.value
                 or submission.status not in PUBLIC_RANKABLE_STATUSES
                 or not suite.published
+                or not self.is_public_suite(suite)
             ):
                 raise SubmissionNotFoundError(str(submission_id))
             return submission, suite

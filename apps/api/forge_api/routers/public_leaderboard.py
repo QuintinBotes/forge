@@ -104,7 +104,7 @@ def list_public_benchmarks(service: ServiceDep, response: Response) -> list[Publ
             primary_metric=s.primary_metric,
             content_hash=s.content_hash,
         )
-        for s in service.list_suites(published_only=True)
+        for s in service.list_suites(published_only=True, public_only=True)
     ]
 
 

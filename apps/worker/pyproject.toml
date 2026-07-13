@@ -26,6 +26,11 @@ dependencies = [
     "celery>=5.3",
     "redis>=5.0",
     "forge-approval",
+    # F41 — Self-Eval Gate: mint hidden regression cases into private suites and
+    # re-freeze their manifests (forge_eval.mint + benchmark.manifest.freeze);
+    # forge-integrations supplies the GitHub PR-data source in the prod seam.
+    "forge-eval",
+    "forge-integrations",
 ]
 
 [build-system]

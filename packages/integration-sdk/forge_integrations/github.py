@@ -705,6 +705,46 @@ class GitHubClient:
             )
         ]
 
+    def list_pr_files(self, repo: str, number: int) -> list[dict[str, Any]]:
+        """Paginated read of ``GET /repos/{r}/pulls/{n}/files`` (raw file objects).
+
+        Each item carries ``filename``/``status``/``patch`` — the unified-diff
+        the Self-Eval Gate miner (F41) parses for added/changed test node ids.
+        Returned as raw dicts so this SDK never depends on ``forge_eval``.
+        """
+        r = self.owner_repo(repo)
+        return list(
+            self._paginate(
+                "GET",
+                f"/repos/{r}/pulls/{number}/files",
+                params={"per_page": 100},
+                action="list_pr_files",
+                repo=r,
+            )
+        )
+
+    def pr_base_commit(self, repo: str, number: int) -> str:
+        """Return a PR's base commit sha (``base.sha`` of ``GET .../pulls/{n}``).
+
+        The "before" ref the Self-Eval Gate miner (F41) replays added tests
+        against to confirm they fail prior to the merge.
+        """
+        return self._pr_ref_sha(repo, number, "base")
+
+    def pr_head_commit(self, repo: str, number: int) -> str:
+        """Return a PR's head commit sha (``head.sha`` of ``GET .../pulls/{n}``).
+
+        The "after" ref (the merged change) the Self-Eval Gate miner (F41)
+        replays added tests against to confirm they now pass.
+        """
+        return self._pr_ref_sha(repo, number, "head")
+
+    def _pr_ref_sha(self, repo: str, number: int, side: str) -> str:
+        r = self.owner_repo(repo)
+        resp = self._request("GET", f"/repos/{r}/pulls/{number}", action="get_pr", repo=r)
+        self._raise_for_status(resp)
+        return str((resp.json().get(side) or {}).get("sha") or "")
+
     def close_pr(self, pr: PullRequest) -> PullRequest:
         """Close a PR (``PATCH .../pulls/{n}`` with ``state=closed``)."""
         r = self.owner_repo(pr.repo)
