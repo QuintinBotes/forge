@@ -9,7 +9,15 @@ resolution rate — the ground-truth signal the Self-Eval Gate blocks on.
 
 from __future__ import annotations
 
+from forge_eval.sweval.gate import SelfEvalGate, SelfEvalRegressionError
 from forge_eval.sweval.runner import SweCaseResult, run_swe_case
 from forge_eval.sweval.self_eval import SelfEvalScorecard, run_self_eval
 
-__all__ = ["SelfEvalScorecard", "SweCaseResult", "run_self_eval", "run_swe_case"]
+__all__ = [
+    "SelfEvalGate",
+    "SelfEvalRegressionError",
+    "SelfEvalScorecard",
+    "SweCaseResult",
+    "run_self_eval",
+    "run_swe_case",
+]
