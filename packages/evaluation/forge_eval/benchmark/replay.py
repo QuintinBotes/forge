@@ -46,6 +46,12 @@ METRIC_REGISTRY: dict[str, Callable[[Sequence[str], Sequence[str], int], float]]
     "agent.requirement_satisfaction_rate": lambda out, exp, _k: (
         len(set(exp) & set(out)) / len(set(exp)) if exp else 1.0
     ),
+    # Self-Eval Gate: a minted case records the fail-to-pass tests that PASS
+    # after the candidate patch as its outputs; the fraction of the expected
+    # fail-to-pass set that now passes is the resolution rate the gate blocks on.
+    "agent.fail_to_pass_rate": lambda out, exp, _k: (
+        len(set(exp) & set(out)) / len(set(exp)) if exp else 1.0
+    ),
 }
 
 

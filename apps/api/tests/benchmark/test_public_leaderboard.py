@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from conftest import SLUG, VERSION, faithful_submission
+from conftest import SLUG, VERSION, WS_ID, faithful_submission
 
 from forge_api.routers import public_leaderboard as public_module
 from forge_api.settings import Settings
@@ -130,3 +130,33 @@ def test_unpublished_suite_hidden_from_public(make_client, service) -> None:
     anon = make_client(None)
     assert anon.get("/public/benchmarks").json() == []
     assert anon.get(BOARD).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda s: setattr(s, "private", True), id="private-flag"),
+        pytest.param(lambda s: setattr(s, "workspace_id", WS_ID), id="workspace-scoped"),
+    ],
+)
+def test_private_self_eval_suite_never_public(make_client, service, mutate) -> None:
+    """A private/workspace-scoped Self-Eval suite is invisible to /public/*.
+
+    Even when it is ``published`` (Self-Eval suites are published so the owning
+    workspace can rank against its own baseline), the public surface must treat
+    it as if it does not exist — no listing, no leaderboard.
+    """
+    sid = _published_submission(make_client)  # give the suite a rankable entry
+    with service._session_factory() as session:  # test-only reach-in
+        from forge_db.models.benchmark import BenchmarkSuite
+
+        suite = session.query(BenchmarkSuite).one()
+        assert suite.published is True  # precondition: only privacy hides it now
+        mutate(suite)
+        session.commit()
+
+    anon = make_client(None)
+    assert anon.get("/public/benchmarks").json() == []
+    assert anon.get(BOARD).status_code == 404
+    # The submission detail for that suite must 404 too — no back-door leak.
+    assert anon.get(f"{BOARD}/submissions/{sid}").status_code == 404
