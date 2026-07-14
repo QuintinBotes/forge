@@ -176,4 +176,48 @@ class BenchmarkSubmission(ForgeModel):
     )
 
 
-__all__ = ["BenchmarkSubmission", "BenchmarkSuite"]
+class SelfEvalBaseline(ForgeModel):
+    """The recorded baseline resolution rate a config change is gated against.
+
+    Self-Eval Gate (F41): when a workspace's private per-repo suite is first run
+    (or an admin accepts a better result), the resolution rate is frozen here as
+    the baseline. A later model/prompt/router change is refused if, re-evaluated
+    on the same suite, it scores below ``baseline_rate``. Exactly one baseline
+    per (workspace, suite) — a new run upserts this row.
+    """
+
+    __tablename__ = "self_eval_baseline"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "benchmark_suite_id",
+            name="uq_self_eval_baseline_workspace_suite",
+        ),
+        Index("ix_self_eval_baseline_workspace", "workspace_id"),
+    )
+
+    #: The workspace whose private suite this baseline belongs to (NOT NULL —
+    #: a baseline is always tenant-scoped, unlike a global benchmark suite).
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    benchmark_suite_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("benchmark_suite.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: Frozen resolution rate (0..1) — the value a config change must not fall below.
+    baseline_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    #: Scorecard provenance for the baseline run (resolved of total cases).
+    resolved: Mapped[int] = mapped_column(Integer, nullable=False)
+    total: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Redacted config snapshot that established this baseline (no secrets).
+    config: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+__all__ = ["BenchmarkSubmission", "BenchmarkSuite", "SelfEvalBaseline"]

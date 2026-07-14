@@ -12,7 +12,7 @@ from forge_db.models.approval import ApprovalDecision, PolicyOverrideGrant
 from forge_db.models.attestation import Attestation
 from forge_db.models.audit import AuditChainHead, AuditLog, AuditLogImmutableError
 from forge_db.models.automation import AutomationExecution, AutomationRule
-from forge_db.models.benchmark import BenchmarkSubmission, BenchmarkSuite
+from forge_db.models.benchmark import BenchmarkSubmission, BenchmarkSuite, SelfEvalBaseline
 from forge_db.models.connections import MCPConnection, RepositoryConnection
 from forge_db.models.cost import CostEvent, ModelPrice
 from forge_db.models.deployment import (
@@ -307,6 +307,7 @@ __all__ = [
     "ScimToken",
     "ScopeType",
     "Secret",
+    "SelfEvalBaseline",
     "SkillProfile",
     "SkillProfileSnapshot",
     "SpecDocument",

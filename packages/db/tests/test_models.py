@@ -122,6 +122,8 @@ EXPECTED_MODELS = [
     # F35 benchmark-leaderboard tables.
     "BenchmarkSuite",
     "BenchmarkSubmission",
+    # F41 Self-Eval Gate baseline.
+    "SelfEvalBaseline",
     # F36 human-approval-system tables.
     "ApprovalDecision",
     "PolicyOverrideGrant",
