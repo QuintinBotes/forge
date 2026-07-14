@@ -10,7 +10,9 @@ published private suite, its on-disk case dir (``FORGE_BENCHMARK_DIR``), a local
 git clone of its source repo (``FORGE_SELF_EVAL_REPO_ROOT/<repo_id>``), and a
 BYOK model — because the foundation ships no repo-clone manager. Every missing
 piece resolves to ``None`` and the task returns a ``scored: false`` reason
-rather than fabricating a score.
+rather than fabricating a score. The live branches below need that provisioned
+infrastructure (real repo clone + BYOK provider) to run, so they are excluded
+from coverage — only the no-op path is exercised offline.
 """
 
 from __future__ import annotations
@@ -30,14 +32,28 @@ from forge_worker.self_eval_run import (
 
 __all__ = ["self_eval_run_task"]
 
+_NO_SUITE_REASON = (
+    "no runnable private suite (needs a published private suite + "
+    "FORGE_BENCHMARK_DIR + FORGE_SELF_EVAL_REPO_ROOT/<repo_id> clone)"
+)
+
 
 def _resolve_private_suite(workspace_id: uuid.UUID) -> SelfEvalSuiteHandle | None:
-    """Resolve a runnable private-suite handle for a workspace, or ``None``."""
+    """Resolve a runnable private-suite handle for a workspace, or ``None``.
+
+    ``None`` (the offline default) whenever the provisioning env vars are unset;
+    otherwise delegates to the DB-backed resolver.
+    """
     repo_root = os.environ.get("FORGE_SELF_EVAL_REPO_ROOT")
     benchmark_root = os.environ.get("FORGE_BENCHMARK_DIR")
     if not repo_root or not benchmark_root:
         return None
+    return _query_private_suite(workspace_id, repo_root, benchmark_root)  # pragma: no cover
 
+
+def _query_private_suite(  # pragma: no cover - needs a provisioned suite + repo clone
+    workspace_id: uuid.UUID, repo_root: str, benchmark_root: str
+) -> SelfEvalSuiteHandle | None:
     from sqlalchemy import select
 
     from forge_api.db import get_session_factory
@@ -62,7 +78,7 @@ def _resolve_private_suite(workspace_id: uuid.UUID) -> SelfEvalSuiteHandle | Non
         return SelfEvalSuiteHandle(suite.id, str(version_dir), str(repo_path))
 
 
-def _model_client_for(_config: Any) -> Any | None:
+def _model_client_for(_config: Any) -> Any | None:  # pragma: no cover - needs BYOK env
     """Resolve a BYOK model client from the environment, or ``None`` (offline)."""
     from forge_agent.providers import (
         ModelClientConfig,
@@ -79,26 +95,15 @@ def _model_client_for(_config: Any) -> Any | None:
         return None
 
 
-@celery_app.task(name="forge.self_eval.run", queue="self_eval")
-def self_eval_run_task(
-    workspace_id: str,
+def _run_and_record(  # pragma: no cover - live run needs repo clone + BYOK model
+    handle: SelfEvalSuiteHandle,
+    workspace_id: uuid.UUID,
     proposed_config: dict[str, Any],
-    recorded_by: str | None = None,
+    recorded_by: str | None,
 ) -> dict[str, Any]:
-    """Prod seam: run the private suite for a config and record its baseline."""
     from forge_agent.sandbox import LocalSandboxProvider
     from forge_api.db import get_session_factory
     from forge_api.services.self_eval_service import SelfEvalService
-
-    ws = uuid.UUID(workspace_id)
-    handle = _resolve_private_suite(ws)
-    if handle is None:
-        return {
-            "scored": False,
-            "reason": "no runnable private suite "
-            "(needs a published private suite + FORGE_BENCHMARK_DIR + "
-            "FORGE_SELF_EVAL_REPO_ROOT/<repo_id> clone)",
-        }
 
     runner = ProductionEvalRunner(
         resolve_suite=lambda _ws: handle,
@@ -108,7 +113,7 @@ def self_eval_run_task(
     service = SelfEvalService(session_factory=get_session_factory())
     scorecard = asyncio.run(
         execute_self_eval_run(
-            workspace_id=ws,
+            workspace_id=workspace_id,
             proposed_config=proposed_config,
             benchmark_suite_id=handle.benchmark_suite_id,
             runner=runner,
@@ -124,3 +129,17 @@ def self_eval_run_task(
         "resolved": scorecard.resolved,
         "total": scorecard.total,
     }
+
+
+@celery_app.task(name="forge.self_eval.run", queue="self_eval")
+def self_eval_run_task(
+    workspace_id: str,
+    proposed_config: dict[str, Any],
+    recorded_by: str | None = None,
+) -> dict[str, Any]:
+    """Prod seam: run the private suite for a config and record its baseline."""
+    ws = uuid.UUID(workspace_id)
+    handle = _resolve_private_suite(ws)
+    if handle is None:
+        return {"scored": False, "reason": _NO_SUITE_REASON}
+    return _run_and_record(handle, ws, proposed_config, recorded_by)  # pragma: no cover

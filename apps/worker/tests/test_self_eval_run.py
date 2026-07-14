@@ -300,6 +300,19 @@ async def test_execute_records_nothing_when_runner_returns_none() -> None:
     assert recorded == []  # a no-score run never writes a baseline
 
 
+def test_self_eval_run_task_is_noop_without_infra(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Celery task is an honest no-op until an operator provisions the clone."""
+    from forge_worker.tasks.self_eval_run import _resolve_private_suite, self_eval_run_task
+
+    monkeypatch.delenv("FORGE_SELF_EVAL_REPO_ROOT", raising=False)
+    monkeypatch.delenv("FORGE_BENCHMARK_DIR", raising=False)
+
+    assert _resolve_private_suite(uuid.uuid4()) is None
+    result = self_eval_run_task(str(uuid.uuid4()), {"model": "x"})
+    assert result["scored"] is False
+    assert "no runnable private suite" in result["reason"]
+
+
 @pytest.mark.asyncio
 async def test_execute_records_via_real_service() -> None:
     """End-to-end with the real SelfEvalService (in-memory) — baseline reads back."""
