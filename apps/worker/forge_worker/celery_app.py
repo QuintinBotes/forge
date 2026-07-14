@@ -43,6 +43,7 @@ celery_app = Celery(
         "forge_worker.tasks.sso",
         "forge_worker.tasks.audit",
         "forge_worker.tasks.self_eval_mint",
+        "forge_worker.tasks.self_eval_run",
         "forge_worker.beat",
     ],
 )

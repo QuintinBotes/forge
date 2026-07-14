@@ -45,6 +45,7 @@ __all__ = [
     "SelfEvalSuiteHandle",
     "agent_solve",
     "build_coder_tools",
+    "execute_self_eval_run",
 ]
 
 #: Tool policy actions the eval agent is scoped to (allow-list on the objective).
@@ -271,3 +272,44 @@ def _config_model(proposed_config: Any) -> str | None:
         return str(model) if model else None
     model = getattr(proposed_config, "model", None)
     return str(model) if model else None
+
+
+#: Persist a baseline for a (workspace, suite) — matches
+#: ``SelfEvalService.record_baseline`` (keyword-only, caller passes redacted config).
+BaselineRecorder = Callable[..., Any]
+#: Run a private suite for a config; ``None`` when there is nothing to score.
+EvalRun = Callable[[uuid.UUID, Any], Any]
+
+
+async def execute_self_eval_run(
+    *,
+    workspace_id: uuid.UUID,
+    proposed_config: Any,
+    benchmark_suite_id: uuid.UUID,
+    runner: EvalRun,
+    record_baseline: BaselineRecorder,
+    recorded_by: uuid.UUID | None = None,
+    overwrite: bool = True,
+) -> SelfEvalScorecard | None:
+    """Run the private-suite eval for a config and record it as the baseline (A4).
+
+    This is the worker-owned, un-parked "self-eval run": it drives the (injected)
+    live runner, and on a real score persists it as the workspace's baseline via
+    ``record_baseline``. Returns the scorecard, or ``None`` when the runner had
+    nothing to score (no suite / no cases / offline) — in which case no baseline
+    is written. ``proposed_config`` must be free of secrets (AO role/tier config).
+    """
+    scorecard = await runner(workspace_id, proposed_config)
+    if scorecard is None:
+        return None
+    record_baseline(
+        workspace_id=workspace_id,
+        benchmark_suite_id=benchmark_suite_id,
+        resolved=scorecard.resolved,
+        total=scorecard.total,
+        resolution_rate=scorecard.resolution_rate,
+        config=dict(proposed_config) if isinstance(proposed_config, dict) else {},
+        recorded_by=recorded_by,
+        overwrite=overwrite,
+    )
+    return scorecard

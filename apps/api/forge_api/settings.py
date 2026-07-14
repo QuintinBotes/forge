@@ -352,6 +352,12 @@ class Settings(BaseSettings):
     # Per-IP request budget per 60s window on the public leaderboard routes.
     leaderboard_public_rate_limit: int = 60
     leaderboard_cache_ttl_seconds: int = 60
+    # F41 Self-Eval Gate: when true, an admin config change (AO role-config /
+    # settings) is refused if it regresses the workspace's private-suite
+    # resolution rate below the recorded baseline. OFF by default so an
+    # unconfigured instance (no private suite / no baseline) is never gated; the
+    # gate is additionally a no-op on cold start. See docs/self-hosting.
+    self_eval_enforce: bool = False
 
 
 @lru_cache(maxsize=1)
