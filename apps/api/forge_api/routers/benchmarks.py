@@ -6,10 +6,13 @@ verify / publish / flag are ``admin``-only moderation actions. All access is
 scoped by the authenticated principal's workspace — a cross-workspace id
 surfaces as 404, never a leak.
 
-Internal agent-driven benchmark runs (``POST /runs``) are PARKED: the in-tree
-foundation has no F12 ``EvalRunner``/agent-eval substrate to drive them, and a
-fake run would violate PARK-DON'T-FAKE. The external submit -> verify ->
-moderate -> rank path is fully implemented.
+Internal agent-driven runs now exist for the F41 Self-Eval Gate: the
+``forge.self_eval.run`` worker task (``forge_worker.tasks.self_eval_run``) drives
+the live ``ProductionEvalRunner`` over a workspace's PRIVATE per-repo suite and
+records the baseline the gate blocks regressions against. They run in the worker,
+not this request path — a private-suite run is minutes-long and agent-driven — so
+there is no inline ``POST /runs`` here. This public F35 router remains the
+external submit -> verify -> moderate -> rank path for shared community suites.
 """
 
 from __future__ import annotations

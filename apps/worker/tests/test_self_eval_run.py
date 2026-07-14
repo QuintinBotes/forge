@@ -18,11 +18,13 @@ import yaml
 from forge_agent.sandbox import LocalSandboxProvider
 from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
 from forge_eval.golden import GoldenCase
+from forge_eval.sweval import SelfEvalScorecard
 from forge_worker.self_eval_run import (
     ProductionEvalRunner,
     SelfEvalSuiteHandle,
     agent_solve,
     build_coder_tools,
+    execute_self_eval_run,
 )
 
 _BROKEN = "def add(a, b):\n    return a - b\n"
@@ -247,3 +249,83 @@ async def test_runner_wrong_config_does_not_resolve(repo: Path, tmp_path: Path) 
     assert card is not None
     assert (card.total, card.resolved) == (1, 0)
     assert card.resolution_rate == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# execute_self_eval_run — run -> record baseline (A4)                           #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_execute_records_baseline() -> None:
+    calls: list[dict] = []
+
+    async def runner(_ws: uuid.UUID, _cfg: object) -> SelfEvalScorecard:
+        return SelfEvalScorecard(total=10, resolved=8, resolution_rate=0.8)
+
+    def record(**kwargs: object) -> None:
+        calls.append(kwargs)
+
+    ws, suite = uuid.uuid4(), uuid.uuid4()
+    card = await execute_self_eval_run(
+        workspace_id=ws,
+        proposed_config={"model": "claude-opus", "scope": "ao.role_config"},
+        benchmark_suite_id=suite,
+        runner=runner,
+        record_baseline=record,
+    )
+    assert card is not None and card.resolution_rate == 0.8
+    assert len(calls) == 1
+    assert calls[0]["workspace_id"] == ws
+    assert calls[0]["benchmark_suite_id"] == suite
+    assert calls[0]["resolution_rate"] == 0.8
+    assert calls[0]["config"] == {"model": "claude-opus", "scope": "ao.role_config"}
+
+
+@pytest.mark.asyncio
+async def test_execute_records_nothing_when_runner_returns_none() -> None:
+    recorded: list[object] = []
+
+    async def runner(_ws: uuid.UUID, _cfg: object) -> None:
+        return None  # no suite / no cases / offline
+
+    card = await execute_self_eval_run(
+        workspace_id=uuid.uuid4(),
+        proposed_config={"model": "x"},
+        benchmark_suite_id=uuid.uuid4(),
+        runner=runner,
+        record_baseline=lambda **kw: recorded.append(kw),
+    )
+    assert card is None
+    assert recorded == []  # a no-score run never writes a baseline
+
+
+@pytest.mark.asyncio
+async def test_execute_records_via_real_service() -> None:
+    """End-to-end with the real SelfEvalService (in-memory) — baseline reads back."""
+    from sqlalchemy import StaticPool, create_engine
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from forge_api.services.self_eval_service import SelfEvalService
+    from forge_db.base import Base
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    service = SelfEvalService(
+        session_factory=sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
+    )
+
+    async def runner(_ws: uuid.UUID, _cfg: object) -> SelfEvalScorecard:
+        return SelfEvalScorecard(total=4, resolved=3, resolution_rate=0.75)
+
+    ws = uuid.uuid4()
+    await execute_self_eval_run(
+        workspace_id=ws,
+        proposed_config={"model": "claude-opus"},
+        benchmark_suite_id=uuid.uuid4(),
+        runner=runner,
+        record_baseline=service.record_baseline,
+    )
+    assert service.workspace_baseline(ws) == 0.75
