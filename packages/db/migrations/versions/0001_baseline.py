@@ -75,6 +75,9 @@ DEFERRED_TABLES = frozenset(
         # F35 benchmark-leaderboard — created by 0018_f35_benchmark_leaderboard.
         "benchmark_suite",
         "benchmark_submission",
+        # F41 Self-Eval Gate baseline (FK -> benchmark_suite, itself deferred) —
+        # created by 0040_self_eval_baseline.
+        "self_eval_baseline",
         # F01 board persistence (task dependency adjacency) — created by
         # 0024_board_persistence.
         "task_dependency",
