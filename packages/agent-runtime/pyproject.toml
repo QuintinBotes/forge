@@ -19,7 +19,7 @@ dependencies = [
 # adapter modules so the hermetic default suite needs neither installed. Install
 # with `uv sync --extra providers` to run the `pytest -m live_model` lane.
 providers = [
-    "anthropic>=0.49",
+    "anthropic>=0.117.0",
     "openai>=2.45.0",
 ]
 
