@@ -38,7 +38,7 @@ dependencies = [
     # Adaptive Orchestration — the provider-agnostic tier -> model router
     # (ao-settings-api's routing-preview resolves a concrete model through it).
     "forge-agent",
-    "fastapi>=0.139.0",
+    "fastapi>=0.139.2",
     "uvicorn[standard]>=0.51.0",
     "pydantic-settings>=2.2",
     "sqlalchemy>=2.0",
