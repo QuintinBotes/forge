@@ -137,8 +137,12 @@ class DeployHandle(BaseModel):
     url: str | None = None
 
 
+#: The lifecycle states a provider can report for a deployment.
+DeployState = Literal["pending", "in_progress", "success", "failure", "error"]
+
+
 class DeployStatus(BaseModel):
-    state: Literal["pending", "in_progress", "success", "failure", "error"]
+    state: DeployState
     detail: str | None = None
     finished: bool = False
 
@@ -154,6 +158,7 @@ __all__ = [
     "DeployHandle",
     "DeployProviderConfig",
     "DeployRequest",
+    "DeployState",
     "DeployStatus",
     "EnvironmentSpec",
     "FreezeWindow",

@@ -14,10 +14,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from uuid import UUID
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
 
 __all__ = ["DeploymentLike", "DoraMetrics", "SqlDoraReader", "compute_dora_metrics"]
 
@@ -31,14 +34,27 @@ _FAILURE_STATES: frozenset[str] = frozenset({"failed", "gate_rejected", "rolled_
 
 @runtime_checkable
 class DeploymentLike(Protocol):
-    """The subset of ``deployment`` columns the DORA aggregation reads."""
+    """The subset of ``deployment`` columns the DORA aggregation reads.
 
-    environment_name: str
-    state: str
-    kind: str
-    requested_at: datetime | None
-    started_at: datetime | None
-    finished_at: datetime | None
+    Members are read-only (properties) rather than settable attributes: the ORM
+    ``deployment`` row types ``state``/``kind`` as ``StrEnum`` (a subclass of
+    ``str``), and a settable ``str`` protocol attribute is invariant and would
+    reject them. The aggregation only ever reads these fields, so a covariant
+    read-only view is both correct and accepts the enum-typed columns.
+    """
+
+    @property
+    def environment_name(self) -> str: ...
+    @property
+    def state(self) -> str: ...
+    @property
+    def kind(self) -> str: ...
+    @property
+    def requested_at(self) -> datetime | None: ...
+    @property
+    def started_at(self) -> datetime | None: ...
+    @property
+    def finished_at(self) -> datetime | None: ...
 
 
 class DoraMetrics(BaseModel):
@@ -114,7 +130,7 @@ def compute_dora_metrics(
 class SqlDoraReader:
     """Workspace-scoped DORA rollup over the real ``deployment`` table."""
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
     def dora_metrics(

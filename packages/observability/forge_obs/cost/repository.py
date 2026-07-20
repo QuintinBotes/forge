@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 from forge_obs.cost.models import (
@@ -29,6 +29,10 @@ from forge_obs.cost.models import (
     ModelUsage,
 )
 from forge_obs.cost.pricing import PriceBook, compute_cost
+
+if TYPE_CHECKING:
+    from sqlalchemy import ColumnElement
+    from sqlalchemy.orm import Session, sessionmaker
 
 __all__ = [
     "CostLedger",
@@ -331,7 +335,7 @@ def _usage_from_row(row: Any) -> ModelUsage:
 class SqlCostLedger:
     """Durable ledger over ``cost_event`` (idempotent on the unique index)."""
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
     def upsert_event(
@@ -342,7 +346,7 @@ class SqlCostLedger:
 
         from forge_db.models.cost import CostEvent, CostEventKind
 
-        def _dedup(session) -> CostRecord | None:
+        def _dedup(session: Session) -> CostRecord | None:
             row = session.scalars(
                 select(CostEvent).where(
                     CostEvent.workspace_id == usage.workspace_id,
@@ -445,11 +449,11 @@ class SqlCostLedger:
 class SqlCostReader:
     """Workspace-scoped rollups over ``cost_event`` for the Cost API."""
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
     @staticmethod
-    def _scope_clause(scope: str, scope_id: UUID):
+    def _scope_clause(scope: str, scope_id: UUID) -> ColumnElement[bool]:
         from forge_db.models.cost import CostEvent
 
         return {
