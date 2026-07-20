@@ -216,6 +216,28 @@ def test_mcp_gateway_on_edge_network_with_proxy() -> None:
     assert "backend" in mcp["networks"]
 
 
+def _caddy_block(caddy: str, header: str) -> str:
+    """Return the text span of a Caddyfile block, from ``header`` (e.g.
+    ``"handle /ws {"``) through its matching closing brace.
+
+    ``api:8000`` (unlike ``temporal-ui:8080`` in the sibling test above) appears
+    as the upstream of several unrelated blocks in this file (``/api/*``,
+    ``/public/*``, the webhook routes, ...), so a bare file-wide substring check
+    would pass even if these specific blocks proxied somewhere else entirely.
+    Scoping the assertion to the block's own text span keeps it meaningful.
+    """
+    start = caddy.index(header)
+    depth = 0
+    for i in range(start, len(caddy)):
+        if caddy[i] == "{":
+            depth += 1
+        elif caddy[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return caddy[start : i + 1]
+    raise AssertionError(f"unterminated block for {header!r}")
+
+
 def test_caddy_routes_realtime_websockets() -> None:
     """The realtime board (/ws) and spec co-editing (/ws/spec/*) sockets mount at
     the API app root (no /api prefix); the client opens a bare same-origin /ws,
@@ -224,6 +246,10 @@ def test_caddy_routes_realtime_websockets() -> None:
     caddy = (DEPLOY / "caddy" / "Caddyfile").read_text(encoding="utf-8")
     assert "handle /ws {" in caddy, "missing bare /ws board-push route"
     assert "handle /ws/spec/* {" in caddy, "missing /ws/spec/* co-editing route"
+    assert "api:8000" in _caddy_block(caddy, "handle /ws {"), "/ws must proxy to api:8000"
+    assert "api:8000" in _caddy_block(
+        caddy, "handle /ws/spec/* {"
+    ), "/ws/spec/* must proxy to api:8000"
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")

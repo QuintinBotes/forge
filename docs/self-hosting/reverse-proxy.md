@@ -36,6 +36,7 @@ from `docker-compose.yml`.
 |---|---|---|---|
 | `/api/v1/integrations/alerts/*/webhook` | `handle` | `api:8000` | No (HMAC'd raw body) |
 | `/api/v1/integrations/pm/webhooks/*` | `handle` | `api:8000` | No (HMAC'd raw body) |
+| `/api/integration/github/webhooks` | `handle_path` (via `/api/*`) | `api:8000` | Yes (`/api` stripped; see below) |
 | `/public/*` | `handle` | `api:8000` | No |
 | `/ws`, `/ws/spec/*` | `handle` | `api:8000` | No |
 | `/api/*` | `handle_path` | `api:8000` | Yes (`/api` stripped) |
@@ -43,6 +44,15 @@ from `docker-compose.yml`.
 | `/_temporal*` | `handle` + `basic_auth` | `temporal-ui:8080` | No |
 | `/grafana/*` | `handle` + `basic_auth` | `grafana:3000` | No |
 | everything else | `handle` (catch-all) | `web:3000` | No |
+
+**`/api/integration/github/webhooks`** (the GitHub App webhook ingress,
+`forge_api.routers.integration`) is not a dedicated `handle` block like the
+alerts/PM webhook rows above — it rides the generic `/api/*` prefix-stripped
+route, because `api_prefix` defaults to empty and the router already mounts
+the path at `/integration/github/webhooks` internally. Configure the GitHub
+App's Webhook URL as `https://<domain>/api/integration/github/webhooks` (see
+[docs/runbooks/live-github.md](../runbooks/live-github.md)) — the bare,
+un-prefixed path is not externally reachable behind either proxy.
 
 **`/ws` and `/ws/spec/{spec_id}`** (the board-push and CRDT spec-co-editing
 websocket channels, `forge_api.routers.realtime`) mount at the API app **root**,
