@@ -127,6 +127,15 @@ def _resolve_model_client(model_client: ModelClient | None) -> ModelClient:
             # Provider SDK/extra absent — never silently fake on a configured
             # lane failure; degrade to the offline client and keep running.
             pass
+    # Reached once per run when no live provider resolved: make the degrade loud
+    # so a self-hoster does not mistake canned scripted output for a real run.
+    logger.warning(
+        "No live model provider resolved; falling back to the offline "
+        "ScriptedModelClient (canned, deterministic output — not a real agent "
+        "run). Set FORGE_MODEL_PROVIDER (anthropic|openai) and a BYOK key "
+        "(ANTHROPIC_API_KEY / OPENAI_API_KEY, or FORGE_MODEL_API_KEY) to run a "
+        "real provider."
+    )
     return _scripted_client()
 
 

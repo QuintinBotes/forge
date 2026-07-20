@@ -7,6 +7,7 @@ live model provider, no Celery broker.
 from __future__ import annotations
 
 import importlib.util
+import logging
 
 import pytest
 
@@ -42,6 +43,27 @@ def test_build_agent_runner_no_creds_uses_scripted(monkeypatch: pytest.MonkeyPat
     monkeypatch.delenv("FORGE_MODEL_PROVIDER", raising=False)
     runner = build_agent_runner()
     assert isinstance(runner._model, ScriptedModelClient)
+
+
+def test_build_agent_runner_warns_on_scripted_fallback(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """No provider configured -> a single loud WARNING that output is canned.
+
+    A self-hoster who never set ``FORGE_MODEL_PROVIDER`` gets ``ScriptedModelClient``
+    (offline, deterministic) instead of a real agent run; the fallback must not be
+    silent. The warning fires once per resolve (once per run), not per-call spam.
+    """
+    monkeypatch.delenv("FORGE_MODEL_PROVIDER", raising=False)
+    with caplog.at_level(logging.WARNING, logger="forge.agent_runner"):
+        build_agent_runner()
+    fallback_warnings = [
+        r for r in caplog.records if r.name == "forge.agent_runner" and r.levelno == logging.WARNING
+    ]
+    assert len(fallback_warnings) == 1, "expected exactly one scripted-fallback WARNING"
+    message = fallback_warnings[0].getMessage()
+    assert "ScriptedModelClient" in message
+    assert "FORGE_MODEL_PROVIDER" in message
 
 
 def test_build_agent_runner_uses_injected_client(monkeypatch: pytest.MonkeyPatch) -> None:
