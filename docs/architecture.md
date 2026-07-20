@@ -57,6 +57,7 @@ packages/
   workflow-engine/forge_workflow       Postgres FSM workflow layer
   agent-runtime/  forge_agent          LangGraph plan/execute/verify + sandboxes
   multi-agent-coordinator/ forge_coordinator  Fan-out / supervision
+  orchestration-policy/ forge_orchestration_policy  Adaptive Orchestration: complexity sizing + role→tier/model routing
   board-core/     forge_board          Native project board
   knowledge-core/ forge_knowledge      Hybrid retrieval (pgvector + FTS + RRF + rerank)
   integration-sdk/forge_integrations   Integrations incl. PM adapters

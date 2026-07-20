@@ -1,10 +1,11 @@
 /**
- * Typed Forge API client (Phase-0 stub).
+ * Typed Forge API client.
  *
- * A thin `fetch` wrapper that knows the Forge API surface. The backend routes are
- * still Phase-0 stubs returning HTTP 501; this client therefore surfaces a typed
- * {@link ApiError} (with `notImplemented` set for 501s) so Task 1.6 can build
- * against a stable shape and progressively light up real handlers.
+ * A thin `fetch` wrapper that knows the Forge API surface. The backend routes
+ * below are implemented; this client still surfaces a typed {@link ApiError}
+ * (with `notImplemented` set for HTTP 501) as a residual safety net for any
+ * route a given deployment has feature-flagged off or not yet enabled, so
+ * callers can degrade gracefully instead of choking on an unexpected shape.
  */
 
 import { deriveOnboardingProgress } from "./onboarding-progress";

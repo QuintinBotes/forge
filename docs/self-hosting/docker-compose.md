@@ -26,6 +26,8 @@ the hardening applied, and how to operate it. To get running quickly first, see
 | `web` | built from `deploy/docker/web.Dockerfile` | Next.js frontend |
 | `caddy` | `caddy:2.8-alpine` | TLS termination and reverse proxy |
 | `autoheal` | `willfarrell/autoheal` | Restarts containers that fail their healthcheck |
+| `docker-proxy` | `tecnativa/docker-socket-proxy:0.3.0` | Read-only-socket, verb-restricted Docker API proxy — the only component near the raw Docker socket, used by `worker` to create/exec/inspect per-task sandbox containers |
+| `sandbox-proxy` | `ubuntu/squid:6.6-24.04_edge` | Allow-listing forward proxy (squid) — the only egress route for sandboxed agent containers on the `network: egress` sandbox mode |
 
 ## Hardening applied
 
@@ -38,8 +40,16 @@ The production file follows the spec's "Production Docker Compose Requirements":
 - **Resource limits** — CPU and memory limits on every container.
 - **Named volumes** for all stateful data (`db-data`, `redis-data`,
   `minio-data`, `caddy-data`, `caddy-config`) — never bind mounts.
-- **Segmented networks** — `edge`, `backend`, `data`, `mcp`; the `data` network
-  is marked `internal`, so the database is unreachable from the edge.
+- **Segmented networks** — seven networks: `edge`, `backend`, `data`, `mcp`,
+  `sandbox_ctl`, `sandbox_egress`, and `observability`. `data`, `sandbox_ctl`,
+  `sandbox_egress`, and `observability` are marked `internal` (no route to the
+  public internet): `data` isolates the database from the edge; `sandbox_ctl`
+  is `worker`'s private route to `docker-proxy`; `sandbox_egress` is the only
+  route out for sandboxed agent containers, bridged by `sandbox-proxy`.
+  `observability` is only populated when the `observability` Compose profile
+  is enabled (`otel-collector`, `prometheus`, `grafana`, `loki`, `tempo`,
+  `alertmanager`); `temporal`, `temporal-ui`, and `temporal-worker` similarly
+  only start under the `temporal` profile.
 - **Non-root** app containers (`user: "1000:1000"`).
 - **Log rotation** — `json-file` driver capped at `max-size: 100m`,
   `max-file: 5` per container.

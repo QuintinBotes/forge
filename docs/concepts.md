@@ -133,16 +133,23 @@ See [BYOK](./integrations/byok-and-boards.md).
 
 ## Access control: SSO, SCIM & RBAC
 
-For teams, Forge provides **SAML SSO** and **SCIM** user provisioning
-(`forge_api`, on `forge_authz` roles) plus **multi-team RBAC** (`forge_authz`) — role-based access
+For teams, Forge provides **SAML SSO** and **OIDC** single sign-on plus
+**SCIM** user provisioning (`forge_api`, on `forge_authz` roles) — configured
+from an admin UI — and **multi-team RBAC** (`forge_authz`) — role-based access
 scoped per team and workspace.
 
-## Marketplace, benchmarks & deployment gates
+## Marketplace, benchmarks, orchestration policy & deployment gates
 
 - **Integration marketplace** (`forge_marketplace`) — publish and install
-  integrations (backend + an offline author CLI today; UI in progress).
-- **Benchmark leaderboard** — submit, verify, and rank agent benchmark runs
-  (backend + offline `forge bench` CLI today; leaderboard UI in progress).
+  integrations, from the in-app UI or the offline `forge marketplace package`
+  CLI.
+- **Benchmark leaderboard** — submit, verify, and rank agent benchmark runs,
+  with a public leaderboard UI (backed by an offline `forge bench` CLI for
+  submission).
+- **Adaptive Orchestration** (`forge_orchestration_policy`) — deterministically
+  sizes a spec or task's complexity (tier: junior/medior/senior, strategy:
+  single/swarm) and resolves the effective model/tier routing per agent role,
+  configurable from a workspace settings screen.
 - **Deployment gates** (`forge_deploy`) — policy-gated promotion of changes
   through environments.
 

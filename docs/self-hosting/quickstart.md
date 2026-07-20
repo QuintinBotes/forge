@@ -25,8 +25,9 @@ cp .env.example .env
 
 Edit `.env` and set, at minimum:
 
-- `SECRET_KEY` and `AUTH_SECRET` — long random strings (e.g.
-  `openssl rand -hex 32`).
+- `FORGE_SECRET_KEY` and `AUTH_SECRET` — long random strings (e.g.
+  `openssl rand -hex 32`). (`SECRET_KEY` is a deprecated alias that is
+  detected and warned about — see `apps/api/forge_api/cli_secrets.py`.)
 - `POSTGRES_PASSWORD` and `MINIO_ROOT_PASSWORD` — strong unique secrets.
 - `DOMAIN` — the hostname Caddy will serve (use `localhost` for a local trial).
 - `MODEL_PROVIDER_KEY` — your BYOK model provider key (Forge is provider
