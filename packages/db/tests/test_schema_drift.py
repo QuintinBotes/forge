@@ -55,7 +55,16 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import MetaData, create_engine, text
+from sqlalchemy import (
+    Column,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    MetaData,
+    Table,
+    create_engine,
+    text,
+)
 from sqlalchemy.engine import make_url
 
 import forge_db.models  # noqa: F401  (registers every model on Base.metadata)
@@ -154,6 +163,142 @@ def _filter_known_unrepresentable(diffs: list) -> list:
             continue
         kept.append(entry)
     return kept
+
+
+# --------------------------------------------------------------------------- #
+# Unit tests for the exclusion filter itself — no Postgres required.          #
+#                                                                               #
+# `_filter_known_unrepresentable` / `_removal_object_name` were previously     #
+# exercised only indirectly, inside `test_no_schema_drift_between_models_and_  #
+# migrations` (``@pytest.mark.postgres``), which skips with no live DB. These  #
+# table-driven cases pin the filter's actual decision logic — using real       #
+# ``sqlalchemy.Index`` / ``ForeignKeyConstraint`` objects so ``.name`` behaves  #
+# exactly as it does on a genuine ``compare_metadata`` diff — and run          #
+# unconditionally (unmarked; the module has no module-level ``pytestmark``,    #
+# each Postgres test opts in individually via ``@pytest.mark.postgres``).      #
+# --------------------------------------------------------------------------- #
+
+
+def _named_index(name: str) -> Index:
+    """A real, standalone ``Index`` with the given ``.name`` (no DB needed)."""
+    metadata = MetaData()
+    table = Table(f"_t_{name}", metadata, Column("id", Integer))
+    return Index(name, table.c.id)
+
+
+def _named_fk(name: str) -> ForeignKeyConstraint:
+    """A real, standalone ``ForeignKeyConstraint`` with the given ``.name``."""
+    return ForeignKeyConstraint(["parent_id"], ["parent.id"], name=name)
+
+
+_ALLOWLISTED_INDEX = _named_index("ix_marketplace_listing_fts")
+_OTHER_INDEX = _named_index("ix_other_random")
+_ALLOWLISTED_FK = _named_fk("fk_sub_agent_run_child")
+_MODIFY_TYPE_GROUP = [("modify_type", None, "some_table", "some_column", {}, "OLD", "NEW")]
+_REMOVE_COLUMN_NO_SCHEMA = ("remove_column", None, "sub_agent_run", Column("agent_run_id", Integer))
+_REMOVE_COLUMN_WITH_SCHEMA = (
+    "remove_column",
+    "public",
+    "sub_agent_run",
+    Column("agent_run_id", Integer),
+)
+
+
+@pytest.mark.parametrize(
+    ("diffs", "expected"),
+    [
+        pytest.param(
+            [("remove_index", _ALLOWLISTED_INDEX)],
+            [],
+            id="remove_index-allowlisted-name-filtered",
+        ),
+        pytest.param(
+            [("add_index", _ALLOWLISTED_INDEX)],
+            [("add_index", _ALLOWLISTED_INDEX)],
+            id="add_index-allowlisted-name-kept-add-star-never-filtered",
+        ),
+        pytest.param(
+            [("remove_index", _OTHER_INDEX)],
+            [("remove_index", _OTHER_INDEX)],
+            id="remove_index-non-allowlisted-name-kept",
+        ),
+        pytest.param(
+            [_MODIFY_TYPE_GROUP],
+            [_MODIFY_TYPE_GROUP],
+            id="grouped-op-list-kept-unconditionally",
+        ),
+        pytest.param(
+            [("remove_fk", _ALLOWLISTED_FK)],
+            [],
+            id="remove_fk-allowlisted-name-filtered",
+        ),
+        pytest.param(
+            [_REMOVE_COLUMN_NO_SCHEMA],
+            [_REMOVE_COLUMN_NO_SCHEMA],
+            id="remove_column-schema-is-None-no-name-attr-kept-no-raise",
+        ),
+        pytest.param(
+            [_REMOVE_COLUMN_WITH_SCHEMA],
+            [_REMOVE_COLUMN_WITH_SCHEMA],
+            id="remove_column-schema-is-str-no-name-attr-kept-no-raise",
+        ),
+    ],
+)
+def test_filter_known_unrepresentable_cases(diffs: list, expected: list) -> None:
+    """Table-driven pin of the exclusion filter's decision logic (no Postgres).
+
+    Each case is a synthetic ``compare_metadata``-shaped diff entry:
+
+    * ``remove_index`` / ``remove_fk`` on an allowlisted name -> dropped.
+    * ``add_index`` on the *same* allowlisted name -> kept: only ``remove_*``
+      is ever eligible for filtering, per ``_removal_object_name``'s
+      ``kind.startswith("remove_")`` guard.
+    * ``remove_index`` on a non-allowlisted name -> kept.
+    * A grouped op (a ``list``, e.g. Alembic's per-column ``modify_*`` bundle)
+      -> kept unconditionally; ``_filter_known_unrepresentable`` never
+      recurses into grouped entries.
+    * ``remove_column`` -> kept and does not raise: its diff shape is
+      ``("remove_column", schema, tablename, column)``, so ``op[1]`` is the
+      *schema* (a ``str`` or ``None``), not the column. ``getattr(op[1],
+      "name", None)`` safely returns ``None`` for both, so remove_column ops
+      are never filterable by this function regardless of the column's name.
+    """
+    assert _filter_known_unrepresentable(diffs) == expected
+
+
+def test_compare_metadata_detects_add_table_without_postgres() -> None:
+    """Sensitivity guard, add_* direction — proven hermetically (no Postgres).
+
+    Folded-in minor: the existing ``test_compare_metadata_is_drift_sensitive``
+    (``@pytest.mark.postgres``) only proves the *remove* direction (comparing a
+    populated DB against empty metadata). This proves the *add* direction —
+    metadata carrying a table the database lacks yields an ``add_table`` op —
+    without needing Postgres or any of ``env.py``'s pgvector-specific baseline:
+    an in-memory SQLite connection is enough to drive a real
+    ``MigrationContext``/``compare_metadata`` round-trip, so this direction is
+    on watch even in the hermetic, no-network default lane.
+    """
+    baseline_metadata = MetaData()
+    grown_metadata = MetaData()
+    Table("throwaway_extra_table", grown_metadata, Column("id", Integer, primary_key=True))
+
+    engine = create_engine("sqlite://", future=True)
+    try:
+        with engine.connect() as conn:
+            baseline_metadata.create_all(conn)  # the "existing" DB: no tables
+            context = MigrationContext.configure(
+                connection=conn,
+                opts={"compare_type": True, "target_metadata": grown_metadata},
+            )
+            diffs = compare_metadata(context, grown_metadata)
+    finally:
+        engine.dispose()
+
+    ops = {op[0] for entry in diffs for op in (entry if isinstance(entry, list) else [entry])}
+    assert "add_table" in ops, (
+        "expected an 'add_table' op when comparing metadata that grew a table "
+        f"the database lacks; got op kinds: {sorted(ops)}"
+    )
 
 
 @pytest.fixture
