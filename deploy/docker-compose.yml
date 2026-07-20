@@ -338,6 +338,12 @@ services:
       db:
         condition: service_healthy
     networks:
+      # `edge` is load-bearing: the Caddy edge proxy (and the drop-in nginx
+      # alternative, deploy/nginx/forge.conf) sits ONLY on `edge` and routes
+      # /mcp/* -> mcp-gateway:8001. Without membership here the proxy and the
+      # gateway share no network, so /mcp/* resolves nowhere and 502s. `mcp`
+      # keeps the api/worker <-> gateway path; `backend` its other peers.
+      - edge
       - backend
       - mcp
     healthcheck:

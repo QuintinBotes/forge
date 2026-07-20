@@ -37,22 +37,27 @@ from `docker-compose.yml`.
 | `/api/v1/integrations/alerts/*/webhook` | `handle` | `api:8000` | No (HMAC'd raw body) |
 | `/api/v1/integrations/pm/webhooks/*` | `handle` | `api:8000` | No (HMAC'd raw body) |
 | `/public/*` | `handle` | `api:8000` | No |
-| `/ws`, `/ws/spec/*` | *(none — see below)* | `api:8000` | No |
+| `/ws`, `/ws/spec/*` | `handle` | `api:8000` | No |
 | `/api/*` | `handle_path` | `api:8000` | Yes (`/api` stripped) |
 | `/mcp/*` | `handle_path` | `mcp-gateway:8001` | Yes (`/mcp` stripped) |
 | `/_temporal*` | `handle` + `basic_auth` | `temporal-ui:8080` | No |
 | `/grafana/*` | `handle` + `basic_auth` | `grafana:3000` | No |
 | everything else | `handle` (catch-all) | `web:3000` | No |
 
-The one deliberate addition: **`/ws` and `/ws/spec/{spec_id}`** (the board-push
-and CRDT spec-co-editing websocket channels, `forge_api.routers.realtime`)
-mount at the API app root, not under `/api` (see
-[architecture.md](../architecture.md#trust-layer--provenance)). The Caddyfile
-has no dedicated `handle` block for either path today, so without one both
-would silently fall through to the catch-all `web:3000` route — wrong, since
-neither socket exists on the frontend. `forge.conf` routes them to `api:8000`
-explicitly; the same gap is worth closing in the Caddyfile too (flagged, not
-fixed here — out of this change's scope).
+**`/ws` and `/ws/spec/{spec_id}`** (the board-push and CRDT spec-co-editing
+websocket channels, `forge_api.routers.realtime`) mount at the API app **root**,
+not under `/api` — `app.include_router(realtime_router)` with no prefix (see
+`apps/api/forge_api/main.py`). The web client builds the socket URL from
+`NEXT_PUBLIC_WS_URL` (default `ws://localhost:8000/ws`, see
+`apps/web/src/lib/realtime/use-board-realtime.ts`): a same-origin **`/ws`** path
+with no `/api` prefix and no `window.location` rewrite. So behind either proxy
+you set `NEXT_PUBLIC_WS_URL=wss://<your-domain>/ws` (the same-origin analogue of
+`NEXT_PUBLIC_API_URL=/api`), and the edge must route that bare `/ws` to the API.
+Both proxies now do: the Caddyfile has explicit `handle /ws` + `handle /ws/spec/*`
+blocks and `forge.conf` has `location = /ws` + `location /ws/spec/`, each
+proxying to `api:8000`. Without them, `/ws` falls through to the catch-all
+`web:3000` route — wrong, since neither socket exists on the frontend — and
+realtime is silently dead behind the proxy.
 
 ### Websocket and streaming requirements
 
@@ -118,15 +123,14 @@ fixed here — out of this change's scope).
   htpasswd -c /etc/nginx/secrets/grafana.htpasswd admin
   ```
 
-- **Network reachability (pre-existing, not introduced by this file):**
-  `docker-compose.yml`'s `mcp-gateway` service is only on the `backend` and
-  `mcp` networks — not `edge`, the network the `caddy` service (and any
-  drop-in nginx replacement) is on. As shipped, neither proxy can actually
-  reach `mcp-gateway:8001` for the `/mcp/*` route without also adding the edge
-  proxy container to the `mcp` network. This is a `docker-compose.yml`
-  topology question, out of scope for this doc/config (only `forge.conf`,
-  this file, and a `quickstart.md` link were in scope) — flag it before
-  relying on `/mcp/*` in production with either proxy.
+- **Network reachability:** the edge proxy reaches `mcp-gateway:8001` for the
+  `/mcp/*` route because `docker-compose.yml`'s `mcp-gateway` service is on the
+  `edge` network alongside the `caddy` service (and any drop-in nginx
+  replacement, which is also on `edge`). It keeps its `backend` + `mcp`
+  membership for the in-cluster api/worker paths. If you swap in your own edge
+  network topology, make sure the proxy container and `mcp-gateway` still share
+  a network, or `/mcp/*` will 502 (the gateway resolves nowhere from the
+  proxy's networks).
 
 ### Health checks
 
@@ -162,6 +166,6 @@ docker run --rm -v "$PWD/deploy/nginx/forge.conf:/etc/nginx/conf.d/forge.conf:ro
 
 This checks config syntax and routing logic only (see `forge.conf`'s header
 comment for exactly what was and wasn't exercised) — it does not stand up the
-real Forge services, so it can't catch things like the network-reachability
-gap noted above. Confirm end-to-end behavior against a running stack before
-trusting either proxy in production.
+real Forge services, so it can't catch a runtime issue like a proxy and an
+upstream landing on different networks. Confirm end-to-end behavior against a
+running stack before trusting either proxy in production.

@@ -194,6 +194,38 @@ def test_caddy_exposes_admin_gated_temporal_route() -> None:
     assert "temporal-ui:8080" in caddy
 
 
+# --------------------------------------------------------------------------- #
+# Task 24 — edge routing parity (mcp-gateway reachability + websocket routes)  #
+# --------------------------------------------------------------------------- #
+
+
+def test_mcp_gateway_on_edge_network_with_proxy() -> None:
+    """The edge proxy can reach mcp-gateway for /mcp/*.
+
+    Caddy (and the drop-in nginx alternative) sit only on `edge` and route
+    /mcp/* -> mcp-gateway:8001. If mcp-gateway is not also on `edge`, proxy and
+    gateway share no network and the route resolves nowhere (502). The mcp +
+    backend memberships (in-cluster api/worker paths) must be preserved.
+    """
+    mcp = _service("mcp-gateway")
+    caddy = _service("caddy")
+    assert "edge" in caddy["networks"], "caddy edge proxy must be on `edge`"
+    assert "edge" in mcp["networks"], "mcp-gateway must share `edge` with the proxy"
+    # Existing in-cluster networks preserved (not clobbered by the edge add).
+    assert "mcp" in mcp["networks"]
+    assert "backend" in mcp["networks"]
+
+
+def test_caddy_routes_realtime_websockets() -> None:
+    """The realtime board (/ws) and spec co-editing (/ws/spec/*) sockets mount at
+    the API app root (no /api prefix); the client opens a bare same-origin /ws,
+    so Caddy must route both to the API or they fall through to the web catch-all.
+    """
+    caddy = (DEPLOY / "caddy" / "Caddyfile").read_text(encoding="utf-8")
+    assert "handle /ws {" in caddy, "missing bare /ws board-push route"
+    assert "handle /ws/spec/* {" in caddy, "missing /ws/spec/* co-editing route"
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_preflight_rejects_old_engine(tmp_path: Path) -> None:
     """AC17 — preflight.sh fails on Docker Engine < 26.1 (stubbed version)."""
