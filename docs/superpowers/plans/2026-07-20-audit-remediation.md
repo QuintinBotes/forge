@@ -363,7 +363,7 @@ Fixes, each with verified reality:
 
 **Files:**
 - Create: `apps/web/src/components/self-eval/self-eval-panel.tsx` (+ `.test.tsx`), surfaced in settings (same page family as `ao_settings` backend — find where AO settings render: `grep -rn "ao" apps/web/src/app/(board)/settings`)
-- Consumes: existing endpoints from `routers/ao_settings.py` (suite scoping, baseline, run trigger `POST /ao/self-eval/runs`, gate verdicts) — read the router to enumerate the exact contract first; do NOT invent endpoints.
+- Consumes: existing endpoints from `routers/ao_settings.py` (suite scoping, baseline, gate verdicts) — read the router to enumerate the exact contract first; do NOT invent endpoints. NOTE (found during Task 4): there is NO `POST /ao/self-eval/runs` endpoint — runs are minted via the Celery task `forge.self_eval.run`. For the panel's "run self-eval" action, prefer adding a thin authenticated POST endpoint in `routers/ao_settings.py` that enqueues that existing task (consistent with #66's worker-driven design); if that proves non-trivial, ship the read-only panel and state the run path plainly in the UI copy.
 
 **Interfaces:**
 - Produces: panel showing configured suite, current baseline (score + minted at), last run result, gate status for pending config changes; a "run self-eval" action calling the existing run endpoint; Phase-A limitation copy (API-layer gate requires a baseline) stated inline.
