@@ -55,9 +55,17 @@ helm install forge deploy/helm/forge -n forge \
   --set-string secrets.data.AUTH_SECRET="$(openssl rand -hex 32)" \
   --set-string secrets.data.API_KEY_PEPPER="$(openssl rand -hex 32)" \
   --set-string secrets.data.INTERNAL_SERVICE_TOKEN="$(openssl rand -hex 32)" \
-  --set-string secrets.data.MODEL_PROVIDER_KEY="$MODEL_KEY"
+  --set-string secrets.data.FORGE_MODEL_API_KEY="$MODEL_KEY"   # optional (see below)
 kubectl -n forge rollout status deploy/forge-api
 ```
+
+The BYOK model key is **optional**: `forge.modelProvider` (default `anthropic`)
+sets the master switch `FORGE_MODEL_PROVIDER`, and with
+`secrets.data.FORGE_MODEL_API_KEY` blank the worker runs the offline
+deterministic scripted model (canned output) and logs a warning each run. Set the
+key — and `forge.modelName` (required for `openai`) — to drive a real provider.
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` take precedence over `FORGE_MODEL_API_KEY`
+if you set them instead.
 
 The pre-install hook runs the Alembic chain (`alembic -c packages/db/alembic.ini
 upgrade head`, the same command as `make migrate`) to completion before any app
@@ -147,9 +155,11 @@ sandbox:
 
 No secret value is ever rendered into a `ConfigMap`. The boot-critical keys
 (`SECRET_KEY`, `AUTH_SECRET`, `FORGE_VAULT_KEYS`, `API_KEY_PEPPER`,
-`INTERNAL_SERVICE_TOKEN`, `MODEL_PROVIDER_KEY`) are required — the chart fails
-fast at template time if any is missing, mirroring the application's fail-closed
-startup. `FORGE_VAULT_KEYS` is the AES-256-GCM envelope-vault master key (KEK)
+`INTERNAL_SERVICE_TOKEN`) are required — the chart fails fast at template time if
+any is missing, mirroring the application's fail-closed startup. The BYOK model
+key (`FORGE_MODEL_API_KEY`) is **not** boot-critical: the worker/api boot without
+it and fall back to the offline scripted model, so it is optional. `FORGE_VAULT_KEYS`
+is the AES-256-GCM envelope-vault master key (KEK)
 and is distinct from `SECRET_KEY`; store it in a managed secret store and rotate
 it with `forge-cli secrets rotate-key`. A Postgres restore of encrypted rows is
 useless without the same `FORGE_VAULT_KEYS` material. See

@@ -103,8 +103,10 @@ often shows repeated restarts rather than a clean `exited`.
 - Confirm the indexer worker ran: `docker compose -f deploy/docker-compose.yml logs worker`.
 - Confirm chunks exist:
   `psql -U forge -d forge -c "select count(*) from retrieval_chunks;"`.
-- A blank `MODEL_PROVIDER_KEY`/`EMBEDDING_*` means no live embeddings are
-  produced; set BYOK keys to enable real retrieval.
+- Blank `EMBEDDING_*` config means no live embeddings are produced; set it to
+  enable real retrieval. Separately, with no `FORGE_MODEL_PROVIDER` + BYOK key
+  (`FORGE_MODEL_API_KEY`, or `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) the worker runs
+  the offline scripted model — set those to enable live agent runs.
 
 ## Resource pressure
 

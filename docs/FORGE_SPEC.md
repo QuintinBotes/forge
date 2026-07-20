@@ -867,7 +867,7 @@ sudo usermod -aG docker $USER && newgrp docker
 git clone https://github.com/QuintinBotes/forge
 cd forge
 cp .env.production.example .env.production
-# Fill in: SECRET_KEY, DB_PASSWORD, GITHUB_APP_*, MODEL_PROVIDER_KEY, DOMAIN
+# Fill in: SECRET_KEY, DB_PASSWORD, GITHUB_APP_*, FORGE_MODEL_PROVIDER + FORGE_MODEL_API_KEY (optional), DOMAIN
 
 docker compose -f docker-compose.yml --env-file .env.production up -d
 docker compose exec api forge-cli db migrate

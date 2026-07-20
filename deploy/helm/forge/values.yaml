@@ -28,8 +28,20 @@ forge:
   # Public base URL; defaults to https://{domain} when empty.
   publicUrl: ""
   logLevel: info
-  # Default model provider name (the API key itself is a Secret: MODEL_PROVIDER_KEY).
+  # BYOK model provider. `modelProvider` (anthropic|openai) is the master switch,
+  # rendered as FORGE_MODEL_PROVIDER. The key itself is a Secret
+  # (secrets.data.FORGE_MODEL_API_KEY); with that key BLANK the worker runs the
+  # offline deterministic ScriptedModelClient (canned output, no network) and logs
+  # a WARNING each run — set the key to drive a real provider. `modelName` is
+  # optional for anthropic (a reference default is applied) and REQUIRED for openai.
+  #
+  # UPGRADE NOTE (pre-1.0): earlier charts shipped the DEAD keys `MODEL_PROVIDER`
+  # (ConfigMap) and `secrets.data.MODEL_PROVIDER_KEY` — nothing read them, so a
+  # deploy silently fell back to the scripted client. They are replaced by
+  # FORGE_MODEL_PROVIDER / FORGE_MODEL_NAME (env) and secrets.data.FORGE_MODEL_API_KEY.
+  # Rename any --set secrets.data.MODEL_PROVIDER_KEY=... to FORGE_MODEL_API_KEY.
   modelProvider: anthropic
+  modelName: ""
 
 # Image defaults shared by all four workloads. Per-workload image.repository/tag/
 # digest live under each workload block below.
@@ -227,7 +239,10 @@ secrets:
     FORGE_VAULT_KEYS: "1:ZGV2LWNoYW5nZS1tZS0zMi1ieXRlLXZhdWx0LWtleS0xMjM="
     API_KEY_PEPPER: "dev-change-me-API_KEY_PEPPER"
     INTERNAL_SERVICE_TOKEN: "dev-change-me-INTERNAL_SERVICE_TOKEN"
-    MODEL_PROVIDER_KEY: "dev-change-me-MODEL_PROVIDER_KEY"
+    # BYOK model key (OPTIONAL — not boot-critical). Blank -> the worker runs the
+    # offline scripted model (see forge.modelProvider). Provider-agnostic fallback:
+    # ANTHROPIC_API_KEY / OPENAI_API_KEY take precedence if you set them instead.
+    FORGE_MODEL_API_KEY: ""
     # Bundled datastore credentials (used to build FORGE_DATABASE_URL / _REDIS_URL).
     POSTGRES_PASSWORD: "forge"
     REDIS_PASSWORD: ""
