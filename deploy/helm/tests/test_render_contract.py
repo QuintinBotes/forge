@@ -101,9 +101,12 @@ def test_secret_and_config_keys_are_disjoint() -> None:
         "FORGE_VAULT_KEYS",
         "API_KEY_PEPPER",
         "INTERNAL_SERVICE_TOKEN",
-        "MODEL_PROVIDER_KEY",
     }
     assert boot <= sec_keys
+    # The BYOK model key lives in the Secret but is OPTIONAL (blank -> offline
+    # scripted model), so it is present-not-required: assert it renders as a key,
+    # but do NOT require a non-blank value (that would break the offline default).
+    assert "FORGE_MODEL_API_KEY" in sec_keys
     assert "FORGE_VAULT_ACTIVE_KEY_VERSION" in cm_keys
 
 

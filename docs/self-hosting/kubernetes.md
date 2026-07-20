@@ -196,6 +196,12 @@ after it succeeds do the workloads roll. If the hook fails, the release does not
 roll — run `helm rollback forge <rev>`. Verify and bump image digests against the
 release notes before upgrading; see [upgrade.md](upgrade.md).
 
+> **Values rename (pre-1.0):** the dead `MODEL_PROVIDER` / `secrets.data.MODEL_PROVIDER_KEY`
+> values were replaced by `forge.modelProvider` (→ `FORGE_MODEL_PROVIDER`) and
+> `secrets.data.FORGE_MODEL_API_KEY`. Rename any `--set secrets.data.MODEL_PROVIDER_KEY=…`
+> to `FORGE_MODEL_API_KEY` before upgrading; a blank key falls back to the offline
+> scripted model (see the BYOK note above).
+
 ## Verification
 
 ```bash
