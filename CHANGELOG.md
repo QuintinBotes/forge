@@ -17,6 +17,42 @@ sections by hand; write a well-formed commit instead.
 
 ### Added
 
+- **self-eval**: enforce the gate on config changes + worker-driven run (Phase A wiring) (#66)
+- **self-eval**: baseline persistence + live agent-backed eval runner (Phase A substrate) (#65)
+- Self-Eval Gate — block config changes that regress a workspace's private per-repo suite (trust-layer 4/4) (#64)
+- Red-Team Gate (trust layer, phase 3) — adversary must break the change in-sandbox before the human gate (#63)
+- Time-Travel Runs (trust layer, phase 2) — deterministic record-replay of agent runs (#62)
+- Attested Changesets (trust layer, phase 1) — signed provenance chained into the tamper-evident audit log (#61)
+- OIDC SSO + marketplace publish + benchmark leaderboard + under-dev banner (#57)
+- frontend UX pass — clearer IA/nav, one primary action, progressive disclosure, empty/loading/error states, a11y (#39)
+- IaC — OpenTofu infra/ (Hetzner control-plane + Cloudflare + Fly agents), dev/staging/prod, remote state, runbook (#38)
+- F40 deferred-scope deltas — PM adapters (BYO board), MCP, policy, automations, sprint depth, observability (#37)
+- realtime co-editing (WS server + CRDT spec co-editing + live push) (#36)
+- Spec Studio — dual-format spec authoring (Guided/Markdown/YAML/Read), BYOK AI draft, lifecycle, versioning (#33)
+- adaptive orchestration (auto model routing + per-role effort + settings + cost-by-tier) (#32)
+- public-readiness — under-dev banner, honest status, live spec dashboard (#30)
+- **web/walkthrough**: In-app guided walkthrough
+- **web/workflow-editor**: Workflow visual editor
+- **web/pm-integrations**: PM integrations
+- **web/rbac-admin**: Multi-team & RBAC admin
+- **web/sso-settings**: SSO / SCIM settings
+- **web/deployment-gates**: Deployment gates
+- **web/audit-log**: Audit viewer
+- **web/sprints**: Sprints & velocity
+- **web/observability**: Observability & cost
+- **web/incidents**: Incidents
+- **web/marketplace**: Marketplace
+- **web/spec-dashboard**: Spec-validation dashboard
+- **web/run-trace-viewer**: Run-trace viewer
+- **web/approval-inbox**: Approval inbox
+- **web/board-depth**: Board depth
+- **HARD-06**: live-slack
+- **HARD-05**: live-mcp-server
+- **HARD-03**: live-reranker
+- **HARD-02**: live-model-byok
+- **HARD-01**: live-github-app
+- **HARD-08**: kubernetes-helm-deploy
+- **HARD-12**: release-engineering
 - **HARD-10**: observability-cost-prod
 - **HARD-04**: real-eval-corpus
 - **HARD-11**: reliability-maturity
@@ -62,3 +98,7 @@ sections by hand; write a well-formed commit instead.
 - **phase0**: 0.3 contracts (packages/contracts)
 - **phase0**: 0.2 data-model (packages/db)
 - **phase0**: 0.1 workspace+tooling
+
+### Fixed
+
+- **config**: document real FORGE_MODEL_* env vars and warn on scripted-client fallback

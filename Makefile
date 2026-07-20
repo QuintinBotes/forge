@@ -125,8 +125,10 @@ hooks: ## Install the commit-msg hook that enforces Conventional Commits (cz che
 	@chmod +x .git/hooks/commit-msg
 	@echo "Installed .git/hooks/commit-msg (uv run cz check)."
 
-release-readiness: ## Run the automated RELEASE_READINESS gate at the PRODUCTION bar
-	uv run forge-release-readiness --bar production
+BAR ?= beta
+
+release-readiness: ## Run the automated RELEASE_READINESS gate at BAR (default: beta; override with BAR=production)
+	uv run forge-release-readiness --bar $(BAR)
 
 source-sbom: ## Generate the source-tree CycloneDX SBOM (release/sbom/forge-source.cdx.json)
 	release/scripts/source-sbom.sh
