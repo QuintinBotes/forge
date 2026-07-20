@@ -73,6 +73,21 @@ For work that fans out, the **coordinator** (`forge_coordinator`) supervises
 multiple agents — dividing a spec across agents and reconciling their results —
 rather than driving a single execution agent.
 
+## Adaptive Orchestration
+
+**Adaptive Orchestration** (`forge_orchestration_policy`) sizes a task or spec
+before an agent runs it. A **pure, deterministic** scoring function reads
+normalized signals — kind, priority, blast radius, file/repo counts, requirement
+and acceptance-criteria counts, whether it touches contracts or security,
+dependency count, and ambiguity — and returns a `ComplexitySizing`: a **tier**
+(`junior` / `medior` / `senior`), a **strategy** (`single` / `swarm`), a score,
+and the reasons behind it. The scorer picks neither a model nor an agent itself;
+its `tier`/`strategy` output is what the model router and per-role config consume
+to resolve the effective model and effort per agent role. It is configurable from
+a workspace settings screen (the `/ao` API), and you can preview what a sample
+task would be routed to via `POST /ao/routing-preview`. See
+[`packages/orchestration-policy/README.md`](../packages/orchestration-policy/README.md).
+
 ## Runs & the run-trace viewer
 
 A **run** is one execution of agent work. Every step, tool call, model
@@ -101,6 +116,49 @@ The **approval system** (`forge_approval`) gates sensitive agent actions behind
 a human decision. When an agent reaches a gated action it pauses and enqueues an
 approval; a human approves or rejects before the action proceeds. Human-in-the-
 loop where it matters, autonomous everywhere else.
+
+## Trust layer
+
+Four features make an autonomous change *verifiable*, not merely recorded — each
+an append-only, single-table record:
+
+- **Attested Changesets** — a DSSE-signed, in-toto provenance record of what
+  actually ran (agent, model, sandbox tier, policy hash, tools, approver, spec
+  revision), minted when a PR gate is approved and chained into the audit log.
+- **Time-Travel Runs** — deterministic record-replay of an agent run from a
+  redacted cassette, plus a counterfactual **fork** that diverges onto a
+  different model from a chosen point.
+- **Red-Team Gate** — a heterogeneous adversary must fail to break a candidate
+  change (with an *executed* failing test or a real spec-violation) before the
+  change reaches the human implementation gate.
+- **Self-Eval Gate** — blocks a model/prompt/router config change that regresses
+  a workspace's private per-repo regression suite below a frozen baseline.
+
+Some of these ship with parked or Phase-A limits (the Red-Team Gate records a
+parked-pass when no adversary is wired; the Self-Eval Gate no-ops at the API
+layer without an injected runner) — each is stated plainly in
+**[Trust layer](./trust-layer.md)**.
+
+## Realtime co-editing
+
+Two WebSocket channels (`forge_api.routers.realtime`), both authenticated
+per-workspace, back the live surfaces. `/ws` is a one-way, server→client **board
+push**: the server pushes JSON envelopes as board entities change and the web
+board hook maps them onto query keys to invalidate.
+
+`/ws/spec/{spec_id}` is **collaborative spec editing** over the **Yjs** binary
+sync protocol (the web client uses `yjs` + `y-websocket`). The server owns an
+*authoritative* CRDT document (a `pycrdt` `Doc` holding a `Text` for `spec.md`
+and `manifest.yaml`), seeded from the canonical spec engine; connected peers
+converge against it. Presence and cursors ride the same socket as ephemeral Yjs
+*awareness* frames, but identity (display name and colour) is **stamped
+server-side** from the authenticated principal, so no peer can spoof another.
+Write gating lives at the router — a read-only principal may observe, but a
+doc-mutating frame from one is a policy violation and closes the socket. The Y
+document is ephemeral: on quiesce (a short idle gap, or the last editor leaving)
+the room materialises `spec.md` back through the engine and records exactly
+**one** `SpecVersion` checkpoint (not one per keystroke), attributed to the most
+recent editor.
 
 ## Policies, skills, integrations & MCP
 
@@ -146,10 +204,9 @@ scoped per team and workspace.
 - **Benchmark leaderboard** — submit, verify, and rank agent benchmark runs,
   with a public leaderboard UI (backed by an offline `forge bench` CLI for
   submission).
-- **Adaptive Orchestration** (`forge_orchestration_policy`) — deterministically
-  sizes a spec or task's complexity (tier: junior/medior/senior, strategy:
-  single/swarm) and resolves the effective model/tier routing per agent role,
-  configurable from a workspace settings screen.
+- **Adaptive Orchestration** (`forge_orchestration_policy`) — deterministic
+  complexity sizing and per-role model/tier routing; see
+  [Adaptive Orchestration](#adaptive-orchestration) above.
 - **Deployment gates** (`forge_deploy`) — policy-gated promotion of changes
   through environments.
 
@@ -168,6 +225,10 @@ scoped per team and workspace.
 | **BYOK** | Bring-your-own-key model-provider credentials |
 | **MCP** | Model Context Protocol — tool-source gateway for agents |
 | **Approval** | Human decision gating a sensitive agent action |
+| **Attested Changeset** | DSSE-signed in-toto provenance record of what actually ran ([trust layer](./trust-layer.md)) |
+| **Cassette** | Redacted record of a run's LLM + tool calls, replayed by substitution ([Time-Travel Runs](./trust-layer.md#time-travel-runs)) |
+| **Red-Team Gate** | Heterogeneous adversary that must fail to break a change before the human gate |
+| **Self-Eval Gate** | Blocks a config change that regresses a workspace's private per-repo suite |
 
 Next: **[Architecture](./architecture.md)** for how these run together, or
 **[Getting started](./getting-started.md)** to try them.

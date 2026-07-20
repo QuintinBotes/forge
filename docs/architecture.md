@@ -114,6 +114,25 @@ in steps 4–6.
   [threat model](./security/threat-model.md) and
   [security policy](../SECURITY.md).
 
+## Trust layer & provenance
+
+The trust-layer features are not a new service — each is a self-contained,
+append-only record spread across the existing packages, hooked into the flow
+above. Full detail (data models, API/CLI, and the parked/Phase-A limitations)
+lives in **[Trust layer](./trust-layer.md)**.
+
+| Feature | Where it lives | Hooks into |
+|---------|----------------|------------|
+| **Attested Changesets** | `forge_contracts.attestation` (DSSE + in-toto contract), `forge_obs.attest.signing` (Ed25519 signer/verifier), `forge_api` `attestation_service` + `forge-verify` CLI, `attestation` table (`forge_db`) | Minted on `pr` approval (step 5); chained into the audit log (step 6) |
+| **Time-Travel Runs** | `forge_agent.replay` (record/replay), `forge_worker.agent_runner` (recorder sink), `forge_api` replay/fork endpoints + `forge-replay` CLI, `run_recording` table | Records the agent run (step 3) behind `FORGE_RECORD_RUNS=1` |
+| **Red-Team Gate** | `forge_coordinator.red_team` (adversary harness), `forge_workflow` Temporal workflow + activity, `red_team_record` table | Runs inside the workflow (step 2), before the human spec-approval gate |
+| **Self-Eval Gate** | `forge_eval.sweval` (gate + scorer), `forge_api` `self_eval_gate`/`self_eval_service` + `/ao` config API, `forge_worker` mint/run tasks, `self_eval_baseline` table | Gates Adaptive Orchestration config changes; baselines minted from merged PRs |
+
+The two realtime WebSocket channels (`forge_api.routers.realtime`) — the board
+push (`/ws`) and CRDT spec co-editing (`/ws/spec/{spec_id}`, `pycrdt` server doc
+over the Yjs sync protocol) — mount at the app root rather than under the API
+prefix, matching the URLs the web client opens.
+
 ## Deployment options
 
 | Path | Use | Reference |
