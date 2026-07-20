@@ -3,9 +3,11 @@
 Stand up a complete Forge instance on a single machine with Docker Compose. This
 is the fastest path from a clone to a running board, knowledge pipeline, and
 API. For the production hardening details see
-[docker-compose.md](docker-compose.md); for day-2 operations see
-[backup.md](backup.md), [restore.md](restore.md), [upgrade.md](upgrade.md),
-[security.md](security.md), and [troubleshooting.md](troubleshooting.md).
+[docker-compose.md](docker-compose.md); for the edge proxy (Caddy by default,
+nginx alternative) see [reverse-proxy.md](reverse-proxy.md); for day-2
+operations see [backup.md](backup.md), [restore.md](restore.md),
+[upgrade.md](upgrade.md), [security.md](security.md), and
+[troubleshooting.md](troubleshooting.md).
 
 ## Prerequisites
 
