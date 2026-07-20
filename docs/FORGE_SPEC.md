@@ -1049,8 +1049,8 @@ Cost: token cost per task, per workflow phase, per model provider.
 - [ ] Advanced policy engine with conditional rules
 - [ ] Multi-team workspace controls and full RBAC hierarchy
 - [ ] Deployment gates and environment promotion workflows
-- [x] Integration marketplace for community MCP connectors and skill profiles — **shipped early** (PR #57; `packages/marketplace-sdk/`, `apps/web` marketplace screens); `forge marketplace search/show/list/install/update` remain parked CLI stubs pending a live registry
-- [x] Enterprise SSO (SAML, SCIM) — **shipped early**, plus OIDC (PR #57; `apps/api/forge_api/sso/`, `routers/oidc.py`, `routers/saml.py`, `routers/scim.py`)
+- [x] Integration marketplace for community MCP connectors and skill profiles — **shipped early** (F32; `packages/marketplace-sdk/`, `apps/web` marketplace screens), in-app publish flow (PR #57); `forge marketplace search/show/list/install/update` remain parked CLI stubs pending a live registry
+- [x] Enterprise SSO (SAML, SCIM) — **shipped early** (F33; `apps/api/forge_api/sso/`, `routers/saml.py`, `routers/scim.py`), plus OIDC (PR #57; `routers/oidc.py`)
 - [x] Firecracker / gVisor sandbox isolation — **shipped early** (F34; `packages/agent-runtime/forge_agent/sandbox/microvm.py`, `sandbox/gvisor.py`, Helm `runtimeclass-kata-fc`/`runtimeclass-gvisor` templates)
 - [x] Benchmark suite and public evaluation leaderboard — **shipped early** (PR #57/F35; `apps/web` leaderboard screen, benchmarks API); `forge bench run/submit/leaderboard` remain parked CLI stubs
 
