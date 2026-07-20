@@ -56,9 +56,15 @@ fixed here — out of this change's scope).
 
 ### Websocket and streaming requirements
 
-- **Upgrade headers.** `/ws` and `/ws/spec/*` set `proxy_http_version 1.1`,
-  `Upgrade`, and `Connection: upgrade` (via the standard `map $http_upgrade
-  $connection_upgrade` recipe) — Caddy does this automatically, nginx does not.
+- **Upgrade headers.** `/ws`, `/ws/spec/*`, `/_temporal`, and `/grafana/` all
+  set `proxy_http_version 1.1`, `Upgrade`, and `Connection: upgrade` (via the
+  standard `map $http_upgrade $connection_upgrade` recipe) — Caddy does this
+  automatically on every route (including Grafana Live's `/grafana/api/live/ws`),
+  nginx does not, so each location that might carry a websocket needs it
+  spelled out explicitly. The remaining locations (`/public/`, the two webhook
+  routes, `/api/`, `/mcp/`, the catch-all) also set `proxy_http_version 1.1`
+  for consistency, even though none of them carry an upgradeable connection
+  today.
 - **Timeouts.** nginx's default `proxy_read_timeout`/`proxy_send_timeout` is
   60s, which would kill an idle websocket or a slow-trickling stream; Caddy
   has no such default. `forge.conf` sets both to `3600s` on the websocket and
@@ -82,6 +88,12 @@ fixed here — out of this change's scope).
 
 ### Known gaps vs. Caddy
 
+- **Request body size cap.** Caddy's `reverse_proxy` imposes no `client_max_body_size`
+  equivalent — request bodies of any size pass through uncapped. Stock nginx
+  defaults `client_max_body_size` to 1m, which would silently 413 any >1 MB
+  webhook/API payload Caddy would have let through. `forge.conf` sets an
+  explicit `client_max_body_size 50m;` at the `server` level instead of
+  relying on the 1m default; tune it for your actual max payload.
 - **TLS is not automatic.** Caddy's ACME integration has no nginx equivalent
   in this file. Run certbot/acme.sh alongside nginx, or terminate TLS
   upstream of it, and uncomment the `listen 443 ssl; ssl_certificate ...;`
