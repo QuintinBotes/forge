@@ -241,7 +241,7 @@ jobs:
         run: uv run pytest -m live_slack -q
 
   web:
-    name: web (lint + build)
+    name: web (lint + types + tests + build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -262,6 +262,16 @@ jobs:
 
       - name: Lint
         run: pnpm -r lint
+
+      # The web package ships 89 vitest files and a `tsc --noEmit` typecheck that
+      # previously only ran in the (unreachable) release workflow. Gate both on
+      # every PR/push, after lint and before build, so a type error or a broken
+      # component test blocks the merge instead of shipping.
+      - name: Type-check (tsc)
+        run: pnpm --filter @forge/web typecheck
+
+      - name: Test (vitest)
+        run: pnpm --filter @forge/web test
 
       - name: Build
         run: pnpm -r build
