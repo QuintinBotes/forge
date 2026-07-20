@@ -59,8 +59,10 @@ class AutomationRule(WorkspaceScopedModel):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # F40 (migration 0033) widened this VARCHAR to 32 for headroom; pin the same
+    # width on the model so the ORM metadata matches the DB (no schema drift).
     trigger_type: Mapped[AutomationTriggerType] = mapped_column(
-        enum_type(AutomationTriggerType), nullable=False
+        enum_type(AutomationTriggerType, length=32), nullable=False
     )
     trigger_config: Mapped[dict[str, Any]] = mapped_column(
         json_type(), default=dict, nullable=False
@@ -91,12 +93,14 @@ class AutomationExecution(WorkspaceScopedModel):
     # ``SET NULL`` to honor the stronger append-only guarantee.)
     rule_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     rule_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # F40 (migration 0033) widened trigger_type/trigger_source to VARCHAR(32) for
+    # headroom; pin the same width here so the ORM matches the DB (no drift).
     trigger_type: Mapped[AutomationTriggerType] = mapped_column(
-        enum_type(AutomationTriggerType), nullable=False
+        enum_type(AutomationTriggerType, length=32), nullable=False
     )
     trigger_event_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     trigger_source: Mapped[AutomationTriggerSource] = mapped_column(
-        enum_type(AutomationTriggerSource), nullable=False
+        enum_type(AutomationTriggerSource, length=32), nullable=False
     )
     entity_type: Mapped[AutomationEntityType] = mapped_column(
         enum_type(AutomationEntityType), nullable=False

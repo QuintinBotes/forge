@@ -27,6 +27,16 @@ Keeping the settings identical to ``env.py`` means the gate can never disagree
 with the tool that generates the migrations: if this test is green, autogenerate
 is quiescent; if it is red, autogenerate would produce a non-empty revision.
 
+The one post-processing step is a narrow, exact-name exclusion allowlist
+(``KNOWN_UNREPRESENTABLE``) applied to the *result* diff — never via
+``include_object`` — for the handful of Postgres objects that exist in the
+migrated schema but genuinely cannot be represented in ORM metadata (raw-DDL
+expression/GIN indexes and Postgres-only FKs the models deliberately omit for
+SQLite portability). It matches by exact object name only, drops only ``remove_*``
+ops, and leaves the ``add_*`` direction completely unfiltered so real "model grew
+something without a migration" drift still fails. Each excluded name cites the
+migration/DDL that owns it (see the allowlist below).
+
 Runs only against a real pgvector Postgres (the baseline's ``CREATE EXTENSION
 vector`` + ``VECTOR(1536)`` / ``tsvector`` columns cannot be represented on
 SQLite) and skips cleanly when no ``FORGE_TEST_DATABASE_URL`` (or a
@@ -66,6 +76,84 @@ def _diff_lines(diffs: list) -> str:
         for op in group:
             lines.append(f"  - {op!r}")
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Structurally-unrepresentable schema objects — exact-name exclusion allowlist. #
+#                                                                               #
+# Each object below genuinely exists in the migrated Postgres schema but CANNOT #
+# be expressed in the SQLAlchemy ORM ``Base.metadata`` (raw-DDL expression/GIN  #
+# indexes, or Postgres-only FKs the models deliberately omit so SQLite          #
+# ``create_all`` stays portable). ``compare_metadata`` therefore emits a        #
+# perpetual, un-actionable ``remove_*`` op for each — a false positive the gate #
+# must tolerate WITHOUT weakening its real job.                                 #
+#                                                                               #
+# The exclusion below is deliberately narrow: it matches by EXACT object name   #
+# only (no wildcard, no prefix), it never suppresses a whole diff kind, and it  #
+# only ever drops ``remove_*`` ops. The ``add_*`` direction is left completely  #
+# unfiltered — a model that *grows* one of these names without a migration must #
+# still fail the gate, because that is real, dangerous drift. Every name cites  #
+# the migration / DDL that owns it and why Alembic cannot round-trip it:        #
+KNOWN_UNREPRESENTABLE: frozenset[str] = frozenset(
+    {
+        # Raw-DDL GIN index over a ``jsonb_path_ops`` expression, created by
+        # ``marketplace.py``'s ``_pg_ddl(...)`` (Postgres-only; mirrored by
+        # migration ``0015_f32_integration_marketplace``). Alembic metadata
+        # cannot represent a functional / opclass GIN index, so it round-trips
+        # as a phantom removal.
+        "ix_marketplace_listing_tags_gin",
+        # Raw-DDL full-text GIN index over ``to_tsvector('english', name || ' '
+        # || summary)``, created by ``marketplace.py``'s ``_pg_ddl(...)``
+        # (Postgres-only; mirrored by ``0015``). Expression indexes are not
+        # expressible in ORM metadata.
+        "ix_marketplace_listing_fts",
+        # Postgres-only FK ``project.owner_team_id -> team.id`` (ON DELETE SET
+        # NULL) added by migration ``0012_f30_multi_team_rbac``. The model keeps
+        # a plain, FK-less column so SQLite ``create_all`` can drop it on
+        # downgrade; the FK lives only in the migration and reflects as a phantom
+        # removal.
+        "fk_project_owner_team_id_team",
+        # Postgres-only FK ``sub_agent_run.agent_run_id -> agent_run.id`` (ON
+        # DELETE SET NULL) added by migration ``0009_f27_multi_agent`` (the
+        # child-run FK pattern ``project.owner_team_id`` mirrors). The model omits
+        # the ORM FK, so it reflects as a phantom removal.
+        "fk_sub_agent_run_child",
+    }
+)
+
+
+def _removal_object_name(op: tuple) -> str | None:
+    """Exact schema-object name a ``remove_*`` diff op targets, else ``None``.
+
+    Defined only for ``remove_*`` ops whose payload is a named schema construct
+    (``Index`` / ``ForeignKeyConstraint`` and other constraints expose ``.name``).
+    Returns ``None`` for every other op — crucially every ``add_*`` op — so the
+    exclusion below can never match anything but an exact-named removal.
+    """
+    kind = op[0]
+    if not kind.startswith("remove_") or len(op) < 2:
+        return None
+    return getattr(op[1], "name", None)
+
+
+def _filter_known_unrepresentable(diffs: list) -> list:
+    """Drop only exact-named ``remove_*`` ops listed in ``KNOWN_UNREPRESENTABLE``.
+
+    Everything else is preserved verbatim: grouped ops (lists, e.g. ``modify_*``),
+    every ``add_*`` op, and any ``remove_*`` op whose name is not in the frozen
+    set. This keeps the gate live for all real drift while tolerating the handful
+    of structurally-unrepresentable Postgres objects documented above.
+    """
+    kept: list = []
+    for entry in diffs:
+        if isinstance(entry, list):
+            kept.append(entry)
+            continue
+        name = _removal_object_name(entry)
+        if name is not None and name in KNOWN_UNREPRESENTABLE:
+            continue
+        kept.append(entry)
+    return kept
 
 
 @pytest.fixture
@@ -141,9 +229,14 @@ def test_no_schema_drift_between_models_and_migrations(scratch_pg_config: Config
                 connection=conn,
                 opts={"compare_type": True, "target_metadata": Base.metadata},
             )
-            diffs = compare_metadata(context, Base.metadata)
+            raw_diffs = compare_metadata(context, Base.metadata)
     finally:
         engine.dispose()
+
+    # Drop only the exact-named, structurally-unrepresentable Postgres objects
+    # documented in KNOWN_UNREPRESENTABLE (raw-DDL expression/GIN indexes +
+    # Postgres-only FKs). The add_* direction and every other object stay live.
+    diffs = _filter_known_unrepresentable(raw_diffs)
 
     assert not diffs, (
         "Schema drift detected: the ORM models and the Alembic migrations "
@@ -153,9 +246,10 @@ def test_no_schema_drift_between_models_and_migrations(scratch_pg_config: Config
         + _diff_lines(diffs)
         + "\n\nResolve by adding/adjusting an Alembic migration under "
         "packages/db/migrations/versions so the schema matches the models "
-        "(do NOT silence this by editing the test). If a divergence is "
-        "intentional and cannot be represented in metadata, document it here "
-        "with a narrow, explicit exclusion."
+        "(do NOT silence this by editing the test). If a divergence is genuinely "
+        "intentional and cannot be represented in metadata, add its exact name to "
+        "KNOWN_UNREPRESENTABLE above with a comment citing the migration/DDL "
+        "source (never a wildcard, never a whole diff kind, never an add_* op)."
     )
 
 
