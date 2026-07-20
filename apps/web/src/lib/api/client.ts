@@ -142,7 +142,7 @@ export const DEFAULT_API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
 export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
-  /** True when the endpoint exists but is a Phase-0 stub (HTTP 501). */
+  /** True when the server answered 501 — a residual safety net for disabled or not-yet-enabled routes. */
   readonly notImplemented: boolean;
 
   constructor(status: number, message: string, body: unknown) {
