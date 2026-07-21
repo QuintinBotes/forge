@@ -83,8 +83,35 @@ batch-Merkle anchoring scheme, unused today).
 Attestations are minted as a **side effect of approval**:
 `PrAttestationResolutionHook` is registered against the F36 approval system, so
 approving a `pr` gate that carries a `workflow_run_id` attests the changeset
-(recording the approving user as `human_approver`). There is no dedicated REST
-endpoint or UI yet.
+(recording the approving user as `human_approver`). There is deliberately no
+HTTP route that mints one.
+
+Records are surfaced **read-only over REST**
+(`apps/api/forge_api/routers/attestations.py`), workspace-scoped with the same
+auth/tenancy contract as the approvals router (cross-workspace ids read as
+`404` — no existence leak):
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /attestations` | One workspace-scoped page (`limit`/`offset`, newest first; filters: `workflow_run_id`, `agent_run_id`, `spec_key`) |
+| `GET /attestations/{id}` | One record (`404` for unknown or foreign ids) |
+| `GET /approvals/{id}/attestation` | The record minted for the gate's linked workflow run (`404` when none exists — normal while the gate is still pending) |
+
+Every response carries a computed `verified: bool` produced by the **same
+verification seam `forge-verify --run` uses**
+(`forge_api.cli_verify.verify_stored_attestation`): re-derive `payload_hash`
+from the envelope's PAE encoding, confirm it matches the recorded column, then
+Ed25519-verify the signature against the deployment's verification key (the
+public half of `FORGE_ATTEST_SIGNING_KEY`). A record this deployment cannot
+vouch for honestly reads `verified: false` — the flag is computed per request,
+never stored.
+
+In the web app, the approvals review surface renders an attestation panel
+(`apps/web/src/components/attestations/attestation-panel.tsx`, on the gate's
+run-trace section next to the red-team badge) with three honest states:
+signed + verified, signed + verification-failed, and confirmed-absent ("not
+attested" — normal while the gate is pending, since records are minted on
+approval). A failed fetch renders nothing: an error is not proof of absence.
 
 Verification is offline-first via the `forge-verify` CLI (`python -m
 forge_api.cli_verify`, `apps/api/forge_api/cli_verify.py`). Three
@@ -104,9 +131,13 @@ tampered").
 ### Current limitations
 
 - **Minted only as an approval side effect.** An attestation is produced when a
-  `pr` approval gate carrying a `workflow_run_id` is approved. There is **no
-  REST endpoint and no UI** to list, fetch, or trigger attestations — those
-  arrive in a later task (Attested Changesets REST endpoints + UI, Task 19).
+  `pr` approval gate carrying a `workflow_run_id` is approved. The REST surface
+  and the approvals-UI panel are **read-only**: there is deliberately no
+  endpoint to trigger or mint an attestation.
+- **REST `verified` is deployment-relative.** The endpoints verify against the
+  public half of this deployment's `FORGE_ATTEST_SIGNING_KEY`, and the raw DSSE
+  envelope is not exposed over REST — independent third-party verification goes
+  through `forge-verify`, which re-reads the stored row.
 - **Default signing key is process-ephemeral.** If `FORGE_ATTEST_SIGNING_KEY`
   is unset, signatures are made with a warned-about ephemeral key and will fail
   verification after a restart or from another process. Set a stable key in any

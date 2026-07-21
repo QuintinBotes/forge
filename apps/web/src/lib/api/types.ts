@@ -341,6 +341,50 @@ export interface RedTeamGateOut {
   records: RedTeamRecordOut[];
 }
 
+// --- Attested Changesets (GET /attestations, /approvals/{id}/attestation) - //
+// Hand-maintained mirror of `forge_api.schemas.attestation.*`. A DSSE/Ed25519
+// signed provenance record over a changeset, minted as a side effect of
+// approving a `pr` gate. `verified` is computed server-side by the exact
+// verification path the `forge-verify` CLI uses — never stored, never faked.
+
+/** The queryable provenance columns of one attestation row. */
+export interface AttestationProvenance {
+  workflow_run_id?: string | null;
+  agent_run_id?: string | null;
+  /** PR numbers the attestation covers. */
+  pr_numbers: number[];
+  /** Spec identity; degrades honestly to `""` / `0` without traceability. */
+  spec_key?: string | null;
+  spec_version?: number | null;
+  /** Position of the chained `changeset.attested` audit event. */
+  audit_seq?: number | null;
+}
+
+/** One immutable DSSE-signed changeset attestation, with live verification. */
+export interface AttestationOut {
+  id: string;
+  /** The attested subject's labeled digest (`sha256:<hex>`). */
+  changeset_hash: string;
+  /** The in-toto predicate type URI of the signed Statement. */
+  predicate_type: string;
+  /** sha256 of the raw Ed25519 public key that signed the envelope. */
+  keyid: string;
+  /** sha256 hex of the PAE-encoded payload the signature covers. */
+  payload_hash: string;
+  created_at: string;
+  /** Recorded payload hash matches the PAE re-derivation AND the Ed25519
+   * signature verifies against the deployment's verification key. */
+  verified: boolean;
+  provenance: AttestationProvenance;
+}
+
+/** Body of `GET /attestations` — one workspace-scoped page, newest first. */
+export interface AttestationListResponse {
+  items: AttestationOut[];
+  limit: number;
+  offset: number;
+}
+
 // --- Spec engine / SDD (F02 /spec + F23 spec-validation) ------------------ //
 // Hand-maintained mirror of the spec DTOs in `forge_contracts.dtos` (Pydantic
 // v2). Enum string values match the Python `SpecStatus` StrEnum verbatim.

@@ -27,6 +27,7 @@ import type {
   ApprovalDecisionRequest,
   ApprovalResolution,
   ApprovalSummary,
+  AttestationOut,
   RedTeamGateOut,
 } from "./types";
 
@@ -43,6 +44,8 @@ export const approvalKeys = {
     ["approvals", "decisions", approvalId] as const,
   redTeam: (workflowRunId: string) =>
     ["approvals", "red-team", workflowRunId] as const,
+  attestation: (approvalId: string) =>
+    ["approvals", "attestation", approvalId] as const,
 } as const;
 
 export type ApprovalFilters = Record<
@@ -111,6 +114,26 @@ export function useRedTeamVerdict(
     queryKey: approvalKeys.redTeam(workflowRunId ?? ""),
     queryFn: () => client.getWorkflowRunRedTeam(workflowRunId as string),
     enabled: Boolean(workflowRunId),
+    retry: false,
+  });
+}
+
+/**
+ * The Attested Changeset for one gate (Attested Changesets, Task 19) — the
+ * DSSE/Ed25519-signed provenance record minted when a `pr` gate carrying a
+ * workflow run is approved. `null` is the confirmed-absent state (the API's
+ * 404, mapped by the client): the gate has no attestation, which is normal
+ * while it is still pending. Retries are disabled for the same reason as the
+ * red-team query: absence is an answer, not an error to retry.
+ */
+export function useApprovalAttestation(
+  approvalId: string | null | undefined,
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<AttestationOut | null> {
+  return useQuery({
+    queryKey: approvalKeys.attestation(approvalId ?? ""),
+    queryFn: () => client.getApprovalAttestation(approvalId as string),
+    enabled: Boolean(approvalId),
     retry: false,
   });
 }

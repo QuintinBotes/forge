@@ -21,6 +21,8 @@ import type {
   ApprovalRequest,
   ApprovalResolution,
   ApprovalSummary,
+  AttestationListResponse,
+  AttestationOut,
   AuditEntry,
   AuditListResponse,
   AuditQuery,
@@ -450,6 +452,44 @@ export class ForgeApiClient {
     return this.request<RedTeamGateOut>(
       `/workflow/runs/${encodeURIComponent(workflowRunId)}/red-team`,
     );
+  }
+
+  // --- Attested Changesets (read-only /attestations surface) -------------- //
+
+  /** One workspace-scoped page of signed changeset attestations, newest first. */
+  listAttestations(
+    query?: RequestOptions["query"],
+  ): Promise<AttestationListResponse> {
+    return this.request<AttestationListResponse>("/attestations", { query });
+  }
+
+  /** One attestation by id (workspace-isolated; foreign ids 404). */
+  getAttestation(attestationId: string): Promise<AttestationOut> {
+    return this.request<AttestationOut>(
+      `/attestations/${encodeURIComponent(attestationId)}`,
+    );
+  }
+
+  /**
+   * The attestation minted for a gate's linked workflow run. The API answers
+   * 404 when none exists (unlinked gate, or the run was never attested —
+   * e.g. the gate is still pending); that is a normal "not attested" state,
+   * surfaced as `null` so the UI can render honest absence, while every other
+   * failure still throws.
+   */
+  async getApprovalAttestation(
+    approvalId: string,
+  ): Promise<AttestationOut | null> {
+    try {
+      return await this.request<AttestationOut>(
+        `/approvals/${encodeURIComponent(approvalId)}/attestation`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   // --- Spec engine / SDD lifecycle (F02 /spec + F23 dashboard) ------------ //
