@@ -242,36 +242,52 @@ adversary model).
 
 ### API / CLI surface
 
-The gate is driven inside the **Temporal** workflow
-(`packages/workflow-engine/forge_workflow/temporal/workflows.py`): after the spec
-is drafted and clarified but **before** the human spec-approval gate, the
-workflow runs a red-team scan. A `blocked` verdict routes the change back for
-changes (→ clarification → spec review) so a human must address the finding; a
-`survived` verdict proceeds unchanged and the recorder writes the
-`RedTeamRecord` plus a `redteam.survived` audit event.
+The gate runs on **both** engine spines, minting the same verdict contract
+through the shared `forge_workflow.red_team_gate` helper:
 
-The verdict is surfaced read-only at `GET /workflow/runs/{run_id}/red-team`
+- **Temporal (V2)** — driven inside the workflow
+  (`packages/workflow-engine/forge_workflow/temporal/workflows.py`): after the
+  spec is drafted and clarified but **before** the human spec-approval gate, the
+  workflow runs a red-team scan. A `blocked` verdict routes the change back for
+  changes (→ clarification → spec review) so a human must address the finding; a
+  `survived` verdict proceeds unchanged and the recorder writes the
+  `RedTeamRecord` plus a `redteam.survived` audit event.
+- **V1 (Postgres FSM)** — the FSM is a plain transition graph with no gate
+  hooks, and its one production driver is the workflow router: when a
+  transition lands a V1 run in `spec_review` (the human spec gate — the same
+  position the Temporal spine scans), the handler mints the run's verdict once
+  via `ensure_red_team_verdict` (idempotent across gate re-entries: a block →
+  changes → resubmit loop does not rescan) and appends it to `red_team_record`
+  with the same `redteam.survived` audit chaining.
+
+The verdict is surfaced at `GET /workflow/runs/{run_id}/red-team`
 (`apps/api/forge_api/routers/workflow.py`), returning the latest verdict plus the
 full scan history (a `blocked` scan followed by a re-submitted `survived` one is
 common). It reads the append-only table scoped to the caller's workspace on the
 row itself; an unscanned or foreign run reads as `latest=None` with an empty
 history — never a 404, so the endpoint never leaks cross-tenant existence.
 
+A scan can also be triggered explicitly: `POST /workflow/runs/{run_id}/red-team`
+(write permission, same pattern as the router's other write endpoints) runs the
+configured adversary — or records an explicit parked-pass when none is wired —
+and **appends** a fresh verdict to the run's history, returning `202` with the
+new `record_id` (+ `verdict`/`kind`); the follow-up GET returns it. It answers
+`409` when the run is not at a gateable state (`spec_review` for the spec
+phase; `pr_opened`/`awaiting_review` for the pr phase) and `404` for unknown or
+foreign runs (no existence leak).
+
 ### Current limitations
 
-- **Parked-pass when no adversary is wired.** The Temporal activity's default
-  `red_team_fn`
-  (`packages/workflow-engine/forge_workflow/temporal/activities.py`,
-  `_default_red_team`) records a **parked-pass**: `verdict=survived`,
-  `kind=parked`, `evidence={"parked": true, "reason": "no adversary model/sandbox
-  wired"}`. This is a *park-don't-fake* stand-in so the durable spine runs and
-  the human gate is still reached — it is **not** a real adversarial review, and
-  a `survived`/`parked` record must not be read as "an adversary tried and
-  failed to break this". A real deployment must inject a `red_team_fn` that runs
-  the heterogeneous, sandboxed adversary (`run_red_team`).
-- **Temporal path only.** The scan runs today only inside the Temporal workflow.
-  A trigger endpoint and a non-Temporal worker path arrive in a later task
-  (Red-Team trigger endpoint + non-Temporal worker path, Task 20).
+- **Parked-pass when no adversary is wired.** The default `red_team_fn` on both
+  spines (`forge_workflow.red_team_gate.parked_pass_verdict`, which the Temporal
+  activity's `_default_red_team` and the API's `get_red_team_fn` default to)
+  records a **parked-pass**: `verdict=survived`, `kind=parked`,
+  `evidence={"parked": true, "reason": "no adversary model/sandbox wired"}`.
+  This is a *park-don't-fake* stand-in so the spine runs and the human gate is
+  still reached — it is **not** a real adversarial review, and a
+  `survived`/`parked` record must not be read as "an adversary tried and failed
+  to break this". A real deployment must inject a `red_team_fn` that runs the
+  heterogeneous, sandboxed adversary (`run_red_team`).
 
 ---
 

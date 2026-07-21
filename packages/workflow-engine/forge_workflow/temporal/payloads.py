@@ -18,6 +18,16 @@ from typing import Any
 
 from forge_contracts import WorkflowState
 
+# The Red-Team gate payloads + verdict constants moved to the engine-agnostic
+# ``forge_workflow.red_team_gate`` (Task 20 — V1 gate parity); re-exported here
+# unchanged so every Temporal import path keeps working byte-identically.
+from forge_workflow.red_team_gate import (
+    REDTEAM_BLOCKED,
+    REDTEAM_SURVIVED,
+    RedTeamInput,
+    RedTeamResult,
+)
+
 # -- canonical human/agent gate event tokens (subset of the DSL vocabulary) -- #
 EVENT_SPEC_APPROVED = "spec_approved_by_human"
 EVENT_SPEC_CHANGES = "spec_changes_requested"
@@ -182,50 +192,8 @@ class ApprovalInput:
     idempotency_key: str = ""
 
 
-#: The two terminal verdicts of the Red-Team Gate (mirror
-#: ``forge_db.models.red_team.VERDICT_*`` without importing the DB into the
-#: workflow determinism sandbox).
-REDTEAM_BLOCKED = "blocked"
-REDTEAM_SURVIVED = "survived"
-
-
-@dataclass
-class RedTeamInput:
-    """Argument to the ``forge.run_red_team_scan`` activity.
-
-    The adversary attacks the candidate spec/diff for ``workflow_run_id`` before
-    the human implementation gate; ``coder_model`` is the model that produced the
-    change, so the adversary can be routed onto a HETEROGENEOUS one.
-    """
-
-    workflow_run_id: uuid.UUID
-    workspace_id: uuid.UUID
-    task_id: uuid.UUID
-    phase: str = "spec"  # the gate the scan runs before (spec | pr)
-    coder_model: str | None = None
-    idempotency_key: str = ""
-
-
-@dataclass
-class RedTeamResult:
-    """Verdict of an adversarial scan.
-
-    ``verdict`` is :data:`REDTEAM_BLOCKED` (the adversary produced a failing test
-    or a structured spec-violation) or :data:`REDTEAM_SURVIVED` (it could not).
-    ``kind`` names the attack class (``failing_test`` / ``spec_violation`` /
-    ``parked``); ``evidence`` carries the structured result. Both models are
-    recorded so the survive is a truthful, heterogeneous-review provenance fact.
-    """
-
-    verdict: str = REDTEAM_SURVIVED
-    kind: str = "parked"
-    evidence: dict[str, Any] = field(default_factory=dict)
-    adversary_model: str | None = None
-    coder_model: str | None = None
-
-    @property
-    def blocked(self) -> bool:
-        return self.verdict == REDTEAM_BLOCKED
+# (RedTeamInput / RedTeamResult / REDTEAM_* are re-exported from the
+# engine-agnostic ``forge_workflow.red_team_gate`` — see the import block.)
 
 
 @dataclass
