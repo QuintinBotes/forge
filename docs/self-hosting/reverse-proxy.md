@@ -74,6 +74,15 @@ proxying to `api:8000`. Without them, `/ws` falls through to the catch-all
 `web:3000` route — wrong, since neither socket exists on the frontend — and
 realtime is silently dead behind the proxy.
 
+The **REST** client derives its base the same way: with `NEXT_PUBLIC_API_URL`
+unset it targets a same-origin **`https://<page-host>/api`** in the browser (the
+`/api` prefix the edge strips and routes to the API; `apps/web/src/lib/api/api-url.ts`),
+keeping `http://localhost:8000` on the local `next dev` server (:3000) and in
+SSR — so behind either proxy REST works over the page's own origin with no build
+arg. Set `NEXT_PUBLIC_API_URL` (as a **build** arg) only for a non-same-origin
+API: an absolute value is used verbatim, a relative one resolves against the page
+origin.
+
 ### Websocket and streaming requirements
 
 - **Upgrade headers.** `/ws`, `/ws/spec/*`, `/_temporal`, and `/grafana/` all

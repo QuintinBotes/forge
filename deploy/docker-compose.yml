@@ -377,7 +377,13 @@ services:
     user: "1000:1000"
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      # NOTE: NEXT_PUBLIC_API_URL is deliberately NOT set here. `NEXT_PUBLIC_*`
+      # is inlined into the web bundle at BUILD time (see web.Dockerfile /
+      # apps/web/next.config.mjs), so a runtime env var is too late to reach the
+      # client — it was dead config. The browser client now derives a same-origin
+      # `/api` base at runtime, which the edge routes to the API (see
+      # apps/web/src/lib/api/api-url.ts + docs/self-hosting/reverse-proxy.md).
+      # To target a non-same-origin API, pass NEXT_PUBLIC_API_URL as a BUILD arg.
     depends_on:
       api:
         condition: service_healthy

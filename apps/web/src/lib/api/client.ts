@@ -8,6 +8,7 @@
  * callers can degrade gracefully instead of choking on an unexpected shape.
  */
 
+import { resolveApiBaseUrl, toAbsoluteApiBase } from "./api-url";
 import { deriveOnboardingProgress } from "./onboarding-progress";
 import type {
   AgentRole,
@@ -133,8 +134,18 @@ import type {
   WorkflowValidationIssue,
 } from "./types";
 
-export const DEFAULT_API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/**
+ * The base URL the client targets when none is passed to the constructor.
+ *
+ * Resolved at runtime (see {@link resolveApiBaseUrl}): an absolute
+ * `NEXT_PUBLIC_API_URL` is used verbatim (byte-identical to the legacy default);
+ * a relative one (e.g. `/api`) or an unset one derives the same origin the page
+ * was served from in the browser, and keeps the static `http://localhost:8000`
+ * default in SSR / on the local `next dev` server. This fixes browser REST calls
+ * from a compose-deployed app, which the build-time `NEXT_PUBLIC_*` inlining
+ * otherwise baked to `http://localhost:8000` (wrong host + mixed content).
+ */
+export const DEFAULT_API_BASE_URL = resolveApiBaseUrl();
 
 /** Default bearer token for the shared `apiClient` singleton (REST + WS auth). */
 export const DEFAULT_API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
@@ -176,7 +187,13 @@ function buildUrl(
   path: string,
   query?: RequestOptions["query"],
 ): string {
-  const url = new URL(path.replace(/^\//, ""), baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  // `new URL(path, base)` throws on a relative base (e.g. `/api`); normalise to
+  // an absolute base first so a same-origin/relative base is joined safely.
+  const absoluteBase = toAbsoluteApiBase(baseUrl);
+  const url = new URL(
+    path.replace(/^\//, ""),
+    absoluteBase.endsWith("/") ? absoluteBase : `${absoluteBase}/`,
+  );
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined) {
@@ -193,7 +210,9 @@ export class ForgeApiClient {
   private readonly fetchImpl: typeof fetch;
 
   constructor(config: ApiClientConfig = {}) {
-    this.baseUrl = config.baseUrl ?? DEFAULT_API_BASE_URL;
+    // Resolve fresh per instance (not the module-load `DEFAULT_API_BASE_URL`) so
+    // the browser-constructed singleton derives the live same-origin base.
+    this.baseUrl = config.baseUrl ?? resolveApiBaseUrl();
     this.authToken = config.token ?? DEFAULT_API_TOKEN;
     this.fetchImpl = config.fetch ?? globalThis.fetch;
   }
