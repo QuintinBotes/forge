@@ -32,6 +32,7 @@ from forge_api.deps import Principal, SettingsDep
 from forge_api.observability.audit import AuditCategory, AuditLog
 from forge_api.observability.redaction import redact_mapping, redact_text
 from forge_api.routers._rbac import require_permission
+from forge_api.routers.agent import AgentRunStore, get_agent_store
 from forge_api.routers.approval import ApprovalStore, get_approval_store
 from forge_api.settings import Settings, get_settings
 from forge_contracts import (
@@ -280,6 +281,7 @@ WebhookSecretDep = Annotated[str | None, Depends(get_github_webhook_secret)]
 SlackSigningSecretDep = Annotated[str | None, Depends(get_slack_signing_secret)]
 ApprovalStoreDep = Annotated[ApprovalStore, Depends(get_approval_store)]
 SlackRefStoreDep = Annotated[SlackApprovalRefStore, Depends(get_slack_ref_store)]
+AgentRunStoreDep = Annotated[AgentRunStore, Depends(get_agent_store)]
 
 
 # --------------------------------------------------------------------------- #
@@ -488,17 +490,43 @@ def _slack_actor(payload: dict[str, object]) -> str:
     return "slack:unknown"
 
 
-def _command_blocks(text: str) -> dict[str, object]:
+def _run_status_body(store: AgentRunStore, raw_run_id: str) -> str:
+    """Resolve ``/forge status <run>`` against the live agent-run store.
+
+    Mirrors the interactivity handler's ``owner_of`` pattern: the slash command is
+    unauthenticated untrusted intake (no Forge principal), so the owning workspace
+    is resolved from the run id and the run is then read back through the normal
+    workspace-scoped :meth:`AgentRunStore.get`. A malformed or unknown id yields
+    the not-found copy (never fabricated). The response reports the run's real
+    :class:`~forge_contracts.enums.RunStatus`, plus the number of recorded steps
+    when the run carries any (the only step/phase detail the run model holds).
+    """
+    try:
+        run_id = uuid.UUID(raw_run_id)
+    except ValueError:
+        return f"*Forge* — no run `{raw_run_id}` found."
+    owner = store.owner_of(run_id)
+    result = store.get(run_id, workspace_id=owner) if owner is not None else None
+    if result is None:
+        return f"*Forge* — no run `{raw_run_id}` found."
+    detail = ""
+    if result.steps:
+        count = len(result.steps)
+        detail = f" ({count} step{'s' if count != 1 else ''})"
+    return f"run {run_id}: {result.status.value}{detail}"
+
+
+def _command_blocks(text: str, store: AgentRunStore) -> dict[str, object]:
     """Build the ephemeral Block Kit response for a ``/forge`` sub-command."""
     parts = text.strip().split()
     sub = parts[0].lower() if parts else "help"
     if sub == "status" and len(parts) > 1:
-        body = f"*Forge* — status for `{parts[1]}` is not wired to a live task yet."
+        body = _run_status_body(store, parts[1])
     else:
         body = (
             "*Forge* commands:\n"
             "• `/forge help` — show this help\n"
-            "• `/forge status <task-id>` — task status"
+            "• `/forge status <run-id>` — live run status"
         )
     return {
         "response_type": "ephemeral",
@@ -511,20 +539,23 @@ async def slack_slash_command(
     request: Request,
     secret: SlackSigningSecretDep,
     settings: SettingsDep,
+    store: AgentRunStoreDep,
     x_slack_signature: Annotated[str | None, Header()] = None,
     x_slack_request_timestamp: Annotated[str | None, Header()] = None,
 ) -> JSONResponse:
     """Handle a signed ``/forge`` slash command (``x-www-form-urlencoded``).
 
     Verifies the Slack v0 signature over the raw body, then returns an ephemeral
-    Block Kit response within Slack's 3-second budget. Fail-closed: 501 when no
-    signing secret is configured, 401 on a bad/missing/stale signature.
+    Block Kit response within Slack's 3-second budget. ``/forge status <run>`` is
+    resolved live against the shared :class:`~forge_api.routers.agent.AgentRunStore`
+    (the same store the runs API serves ``GET /agent/runs/{id}`` from). Fail-closed:
+    501 when no signing secret is configured, 401 on a bad/missing/stale signature.
     """
     body = await request.body()
     _verify_slack_request(secret, settings, body, x_slack_request_timestamp, x_slack_signature)
     form = parse_qs(body.decode("utf-8", errors="replace"))
     text = (form.get("text") or [""])[0]
-    return JSONResponse(content=_command_blocks(text))
+    return JSONResponse(content=_command_blocks(text, store))
 
 
 @router.post("/slack/interactions")

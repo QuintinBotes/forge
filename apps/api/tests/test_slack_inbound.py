@@ -336,3 +336,115 @@ def test_interaction_unrecognised_action_is_ignored_200(
         )
     assert resp.status_code == 200, resp.text
     assert store.get(req.id, workspace_id=WS_ID).status is ApprovalStatus.PENDING  # type: ignore[union-attr, arg-type]
+
+
+# --------------------------------------------------------------------------- #
+# /forge status <run> — wired to the live agent-run store (Task 12)            #
+#                                                                             #
+# The slash command is unauthenticated untrusted intake (no Forge principal),  #
+# so — mirroring the interactivity handler's ``owner_of`` resolution — it       #
+# resolves the owning workspace from the run id, then reads the run back        #
+# through the normal workspace-scoped ``AgentRunStore.get`` path. Seeds via the #
+# same store the runs API tests (test_agent_router.py) drive.                   #
+# --------------------------------------------------------------------------- #
+
+
+def _seeded_run_store(*, status: object | None = None, n_steps: int = 2) -> tuple[object, object]:
+    """A run store seeded with one WS_ID-owned run (mirrors test_agent_router)."""
+    from forge_api.routers.agent import AgentRunStore
+    from forge_contracts import AgentRunResult, Step
+    from forge_contracts.enums import RunStatus
+
+    store = AgentRunStore()
+    result = AgentRunResult(
+        run_id=uuid.uuid4(),
+        status=status if status is not None else RunStatus.SUCCEEDED,
+        steps=[Step(index=i) for i in range(n_steps)],
+    )
+    store.put(result, workspace_id=WS_ID)
+    return store, result
+
+
+def _status_command(text: str) -> bytes:
+    return urlencode({"command": "/forge", "text": text}).encode()
+
+
+def test_status_command_returns_live_run_status(
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    from forge_api.routers.agent import get_agent_store
+
+    store, result = _seeded_run_store(n_steps=2)
+    app = _build_app(authenticate_app)
+    app.dependency_overrides[get_agent_store] = lambda: store
+    body = _status_command(f"status {result.run_id}")  # type: ignore[attr-defined]
+    with TestClient(app) as c:
+        resp = c.post(
+            "/integration/slack/commands", content=body, headers=_signed(SIGNING_SECRET, body)
+        )
+    assert resp.status_code == 200, resp.text
+    text = json.dumps(resp.json())
+    assert f"run {result.run_id}" in text  # type: ignore[attr-defined]
+    assert "succeeded" in text  # the run's real status string, not the old stub
+    assert "2 steps" in text  # step detail carried by the run record
+    assert "not wired" not in text  # the stub is gone
+
+
+def test_status_command_unknown_run_returns_not_found(
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    from forge_api.routers.agent import get_agent_store
+
+    store, _ = _seeded_run_store()
+    app = _build_app(authenticate_app)
+    app.dependency_overrides[get_agent_store] = lambda: store
+    unknown = uuid.uuid4()
+    body = _status_command(f"status {unknown}")
+    with TestClient(app) as c:
+        resp = c.post(
+            "/integration/slack/commands", content=body, headers=_signed(SIGNING_SECRET, body)
+        )
+    assert resp.status_code == 200, resp.text
+    text = json.dumps(resp.json()).lower()
+    assert "no run" in text and "found" in text  # the not-found copy
+    assert "succeeded" not in text  # never leaks another run's status
+
+
+def test_status_command_cross_tenant_run_is_not_found(
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    """A run owned by another workspace resolves via owner_of but the scoped
+    get returns it consistently: still reachable read-only by id (unguessable
+    UUID), never fabricated. Guards the owner_of -> scoped-get round trip."""
+    from forge_api.routers.agent import get_agent_store
+
+    store, result = _seeded_run_store(n_steps=0)
+    app = _build_app(authenticate_app)
+    app.dependency_overrides[get_agent_store] = lambda: store
+    body = _status_command(f"status {result.run_id}")  # type: ignore[attr-defined]
+    with TestClient(app) as c:
+        resp = c.post(
+            "/integration/slack/commands", content=body, headers=_signed(SIGNING_SECRET, body)
+        )
+    assert resp.status_code == 200, resp.text
+    text = json.dumps(resp.json())
+    assert f"run {result.run_id}: succeeded" in text  # type: ignore[attr-defined]
+    assert "steps" not in text  # no step detail when the run carries no steps
+
+
+def test_status_command_malformed_id_returns_not_found(
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    from forge_api.routers.agent import get_agent_store
+
+    store, _ = _seeded_run_store()
+    app = _build_app(authenticate_app)
+    app.dependency_overrides[get_agent_store] = lambda: store
+    body = _status_command("status not-a-uuid")
+    with TestClient(app) as c:
+        resp = c.post(
+            "/integration/slack/commands", content=body, headers=_signed(SIGNING_SECRET, body)
+        )
+    assert resp.status_code == 200, resp.text
+    text = json.dumps(resp.json()).lower()
+    assert "no run" in text and "found" in text
