@@ -40,7 +40,7 @@ FEATURE_ROUTER_PREFIXES = [
     "/policy",
     "/mcp",
     "/integration",
-    "/approval",
+    "/approvals",
     "/observability",
     "/auth",
 ]

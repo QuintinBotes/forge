@@ -109,7 +109,8 @@ class AgentRunStore:
         """Return the workspace that owns ``run_id``, or ``None`` if unknown.
 
         Read-only, cross-tenant-safe resolution mirroring
-        :meth:`ApprovalStore.owner_of`: the Slack ``/forge status`` slash command
+        :meth:`~forge_api.routers.integration.ApprovalStore.owner_of`: the Slack
+        ``/forge status`` slash command
         is unauthenticated untrusted intake (it carries no Forge principal), so
         the handler resolves the owning workspace from the run id and then reads
         the run back through the normal workspace-scoped :meth:`get`. An unknown

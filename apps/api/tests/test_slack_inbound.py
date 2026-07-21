@@ -26,9 +26,10 @@ from fastapi.testclient import TestClient
 from forge_api.deps import Principal
 from forge_api.main import create_app
 from forge_api.observability.audit import AuditCategory, AuditLog
-from forge_api.routers.approval import ApprovalStore, get_approval_store
 from forge_api.routers.integration import (
+    ApprovalStore,
     SlackApprovalRefStore,
+    get_approval_store,
     get_integration_audit_log,
     get_slack_notifier,
     get_slack_ref_store,

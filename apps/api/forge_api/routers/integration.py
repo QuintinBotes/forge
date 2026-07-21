@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import uuid
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated
 from urllib.parse import parse_qs
@@ -33,9 +34,9 @@ from forge_api.observability.audit import AuditCategory, AuditLog
 from forge_api.observability.redaction import redact_mapping, redact_text
 from forge_api.routers._rbac import require_permission
 from forge_api.routers.agent import AgentRunStore, get_agent_store
-from forge_api.routers.approval import ApprovalStore, get_approval_store
 from forge_api.settings import Settings, get_settings
 from forge_contracts import (
+    ApprovalRequest,
     CIStatus,
     HealthResult,
     PullRequest,
@@ -203,15 +204,111 @@ def _slack_notifier_singleton() -> SlackNotifier:
     )
 
 
+class ApprovalStore:
+    """In-memory approval queue that backs **only** the Slack integration.
+
+    This is the Phase-2 in-memory approval store. Its HTTP surface (the legacy
+    ``/approval/*`` router) was retired in favour of the DB-backed F36
+    ``/approvals/*`` surface (``routers/approvals.py`` +
+    ``forge_approval.ApprovalService``). The store itself survives here because
+    the Slack integration is still wired to it and **cannot** be migrated to the
+    F36 service within a bounded diff:
+
+    * a Slack ``block_actions`` / ``chat.update`` callback is *unauthenticated*
+      untrusted intake — it carries no Forge principal, only an approval id — so
+      it needs :meth:`owner_of` to resolve the owning workspace from the id
+      alone; ``ApprovalService`` deliberately exposes no such id-only lookup
+      (every read demands a ``workspace_id``, and a cross-workspace id maps to
+      not-found);
+    * ``ApprovalService.resolve`` requires a domain ``Principal`` of
+      ``kind="user"`` with a real Forge user UUID and a ``member``/``admin``
+      role, and records that UUID as the decision's ``approver_user_id``; a Slack
+      actor is a ``slack:<handle>`` string with no Forge-user mapping anywhere in
+      the codebase, so it cannot satisfy the authorizer without forging identity;
+    * :meth:`slack_notify_approval` hands the resolved request to
+      :meth:`SlackNotifier.notify_approval`, which is typed to the frozen
+      :class:`~forge_contracts.ApprovalRequest` contract — a different type than
+      the F36 ``forge_approval.models.ApprovalRequest`` the service returns.
+
+    Consumers (both in this module): :func:`slack_notify_approval`
+    (``POST /integration/slack/approvals/{id}/notify``) reads via :meth:`get`;
+    :func:`slack_interaction` (``POST /integration/slack/interactions``) resolves
+    via :meth:`owner_of` then applies :meth:`decide`.
+
+    Each request is tagged with the ``workspace_id`` that created it; every read
+    and decision is scoped to a workspace so one tenant can never see, fetch, or
+    decide another tenant's gates. ``ApprovalRequest`` carries no ``workspace_id``
+    field (it is a frozen contract), so ownership is tracked alongside the items.
+    """
+
+    def __init__(self) -> None:
+        self._items: dict[uuid.UUID, ApprovalRequest] = {}
+        self._owner: dict[uuid.UUID, uuid.UUID] = {}
+
+    def create(self, request: ApprovalRequest, *, workspace_id: uuid.UUID) -> ApprovalRequest:
+        if request.id is None:
+            request.id = uuid.uuid4()
+        if request.created_at is None:
+            request.created_at = datetime.now(UTC)
+        self._items[request.id] = request
+        self._owner[request.id] = workspace_id
+        return request
+
+    def get(self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID) -> ApprovalRequest | None:
+        if self._owner.get(approval_id) != workspace_id:
+            return None
+        return self._items.get(approval_id)
+
+    def owner_of(self, approval_id: uuid.UUID) -> uuid.UUID | None:
+        """Return the workspace that owns ``approval_id``, or ``None`` if unknown.
+
+        Read-only, cross-tenant-safe resolution used by the Slack interactivity
+        handler: a Slack ``block_actions`` callback is unauthenticated (it carries
+        no Forge principal) and embeds only the approval id, so the handler must
+        resolve the owning workspace before applying the decision through the
+        normal workspace-scoped :meth:`decide` path. An unknown id yields
+        ``None`` -> the handler no-ops (never leaks another tenant's gate).
+        """
+        return self._owner.get(approval_id)
+
+    def decide(
+        self,
+        approval_id: uuid.UUID,
+        *,
+        workspace_id: uuid.UUID,
+        status: ApprovalStatus,
+        decided_by: str | None,
+        reason: str | None,
+    ) -> ApprovalRequest | None:
+        request = self.get(approval_id, workspace_id=workspace_id)
+        if request is None:
+            return None
+        request.status = status
+        request.decided_by = decided_by
+        request.decision_reason = reason
+        request.decided_at = datetime.now(UTC)
+        return request
+
+
+@lru_cache(maxsize=1)
+def _approval_store_singleton() -> ApprovalStore:
+    return ApprovalStore()
+
+
+def get_approval_store() -> ApprovalStore:
+    """Return the process-wide Slack-integration approval store (override in tests)."""
+    return _approval_store_singleton()
+
+
 class SlackApprovalRefStore:
     """In-memory ``approval_id -> (channel, ts)`` back-reference for Slack posts.
 
     ``ApprovalRequest`` is a frozen contract (no ``slack_ts`` field), so — exactly
-    as :class:`~forge_api.routers.approval.ApprovalStore` tracks workspace
-    ownership *beside* the item rather than mutating the DTO — the resolved
-    channel + message timestamp of an approval's Slack post are tracked here. The
-    interactivity handler reads them to edit the original message in place
-    (``chat.update``). The DB-backed store swaps in behind the same dependency.
+    as :class:`ApprovalStore` tracks workspace ownership *beside* the item rather
+    than mutating the DTO — the resolved channel + message timestamp of an
+    approval's Slack post are tracked here. The interactivity handler reads them
+    to edit the original message in place (``chat.update``). The DB-backed store
+    swaps in behind the same dependency.
     """
 
     def __init__(self) -> None:
@@ -661,8 +758,10 @@ async def slack_interaction(
 
 
 __all__ = [
+    "ApprovalStore",
     "RepoConnectionStore",
     "SlackApprovalRefStore",
+    "get_approval_store",
     "get_github_client",
     "get_github_client_optional",
     "get_github_webhook_secret",
