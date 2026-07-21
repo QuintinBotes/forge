@@ -57,13 +57,18 @@ un-prefixed path is not externally reachable behind either proxy.
 **`/ws` and `/ws/spec/{spec_id}`** (the board-push and CRDT spec-co-editing
 websocket channels, `forge_api.routers.realtime`) mount at the API app **root**,
 not under `/api` — `app.include_router(realtime_router)` with no prefix (see
-`apps/api/forge_api/main.py`). The web client builds the socket URL from
-`NEXT_PUBLIC_WS_URL` (default `ws://localhost:8000/ws`, see
-`apps/web/src/lib/realtime/use-board-realtime.ts`): a same-origin **`/ws`** path
-with no `/api` prefix and no `window.location` rewrite. So behind either proxy
-you set `NEXT_PUBLIC_WS_URL=wss://<your-domain>/ws` (the same-origin analogue of
-`NEXT_PUBLIC_API_URL=/api`), and the edge must route that bare `/ws` to the API.
-Both proxies now do: the Caddyfile has explicit `handle /ws` + `handle /ws/spec/*`
+`apps/api/forge_api/main.py`). The web client opens a bare same-origin **`/ws`**
+path — no `/api` prefix. It **auto-derives** the URL from the page's
+`window.location` at runtime (`wss://<page-host>/ws` on an https page, `ws://`
+otherwise; see `apps/web/src/lib/realtime/ws-url.ts`), so behind either proxy
+realtime works over the same origin as the page with no configuration — the edge
+only has to route that bare `/ws` to the API. To point realtime at a
+non-same-origin endpoint, override with `NEXT_PUBLIC_WS_URL=wss://<host>/ws` as a
+**build** arg (it is inlined into the web bundle at build time, like
+`NEXT_PUBLIC_API_URL`); leave it unset for the same-origin default. (The local
+`next dev` server on :3000 serves no `/ws`, so the client keeps
+`ws://localhost:8000/ws` there.) The edge must still route bare `/ws` to the API,
+and both proxies now do: the Caddyfile has explicit `handle /ws` + `handle /ws/spec/*`
 blocks and `forge.conf` has `location = /ws` + `location /ws/spec/`, each
 proxying to `api:8000`. Without them, `/ws` falls through to the catch-all
 `web:3000` route — wrong, since neither socket exists on the frontend — and

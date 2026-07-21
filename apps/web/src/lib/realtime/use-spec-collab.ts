@@ -23,6 +23,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 
+import { resolveSpecWsBaseUrl } from "./ws-url";
+
 /** The two CRDT-synced spec surfaces; each is a named `Y.Text` in the doc. */
 export type SpecCollabField = "markdown" | "yaml";
 
@@ -98,7 +100,11 @@ export interface UseSpecCollabOptions {
   enabled?: boolean;
   /** Bearer token forwarded as the `?token=` query param (WS auth). */
   token?: string;
-  /** Base WS URL; defaults to `NEXT_PUBLIC_SPEC_WS_URL` → `/ws/spec`. */
+  /**
+   * Base WS URL. Defaults to `NEXT_PUBLIC_SPEC_WS_URL` → `NEXT_PUBLIC_WS_URL`
+   * (`/ws`→`/ws/spec`) → the same-origin `/ws/spec` derived from the page's
+   * `window.location` (see `resolveSpecWsBaseUrl`).
+   */
   baseUrl?: string;
   /** Local editor identity for presence. */
   user?: CollabUser;
@@ -129,11 +135,6 @@ export interface SpecCollabState {
   /** Everyone currently in the room, including the local editor (`isSelf`). */
   peers: CollabPeer[];
 }
-
-export const DEFAULT_SPEC_WS_URL =
-  process.env.NEXT_PUBLIC_SPEC_WS_URL ??
-  process.env.NEXT_PUBLIC_WS_URL?.replace(/\/ws$/, "/ws/spec") ??
-  "ws://localhost:8000/ws/spec";
 
 /** Number of slots in the categorical chart ramp (`--chart-1..6`). */
 const CHART_SLOTS = 6;
@@ -212,7 +213,7 @@ export function useSpecCollab(
     field,
     enabled = true,
     token,
-    baseUrl = DEFAULT_SPEC_WS_URL,
+    baseUrl = resolveSpecWsBaseUrl(),
     user,
     seedText,
     providerFactory,
