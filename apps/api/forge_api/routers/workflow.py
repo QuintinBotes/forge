@@ -236,6 +236,22 @@ def _run_task_id(run: WorkflowRun) -> uuid.UUID:
     return run.task_id
 
 
+def _run_id(run: WorkflowRun) -> uuid.UUID:
+    """Narrow the contract's optional ``id`` (always set by ``start_run``).
+
+    Mirrors :func:`_run_task_id`: a run reaching the mint gate without an id
+    cannot be scanned or recorded (``ensure_red_team_verdict`` requires
+    ``workflow_run_id``) — fail loud (500) rather than silently skipping the
+    gate. Previously this case was a quiet ``if run.id is not None:`` skip.
+    """
+    if run.id is None:  # pragma: no cover — start_run always sets it
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="workflow run has no id; cannot red-team scan",
+        )
+    return run.id
+
+
 @router.post("/runs", response_model=WorkflowRun, status_code=status.HTTP_201_CREATED)
 def start_run(
     engine: EngineDep,
@@ -276,8 +292,14 @@ def transition(
     in ``spec_review`` — the human spec gate, exactly where the Temporal spine
     scans — mint the run's verdict once (idempotent across gate re-entries):
     the configured adversary when wired, an explicit parked-pass otherwise.
-    Failure to record is loud (500), never a silently skipped gate. The
-    Temporal engine is excluded: its workflow body owns the scan.
+    Failure to record is loud (500 via ``_run_id``/``_run_task_id``), never a
+    silently skipped gate. The Temporal engine is excluded: its workflow body
+    owns the scan. Recovery from a mint failure needs no special-casing: the
+    FSM transition itself has already landed (it is a separate store from this
+    mint), so the next transition that re-enters ``spec_review`` re-attempts
+    the mint (``ensure_red_team_verdict`` is idempotent on "no existing
+    record"); alternatively, ``POST /workflow/runs/{run_id}/red-team`` records
+    the verdict directly as a manual recovery path.
     """
     _require_owned(ownership, run_id, principal.workspace_id)
     with _workflow_errors():
@@ -286,12 +308,11 @@ def transition(
     if (
         isinstance(engine, WorkflowEngineImpl)
         and run.current_state == WorkflowState.SPEC_REVIEW.value
-        and run.id is not None
     ):
         ensure_red_team_verdict(
             session,
             principal.workspace_id,
-            workflow_run_id=run.id,
+            workflow_run_id=_run_id(run),
             task_id=_run_task_id(run),
             phase=_GATEABLE_STATES[run.current_state],
             red_team_fn=red_team_fn,

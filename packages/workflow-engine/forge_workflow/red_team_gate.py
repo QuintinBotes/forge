@@ -188,6 +188,11 @@ def ensure_red_team_verdict(
     """
     from forge_db.redteam import RedTeamRepository
 
+    # Query-first idempotency is best-effort, not a hard guarantee: two
+    # concurrent callers can both see "no existing scan" and both record.
+    # Worst case under a race is a duplicate honest `parked`/`survived` row in
+    # the append-only history (extra noise on the GET's `records` list) — it
+    # is never a verdict flip, and never fabricates a block or a survive.
     existing = RedTeamRepository(session).get_by_run(workspace_id, workflow_run_id)
     if existing:
         return existing[0], False
