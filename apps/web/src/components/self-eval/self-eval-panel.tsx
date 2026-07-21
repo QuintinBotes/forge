@@ -122,8 +122,8 @@ export function SelfEvalPanel({ client = apiClient }: SelfEvalPanelProps) {
             className="text-sm text-success"
           >
             Run queued — the <Mono>forge.self_eval.run</Mono> worker task will
-            score the private suite and record the baseline. Refresh in a few
-            minutes.
+            attempt to score the private suite; if it can score, it records the
+            baseline. Refresh in a few minutes.
           </p>
         ) : null}
         {runMutation.isError ? (
