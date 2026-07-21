@@ -44,7 +44,7 @@ from forge_agent.sandbox.output import cap_output
 from forge_agent.testing import ScriptedModelClient, finish_response
 from forge_agent.tools import ToolRegistry
 from forge_auth.redaction import SecretRedactor
-from forge_contracts import AgentObjective, AgentRunResult, ModelClient
+from forge_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
 from forge_db.models import RunRecording
 from forge_db.session import create_session_factory
 from forge_worker.celery_app import celery_app
@@ -316,6 +316,22 @@ def run_agent_task(
     dedup_key = idempotency_key or objective.get("task_id")
     if self.is_duplicate(dedup_key):
         return {"deduplicated": True, "idempotency_key": dedup_key}
+    if objective.get("execution_mode") == ExecutionMode.SUPERVISED_MULTI_AGENT.value:
+        # Task 17 (F27): a supervised-mode objective is driven by the
+        # deterministic multi-agent Supervisor, never a single AgentRunner.
+        # FORGE_RECORD_RUNS is a documented no-op on this branch (see the
+        # forge_worker.multi_agent module docstring).
+        from forge_worker.multi_agent import run_supervised_objective
+
+        try:
+            result = run_supervised_objective(objective)
+        except SoftTimeLimitExceeded:
+            return {
+                "escalated": True,
+                "reason": "soft_time_limit_exceeded",
+                "idempotency_key": dedup_key,
+            }
+        return result.model_dump(mode="json")
     runner = build_agent_runner()
     try:
         result = run_objective(runner, AgentObjective.model_validate(objective))
