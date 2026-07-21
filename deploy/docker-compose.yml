@@ -140,6 +140,17 @@ services:
       FORGE_SECRET_KEY_FILE: /run/secrets/forge_secret_key
       # Two-tier envelope encryption for BYOK secrets (rotatable, versioned KEK).
       FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
+      # HARD-02 BYOK model provider. The API resolves a per-workspace model client
+      # via AuthService.resolve_model_client -> ModelClientConfig.from_env(), whose
+      # env fallback (no vault secret_id) reads these same vars — so they must reach
+      # the api, not just the worker. Empty-default == unset == offline scripted
+      # client (from_env strips/falsy-checks them). Passed explicitly: this service
+      # uses an `environment:` map with no env_file (a root .env only fills ${VAR}).
+      FORGE_MODEL_PROVIDER: ${FORGE_MODEL_PROVIDER:-}
+      FORGE_MODEL_NAME: ${FORGE_MODEL_NAME:-}
+      FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Incident alert webhook signing secrets (F17); absent -> 501 fail-closed.
       FORGE_PAGERDUTY_WEBHOOK_SECRET: ${FORGE_PAGERDUTY_WEBHOOK_SECRET:-}
       FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
@@ -238,6 +249,22 @@ services:
       # the API; fail-closed if unset (no ephemeral key in production).
       FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
       FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
+      # HARD-02 BYOK model provider. FORGE_MODEL_PROVIDER (anthropic|openai) is the
+      # master switch; unset OR empty -> the offline deterministic scripted client
+      # (ModelClientConfig.from_env strips/falsy-checks these, so the empty-default
+      # form below is unset-equivalent). The key is BYOK: provider-native
+      # ANTHROPIC_API_KEY / OPENAI_API_KEY win, FORGE_MODEL_API_KEY is the
+      # provider-agnostic fallback. Passed explicitly because this service uses an
+      # `environment:` map with no env_file, so a root .env only reaches ${VAR} refs.
+      FORGE_MODEL_PROVIDER: ${FORGE_MODEL_PROVIDER:-}
+      FORGE_MODEL_NAME: ${FORGE_MODEL_NAME:-}
+      FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # F27 multi-agent coordinator (supervised runs). Read by forge_coordinator's
+      # CoordinatorSettings (MULTI_AGENT_ENABLED); "false"/unset keeps supervised
+      # runs single-agent (escalate with reason `multi_agent_disabled`).
+      MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-false}
       FORGE_PAGERDUTY_WEBHOOK_SECRET: ${FORGE_PAGERDUTY_WEBHOOK_SECRET:-}
       FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
       FORGE_SENTRY_WEBHOOK_SECRET: ${FORGE_SENTRY_WEBHOOK_SECRET:-}

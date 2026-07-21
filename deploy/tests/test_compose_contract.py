@@ -414,6 +414,45 @@ def test_worker_env_carries_f34_sandbox_settings() -> None:
     assert "FORGE_SANDBOX_JAILER_ROOT" in env
 
 
+# --------------------------------------------------------------------------- #
+# HARD-02 — BYOK model provider + F27 multi-agent env contract                 #
+# The app services use explicit `environment:` maps with no env_file, so a     #
+# quickstart operator's FORGE_MODEL_* / provider keys reach the container ONLY #
+# if the var is listed here; otherwise the scripted offline client is forced.  #
+# --------------------------------------------------------------------------- #
+
+_MODEL_ENV_KEYS = (
+    "FORGE_MODEL_PROVIDER",
+    "FORGE_MODEL_NAME",
+    "FORGE_MODEL_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+)
+
+
+def test_worker_env_carries_model_provider_contract() -> None:
+    """The worker's agent runtime reads FORGE_MODEL_* / provider keys from env."""
+    env = _service("worker")["environment"]
+    for key in _MODEL_ENV_KEYS:
+        assert key in env, f"worker env missing {key}"
+        # Empty-default form so an unset var stays unset-equivalent (offline).
+        assert env[key] == f"${{{key}:-}}", f"{key} not passed empty-default"
+
+
+def test_api_env_carries_model_provider_contract() -> None:
+    """The API resolve_model_client env fallback (ModelClientConfig.from_env) reads
+    the same keys, so they must reach the api service too — not just the worker."""
+    env = _service("api")["environment"]
+    for key in _MODEL_ENV_KEYS:
+        assert key in env, f"api env missing {key}"
+
+
+def test_worker_env_carries_multi_agent_toggle() -> None:
+    """F27 MULTI_AGENT_ENABLED must reach the worker (the coordinator reader)."""
+    env = _service("worker")["environment"]
+    assert env.get("MULTI_AGENT_ENABLED") == "${MULTI_AGENT_ENABLED:-false}"
+
+
 def test_docker_proxy_verbs_unchanged_by_f34() -> None:
     """AC15 — runtime selection is a create-body field; no new proxy verbs."""
     env = _service("docker-proxy")["environment"]

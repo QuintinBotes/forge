@@ -38,6 +38,19 @@ x-python-env: &python-env
   FORGE_REDIS_URL: redis://redis:6379/0
   MCP_GATEWAY_URL: http://mcp-gateway:8001
   MINIO_ENDPOINT: http://minio:9000
+  # HARD-02 BYOK model provider. FORGE_MODEL_PROVIDER (anthropic|openai) is the
+  # master switch; unset OR empty -> the offline deterministic scripted client
+  # (ModelClientConfig.from_env strips/falsy-checks these, so the empty-default
+  # form is unset-equivalent). Provider-native ANTHROPIC/OPENAI keys win, then the
+  # provider-agnostic FORGE_MODEL_API_KEY. Passed explicitly because this shared
+  # env map has no env_file, so a root .env only reaches ${VAR} references.
+  FORGE_MODEL_PROVIDER: ${FORGE_MODEL_PROVIDER:-}
+  FORGE_MODEL_NAME: ${FORGE_MODEL_NAME:-}
+  FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  # F27 multi-agent coordinator (supervised runs); read by CoordinatorSettings.
+  MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-false}
 
 services:
   # --------------------------------------------------------------------- #

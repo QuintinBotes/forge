@@ -42,6 +42,11 @@ forge:
   # Rename any --set secrets.data.MODEL_PROVIDER_KEY=... to FORGE_MODEL_API_KEY.
   modelProvider: anthropic
   modelName: ""
+  # F27 multi-agent coordinator (supervised runs). Rendered as MULTI_AGENT_ENABLED
+  # in the ConfigMap and read by forge_coordinator's CoordinatorSettings. `false`
+  # (default) keeps supervised runs single-agent (they escalate to a human with
+  # reason `multi_agent_disabled`); set `true` to enable parallel sub-agents.
+  multiAgentEnabled: false
 
 # Image defaults shared by all four workloads. Per-workload image.repository/tag/
 # digest live under each workload block below.

@@ -91,7 +91,8 @@
         "publicUrl": {"type": "string"},
         "logLevel": {"enum": ["debug", "info", "warning", "error"]},
         "modelProvider": {"type": "string", "enum": ["anthropic", "openai"]},
-        "modelName": {"type": "string"}
+        "modelName": {"type": "string"},
+        "multiAgentEnabled": {"type": "boolean"}
       }
     },
     "image": {

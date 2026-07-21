@@ -26,6 +26,9 @@ data:
   {{- with .Values.forge.modelName }}
   FORGE_MODEL_NAME: {{ . | quote }}
   {{- end }}
+  # --- F27 multi-agent coordinator (supervised runs). Read by CoordinatorSettings;
+  #     the worker consumes this ConfigMap via envFrom. Default "false". ---
+  MULTI_AGENT_ENABLED: {{ .Values.forge.multiAgentEnabled | quote }}
   MCP_GATEWAY_URL: {{ printf "http://%s-mcp-gateway:%d" (include "forge.fullname" .) (int .Values.mcpGateway.service.port) | quote }}
   # --- BYOK vault: the ACTIVE key VERSION is non-secret; the key MATERIAL
   #     (FORGE_VAULT_KEYS) is in the Secret only (F37). ---
