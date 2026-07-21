@@ -239,6 +239,12 @@ class ApprovalStore:
     and decision is scoped to a workspace so one tenant can never see, fetch, or
     decide another tenant's gates. ``ApprovalRequest`` carries no ``workspace_id``
     field (it is a frozen contract), so ownership is tracked alongside the items.
+
+    Note: since the legacy ``POST /approval/requests`` route was removed, nothing
+    populates this store in production — the Slack notify/decide flow below
+    operates on an empty store until a writer is reintroduced (tests seed it
+    directly). Kept pending migration of Slack interactivity to the DB-backed
+    ``/approvals`` surface.
     """
 
     def __init__(self) -> None:
