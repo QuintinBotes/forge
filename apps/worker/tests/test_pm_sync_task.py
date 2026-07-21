@@ -45,7 +45,11 @@ from forge_db.models import Project, Task, Workspace
 from forge_db.models.enums import PMDeliveryStatus
 from forge_db.models.enums import PMProvider as DbPMProvider
 from forge_db.models.pm import PMTaskLink, PMWebhookDelivery
+from forge_integrations.pm.errors import ExternalNotFound, RateLimitError
 from forge_worker.celery_app import celery_app
+from forge_worker.reliability import ForgeTask as ForgeReliableTask
+from forge_worker.reliability import TransientError
+from forge_worker.tasks import pm_sync as pm_sync_module
 from forge_worker.tasks.pm_sync import PM_SYNC_TASK, process_webhook
 
 WS_ID = uuid.uuid4()
@@ -87,6 +91,9 @@ class FakeAdapter:
     def __init__(self) -> None:
         self.external: ExternalTask | None = None
         self.fetch_calls: list[str] = []
+        #: When set, ``fetch_external`` raises this instead of returning — models a
+        #: provider fault (transient or permanent) so the failure path is testable.
+        self.raise_on_fetch: Exception | None = None
 
     # --- mapping (pure) ---
     def map_status(self, value: str, direction: Direction) -> str:
@@ -101,6 +108,8 @@ class FakeAdapter:
     # --- external I/O (only the inbound fetch is legal here) ---
     async def fetch_external(self, external_id: str) -> ExternalTask:
         self.fetch_calls.append(external_id)
+        if self.raise_on_fetch is not None:
+            raise self.raise_on_fetch
         assert self.external is not None, "fake adapter has no external staged"
         return self.external
 
@@ -208,6 +217,37 @@ def _delivery(factory: sessionmaker[Session], row_id: uuid.UUID) -> PMWebhookDel
         return row
 
 
+def _seed_other_tenant_link(
+    factory: sessionmaker[Session], *, external_id: str = "ext-1"
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """Seed a full OTHER_WS_ID task + PM link carrying the *same* external_id.
+
+    Under a *different* connection (outside WS_ID's scope), so the WS_ID sync must
+    never read or overwrite it despite the id collision. Returns (task_id, link_id).
+    """
+    with factory() as session:
+        project = Project(workspace_id=OTHER_WS_ID, name="OtherCore", key="OCORE")
+        session.add(project)
+        session.flush()
+        task = Task(
+            workspace_id=OTHER_WS_ID, project_id=project.id, key="OCORE-1", title="Untouchable"
+        )
+        session.add(task)
+        session.flush()
+        link = PMTaskLink(
+            workspace_id=OTHER_WS_ID,
+            connection_id=uuid.uuid4(),  # a foreign connection, outside WS_ID's scope
+            forge_task_id=task.id,
+            provider=DbPMProvider.LINEAR,
+            external_id=external_id,
+            external_key="OCORE-1",
+            external_url="https://linear.app/other/issue/OCORE-1",
+        )
+        session.add(link)
+        session.commit()
+        return task.id, link.id
+
+
 # --------------------------------------------------------------------------- #
 # Tests                                                                       #
 # --------------------------------------------------------------------------- #
@@ -221,6 +261,9 @@ def test_process_webhook_fetches_and_upserts_board_task(
     project_id: uuid.UUID,
 ) -> None:
     fake_adapter.external = _external()
+    # A different tenant already holds a task + link under the *same* external_id
+    # (via a foreign connection): the sync must not read or clobber it.
+    other_task_id, other_link_id = _seed_other_tenant_link(factory, external_id="ext-1")
     row_id = _seed_delivery(factory, connection_id)
 
     result = process_webhook(factory, row_id, connections=connections)
@@ -229,21 +272,29 @@ def test_process_webhook_fetches_and_upserts_board_task(
     assert fake_adapter.fetch_calls == ["ext-1"]
 
     tasks, links = _board_state(factory)
-    assert len(tasks) == 1
-    task = tasks[0]
-    # Multi-tenancy: the board write is scoped to the connection's workspace.
-    assert task.workspace_id == WS_ID
+    # Multi-tenancy: the board write is scoped to the connection's workspace only.
+    ws_tasks = [t for t in tasks if t.workspace_id == WS_ID]
+    other_tasks = [t for t in tasks if t.workspace_id == OTHER_WS_ID]
+    ws_links = [link for link in links if link.workspace_id == WS_ID]
+    other_links = [link for link in links if link.workspace_id == OTHER_WS_ID]
+
+    assert len(ws_tasks) == 1
+    task = ws_tasks[0]
     assert task.project_id == project_id
     assert task.title == "Add pagination"
     assert task.description == "body"
     assert list(task.labels) == ["backend"]
 
-    assert len(links) == 1
-    link = links[0]
-    assert link.workspace_id == WS_ID
+    assert len(ws_links) == 1
+    link = ws_links[0]
     assert link.connection_id == connection_id
     assert link.forge_task_id == task.id
     assert link.external_id == "ext-1"
+
+    # The identically-keyed OTHER_WS_ID rows are untouched (no cross-tenant leak).
+    assert [t.id for t in other_tasks] == [other_task_id]
+    assert other_tasks[0].title == "Untouchable"
+    assert [link.id for link in other_links] == [other_link_id]
 
     delivery = _delivery(factory, row_id)
     assert delivery.status == PMDeliveryStatus.PROCESSED
@@ -358,7 +409,64 @@ def test_missing_connection_is_skipped(
     assert _delivery(factory, row_id).status == PMDeliveryStatus.SKIPPED
 
 
+def test_permanent_fetch_failure_lands_error_and_reraises(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    connection_id: uuid.UUID,
+    fake_adapter: FakeAdapter,
+) -> None:
+    # A *permanent* provider fault (the issue does not exist): fail fast to ERROR,
+    # re-raise as-is (never wrapped as TransientError), never touch the board.
+    fake_adapter.raise_on_fetch = ExternalNotFound("x" * 2500)  # long -> exercises truncation
+    row_id = _seed_delivery(factory, connection_id)
+
+    with pytest.raises(ExternalNotFound):
+        process_webhook(factory, row_id, connections=connections)
+
+    assert fake_adapter.fetch_calls == ["ext-1"]  # tried once, not retried
+    assert _board_state(factory) == ([], [])  # no board write
+    delivery = _delivery(factory, row_id)
+    assert delivery.status == PMDeliveryStatus.ERROR
+    assert delivery.error is not None
+    assert len(delivery.error) == 2000  # truncated error text
+    assert delivery.processed_at is not None
+
+
+def test_transient_fetch_failure_is_retried_by_reliability_base(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    connection_id: uuid.UUID,
+    fake_adapter: FakeAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A *transient* provider fault (rate-limit): the ForgeTask base auto-retries.
+    # Drive the real registered task in eager mode and assert the authoritative
+    # re-fetch is attempted more than once (initial + backoff retries).
+    fake_adapter.raise_on_fetch = RateLimitError("rate limited")
+    row_id = _seed_delivery(factory, connection_id)
+
+    # Point the production seams at the hermetic test factory + connections.
+    monkeypatch.setattr(pm_sync_module, "_session_factory", lambda: factory)
+    monkeypatch.setattr(pm_sync_module, "_connection_service", lambda _factory: connections)
+    monkeypatch.setattr(celery_app.conf, "task_always_eager", True)
+    monkeypatch.setattr(celery_app.conf, "task_eager_propagates", False)
+
+    result = celery_app.tasks[PM_SYNC_TASK].apply(args=[str(row_id)])
+
+    assert result.failed()  # retry budget spent -> terminal failure
+    # A retry *was* attempted: initial call + ForgeTask.max_retries re-fetches.
+    assert len(fake_adapter.fetch_calls) == ForgeReliableTask.max_retries + 1
+    assert len(fake_adapter.fetch_calls) > 1
+    assert _delivery(factory, row_id).status == PMDeliveryStatus.ERROR
+
+
 def test_task_registered_in_celery_app() -> None:
     assert PM_SYNC_TASK == "forge.pm.process_webhook"
     assert PM_SYNC_TASK in celery_app.tasks
     assert "forge_worker.tasks.pm_sync" in celery_app.conf.include
+    # Registered on the reliability base: acks_late + auto-retry of TransientError
+    # (so transient provider blips retry with backoff instead of being dropped).
+    task = celery_app.tasks[PM_SYNC_TASK]
+    assert isinstance(task, ForgeReliableTask)
+    assert TransientError in task.autoretry_for
+    assert task.acks_late is True

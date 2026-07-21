@@ -56,8 +56,11 @@ from forge_contracts.pm import (
 )
 from forge_db.models.enums import PMConnectionStatus, PMDeliveryStatus, PMSyncDirection
 from forge_db.models.pm import PMConnection, PMWebhookDelivery
+from forge_integrations.pm.errors import ProviderError, RateLimitError
 from forge_integrations.pm.sync_engine import ForgeTaskPatch, PMSyncEngine
 from forge_worker.celery_app import celery_app
+from forge_worker.reliability import ForgeTask as ForgeReliableTask
+from forge_worker.reliability import TransientError
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
@@ -143,6 +146,11 @@ class SqlBoardWriter:
     the board substrate has no per-row version column yet; last-write-wins
     within the engine's own conflict detection (which compares content hashes,
     not versions, before ever calling ``update``).
+
+    A patch's ``assignee_email`` is intentionally **not** written: the board keys
+    assignees by ``assignee_id`` (a Forge user), not by an external email, so the
+    inbound assignee is dropped at this seam rather than guessed at (resolving an
+    external email to a Forge user is parked; see ``_dto_to_forge_task``).
     """
 
     def __init__(self, session_factory: sessionmaker[Session], workspace_id: uuid.UUID) -> None:
@@ -232,6 +240,24 @@ def _result(action: str, row_id: uuid.UUID, **extra: str | None) -> dict[str, st
     return {"action": action, "delivery_row_id": str(row_id), **extra}
 
 
+def _is_transient(exc: BaseException) -> bool:
+    """Is ``exc`` a *retryable* provider failure (vs. a deterministic one)?
+
+    Transient (retry with backoff): a provider rate-limit (429 — always resolves)
+    or an upstream **5xx** ``ProviderError`` blip, plus raw network faults
+    (connect / timeout). Everything else is deterministic and must fail fast to
+    ``ERROR`` — auth, not-found, unmappable field, sync-conflict, an *unsupported*
+    provider (a ``ProviderError`` with no 5xx status, e.g. the registry's
+    ``unsupported PM provider``), or a malformed payload — because retrying it
+    only burns the budget and delays the terminal state.
+    """
+    if isinstance(exc, RateLimitError):
+        return True
+    if isinstance(exc, ProviderError):
+        return exc.status_code is not None and exc.status_code >= 500
+    return isinstance(exc, ConnectionError | TimeoutError)
+
+
 async def _fetch_and_sync(
     adapter: PMAdapter, engine: PMSyncEngine, external_id: str
 ) -> SyncOutcome:
@@ -249,9 +275,19 @@ def process_webhook(
     """Re-fetch the changed issue for one persisted delivery and upsert the board.
 
     Idempotent: an already-processed row early-returns; identical redelivered
-    content is echo-suppressed by the engine's content hash. Failures mark the
-    row ``error`` and re-raise (so Celery retry semantics still apply); the
-    next run of the same row proceeds again (``error``/``received`` both run).
+    content is echo-suppressed by the engine's content hash.
+
+    Failure semantics (honest): any fetch / board-write failure first marks the
+    row ``error`` (truncated). A *transient* provider failure — a rate-limit, an
+    upstream 5xx, a raw network blip — is then re-raised as
+    :class:`~forge_worker.reliability.TransientError`, so the
+    :class:`~forge_worker.reliability.ForgeTask` base auto-retries it ``N`` times
+    with exponential backoff; only once that budget is spent does the row stay
+    ``ERROR``. A *permanent* failure — auth, not-found, unmappable field, an
+    unsupported provider, a malformed payload — is re-raised as-is and lands
+    ``ERROR`` immediately (retrying it only burns the budget). Either way the
+    independent recovery path is the next webhook for the same issue, which
+    re-fetches authoritative state and re-runs from ``received``.
     """
     audit = audit or AuditLog()
     with session_factory() as session:
@@ -296,6 +332,10 @@ def process_webhook(
             delivery_row_id,
             row.connection_id,
         )
+        # Transient provider blips retry with backoff on the ForgeTask base;
+        # deterministic failures fail fast to ERROR (see module docstring).
+        if _is_transient(exc):
+            raise TransientError(str(exc)) from exc
         raise
 
     status = (
@@ -373,8 +413,15 @@ def process_webhook_task(delivery_row_id: str) -> dict[str, str | None]:  # prag
 
 
 def register_pm_sync_tasks() -> None:
-    """Register the PM sync Celery task (idempotent)."""
-    celery_app.task(name=PM_SYNC_TASK)(process_webhook_task)
+    """Register the PM sync Celery task on the reliability base (idempotent).
+
+    ``ForgeTask`` gives the task ``acks_late`` + auto-retry of
+    :class:`~forge_worker.reliability.TransientError` with exponential backoff
+    (mirrors ``agent_runner`` / ``syncer`` / ``indexer``), so a transient
+    provider blip re-fetches instead of dropping the delivery — recovery no
+    longer relies solely on the next webhook event.
+    """
+    celery_app.task(name=PM_SYNC_TASK, base=ForgeReliableTask)(process_webhook_task)
 
 
 register_pm_sync_tasks()
