@@ -345,10 +345,17 @@ export interface RedTeamGateOut {
 // Hand-maintained mirror of the spec DTOs in `forge_contracts.dtos` (Pydantic
 // v2). Enum string values match the Python `SpecStatus` StrEnum verbatim.
 
-/** The SDD lifecycle stages (forge_contracts.enums.SpecStatus), in order. */
+/**
+ * The SDD lifecycle stages (forge_contracts.enums.SpecStatus), in order.
+ * `changes_requested`/`rejected` are review decisions at the human gate: they
+ * sit between `clarifying` and `approved` (reviewed, but NOT past the gate) —
+ * ordering matters to every `indexOf`-based lifecycle comparison below.
+ */
 export const SPEC_STATUSES = [
   "draft",
   "clarifying",
+  "changes_requested",
+  "rejected",
   "approved",
   "implementing",
   "validated",
@@ -399,6 +406,8 @@ export interface SpecManifest {
   id: string;
   name: string;
   status?: SpecStatus;
+  /** Reviewer note from a reject / request-changes decision; cleared on approve. */
+  review_note?: string | null;
   constitution_refs?: string[];
   repos?: string[];
   requirements?: Requirement[];

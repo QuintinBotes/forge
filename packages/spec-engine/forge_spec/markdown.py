@@ -17,6 +17,7 @@ Document shape (a YAML frontmatter block for scalar/list *metadata*, then
     ---
     id: SPEC-1
     status: draft
+    review_note: null
     constitution_refs: []
     repos: []
     execution_mode: single_agent
@@ -106,6 +107,7 @@ class SpecParseError(ForgeError, ValueError):
 _FRONTMATTER_KEYS: tuple[str, ...] = (
     "id",
     "status",
+    "review_note",
     "constitution_refs",
     "repos",
     "execution_mode",

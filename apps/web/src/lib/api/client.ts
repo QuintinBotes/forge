@@ -586,6 +586,22 @@ export class ForgeApiClient {
     );
   }
 
+  /** Reject a spec at the human gate — persists the decision + note (409 once approved). */
+  rejectSpec(specId: string, note: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/reject`,
+      { method: "POST", body: { note } },
+    );
+  }
+
+  /** Request changes on a spec at the human gate — persists the decision + note (409 once approved). */
+  requestSpecChanges(specId: string, note: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/request-changes`,
+      { method: "POST", body: { note } },
+    );
+  }
+
   /** Generate implementation tasks from an *approved* spec (409 if not). */
   generateTasks(specId: string): Promise<TaskDTO[]> {
     return this.request<TaskDTO[]>(

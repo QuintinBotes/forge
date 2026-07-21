@@ -97,6 +97,26 @@ def test_load_manifest_accepts_plain_dict_text() -> None:
     assert manifest.acceptance_criteria == []
 
 
+def test_review_statuses_and_note_round_trip_through_yaml() -> None:
+    # Reject / request-changes decisions live in the manifest (file-based
+    # engine), so the new statuses + note must survive dump/load.
+    for status, note in (
+        (SpecStatus.REJECTED, "Missing offline handling"),
+        (SpecStatus.CHANGES_REQUESTED, "Please add a rate limit"),
+    ):
+        original = SpecManifest(id="SPEC-5", name="Review me", status=status, review_note=note)
+        again = load_manifest(dump_manifest(original))
+        assert again.status is status
+        assert again.review_note == note
+        assert again == original
+
+
+def test_load_manifest_without_review_note_defaults_to_none() -> None:
+    # Pre-existing manifests (written before review decisions existed) load fine.
+    manifest = load_manifest("id: SPEC-9\nname: Minimal\nstatus: draft\n")
+    assert manifest.review_note is None
+
+
 def test_dump_manifest_status_enum_is_a_string_not_python_repr() -> None:
     # Guards against ``!!python/object`` leaking into the YAML for StrEnum fields.
     text = dump_manifest(SpecManifest(id="SPEC-1", name="x", status=SpecStatus.DRAFT))

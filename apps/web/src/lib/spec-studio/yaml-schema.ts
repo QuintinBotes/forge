@@ -29,7 +29,7 @@ export interface YamlIssue {
 const EXECUTION_MODES = ["single_agent", "supervised_multi_agent"] as const;
 
 const STRING_ARRAY_FIELDS = ["constitution_refs", "repos", "constraints"] as const;
-const NULLABLE_STRING_FIELDS = ["plan_ref", "tasks_ref", "validation_ref", "skill_profile"] as const;
+const NULLABLE_STRING_FIELDS = ["review_note", "plan_ref", "tasks_ref", "validation_ref", "skill_profile"] as const;
 
 /** Required scalar id/text shape shared by requirements, ACs, questions, ADRs. */
 function offsetToLine(text: string, offset: number): { line: number; column: number } {

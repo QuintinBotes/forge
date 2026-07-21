@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { toast } from "@/components/ui/toast";
 import { apiClient, ApiError, type ForgeApiClient } from "@/lib/api/client";
-import { useApproveSpec } from "@/lib/api/spec";
+import { useApproveSpec, useRejectSpec, useRequestSpecChanges } from "@/lib/api/spec";
 import {
   useSaveGuidedManifest,
   useSaveSpecMarkdown,
@@ -123,6 +123,18 @@ export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioPro
   const saveMarkdown = useSaveSpecMarkdown(specId, client);
   const saveYaml = useSaveSpecManifestYaml(specId, client);
   const approveSpec = useApproveSpec(client);
+  const rejectSpec = useRejectSpec(client);
+  const requestChanges = useRequestSpecChanges(client);
+
+  const reviewPending =
+    approveSpec.isPending || rejectSpec.isPending || requestChanges.isPending;
+  const reviewError = approveSpec.isError
+    ? errorMessage(approveSpec.error)
+    : rejectSpec.isError
+      ? errorMessage(rejectSpec.error)
+      : requestChanges.isError
+        ? errorMessage(requestChanges.error)
+        : null;
 
   const manifest = manifestQuery.data ?? null;
   const guidedValue = guidedOverride ?? manifest;
@@ -290,8 +302,20 @@ export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioPro
                   { onSuccess: () => toast.success("Spec approved") },
                 )
               }
-              approving={approveSpec.isPending}
-              approveError={approveSpec.isError ? errorMessage(approveSpec.error) : null}
+              onReject={(note) =>
+                rejectSpec.mutate(
+                  { specId, note },
+                  { onSuccess: () => toast.success("Spec rejected") },
+                )
+              }
+              onRequestChanges={(note) =>
+                requestChanges.mutate(
+                  { specId, note },
+                  { onSuccess: () => toast.success("Changes requested") },
+                )
+              }
+              pending={reviewPending}
+              errorMessage={reviewError}
             />
           ) : null}
           {mode === "history" ? <VersionHistory specId={specId} client={client} /> : null}

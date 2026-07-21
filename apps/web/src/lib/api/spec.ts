@@ -196,6 +196,77 @@ export function useApproveSpec(
   });
 }
 
+export interface ReviewSpecVariables {
+  specId: string;
+  /** The reviewer's note — persisted server-side with the decision. */
+  note: string;
+}
+
+interface ReviewSpecContext {
+  previous: [readonly unknown[], SpecDashboard | undefined][];
+  previousManifest: SpecManifest | undefined;
+}
+
+/**
+ * Shared optimistic mutation for the two review decisions (reject /
+ * request-changes). Mirrors `useApproveSpec`'s treatment — a review decision
+ * is a simple status flip — but also flips the Spec Studio manifest cache so
+ * Read mode reflects the decision instantly; `onError` rolls both back and
+ * `onSettled` revalidates from the engine (the authoritative status +
+ * persisted note win).
+ */
+function useReviewSpecDecision(
+  client: ForgeApiClient,
+  status: "rejected" | "changes_requested",
+  send: (specId: string, note: string) => Promise<SpecManifest>,
+): UseMutationResult<SpecManifest, Error, ReviewSpecVariables, ReviewSpecContext> {
+  const queryClient = useQueryClient();
+  return useMutation<SpecManifest, Error, ReviewSpecVariables, ReviewSpecContext>({
+    mutationFn: ({ specId, note }) => send(specId, note),
+    onMutate: async ({ specId, note }) => {
+      await queryClient.cancelQueries({ queryKey: specKeys.overviews() });
+      await queryClient.cancelQueries({ queryKey: specStudioKeys.manifest(specId) });
+      const previous = optimisticallySetStatus(queryClient, specId, status);
+      const previousManifest = queryClient.getQueryData<SpecManifest>(
+        specStudioKeys.manifest(specId),
+      );
+      if (previousManifest) {
+        queryClient.setQueryData<SpecManifest>(specStudioKeys.manifest(specId), {
+          ...previousManifest,
+          status,
+          review_note: note || null,
+        });
+      }
+      return { previous, previousManifest };
+    },
+    onError: (_error, { specId }, context) => {
+      rollbackStatus(queryClient, context);
+      if (context?.previousManifest) {
+        queryClient.setQueryData(specStudioKeys.manifest(specId), context.previousManifest);
+      }
+    },
+    onSettled: (_data, _error, { specId }) => invalidateSpecCaches(queryClient, specId),
+  });
+}
+
+/** Reject a spec at the human gate (`POST /spec/specs/{id}/reject`). */
+export function useRejectSpec(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<SpecManifest, Error, ReviewSpecVariables, ReviewSpecContext> {
+  return useReviewSpecDecision(client, "rejected", (specId, note) =>
+    client.rejectSpec(specId, note),
+  );
+}
+
+/** Request changes on a spec at the human gate (`POST /spec/specs/{id}/request-changes`). */
+export function useRequestSpecChanges(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<SpecManifest, Error, ReviewSpecVariables, ReviewSpecContext> {
+  return useReviewSpecDecision(client, "changes_requested", (specId, note) =>
+    client.requestSpecChanges(specId, note),
+  );
+}
+
 // --------------------------------------------------------------------------- //
 // ss-lifecycle: the plain-language stepper's inline actions                   //
 //                                                                              //

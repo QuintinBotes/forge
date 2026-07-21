@@ -20,21 +20,16 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export interface ReadModeProps {
   spec: SpecManifest;
-  /** Approves the spec at the human gate (`POST /spec/specs/{id}/approve`, real). */
+  /** Approves the spec at the human gate (`POST /spec/specs/{id}/approve`). */
   onApprove: () => void;
-  approving?: boolean;
-  approveError?: string | null;
-  /**
-   * Reject / request-changes have no backend endpoint yet — `forge_spec`'s
-   * `FileSpecEngine` only exposes `approve_spec` (no `reject_spec` /
-   * `request_changes` state transition, and `SpecStatus` has no such values).
-   * Read mode still records the decision + note locally (so the keyboard-first
-   * review flow is fully usable) and surfaces it through these optional
-   * callbacks for a caller to persist once that endpoint exists — parked,
-   * tracked separately; not faked as a server round-trip.
-   */
-  onReject?: (note: string) => void;
-  onRequestChanges?: (note: string) => void;
+  /** Rejects the spec, persisting the note (`POST /spec/specs/{id}/reject`). */
+  onReject: (note: string) => void;
+  /** Requests changes, persisting the note (`POST /spec/specs/{id}/request-changes`). */
+  onRequestChanges: (note: string) => void;
+  /** True while any review decision (approve/reject/request-changes) is in flight. */
+  pending?: boolean;
+  /** Server error from the most recent review decision — always surfaced, never swallowed. */
+  errorMessage?: string | null;
 }
 
 /**
@@ -49,18 +44,19 @@ export interface ReadModeProps {
 export function ReadMode({
   spec,
   onApprove,
-  approving = false,
-  approveError = null,
   onReject,
   onRequestChanges,
+  pending = false,
+  errorMessage = null,
 }: ReadModeProps) {
   const [activeNote, setActiveNote] = useState<"reject" | "request_changes" | null>(null);
   const [note, setNote] = useState("");
-  const [recorded, setRecorded] = useState<{ action: "reject" | "request_changes"; note: string } | null>(
-    null,
-  );
 
   const reviewable = isApprovable(spec.status);
+  // The persisted review decision (server state, via the manifest) — never a
+  // local echo of a click that might not have survived the round-trip.
+  const decision =
+    spec.status === "rejected" || spec.status === "changes_requested" ? spec.status : null;
 
   const submit = useCallback(
     (action: ApprovalAction, reason?: string) => {
@@ -68,20 +64,18 @@ export function ReadMode({
         onApprove();
         return;
       }
-      const decision = action as "reject" | "request_changes";
       const trimmed = (reason ?? "").trim();
-      setRecorded({ action: decision, note: trimmed });
       setActiveNote(null);
       setNote("");
-      if (decision === "reject") onReject?.(trimmed);
-      else onRequestChanges?.(trimmed);
+      if (action === "reject") onReject(trimmed);
+      else onRequestChanges(trimmed);
     },
     [onApprove, onReject, onRequestChanges],
   );
 
   const trigger = useCallback(
     (action: ApprovalAction) => {
-      if (!reviewable || approving) return;
+      if (!reviewable || pending) return;
       if (action === "reject" || action === "request_changes") {
         setNote("");
         setActiveNote(action);
@@ -89,7 +83,7 @@ export function ReadMode({
         submit(action);
       }
     },
-    [reviewable, approving, submit],
+    [reviewable, pending, submit],
   );
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -246,15 +240,14 @@ export function ReadMode({
             </span>
           ) : null}
         </div>
-        {recorded ? (
+        {decision ? (
           <p
             role="status"
-            data-testid="review-recorded"
+            data-testid="review-decision"
             className="px-4 pt-3 text-xs text-muted-foreground"
           >
-            {recorded.action === "reject" ? "Rejected" : "Changes requested"}
-            {recorded.note ? ` — "${recorded.note}"` : ""} (recorded locally; not yet
-            persisted server-side).
+            {decision === "rejected" ? "Rejected" : "Changes requested"}
+            {spec.review_note ? ` — "${spec.review_note}"` : ""}
           </p>
         ) : null}
         <DecisionBar
@@ -262,9 +255,9 @@ export function ReadMode({
           activeNote={activeNote}
           note={note}
           onNoteChange={setNote}
-          pending={approving}
+          pending={pending}
           disabled={!reviewable}
-          errorMessage={approveError}
+          errorMessage={errorMessage}
           onTrigger={trigger}
           onConfirm={() => activeNote && submit(activeNote, note)}
           onCancel={() => {

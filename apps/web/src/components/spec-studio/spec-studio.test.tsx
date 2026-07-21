@@ -168,6 +168,88 @@ describe("SpecStudio", () => {
     );
   });
 
+  it("rejecting in Read mode posts the note to the server and renders the returned status", async () => {
+    const rejected: SpecManifest = {
+      ...manifest,
+      status: "rejected",
+      review_note: "Missing offline handling",
+    };
+    const client = makeClient({
+      getSpecManifest: vi.fn().mockResolvedValueOnce(manifest).mockResolvedValue(rejected),
+      rejectSpec: vi.fn(() => Promise.resolve(rejected)),
+    });
+    renderStudio(client);
+    await screen.findByTestId("guided-mode");
+
+    fireEvent.click(screen.getByTestId("studio-mode-read"));
+    await screen.findByTestId("read-mode");
+    fireEvent.click(screen.getByTestId("decision-reject"));
+    const composer = screen.getByTestId("reason-composer");
+    fireEvent.change(composer.querySelector("textarea") as HTMLTextAreaElement, {
+      target: { value: "Missing offline handling" },
+    });
+    fireEvent.click(screen.getByTestId("confirm-decision"));
+
+    await waitFor(() =>
+      expect(client.rejectSpec).toHaveBeenCalledWith("SPEC-1", "Missing offline handling"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("read-status")).toHaveTextContent("Rejected"),
+    );
+    expect(screen.getByTestId("review-decision")).toHaveTextContent("Missing offline handling");
+  });
+
+  it("requesting changes in Read mode posts the note to the server", async () => {
+    const changed: SpecManifest = {
+      ...manifest,
+      status: "changes_requested",
+      review_note: "Please add a rate limit",
+    };
+    const client = makeClient({
+      getSpecManifest: vi.fn().mockResolvedValueOnce(manifest).mockResolvedValue(changed),
+      requestSpecChanges: vi.fn(() => Promise.resolve(changed)),
+    });
+    renderStudio(client);
+    await screen.findByTestId("guided-mode");
+
+    fireEvent.click(screen.getByTestId("studio-mode-read"));
+    await screen.findByTestId("read-mode");
+    fireEvent.click(screen.getByTestId("decision-request_changes"));
+    const composer = screen.getByTestId("reason-composer");
+    fireEvent.change(composer.querySelector("textarea") as HTMLTextAreaElement, {
+      target: { value: "Please add a rate limit" },
+    });
+    fireEvent.click(screen.getByTestId("confirm-decision"));
+
+    await waitFor(() =>
+      expect(client.requestSpecChanges).toHaveBeenCalledWith("SPEC-1", "Please add a rate limit"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("read-status")).toHaveTextContent("Changes requested"),
+    );
+  });
+
+  it("surfaces a server error when rejecting fails (no silent local state)", async () => {
+    const client = makeClient({
+      rejectSpec: vi.fn(() => Promise.reject(new Error("spec engine unavailable"))),
+    });
+    renderStudio(client);
+    await screen.findByTestId("guided-mode");
+
+    fireEvent.click(screen.getByTestId("studio-mode-read"));
+    await screen.findByTestId("read-mode");
+    fireEvent.click(screen.getByTestId("decision-reject"));
+    fireEvent.change(
+      screen.getByTestId("reason-composer").querySelector("textarea") as HTMLTextAreaElement,
+      { target: { value: "nope" } },
+    );
+    fireEvent.click(screen.getByTestId("confirm-decision"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("spec engine unavailable");
+    // The status must not pretend the decision persisted.
+    expect(screen.getByTestId("read-status")).toHaveTextContent("Draft");
+  });
+
   it("disables the YAML save button and surfaces errors for an invalid manifest", async () => {
     renderStudio(makeClient());
     await screen.findByTestId("guided-mode");
