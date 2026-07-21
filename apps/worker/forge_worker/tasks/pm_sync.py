@@ -41,6 +41,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import httpx
+
 from forge_api.observability.audit import AuditCategory, AuditLog
 from forge_api.services.pm_link_repository_db import DbLinkRepository
 from forge_api.services.pm_service import PMConnectionService
@@ -245,17 +247,20 @@ def _is_transient(exc: BaseException) -> bool:
 
     Transient (retry with backoff): a provider rate-limit (429 — always resolves)
     or an upstream **5xx** ``ProviderError`` blip, plus raw network faults
-    (connect / timeout). Everything else is deterministic and must fail fast to
-    ``ERROR`` — auth, not-found, unmappable field, sync-conflict, an *unsupported*
-    provider (a ``ProviderError`` with no 5xx status, e.g. the registry's
-    ``unsupported PM provider``), or a malformed payload — because retrying it
-    only burns the budget and delays the terminal state.
+    (connect / timeout — ``httpx.TransportError`` and its subclasses, which is
+    what the real provider adapters' transport actually raises, e.g.
+    ``httpx.ConnectError`` / ``httpx.ReadTimeout``). Everything else is
+    deterministic and must fail fast to ``ERROR`` — auth, not-found, unmappable
+    field, sync-conflict, an *unsupported* provider (a ``ProviderError`` with no
+    5xx status, e.g. the registry's ``unsupported PM provider``), or a malformed
+    payload — because retrying it only burns the budget and delays the terminal
+    state.
     """
     if isinstance(exc, RateLimitError):
         return True
     if isinstance(exc, ProviderError):
         return exc.status_code is not None and exc.status_code >= 500
-    return isinstance(exc, ConnectionError | TimeoutError)
+    return isinstance(exc, ConnectionError | TimeoutError | httpx.TransportError)
 
 
 async def _fetch_and_sync(

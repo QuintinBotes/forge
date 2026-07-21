@@ -24,6 +24,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -443,6 +444,36 @@ def test_transient_fetch_failure_is_retried_by_reliability_base(
     # Drive the real registered task in eager mode and assert the authoritative
     # re-fetch is attempted more than once (initial + backoff retries).
     fake_adapter.raise_on_fetch = RateLimitError("rate limited")
+    row_id = _seed_delivery(factory, connection_id)
+
+    # Point the production seams at the hermetic test factory + connections.
+    monkeypatch.setattr(pm_sync_module, "_session_factory", lambda: factory)
+    monkeypatch.setattr(pm_sync_module, "_connection_service", lambda _factory: connections)
+    monkeypatch.setattr(celery_app.conf, "task_always_eager", True)
+    monkeypatch.setattr(celery_app.conf, "task_eager_propagates", False)
+
+    result = celery_app.tasks[PM_SYNC_TASK].apply(args=[str(row_id)])
+
+    assert result.failed()  # retry budget spent -> terminal failure
+    # A retry *was* attempted: initial call + ForgeTask.max_retries re-fetches.
+    assert len(fake_adapter.fetch_calls) == ForgeReliableTask.max_retries + 1
+    assert len(fake_adapter.fetch_calls) > 1
+    assert _delivery(factory, row_id).status == PMDeliveryStatus.ERROR
+
+
+def test_transport_error_fetch_failure_is_retried_by_reliability_base(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    connection_id: uuid.UUID,
+    fake_adapter: FakeAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A raw network fault from the real transport (connect refused): the real
+    # provider adapters raise httpx's transport errors, not the ``ConnectionError``
+    # / ``TimeoutError`` builtins, so this must classify as transient too.
+    fake_adapter.raise_on_fetch = httpx.ConnectError(
+        "boom", request=httpx.Request("GET", "https://example.com/issue/ext-1")
+    )
     row_id = _seed_delivery(factory, connection_id)
 
     # Point the production seams at the hermetic test factory + connections.
