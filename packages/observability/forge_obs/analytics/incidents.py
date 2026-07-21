@@ -15,10 +15,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from uuid import UUID
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
 
 __all__ = [
     "IncidentLike",
@@ -103,7 +106,7 @@ def compute_incident_reliability(
 class SqlIncidentReliabilityReader:
     """Workspace-scoped reliability rollup over ``incident``/``remediation_plan``."""
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
     def reliability(

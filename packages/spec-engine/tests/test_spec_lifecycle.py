@@ -165,6 +165,123 @@ def test_spec_tasks_writes_tasks_artifacts(engine) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Review decisions: reject / request changes (the other side of the human gate)#
+# --------------------------------------------------------------------------- #
+
+
+def test_reject_spec_moves_to_rejected_and_persists_note(engine, tmp_path) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+
+    rejected = engine.reject_spec(spec_id, "Missing pagination limits")
+
+    assert rejected.status is SpecStatus.REJECTED
+    assert rejected.review_note == "Missing pagination limits"
+    # The decision survives a fresh engine over the same root (disk, not memory),
+    # and the two on-disk serializations agree (no reconcile warning).
+    import warnings as _warnings
+
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error")
+        reloaded = FileSpecEngine(tmp_path).read_manifest(spec_id)
+    assert reloaded.status is SpecStatus.REJECTED
+    assert reloaded.review_note == "Missing pagination limits"
+
+
+def test_request_changes_moves_to_changes_requested_and_persists_note(engine, tmp_path) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+    engine.spec_clarify(spec_id)
+
+    changed = engine.request_changes(spec_id, "Please add a rate limit")
+
+    assert changed.status is SpecStatus.CHANGES_REQUESTED
+    assert changed.review_note == "Please add a rate limit"
+    reloaded = FileSpecEngine(tmp_path).read_manifest(spec_id)
+    assert reloaded.status is SpecStatus.CHANGES_REQUESTED
+    assert reloaded.review_note == "Please add a rate limit"
+
+
+def test_reject_without_note_stores_none(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+
+    rejected = engine.reject_spec(spec_id)
+
+    assert rejected.status is SpecStatus.REJECTED
+    assert rejected.review_note is None
+
+
+def test_reject_already_approved_spec_raises_gate_error(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+    engine.approve_spec(spec_id)
+
+    with pytest.raises(SpecGateError):
+        engine.reject_spec(spec_id, "too late")
+    # The illegal transition must not have mutated the manifest.
+    assert engine.read_manifest(spec_id).status is SpecStatus.APPROVED
+
+
+def test_request_changes_on_approved_spec_raises_gate_error(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+    engine.approve_spec(spec_id)
+
+    with pytest.raises(SpecGateError):
+        engine.request_changes(spec_id, "too late")
+
+
+def test_review_decision_can_be_revised_before_the_gate(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+
+    engine.reject_spec(spec_id, "first pass: no")
+    revised = engine.request_changes(spec_id, "actually, just add auth")
+
+    assert revised.status is SpecStatus.CHANGES_REQUESTED
+    assert revised.review_note == "actually, just add auth"
+
+
+def test_rejected_spec_is_not_implementable(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+    engine.reject_spec(spec_id, "nope")
+
+    with pytest.raises(SpecGateError):
+        engine.spec_tasks(spec_id)
+    with pytest.raises(SpecGateError):
+        engine.ensure_implementable(spec_id)
+
+
+def test_changes_requested_spec_is_not_implementable(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+    engine.request_changes(spec_id, "tighten acceptance criteria")
+
+    with pytest.raises(SpecGateError):
+        engine.ensure_implementable(spec_id)
+
+
+def test_approve_after_review_decision_clears_the_note(engine) -> None:
+    manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
+    spec_id = spec_id_for_key(manifest.id)
+    engine.request_changes(spec_id, "add auth first")
+
+    approved = engine.approve_spec(spec_id)
+
+    assert approved.status is SpecStatus.APPROVED
+    assert approved.review_note is None
+
+
+def test_reject_unknown_spec_raises_not_found(engine) -> None:
+    from forge_spec import SpecNotFoundError
+
+    with pytest.raises(SpecNotFoundError):
+        engine.reject_spec(uuid.uuid4(), "no such spec")
+
+
+# --------------------------------------------------------------------------- #
 # manifest read/write                                                          #
 # --------------------------------------------------------------------------- #
 

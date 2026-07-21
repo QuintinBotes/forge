@@ -178,6 +178,12 @@ class TextContent(BaseModel):
     content: str
 
 
+class SpecReviewRequest(BaseModel):
+    """Body for the reject / request-changes review endpoints."""
+
+    note: str = ""
+
+
 class DraftSpecRequest(BaseModel):
     """Body for ``POST /spec/draft`` (BYOK AI spec drafting; draft-only)."""
 
@@ -341,6 +347,32 @@ def approve_spec(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
     """Approve a spec (the human gate); moves it to ``approved``."""
     with _spec_errors():
         return engine.approve_spec(spec_id)
+
+
+@router.post("/specs/{spec_id}/reject", response_model=SpecManifest, dependencies=[WriteGate])
+def reject_spec(engine: EngineDep, spec_id: uuid.UUID, request: SpecReviewRequest) -> SpecManifest:
+    """Reject a spec at the human gate; moves it to ``rejected``.
+
+    Persists the reviewer's note in the manifest. 409 when the spec is already
+    past the gate (``approved`` and beyond), mirroring the tasks gate.
+    """
+    with _spec_errors():
+        return engine.reject_spec(spec_id, request.note)
+
+
+@router.post(
+    "/specs/{spec_id}/request-changes", response_model=SpecManifest, dependencies=[WriteGate]
+)
+def request_changes(
+    engine: EngineDep, spec_id: uuid.UUID, request: SpecReviewRequest
+) -> SpecManifest:
+    """Request changes on a spec at the human gate; moves it to ``changes_requested``.
+
+    The counterpart of the reject endpoint for the softer review outcome; same
+    persistence and 409 gating semantics.
+    """
+    with _spec_errors():
+        return engine.request_changes(spec_id, request.note)
 
 
 @router.post("/specs/{spec_id}/tasks", response_model=list[TaskDTO], dependencies=[WriteGate])

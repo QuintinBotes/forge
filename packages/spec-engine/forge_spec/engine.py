@@ -36,7 +36,7 @@ from forge_contracts import (
 from forge_contracts.dtos import ADR
 from forge_spec import manifest as manifest_io
 from forge_spec.errors import SpecNotFoundError, SpecReconcileWarning
-from forge_spec.gates import check_implementation_gate
+from forge_spec.gates import check_implementation_gate, check_review_gate
 from forge_spec.ids import (
     constitution_id_for,
     spec_dirname,
@@ -191,9 +191,43 @@ class FileSpecEngine:
         return manifest
 
     def approve_spec(self, spec_id: uuid.UUID) -> SpecManifest:
-        """Approve a spec (the human gate); moves it to ``approved``."""
+        """Approve a spec (the human gate); moves it to ``approved``.
+
+        Clears any ``review_note`` left by an earlier reject / request-changes
+        decision — the note belongs to the latest review outcome.
+        """
         spec_dir, manifest = self._resolve(spec_id)
         manifest.status = SpecStatus.APPROVED
+        manifest.review_note = None
+        self._persist(manifest, spec_dir)
+        return manifest
+
+    def reject_spec(self, spec_id: uuid.UUID, note: str | None = None) -> SpecManifest:
+        """Reject a spec at the human gate; moves it to ``rejected``.
+
+        Persists the reviewer's ``note`` in the manifest (both canonical
+        serializations), so the decision survives reloads. Raises
+        ``SpecGateError`` when the spec is already past the gate
+        (``approved`` and beyond) — mirroring the implementation gate's
+        error family.
+        """
+        spec_dir, manifest = self._resolve(spec_id)
+        check_review_gate(manifest)
+        manifest.status = SpecStatus.REJECTED
+        manifest.review_note = note or None
+        self._persist(manifest, spec_dir)
+        return manifest
+
+    def request_changes(self, spec_id: uuid.UUID, note: str | None = None) -> SpecManifest:
+        """Request changes on a spec at the human gate; moves it to ``changes_requested``.
+
+        The counterpart of :meth:`reject_spec` for the softer review outcome;
+        same persistence and gating semantics.
+        """
+        spec_dir, manifest = self._resolve(spec_id)
+        check_review_gate(manifest)
+        manifest.status = SpecStatus.CHANGES_REQUESTED
+        manifest.review_note = note or None
         self._persist(manifest, spec_dir)
         return manifest
 

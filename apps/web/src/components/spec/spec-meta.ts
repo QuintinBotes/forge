@@ -19,6 +19,8 @@ export type StageState = "done" | "current" | "upcoming";
 export const STATUS_LABELS: Record<SpecStatus, string> = {
   draft: "Draft",
   clarifying: "Clarifying",
+  changes_requested: "Changes requested",
+  rejected: "Rejected",
   approved: "Approved",
   implementing: "Implementing",
   validated: "Validated",
@@ -35,16 +37,28 @@ export function statusBadgeClass(status: SpecStatus | undefined): string {
     case "implementing":
       return "border-primary/40 bg-primary/10 text-primary";
     case "clarifying":
+    case "changes_requested":
       return "border-warning/40 bg-warning/10 text-warning";
+    case "rejected":
+      return "border-danger/40 bg-danger/10 text-danger";
     case "draft":
     default:
       return "border-border bg-muted text-muted-foreground";
   }
 }
 
-/** The two statuses at (or before) the human approval gate. */
+/**
+ * The statuses at (or before) the human approval gate. Rejected /
+ * changes-requested specs stay reviewable — the decision can be revised
+ * (mirroring the engine's `REVIEWABLE_STATUSES` gate).
+ */
 export function isApprovable(status: SpecStatus | undefined): boolean {
-  return status === "draft" || status === "clarifying";
+  return (
+    status === "draft" ||
+    status === "clarifying" ||
+    status === "changes_requested" ||
+    status === "rejected"
+  );
 }
 
 export interface GateSummary {

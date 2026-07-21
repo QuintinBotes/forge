@@ -22,6 +22,8 @@ function setup(overrides: Partial<React.ComponentProps<typeof ReadMode>> = {}) {
   const props = {
     spec: baseSpec,
     onApprove: vi.fn(),
+    onReject: vi.fn(),
+    onRequestChanges: vi.fn(),
     ...overrides,
   } as React.ComponentProps<typeof ReadMode>;
   render(<ReadMode {...props} />);
@@ -65,7 +67,7 @@ describe("ReadMode", () => {
     expect(onApprove).toHaveBeenCalledTimes(1);
   });
 
-  it("pressing 'x' opens the reject note composer, and confirming records + calls onReject", () => {
+  it("pressing 'x' opens the reject note composer, and confirming sends the note to onReject", () => {
     const onReject = vi.fn();
     setup({ onReject });
     fireEvent.keyDown(screen.getByTestId("read-mode"), { key: "x" });
@@ -75,11 +77,12 @@ describe("ReadMode", () => {
     });
     fireEvent.click(screen.getByTestId("confirm-decision"));
     expect(onReject).toHaveBeenCalledWith("Missing offline handling");
-    expect(screen.getByTestId("review-recorded")).toHaveTextContent("Rejected");
-    expect(screen.getByTestId("review-recorded")).toHaveTextContent("Missing offline handling");
+    // The composer closes; the decision renders from the server-persisted
+    // manifest (via the spec prop), never from local component state.
+    expect(screen.queryByTestId("reason-composer")).not.toBeInTheDocument();
   });
 
-  it("pressing 'r' opens the request-changes note composer, and confirming records + calls onRequestChanges", () => {
+  it("pressing 'r' opens the request-changes note composer, and confirming sends the note to onRequestChanges", () => {
     const onRequestChanges = vi.fn();
     setup({ onRequestChanges });
     fireEvent.keyDown(screen.getByTestId("read-mode"), { key: "r" });
@@ -89,10 +92,9 @@ describe("ReadMode", () => {
     });
     fireEvent.click(screen.getByTestId("confirm-decision"));
     expect(onRequestChanges).toHaveBeenCalledWith("Please add a rate limit");
-    expect(screen.getByTestId("review-recorded")).toHaveTextContent("Changes requested");
   });
 
-  it("Escape cancels the note composer without recording a decision", () => {
+  it("Escape cancels the note composer without sending a decision", () => {
     const onReject = vi.fn();
     setup({ onReject });
     fireEvent.keyDown(screen.getByTestId("read-mode"), { key: "x" });
@@ -101,7 +103,30 @@ describe("ReadMode", () => {
     });
     expect(screen.queryByTestId("reason-composer")).not.toBeInTheDocument();
     expect(onReject).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("review-recorded")).not.toBeInTheDocument();
+  });
+
+  it("renders a persisted rejected decision (status + note) from the manifest", () => {
+    setup({
+      spec: { ...baseSpec, status: "rejected", review_note: "Missing offline handling" },
+    });
+    expect(screen.getByTestId("read-status")).toHaveTextContent("Rejected");
+    expect(screen.getByTestId("review-decision")).toHaveTextContent("Rejected");
+    expect(screen.getByTestId("review-decision")).toHaveTextContent("Missing offline handling");
+  });
+
+  it("renders a persisted changes-requested decision from the manifest", () => {
+    setup({
+      spec: { ...baseSpec, status: "changes_requested", review_note: "Please add a rate limit" },
+    });
+    expect(screen.getByTestId("read-status")).toHaveTextContent("Changes requested");
+    expect(screen.getByTestId("review-decision")).toHaveTextContent("Changes requested");
+    expect(screen.getByTestId("review-decision")).toHaveTextContent("Please add a rate limit");
+  });
+
+  it("keeps the review gate open for a rejected spec (the decision can be revised)", () => {
+    setup({ spec: { ...baseSpec, status: "rejected" } });
+    expect(screen.queryByTestId("review-gate-closed")).not.toBeInTheDocument();
+    expect(screen.getByTestId("decision-approve")).toBeEnabled();
   });
 
   it("disables the decision bar once the spec is past the human gate", () => {
@@ -117,13 +142,13 @@ describe("ReadMode", () => {
     expect(onApprove).not.toHaveBeenCalled();
   });
 
-  it("surfaces an approve error from the caller", () => {
-    setup({ approveError: "Couldn't reach the spec engine" });
+  it("surfaces a server error from any review decision", () => {
+    setup({ errorMessage: "Couldn't reach the spec engine" });
     expect(screen.getByRole("alert")).toHaveTextContent("Couldn't reach the spec engine");
   });
 
-  it("shows a saving state on Approve while the mutation is pending", () => {
-    setup({ approving: true });
+  it("disables the decision bar while a review decision is in flight", () => {
+    setup({ pending: true });
     expect(screen.getByTestId("decision-approve")).toBeDisabled();
   });
 });

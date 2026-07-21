@@ -3,9 +3,10 @@
 Real handlers over a real Postgres session (``pg_engine``, shared root
 fixture): per-role model+effort config (list/upsert/delete, workspace vs
 project override precedence, RBAC, workspace isolation), the workspace-wide
-settings (auto-route, tier-model overrides, complexity thresholds, RBAC), and
-the routing-preview endpoint (default sizing, custom thresholds, custom
-tier-model overrides, invalid provider).
+settings (auto-route, tier-model overrides, complexity thresholds, RBAC), the
+routing-preview endpoint (default sizing, custom thresholds, custom
+tier-model overrides, invalid provider), and the Self-Eval Gate surface
+(status read + the admin run trigger that enqueues ``forge.self_eval.run``).
 """
 
 from __future__ import annotations
@@ -16,14 +17,19 @@ from collections.abc import Callable, Iterator
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.db import get_db
 from forge_api.deps import Principal
 from forge_api.main import create_app
+from forge_api.routers import ao_settings as ao_module
+from forge_api.services import self_eval_service as self_eval_service_module
+from forge_api.settings import Settings
 from forge_contracts import UserRole
 from forge_db.base import Base
-from forge_db.models import Project, Workspace
+from forge_db.models import AuditLog, Project, User, Workspace
+from forge_db.models.benchmark import BenchmarkSuite, SelfEvalBaseline
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 
@@ -334,3 +340,201 @@ def test_routing_preview_rejects_invalid_provider(
         json={"kind": "doc", "priority": "low", "provider": "not-a-provider"},
     )
     assert resp.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Self-Eval Gate: status read + run trigger                                   #
+# --------------------------------------------------------------------------- #
+
+
+def _workspace_of(client: TestClient) -> uuid.UUID:
+    return uuid.UUID(client.get("/ao/settings").json()["workspace_id"])
+
+
+def _seed_private_suite(
+    factory: sessionmaker[Session], workspace_id: uuid.UUID, *, published: bool = True
+) -> uuid.UUID:
+    with factory() as session:
+        suite = BenchmarkSuite(
+            slug=f"self-eval-{uuid.uuid4().hex[:8]}",
+            version="1.0.0",
+            title="Private self-eval suite",
+            task_count=10,
+            content_hash="deadbeef",
+            frozen=True,
+            published=published,
+            workspace_id=workspace_id,
+            repo_id="github:acme/app",
+            private=True,
+        )
+        session.add(suite)
+        session.flush()
+        suite_id = suite.id
+        session.commit()
+    return suite_id
+
+
+def _seed_baseline(
+    factory: sessionmaker[Session], workspace_id: uuid.UUID, suite_id: uuid.UUID
+) -> None:
+    with factory() as session:
+        session.add(
+            SelfEvalBaseline(
+                workspace_id=workspace_id,
+                benchmark_suite_id=suite_id,
+                baseline_rate=0.8,
+                resolved=8,
+                total=10,
+                config={"scope": "ao.settings"},
+            )
+        )
+        session.commit()
+
+
+def test_self_eval_status_cold_start_is_honest_nulls(
+    client_for: Callable[[UserRole], TestClient],
+) -> None:
+    client = client_for(UserRole.VIEWER)
+    resp = client.get("/ao/self-eval/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["enforced"] is False
+    assert body["suite"] is None
+    assert body["baseline"] is None
+
+
+def test_self_eval_status_reports_suite_and_baseline(
+    client_for: Callable[[UserRole], TestClient], factory: sessionmaker[Session]
+) -> None:
+    client = client_for(UserRole.VIEWER)
+    workspace_id = _workspace_of(client)
+    suite_id = _seed_private_suite(factory, workspace_id)
+    _seed_baseline(factory, workspace_id, suite_id)
+
+    body = client.get("/ao/self-eval/status").json()
+    assert body["suite"]["id"] == str(suite_id)
+    assert body["suite"]["published"] is True
+    assert body["suite"]["repo_id"] == "github:acme/app"
+    assert body["baseline"]["benchmark_suite_id"] == str(suite_id)
+    assert body["baseline"]["baseline_rate"] == 0.8
+    assert (body["baseline"]["resolved"], body["baseline"]["total"]) == (8, 10)
+    assert body["baseline"]["recorded_at"]
+
+
+def test_self_eval_status_reflects_enforcement_flag(
+    client_for: Callable[[UserRole], TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ao_module, "get_app_settings", lambda: Settings(self_eval_enforce=True))
+    client = client_for(UserRole.VIEWER)
+    assert client.get("/ao/self-eval/status").json()["enforced"] is True
+
+
+def test_self_eval_status_is_workspace_isolated(
+    factory: sessionmaker[Session], authenticate_app: Callable[..., FastAPI]
+) -> None:
+    ws_a = _seed_workspace(factory, name="A", slug=f"a-{uuid.uuid4().hex[:8]}")
+    ws_b = _seed_workspace(factory, name="B", slug=f"b-{uuid.uuid4().hex[:8]}")
+    suite_a = _seed_private_suite(factory, ws_a)
+    _seed_baseline(factory, ws_a, suite_a)
+
+    app = create_app()
+    authenticate_app(app, _principal(UserRole.VIEWER, ws_b))
+
+    def _get_db() -> Iterator[Session]:
+        with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _get_db
+    body = TestClient(app).get("/ao/self-eval/status").json()
+    assert body["suite"] is None
+    assert body["baseline"] is None
+
+
+def test_viewer_cannot_request_self_eval_run(
+    client_for: Callable[[UserRole], TestClient],
+) -> None:
+    client = client_for(UserRole.VIEWER)
+    assert client.post("/ao/self-eval/runs").status_code == 403
+
+
+def test_self_eval_run_without_private_suite_is_409(
+    client_for: Callable[[UserRole], TestClient],
+) -> None:
+    client = client_for(UserRole.ADMIN)
+    resp = client.post("/ao/self-eval/runs")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["error"] == "no_private_suite"
+
+
+def test_self_eval_run_unpublished_suite_is_409(
+    client_for: Callable[[UserRole], TestClient], factory: sessionmaker[Session]
+) -> None:
+    client = client_for(UserRole.ADMIN)
+    _seed_private_suite(factory, _workspace_of(client), published=False)
+    resp = client.post("/ao/self-eval/runs")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["error"] == "no_private_suite"
+
+
+def test_admin_self_eval_run_enqueues_worker_task_and_audits(
+    factory: sessionmaker[Session],
+    authenticate_app: Callable[..., FastAPI],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Self-contained client: the run-request audit row carries a real actor FK,
+    # so the principal must be a persisted user (unlike the shared client_for).
+    workspace_id = _seed_workspace(factory, name="Run", slug=f"run-{uuid.uuid4().hex[:8]}")
+    with factory() as session:
+        admin = User(workspace_id=workspace_id, email="admin@forge.local", role=UserRole.ADMIN)
+        session.add(admin)
+        session.flush()
+        user_id = admin.id
+        session.commit()
+
+    app = create_app()
+    principal = Principal(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        role=UserRole.ADMIN,
+        email="admin@forge.local",
+        auth_method="test",
+        scopes=["*"],
+    )
+    authenticate_app(app, principal)
+
+    def _get_db() -> Iterator[Session]:
+        with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _get_db
+    client = TestClient(app)
+    suite_id = _seed_private_suite(factory, workspace_id)
+
+    calls: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(
+        self_eval_service_module,
+        "enqueue_self_eval_run",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    resp = client.post("/ao/self-eval/runs")
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["status"] == "queued"
+    assert body["task"] == "forge.self_eval.run"
+    assert body["benchmark_suite_id"] == str(suite_id)
+
+    assert len(calls) == 1
+    (ws_arg, config_arg), kwargs = calls[0]
+    assert ws_arg == workspace_id
+    assert config_arg["scope"] == "ao.settings"
+    assert "auto_route" in config_arg
+    assert kwargs["recorded_by"] is not None
+
+    with factory() as session:
+        actions = list(
+            session.scalars(
+                select(AuditLog.action).where(AuditLog.workspace_id == workspace_id)
+            ).all()
+        )
+    assert "ao.self_eval.run_requested" in actions

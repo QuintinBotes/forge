@@ -194,6 +194,64 @@ def test_caddy_exposes_admin_gated_temporal_route() -> None:
     assert "temporal-ui:8080" in caddy
 
 
+# --------------------------------------------------------------------------- #
+# Task 24 — edge routing parity (mcp-gateway reachability + websocket routes)  #
+# --------------------------------------------------------------------------- #
+
+
+def test_mcp_gateway_on_edge_network_with_proxy() -> None:
+    """The edge proxy can reach mcp-gateway for /mcp/*.
+
+    Caddy (and the drop-in nginx alternative) sit only on `edge` and route
+    /mcp/* -> mcp-gateway:8001. If mcp-gateway is not also on `edge`, proxy and
+    gateway share no network and the route resolves nowhere (502). The mcp +
+    backend memberships (in-cluster api/worker paths) must be preserved.
+    """
+    mcp = _service("mcp-gateway")
+    caddy = _service("caddy")
+    assert "edge" in caddy["networks"], "caddy edge proxy must be on `edge`"
+    assert "edge" in mcp["networks"], "mcp-gateway must share `edge` with the proxy"
+    # Existing in-cluster networks preserved (not clobbered by the edge add).
+    assert "mcp" in mcp["networks"]
+    assert "backend" in mcp["networks"]
+
+
+def _caddy_block(caddy: str, header: str) -> str:
+    """Return the text span of a Caddyfile block, from ``header`` (e.g.
+    ``"handle /ws {"``) through its matching closing brace.
+
+    ``api:8000`` (unlike ``temporal-ui:8080`` in the sibling test above) appears
+    as the upstream of several unrelated blocks in this file (``/api/*``,
+    ``/public/*``, the webhook routes, ...), so a bare file-wide substring check
+    would pass even if these specific blocks proxied somewhere else entirely.
+    Scoping the assertion to the block's own text span keeps it meaningful.
+    """
+    start = caddy.index(header)
+    depth = 0
+    for i in range(start, len(caddy)):
+        if caddy[i] == "{":
+            depth += 1
+        elif caddy[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return caddy[start : i + 1]
+    raise AssertionError(f"unterminated block for {header!r}")
+
+
+def test_caddy_routes_realtime_websockets() -> None:
+    """The realtime board (/ws) and spec co-editing (/ws/spec/*) sockets mount at
+    the API app root (no /api prefix); the client opens a bare same-origin /ws,
+    so Caddy must route both to the API or they fall through to the web catch-all.
+    """
+    caddy = (DEPLOY / "caddy" / "Caddyfile").read_text(encoding="utf-8")
+    assert "handle /ws {" in caddy, "missing bare /ws board-push route"
+    assert "handle /ws/spec/* {" in caddy, "missing /ws/spec/* co-editing route"
+    assert "api:8000" in _caddy_block(caddy, "handle /ws {"), "/ws must proxy to api:8000"
+    assert "api:8000" in _caddy_block(
+        caddy, "handle /ws/spec/* {"
+    ), "/ws/spec/* must proxy to api:8000"
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_preflight_rejects_old_engine(tmp_path: Path) -> None:
     """AC17 — preflight.sh fails on Docker Engine < 26.1 (stubbed version)."""
@@ -354,6 +412,45 @@ def test_worker_env_carries_f34_sandbox_settings() -> None:
     assert "FORGE_SANDBOX_MICROVM_RUNTIME" in env
     assert "FORGE_SANDBOX_REQUIRE_KVM" in env
     assert "FORGE_SANDBOX_JAILER_ROOT" in env
+
+
+# --------------------------------------------------------------------------- #
+# HARD-02 — BYOK model provider + F27 multi-agent env contract                 #
+# The app services use explicit `environment:` maps with no env_file, so a     #
+# quickstart operator's FORGE_MODEL_* / provider keys reach the container ONLY #
+# if the var is listed here; otherwise the scripted offline client is forced.  #
+# --------------------------------------------------------------------------- #
+
+_MODEL_ENV_KEYS = (
+    "FORGE_MODEL_PROVIDER",
+    "FORGE_MODEL_NAME",
+    "FORGE_MODEL_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+)
+
+
+def test_worker_env_carries_model_provider_contract() -> None:
+    """The worker's agent runtime reads FORGE_MODEL_* / provider keys from env."""
+    env = _service("worker")["environment"]
+    for key in _MODEL_ENV_KEYS:
+        assert key in env, f"worker env missing {key}"
+        # Empty-default form so an unset var stays unset-equivalent (offline).
+        assert env[key] == f"${{{key}:-}}", f"{key} not passed empty-default"
+
+
+def test_api_env_carries_model_provider_contract() -> None:
+    """The API resolve_model_client env fallback (ModelClientConfig.from_env) reads
+    the same keys, so they must reach the api service too — not just the worker."""
+    env = _service("api")["environment"]
+    for key in _MODEL_ENV_KEYS:
+        assert key in env, f"api env missing {key}"
+
+
+def test_worker_env_carries_multi_agent_toggle() -> None:
+    """F27 MULTI_AGENT_ENABLED must reach the worker (the coordinator reader)."""
+    env = _service("worker")["environment"]
+    assert env.get("MULTI_AGENT_ENABLED") == "${MULTI_AGENT_ENABLED:-false}"
 
 
 def test_docker_proxy_verbs_unchanged_by_f34() -> None:

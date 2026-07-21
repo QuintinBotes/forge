@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { AttestationPanel } from "@/components/attestations/attestation-panel";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
 import { apiClient, type ForgeApiClient } from "@/lib/api/client";
@@ -177,7 +178,7 @@ export function ReviewPanel({
       {/* 8 — Run trace */}
       {runTrace ? (
         <Section n={8} title="Run trace" icon={GitBranch}>
-          <RunTrace runTrace={runTrace} client={client} />
+          <RunTrace runTrace={runTrace} approvalId={summary.id} client={client} />
         </Section>
       ) : null}
     </div>
@@ -540,9 +541,11 @@ function RiskRow({ flag }: { flag: RiskFlag }) {
 
 function RunTrace({
   runTrace,
+  approvalId,
   client,
 }: {
   runTrace: Record<string, unknown>;
+  approvalId: string;
   client?: ForgeApiClient;
 }) {
   const entries = Object.entries(runTrace).filter(([, v]) => scalar(v) !== null);
@@ -556,6 +559,10 @@ function RunTrace({
           was blocked by) before reaching this human gate. Renders nothing
           until a scan has landed — see RedTeamBadge. */}
       <RedTeamBadge workflowRunId={workflowRunId} client={client} />
+      {/* Attested Changesets: the DSSE-signed provenance record for this
+          gate's run — verified / verification-failed / honestly absent
+          (records are minted on approval). See AttestationPanel. */}
+      <AttestationPanel approvalId={approvalId} client={client} />
       <dl className="flex flex-col gap-1.5" data-testid="run-trace">
         {entries.map(([key, value]) => (
           <div key={key} className="flex items-center justify-between gap-3">

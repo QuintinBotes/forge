@@ -4,10 +4,14 @@ Connection management (admin), health probe, link listing (members), and the two
 signature/secret-verified webhook intake routes (no bearer). All queries are
 workspace-scoped (cross-workspace ids -> 404, no existence leak).
 
-Parked (needs the F01 Postgres board substrate — see ``pm_service`` docstring and
-the slice report): OAuth code-exchange routes, ``backfill`` enqueue, the manual
-conflict ``resolve`` execution, and the worker board-write/scan tasks. The
-sync engine that performs those is fully unit-tested in ``forge_integrations``.
+An accepted webhook now completes the inbound loop: the service persists the
+delivery and enqueues the worker board-write task ``forge.pm.process_webhook``
+(``forge_worker.tasks.pm_sync`` — re-fetch through the provider adapter, then
+``PMSyncEngine.sync_in`` onto the F01 Postgres board substrate, workspace-scoped
+and idempotent on redelivery; see the ``pm_service`` docstring).
+
+Still parked: OAuth code-exchange routes, ``backfill`` enqueue, the manual
+conflict ``resolve`` execution, and the outbound ``activity_events`` scan.
 """
 
 from __future__ import annotations

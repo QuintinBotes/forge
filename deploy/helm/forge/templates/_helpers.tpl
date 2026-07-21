@@ -164,7 +164,10 @@ its name is required (and the same keys are the operator's responsibility).
 {{- define "forge.validateSecrets" -}}
 {{- if .Values.secrets.create -}}
 {{- $data := .Values.secrets.data | default dict -}}
-{{- range $key := (list "SECRET_KEY" "AUTH_SECRET" "FORGE_VAULT_KEYS" "API_KEY_PEPPER" "INTERNAL_SERVICE_TOKEN" "MODEL_PROVIDER_KEY") -}}
+{{- /* The BYOK model key (FORGE_MODEL_API_KEY) is intentionally NOT here: the
+       worker/api boot fine without it (offline scripted fallback), so it is
+       optional, not fail-closed. */ -}}
+{{- range $key := (list "SECRET_KEY" "AUTH_SECRET" "FORGE_VAULT_KEYS" "API_KEY_PEPPER" "INTERNAL_SERVICE_TOKEN") -}}
 {{- if not (get $data $key) -}}
 {{- fail (printf "secrets.data.%s is required (api/worker fail closed without it — F37). Generate one (e.g. openssl rand -hex 32) and pass it via --set or a values file." $key) -}}
 {{- end -}}
@@ -211,13 +214,10 @@ secret name.
 {{- end -}}
 {{- end -}}
 
-{{- define "forge.minioEndpoint" -}}
-{{- if .Values.minio.enabled -}}
-{{- printf "http://%s-minio:9000" (include "forge.fullname" .) -}}
-{{- else -}}
-{{- .Values.externalObjectStore.endpoint -}}
-{{- end -}}
-{{- end -}}
+{{/* NOTE: no forge.minioEndpoint helper — object-store endpoint/bucket env is
+     PARKED with the object-storage scope (no reader yet). Bundled/external
+     object-store CREDS still flow via the Secret + the minio subchart /
+     externalObjectStore config. */}}
 
 {{- define "forge.publicUrl" -}}
 {{- default (printf "https://%s" .Values.forge.domain) .Values.forge.publicUrl -}}

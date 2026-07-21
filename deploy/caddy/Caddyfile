@@ -46,6 +46,30 @@
 		reverse_proxy api:8000
 	}
 
+	# Realtime WebSockets (forge_api.routers.realtime): board push (`/ws`) and
+	# CRDT spec co-editing (`/ws/spec/{spec_id}`). These mount at the API app
+	# ROOT — `app.include_router(realtime_router)` with no prefix (see
+	# apps/api/forge_api/main.py) — so their path is a bare `/ws`, NOT `/api/ws`.
+	# The web client builds the URL from NEXT_PUBLIC_WS_URL (default
+	# `ws://localhost:8000/ws`, apps/web/src/lib/realtime/use-board-realtime.ts),
+	# a same-origin `/ws` path with no `/api` prefix and no window.location
+	# rewrite — so behind this edge an operator sets NEXT_PUBLIC_WS_URL to
+	# `wss://<DOMAIN>/ws`. Without these two blocks, `/ws` and `/ws/spec/*` fall
+	# through to the `web:3000` catch-all below and the socket hits Next.js
+	# instead of the API — realtime silently dead behind Caddy. `handle` (not
+	# `handle_path`) preserves the `/ws` prefix, which is where the API serves
+	# them. Caddy's reverse_proxy auto-detects the `Upgrade` header, so
+	# websockets need no extra directives here; the nginx equivalent
+	# (deploy/nginx/forge.conf `location = /ws` + `location /ws/spec/`) has to
+	# spell the upgrade + long-idle timeouts out by hand. These two are the
+	# canonical realtime routes for BOTH proxies (edge routing parity).
+	handle /ws {
+		reverse_proxy api:8000
+	}
+	handle /ws/spec/* {
+		reverse_proxy api:8000
+	}
+
 	# MCP gateway surface.
 	handle_path /mcp/* {
 		reverse_proxy mcp-gateway:8001

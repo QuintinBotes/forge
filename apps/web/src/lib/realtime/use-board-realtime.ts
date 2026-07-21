@@ -14,6 +14,8 @@ import { useEffect, useState } from "react";
 
 import { apiClient } from "@/lib/api/client";
 
+import { resolveBoardWsUrl } from "./ws-url";
+
 /** Minimal structural type for the bits of `WebSocket` this hook uses. */
 export interface WebSocketLike {
   readyState: number;
@@ -51,9 +53,6 @@ export interface UseBoardRealtimeOptions {
 export interface BoardRealtimeState {
   connected: boolean;
 }
-
-export const DEFAULT_WS_URL =
-  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
 
 /**
  * Append `?token=` to a WS URL for the server's WS auth dependency (query
@@ -110,7 +109,7 @@ export function useBoardRealtime(
   options: UseBoardRealtimeOptions = {},
 ): BoardRealtimeState {
   const {
-    url = DEFAULT_WS_URL,
+    url = resolveBoardWsUrl(),
     enabled = true,
     token = apiClient.token,
     socketFactory,

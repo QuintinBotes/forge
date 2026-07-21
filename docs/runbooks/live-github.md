@@ -96,6 +96,20 @@ behaviour (200 on a valid signature, 401 on a tamper) with a signed envelope, an
 proves the **HMAC primitive** on the actual delivered bytes. Raw-payload
 ingestion is an F03 concern, out of scope for HARD-01.
 
+**Webhook delivery URL (configure this in the GitHub App):** the path above is
+the API's *internal* route — `api_prefix` defaults to empty, so the router
+serves it bare. Behind the edge proxy (Caddy's `handle_path /api/*` /
+`forge.conf`'s `location /api/`, see
+[docs/self-hosting/reverse-proxy.md](../self-hosting/reverse-proxy.md)), only
+the `/api`-prefixed path is externally reachable — the bare path falls through
+to the web frontend's catch-all route. Set the GitHub App's **Webhook URL** to:
+
+```
+https://<DOMAIN>/api/integration/github/webhooks
+```
+
+(internally the API serves this at `POST /integration/github/webhooks`).
+
 ## 6. Docker Compose (production wiring)
 
 `deploy/docker-compose.yml` mounts the key **read-only** and passes the

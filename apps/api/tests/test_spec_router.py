@@ -221,6 +221,81 @@ def test_read_missing_spec_manifest_yaml_is_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+def test_reject_spec_persists_status_and_note(client: TestClient) -> None:
+    manifest = _create_spec(client)
+    spec_uuid = spec_id_for_key(manifest["id"])
+
+    resp = client.post(
+        f"/spec/specs/{spec_uuid}/reject", json={"note": "Missing offline handling"}
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "rejected"
+    assert body["review_note"] == "Missing offline handling"
+
+    # The decision survives a re-read (persisted, not echoed).
+    fetched = client.get(f"/spec/specs/{spec_uuid}")
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "rejected"
+    assert fetched.json()["review_note"] == "Missing offline handling"
+
+
+def test_request_changes_persists_status_and_note(client: TestClient) -> None:
+    manifest = _create_spec(client)
+    spec_uuid = spec_id_for_key(manifest["id"])
+
+    resp = client.post(
+        f"/spec/specs/{spec_uuid}/request-changes", json={"note": "Please add a rate limit"}
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "changes_requested"
+    assert body["review_note"] == "Please add a rate limit"
+
+    fetched = client.get(f"/spec/specs/{spec_uuid}")
+    assert fetched.json()["status"] == "changes_requested"
+    assert fetched.json()["review_note"] == "Please add a rate limit"
+
+
+def test_reject_after_approval_is_409(client: TestClient) -> None:
+    manifest = _create_spec(client)
+    spec_uuid = spec_id_for_key(manifest["id"])
+    assert client.post(f"/spec/specs/{spec_uuid}/approve").status_code == 200
+
+    resp = client.post(f"/spec/specs/{spec_uuid}/reject", json={"note": "too late"})
+
+    assert resp.status_code == 409
+    # The illegal transition did not mutate the spec.
+    assert client.get(f"/spec/specs/{spec_uuid}").json()["status"] == "approved"
+
+
+def test_request_changes_after_approval_is_409(client: TestClient) -> None:
+    manifest = _create_spec(client)
+    spec_uuid = spec_id_for_key(manifest["id"])
+    assert client.post(f"/spec/specs/{spec_uuid}/approve").status_code == 200
+
+    resp = client.post(f"/spec/specs/{spec_uuid}/request-changes", json={"note": "too late"})
+
+    assert resp.status_code == 409
+
+
+def test_reject_missing_spec_is_404(client: TestClient) -> None:
+    resp = client.post(f"/spec/specs/{uuid.uuid4()}/reject", json={"note": "no such spec"})
+    assert resp.status_code == 404
+
+
+def test_rejected_spec_cannot_generate_tasks(client: TestClient) -> None:
+    manifest = _create_spec(client)
+    spec_uuid = spec_id_for_key(manifest["id"])
+    client.post(f"/spec/specs/{spec_uuid}/reject", json={"note": "nope"})
+
+    resp = client.post(f"/spec/specs/{spec_uuid}/tasks")
+
+    assert resp.status_code == 409
+
+
 def test_lifecycle_clarify_plan_approve_tasks(client: TestClient) -> None:
     manifest = _create_spec(client)
     spec_uuid = spec_id_for_key(manifest["id"])

@@ -13,7 +13,11 @@ from forge_contracts.dtos import DeployRules
 from forge_db.base import Base
 from forge_db.models import Project, User, Workspace
 from forge_db.models.deployment import Environment, EnvironmentPipeline
+from forge_deploy.orchestrator import DeploymentOrchestrator
+from forge_deploy.repository import DeploymentRepository
 from forge_deploy.schemas import GateConfig
+from forge_worker.celery_app import celery_app
+from forge_worker.tasks import deployments as deployments_task
 from forge_worker.tasks.deployments import (
     CeleryDeploymentRequester,
     request_deployment_sync,
@@ -107,3 +111,89 @@ def test_unknown_pipeline_returns_none(seeded) -> None:
         initiated_by="x",
     )
     assert dto is None
+
+
+# --------------------------------------------------------------- registration
+def test_deployment_tasks_registered_with_celery() -> None:
+    """The task module must be in the celery ``include`` list so the tasks
+    register at worker boot — independent of any test-time side-effect import.
+
+    ``loader.import_default_modules()`` is exactly what a real worker calls on
+    startup to import ``conf.include``; asserting through it proves the tasks
+    resolve from the include list rather than from this file's own import."""
+    assert "forge_worker.tasks.deployments" in (celery_app.conf.include or [])
+    celery_app.loader.import_default_modules()
+    assert "forge.deployments.advance" in celery_app.tasks
+    assert "forge.deployments.request" in celery_app.tasks
+
+
+# ------------------------------------------------------------- task behaviour
+def _seed_requested_deployment(
+    factory: sessionmaker[Session], project_id: uuid.UUID
+) -> uuid.UUID:
+    """Persist a bare REQUESTED deployment (no advance) and return its id."""
+    with factory() as s:
+        repo = DeploymentRepository(s, workspace_id=WS_ID)
+        pipeline = repo.get_pipeline_for_project(project_id)
+        assert pipeline is not None
+        env = repo.get_environment(pipeline.id, "dev")
+        assert env is not None
+        dep = repo.create_deployment(
+            project_id=project_id,
+            pipeline_id=pipeline.id,
+            environment_id=env.id,
+            environment_name=env.name,
+            repo_id=pipeline.repo_id,
+            commit_sha="abc123",
+            initiated_by="system:test",
+            state=DeploymentState.REQUESTED,
+        )
+        s.commit()
+        return dep.id
+
+
+def _spy_on_advance(monkeypatch) -> list[uuid.UUID]:
+    calls: list[uuid.UUID] = []
+    original = DeploymentOrchestrator.advance
+
+    def _spy(self: DeploymentOrchestrator, deployment_id: uuid.UUID) -> DeploymentState:
+        calls.append(deployment_id)
+        return original(self, deployment_id)
+
+    monkeypatch.setattr(DeploymentOrchestrator, "advance", _spy)
+    return calls
+
+
+def test_request_task_drives_orchestrator_advance(seeded, monkeypatch) -> None:
+    factory, project_id = seeded
+    monkeypatch.setattr(deployments_task, "_session_factory", lambda: factory)
+    advanced = _spy_on_advance(monkeypatch)
+
+    dep_id = deployments_task.request_deployment_task(
+        str(WS_ID),
+        str(project_id),
+        DeploymentRequest(environment="dev", commit_sha="abc123").model_dump(mode="json"),
+        "system:test",
+    )
+
+    assert dep_id is not None
+    # The task created the deployment and drove it through the orchestrator.
+    assert uuid.UUID(dep_id) in advanced
+    # No CI reader wired -> ci_green gate fails closed -> terminal GATE_REJECTED.
+    with factory() as s:
+        state = DeploymentRepository(s, workspace_id=WS_ID).get_or_404(uuid.UUID(dep_id)).state
+    assert state == DeploymentState.GATE_REJECTED
+
+
+def test_advance_task_drives_orchestrator_advance(seeded, monkeypatch) -> None:
+    factory, project_id = seeded
+    dep_id = _seed_requested_deployment(factory, project_id)
+    monkeypatch.setattr(deployments_task, "_session_factory", lambda: factory)
+    advanced = _spy_on_advance(monkeypatch)
+
+    result = deployments_task.advance_deployment(str(dep_id), str(WS_ID))
+
+    # The task resumed the FSM via DeploymentOrchestrator.advance() on that id.
+    assert dep_id in advanced
+    # REQUESTED -> gate-evaluate -> no CI -> GATE_REJECTED (fail-closed).
+    assert result == DeploymentState.GATE_REJECTED.value

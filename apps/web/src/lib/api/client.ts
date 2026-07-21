@@ -1,12 +1,14 @@
 /**
- * Typed Forge API client (Phase-0 stub).
+ * Typed Forge API client.
  *
- * A thin `fetch` wrapper that knows the Forge API surface. The backend routes are
- * still Phase-0 stubs returning HTTP 501; this client therefore surfaces a typed
- * {@link ApiError} (with `notImplemented` set for 501s) so Task 1.6 can build
- * against a stable shape and progressively light up real handlers.
+ * A thin `fetch` wrapper that knows the Forge API surface. The backend routes
+ * below are implemented; this client still surfaces a typed {@link ApiError}
+ * (with `notImplemented` set for HTTP 501) as a residual safety net for any
+ * route a given deployment has feature-flagged off or not yet enabled, so
+ * callers can degrade gracefully instead of choking on an unexpected shape.
  */
 
+import { resolveApiBaseUrl, toAbsoluteApiBase } from "./api-url";
 import { deriveOnboardingProgress } from "./onboarding-progress";
 import type {
   AgentRole,
@@ -19,6 +21,8 @@ import type {
   ApprovalRequest,
   ApprovalResolution,
   ApprovalSummary,
+  AttestationListResponse,
+  AttestationOut,
   AuditEntry,
   AuditListResponse,
   AuditQuery,
@@ -94,6 +98,8 @@ import type {
   RoutingPreviewRequest,
   RoutingPreviewResponse,
   RunTrace,
+  SelfEvalRunAccepted,
+  SelfEvalStatusOut,
   ServiceInfo,
   Team,
   TeamInput,
@@ -132,8 +138,18 @@ import type {
   WorkflowValidationIssue,
 } from "./types";
 
-export const DEFAULT_API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/**
+ * The base URL the client targets when none is passed to the constructor.
+ *
+ * Resolved at runtime (see {@link resolveApiBaseUrl}): an absolute
+ * `NEXT_PUBLIC_API_URL` is used verbatim (byte-identical to the legacy default);
+ * a relative one (e.g. `/api`) or an unset one derives the same origin the page
+ * was served from in the browser, and keeps the static `http://localhost:8000`
+ * default in SSR / on the local `next dev` server. This fixes browser REST calls
+ * from a compose-deployed app, which the build-time `NEXT_PUBLIC_*` inlining
+ * otherwise baked to `http://localhost:8000` (wrong host + mixed content).
+ */
+export const DEFAULT_API_BASE_URL = resolveApiBaseUrl();
 
 /** Default bearer token for the shared `apiClient` singleton (REST + WS auth). */
 export const DEFAULT_API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
@@ -141,7 +157,7 @@ export const DEFAULT_API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
 export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
-  /** True when the endpoint exists but is a Phase-0 stub (HTTP 501). */
+  /** True when the server answered 501 — a residual safety net for disabled or not-yet-enabled routes. */
   readonly notImplemented: boolean;
 
   constructor(status: number, message: string, body: unknown) {
@@ -175,7 +191,13 @@ function buildUrl(
   path: string,
   query?: RequestOptions["query"],
 ): string {
-  const url = new URL(path.replace(/^\//, ""), baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  // `new URL(path, base)` throws on a relative base (e.g. `/api`); normalise to
+  // an absolute base first so a same-origin/relative base is joined safely.
+  const absoluteBase = toAbsoluteApiBase(baseUrl);
+  const url = new URL(
+    path.replace(/^\//, ""),
+    absoluteBase.endsWith("/") ? absoluteBase : `${absoluteBase}/`,
+  );
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined) {
@@ -192,7 +214,9 @@ export class ForgeApiClient {
   private readonly fetchImpl: typeof fetch;
 
   constructor(config: ApiClientConfig = {}) {
-    this.baseUrl = config.baseUrl ?? DEFAULT_API_BASE_URL;
+    // Resolve fresh per instance (not the module-load `DEFAULT_API_BASE_URL`) so
+    // the browser-constructed singleton derives the live same-origin base.
+    this.baseUrl = config.baseUrl ?? resolveApiBaseUrl();
     this.authToken = config.token ?? DEFAULT_API_TOKEN;
     this.fetchImpl = config.fetch ?? globalThis.fetch;
   }
@@ -432,6 +456,44 @@ export class ForgeApiClient {
     );
   }
 
+  // --- Attested Changesets (read-only /attestations surface) -------------- //
+
+  /** One workspace-scoped page of signed changeset attestations, newest first. */
+  listAttestations(
+    query?: RequestOptions["query"],
+  ): Promise<AttestationListResponse> {
+    return this.request<AttestationListResponse>("/attestations", { query });
+  }
+
+  /** One attestation by id (workspace-isolated; foreign ids 404). */
+  getAttestation(attestationId: string): Promise<AttestationOut> {
+    return this.request<AttestationOut>(
+      `/attestations/${encodeURIComponent(attestationId)}`,
+    );
+  }
+
+  /**
+   * The attestation minted for a gate's linked workflow run. The API answers
+   * 404 when none exists (unlinked gate, or the run was never attested —
+   * e.g. the gate is still pending); that is a normal "not attested" state,
+   * surfaced as `null` so the UI can render honest absence, while every other
+   * failure still throws.
+   */
+  async getApprovalAttestation(
+    approvalId: string,
+  ): Promise<AttestationOut | null> {
+    try {
+      return await this.request<AttestationOut>(
+        `/approvals/${encodeURIComponent(approvalId)}/attestation`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   // --- Spec engine / SDD lifecycle (F02 /spec + F23 dashboard) ------------ //
 
   /**
@@ -563,6 +625,22 @@ export class ForgeApiClient {
     return this.request<SpecManifest>(
       `/spec/specs/${encodeURIComponent(specId)}/approve`,
       { method: "POST" },
+    );
+  }
+
+  /** Reject a spec at the human gate — persists the decision + note (409 once approved). */
+  rejectSpec(specId: string, note: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/reject`,
+      { method: "POST", body: { note } },
+    );
+  }
+
+  /** Request changes on a spec at the human gate — persists the decision + note (409 once approved). */
+  requestSpecChanges(specId: string, note: string): Promise<SpecManifest> {
+    return this.request<SpecManifest>(
+      `/spec/specs/${encodeURIComponent(specId)}/request-changes`,
+      { method: "POST", body: { note } },
     );
   }
 
@@ -730,6 +808,22 @@ export class ForgeApiClient {
     return this.request<RoutingPreviewResponse>("/ao/routing-preview", {
       method: "POST",
       body,
+    });
+  }
+
+  /** Self-Eval Gate facts: enforcement flag, private suite, recorded baseline. */
+  getSelfEvalStatus(): Promise<SelfEvalStatusOut> {
+    return this.request<SelfEvalStatusOut>("/ao/self-eval/status");
+  }
+
+  /**
+   * Enqueue the worker-owned `forge.self_eval.run` task for this workspace
+   * (admin, 202). The run itself is minutes-long and agent-driven — it scores
+   * the private suite and records the baseline; this call only queues it.
+   */
+  runSelfEval(): Promise<SelfEvalRunAccepted> {
+    return this.request<SelfEvalRunAccepted>("/ao/self-eval/runs", {
+      method: "POST",
     });
   }
 

@@ -7,7 +7,7 @@
 > ⚠️ **Under active development — pre-1.0, not production-ready.** Forge is shared
 > openly for **evaluation and testing**, not for production use yet. Expect rough
 > edges, changing APIs, and features that are API/CLI-first with their UI or live
-> integrations still landing. Read **[Status](#status)** for the honest per-area
+> integrations pending. Read **[Status](#status)** for the honest per-area
 > state before you rely on it, and please contribute via pull request.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
@@ -36,12 +36,13 @@ Forge is **pre-1.0 and under active development** — usable for evaluation and
 self-host testing, **not yet for production**. The backend platform, HTTP API,
 CLI, workflow/agent runtime, and self-hosting substrate are the mature surface,
 exercised by a large test suite (~3,700 tests on real pgvector Postgres, green
-in CI). The **web UI ships 15 feature screens** (board, approvals, run-trace
-viewer, spec dashboard, marketplace, incidents, observability, sprints, audit,
-deployment gates, SSO/SCIM, RBAC admin, PM integrations, workflow editor, and a
-guided walkthrough) on the Forge design system. Some screens carry **honestly
-marked gaps** where a backend projection or live credential is still landing
-(e.g. a couple of dashboard projections, OIDC), and the
+in CI). The **web UI ships 15 feature screens** — `approvals`, `audit`,
+`board`, `deployments`, `depth`, `incidents`, `leaderboard`, `marketplace`,
+`observability`, `runs`, `settings` (SSO/OIDC/SCIM, RBAC, PM integrations,
+model BYOK), `specs`, `sprints`, `walkthrough`, and `workflow` — on the Forge
+design system. Some screens carry **honestly marked gaps** where a backend
+projection or live credential is pending (e.g. a couple of dashboard
+projections), and the
 third-party integrations (GitHub App, model BYOK, reranker, MCP, Slack) are
 code-complete with tests + runbooks but need **your keys** to verify live. We
 try hard not to advertise anything that is only parked — the pre-1.0 notice at
@@ -54,9 +55,10 @@ individual screens mark in-progress areas inline.
 - **Spec-driven development** — author a `manifest.yaml` spec; the spec engine
   validates it and drives the work. Includes a spec-validation dashboard.
 - **Agent runtime** — a LangGraph agent loop that runs work inside sandboxed
-  execution (Docker today; gVisor / Firecracker isolation classes are modelled
-  and mapped, with the real-runtime tiers gated behind a virtualization-enabled
-  CI job).
+  execution (`worktree` git-worktree isolation by default, a per-task Docker
+  `container` sandbox also available; gVisor / Firecracker isolation classes
+  are modelled and mapped, with the real-runtime tiers gated behind a
+  virtualization-enabled CI job).
 - **Multi-agent coordination** — a coordinator for fanning work across agents.
 - **Workflow engine** — a Postgres finite-state-machine workflow layer, with
   Temporal available in the production stack for durable orchestration.
@@ -65,13 +67,14 @@ individual screens mark in-progress areas inline.
 - **Native project board** — a board core for tracking runs and work items.
 - **Policy, skill, integration & MCP SDKs** — declarative `.forge/policy.yaml`,
   skill profiles, integration definitions, and an MCP gateway for tool sources.
-- **Integration marketplace** — browse and install integrations (UI shipped;
-  publishing still via the offline author CLI).
-- **Enterprise SSO / SCIM** — SAML SSO and SCIM provisioning with an admin UI
-  (OIDC and live IdP verification still landing).
+- **Integration marketplace** — browse, install, and publish integrations
+  from the in-app UI (the offline `forge marketplace package` CLI works too).
+- **Enterprise SSO / SCIM** — SAML SSO and OIDC, plus SCIM provisioning, with
+  an admin UI (live IdP verification needs your own IdP, like the third-party
+  integrations above).
 - **Human approval system** — gated approvals for sensitive agent actions.
-- **Benchmark leaderboard** — submit, verify, and rank agent benchmark runs
-  (backend; **UI in progress**).
+- **Benchmark leaderboard** — submit, verify, and rank agent benchmark runs,
+  with a public leaderboard UI.
 - **Auth, secrets & BYOK** — envelope-encrypted secrets, a key vault, and
   bring-your-own-key model-provider credentials.
 - **Observability & cost metrics + audit log** — structured, redaction-aware
@@ -133,6 +136,7 @@ forge/
 │   ├── workflow-engine/         # forge_workflow
 │   ├── agent-runtime/           # forge_agent
 │   ├── multi-agent-coordinator/ # forge_coordinator
+│   ├── orchestration-policy/    # forge_orchestration_policy
 │   ├── spec-engine/             # forge_spec
 │   ├── board-core/              # forge_board
 │   ├── knowledge-core/          # forge_knowledge

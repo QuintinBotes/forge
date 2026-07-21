@@ -1,17 +1,24 @@
 """Reproduction + regression tests for the Phase-2 round-2 security fixes (2.3-fix-r2).
 
-Four real defects in the wired feature routers:
+Four real defects were found in the wired feature routers. The legacy in-memory
+``/approval/*`` router has since been retired in favour of the DB-backed F36
+``/approvals/*`` surface, so this file keeps the agent / workflow / spec / repo
+coverage below; the approval-gate embodiment of defects #1-#3 now lives with the
+DB-backed surface's own tests (``test_approvals.py``:
+``test_decision_authz_matrix`` for RBAC + the ``agent-runner`` refusal,
+``test_decision_body_cannot_forge_decider`` for decider identity,
+``test_cross_workspace_404`` for tenant isolation).
 
 1. **RBAC never enforced** — a read-only ``viewer`` (and the ``agent-runner``
    identity) could perform writes / runs / approvals. Every write/run/approve
    route must now authorize, not just authenticate.
-2. **HITL decider spoofing** — ``POST /approval/.../decision`` recorded
-   ``decided_by`` from the request body, and any role could decide. The decider
-   identity must come from the authenticated principal, and the ``agent-runner``
-   must not be able to decide its own gate.
-3. **Cross-workspace tenant isolation** — approval / agent / workflow / spec
-   stores were process-wide and unscoped; workspace B could read/decide/overwrite
-   workspace A's data. Foreign ids must surface as 404.
+2. **HITL decider spoofing** — a decision recorded ``decided_by`` from the
+   request body, and any role could decide. The decider identity must come from
+   the authenticated principal, and the ``agent-runner`` must not be able to
+   decide its own gate.
+3. **Cross-workspace tenant isolation** — agent / workflow / spec stores were
+   process-wide and unscoped; workspace B could read/decide/overwrite workspace
+   A's data. Foreign ids must surface as 404.
 4. **sync_repo confused-deputy** — the route ignored ``connection_id`` and synced
    a caller-supplied repo with the server's privileged token. The connection must
    be resolved server-side, scoped to the caller's workspace.
@@ -108,88 +115,30 @@ def test_viewer_cannot_write_or_run_across_routers() -> None:
     rid = uuid.uuid4()
     with TestClient(app) as client:
         cases = [
-            client.post(f"/approval/requests/{rid}/decision", json={"status": "approved"}),
             client.post(f"/spec/specs/{rid}/approve"),
             client.post(f"/workflow/runs/{rid}/transition", json={"event": "x"}),
             client.post(
                 "/integration/github/pull-requests",
                 json={"repo": "org/api", "title": "t", "head": "f", "base": "main"},
             ),
-            client.post(
-                "/approval/requests",
-                json={"gate": "pr", "title": "t", "confidence": 0.5},
-            ),
         ]
     for resp in cases:
         assert resp.status_code == 403, resp.text
 
 
-def test_viewer_may_still_read() -> None:
-    app = create_app()
-    _as(app, make_test_principal(role=UserRole.VIEWER))
-    with TestClient(app) as client:
-        resp = client.get("/approval/requests")
-    assert resp.status_code == 200, resp.text
-
-
 # --------------------------------------------------------------------------- #
-# 2. HITL decider identity                                                     #
+# 2. HITL decider identity + 3. approval tenant isolation                      #
+#                                                                             #
+# The approval-gate embodiment of these fixes moved to the DB-backed F36       #
+# ``/approvals/*`` surface when the legacy in-memory ``/approval/*`` router was #
+# retired; see ``test_approvals.py`` (``test_decision_body_cannot_forge_decider``,#
+# ``test_decision_authz_matrix``, ``test_cross_workspace_404``).               #
 # --------------------------------------------------------------------------- #
 
 
-def _open_request(client: TestClient) -> str:
-    resp = client.post(
-        "/approval/requests",
-        json={"gate": "pr", "title": "Approve PR", "confidence": 0.8},
-    )
-    assert resp.status_code == 201, resp.text
-    return resp.json()["id"]
-
-
-def test_decider_identity_comes_from_principal_not_body() -> None:
-    app = create_app()
-    member = make_test_principal(role=UserRole.MEMBER)
-    _as(app, member)
-    with TestClient(app) as client:
-        rid = _open_request(client)
-        resp = client.post(
-            f"/approval/requests/{rid}/decision",
-            json={"status": "approved", "decided_by": "attacker", "reason": "ok"},
-        )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    # The forged body identity is ignored; the authenticated principal is recorded.
-    assert body["decided_by"] != "attacker"
-    assert body["decided_by"] == member.email
-
-
-def test_agent_runner_cannot_decide_its_own_gate() -> None:
-    app = create_app()
-    # Member opens the gate, then the agent-runner attempts to approve it.
-    _as(app, make_test_principal(role=UserRole.MEMBER))
-    with TestClient(app) as client:
-        rid = _open_request(client)
-        _as(app, make_test_principal(role=UserRole.AGENT_RUNNER))
-        resp = client.post(f"/approval/requests/{rid}/decision", json={"status": "approved"})
-    assert resp.status_code == 403, resp.text
-
-
 # --------------------------------------------------------------------------- #
-# 3. Cross-workspace tenant isolation                                          #
+# 3. Cross-workspace tenant isolation (agent / workflow / spec)                #
 # --------------------------------------------------------------------------- #
-
-
-def test_approval_is_workspace_scoped() -> None:
-    app = create_app()
-    _as(app, make_test_principal(role=UserRole.MEMBER, workspace_id=TEST_WORKSPACE_ID))
-    with TestClient(app) as client:
-        rid = _open_request(client)
-        # Switch to a different tenant.
-        _as(app, make_test_principal(role=UserRole.MEMBER, workspace_id=OTHER_WORKSPACE_ID))
-        assert client.get(f"/approval/requests/{rid}").status_code == 404
-        assert client.get("/approval/requests").json() == []
-        decide = client.post(f"/approval/requests/{rid}/decision", json={"status": "approved"})
-        assert decide.status_code == 404
 
 
 def test_agent_run_is_workspace_scoped() -> None:

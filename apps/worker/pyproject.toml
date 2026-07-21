@@ -31,6 +31,9 @@ dependencies = [
     # forge-integrations supplies the GitHub PR-data source in the prod seam.
     "forge-eval",
     "forge-integrations",
+    # Task 17 — supervised multi-agent dispatch: forge.agent.run drives the F27
+    # Supervisor (forge_coordinator) when execution_mode=supervised_multi_agent.
+    "forge-coordinator",
 ]
 
 [build-system]

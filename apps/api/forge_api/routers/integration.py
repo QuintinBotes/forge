@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import uuid
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated
 from urllib.parse import parse_qs
@@ -32,9 +33,10 @@ from forge_api.deps import Principal, SettingsDep
 from forge_api.observability.audit import AuditCategory, AuditLog
 from forge_api.observability.redaction import redact_mapping, redact_text
 from forge_api.routers._rbac import require_permission
-from forge_api.routers.approval import ApprovalStore, get_approval_store
+from forge_api.routers.agent import AgentRunStore, get_agent_store
 from forge_api.settings import Settings, get_settings
 from forge_contracts import (
+    ApprovalRequest,
     CIStatus,
     HealthResult,
     PullRequest,
@@ -202,15 +204,117 @@ def _slack_notifier_singleton() -> SlackNotifier:
     )
 
 
+class ApprovalStore:
+    """In-memory approval queue that backs **only** the Slack integration.
+
+    This is the Phase-2 in-memory approval store. Its HTTP surface (the legacy
+    ``/approval/*`` router) was retired in favour of the DB-backed F36
+    ``/approvals/*`` surface (``routers/approvals.py`` +
+    ``forge_approval.ApprovalService``). The store itself survives here because
+    the Slack integration is still wired to it and **cannot** be migrated to the
+    F36 service within a bounded diff:
+
+    * a Slack ``block_actions`` / ``chat.update`` callback is *unauthenticated*
+      untrusted intake — it carries no Forge principal, only an approval id — so
+      it needs :meth:`owner_of` to resolve the owning workspace from the id
+      alone; ``ApprovalService`` deliberately exposes no such id-only lookup
+      (every read demands a ``workspace_id``, and a cross-workspace id maps to
+      not-found);
+    * ``ApprovalService.resolve`` requires a domain ``Principal`` of
+      ``kind="user"`` with a real Forge user UUID and a ``member``/``admin``
+      role, and records that UUID as the decision's ``approver_user_id``; a Slack
+      actor is a ``slack:<handle>`` string with no Forge-user mapping anywhere in
+      the codebase, so it cannot satisfy the authorizer without forging identity;
+    * :meth:`slack_notify_approval` hands the resolved request to
+      :meth:`SlackNotifier.notify_approval`, which is typed to the frozen
+      :class:`~forge_contracts.ApprovalRequest` contract — a different type than
+      the F36 ``forge_approval.models.ApprovalRequest`` the service returns.
+
+    Consumers (both in this module): :func:`slack_notify_approval`
+    (``POST /integration/slack/approvals/{id}/notify``) reads via :meth:`get`;
+    :func:`slack_interaction` (``POST /integration/slack/interactions``) resolves
+    via :meth:`owner_of` then applies :meth:`decide`.
+
+    Each request is tagged with the ``workspace_id`` that created it; every read
+    and decision is scoped to a workspace so one tenant can never see, fetch, or
+    decide another tenant's gates. ``ApprovalRequest`` carries no ``workspace_id``
+    field (it is a frozen contract), so ownership is tracked alongside the items.
+
+    Note: since the legacy ``POST /approval/requests`` route was removed, nothing
+    populates this store in production — the Slack notify/decide flow below
+    operates on an empty store until a writer is reintroduced (tests seed it
+    directly). Kept pending migration of Slack interactivity to the DB-backed
+    ``/approvals`` surface.
+    """
+
+    def __init__(self) -> None:
+        self._items: dict[uuid.UUID, ApprovalRequest] = {}
+        self._owner: dict[uuid.UUID, uuid.UUID] = {}
+
+    def create(self, request: ApprovalRequest, *, workspace_id: uuid.UUID) -> ApprovalRequest:
+        if request.id is None:
+            request.id = uuid.uuid4()
+        if request.created_at is None:
+            request.created_at = datetime.now(UTC)
+        self._items[request.id] = request
+        self._owner[request.id] = workspace_id
+        return request
+
+    def get(self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID) -> ApprovalRequest | None:
+        if self._owner.get(approval_id) != workspace_id:
+            return None
+        return self._items.get(approval_id)
+
+    def owner_of(self, approval_id: uuid.UUID) -> uuid.UUID | None:
+        """Return the workspace that owns ``approval_id``, or ``None`` if unknown.
+
+        Read-only, cross-tenant-safe resolution used by the Slack interactivity
+        handler: a Slack ``block_actions`` callback is unauthenticated (it carries
+        no Forge principal) and embeds only the approval id, so the handler must
+        resolve the owning workspace before applying the decision through the
+        normal workspace-scoped :meth:`decide` path. An unknown id yields
+        ``None`` -> the handler no-ops (never leaks another tenant's gate).
+        """
+        return self._owner.get(approval_id)
+
+    def decide(
+        self,
+        approval_id: uuid.UUID,
+        *,
+        workspace_id: uuid.UUID,
+        status: ApprovalStatus,
+        decided_by: str | None,
+        reason: str | None,
+    ) -> ApprovalRequest | None:
+        request = self.get(approval_id, workspace_id=workspace_id)
+        if request is None:
+            return None
+        request.status = status
+        request.decided_by = decided_by
+        request.decision_reason = reason
+        request.decided_at = datetime.now(UTC)
+        return request
+
+
+@lru_cache(maxsize=1)
+def _approval_store_singleton() -> ApprovalStore:
+    return ApprovalStore()
+
+
+def get_approval_store() -> ApprovalStore:
+    """Return the process-wide Slack-integration approval store (override in tests)."""
+    return _approval_store_singleton()
+
+
 class SlackApprovalRefStore:
     """In-memory ``approval_id -> (channel, ts)`` back-reference for Slack posts.
 
     ``ApprovalRequest`` is a frozen contract (no ``slack_ts`` field), so — exactly
-    as :class:`~forge_api.routers.approval.ApprovalStore` tracks workspace
-    ownership *beside* the item rather than mutating the DTO — the resolved
-    channel + message timestamp of an approval's Slack post are tracked here. The
-    interactivity handler reads them to edit the original message in place
-    (``chat.update``). The DB-backed store swaps in behind the same dependency.
+    as :class:`ApprovalStore` tracks workspace ownership *beside* the item rather
+    than mutating the DTO — the resolved channel + message timestamp of an
+    approval's Slack post are tracked here. The interactivity handler reads them
+    to edit the original message in place (``chat.update``). The DB-backed store
+    swaps in behind the same dependency.
     """
 
     def __init__(self) -> None:
@@ -280,6 +384,7 @@ WebhookSecretDep = Annotated[str | None, Depends(get_github_webhook_secret)]
 SlackSigningSecretDep = Annotated[str | None, Depends(get_slack_signing_secret)]
 ApprovalStoreDep = Annotated[ApprovalStore, Depends(get_approval_store)]
 SlackRefStoreDep = Annotated[SlackApprovalRefStore, Depends(get_slack_ref_store)]
+AgentRunStoreDep = Annotated[AgentRunStore, Depends(get_agent_store)]
 
 
 # --------------------------------------------------------------------------- #
@@ -488,17 +593,43 @@ def _slack_actor(payload: dict[str, object]) -> str:
     return "slack:unknown"
 
 
-def _command_blocks(text: str) -> dict[str, object]:
+def _run_status_body(store: AgentRunStore, raw_run_id: str) -> str:
+    """Resolve ``/forge status <run>`` against the live agent-run store.
+
+    Mirrors the interactivity handler's ``owner_of`` pattern: the slash command is
+    unauthenticated untrusted intake (no Forge principal), so the owning workspace
+    is resolved from the run id and the run is then read back through the normal
+    workspace-scoped :meth:`AgentRunStore.get`. A malformed or unknown id yields
+    the not-found copy (never fabricated). The response reports the run's real
+    :class:`~forge_contracts.enums.RunStatus`, plus the number of recorded steps
+    when the run carries any (the only step/phase detail the run model holds).
+    """
+    try:
+        run_id = uuid.UUID(raw_run_id)
+    except ValueError:
+        return f"*Forge* — no run `{raw_run_id}` found."
+    owner = store.owner_of(run_id)
+    result = store.get(run_id, workspace_id=owner) if owner is not None else None
+    if result is None:
+        return f"*Forge* — no run `{raw_run_id}` found."
+    detail = ""
+    if result.steps:
+        count = len(result.steps)
+        detail = f" ({count} step{'s' if count != 1 else ''})"
+    return f"run {run_id}: {result.status.value}{detail}"
+
+
+def _command_blocks(text: str, store: AgentRunStore) -> dict[str, object]:
     """Build the ephemeral Block Kit response for a ``/forge`` sub-command."""
     parts = text.strip().split()
     sub = parts[0].lower() if parts else "help"
     if sub == "status" and len(parts) > 1:
-        body = f"*Forge* — status for `{parts[1]}` is not wired to a live task yet."
+        body = _run_status_body(store, parts[1])
     else:
         body = (
             "*Forge* commands:\n"
             "• `/forge help` — show this help\n"
-            "• `/forge status <task-id>` — task status"
+            "• `/forge status <run-id>` — live run status"
         )
     return {
         "response_type": "ephemeral",
@@ -511,20 +642,23 @@ async def slack_slash_command(
     request: Request,
     secret: SlackSigningSecretDep,
     settings: SettingsDep,
+    store: AgentRunStoreDep,
     x_slack_signature: Annotated[str | None, Header()] = None,
     x_slack_request_timestamp: Annotated[str | None, Header()] = None,
 ) -> JSONResponse:
     """Handle a signed ``/forge`` slash command (``x-www-form-urlencoded``).
 
     Verifies the Slack v0 signature over the raw body, then returns an ephemeral
-    Block Kit response within Slack's 3-second budget. Fail-closed: 501 when no
-    signing secret is configured, 401 on a bad/missing/stale signature.
+    Block Kit response within Slack's 3-second budget. ``/forge status <run>`` is
+    resolved live against the shared :class:`~forge_api.routers.agent.AgentRunStore`
+    (the same store the runs API serves ``GET /agent/runs/{id}`` from). Fail-closed:
+    501 when no signing secret is configured, 401 on a bad/missing/stale signature.
     """
     body = await request.body()
     _verify_slack_request(secret, settings, body, x_slack_request_timestamp, x_slack_signature)
     form = parse_qs(body.decode("utf-8", errors="replace"))
     text = (form.get("text") or [""])[0]
-    return JSONResponse(content=_command_blocks(text))
+    return JSONResponse(content=_command_blocks(text, store))
 
 
 @router.post("/slack/interactions")
@@ -630,8 +764,10 @@ async def slack_interaction(
 
 
 __all__ = [
+    "ApprovalStore",
     "RepoConnectionStore",
     "SlackApprovalRefStore",
+    "get_approval_store",
     "get_github_client",
     "get_github_client_optional",
     "get_github_webhook_secret",

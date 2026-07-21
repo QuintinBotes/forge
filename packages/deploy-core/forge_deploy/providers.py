@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from forge_deploy.errors import ProviderError
-from forge_deploy.schemas import DeployHandle, DeployRequest, DeployStatus
+from forge_deploy.schemas import DeployHandle, DeployRequest, DeployState, DeployStatus
 
 
 @runtime_checkable
@@ -51,7 +51,7 @@ class WebhookClient(Protocol):
     ) -> dict[str, Any]: ...
 
 
-_GITHUB_STATE_MAP = {
+_GITHUB_STATE_MAP: dict[str, DeployState] = {
     "queued": "pending",
     "pending": "pending",
     "in_progress": "in_progress",
