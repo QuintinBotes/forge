@@ -583,18 +583,27 @@ export function SsoSettingsView({
                   className={cn(FIELD, "font-mono text-xs")}
                 />
               </Field>
-              <Field label="IdP SLO URL" hint="not yet supported">
-                <input
-                  value={form.idpSloUrl}
-                  disabled
-                  aria-describedby="idp-slo-help"
-                  onChange={(e) => patch("idpSloUrl", e.target.value)}
-                  placeholder="https://idp.example.com/slo"
-                  className={cn(
-                    FIELD,
-                    "font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60",
-                  )}
-                />
+              <div className="flex flex-col gap-1.5">
+                <Field label="IdP SLO URL">
+                  <input
+                    value={form.idpSloUrl}
+                    disabled
+                    aria-describedby="idp-slo-help"
+                    onChange={(e) => patch("idpSloUrl", e.target.value)}
+                    placeholder="https://idp.example.com/slo"
+                    className={cn(
+                      FIELD,
+                      "font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60",
+                    )}
+                  />
+                </Field>
+                {/*
+                 * Sibling of the label, not nested inside it: the input's accessible
+                 * NAME comes only from the <label> above, and its accessible
+                 * DESCRIPTION comes only from this paragraph via aria-describedby.
+                 * Keeping them as non-overlapping elements (see SsoSwitch) avoids
+                 * screen readers announcing this sentence twice.
+                 */}
                 <p
                   id="idp-slo-help"
                   className="text-xs text-muted-foreground"
@@ -602,7 +611,7 @@ export function SsoSettingsView({
                   Single Logout is not yet supported. Forge keeps any saved
                   value but can&apos;t yet act on it during sign-out.
                 </p>
-              </Field>
+              </div>
             </div>
   
             <Field

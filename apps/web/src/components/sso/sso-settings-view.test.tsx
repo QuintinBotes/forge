@@ -285,6 +285,19 @@ describe("SsoSettingsView", () => {
     ).toBeInTheDocument();
     // House style bans "coming soon" phrasing everywhere in this view.
     expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+
+    // The helper sentence is a sibling of the <label>, not nested inside it, so
+    // it must NOT be folded into the input's accessible name — it should only
+    // reach assistive tech via aria-describedby, exactly like SsoSwitch's
+    // separate label/description elements.
+    expect(sloField).toHaveAccessibleName("IdP SLO URL");
+    const describedbyId = sloField.getAttribute("aria-describedby");
+    expect(describedbyId).toBeTruthy();
+    const describedbyEl = document.getElementById(describedbyId as string);
+    expect(describedbyEl).not.toBeNull();
+    expect(describedbyEl).toHaveTextContent(
+      /single logout is not yet supported/i,
+    );
   });
 
   it("keeps the saved SLO URL in the save payload even though the field is disabled", async () => {
