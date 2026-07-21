@@ -368,6 +368,23 @@ setting (a no-op unless set). On a regression the block is **audited**
 *before* the mutation is applied; a `force=true` override is audited
 (`ao.config.self_eval_forced`) and allowed through.
 
+Two thin endpoints back the web panel (same router):
+
+- `GET /ao/self-eval/status` (READ) — raw facts, no derived verdicts: the
+  `self_eval_enforce` flag, the workspace's private suite (published
+  preferred; case content is never exposed), and the most recently updated
+  baseline (`baseline_rate`, `resolved`/`total`, `recorded_at`). `null`s on
+  cold start.
+- `POST /ao/self-eval/runs` (ADMIN, `202`) — enqueues the worker-owned
+  `forge.self_eval.run` Celery task with the workspace's current effective AO
+  config snapshot (redacted) via the api->worker `send_task` seam
+  (`enqueue_self_eval_run` in
+  `apps/api/forge_api/services/self_eval_service.py`, mirroring
+  `pm_service.py`). `409 no_private_suite` when no published private suite
+  exists (nothing the worker could score); the request is audited
+  (`ao.self_eval.run_requested`). The run itself still executes only in the
+  worker — this endpoint queues it, nothing more.
+
 Two worker tasks own the offline, agent-driven halves (they run in the worker,
 never a request path, because a real run is minutes-long):
 
@@ -395,9 +412,17 @@ never a request path, because a real run is minutes-long):
   runner, but a stock API deployment does not evaluate the proposed config
   inline.
 - **Enforcement is off by default** (`self_eval_enforce`).
-- **Baseline establishment/refresh is worker-driven only.** It is the
-  `forge.self_eval.run` Celery task. (Some in-code docstrings refer to this as
-  "the worker-owned `POST /ao/self-eval/runs` path" — that HTTP endpoint does
-  **not** exist today; `benchmarks.py` states there is no inline `POST /runs`,
-  and the baseline run is the Celery task.)
-- **No web UI yet** (Self-Eval web UI, Task 21).
+- **Baseline establishment/refresh is worker-executed.** The run is the
+  `forge.self_eval.run` Celery task; `POST /ao/self-eval/runs` is only a thin
+  admin trigger that enqueues it (there is still no inline run in any request
+  path — `benchmarks.py`'s "no inline `POST /runs`" note stands for the
+  community-suite router).
+- **Web UI**: the Self-Eval Gate settings panel
+  (`apps/web/src/components/self-eval/self-eval-panel.tsx`, rendered on
+  Settings -> "Models & effort" beneath the AO config it guards) shows the
+  private suite, the frozen baseline (rate + recorded-at), the last scoring
+  run, the derived gate posture, and a "Run self-eval" action over
+  `POST /ao/self-eval/runs`. The Phase-A limitation above is stated inline in
+  the panel — a no-baseline workspace is told plainly that the gate cannot
+  block until a baseline exists. Phase B (inline evaluation of the proposed
+  config at the API layer) remains out of scope.

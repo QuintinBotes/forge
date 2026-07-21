@@ -2317,6 +2317,49 @@ export interface RoutingPreviewResponse {
   auto_route_enabled: boolean;
 }
 
+// --- Self-Eval Gate (trust layer, /ao/self-eval/*) ------------------------- //
+
+/** The workspace's private Self-Eval suite (case content is never exposed). */
+export interface SelfEvalSuiteOut {
+  id: string;
+  slug: string;
+  version: string;
+  title: string;
+  task_count: number;
+  repo_id: string | null;
+  published: boolean;
+}
+
+/** The frozen baseline the Self-Eval Gate blocks regressions against. */
+export interface SelfEvalBaselineOut {
+  benchmark_suite_id: string;
+  baseline_rate: number;
+  resolved: number;
+  total: number;
+  /** When the baseline row was last minted/refreshed by a scoring run. */
+  recorded_at: string;
+}
+
+/**
+ * Body for `GET /ao/self-eval/status` — raw facts, no derived verdicts.
+ * `suite`/`baseline` are `null` on cold start; `enforced` mirrors the
+ * `self_eval_enforce` app setting. The UI derives gate status from these.
+ */
+export interface SelfEvalStatusOut {
+  workspace_id: string;
+  enforced: boolean;
+  suite: SelfEvalSuiteOut | null;
+  baseline: SelfEvalBaselineOut | null;
+}
+
+/** Body for `POST /ao/self-eval/runs` (202): the run is queued, not done. */
+export interface SelfEvalRunAccepted {
+  status: "queued";
+  task: string;
+  workspace_id: string;
+  benchmark_suite_id: string;
+}
+
 // --- Public benchmark leaderboard (F35 /public router) --------------------- //
 // Payload-free, unauthenticated projections: no submitter contact, raw config,
 // or raw payloads ever appear on these shapes (mirrors the API's `Public*`

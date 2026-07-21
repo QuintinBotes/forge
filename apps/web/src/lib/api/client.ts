@@ -98,6 +98,8 @@ import type {
   RoutingPreviewRequest,
   RoutingPreviewResponse,
   RunTrace,
+  SelfEvalRunAccepted,
+  SelfEvalStatusOut,
   ServiceInfo,
   Team,
   TeamInput,
@@ -806,6 +808,22 @@ export class ForgeApiClient {
     return this.request<RoutingPreviewResponse>("/ao/routing-preview", {
       method: "POST",
       body,
+    });
+  }
+
+  /** Self-Eval Gate facts: enforcement flag, private suite, recorded baseline. */
+  getSelfEvalStatus(): Promise<SelfEvalStatusOut> {
+    return this.request<SelfEvalStatusOut>("/ao/self-eval/status");
+  }
+
+  /**
+   * Enqueue the worker-owned `forge.self_eval.run` task for this workspace
+   * (admin, 202). The run itself is minutes-long and agent-driven — it scores
+   * the private suite and records the baseline; this call only queues it.
+   */
+  runSelfEval(): Promise<SelfEvalRunAccepted> {
+    return this.request<SelfEvalRunAccepted>("/ao/self-eval/runs", {
+      method: "POST",
     });
   }
 
