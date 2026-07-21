@@ -255,6 +255,74 @@ describe("SsoSettingsView", () => {
     );
   });
 
+  it("renders the SLO URL field disabled with a not-yet-supported hint, but still shows a previously saved value", async () => {
+    const client = makeClient({
+      getSsoConfig: vi.fn(() =>
+        Promise.resolve(
+          makeConfig({
+            idp: {
+              entity_id: "https://idp.acme.com/saml/metadata",
+              sso_url: "https://idp.acme.com/sso",
+              slo_url: "https://idp.acme.com/slo",
+              x509_certs: [
+                "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----",
+              ],
+              name_id_format:
+                "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+            },
+          }),
+        ),
+      ),
+    });
+    renderView(client);
+
+    const sloField = await screen.findByLabelText(/IdP SLO URL/i);
+    expect(sloField).toBeDisabled();
+    // Disabled != hidden: an admin who previously saved a value should still see it.
+    expect(sloField).toHaveValue("https://idp.acme.com/slo");
+    expect(
+      screen.getByText(/single logout is not yet supported/i),
+    ).toBeInTheDocument();
+    // House style bans "coming soon" phrasing everywhere in this view.
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the saved SLO URL in the save payload even though the field is disabled", async () => {
+    const client = makeClient({
+      getSsoConfig: vi.fn(() =>
+        Promise.resolve(
+          makeConfig({
+            idp: {
+              entity_id: "https://idp.acme.com/saml/metadata",
+              sso_url: "https://idp.acme.com/sso",
+              slo_url: "https://idp.acme.com/slo",
+              x509_certs: [
+                "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----",
+              ],
+              name_id_format:
+                "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+            },
+          }),
+        ),
+      ),
+    });
+    renderView(client);
+    await screen.findByLabelText(/IdP SLO URL/i);
+
+    fireEvent.click(screen.getByTestId("sso-save"));
+
+    await waitFor(() =>
+      expect(client.putSsoConfig).toHaveBeenCalledWith(
+        WORKSPACE,
+        expect.objectContaining({
+          idp: expect.objectContaining({
+            slo_url: "https://idp.acme.com/slo",
+          }),
+        }),
+      ),
+    );
+  });
+
   it("adds a login domain to the verified list", async () => {
     renderView(makeClient());
     const input = await screen.findByLabelText("Add domain");

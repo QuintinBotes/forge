@@ -583,13 +583,25 @@ export function SsoSettingsView({
                   className={cn(FIELD, "font-mono text-xs")}
                 />
               </Field>
-              <Field label="IdP SLO URL" hint="optional">
+              <Field label="IdP SLO URL" hint="not yet supported">
                 <input
                   value={form.idpSloUrl}
+                  disabled
+                  aria-describedby="idp-slo-help"
                   onChange={(e) => patch("idpSloUrl", e.target.value)}
                   placeholder="https://idp.example.com/slo"
-                  className={cn(FIELD, "font-mono text-xs")}
+                  className={cn(
+                    FIELD,
+                    "font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60",
+                  )}
                 />
+                <p
+                  id="idp-slo-help"
+                  className="text-xs text-muted-foreground"
+                >
+                  Single Logout is not yet supported. Forge keeps any saved
+                  value but can&apos;t yet act on it during sign-out.
+                </p>
               </Field>
             </div>
   
