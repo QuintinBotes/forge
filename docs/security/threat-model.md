@@ -89,7 +89,11 @@ registry client is **PT-07**. Pentest: SSRF via redirect + rebind (**PT-05**).
 | **R** | Replay | Slack timestamp window; providers' nonces where available. |
 
 **Residual:** replay window tuning per provider; pentest: signature-bypass and
-timing (**PT-06**).
+timing (**PT-06**). After signature verification, Slack interaction/command
+payloads carry no Forge tenant principal; approval-decide and run-status
+resolve tenancy via an `owner_of(id)` lookup, so object-UUID unguessability is
+the sole cross-tenant secrecy control on these surfaces (status/step-count
+exposure for runs; decide for approvals).
 
 ## S6 — Agent git-worktree sandbox (worker)
 

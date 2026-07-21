@@ -43,6 +43,9 @@ SIGNING_SECRET = "test-slack-signing-secret-0123456789abcdef"
 # across the full-suite run, where a nested tests/sso/conftest.py collides).
 WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000c6")
 USER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000d7")
+# A second, distinct workspace used only by the genuine cross-tenant test below —
+# never the authenticated test principal's own workspace (WS_ID).
+WS_ID_OTHER = uuid.UUID("00000000-0000-0000-0000-0000000000c7")
 
 
 def _principal() -> Principal:
@@ -349,8 +352,11 @@ def test_interaction_unrecognised_action_is_ignored_200(
 # --------------------------------------------------------------------------- #
 
 
-def _seeded_run_store(*, status: object | None = None, n_steps: int = 2) -> tuple[object, object]:
-    """A run store seeded with one WS_ID-owned run (mirrors test_agent_router)."""
+def _seeded_run_store(
+    *, status: object | None = None, n_steps: int = 2, workspace_id: uuid.UUID = WS_ID
+) -> tuple[object, object]:
+    """A run store seeded with one ``workspace_id``-owned run (defaults to
+    WS_ID; mirrors test_agent_router)."""
     from forge_api.routers.agent import AgentRunStore
     from forge_contracts import AgentRunResult, Step
     from forge_contracts.enums import RunStatus
@@ -361,7 +367,7 @@ def _seeded_run_store(*, status: object | None = None, n_steps: int = 2) -> tupl
         status=status if status is not None else RunStatus.SUCCEEDED,
         steps=[Step(index=i) for i in range(n_steps)],
     )
-    store.put(result, workspace_id=WS_ID)
+    store.put(result, workspace_id=workspace_id)
     return store, result
 
 
@@ -410,12 +416,16 @@ def test_status_command_unknown_run_returns_not_found(
     assert "succeeded" not in text  # never leaks another run's status
 
 
-def test_status_command_cross_tenant_run_is_not_found(
+def test_status_command_run_without_steps_omits_step_detail(
     authenticate_app: Callable[..., FastAPI],
 ) -> None:
-    """A run owned by another workspace resolves via owner_of but the scoped
-    get returns it consistently: still reachable read-only by id (unguessable
-    UUID), never fabricated. Guards the owner_of -> scoped-get round trip."""
+    """A run with zero recorded steps renders its status with no step-count
+    suffix: ``_run_status_body`` only appends ``(N steps)`` when the run
+    actually carries any. (Previously misnamed
+    ``test_status_command_cross_tenant_run_is_not_found`` — it seeded and read
+    back a single workspace's own run, so it never exercised a second tenant;
+    see ``test_status_command_cross_tenant_run_is_found_by_uuid`` below for the
+    genuine cross-tenant case.)"""
     from forge_api.routers.agent import get_agent_store
 
     store, result = _seeded_run_store(n_steps=0)
@@ -430,6 +440,34 @@ def test_status_command_cross_tenant_run_is_not_found(
     text = json.dumps(resp.json())
     assert f"run {result.run_id}: succeeded" in text  # type: ignore[attr-defined]
     assert "steps" not in text  # no step detail when the run carries no steps
+
+
+def test_status_command_cross_tenant_run_is_found_by_uuid(
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    """The slash command carries no Forge tenant principal, so a run seeded
+    under a different workspace (WS_ID_OTHER — never the authenticated test
+    principal's own WS_ID) is still resolved and returned by UUID: ``owner_of``
+    finds the true owning workspace and ``get`` reads the run back through
+    that workspace's own scope, regardless of who is asking. This is the
+    accepted residual posture recorded in the threat model
+    (docs/security/threat-model.md, S5): after signature verification,
+    object-UUID unguessability — not tenant matching — is the sole
+    cross-tenant secrecy control on this surface."""
+    from forge_api.routers.agent import get_agent_store
+
+    store, result = _seeded_run_store(n_steps=1, workspace_id=WS_ID_OTHER)
+    app = _build_app(authenticate_app)
+    app.dependency_overrides[get_agent_store] = lambda: store
+    body = _status_command(f"status {result.run_id}")  # type: ignore[attr-defined]
+    with TestClient(app) as c:
+        resp = c.post(
+            "/integration/slack/commands", content=body, headers=_signed(SIGNING_SECRET, body)
+        )
+    assert resp.status_code == 200, resp.text
+    text = json.dumps(resp.json())
+    assert f"run {result.run_id}: succeeded" in text  # type: ignore[attr-defined]
+    assert "no run" not in text.lower()  # genuinely found, not the not-found copy
 
 
 def test_status_command_malformed_id_returns_not_found(
