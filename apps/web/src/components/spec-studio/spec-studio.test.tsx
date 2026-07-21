@@ -250,6 +250,37 @@ describe("SpecStudio", () => {
     expect(screen.getByTestId("read-status")).toHaveTextContent("Draft");
   });
 
+  it("clears a stale rejection error once a later Approve succeeds (no unclearable alert)", async () => {
+    const client = makeClient({
+      rejectSpec: vi.fn(() => Promise.reject(new Error("spec engine unavailable"))),
+      approveSpec: vi.fn(() =>
+        Promise.resolve({ ...manifest, status: "approved" } satisfies SpecManifest),
+      ),
+    });
+    renderStudio(client);
+    await screen.findByTestId("guided-mode");
+
+    fireEvent.click(screen.getByTestId("studio-mode-read"));
+    await screen.findByTestId("read-mode");
+
+    // Reject fails first — its mutation is left in an error state.
+    fireEvent.click(screen.getByTestId("decision-reject"));
+    fireEvent.change(
+      screen.getByTestId("reason-composer").querySelector("textarea") as HTMLTextAreaElement,
+      { target: { value: "nope" } },
+    );
+    fireEvent.click(screen.getByTestId("confirm-decision"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("spec engine unavailable");
+
+    // Approve then succeeds. A `rejectSpec` mutation only clears `isError` when
+    // IT is re-fired, so a naive "priority ternary over all three mutations"
+    // would keep showing the stale reject error forever.
+    fireEvent.click(screen.getByTestId("decision-approve"));
+    await waitFor(() => expect(client.approveSpec).toHaveBeenCalledWith("SPEC-1"));
+
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
   it("disables the YAML save button and surfaces errors for an invalid manifest", async () => {
     renderStudio(makeClient());
     await screen.findByTestId("guided-mode");

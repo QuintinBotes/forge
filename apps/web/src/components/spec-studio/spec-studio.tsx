@@ -128,6 +128,13 @@ export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioPro
 
   const reviewPending =
     approveSpec.isPending || rejectSpec.isPending || requestChanges.isPending;
+  // A priority ternary over three independent mutations would be unsafe on
+  // its own: react-query keeps `isError` set on a mutation until IT is
+  // re-fired, so an old failure could otherwise linger in `reviewError`
+  // after a *different* review decision has since succeeded. Safe here only
+  // because each `onApprove`/`onReject`/`onRequestChanges` handler below
+  // resets its siblings immediately before mutating, so at most one of these
+  // three can be `isError` at a time.
   const reviewError = approveSpec.isError
     ? errorMessage(approveSpec.error)
     : rejectSpec.isError
@@ -296,24 +303,35 @@ export function SpecStudio({ specId, client = apiClient, collab }: SpecStudioPro
           {mode === "read" ? (
             <ReadMode
               spec={manifest}
-              onApprove={() =>
+              onApprove={() => {
+                // Clear the siblings' settled state *before* firing this
+                // mutation: a mutation keeps `isError`/`isSuccess` until IT is
+                // re-fired, so without this a stale error from a previous
+                // reject/request-changes attempt would linger in `reviewError`
+                // forever, even after this decision succeeds.
+                rejectSpec.reset();
+                requestChanges.reset();
                 approveSpec.mutate(
                   { specId },
                   { onSuccess: () => toast.success("Spec approved") },
-                )
-              }
-              onReject={(note) =>
+                );
+              }}
+              onReject={(note) => {
+                approveSpec.reset();
+                requestChanges.reset();
                 rejectSpec.mutate(
                   { specId, note },
                   { onSuccess: () => toast.success("Spec rejected") },
-                )
-              }
-              onRequestChanges={(note) =>
+                );
+              }}
+              onRequestChanges={(note) => {
+                approveSpec.reset();
+                rejectSpec.reset();
                 requestChanges.mutate(
                   { specId, note },
                   { onSuccess: () => toast.success("Changes requested") },
-                )
-              }
+                );
+              }}
               pending={reviewPending}
               errorMessage={reviewError}
             />
