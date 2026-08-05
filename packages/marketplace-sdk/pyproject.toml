@@ -9,7 +9,7 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "forge-skill",
-    "cryptography>=43",
+    "cryptography>=50.0.0",
     "pydantic>=2.7",
     "pyyaml>=6.0",
 ]
