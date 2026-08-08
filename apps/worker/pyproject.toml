@@ -24,7 +24,7 @@ dependencies = [
     # F31 — deployment gates: drive promotions/health/rollback on the worker.
     "forge-deploy",
     "celery>=5.3",
-    "redis>=5.0",
+    "redis>=8.1.0",
     "forge-approval",
     # F41 — Self-Eval Gate: mint hidden regression cases into private suites and
     # re-freeze their manifests (forge_eval.mint + benchmark.manifest.freeze);
