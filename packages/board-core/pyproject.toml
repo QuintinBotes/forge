@@ -12,7 +12,7 @@ dependencies = [
     "forge-policy",
     "forge-skill",
     "forge-workflow",
-    "sqlalchemy>=2.0",
+    "sqlalchemy>=2.0.52",
 ]
 
 [build-system]

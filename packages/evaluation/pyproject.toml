@@ -19,7 +19,7 @@ dependencies = [
 # The learned local embedder for the honest real-corpus eval (HARD-04). Optional
 # so the base package and default test suite never require torch. uv lock owned
 # by HARD-14.
-eval = ["sentence-transformers>=3.0"]
+eval = ["sentence-transformers>=5.7.0"]
 
 [project.scripts]
 # HARD-12: the automated RELEASE_READINESS meta-gate. Runs/inspects every spec
