@@ -8,7 +8,7 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
-    "sqlalchemy>=2.0",
+    "sqlalchemy>=2.0.52",
     "alembic>=1.13",
     "pgvector>=0.5.0",
     "psycopg[binary]>=3.3.4",

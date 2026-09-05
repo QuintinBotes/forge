@@ -9,7 +9,7 @@ authors = [{ name = "The Forge Authors" }]
 dependencies = [
     "forge-contracts",
     "forge-db",
-    "sqlalchemy>=2.0",
+    "sqlalchemy>=2.0.52",
     "pyyaml>=6.0",
     # F25 — Temporal durable workflow engine (V2). Pinned exactly: the Workflow
     # Update API + time-skipping WorkflowEnvironment are version-sensitive.

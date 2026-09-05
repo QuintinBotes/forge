@@ -7,7 +7,7 @@ requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
 authors = [{ name = "The Forge Authors" }]
 dependencies = [
-    "pydantic>=2.7,<3",
+    "pydantic>=2.13.5,<3",
 ]
 
 [build-system]
