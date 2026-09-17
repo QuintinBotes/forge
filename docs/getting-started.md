@@ -127,7 +127,7 @@ example in the repo:
 # examples/specs/SPEC-42-rate-limiting/manifest.yaml (excerpt)
 id: SPEC-42
 name: API rate limiting
-status: clarifying          # -> approved once open_questions are resolved
+status: clarifying          # authored here; set by /clarify, not inferred
 requirements:
   - id: R1
     text: Apply per-API-key request rate limiting on all public endpoints
@@ -142,10 +142,21 @@ execution_mode: single_agent
 skill_profile: backend-tdd
 ```
 
-While a spec has unresolved `open_questions` its status stays `clarifying`, and
-the spec engine's **implementation gate blocks any run** — Forge will not let an
-agent execute an ambiguous spec. Resolve the questions and set `status:
-approved` to unblock it. The
+A spec starts at `draft`, and the spec engine's **implementation gate blocks any
+run** until it reaches `approved` — Forge will not let an agent execute a spec
+nobody has signed off. The gate names the status it refused, so a blocked run
+tells you exactly why:
+
+```
+409  spec "SPEC-1" is "draft"; an approved spec is required before task
+     generation or implementation (allowed: ["approved", "implementing", "validated"])
+```
+
+The statuses are set by **explicit transitions**, not inferred from the
+document's contents: `POST /spec/specs/{id}/clarify` moves a spec to
+`clarifying`, and `POST /spec/specs/{id}/approve` to `approved`. Unresolved
+`open_questions` do **not** move a spec to `clarifying` on their own — a spec
+with open questions sits at `draft`, which the gate blocks just the same. The
 **[Specs dashboard](http://localhost:8080/specs)** shows each spec's validation
 state.
 

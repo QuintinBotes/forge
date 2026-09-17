@@ -121,6 +121,7 @@ def test_the_default_never_reaches_across_workspaces(
     with pytest.raises(NoProjectError):
         svc.create_task(TaskDTO(title="Nowhere to put this"))
 
+
 # --- every project-scoped entity, not just tasks (issue #102) -------------- #
 
 

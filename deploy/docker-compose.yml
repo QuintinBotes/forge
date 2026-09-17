@@ -37,6 +37,10 @@ x-persistence-env: &persistence-env
   FORGE_POLICY_AUDIT_BACKEND: ${FORGE_POLICY_AUDIT_BACKEND:-db}
   FORGE_PROJECTION_BACKEND: ${FORGE_PROJECTION_BACKEND:-db}
   FORGE_SECRET_BACKEND: ${FORGE_SECRET_BACKEND:-db}
+  # The spec engine's on-disk store. Without it `spec_root` is the relative
+  # path `specs` on each container's own writable layer: specs do not survive
+  # a redeploy, and the API and worker cannot see each other's.
+  FORGE_SPEC_ROOT: /srv/forge/specs
 
 services:
   # --------------------------------------------------------------------- #
@@ -193,6 +197,8 @@ services:
       # env value. The dir (deploy/secrets/) is tracked only via its README; the
       # .pem is operator-provided + gitignored. Absent key -> routes fail closed.
       - ./secrets:/run/secrets:ro
+      # Spec-engine store, shared with the worker so both see the same specs.
+      - forge-specs:/srv/forge/specs
     depends_on:
       db:
         condition: service_healthy
@@ -306,6 +312,8 @@ services:
       - forge_repos:/srv/forge/worktrees
       # HARD-01: read-only GitHub App private key mount (see the api service).
       - ./secrets:/run/secrets:ro
+      # Spec-engine store, shared with the worker so both see the same specs.
+      - forge-specs:/srv/forge/specs
     depends_on:
       db:
         condition: service_healthy
@@ -359,6 +367,11 @@ services:
       # Per-connection token is resolved from the vault (secret://mcp/<slug>);
       # MCP_TOKEN is a dev/integration fallback only. Never commit a real value.
       MCP_TOKEN: ${MCP_TOKEN:-}
+    volumes:
+      # Spec-engine store, shared with api + worker (the gateway resolves the
+      # same FORGE_SPEC_ROOT, so give it the same documents rather than an
+      # empty directory that silently answers "no such spec").
+      - forge-specs:/srv/forge/specs
     depends_on:
       db:
         condition: service_healthy
@@ -942,6 +955,10 @@ volumes:
   caddy-config:
   # Worktrees, mounted by the worker and (subpath) by sandbox containers.
   forge_repos:
+  # Spec-engine documents. Shared by api + worker: the engine is filesystem
+  # backed, so without a volume each container keeps its own copy and loses
+  # every spec on redeploy.
+  forge-specs:
   # HARD-10 observability stateful stores.
   prometheus-data:
   grafana-data:

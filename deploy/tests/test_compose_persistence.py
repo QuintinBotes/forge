@@ -127,3 +127,50 @@ def test_the_edge_proxies_the_realtime_sockets(caddyfile: str) -> None:
     text = (DEPLOY / "caddy" / caddyfile).read_text(encoding="utf-8")
     assert "@realtime path /ws /ws/*" in text
     assert "handle @realtime" in text
+
+
+# --- the spec engine's store is durable and shared (issue #110) ------------ #
+
+#: Services that resolve ``FORGE_SPEC_ROOT`` and must see the same documents.
+SPEC_ENGINE_SERVICES = ("api", "worker", "mcp-gateway")
+
+
+@pytest.mark.parametrize("path", [PROD, DEV], ids=["production", "dev"])
+@pytest.mark.parametrize("service", SPEC_ENGINE_SERVICES)
+def test_the_spec_store_is_on_a_named_volume(path: Path, service: str) -> None:
+    """The spec engine is filesystem-backed, so the filesystem has to survive.
+
+    `spec_root` defaults to the relative path `specs`, which lands on the
+    container's own writable layer: every spec is destroyed by a rebuild, the
+    key allocator restarts at 1 and hands back a key already in use, and the
+    worker cannot see a spec the API wrote.
+    """
+    svc = _compose(path)["services"][service]
+    env = svc.get("environment") or {}
+    assert env.get("FORGE_SPEC_ROOT") == "/srv/forge/specs", (
+        f"{service} does not point the spec engine at the shared volume"
+    )
+
+    mounts = [v if isinstance(v, str) else v.get("source", "") for v in (svc.get("volumes") or [])]
+    assert any("forge-specs:/srv/forge/specs" in m for m in mounts), (
+        f"{service} does not mount the spec volume, so its specs are ephemeral"
+    )
+
+
+@pytest.mark.parametrize("path", [PROD, DEV], ids=["production", "dev"])
+def test_the_spec_volume_is_declared(path: Path) -> None:
+    assert "forge-specs" in (_compose(path).get("volumes") or {})
+
+
+@pytest.mark.parametrize("dockerfile", ["api", "worker", "mcp-gateway"])
+def test_the_image_seeds_the_spec_dir_owned_by_the_runtime_user(dockerfile: str) -> None:
+    """A volume mounted onto a path absent from the image is created root-owned.
+
+    These images run as `forge` (1000:1000), so the directory has to exist and
+    be owned before the mount, or the engine cannot write a single spec.
+    """
+    text = (DEPLOY / "docker" / f"{dockerfile}.Dockerfile").read_text(encoding="utf-8")
+    assert "mkdir -p /srv/forge/specs" in text
+    assert "chown -R forge:forge /srv/forge" in text
+    # The chown must precede `USER forge`, or it cannot chown at all.
+    assert text.index("chown -R forge:forge /srv/forge") < text.index("USER forge")

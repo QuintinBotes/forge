@@ -21,6 +21,7 @@ before the spec is approved) -> 409.
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -30,7 +31,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError
@@ -270,6 +271,52 @@ class TextContent(BaseModel):
     content: str
 
 
+async def read_document_body(request: Request) -> str:
+    """The document to write, from either a raw body or the JSON wrapper.
+
+    The matching GET returns the document as ``text/plain``, so the obvious
+    thing — pipe a GET into a PUT — has to work:
+
+        curl .../manifest > manifest.yaml
+        curl -X PUT -H 'Content-Type: text/plain' --data-binary @manifest.yaml .../manifest
+
+    It previously did not: the PUT accepted only ``{"content": "<document>"}``,
+    so round-tripping needed a JSON-wrapping step in between. Any non-JSON
+    content type is now taken as the document itself; ``application/json`` keeps
+    the wrapper for clients that prefer it.
+    """
+    raw = await request.body()
+    media_type = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+
+    if media_type == "application/json":
+        try:
+            payload = json.loads(raw or b"{}")
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=[{"msg": f"body is not valid JSON: {exc}", "type": "json_invalid"}],
+            ) from exc
+        try:
+            return TextContent.model_validate(payload).content
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=jsonable_encoder(exc.errors()),
+            ) from exc
+
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=[{"msg": "body must be UTF-8 text", "type": "encoding_error"}],
+        ) from exc
+
+
+#: A spec document supplied as a raw body or as ``{"content": ...}``.
+DocumentBody = Annotated[str, Depends(read_document_body)]
+
+
 class DraftSpecRequest(BaseModel):
     """Body for ``POST /spec/draft`` (BYOK AI spec drafting; draft-only)."""
 
@@ -359,7 +406,7 @@ def read_spec_markdown(engine: EngineDep, spec_id: SpecRef) -> PlainTextResponse
 def write_spec_markdown(
     engine: EngineDep,
     spec_id: SpecRef,
-    body: TextContent,
+    body: DocumentBody,
     db: DbSession,
     principal: Annotated[Principal, Depends(get_current_principal)],
 ) -> SpecManifest:
@@ -371,7 +418,7 @@ def write_spec_markdown(
     """
     with _spec_errors():
         engine.read_manifest(spec_id)
-        updated = engine.save_spec_md(body.content)
+        updated = engine.save_spec_md(body)
     _record_version(engine, db, principal, updated)
     return updated
 
@@ -392,7 +439,7 @@ def read_spec_manifest_yaml(engine: EngineDep, spec_id: SpecRef) -> PlainTextRes
 def write_spec_manifest_yaml(
     engine: EngineDep,
     spec_id: SpecRef,
-    body: TextContent,
+    body: DocumentBody,
     db: DbSession,
     principal: Annotated[Principal, Depends(get_current_principal)],
 ) -> SpecManifest:
@@ -404,7 +451,7 @@ def write_spec_manifest_yaml(
     semantics). Records a new version on success.
     """
     with _spec_errors():
-        updated = engine.save_manifest_yaml(body.content)
+        updated = engine.save_manifest_yaml(body)
     _record_version(engine, db, principal, updated)
     return updated
 

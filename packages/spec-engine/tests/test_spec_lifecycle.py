@@ -69,9 +69,12 @@ def test_spec_create_returns_draft_manifest(engine) -> None:
     assert manifest.status is SpecStatus.DRAFT
     assert manifest.id.startswith("SPEC-")
     assert [r.id for r in manifest.requirements] == ["R1", "R2"]
-    # An acceptance criterion is auto-derived per requirement (verifiable spec).
-    assert {a.id for a in manifest.acceptance_criteria}
-    assert all(a.req_refs for a in manifest.acceptance_criteria)
+    # No acceptance criteria are manufactured. One derived per requirement read
+    # "Implementation satisfies R1: <R1 verbatim>" — it restated the obligation
+    # instead of defining evidence for it, so it could not fail, while a
+    # dashboard counting 2/2 present reported the spec as well specified. An
+    # empty list the author must fill is the honest state.
+    assert manifest.acceptance_criteria == []
 
 
 def test_spec_create_writes_spec_md_and_manifest(engine) -> None:

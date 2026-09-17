@@ -421,3 +421,46 @@ def test_require_role_shim_maps_to_permission(factory: sessionmaker[Session]) ->
         svc = AuthzService(s)
         dep_admin(viewer_ctx, svc)
     assert exc.value.status_code == 403
+
+
+# --- GET /projects (issue #104) -------------------------------------------- #
+
+
+def test_projects_can_be_listed(factory: sessionmaker[Session]) -> None:
+    """`project_id` is required to create an epic and had no API source.
+
+    The only way to obtain one was reading the `project` table directly.
+    """
+    admin = _client(factory, _principal(ADMIN, UserRole.ADMIN))
+    resp = admin.get("/projects")
+
+    assert resp.status_code == 200, resp.text
+    by_key = {p["key"]: p for p in resp.json()}
+    assert by_key["CORE"]["id"] == str(CORE)
+    assert by_key["CORE"]["name"] == "Core"
+
+
+def test_the_listing_hides_a_project_the_caller_cannot_read(
+    factory: sessionmaker[Session],
+) -> None:
+    """A listing must not leak what a direct read 404s on."""
+    _seed_project_team_access(factory)
+    outsider = _client(factory, _principal(OUTSIDER, UserRole.VIEWER))
+
+    keys = {p["key"] for p in outsider.get("/projects").json()}
+
+    assert "CORE" in keys
+    assert "SECRET" not in keys
+    # Consistent with the single-project read.
+    assert outsider.get(f"/projects/{SECRET}/access").status_code == 404
+
+
+def test_the_listing_shows_a_restricted_project_to_its_team(
+    factory: sessionmaker[Session],
+) -> None:
+    _seed_project_team_access(factory)
+    be_member = _client(factory, _principal(MEMBER, UserRole.MEMBER))
+
+    keys = {p["key"] for p in be_member.get("/projects").json()}
+
+    assert {"CORE", "SECRET"} <= keys
