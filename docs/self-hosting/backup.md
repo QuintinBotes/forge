@@ -1,13 +1,21 @@
 # Backups
 
-Forge keeps durable state in three places, and a complete backup must capture
-all three together:
+Forge keeps durable state in four places, and a complete backup must capture
+all four together:
 
 | State | Where it lives | What you lose without it |
 |---|---|---|
-| Relational data | Postgres (`db` service, `db-data` volume) | Boards, specs, runs, audit log, users |
+| Relational data | Postgres (`db` service, `db-data` volume) | Boards, runs, audit log, users, spec version history |
+| Spec documents | The `forge-specs` volume (`FORGE_SPEC_ROOT`, shared by `api`/`worker`/`mcp-gateway`) | Every live spec |
 | Artifacts | MinIO (`minio` service, `minio-data` volume) | Run artifacts, logs, spec snapshots |
 | Secrets | `.env` in the repo root + the BYOK vault rows in Postgres | The keys needed to decrypt the vault |
+
+**Spec documents are a separate store, not a copy of the database.** The spec
+engine is filesystem backed. Postgres holds each spec's *version history* in
+`spec_version`, but the live document — what `GET /spec/specs/{id}` returns and
+what the implementation gate reads before allowing a run — is a file on the
+`forge-specs` volume. A Postgres-and-MinIO backup restores a stack whose specs
+all 404, and whose key allocator starts again at `SPEC-1`.
 
 The BYOK secrets vault is encrypted at rest using `SECRET_KEY` from `.env`. A
 Postgres dump therefore contains only ciphertext: **a database backup is
@@ -28,6 +36,8 @@ It writes a timestamped directory `./backups/<UTC-timestamp>/` containing:
 
 - `postgres.dump` — a compressed custom-format dump (`pg_dump -Fc`).
 - `minio/` — a mirror of the artifact bucket (`forge-artifacts` by default).
+- `specs/` — the spec engine's documents, copied out of the `forge-specs`
+  volume (`FORGE_SPEC_ROOT`, `/srv/forge/specs` by default).
 
 The script reads `POSTGRES_USER`, `POSTGRES_DB`, and `MINIO_BUCKET` from the
 environment and falls back to the defaults in

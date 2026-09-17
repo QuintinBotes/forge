@@ -22,6 +22,7 @@ import pytest
 
 from forge_contracts import (
     AcceptanceCriterion,
+    Constraint,
     Requirement,
     SpecManifest,
     SpecStatus,
@@ -55,7 +56,7 @@ def _manifest(spec_id: str = "SPEC-1", name: str = "Customer endpoint") -> SpecM
         acceptance_criteria=[
             AcceptanceCriterion(id="A1", req_refs=["R1"], text="cursor + limit params"),
         ],
-        constraints=["No breaking changes before v2"],
+        constraints=[Constraint(id="C1", text="No breaking changes before v2")],
     )
 
 
@@ -92,11 +93,21 @@ def test_edit_via_spec_md_updates_manifest_yaml(engine) -> None:
     engine.save_spec_md(render_spec_md(manifest))
     spec_id = spec_id_for_key(manifest.id)
 
-    edited = manifest.model_copy(update={"constraints": ["Edited: P99 < 200ms", "and via md"]})
+    edited = manifest.model_copy(
+        update={
+            "constraints": [
+                Constraint(id="C1", text="Edited: P99 < 200ms"),
+                Constraint(id="C2", text="and via md"),
+            ]
+        }
+    )
     engine.save_spec_md(render_spec_md(edited))
 
     reloaded = engine.read_manifest(spec_id)
-    assert reloaded.constraints == ["Edited: P99 < 200ms", "and via md"]
+    assert [(c.id, c.text) for c in reloaded.constraints] == [
+        ("C1", "Edited: P99 < 200ms"),
+        ("C2", "and via md"),
+    ]
     # The machine format was re-rendered to match the prose edit.
     assert _both_files_agree(engine, spec_id) == edited
 

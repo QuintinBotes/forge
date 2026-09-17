@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, select
 
@@ -210,7 +210,7 @@ class SqlAlchemyBoardService:
             row = Epic(
                 id=uuid.uuid4(),
                 workspace_id=self._ws,
-                project_id=data.project_id,
+                project_id=self._resolve_project_id(session, data.project_id),
                 key=self._next_key(session, Epic, "EPIC"),
                 title=data.title,
                 description=data.description,
@@ -231,8 +231,8 @@ class SqlAlchemyBoardService:
     def update_epic(self, epic_id: uuid.UUID, data: EpicDTO) -> EpicDTO:
         with self._sf() as session:
             row = self._get(session, Epic, epic_id, "epic")
-            # Required FK; DTO id is loosely Optional (see _apply_task_fields).
-            row.project_id = cast(uuid.UUID, data.project_id)
+            # Required FK, loosely Optional on the DTO (see _resolve_project_id).
+            row.project_id = self._resolve_project_id(session, data.project_id)
             row.title = data.title
             row.description = data.description
             row.status = data.status
@@ -284,13 +284,20 @@ class SqlAlchemyBoardService:
             raise NoProjectError(self._ws)
         return project_id
 
+    def _resolve_project_id(self, session: Session, project_id: uuid.UUID | None) -> uuid.UUID:
+        """``project_id``, or the workspace default when the caller omitted one.
+
+        Every project-scoped entity (task, epic, sprint, milestone, incident)
+        declares ``project_id`` optional on its DTO and NOT NULL on its column.
+        Passing the ``None`` straight through turns an omitted field into an
+        IntegrityError surfacing as a bare HTTP 500 — which is what
+        ``POST /board/epics`` with only a title used to do.
+        """
+        return project_id if project_id is not None else self._default_project_id(session)
+
     def _apply_task_fields(self, row: Task, data: TaskDTO, session: Session) -> None:
-        # ``TaskDTO.project_id`` is loosely Optional, but ``task.project_id`` is a
-        # required FK (a task always belongs to a project). Fall back to the
-        # workspace default rather than letting the None reach the flush.
-        row.project_id = (
-            data.project_id if data.project_id is not None else self._default_project_id(session)
-        )
+        # Required FK, loosely Optional on the DTO (see _resolve_project_id).
+        row.project_id = self._resolve_project_id(session, data.project_id)
         row.epic_id = data.epic_id
         row.spec_id = data.spec_id
         row.sprint_id = data.sprint_id
@@ -446,7 +453,7 @@ class SqlAlchemyBoardService:
             row = Sprint(
                 id=uuid.uuid4(),
                 workspace_id=self._ws,
-                project_id=data.project_id,
+                project_id=self._resolve_project_id(session, data.project_id),
                 name=data.name,
                 goal=data.goal,
                 start_date=_naive(data.starts_at),
@@ -466,8 +473,8 @@ class SqlAlchemyBoardService:
     def update_sprint(self, sprint_id: uuid.UUID, data: SprintDTO) -> SprintDTO:
         with self._sf() as session:
             row = self._get(session, Sprint, sprint_id, "sprint")
-            # Required FK; DTO id is loosely Optional (see _apply_task_fields).
-            row.project_id = cast(uuid.UUID, data.project_id)
+            # Required FK, loosely Optional on the DTO (see _resolve_project_id).
+            row.project_id = self._resolve_project_id(session, data.project_id)
             row.name = data.name
             row.goal = data.goal
             row.start_date = _naive(data.starts_at)
@@ -518,7 +525,7 @@ class SqlAlchemyBoardService:
             row = Milestone(
                 id=uuid.uuid4(),
                 workspace_id=self._ws,
-                project_id=data.project_id,
+                project_id=self._resolve_project_id(session, data.project_id),
                 name=data.name,
                 description=data.description,
                 due_date=_naive(data.due_at),
@@ -536,8 +543,8 @@ class SqlAlchemyBoardService:
     def update_milestone(self, milestone_id: uuid.UUID, data: MilestoneDTO) -> MilestoneDTO:
         with self._sf() as session:
             row = self._get(session, Milestone, milestone_id, "milestone")
-            # Required FK; DTO id is loosely Optional (see _apply_task_fields).
-            row.project_id = cast(uuid.UUID, data.project_id)
+            # Required FK, loosely Optional on the DTO (see _resolve_project_id).
+            row.project_id = self._resolve_project_id(session, data.project_id)
             row.name = data.name
             row.description = data.description
             row.due_date = _naive(data.due_at)
@@ -590,7 +597,7 @@ class SqlAlchemyBoardService:
             row = Incident(
                 id=uuid.uuid4(),
                 workspace_id=self._ws,
-                project_id=data.project_id,
+                project_id=self._resolve_project_id(session, data.project_id),
                 key=self._next_key(session, Incident, "INC"),
                 title=data.title,
                 description=data.description,
@@ -610,8 +617,8 @@ class SqlAlchemyBoardService:
     def update_incident(self, incident_id: uuid.UUID, data: IncidentDTO) -> IncidentDTO:
         with self._sf() as session:
             row = self._get(session, Incident, incident_id, "incident")
-            # Required FK; DTO id is loosely Optional (see _apply_task_fields).
-            row.project_id = cast(uuid.UUID, data.project_id)
+            # Required FK, loosely Optional on the DTO (see _resolve_project_id).
+            row.project_id = self._resolve_project_id(session, data.project_id)
             row.title = data.title
             row.description = data.description
             row.severity = dbe.IncidentSeverity(data.severity.value)

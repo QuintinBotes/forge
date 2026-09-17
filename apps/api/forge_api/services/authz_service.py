@@ -174,6 +174,30 @@ class AuthzService:
     def get_project(self, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Project:
         return self._project(workspace_id, project_id)
 
+    def list_projects(self, ctx: PrincipalContext, workspace_id: uuid.UUID) -> list[Project]:
+        """Every project in ``workspace_id`` the caller may read, oldest first.
+
+        Filtered through the same resolver a single-project read uses, so an
+        invisible project is absent here exactly as it 404s there — a listing
+        must not become the side channel that leaks a project's existence.
+        """
+        rows = self.session.scalars(
+            select(Project)
+            .where(Project.workspace_id == workspace_id)
+            .order_by(Project.created_at.asc(), Project.id.asc())
+        ).all()
+        visible: list[Project] = []
+        for project in rows:
+            resource = ResourceRef(
+                workspace_id=workspace_id,
+                project_id=project.id,
+                team_id=project.owner_team_id,
+                visibility=ProjectVisibility(project.visibility),
+            )
+            if Permission.PROJECT_READ in self.resolve(ctx, resource).permissions:
+                visible.append(project)
+        return visible
+
     def project_resource(self, workspace_id: uuid.UUID, project_id: uuid.UUID) -> ResourceRef:
         project = self._project(workspace_id, project_id)
         return ResourceRef(

@@ -12,6 +12,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-deploy/docker-compose.yml}"
 SRC="${1:-}"
 POSTGRES_USER="${POSTGRES_USER:-forge}"
 POSTGRES_DB="${POSTGRES_DB:-forge}"
+FORGE_SPEC_ROOT="${FORGE_SPEC_ROOT:-/srv/forge/specs}"
 
 if [[ -z "${SRC}" || ! -d "${SRC}" ]]; then
 	echo "usage: $0 <backup_dir>" >&2
@@ -32,5 +33,16 @@ echo "==> Restoring Postgres from ${SRC}/postgres.dump"
 docker compose -f "${COMPOSE_FILE}" exec -T db \
 	pg_restore -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --clean --if-exists \
 	<"${SRC}/postgres.dump"
+
+# The spec engine is filesystem backed: Postgres carries the version history,
+# but the live document every read and the implementation gate go through is a
+# file. Restoring only the database leaves a stack whose specs all 404, and whose
+# key allocator starts over at SPEC-1 and reissues keys that are already in use.
+if [[ -d "${SRC}/specs" ]]; then
+	echo "==> Restoring spec documents to ${FORGE_SPEC_ROOT}"
+	docker compose -f "${COMPOSE_FILE}" cp "${SRC}/specs/." "api:${FORGE_SPEC_ROOT}"
+else
+	echo "==> No spec documents in ${SRC} (nothing to restore)"
+fi
 
 echo "OK: restore complete (MinIO artifacts in ${SRC}/minio must be re-uploaded with 'mc mirror')"

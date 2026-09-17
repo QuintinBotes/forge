@@ -27,6 +27,7 @@ import type {
   AcceptanceCriterion,
   ExecutionMode,
   OpenQuestion,
+  SpecConstraint,
   Requirement,
   SpecDashboard,
   SpecManifest,
@@ -66,7 +67,7 @@ export interface CreateSpecVariables {
    */
   acceptance_criteria?: AcceptanceCriterion[];
   open_questions?: OpenQuestion[];
-  constraints?: string[];
+  constraints?: Array<string | SpecConstraint>;
   decisions?: ADR[];
   execution_mode?: ExecutionMode;
   constitution_refs?: string[];

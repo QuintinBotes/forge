@@ -124,7 +124,8 @@ def test_import_loose_markdown_normalizes_sections() -> None:
     ]
     assert manifest.requirements[0].id == "R1"
     assert manifest.acceptance_criteria[0].req_refs == ["R1", "R2"]
-    assert manifest.constraints == ["Must respond within 200ms"]
+    # Bare strings in an imported document take positional ids (#107).
+    assert [(c.id, c.text) for c in manifest.constraints] == [("C1", "Must respond within 200ms")]
     assert manifest.open_questions[0].id == "Q1"
     # The normalized preview re-renders as valid, round-trippable spec.md.
     assert result.spec_md.startswith("---")
@@ -166,7 +167,8 @@ def test_import_loose_yaml_normalizes_alternate_keys() -> None:
     assert len(manifest.requirements) == 2
     assert manifest.requirements[0].id == "R1"
     assert manifest.acceptance_criteria[0].req_refs == ["R1", "R2"]
-    assert manifest.constraints == ["Must respond within 200ms"]
+    # Bare strings in an imported document take positional ids (#107).
+    assert [(c.id, c.text) for c in manifest.constraints] == [("C1", "Must respond within 200ms")]
 
 
 def test_import_loose_yaml_with_dict_items_extracts_text() -> None:
