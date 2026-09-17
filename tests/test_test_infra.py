@@ -121,9 +121,7 @@ def test_no_ambiguous_test_basename_collisions() -> None:
             by_module[_dotted_module(path)].append(path)
         for module, module_paths in sorted(by_module.items()):
             if len(module_paths) > 1:
-                rels = ", ".join(
-                    str(p.relative_to(root)) for p in sorted(module_paths)
-                )
+                rels = ", ".join(str(p.relative_to(root)) for p in sorted(module_paths))
                 collisions.append(f"  module {module!r} <- {rels}")
 
     assert not collisions, (

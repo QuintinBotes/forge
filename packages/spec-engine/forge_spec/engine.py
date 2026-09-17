@@ -35,14 +35,17 @@ from forge_contracts import (
 )
 from forge_contracts.dtos import ADR
 from forge_spec import manifest as manifest_io
-from forge_spec.errors import SpecNotFoundError, SpecReconcileWarning
+from forge_spec.errors import SpecKeyError, SpecNotFoundError, SpecReconcileWarning
 from forge_spec.gates import check_implementation_gate, check_review_gate
 from forge_spec.ids import (
+    DEFAULT_SPEC_PREFIX,
     constitution_id_for,
+    is_spec_key,
     spec_dirname,
     spec_id_for_key,
     spec_key,
     spec_number,
+    spec_prefix,
 )
 from forge_spec.markdown import parse_spec_md
 from forge_spec.tasks import generate_tasks
@@ -130,11 +133,25 @@ class FileSpecEngine:
     # ----------------------------------------------------------------- #
 
     def spec_create(
-        self, epic_id: uuid.UUID, name: str, requirements: list[Requirement] | None = None
+        self,
+        epic_id: uuid.UUID,
+        name: str,
+        requirements: list[Requirement] | None = None,
+        *,
+        key: str | None = None,
     ) -> SpecManifest:
-        """Create a draft spec for an epic and write its initial artifacts."""
+        """Create a draft spec for an epic and write its initial artifacts.
+
+        ``key`` lets the caller supply the identifier — ``MOD-893`` for a team
+        that already numbers work in their own tracker — instead of taking the
+        next Forge-allocated ``SPEC-<n>``. It must look like ``<PREFIX>-<n>``
+        (uppercase prefix) and must not already be in use; both are
+        :class:`SpecKeyError`. Omitted, Forge allocates the next ordinal **within
+        the default prefix**, so a workspace holding ``MOD-893`` still gets
+        ``SPEC-1`` for its first Forge-numbered spec.
+        """
         reqs = list(requirements) if requirements else []
-        key = spec_key(self._next_spec_number())
+        key = spec_key(self._next_spec_number()) if key is None else self._validate_new_key(key)
         acceptance = [
             self._default_acceptance(index, requirement)
             for index, requirement in enumerate(reqs, start=1)
@@ -523,10 +540,31 @@ class FileSpecEngine:
         checks = [CheckResult.model_validate(c) for c in entry.get("checks", [])]
         return checks, entry.get("coverage")
 
-    def _next_spec_number(self) -> int:
+    def _validate_new_key(self, key: str) -> str:
+        """Check a client-supplied spec key is well-formed and free, or raise."""
+        candidate = key.strip()
+        if not is_spec_key(candidate):
+            raise SpecKeyError(
+                f"{key!r} is not a valid spec key; expected <PREFIX>-<number> "
+                "with an uppercase prefix, e.g. 'SPEC-1' or 'MOD-893'"
+            )
+        if self._resolve_optional(spec_id_for_key(candidate)) is not None:
+            raise SpecKeyError(f"spec key {candidate!r} is already in use")
+        return candidate
+
+    def _next_spec_number(self, prefix: str = DEFAULT_SPEC_PREFIX) -> int:
+        """The next free ordinal within ``prefix``.
+
+        Numbering is per-prefix: a workspace that imported ``MOD-893`` from an
+        external tracker must not have that push Forge's own allocation to
+        ``SPEC-894``.
+        """
         highest = 0
         for spec_dir in self._iter_spec_dirs():
-            number = spec_number(self._load_dir_manifest(spec_dir).id)
+            existing = self._load_dir_manifest(spec_dir).id
+            if spec_prefix(existing) != prefix:
+                continue
+            number = spec_number(existing)
             if number is not None:
                 highest = max(highest, number)
         return highest + 1

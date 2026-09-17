@@ -128,9 +128,7 @@ def test_deployment_tasks_registered_with_celery() -> None:
 
 
 # ------------------------------------------------------------- task behaviour
-def _seed_requested_deployment(
-    factory: sessionmaker[Session], project_id: uuid.UUID
-) -> uuid.UUID:
+def _seed_requested_deployment(factory: sessionmaker[Session], project_id: uuid.UUID) -> uuid.UUID:
     """Persist a bare REQUESTED deployment (no advance) and return its id."""
     with factory() as s:
         repo = DeploymentRepository(s, workspace_id=WS_ID)

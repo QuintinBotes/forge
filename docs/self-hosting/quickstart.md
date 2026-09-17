@@ -69,8 +69,22 @@ docker compose -f deploy/docker-compose.yml exec api \
 curl -fsS http://localhost:8000/health
 ```
 
-A `200` response means the API is up. Open the web UI at `http://localhost:3000`
-(or `https://$DOMAIN` once Caddy has issued a certificate).
+A `200` response means the API is up. Open Forge at `https://$DOMAIN` — the
+Caddy edge, which serves the UI and `/api/*` from one origin. The web
+container's own port is an implementation detail; a browser sent there has no
+`/api` to talk to.
+
+Every route is authenticated and there is no password login yet, so you need an
+API key to get past the Connect screen. Mint one against the running stack:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec -e FORGE_SEED_ADMIN_KEY=1 api \
+  python -m forge_api.scripts.seed
+```
+
+The token is printed once. It is a full workspace admin credential and it lands
+in your shell history and the container log — treat it accordingly, and revoke
+it (`DELETE /auth/api-keys/{id}`) once you have minted per-person keys.
 
 ## Local development (from source)
 

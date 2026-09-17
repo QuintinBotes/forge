@@ -19,7 +19,7 @@ the hardening applied, and how to operate it. To get running quickly first, see
 |---|---|---|
 | `db` | `pgvector/pgvector:pg16` | Postgres with the pgvector extension |
 | `redis` | `redis:7.4-alpine` | Queue, cache, and session store |
-| `minio` | `minio/minio` | S3-compatible object storage for artifacts |
+| `minio` | `quay.io/minio/minio` | S3-compatible object storage for artifacts (quay.io is MinIO's public registry — the Docker Hub repo is no longer anonymously pullable) |
 | `api` | built from `deploy/docker/api.Dockerfile` | FastAPI application |
 | `worker` | built from `deploy/docker/worker.Dockerfile` | Celery worker (indexer, syncer, agent runner) |
 | `mcp-gateway` | built from `deploy/docker/mcp-gateway.Dockerfile` | MCP client manager |

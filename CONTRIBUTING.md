@@ -66,8 +66,16 @@ health:
 make dev        # docker compose -f deploy/docker-compose.dev.yml, migrate + seed + healthcheck
 ```
 
-- Web UI: <http://localhost:3000>
-- API + health check: <http://localhost:8000/health>
+- **Forge (the Caddy edge — use this):** <http://localhost:8080>
+- API health check: <http://localhost:8080/api/health>
+
+Caddy serves the UI and `/api/*` from one origin, so the browser needs no CORS
+and everything resolves. The web (3000) and API (8000) ports are published for
+debugging only — a browser pointed at 3000 has no `/api` to reach.
+
+`make dev` also prints a one-time **admin API key**; paste it into the UI's
+Connect dialog. Every API route is authenticated and there is no password login
+yet, so this is how you get in. `scripts/dev.sh seed` prints a fresh one.
 
 Useful stack commands:
 

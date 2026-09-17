@@ -10,6 +10,7 @@
 
 import { resolveApiBaseUrl, toAbsoluteApiBase } from "./api-url";
 import { deriveOnboardingProgress } from "./onboarding-progress";
+import { readApiToken } from "./session";
 import type {
   AgentRole,
   AoSettingsOut,
@@ -151,7 +152,15 @@ import type {
  */
 export const DEFAULT_API_BASE_URL = resolveApiBaseUrl();
 
-/** Default bearer token for the shared `apiClient` singleton (REST + WS auth). */
+/**
+ * Build-time fallback bearer token (REST + WS auth).
+ *
+ * This is the *last* resort. A token the operator pasted into the Connect
+ * dialog wins over it, because that one can be changed without rebuilding the
+ * image — which is the whole point: `NEXT_PUBLIC_API_TOKEN` is inlined at build
+ * time, so on a shipped image it is whatever the publisher baked in (usually
+ * nothing at all).
+ */
 export const DEFAULT_API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
 
 export class ApiError extends Error {
@@ -210,31 +219,45 @@ function buildUrl(
 
 export class ForgeApiClient {
   readonly baseUrl: string;
-  private readonly authToken?: string;
+  /** Explicit per-instance token, if the caller pinned one (tests, SSR). */
+  private readonly configuredToken?: string;
   private readonly fetchImpl: typeof fetch;
 
   constructor(config: ApiClientConfig = {}) {
     // Resolve fresh per instance (not the module-load `DEFAULT_API_BASE_URL`) so
     // the browser-constructed singleton derives the live same-origin base.
     this.baseUrl = config.baseUrl ?? resolveApiBaseUrl();
-    this.authToken = config.token ?? DEFAULT_API_TOKEN;
-    this.fetchImpl = config.fetch ?? globalThis.fetch;
+    this.configuredToken = config.token;
+    // Bind to the global. `fetch` is stored on the instance and invoked as
+    // `this.fetchImpl(...)`, which would otherwise call it with the client as
+    // its receiver — and a real browser rejects that with
+    // "TypeError: Failed to execute 'fetch' on 'Window': Illegal invocation",
+    // failing every request. jsdom's `fetch` does not enforce the receiver, so
+    // the unit suite cannot see this; `client-fetch-binding.test.ts` asserts the
+    // receiver directly instead.
+    this.fetchImpl = config.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
   /**
-   * The token this client authenticates with (per-instance override, else
-   * `NEXT_PUBLIC_API_TOKEN`). Other realtime transports (board WS, spec
-   * collab WS) key off this same value for their `?token=` query param, so
-   * REST and WebSocket auth never drift apart.
+   * The token this client authenticates with, resolved fresh on every read:
+   * an explicit per-instance override, else the key the operator stored via the
+   * Connect dialog, else the build-time `NEXT_PUBLIC_API_TOKEN`.
+   *
+   * Resolving per read rather than latching in the constructor is what lets a
+   * signed-in user appear without a page reload — the shared `apiClient` is a
+   * module singleton created once at import time, long before anyone has pasted
+   * a key. Other realtime transports (board WS, spec collab WS) key off this
+   * same getter for their `?token=` query param, so REST and WebSocket auth
+   * never drift apart.
    */
   get token(): string | undefined {
-    return this.authToken;
+    return this.configuredToken ?? readApiToken() ?? DEFAULT_API_TOKEN;
   }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const url = buildUrl(this.baseUrl, path, options.query);
     const headers: Record<string, string> = { Accept: "application/json" };
-    const token = options.token ?? this.authToken;
+    const token = options.token ?? this.token;
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -272,9 +295,14 @@ export class ForgeApiClient {
     return this.request<HealthResponse>("/health");
   }
 
-  /** The authenticated principal (used to resolve "assign to me"). */
-  me(): Promise<Principal> {
-    return this.request<Principal>("/auth/me");
+  /**
+   * The authenticated principal (used to resolve "assign to me").
+   *
+   * Takes an optional per-call token so the Connect dialog can verify a key
+   * *before* storing it — at that point the client has not been told about it.
+   */
+  me(options: Pick<RequestOptions, "token" | "signal"> = {}): Promise<Principal> {
+    return this.request<Principal>("/auth/me", options);
   }
 
   // --- Board: tasks ------------------------------------------------------- //

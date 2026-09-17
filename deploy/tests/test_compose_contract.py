@@ -247,9 +247,9 @@ def test_caddy_routes_realtime_websockets() -> None:
     assert "handle /ws {" in caddy, "missing bare /ws board-push route"
     assert "handle /ws/spec/* {" in caddy, "missing /ws/spec/* co-editing route"
     assert "api:8000" in _caddy_block(caddy, "handle /ws {"), "/ws must proxy to api:8000"
-    assert "api:8000" in _caddy_block(
-        caddy, "handle /ws/spec/* {"
-    ), "/ws/spec/* must proxy to api:8000"
+    assert "api:8000" in _caddy_block(caddy, "handle /ws/spec/* {"), (
+        "/ws/spec/* must proxy to api:8000"
+    )
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")

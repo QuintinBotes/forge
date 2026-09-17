@@ -225,9 +225,7 @@ def test_reject_spec_persists_status_and_note(client: TestClient) -> None:
     manifest = _create_spec(client)
     spec_uuid = spec_id_for_key(manifest["id"])
 
-    resp = client.post(
-        f"/spec/specs/{spec_uuid}/reject", json={"note": "Missing offline handling"}
-    )
+    resp = client.post(f"/spec/specs/{spec_uuid}/reject", json={"note": "Missing offline handling"})
 
     assert resp.status_code == 200, resp.text
     body = resp.json()

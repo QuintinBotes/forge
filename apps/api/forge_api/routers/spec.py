@@ -4,11 +4,19 @@ Covers the SDD lifecycle: constitution -> spec_create -> clarify -> plan ->
 approve -> tasks -> validate, plus manifest read/write.
 
 Handlers delegate to a process-wide filesystem-backed
-:class:`~forge_spec.FileSpecEngine` rooted at ``Settings.spec_root``. The
-``spec_id``/``task_id`` path params are the engine's deterministic uuids
-(``forge_spec.spec_id_for_key`` / ``task_id_for``). Errors map to HTTP: an
-unresolved spec/task uuid -> 404; a gate violation (e.g. generating tasks before
-the spec is approved) -> 409.
+:class:`~forge_spec.FileSpecEngine` rooted at ``Settings.spec_root``.
+
+``{spec_id}`` accepts **either** identifier a client has: the engine's
+deterministic uuid (``forge_spec.spec_id_for_key``) *or* the human key the
+create call returned (``SPEC-1``, ``MOD-893``). Creating a spec hands back the
+key, so requiring the uuid on reads meant a client could not use the identifier
+it had just been given without importing ``SPEC_NAMESPACE`` and reimplementing
+the uuid5 derivation. ``{task_id}`` remains a uuid (a task key is only unique
+within its spec, so it cannot address a task on its own).
+
+Errors map to HTTP: an unresolved spec/task id -> 404; an unusable spec key
+(malformed, or already taken) -> 409; a gate violation (e.g. generating tasks
+before the spec is approved) -> 409.
 """
 
 from __future__ import annotations
@@ -48,9 +56,11 @@ from forge_orchestration_policy import Tier
 from forge_spec import (
     FileSpecEngine,
     ManifestDiff,
+    SpecKeyError,
     SpecNotFoundError,
     diff_manifest,
     diff_markdown,
+    is_spec_key,
     spec_id_for_key,
 )
 
@@ -126,8 +136,44 @@ def _spec_errors() -> Iterator[None]:
         yield
     except SpecNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except SpecKeyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except SpecGateError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+def resolve_spec_ref(spec_id: str) -> uuid.UUID:
+    """Resolve a ``{spec_id}`` path segment to the engine's deterministic uuid.
+
+    Accepts either form a client can be holding:
+
+    * the uuid itself, as every other Forge path param takes; or
+    * the human key (``SPEC-1``, ``MOD-893``), which is what ``POST /spec/specs``
+      returns as the manifest's ``id`` — so the identifier the create call hands
+      back is directly usable on the read.
+
+    Resolution is pure derivation (``uuid5(SPEC_NAMESPACE, key)``), not a lookup:
+    a syntactically valid key for a spec that does not exist still resolves here
+    and 404s at the engine, which keeps "malformed identifier" (422) and "no such
+    spec" (404) as distinct answers.
+    """
+    try:
+        return uuid.UUID(spec_id)
+    except ValueError:
+        pass
+    if is_spec_key(spec_id):
+        return spec_id_for_key(spec_id)
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=(
+            f"{spec_id!r} is neither a spec uuid nor a spec key; expected a UUID "
+            "or <PREFIX>-<number> (e.g. 'SPEC-1')"
+        ),
+    )
+
+
+#: A ``{spec_id}`` path param, resolved from either the uuid or the human key.
+SpecRef = Annotated[uuid.UUID, Depends(resolve_spec_ref)]
 
 
 def _record_version(
@@ -170,6 +216,19 @@ class SpecCreateRequest(BaseModel):
     epic_id: uuid.UUID
     name: str
     requirements: list[Requirement] = Field(default_factory=list)
+    #: Optional client-supplied spec key (``MOD-893``). Omitted, Forge allocates
+    #: the next ``SPEC-<n>``. Supplying it lets a team whose work is already
+    #: numbered in another tracker keep that identifier as the spec id, instead
+    #: of carrying two schemes and mapping between them by hand.
+    key: str | None = Field(
+        default=None,
+        pattern=r"^[A-Z][A-Z0-9]*-\d+$",
+        examples=["MOD-893"],
+        description=(
+            "Spec key to create under, as <PREFIX>-<number>. Defaults to the "
+            "next Forge-allocated SPEC-<n>. 409 if already in use."
+        ),
+    )
 
 
 class TextContent(BaseModel):
@@ -221,14 +280,22 @@ def spec_create(
     db: DbSession,
     principal: Annotated[Principal, Depends(get_current_principal)],
 ) -> SpecManifest:
-    """Create a draft spec for an epic (recorded as version 1)."""
-    manifest = engine.spec_create(request.epic_id, request.name, request.requirements)
+    """Create a draft spec for an epic (recorded as version 1).
+
+    The returned manifest's ``id`` is the spec key, and that key addresses the
+    spec on every ``/spec/specs/{spec_id}`` route — so the identifier this call
+    hands back can be fed straight back in.
+    """
+    with _spec_errors():
+        manifest = engine.spec_create(
+            request.epic_id, request.name, request.requirements, key=request.key
+        )
     _record_version(engine, db, principal, manifest)
     return manifest
 
 
 @router.get("/specs/{spec_id}", response_model=SpecManifest, dependencies=[ReadGate])
-def read_manifest(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
+def read_manifest(engine: EngineDep, spec_id: SpecRef) -> SpecManifest:
     """Read a spec manifest by its deterministic uuid."""
     with _spec_errors():
         return engine.read_manifest(spec_id)
@@ -237,7 +304,7 @@ def read_manifest(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
 @router.put("/specs/{spec_id}", response_model=SpecManifest, dependencies=[WriteGate])
 def write_manifest(
     engine: EngineDep,
-    spec_id: uuid.UUID,
+    spec_id: SpecRef,
     manifest: SpecManifest,
     db: DbSession,
     principal: Annotated[Principal, Depends(get_current_principal)],
@@ -254,7 +321,7 @@ def write_manifest(
     dependencies=[ReadGate],
     response_class=PlainTextResponse,
 )
-def read_spec_markdown(engine: EngineDep, spec_id: uuid.UUID) -> PlainTextResponse:
+def read_spec_markdown(engine: EngineDep, spec_id: SpecRef) -> PlainTextResponse:
     """Read the spec's ``spec.md`` prose serialization (always kept in sync)."""
     with _spec_errors():
         text = engine.read_spec_md(spec_id)
@@ -264,7 +331,7 @@ def read_spec_markdown(engine: EngineDep, spec_id: uuid.UUID) -> PlainTextRespon
 @router.put("/specs/{spec_id}/markdown", response_model=SpecManifest, dependencies=[WriteGate])
 def write_spec_markdown(
     engine: EngineDep,
-    spec_id: uuid.UUID,
+    spec_id: SpecRef,
     body: TextContent,
     db: DbSession,
     principal: Annotated[Principal, Depends(get_current_principal)],
@@ -287,7 +354,7 @@ def write_spec_markdown(
     dependencies=[ReadGate],
     response_class=PlainTextResponse,
 )
-def read_spec_manifest_yaml(engine: EngineDep, spec_id: uuid.UUID) -> PlainTextResponse:
+def read_spec_manifest_yaml(engine: EngineDep, spec_id: SpecRef) -> PlainTextResponse:
     """Read the spec's ``manifest.yaml`` serialization (always kept in sync)."""
     with _spec_errors():
         text = engine.read_manifest_yaml(spec_id)
@@ -297,7 +364,7 @@ def read_spec_manifest_yaml(engine: EngineDep, spec_id: uuid.UUID) -> PlainTextR
 @router.put("/specs/{spec_id}/manifest", response_model=SpecManifest, dependencies=[WriteGate])
 def write_spec_manifest_yaml(
     engine: EngineDep,
-    spec_id: uuid.UUID,
+    spec_id: SpecRef,
     body: TextContent,
     db: DbSession,
     principal: Annotated[Principal, Depends(get_current_principal)],
@@ -329,21 +396,21 @@ def read_constitution(engine: EngineDep, project_id: uuid.UUID) -> Constitution:
 
 
 @router.post("/specs/{spec_id}/clarify", response_model=SpecManifest, dependencies=[WriteGate])
-def spec_clarify(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
+def spec_clarify(engine: EngineDep, spec_id: SpecRef) -> SpecManifest:
     """Run the clarification pass."""
     with _spec_errors():
         return engine.spec_clarify(spec_id)
 
 
 @router.post("/specs/{spec_id}/plan", response_model=SpecManifest, dependencies=[WriteGate])
-def spec_plan(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
+def spec_plan(engine: EngineDep, spec_id: SpecRef) -> SpecManifest:
     """Generate the technical plan + ADRs."""
     with _spec_errors():
         return engine.spec_plan(spec_id)
 
 
 @router.post("/specs/{spec_id}/approve", response_model=SpecManifest, dependencies=[WriteGate])
-def approve_spec(engine: EngineDep, spec_id: uuid.UUID) -> SpecManifest:
+def approve_spec(engine: EngineDep, spec_id: SpecRef) -> SpecManifest:
     """Approve a spec (the human gate); moves it to ``approved``."""
     with _spec_errors():
         return engine.approve_spec(spec_id)
@@ -376,7 +443,7 @@ def request_changes(
 
 
 @router.post("/specs/{spec_id}/tasks", response_model=list[TaskDTO], dependencies=[WriteGate])
-def spec_tasks(engine: EngineDep, spec_id: uuid.UUID) -> list[TaskDTO]:
+def spec_tasks(engine: EngineDep, spec_id: SpecRef) -> list[TaskDTO]:
     """Generate implementation tasks from an approved spec (gated)."""
     with _spec_errors():
         return engine.spec_tasks(spec_id)
@@ -448,7 +515,7 @@ def _version_summary(version: SpecVersion) -> SpecVersionSummary:
     dependencies=[ReadGate],
 )
 def list_spec_versions(
-    spec_id: uuid.UUID,
+    spec_id: SpecRef,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: DbSession,
 ) -> list[SpecVersionSummary]:
@@ -479,7 +546,7 @@ def _get_version_or_404(
     dependencies=[ReadGate],
 )
 def read_spec_version(
-    spec_id: uuid.UUID,
+    spec_id: SpecRef,
     version_number: int,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: DbSession,
@@ -500,7 +567,7 @@ def read_spec_version(
     dependencies=[ReadGate],
 )
 def diff_spec_versions(
-    spec_id: uuid.UUID,
+    spec_id: SpecRef,
     from_version: int,
     to_version: int,
     principal: Annotated[Principal, Depends(get_current_principal)],

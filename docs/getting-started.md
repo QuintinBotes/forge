@@ -53,6 +53,15 @@ To run agent work, also set your model provider:
 
 Never commit `.env`; it is git-ignored.
 
+> **Which env file the dev stack reads.** `make dev` runs Compose with
+> `--env-file deploy/.env.dev`, so the **root `.env` above is not read by the
+> local dev stack** — it configures a production/manual `docker compose -f
+> deploy/docker-compose.yml` run. Override a dev value in `deploy/.env.dev` or
+> your shell instead. Setting `POSTGRES_PASSWORD` only in the root `.env` is a
+> common way to end up with a database volume whose password no longer matches
+> what the stack passes, which fails as
+> `password authentication failed for user "forge"` during `migrate`.
+
 ## 2. Bring up the stack
 
 ```bash
@@ -63,15 +72,35 @@ make dev
 MinIO, the API, worker, MCP gateway, web UI, and the Caddy edge proxy — then runs
 migrations and seeds a demo workspace. When it reports healthy:
 
-- **Web UI:** <http://localhost:3000>
-- **API + health check:** <http://localhost:8000/health>
+- **Forge:** <http://localhost:8080>
+- **API health check:** <http://localhost:8080/api/health>
+
+Use **port 8080**. That is the Caddy edge, which serves the UI and `/api/*` from
+one origin — the browser makes no cross-origin request and everything resolves.
+The web container's own port (3000) and the API's (8000) are published for
+debugging only; a browser pointed at 3000 has no `/api` to talk to and the UI
+sits there looking broken with nothing on screen explaining why.
+
+`make dev` also prints an **admin API key**. Copy it — you need it in the next
+step, and it is shown only once. Lost it? `scripts/dev.sh seed` retires the old
+one and prints a fresh one.
 
 If a service fails to come up, see
 [troubleshooting](./self-hosting/troubleshooting.md).
 
-## 3. Open the board
+## 3. Connect and open the board
 
-Open <http://localhost:3000>. The **board** is the home surface — it tracks work
+Open <http://localhost:8080>. Forge asks you to **connect** before it shows any
+data: every API route is authenticated, and until OIDC lands a Forge API key
+*is* the credential. Paste the key `make dev` printed.
+
+By default the key is held only for the current tab. "Remember on this browser"
+persists it — worth understanding before you tick it, because browser storage is
+shared with every other app served from the same origin, and on `localhost` that
+means any other local app that has used this port. See
+[self-hosting security](./self-hosting/security.md#browser-storage-on-localhost).
+
+The **board** is the home surface — it tracks work
 items and runs across your workspace. Individual screens honestly flag any area
 whose backend projection or live credential is still landing, and the
 [Status](../README.md#status) section tracks the honest per-area state.
@@ -81,7 +110,7 @@ approvals, integrations and settings, and the admin surfaces (RBAC, SSO, audit).
 Each view leads with a single primary action, so the next step is always
 obvious.
 
-If this is your first visit, the **[Walkthrough](http://localhost:3000/walkthrough)**
+If this is your first visit, the **[Walkthrough](http://localhost:8080/walkthrough)**
 gives a guided tour of the platform.
 
 ## 4. Write a spec
@@ -92,7 +121,7 @@ acceptance criteria, open questions, and constraints — that the **spec engine*
 validates before any agent is allowed to run.
 
 Create one from the UI at
-**[Specs → New](http://localhost:3000/specs/new)**, or start from a tested
+**[Specs → New](http://localhost:8080/specs/new)**, or start from a tested
 example in the repo:
 
 ```yaml
@@ -118,7 +147,7 @@ While a spec has unresolved `open_questions` its status stays `clarifying`, and
 the spec engine's **implementation gate blocks any run** — Forge will not let an
 agent execute an ambiguous spec. Resolve the questions and set `status:
 approved` to unblock it. The
-**[Specs dashboard](http://localhost:3000/specs)** shows each spec's validation
+**[Specs dashboard](http://localhost:8080/specs)** shows each spec's validation
 state.
 
 See [`examples/specs/`](../examples/specs) for complete, schema-validated
@@ -131,10 +160,10 @@ LangGraph plan → execute → verify loop — picks up the work inside a sandbo
 (git-worktree isolation by default; per-task Docker containers available), grounds itself in your codebase through
 the hybrid knowledge pipeline, and opens a pull request for the change.
 
-Follow it live in the **[run-trace viewer](http://localhost:3000/runs)**: every
+Follow it live in the **[run-trace viewer](http://localhost:8080/runs)**: every
 step, tool call, and decision is recorded, so you can see exactly what the agent
 did and why. Sensitive actions pause at the
-**[approvals](http://localhost:3000/approvals)** queue for a human decision
+**[approvals](http://localhost:8080/approvals)** queue for a human decision
 before they proceed.
 
 ## Where to go next
