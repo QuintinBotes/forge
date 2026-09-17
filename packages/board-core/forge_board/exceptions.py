@@ -33,6 +33,24 @@ class InvalidStatusTransitionError(BoardError):
         super().__init__(f"illegal status transition: {src} -> {dst}")
 
 
+class NoProjectError(BoardError):
+    """Raised when a task/epic needs a project and the workspace has none.
+
+    ``task.project_id`` is a required FK, but the create DTO leaves it optional
+    and callers that do not care about projects (the board's own New-task
+    dialog) omit it. When a workspace has exactly one project that is the
+    obvious target; when it has none there is nothing to fall back to, and
+    saying so beats a NOT NULL violation surfacing as a 500.
+    """
+
+    def __init__(self, workspace_id: object) -> None:
+        self.workspace_id = workspace_id
+        super().__init__(
+            f"workspace {workspace_id} has no project to attach this to; "
+            "create a project first, or supply an explicit project_id"
+        )
+
+
 class SprintStateError(BoardError):
     """Raised when a sprint lifecycle transition is illegal (F26)."""
 
@@ -56,5 +74,6 @@ __all__ = [
     "CycleError",
     "EntityNotFoundError",
     "InvalidStatusTransitionError",
+    "NoProjectError",
     "SprintStateError",
 ]

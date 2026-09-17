@@ -92,3 +92,27 @@ waivers:
     owner: forge-security
     created: 2026-07-04
     expires: 2027-01-04
+
+  - id: W-007
+    tool: codeql
+    rule: py/clear-text-logging-sensitive-data
+    location: apps/api/forge_api/scripts/seed.py:108
+    finding: >
+      The demo seed writes a freshly minted admin API key to stdout, which on
+      the compose stack is the seed container's log.
+    justification: >
+      True positive, and the intended behaviour. A fresh self-host has no other
+      credential path: the UI has no password login, OIDC has not landed, and
+      only the token's HMAC is stored, so the plaintext is unrecoverable after
+      the mint — it must be shown once or it is lost. The print is gated behind
+      FORGE_SEED_ADMIN_KEY, which is unset by default and set only by
+      deploy/docker-compose.dev.yml; a production seed emits nothing unless an
+      operator opts in explicitly. The emitted text says the key is
+      local-development only, docs/self-hosting/quickstart.md tells operators to
+      revoke it once per-person keys exist, and re-running the seed retires the
+      previous key so at most one is ever live. This is the same bootstrap
+      pattern Jenkins, Grafana and Airflow use. Revisit when OIDC ships and the
+      seeded key stops being the only way in.
+    owner: forge-security
+    created: 2026-09-17
+    expires: 2027-03-17

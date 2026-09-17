@@ -33,6 +33,7 @@ from forge_board.exceptions import (
     CycleError,
     EntityNotFoundError,
     InvalidStatusTransitionError,
+    NoProjectError,
 )
 from forge_contracts import (
     BoardFilter,
@@ -160,6 +161,13 @@ def _domain_errors() -> Iterator[None]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (CycleError, InvalidStatusTransitionError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except NoProjectError as exc:
+        # The workspace has nothing to attach the work to. That is a request the
+        # server cannot fulfil yet, not a server fault — say so instead of
+        # letting the NOT NULL violation surface as a 500.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
 
 
 class StatusUpdateRequest(BaseModel):

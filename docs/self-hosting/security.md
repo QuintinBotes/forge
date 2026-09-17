@@ -205,6 +205,43 @@ the gate closed) in [`../../security/waivers.yaml`](../../security/waivers.yaml)
 the triage of every automated finding is in
 [`../../SECURITY_FINDINGS.md`](../../SECURITY_FINDINGS.md).
 
+## Browser storage on `localhost`
+
+Forge holds the API key you paste into the Connect dialog in browser storage.
+Browser storage is scoped to an **origin** — scheme, host *and* port — and
+`http://localhost:8080` is not a private origin. It is the same origin as every
+other local application that has ever been served from that port on this
+machine, and those applications share one storage bucket.
+
+We saw this concretely during a self-host evaluation: Forge's `localStorage`
+already held `mewsCommander`, `lockscreen` and `reservation-import-store` keys
+from unrelated local development. Nothing had gone wrong — that is simply what a
+shared origin means. Anything Forge persists client-side is readable by those
+apps, and theirs by Forge.
+
+What Forge does about it:
+
+- **The key is held per-tab by default.** The Connect dialog uses
+  `sessionStorage`, so the credential dies when the tab closes. "Remember on
+  this browser" opts into `localStorage`; the dialog says what that means.
+- **Every key Forge writes is namespaced** under `forge.` (`forge.api.token`,
+  `forge.board.savedViews`, …), so Forge cannot silently collide with another
+  app's state on a shared origin. Namespacing prevents collisions; it does not
+  and cannot prevent reads.
+
+What you should do about it:
+
+- **Prefer a real hostname over `localhost`, even locally.** Point a hostname at
+  your machine (`forge.localhost`, an `/etc/hosts` entry, or a LAN name), set
+  `DOMAIN`, and browse that. A distinct origin is a distinct storage bucket.
+- **Do not tick "remember" for an admin key** on a machine that runs other local
+  web apps. A tab-scoped token is a much smaller window.
+- **Mint per-person, least-privilege keys** for anything beyond evaluation, and
+  revoke the shared bootstrap key (`DELETE /auth/api-keys/{id}`).
+
+This is a property of browsers, not of Forge's deployment posture: the same
+reasoning applies to any app you run on `localhost`.
+
 ## Network policy
 
 The production compose file segments traffic into `edge`, `backend`, `data`, and
@@ -394,6 +431,8 @@ accidentally publishes internal benchmark scores. Before opting in:
 - [ ] A credential rotation schedule is documented and owned.
 - [ ] MCP connections that need writes are explicitly reviewed and audited.
 - [ ] Backups are encrypted in transit and at rest off-host.
+- [ ] The seed's bootstrap admin key is revoked once per-person keys exist.
+- [ ] Operators browse a real hostname, not `localhost` (see [browser storage](#browser-storage-on-localhost)).
 
 ## Related
 

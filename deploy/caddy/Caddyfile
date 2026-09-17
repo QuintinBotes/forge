@@ -5,6 +5,7 @@
 # `localhost` serves over Caddy's internal CA.
 #
 #   - /api/*  -> FastAPI backend (api:8000)
+#   - /ws, /ws/* -> FastAPI realtime WebSockets (api:8000)
 #   - /mcp/*  -> MCP gateway service (mcp-gateway:8001)
 #   - /*      -> Next.js frontend (web:3000)
 
@@ -35,6 +36,17 @@
 
 	# API surface.
 	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	# Realtime WebSockets (board events, spec collab). `handle`, not
+	# `handle_path`: the API mounts these at /ws/*, so the prefix must survive.
+	# Without this the catch-all below sends /ws to the web frontend and realtime
+	# only works by bypassing the edge.
+	# `handle` takes a single matcher, and the two sockets sit at different
+	# shapes (/ws exactly, /ws/spec/{id} below it), so match them by name.
+	@realtime path /ws /ws/*
+	handle @realtime {
 		reverse_proxy api:8000
 	}
 

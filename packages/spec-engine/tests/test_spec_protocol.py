@@ -36,10 +36,19 @@ def test_engine_exposes_every_protocol_method(tmp_path) -> None:
 
 
 def test_protocol_method_signatures_match_contract(tmp_path) -> None:
-    # The impl must accept the exact frozen parameter names.
+    # The impl must accept the exact frozen POSITIONAL parameter names, in
+    # order. The engine may widen its own surface beyond the protocol (it does:
+    # `spec_create(..., key=...)` lets a caller supply their own spec key), but
+    # only keyword-only — a new positional would shift the frozen contract.
     engine = FileSpecEngine(tmp_path)
     sig = inspect.signature(engine.spec_create)
-    assert list(sig.parameters) == ["epic_id", "name", "requirements"]
+    positional = [
+        name
+        for name, param in sig.parameters.items()
+        if param.kind is not inspect.Parameter.KEYWORD_ONLY
+    ]
+    assert positional == ["epic_id", "name", "requirements"]
+    assert set(sig.parameters) - set(positional) == {"key"}
 
     sig_const = inspect.signature(engine.constitution_init)
     assert list(sig_const.parameters) == ["project_id", "principles"]
