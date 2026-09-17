@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import delete, select
 
-from forge_board.exceptions import EntityNotFoundError
+from forge_board.exceptions import EntityNotFoundError, NoProjectError
 from forge_board.graph import has_cycle, would_create_cycle
 from forge_board.service import (
     _epic_matches,
@@ -69,7 +69,7 @@ from forge_contracts import (
 )
 from forge_contracts import enums as ce
 from forge_db.base import WorkspaceScopedModel
-from forge_db.models import Epic, Incident, Milestone, Sprint, Task, TaskDependency
+from forge_db.models import Epic, Incident, Milestone, Project, Sprint, Task, TaskDependency
 from forge_db.models import enums as dbe
 
 if TYPE_CHECKING:
@@ -265,11 +265,32 @@ class SqlAlchemyBoardService:
     # Task                                                                #
     # ------------------------------------------------------------------ #
 
-    def _apply_task_fields(self, row: Task, data: TaskDTO) -> None:
+    def _default_project_id(self, session: Session) -> uuid.UUID:
+        """The workspace's default project: its oldest, by creation order.
+
+        A workspace normally has one project, and the surfaces that create work
+        without naming one (the board's New-task dialog) mean it. Resolving here
+        rather than narrowing an Optional to a non-null keeps the failure legible:
+        a workspace with no project at all raises :class:`NoProjectError` instead
+        of a NOT NULL violation escaping as a 500.
+        """
+        project_id = session.scalars(
+            select(Project.id)
+            .where(Project.workspace_id == self._ws)
+            .order_by(Project.created_at.asc(), Project.id.asc())
+            .limit(1)
+        ).first()
+        if project_id is None:
+            raise NoProjectError(self._ws)
+        return project_id
+
+    def _apply_task_fields(self, row: Task, data: TaskDTO, session: Session) -> None:
         # ``TaskDTO.project_id`` is loosely Optional, but ``task.project_id`` is a
-        # required FK (a task always belongs to a project); a missing value is a
-        # NOT NULL violation at flush, exactly as before. Narrow at this boundary.
-        row.project_id = cast(uuid.UUID, data.project_id)
+        # required FK (a task always belongs to a project). Fall back to the
+        # workspace default rather than letting the None reach the flush.
+        row.project_id = (
+            data.project_id if data.project_id is not None else self._default_project_id(session)
+        )
         row.epic_id = data.epic_id
         row.spec_id = data.spec_id
         row.sprint_id = data.sprint_id
@@ -354,7 +375,7 @@ class SqlAlchemyBoardService:
                 created_at=now,
                 updated_at=now,
             )
-            self._apply_task_fields(row, data)
+            self._apply_task_fields(row, data, session)
             session.add(row)
             session.flush()
             self._set_edges(session, new_id, data.depends_on)
@@ -372,7 +393,7 @@ class SqlAlchemyBoardService:
             edges[task_id] = set(data.depends_on)
             if has_cycle(edges):
                 raise CycleError(f"updating task {task_id} dependencies would create a cycle")
-            self._apply_task_fields(row, data)
+            self._apply_task_fields(row, data, session)
             row.updated_at = _now()
             self._set_edges(session, task_id, data.depends_on)
             session.commit()

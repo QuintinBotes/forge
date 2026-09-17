@@ -15,6 +15,15 @@ class SpecNotFoundError(ForgeError, KeyError):
     """Raised when a spec or task uuid does not resolve to an on-disk spec."""
 
 
+class SpecKeyError(ForgeError, ValueError):
+    """Raised when a client-supplied spec key is malformed or already taken.
+
+    Distinct from :class:`SpecNotFoundError` so the API can map it to 400/409
+    rather than 404 — "that key is not usable" is a different answer from "no
+    such spec".
+    """
+
+
 class SpecReconcileWarning(UserWarning):
     """Emitted when ``spec.md`` and ``manifest.yaml`` diverge out-of-band.
 
@@ -27,4 +36,4 @@ class SpecReconcileWarning(UserWarning):
     """
 
 
-__all__ = ["SpecNotFoundError", "SpecReconcileWarning"]
+__all__ = ["SpecKeyError", "SpecNotFoundError", "SpecReconcileWarning"]

@@ -19,6 +19,7 @@ from forge_board.exceptions import (
     CycleError,
     EntityNotFoundError,
     InvalidStatusTransitionError,
+    NoProjectError,
     SprintStateError,
 )
 from forge_board.service import InMemoryBoardService
@@ -47,6 +48,7 @@ __all__ = [
     "EntityNotFoundError",
     "InMemoryBoardService",
     "InvalidStatusTransitionError",
+    "NoProjectError",
     "ScopeEvent",
     "SprintStateError",
     "SprintStateMachine",

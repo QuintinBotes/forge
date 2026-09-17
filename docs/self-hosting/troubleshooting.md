@@ -57,10 +57,9 @@ often shows repeated restarts rather than a clean `exited`.
   `pgvector/pgvector:pg16` image ships it; confirm with `\dx` in `psql`. If you
   swapped to a vanilla Postgres image, switch back.
 
-- **`password authentication failed`:** `.env` `POSTGRES_PASSWORD` does not match
-  the password baked into the existing `db-data` volume. Either restore the
-  original password or recreate the volume (destroys data — back up first via
-  [backup.md](backup.md)).
+- **`password authentication failed`:** the configured `POSTGRES_PASSWORD` does
+  not match the one baked into the existing `db-data` volume — see
+  [the dedicated section below](#migrate-fails-password-authentication-failed-for-user-forge).
 
 ## Migrations
 
@@ -69,6 +68,33 @@ often shows repeated restarts rather than a clean `exited`.
   upgrading. See [upgrade.md](upgrade.md).
 - **A migration half-applied and failed:** restore the pre-upgrade backup
   ([restore.md](restore.md)) rather than hand-editing the schema.
+
+## `migrate` fails: password authentication failed for user "forge"
+
+The Postgres volume keeps the password it was **first initialised** with;
+`POSTGRES_PASSWORD` is ignored on every later start. If the value the stack
+passes has changed since, `migrate` cannot connect.
+
+The usual cause is editing the root `.env` and expecting `make dev` to read it.
+It does not — `scripts/dev.sh` passes `--env-file deploy/.env.dev`, which
+*replaces* the default env file rather than adding to it.
+
+Either align the running database with what the stack passes:
+
+```bash
+docker compose -p forge-dev -f deploy/docker-compose.dev.yml up -d db
+docker exec forge-dev-db-1 psql -U forge -d forge \
+  -c "ALTER USER forge PASSWORD '<the password the stack passes>'"
+```
+
+(the local socket does not require the password), or discard the volume and
+start clean — **this deletes the database**:
+
+```bash
+docker compose -p forge-dev -f deploy/docker-compose.dev.yml down -v
+```
+
+Back up first if the data matters — see [backup.md](backup.md).
 
 ## Auth and secrets
 

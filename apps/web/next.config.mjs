@@ -4,8 +4,15 @@
 // (forge_api.security.headers) and src/lib/security-headers.ts. Kept in JS here
 // because next.config.mjs is loaded by Node (cannot import the .ts module); a
 // Vitest parity test (src/lib/security-headers.test.ts) asserts the two agree.
+//
+// This CSP is the STATIC FLOOR. src/middleware.ts replaces it per request with
+// an equivalent policy carrying a fresh script nonce; Next needs that nonce to
+// run its own inline document bootstrap. The two must stay in step — the parity
+// test builds this list from the same source module.
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
+  "script-src 'self'",
+  "connect-src 'self'",
   "base-uri 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",

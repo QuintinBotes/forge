@@ -7,7 +7,9 @@ blast radius, file/repo counts, requirement + acceptance-criteria counts,
 whether it touches contracts/security, dependency count, ambiguity) into:
 
 ```python
-ComplexitySizing(tier="junior" | "medior" | "senior", strategy="single" | "swarm", score=..., reasons=[...])
+ComplexitySizing(
+    tier="junior" | "medior" | "senior", strategy="single" | "swarm", score=..., reasons=[...]
+)
 ```
 
 This is a pure, side-effect-free scoring module. It does not pick a model or

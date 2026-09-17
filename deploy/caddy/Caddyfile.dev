@@ -3,6 +3,7 @@
 # Plain HTTP on :80 inside the container (published to the host as
 # ${CADDY_PORT:-8080}). No TLS / ACME for local use. Routes:
 #   - /api/*  -> FastAPI backend       (api:8000)
+#   - /ws, /ws/* -> FastAPI realtime WS (api:8000)
 #   - /mcp/*  -> MCP gateway service    (mcp-gateway:8001)
 #   - /*      -> Next.js dev frontend   (web:3000)
 
@@ -15,6 +16,18 @@
 	encode gzip
 
 	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	# Realtime WebSockets (board events, spec collab). Routed with `handle`, not
+	# `handle_path`, because the API mounts them at /ws/* — the prefix must
+	# survive. Without this the catch-all below would hand /ws to the Next dev
+	# server and realtime would only work by bypassing the proxy. Caddy upgrades
+	# WebSocket connections through reverse_proxy with no extra configuration.
+	# `handle` takes a single matcher, and the two sockets sit at different
+	# shapes (/ws exactly, /ws/spec/{id} below it), so match them by name.
+	@realtime path /ws /ws/*
+	handle @realtime {
 		reverse_proxy api:8000
 	}
 

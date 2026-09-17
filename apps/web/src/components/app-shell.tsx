@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { SessionMenu } from "@/components/auth/session-gate";
 import { useCommandPaletteOptional } from "@/components/command-palette";
 import { ForgeMark } from "@/components/forge-logo";
 import { Button } from "@/components/ui/button";
@@ -308,6 +309,7 @@ export function AppShell({ children, actions }: AppShellProps): ReactNode {
             <div className="flex items-center gap-3">
               {actions}
               <CommandPaletteHint />
+              <SessionMenu />
             </div>
           </header>
 

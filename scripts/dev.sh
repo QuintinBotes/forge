@@ -30,16 +30,51 @@ compose() {
   docker "${args[@]}" "$@"
 }
 
+# The admin API key the `seed` one-shot minted, recovered from its log. The
+# token is printed exactly once and is unrecoverable afterwards, so `up` has to
+# read it back out of the container log rather than re-derive it.
+seed_api_key() {
+  compose logs --no-log-prefix seed 2>/dev/null \
+    | grep -oE 'forge_[a-z_]+_[A-Za-z0-9_-]{20,}' \
+    | tail -n 1
+}
+
 print_urls() {
+  local key
+  key="$(seed_api_key)"
+
   cat <<EOF
 
-Forge dev stack is up:
-  Web UI   ->  http://localhost:${WEB_PORT}
-  API      ->  http://localhost:${API_PORT}      (docs: http://localhost:${API_PORT}/docs)
-  Edge     ->  http://localhost:${CADDY_PORT}      (Caddy: /api/*, /mcp/*, /*)
+Forge dev stack is up. Open the edge — it serves the UI and /api/* on ONE
+origin, so the browser needs no CORS and no separate API host:
+
+  Forge    ->  http://localhost:${CADDY_PORT}
+
+  (direct, bypasses the proxy: web http://localhost:${WEB_PORT} ·
+   API http://localhost:${API_PORT} · docs http://localhost:${API_PORT}/docs)
 
 Demo workspace seeded: slug=demo  admin=admin@forge.local
 EOF
+
+  if [ -n "${key}" ]; then
+    cat <<EOF
+
+Admin API key (dev only — shown once by the seed, full admin on the demo
+workspace). Paste it into the UI's Connect dialog on first load:
+
+  ${key}
+
+  curl -H "Authorization: Bearer ${key}" http://localhost:${CADDY_PORT}/api/auth/me
+EOF
+  else
+    cat <<EOF
+
+No admin API key found in the seed log. Mint one with:
+
+  scripts/dev.sh seed
+EOF
+  fi
+  echo
 }
 
 cmd="${1:-up}"
@@ -57,7 +92,9 @@ case "${cmd}" in
     compose logs -f "${@:2}"
     ;;
   seed)
-    # Re-run the idempotent demo seed against the running stack.
+    # Re-run the idempotent demo seed against the running stack. This retires the
+    # previous bootstrap key and mints a fresh one, so it is also how you recover
+    # access after losing the token.
     compose run --rm seed
     ;;
   ps)

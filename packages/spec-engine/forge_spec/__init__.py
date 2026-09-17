@@ -63,14 +63,18 @@ from forge_spec.engine import (
     DEFAULT_PRINCIPLES,
     FileSpecEngine,
 )
-from forge_spec.errors import SpecNotFoundError, SpecReconcileWarning
+from forge_spec.errors import SpecKeyError, SpecNotFoundError, SpecReconcileWarning
 from forge_spec.gates import IMPLEMENTABLE_STATUSES, check_implementation_gate
 from forge_spec.ids import (
+    DEFAULT_SPEC_PREFIX,
     constitution_id_for,
+    is_spec_key,
     slugify,
     spec_dirname,
     spec_id_for_key,
     spec_key,
+    spec_number,
+    spec_prefix,
     task_id_for,
     task_key,
 )
@@ -97,6 +101,7 @@ __all__ = [
     "CHECKLIST",
     "DEFAULT_GUARDRAILS",
     "DEFAULT_PRINCIPLES",
+    "DEFAULT_SPEC_PREFIX",
     "GHERKIN",
     "IMPLEMENTABLE_STATUSES",
     "CellStatus",
@@ -117,6 +122,7 @@ __all__ = [
     "ProjectionRepository",
     "ScalarFieldChange",
     "SpecEngineService",
+    "SpecKeyError",
     "SpecNotFoundError",
     "SpecParseError",
     "SpecReconcileWarning",
@@ -145,6 +151,7 @@ __all__ = [
     "diff_markdown",
     "dump_manifest",
     "generate_tasks",
+    "is_spec_key",
     "load_manifest",
     "manifest_to_dict",
     "parse_checklist",
@@ -155,6 +162,8 @@ __all__ = [
     "spec_dirname",
     "spec_id_for_key",
     "spec_key",
+    "spec_number",
+    "spec_prefix",
     "summarize_project",
     "task_id_for",
     "task_key",
