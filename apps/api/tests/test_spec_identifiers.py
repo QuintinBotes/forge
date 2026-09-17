@@ -167,14 +167,10 @@ def test_a_manifest_that_fails_validation_is_422_with_the_errors(
 ) -> None:
     """A wrong field type used to be a bare 500 with the reason only in the log."""
     _create(client)
-    # `constraints` is list[str]; send a list of objects.
-    bad = (
-        "id: SPEC-1\n"
-        "name: Customer search\n"
-        "constraints:\n"
-        "  - id: C1\n"
-        "    text: ships off by default\n"
-    )
+    # A constraint object missing its required `text`. (An object *with* both
+    # fields is valid now — see the constraint round-trip tests — so the invalid
+    # case has to be genuinely invalid.)
+    bad = "id: SPEC-1\nname: Customer search\nconstraints:\n  - id: C1\n"
     resp = client.put("/spec/specs/SPEC-1/manifest", json={"content": bad})
 
     assert resp.status_code == 422, resp.text
@@ -220,7 +216,8 @@ def test_a_valid_manifest_still_saves(client: TestClient) -> None:
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["name"] == "Renamed via manifest"
-    assert resp.json()["constraints"] == ["ships off by default"]
+    # A bare string is still accepted and takes a positional id.
+    assert resp.json()["constraints"] == [{"id": "C1", "text": "ships off by default"}]
 
 
 # --- the manifest round-trips (issue #105) --------------------------------- #

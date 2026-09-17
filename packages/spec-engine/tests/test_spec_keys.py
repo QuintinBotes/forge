@@ -161,3 +161,54 @@ def test_the_placeholder_adr_is_proposed_not_accepted(tmp_path) -> None:
     adr = planned.decisions[0]
     assert adr.status == "proposed"
     assert "TODO" in adr.decision
+
+
+# --- constraints gained ids without invalidating what is written (#107) ---- #
+
+
+def test_a_legacy_bare_string_manifest_still_loads(tmp_path) -> None:
+    """Every manifest written before constraints had ids is still on disk."""
+    from forge_spec.manifest import load_manifest
+
+    legacy = (
+        "id: SPEC-1\n"
+        "name: Legacy\n"
+        "constraints:\n"
+        "  - ships off by default\n"
+        "  - no new runtime dependencies\n"
+    )
+    manifest = load_manifest(legacy)
+
+    assert [(c.id, c.text) for c in manifest.constraints] == [
+        ("C1", "ships off by default"),
+        ("C2", "no new runtime dependencies"),
+    ]
+
+
+def test_a_legacy_spec_md_still_parses(tmp_path) -> None:
+    """`- <text>` is what every spec.md written before ids looks like."""
+    from forge_spec.markdown import parse_spec_md
+
+    legacy = (
+        "---\nid: SPEC-1\nstatus: draft\n---\n\n"
+        "## Goal\n\nLegacy\n\n"
+        "## Constraints\n\n- ships off by default\n"
+    )
+    manifest = parse_spec_md(legacy)
+
+    assert [(c.id, c.text) for c in manifest.constraints] == [("C1", "ships off by default")]
+
+
+def test_constraints_round_trip_through_markdown(tmp_path) -> None:
+    """An identified constraint survives render -> parse with its id intact."""
+    from forge_contracts import Constraint
+    from forge_spec.markdown import parse_spec_md, render_spec_md
+
+    engine = _engine(tmp_path)
+    manifest = engine.spec_create(uuid.uuid4(), "Round trip", key="SPEC-1")
+    manifest.constraints = [Constraint(id="C7", text="cite me by id")]
+    saved = engine.write_manifest(manifest)
+
+    reparsed = parse_spec_md(render_spec_md(saved))
+
+    assert [(c.id, c.text) for c in reparsed.constraints] == [("C7", "cite me by id")]

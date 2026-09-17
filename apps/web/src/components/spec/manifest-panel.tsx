@@ -1,5 +1,6 @@
 import { CircleDot, FileText, GitFork } from "lucide-react";
 
+import { constraintKey, constraintText } from "@/lib/spec-studio/constraints";
 import { cn } from "@/lib/utils";
 import type { SpecManifest } from "@/lib/api/types";
 
@@ -93,16 +94,16 @@ export function ManifestPanel({ spec }: ManifestPanelProps) {
             Constraints
           </h3>
           <ul className="flex flex-col gap-1.5">
-            {constraints.map((constraint) => (
+            {constraints.map((constraint, index) => (
               <li
-                key={constraint}
+                key={constraintKey(constraint, index)}
                 className="flex items-start gap-2 text-sm text-muted-foreground"
               >
                 <span
                   aria-hidden
                   className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
                 />
-                {constraint}
+                {constraintText(constraint)}
               </li>
             ))}
           </ul>

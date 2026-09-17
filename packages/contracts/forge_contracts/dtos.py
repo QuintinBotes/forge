@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from forge_contracts.conditions import ConditionGroup
 from forge_contracts.constants import DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_MAX_RETRIES
@@ -707,6 +707,23 @@ class ADR(_Model):
     consequences: str | None = None
 
 
+class Constraint(_Model):
+    """A constraint the implementation must respect (spec: ``constraints[]``).
+
+    Identified like its sibling collections so it can be *cited*: an ADR that
+    says "rejected because it violates C2", or a criterion carrying
+    ``constraint_refs``, needs something to point at. Constraints used to be
+    bare strings, which left the only way to reference one to restate its text.
+
+    A bare string is still accepted on input and given a positional id, so every
+    manifest written before this — on disk and in ``spec_version`` history —
+    keeps loading unchanged.
+    """
+
+    id: str
+    text: str
+
+
 class Constitution(_Model):
     """Engineering principles / architecture guardrails for a project."""
 
@@ -720,6 +737,24 @@ class Constitution(_Model):
 class SpecManifest(_Model):
     """Machine-readable spec metadata (spec: Spec Manifest Schema)."""
 
+    @field_validator("constraints", mode="before")
+    @classmethod
+    def _accept_legacy_string_constraints(cls, value: Any) -> Any:
+        """Coerce ``constraints: [str]`` to ``[{id, text}]``.
+
+        Constraints were bare strings until they gained ids. Every manifest
+        written before that is still on disk and in ``spec_version``, so the old
+        shape has to keep loading: a string becomes ``{"id": "C<n>", "text": ...}``
+        at its position. Mixed lists work too, which is what a partially
+        hand-edited manifest looks like.
+        """
+        if not isinstance(value, list):
+            return value
+        return [
+            {"id": f"C{index}", "text": item} if isinstance(item, str) else item
+            for index, item in enumerate(value, start=1)
+        ]
+
     id: str
     name: str
     status: SpecStatus = SpecStatus.DRAFT
@@ -728,7 +763,7 @@ class SpecManifest(_Model):
     requirements: list[Requirement] = Field(default_factory=list)
     acceptance_criteria: list[AcceptanceCriterion] = Field(default_factory=list)
     open_questions: list[OpenQuestion] = Field(default_factory=list)
-    constraints: list[str] = Field(default_factory=list)
+    constraints: list[Constraint] = Field(default_factory=list)
     decisions: list[ADR] = Field(default_factory=list)
     plan_ref: str | None = None
     tasks_ref: str | None = None

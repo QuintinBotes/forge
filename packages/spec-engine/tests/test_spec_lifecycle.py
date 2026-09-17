@@ -15,6 +15,7 @@ import pytest
 from forge_contracts import (
     CheckResult,
     Constitution,
+    Constraint,
     Requirement,
     SpecGateError,
     SpecManifest,
@@ -181,11 +182,13 @@ def test_read_manifest_after_create(engine) -> None:
 
 def test_write_manifest_persists_edits(engine) -> None:
     manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
-    manifest.constraints = ["Follow existing auth middleware pattern"]
+    manifest.constraints = [Constraint(id="C1", text="Follow existing auth middleware pattern")]
     engine.write_manifest(manifest)
 
     reloaded = engine.read_manifest(spec_id_for_key(manifest.id))
-    assert reloaded.constraints == ["Follow existing auth middleware pattern"]
+    assert [(c.id, c.text) for c in reloaded.constraints] == [
+        ("C1", "Follow existing auth middleware pattern")
+    ]
 
 
 def test_read_manifest_unknown_spec_raises(engine) -> None:

@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 
 from forge_contracts import (
     AcceptanceCriterion,
+    Constraint,
     OpenQuestion,
     Requirement,
     SpecManifest,
@@ -176,6 +177,37 @@ def _coerce_open_questions(raw: Any) -> list[OpenQuestion]:
     return out
 
 
+def _coerce_constraints(value: object) -> list[Constraint]:
+    """Build identified constraints from an imported document's loose input.
+
+    Importers see hand-written documents, so a constraint arrives either as a
+    bare string or as a mapping. The model would coerce a string anyway, but
+    passing `list[str]` where `list[Constraint]` is declared only type-checks by
+    accident — build them here so the annotation means what it says.
+    """
+    out: list[Constraint] = []
+    for index, item in enumerate(_coerce_str_list_or_maps(value), start=1):
+        if isinstance(item, dict):
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            out.append(Constraint(id=str(item.get("id") or f"C{index}"), text=text))
+        elif item:
+            out.append(Constraint(id=f"C{index}", text=str(item)))
+    return out
+
+
+def _coerce_str_list_or_maps(value: object) -> list[object]:
+    """Loose list coercion that preserves mappings (see _coerce_constraints)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [line.strip("-* ").strip() for line in value.splitlines() if line.strip()]
+    if isinstance(value, list):
+        return [v if isinstance(v, dict) else str(v).strip() for v in value if v]
+    return []
+
+
 def _coerce_str_list(raw: Any) -> list[str]:
     if not isinstance(raw, list):
         return []
@@ -189,7 +221,7 @@ def _manifest_from_loose_yaml(data: dict[str, Any]) -> SpecManifest:
     acceptance = _coerce_acceptance(
         _first_present(data, _YAML_ACCEPTANCE_KEYS), [r.id for r in requirements]
     )
-    constraints = _coerce_str_list(_first_present(data, _YAML_CONSTRAINT_KEYS))
+    constraints = _coerce_constraints(_first_present(data, _YAML_CONSTRAINT_KEYS))
     open_questions = _coerce_open_questions(_first_present(data, _YAML_QUESTION_KEYS))
     return SpecManifest(
         id=IMPORT_PLACEHOLDER_ID,
@@ -291,7 +323,7 @@ def _normalize_markdown(text: str) -> SpecManifest:
         status=SpecStatus.DRAFT,
         requirements=requirements,
         acceptance_criteria=acceptance,
-        constraints=buckets["constraints"],
+        constraints=_coerce_constraints(buckets["constraints"]),
         open_questions=open_questions,
     )
 

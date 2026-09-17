@@ -133,7 +133,13 @@ def diff_manifest(old: SpecManifest, new: SpecManifest) -> ManifestDiff:
         for field in _SCALAR_FIELDS
         if getattr(old, field) != getattr(new, field)
     ]
-    old_constraints, new_constraints = set(old.constraints), set(new.constraints)
+    # Diff constraints on their TEXT, not their id. Ids exist so a constraint can
+    # be cited; they are positional for any manifest still written as bare
+    # strings, so removing the first one renumbers the rest and an id-based diff
+    # would report every later constraint as changed. Text is what a reader
+    # compares, and it keeps this diff identical to its pre-id behaviour.
+    old_constraints = {c.text for c in old.constraints}
+    new_constraints = {c.text for c in new.constraints}
     return ManifestDiff(
         scalar_changes=scalar_changes,
         requirements=_diff_ids(old.requirements, new.requirements),
