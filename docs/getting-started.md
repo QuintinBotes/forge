@@ -119,6 +119,13 @@ prompt. A spec is a `manifest.yaml` describing what to build — requirements,
 acceptance criteria, open questions, and constraints — that the **spec engine**
 validates before any agent is allowed to run.
 
+`acceptance_criteria` is yours to write, and starts empty. Forge deliberately
+does not generate one per requirement: a criterion that reads "Implementation
+satisfies R1: *<R1 verbatim>*" restates the obligation rather than defining
+evidence for it, so it can never fail — and a dashboard counting 7 of 7 present
+would report the spec as well specified on the strength of it. Write criteria
+someone can evaluate and get a yes or no from.
+
 Create one from the UI at
 **[Specs → New](http://localhost:8080/specs/new)**, or start from a tested
 example in the repo:
@@ -159,6 +166,25 @@ document's contents: `POST /spec/specs/{id}/clarify` moves a spec to
 with open questions sits at `draft`, which the gate blocks just the same. The
 **[Specs dashboard](http://localhost:8080/specs)** shows each spec's validation
 state.
+
+Over the API, a manifest round-trips: `GET` returns the YAML as `text/plain`,
+and `PUT` takes it straight back.
+
+```bash
+# Which projects exist (an epic, sprint or milestone needs one)
+curl -fsS -H "Authorization: Bearer $KEY" http://localhost:8080/api/projects
+
+# Edit a spec as YAML and put it back verbatim
+curl -fsS -H "Authorization: Bearer $KEY" \
+  http://localhost:8080/api/spec/specs/SPEC-1/manifest > manifest.yaml
+$EDITOR manifest.yaml
+curl -fsS -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: text/plain" \
+  --data-binary @manifest.yaml http://localhost:8080/api/spec/specs/SPEC-1/manifest
+```
+
+A manifest that fails validation comes back as a 422 naming the field, not a
+500. `{"content": "<yaml>"}` still works if your client prefers JSON, and
+`{spec_id}` accepts either the key (`SPEC-1`) or its uuid.
 
 See [`examples/specs/`](../examples/specs) for complete, schema-validated
 manifests you can copy.
