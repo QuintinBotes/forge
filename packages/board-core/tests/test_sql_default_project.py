@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import StaticPool, create_engine
@@ -37,14 +38,30 @@ def factory() -> Iterator[sessionmaker[Session]]:
 
 
 def _workspace(factory: sessionmaker[Session], *projects: str) -> tuple[uuid.UUID, list[uuid.UUID]]:
+    """A workspace whose projects have strictly increasing ``created_at``.
+
+    The timestamps are set explicitly, a minute apart. Rows inserted in one
+    transaction otherwise share a ``created_at``, which leaves "the oldest
+    project" decided by the ``id`` tiebreaker — a random uuid4, so a test that
+    asserted insertion order passed only about half the time.
+    """
     ws = uuid.uuid4()
     ids: list[uuid.UUID] = []
+    base = datetime(2026, 1, 1, tzinfo=UTC)
     with factory() as session:
         session.add(Workspace(id=ws, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}"))
         session.flush()
-        for key in projects:
+        for index, key in enumerate(projects):
             project_id = uuid.uuid4()
-            session.add(Project(id=project_id, workspace_id=ws, name=key, key=key))
+            session.add(
+                Project(
+                    id=project_id,
+                    workspace_id=ws,
+                    name=key,
+                    key=key,
+                    created_at=base + timedelta(minutes=index),
+                )
+            )
             session.flush()
             ids.append(project_id)
         session.commit()
@@ -74,7 +91,11 @@ def test_an_explicit_project_still_wins(factory: sessionmaker[Session]) -> None:
 
 
 def test_the_default_is_the_oldest_project(factory: sessionmaker[Session]) -> None:
-    """Stable and predictable, rather than whichever row the database returns."""
+    """Stable and predictable, rather than whichever row the database returns.
+
+    Ordering is ``(created_at, id)``: the timestamp decides, and the id only
+    breaks a genuine tie so the answer is at least stable across calls.
+    """
     ws, [first, _second] = _workspace(factory, "AAA", "BBB")
     svc = SqlAlchemyBoardService(factory, ws)
 
