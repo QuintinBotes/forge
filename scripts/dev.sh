@@ -80,8 +80,17 @@ EOF
 cmd="${1:-up}"
 case "${cmd}" in
   up)
-    # The single command: build images, start detached, wait for healthy.
-    compose up -d --build --wait
+    # Build and start everything, including the one-shot `migrate` and `seed`.
+    compose up -d --build
+
+    # Then wait for health — but only on the long-running services. `--wait`
+    # treats a one-shot that has exited as a failed service even when it exited
+    # 0, so waiting on the whole project makes a completely successful bring-up
+    # return non-zero and `make dev` report failure. Naming the long-running
+    # services keeps the health gate while letting migrate/seed finish and exit.
+    compose up -d --wait \
+      db redis minio api worker mcp-gateway web caddy
+
     compose ps
     print_urls
     ;;
