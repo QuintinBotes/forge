@@ -39,8 +39,22 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      # Celery's broker. Several worker tests (supervised multi-agent dispatch,
+      # the MCP token bucket) talk to a real Redis rather than a fake, and
+      # without one they fail with ECONNREFUSED rather than skipping — the job
+      # declared Postgres but never this.
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
       FORGE_TEST_DATABASE_URL: postgresql+psycopg://forge:forge@localhost:5432/forge_test
+      FORGE_REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -328,15 +342,12 @@ jobs:
           --error --metrics=off --sarif -o semgrep.sarif .
 
       # --- Dependency audit --- #
-      # PYSEC-2026-2132: command injection in click.edit(). Forge never imports
-      # click, so the vulnerable path is unreachable; click<8.2 is pinned by the
-      # semgrep dev/CI dependency, so click>=8.3.3 is not resolvable. Revisit and
-      # drop this ignore once semgrep lifts the click<8.2 cap (dependabot #1).
+      # No ignores: semgrep has lifted its click<8.2 cap, so click resolves to
+      # 8.4.2 and PYSEC-2026-2132 no longer applies.
       - name: pip-audit
         run: >-
           uv export --frozen --format requirements-txt --no-emit-workspace
           | uv run pip-audit -r /dev/stdin --strict
-          --ignore-vuln PYSEC-2026-2132
 
       # --- Secret scan (full history) --- #
       # The gitleaks GitHub Action requires a paid license for ORGANIZATION
