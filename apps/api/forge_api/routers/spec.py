@@ -29,9 +29,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
 
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from forge_api.auth.rbac import Permission
 from forge_api.deps import DbSession, Principal, get_current_principal
@@ -58,6 +60,7 @@ from forge_spec import (
     ManifestDiff,
     SpecKeyError,
     SpecNotFoundError,
+    SpecParseError,
     diff_manifest,
     diff_markdown,
     is_spec_key,
@@ -131,7 +134,18 @@ EngineDep = Annotated[FileSpecEngine, Depends(get_spec_engine)]
 
 @contextmanager
 def _spec_errors() -> Iterator[None]:
-    """Translate spec domain exceptions into HTTP error responses."""
+    """Translate spec domain exceptions into HTTP error responses.
+
+    The malformed-document cases matter as much as the domain ones: both write
+    endpoints take a whole document as a string, so a caller's first attempt
+    often fails validation. Letting that escape returns a bare 500 whose actual
+    cause — which field, which line — is visible only in the server log, and the
+    client has nothing to correct. They map to 422 carrying the detail instead.
+
+    ``SpecKeyError`` is caught ahead of the malformed-input clauses on purpose:
+    it subclasses ``ValueError``, and "that key is taken" is a conflict (409),
+    not a parse failure.
+    """
     try:
         yield
     except SpecNotFoundError as exc:
@@ -140,6 +154,25 @@ def _spec_errors() -> Iterator[None]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except SpecGateError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValidationError as exc:
+        # Hand back pydantic's own error list, the same shape FastAPI returns for
+        # a bad request body, so a client parses one format either way.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=jsonable_encoder(exc.errors()),
+        ) from exc
+    except SpecParseError as exc:
+        detail: dict[str, object] = {"msg": str(exc), "type": "spec_md_parse_error"}
+        if exc.line is not None:
+            detail["line"] = exc.line
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=[detail]
+        ) from exc
+    except yaml.YAMLError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=[{"msg": f"manifest is not valid YAML: {exc}", "type": "yaml_error"}],
+        ) from exc
 
 
 def resolve_spec_ref(spec_id: str) -> uuid.UUID:

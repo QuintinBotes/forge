@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from forge_board import SqlAlchemyBoardService
 from forge_board.exceptions import NoProjectError
-from forge_contracts import TaskDTO
+from forge_contracts import EpicDTO, IncidentDTO, MilestoneDTO, SprintDTO, TaskDTO
 from forge_db.base import Base
 from forge_db.models import Project, Workspace
 
@@ -120,3 +120,68 @@ def test_the_default_never_reaches_across_workspaces(
 
     with pytest.raises(NoProjectError):
         svc.create_task(TaskDTO(title="Nowhere to put this"))
+
+# --- every project-scoped entity, not just tasks (issue #102) -------------- #
+
+
+def _create(svc: SqlAlchemyBoardService, entity: str):
+    """Create one entity of each kind with no project_id."""
+    return {
+        "task": lambda: svc.create_task(TaskDTO(title="probe")),
+        "epic": lambda: svc.create_epic(EpicDTO(title="probe")),
+        "sprint": lambda: svc.create_sprint(SprintDTO(name="probe")),
+        "milestone": lambda: svc.create_milestone(MilestoneDTO(name="probe")),
+        "incident": lambda: svc.create_incident(IncidentDTO(title="probe")),
+    }[entity]()
+
+
+@pytest.mark.parametrize("entity", ["task", "epic", "sprint", "milestone", "incident"])
+def test_every_entity_falls_back_to_the_default_project(
+    factory: sessionmaker[Session], entity: str
+) -> None:
+    """`POST /board/epics` with only a title used to be a bare HTTP 500.
+
+    `project_id` is optional on every one of these DTOs and NOT NULL on every
+    one of their columns, so the omission became an IntegrityError rather than
+    an answer. Fixing it for tasks alone left the other four reachable.
+    """
+    ws, [project_id] = _workspace(factory, "DEMO")
+    svc = SqlAlchemyBoardService(factory, ws)
+
+    created = _create(svc, entity)
+
+    assert created.project_id == project_id
+
+
+@pytest.mark.parametrize("entity", ["task", "epic", "sprint", "milestone", "incident"])
+def test_every_entity_reports_a_projectless_workspace(
+    factory: sessionmaker[Session], entity: str
+) -> None:
+    ws, _ = _workspace(factory)
+    svc = SqlAlchemyBoardService(factory, ws)
+
+    with pytest.raises(NoProjectError):
+        _create(svc, entity)
+
+
+@pytest.mark.parametrize("entity", ["epic", "sprint", "milestone", "incident"])
+def test_an_explicit_project_still_wins_for_every_entity(
+    factory: sessionmaker[Session], entity: str
+) -> None:
+    ws, [_first, second] = _workspace(factory, "AAA", "BBB")
+    svc = SqlAlchemyBoardService(factory, ws)
+
+    dto = {
+        "epic": EpicDTO(title="probe", project_id=second),
+        "sprint": SprintDTO(name="probe", project_id=second),
+        "milestone": MilestoneDTO(name="probe", project_id=second),
+        "incident": IncidentDTO(title="probe", project_id=second),
+    }[entity]
+    created = {
+        "epic": svc.create_epic,
+        "sprint": svc.create_sprint,
+        "milestone": svc.create_milestone,
+        "incident": svc.create_incident,
+    }[entity](dto)
+
+    assert created.project_id == second

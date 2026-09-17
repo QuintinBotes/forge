@@ -157,3 +157,66 @@ def test_a_malformed_key_is_rejected_by_validation(client: TestClient) -> None:
         json={"epic_id": str(uuid.uuid4()), "name": "Bad", "key": "mod 893"},
     )
     assert resp.status_code == 422, resp.text
+
+# --- malformed documents answer, rather than 500 (issue #103) -------------- #
+
+
+def test_a_manifest_that_fails_validation_is_422_with_the_errors(
+    client: TestClient,
+) -> None:
+    """A wrong field type used to be a bare 500 with the reason only in the log."""
+    _create(client)
+    # `constraints` is list[str]; send a list of objects.
+    bad = (
+        "id: SPEC-1\n"
+        "name: Customer search\n"
+        "constraints:\n"
+        "  - id: C1\n"
+        "    text: ships off by default\n"
+    )
+    resp = client.put("/spec/specs/SPEC-1/manifest", json={"content": bad})
+
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    # Pydantic's own error list — the same shape FastAPI returns for a bad body.
+    assert isinstance(detail, list) and detail
+    assert any("constraints" in str(item.get("loc", "")) for item in detail)
+
+
+def test_malformed_yaml_is_422_not_500(client: TestClient) -> None:
+    _create(client)
+    resp = client.put(
+        "/spec/specs/SPEC-1/manifest",
+        json={"content": "id: SPEC-1\nname: [unclosed\n"},
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "YAML" in resp.text or "yaml" in resp.text
+
+
+def test_unparseable_markdown_is_422_not_500(client: TestClient) -> None:
+    """The markdown endpoint takes a whole document too, and had the same hole."""
+    _create(client)
+    resp = client.put(
+        "/spec/specs/SPEC-1/markdown",
+        json={"content": "no frontmatter, no headings, not a spec document"},
+    )
+
+    assert resp.status_code == 422, resp.text
+
+
+def test_a_valid_manifest_still_saves(client: TestClient) -> None:
+    """The guard must not swallow good input."""
+    _create(client)
+    good = (
+        "id: SPEC-1\n"
+        "name: Renamed via manifest\n"
+        "status: draft\n"
+        "constraints:\n"
+        "  - ships off by default\n"
+    )
+    resp = client.put("/spec/specs/SPEC-1/manifest", json={"content": good})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["name"] == "Renamed via manifest"
+    assert resp.json()["constraints"] == ["ships off by default"]
