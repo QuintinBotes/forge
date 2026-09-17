@@ -3,6 +3,11 @@
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import {
+  constraintKey,
+  constraintText,
+  withConstraintText,
+} from "@/lib/spec-studio/constraints";
 import { Button } from "@/components/ui/button";
 import {
   SPEC_STATUSES,
@@ -319,13 +324,15 @@ export function GuidedMode({ value, onChange, onSave, saving = false, dirty = fa
         </h3>
         <ul className="flex flex-col gap-2" data-testid="guided-constraints">
           {constraints.map((constraint, index) => (
-            <li key={index} className="flex items-center gap-2">
+            <li key={constraintKey(constraint, index)} className="flex items-center gap-2">
               <input
                 aria-label={`Constraint ${index + 1}`}
-                value={constraint}
+                value={constraintText(constraint)}
                 onChange={(event) => {
+                  // Edit the text in place; an identified constraint keeps its
+                  // id so anything citing it still resolves.
                   const next = [...constraints];
-                  next[index] = event.target.value;
+                  next[index] = withConstraintText(constraint, event.target.value);
                   onChange({ ...value, constraints: next });
                 }}
                 className="flex-1 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground outline-none"

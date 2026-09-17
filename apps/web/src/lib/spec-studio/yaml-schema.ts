@@ -28,7 +28,7 @@ export interface YamlIssue {
 
 const EXECUTION_MODES = ["single_agent", "supervised_multi_agent"] as const;
 
-const STRING_ARRAY_FIELDS = ["constitution_refs", "repos", "constraints"] as const;
+const STRING_ARRAY_FIELDS = ["constitution_refs", "repos"] as const;
 const NULLABLE_STRING_FIELDS = ["plan_ref", "tasks_ref", "validation_ref", "skill_profile"] as const;
 
 /** Required scalar id/text shape shared by requirements, ACs, questions, ADRs. */
@@ -86,6 +86,52 @@ function checkStringList(
     if (!isScalar(itemNode) || typeof itemNode.value !== "string") {
       pushIssue(issues, text, itemNode, `${key}[${index}] must be a string`);
     }
+  });
+}
+
+/**
+ * Constraints accept either shape.
+ *
+ * They gained an `{id, text}` form so they can be cited — "rejected because it
+ * violates C2" needs something to point at — but every manifest written before
+ * that is a list of bare strings, and those are still on disk and in version
+ * history. Flagging them as invalid in the editor would make a document Forge
+ * itself wrote look broken.
+ */
+function checkConstraintList(
+  doc: Document.Parsed,
+  text: string,
+  issues: YamlIssue[],
+): void {
+  const node = resolveNode(doc, ["constraints"]);
+  if (node == null) return;
+  if (!isSeq(node)) {
+    pushIssue(issues, text, node, "'constraints' must be a list");
+    return;
+  }
+  node.items.forEach((item, index) => {
+    const itemNode = item as ParsedNode;
+    if (isScalar(itemNode) && typeof itemNode.value === "string") return;
+    if (isMap(itemNode)) {
+      for (const key of ["id", "text"]) {
+        const field = itemNode.get(key, true) as ParsedNode | undefined;
+        if (field == null || !isScalar(field) || typeof field.value !== "string") {
+          pushIssue(
+            issues,
+            text,
+            field ?? itemNode,
+            `constraints[${index}].${key} must be a string`,
+          );
+        }
+      }
+      return;
+    }
+    pushIssue(
+      issues,
+      text,
+      itemNode,
+      `constraints[${index}] must be a string or {id, text}`,
+    );
   });
 }
 
@@ -241,6 +287,7 @@ export function validateManifestYaml(text: string): YamlIssue[] {
   for (const field of STRING_ARRAY_FIELDS) {
     checkStringList(doc, text, field, issues);
   }
+  checkConstraintList(doc, text, issues);
 
   const requirementIds = new Set<string>();
   checkItemList(

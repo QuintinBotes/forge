@@ -61,6 +61,12 @@ x-python-env: &python-env
   FORGE_REDIS_URL: redis://redis:6379/0
   MCP_GATEWAY_URL: http://mcp-gateway:8001
   MINIO_ENDPOINT: http://minio:9000
+  # The spec engine's on-disk store. Absent this, `spec_root` defaults to the
+  # relative path `specs`, which lands on the container's own writable layer:
+  # every spec is destroyed by a rebuild, the key allocator restarts at 1 and
+  # reissues a key that is already in use, and the worker cannot see a spec the
+  # API wrote because each container has its own copy.
+  FORGE_SPEC_ROOT: /srv/forge/specs
 
 services:
   # --------------------------------------------------------------------- #
@@ -148,6 +154,8 @@ services:
     environment:
       <<: *python-env
       FORGE_CORS_ORIGINS: '["http://localhost:3000","http://localhost:8080"]'
+    volumes:
+      - forge-specs:/srv/forge/specs
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -173,6 +181,8 @@ services:
     image: forge/worker:dev
     command: ["celery", "-A", "forge_worker", "worker", "--loglevel=info"]
     environment: *python-env
+    volumes:
+      - forge-specs:/srv/forge/specs
     depends_on:
       db:
         condition: service_healthy
@@ -200,6 +210,8 @@ services:
       - "--port"
       - "8001"
     environment: *python-env
+    volumes:
+      - forge-specs:/srv/forge/specs
     depends_on:
       db:
         condition: service_healthy
@@ -271,6 +283,7 @@ services:
       start_period: 10s
 
 volumes:
+  forge-specs:
   dev-db-data:
   dev-redis-data:
   dev-minio-data:

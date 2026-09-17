@@ -3,6 +3,7 @@
 import { AlertTriangle, CheckCircle2, ListTree, Eye as EyeIcon, Route } from "lucide-react";
 import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type UIEvent } from "react";
 
+import { constraintKey, constraintText } from "@/lib/spec-studio/constraints";
 import { Button } from "@/components/ui/button";
 import { TraceabilityMatrix } from "@/components/spec/traceability-matrix";
 import { computeChecklist, computeCoverage, computeNudges } from "@/components/spec-studio/guided-helpers";
@@ -195,8 +196,8 @@ function PreviewPanel({ manifest }: { manifest: ReturnType<typeof parseSpecMarkd
           <h3 className="font-display text-sm font-semibold text-foreground">Constraints</h3>
           <ul className="flex flex-col gap-1">
             {constraints.map((c, i) => (
-              <li key={i} className="text-sm text-foreground/90">
-                {c}
+              <li key={constraintKey(c, i)} className="text-sm text-foreground/90">
+                {constraintText(c)}
               </li>
             ))}
           </ul>
