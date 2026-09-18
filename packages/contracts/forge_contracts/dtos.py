@@ -763,7 +763,17 @@ class SpecManifest(_Model):
     review_note: str | None = None
     constitution_refs: list[str] = Field(default_factory=list)
     repos: list[str] = Field(default_factory=list)
+    #: The epic this spec was created for. Carried on the manifest so generated
+    #: tasks can be linked back to the board they came from; `spec_create` used
+    #: to take it and discard it, which left every generated task orphaned.
+    epic_id: uuid.UUID | None = None
     requirements: list[Requirement] = Field(default_factory=list)
+    #: Explicit scope EXCLUSIONS. Tasks are generated from `requirements` only,
+    #: so a non-goal recorded here can never become a work item. Written as a
+    #: requirement ("X stays out of scope"), it did: generation is 1:1 over
+    #: requirements, so the spec's own exclusion came back as a task marked
+    #: ready_for_agent telling an agent to do the thing the spec forbade.
+    non_goals: list[Requirement] = Field(default_factory=list)
     acceptance_criteria: list[AcceptanceCriterion] = Field(default_factory=list)
     open_questions: list[OpenQuestion] = Field(default_factory=list)
     constraints: list[Constraint] = Field(default_factory=list)

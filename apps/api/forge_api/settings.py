@@ -177,6 +177,15 @@ class Settings(BaseSettings):
     # ``FORGE_SECRET_BACKEND``.
     secret_backend: str = "memory"
 
+    # Explicit opt-in to the offline scripted agent model. OFF by default: a
+    # deployment with no model provider must REFUSE an agent run, not fake one.
+    # The scripted client finishes every objective cleanly, so falling back to it
+    # silently made a run that did nothing indistinguishable from one that did
+    # the work — the board moved, the task closed, the trace looked clean. Set
+    # this only for offline demos and hermetic tests, never where a run's result
+    # is trusted. Read via ``FORGE_ALLOW_SCRIPTED_AGENT``.
+    allow_scripted_agent: bool = False
+
     # Filesystem root for the spec engine's SDD artifacts (manifests, plans).
     spec_root: str = "specs"
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from forge_contracts import (
     AcceptanceCriterion,
+    Requirement,
     SpecManifest,
     TaskDTO,
     TaskKind,
@@ -34,8 +35,33 @@ def test_ref_for(manifest: SpecManifest, acceptance_id: str) -> str:
     return f"tests/test_{slugify(manifest.id)}.py::test_{acceptance_id.lower()}"
 
 
+#: Longest title before it stops being a title. A requirement is often a
+#: paragraph, and a board whose every row is three lines of prose is unreadable.
+_TITLE_MAX = 72
+
+
+def _task_title(requirement: Requirement) -> str:
+    """A one-line title from a requirement that may be a paragraph.
+
+    Takes the first sentence, then truncates on a word boundary. The full text
+    is never lost — it is the task's description.
+    """
+    first = requirement.text.strip().split(". ")[0].strip().rstrip(".")
+    collapsed = " ".join(first.split())
+    if len(collapsed) <= _TITLE_MAX:
+        return collapsed or requirement.id
+    clipped = collapsed[:_TITLE_MAX].rsplit(" ", 1)[0].rstrip(",;:")
+    return f"{clipped}…"
+
+
 def generate_tasks(manifest: SpecManifest) -> list[TaskDTO]:
-    """Return the deterministic task list for an (approved) ``manifest``."""
+    """Return the deterministic task list for an (approved) ``manifest``.
+
+    Iterates ``requirements`` only. ``non_goals`` are deliberately excluded: a
+    scope exclusion is not work, and when one was written as a requirement it
+    became a task marked ``ready_for_agent`` instructing an agent to do the very
+    thing the spec ruled out.
+    """
     spec_uuid = spec_id_for_key(manifest.id)
     tasks: list[TaskDTO] = []
     for ordinal, requirement in enumerate(manifest.requirements, start=1):
@@ -54,8 +80,12 @@ def generate_tasks(manifest: SpecManifest) -> list[TaskDTO]:
                 id=task_id_for(manifest.id, key),
                 key=key,
                 spec_id=spec_uuid,
+                # Link the task back to the board the spec came from. Without
+                # this every generated task was orphaned — no epic, no project —
+                # even though the spec was created against a real epic.
+                epic_id=manifest.epic_id,
                 kind=TaskKind.FEATURE,
-                title=requirement.text,
+                title=_task_title(requirement),
                 description=f"Implement {requirement.id}: {requirement.text}",
                 status=TaskStatus.READY_FOR_AGENT,
                 execution_mode=manifest.execution_mode,

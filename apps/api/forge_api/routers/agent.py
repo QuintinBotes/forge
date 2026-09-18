@@ -20,6 +20,7 @@ store so ``GET /agent/runs/{run_id}`` can return them.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import uuid
 from collections.abc import Callable
 from functools import lru_cache
@@ -55,6 +56,7 @@ from forge_api.services.fork_service import (
     fork_recording,
 )
 from forge_api.services.replay_service import replay_recording
+from forge_api.settings import get_settings
 from forge_contracts import AgentObjective, AgentRunResult, ModelClient
 from forge_db.models import RunRecording
 from forge_policy import (
@@ -62,6 +64,8 @@ from forge_policy import (
     enforce_skill_profile_allowed,
     load_policy,
 )
+
+logger = logging.getLogger("forge_api.routers.agent")
 
 router = APIRouter(
     prefix="/agent",
@@ -124,17 +128,70 @@ class AgentRunStore:
 # --------------------------------------------------------------------------- #
 
 
-def _default_runner() -> AgentRunner:
-    # Offline-safe deterministic model: every objective finishes cleanly without
-    # any live provider call. A real ModelClient is injected in production.
+#: Raised when a run is requested on a deployment that cannot call a model.
+_NO_PROVIDER_DETAIL = (
+    "no model provider is configured, so this run cannot be executed. Set "
+    "FORGE_MODEL_PROVIDER (anthropic|openai) and a key "
+    "(FORGE_MODEL_API_KEY, or the provider-native ANTHROPIC_API_KEY / "
+    "OPENAI_API_KEY), or store one in the workspace vault. Note that the dev "
+    "stack reads deploy/.env.dev, not the repo-root .env. To run offline with "
+    "canned output instead, set FORGE_ALLOW_SCRIPTED_AGENT=1 — never where a "
+    "run's result is trusted."
+)
+
+
+def _scripted_fallback_runner() -> AgentRunner:
+    """The offline deterministic runner, only when explicitly opted in.
+
+    Carries no confidence: the previous default attached ``confidence=0.9`` to a
+    canned string, asserting near-certainty about a result that involved no
+    reasoning at all.
+    """
     model = ScriptedModelClient(
         responses=[],
         default=finish_response(
-            "Objective acknowledged; no offline model actions were required.",
-            confidence=0.9,
+            "Offline scripted agent (FORGE_ALLOW_SCRIPTED_AGENT=1): no model was "
+            "called and no work was performed.",
         ),
     )
     return AgentRunner(model)
+
+
+def _default_runner() -> AgentRunner:
+    """Build the runner, or refuse when this deployment cannot call a model.
+
+    A run that cannot reach a model has not succeeded, and must not report that
+    it has. The previous default silently substituted the scripted client, whose
+    every objective "finishes cleanly" — so a run that did nothing was
+    indistinguishable downstream from one that did the work.
+
+    The offline client is still available, but only behind an explicit
+    ``FORGE_ALLOW_SCRIPTED_AGENT``, so it can never be reached by accident.
+    """
+    config = ModelClientConfig.from_env()
+    if config is not None:
+        try:
+            return AgentRunner(build_model_client(config, redactor=redact_text))
+        except ModelClientUnavailable as exc:
+            # The lane IS configured and its SDK is missing — a deployment
+            # error, not an invitation to fake the result.
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"model provider {config.provider!r} is configured but its SDK is "
+                    f"not installed: {exc}"
+                ),
+            ) from exc
+
+    if get_settings().allow_scripted_agent:
+        logger.warning(
+            "FORGE_ALLOW_SCRIPTED_AGENT is set and no model provider is configured: "
+            "agent runs will return canned output and perform NO work. Never use "
+            "this where a run's result is trusted."
+        )
+        return _scripted_fallback_runner()
+
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_NO_PROVIDER_DETAIL)
 
 
 @lru_cache(maxsize=1)
@@ -189,11 +246,13 @@ def _default_fork_model_factory(model: str) -> ModelClient:
             )
         except ModelClientUnavailable:
             pass
+    # Same rule as a live run: never assert confidence in a canned answer. A
+    # fork is a counterfactual, so it stays available offline — but it says so.
     return ScriptedModelClient(
         responses=[],
         default=finish_response(
-            "Counterfactual fork acknowledged; no offline model actions were required.",
-            confidence=0.9,
+            "Offline fork: no model was called, so this counterfactual reflects no "
+            "reasoning about the alternative.",
         ),
     )
 
