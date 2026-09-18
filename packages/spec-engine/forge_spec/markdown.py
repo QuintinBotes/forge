@@ -106,6 +106,7 @@ class SpecParseError(ForgeError, ValueError):
 #: Scalar / simple-list manifest fields carried by the YAML frontmatter.
 _FRONTMATTER_KEYS: tuple[str, ...] = (
     "id",
+    "epic_id",
     "status",
     "constitution_refs",
     "repos",
@@ -193,6 +194,10 @@ def render_spec_md(manifest: SpecManifest) -> str:
     if manifest.requirements:
         parts += ["", f"{_H2}Requirements", ""]
         parts += [f"- **{r.id}**: {r.text}" for r in manifest.requirements]
+
+    if manifest.non_goals:
+        parts += ["", f"{_H2}Non-Goals", ""]
+        parts += [f"- **{n.id}**: {n.text}" for n in manifest.non_goals]
 
     if manifest.acceptance_criteria:
         parts += ["", f"{_H2}Acceptance Criteria", ""]
@@ -420,6 +425,8 @@ def _parse_section(section: _Section, data: dict[str, Any]) -> None:
         data["requirements"] = _parse_requirements(section)
     elif section.title == "Acceptance Criteria":
         data["acceptance_criteria"] = _parse_acceptance(section)
+    elif section.title == "Non-Goals":
+        data["non_goals"] = _parse_requirements(section)
     elif section.title == "Constraints":
         data["constraints"] = _parse_constraints(section)
     elif section.title == "Open Questions":
