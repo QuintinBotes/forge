@@ -82,7 +82,7 @@ x-python-env: &python-env
   FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-  FORGE_ALLOW_SCRIPTED_AGENT: ${FORGE_ALLOW_SCRIPTED_AGENT:-}
+  FORGE_ALLOW_SCRIPTED_AGENT: ${FORGE_ALLOW_SCRIPTED_AGENT:-false}
 
 services:
   # --------------------------------------------------------------------- #
