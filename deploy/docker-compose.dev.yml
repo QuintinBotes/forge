@@ -61,16 +61,22 @@ x-python-env: &python-env
   FORGE_REDIS_URL: redis://redis:6379/0
   MCP_GATEWAY_URL: http://mcp-gateway:8001
   MINIO_ENDPOINT: http://minio:9000
+  # F27 multi-agent coordinator (supervised runs); read by CoordinatorSettings.
+  MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-false}
   # The spec engine's on-disk store. Absent this, `spec_root` defaults to the
   # relative path `specs`, which lands on the container's own writable layer:
   # every spec is destroyed by a rebuild, the key allocator restarts at 1 and
   # reissues a key that is already in use, and the worker cannot see a spec the
   # API wrote because each container has its own copy.
   FORGE_SPEC_ROOT: /srv/forge/specs
-  # BYOK model provider, passed through so a key set in your shell or in
-  # deploy/.env.dev actually reaches the container. Unset, the API refuses agent
-  # runs rather than returning canned output (FORGE_ALLOW_SCRIPTED_AGENT=1 opts
-  # into the offline stub). Note this stack does NOT read the repo-root .env.
+  # HARD-02 BYOK model provider, passed through so a key set in your shell or in
+  # deploy/.env.dev actually reaches the container — this shared env map has no
+  # env_file, so a value only arrives via an explicit ${VAR} reference, and this
+  # stack does NOT read the repo-root .env. FORGE_MODEL_PROVIDER
+  # (anthropic|openai) is the master switch; provider-native ANTHROPIC/OPENAI
+  # keys win, then the provider-agnostic FORGE_MODEL_API_KEY. Unset, the API
+  # REFUSES agent runs rather than returning canned output
+  # (FORGE_ALLOW_SCRIPTED_AGENT=1 opts into the offline stub).
   FORGE_MODEL_PROVIDER: ${FORGE_MODEL_PROVIDER:-}
   FORGE_MODEL_NAME: ${FORGE_MODEL_NAME:-}
   FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}

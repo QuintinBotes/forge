@@ -22,9 +22,9 @@ from datetime import UTC, datetime
 from temporalio import activity
 
 from forge_contracts import RunStatus, WorkflowRun, WorkflowState
+from forge_workflow.red_team_gate import evaluate_red_team
 from forge_workflow.store import InMemoryWorkflowStore, WorkflowStore
 from forge_workflow.temporal.payloads import (
-    REDTEAM_SURVIVED,
     AgentRunResultDTO,
     ApprovalInput,
     ChecksResult,
@@ -123,16 +123,13 @@ def _default_approval(_: ApprovalInput) -> uuid.UUID:
     return uuid.uuid4()
 
 
-def _default_red_team(_: RedTeamInput) -> RedTeamResult:
+def _default_red_team(inp: RedTeamInput) -> RedTeamResult:
     # No adversary model / sandbox wired (park-don't-fake): the scan is a
     # parked-pass so the durable spine runs and the human gate is reached
     # unchanged. A real deployment injects a red_team_fn that runs a
-    # heterogeneous adversary against the candidate in a sandbox.
-    return RedTeamResult(
-        verdict=REDTEAM_SURVIVED,
-        kind="parked",
-        evidence={"parked": True, "reason": "no adversary model/sandbox wired"},
-    )
+    # heterogeneous adversary against the candidate in a sandbox. The verdict
+    # construction is the shared, engine-agnostic helper (V1 mints the same).
+    return evaluate_red_team(inp, red_team_fn=None)
 
 
 class WorkflowActivities:

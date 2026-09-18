@@ -5,6 +5,15 @@
 #
 # Third-party (and official actions/*) actions are pinned to a full commit SHA
 # with a human-readable version comment, so a moved tag cannot alter what runs.
+#
+# NOTE — intentional overlap with ci.yml's `security` job: that job runs the
+# same scanners (bandit, pip-audit, gitleaks) plus semgrep + SBOM + the
+# enforcement-matrix suite as part of the full green gate. This workflow is
+# kept as a separate, minimal-permission (contents: read only), fast-to-review
+# check so the core secret/SAST/dependency gate can be reasoned about (and
+# required in branch protection) independently of the rest of CI. Do not
+# de-duplicate one into the other without checking branch-protection required
+# status checks first.
 name: security
 
 on:
@@ -70,12 +79,9 @@ jobs:
         run: uv run bandit -c pyproject.toml -r packages apps --severity-level high -q
 
       # Dependency audit against the fully-resolved, frozen requirements set.
-      # PYSEC-2026-2132: command injection in click.edit(). Forge never imports
-      # click, so the vulnerable path is unreachable; click<8.2 is pinned by the
-      # semgrep dev/CI dependency, so click>=8.3.3 is not resolvable. Revisit and
-      # drop this ignore once semgrep lifts the click<8.2 cap (dependabot #1).
+      # No ignores: semgrep has lifted its click<8.2 cap, so click resolves to
+      # 8.4.2 and PYSEC-2026-2132 no longer applies.
       - name: pip-audit
         run: >-
           uv export --frozen --format requirements-txt --no-emit-workspace
           | uv run pip-audit -r /dev/stdin --strict
-          --ignore-vuln PYSEC-2026-2132

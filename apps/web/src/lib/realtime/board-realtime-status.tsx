@@ -5,11 +5,11 @@ import { useCallback } from "react";
 import { BoardEventToastViewport, useBoardEventToasts } from "./board-event-toast";
 import { BoardConnectionIndicator } from "./board-presence";
 import {
-  DEFAULT_WS_URL,
   useBoardRealtime,
   type BoardRealtimeEvent,
   type SocketFactory,
 } from "./use-board-realtime";
+import { resolveBoardWsUrl } from "./ws-url";
 
 export interface BoardRealtimeStatusProps {
   enabled?: boolean;
@@ -62,7 +62,7 @@ export function BoardRealtimeStatus({
     <>
       <BoardConnectionIndicator
         connected={connected}
-        url={url ?? DEFAULT_WS_URL}
+        url={url ?? resolveBoardWsUrl()}
         className={className}
       />
       <BoardEventToastViewport toasts={toasts} onDismiss={dismiss} />

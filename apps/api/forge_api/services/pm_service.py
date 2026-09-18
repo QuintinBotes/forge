@@ -6,23 +6,32 @@ through an injectable transport factory (so tests stay socket-free), verifies +
 dedupes inbound webhooks, and writes an immutable audit entry per accepted
 webhook / health probe.
 
-Board-write execution (the worker's ``process_webhook`` -> re-fetch ->
-``sync_in`` and the outbound ``activity_events`` scan) is intentionally **not**
-performed here — see module notes / the slice report: it depends on the F01
-Postgres board substrate (``activity_events`` outbox + versioned task service)
-which is not present in this foundation. The engine that performs it lives in
-``forge_integrations.pm.sync_engine`` and is fully unit-tested against fakes.
+Board-write execution now runs: each accepted (non-skipped) delivery enqueues
+the worker task ``forge.pm.process_webhook``
+(``forge_worker.tasks.pm_sync``), which re-fetches the changed issue through
+the provider adapter and upserts the board via the F01 Postgres board
+substrate (``SqlAlchemyBoardService`` + ``DbLinkRepository``), workspace-
+scoped and idempotent on redelivery. Enqueueing is fail-open: a broker outage
+logs a loud warning and the webhook still returns 202 (the persisted delivery
+row is the durable record for reprocessing).
+
+Still parked (unchanged scope): OAuth code exchange, historical backfill,
+manual conflict-resolve execution, external delete propagation, and the
+outbound ``activity_events`` scan.
 """
 
 from __future__ import annotations
 
 import builtins
 import hashlib
+import logging
+import os
 import secrets
 import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import lru_cache
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -59,6 +68,29 @@ from forge_integrations.pm.transport import (
     PMTransport,
 )
 
+logger = logging.getLogger(__name__)
+
+#: Must match ``apps/worker/forge_worker/tasks/pm_sync.py::PM_SYNC_TASK`` —
+#: duplicated (not imported) because ``forge-api`` cannot depend on
+#: ``forge-worker`` (the dependency runs the other way); mirrors the
+#: ``FULL_SYNC_TASK`` pattern in ``mcp_index_service.py``.
+PROCESS_WEBHOOK_TASK = "forge.pm.process_webhook"
+
+
+@lru_cache(maxsize=1)
+def _celery_app() -> object:  # pragma: no cover - prod seam
+    from celery import Celery
+
+    url = os.environ.get("FORGE_REDIS_URL", "redis://localhost:6379/0")
+    return Celery("forge-api-enqueue", broker=url, backend=url)
+
+
+def enqueue_process_webhook(delivery_row_id: uuid.UUID) -> None:  # pragma: no cover - prod seam
+    """Enqueue the worker board-write task for one persisted delivery."""
+    _celery_app().send_task(  # type: ignore[attr-defined]
+        PROCESS_WEBHOOK_TASK, args=[str(delivery_row_id)]
+    )
+
 
 class PMConnectionNotFound(LookupError):
     """Raised when a connection id is absent in the caller's workspace."""
@@ -91,11 +123,13 @@ class PMConnectionService:
         vault: SecretVault,
         audit: AuditLog,
         transport_factory: Callable[[PMConnection], PMTransport] = _default_transport_factory,
+        process_webhook_enqueue: Callable[[uuid.UUID], None] = enqueue_process_webhook,
     ) -> None:
         self._sf = session_factory
         self._vault = vault
         self._audit = audit
         self._transport_factory = transport_factory
+        self._enqueue_process_webhook = process_webhook_enqueue
 
     # ------------------------------------------------------------------ #
     # connection CRUD                                                     #
@@ -322,10 +356,12 @@ class PMConnectionService:
     def receive_webhook(
         self, connection: PMConnection, body: bytes, headers: dict[str, str]
     ) -> tuple[int, WebhookEvent | None]:
-        """Verify -> dedupe -> persist a delivery. Returns ``(status_code, event)``.
+        """Verify -> dedupe -> persist -> enqueue. Returns ``(status_code, event)``.
 
-        The payload is a *hint*; the worker re-fetches authoritative state before
-        any board write (parked — see module docstring). 401 on bad signature.
+        The payload is a *hint*; the worker task (``forge.pm.process_webhook``)
+        re-fetches authoritative state before the board write. 401 on bad
+        signature. Enqueue failures never fail the response (fail-open + warn);
+        skipped deliveries (disabled / outbound-only) are never enqueued.
         """
         adapter = self._build_adapter(connection)
         secret = self._webhook_secret(connection)
@@ -359,6 +395,7 @@ class PMConnectionService:
             )
             session.add(delivery)
             session.commit()
+            delivery_row_id = delivery.id
 
         self._audit.record(
             category=AuditCategory.SYSTEM,
@@ -368,7 +405,18 @@ class PMConnectionService:
             status=status.value,
             payload_hash=payload_hash,
         )
-        # NOTE: enqueue of pm.process_webhook is parked (worker board-write path).
+        if status == PMDeliveryStatus.RECEIVED:
+            try:
+                self._enqueue_process_webhook(delivery_row_id)
+            except Exception:
+                logger.warning(
+                    "pm webhook accepted but worker enqueue failed "
+                    "(delivery row %s, connection %s); the board write will not "
+                    "run until the delivery is reprocessed",
+                    delivery_row_id,
+                    connection.id,
+                    exc_info=True,
+                )
         return 202, event
 
     # ------------------------------------------------------------------ #
@@ -474,8 +522,10 @@ class PMConnectionService:
 
 
 __all__ = [
+    "PROCESS_WEBHOOK_TASK",
     "PMConflictExists",
     "PMConnectionNotFound",
     "PMConnectionService",
     "PMError",
+    "enqueue_process_webhook",
 ]

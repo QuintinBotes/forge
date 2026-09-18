@@ -49,18 +49,25 @@ def json_type() -> TypeEngine[Any]:
     return JSON().with_variant(JSONB(), "postgresql")
 
 
-def enum_type[E: enum.Enum](enum_cls: type[E]) -> SAEnum:
+def enum_type[E: enum.Enum](enum_cls: type[E], *, length: int | None = None) -> SAEnum:
     """String-backed enum column storing the member ``value`` (cross-dialect).
 
     ``native_enum=False`` renders as VARCHAR + CHECK (no Postgres native ENUM,
     keeping migrations simple); ``values_callable`` persists ``member.value`` so
     stored strings match the spec verbatim (e.g. ``agent-runner``).
+
+    ``length`` pins the rendered ``VARCHAR`` width. Left ``None`` (the default),
+    SQLAlchemy sizes the column to the longest enum value; pass an explicit width
+    when a migration has deliberately widened the DB column beyond the current
+    vocabulary (e.g. F40's ``VARCHAR(32)`` headroom on the automation trigger
+    columns) so the ORM metadata renders the same width and no drift is reported.
     """
     return SAEnum(
         enum_cls,
         native_enum=False,
         validate_strings=True,
         values_callable=lambda e: [member.value for member in e],
+        length=length,
     )
 
 

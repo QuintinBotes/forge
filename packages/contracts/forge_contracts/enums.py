@@ -123,10 +123,17 @@ class ExecutionMode(enum.StrEnum):
 
 
 class SpecStatus(enum.StrEnum):
-    """Spec manifest status (spec: Spec Manifest Schema)."""
+    """Spec manifest status (spec: Spec Manifest Schema).
+
+    ``changes_requested``/``rejected`` are review decisions at the human gate:
+    they sit between ``clarifying`` and ``approved`` in lifecycle order (the
+    spec has been reviewed but has NOT passed the gate).
+    """
 
     DRAFT = "draft"
     CLARIFYING = "clarifying"
+    CHANGES_REQUESTED = "changes_requested"
+    REJECTED = "rejected"
     APPROVED = "approved"
     IMPLEMENTING = "implementing"
     VALIDATED = "validated"

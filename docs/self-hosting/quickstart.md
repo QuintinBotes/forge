@@ -3,9 +3,11 @@
 Stand up a complete Forge instance on a single machine with Docker Compose. This
 is the fastest path from a clone to a running board, knowledge pipeline, and
 API. For the production hardening details see
-[docker-compose.md](docker-compose.md); for day-2 operations see
-[backup.md](backup.md), [restore.md](restore.md), [upgrade.md](upgrade.md),
-[security.md](security.md), and [troubleshooting.md](troubleshooting.md).
+[docker-compose.md](docker-compose.md); for the edge proxy (Caddy by default,
+nginx alternative) see [reverse-proxy.md](reverse-proxy.md); for day-2
+operations see [backup.md](backup.md), [restore.md](restore.md),
+[upgrade.md](upgrade.md), [security.md](security.md), and
+[troubleshooting.md](troubleshooting.md).
 
 ## Prerequisites
 
@@ -25,12 +27,15 @@ cp .env.example .env
 
 Edit `.env` and set, at minimum:
 
-- `SECRET_KEY` and `AUTH_SECRET` — long random strings (e.g.
-  `openssl rand -hex 32`).
+- `FORGE_SECRET_KEY` and `AUTH_SECRET` — long random strings (e.g.
+  `openssl rand -hex 32`). (`SECRET_KEY` is a deprecated alias that is
+  detected and warned about — see `apps/api/forge_api/cli_secrets.py`.)
 - `POSTGRES_PASSWORD` and `MINIO_ROOT_PASSWORD` — strong unique secrets.
 - `DOMAIN` — the hostname Caddy will serve (use `localhost` for a local trial).
-- `MODEL_PROVIDER_KEY` — your BYOK model provider key (Forge is provider
-  agnostic; leave blank to run the platform without live model calls).
+- `FORGE_MODEL_PROVIDER` (`anthropic`|`openai`) plus a BYOK key
+  (`FORGE_MODEL_API_KEY`, or `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) — Forge is
+  provider agnostic; leave `FORGE_MODEL_PROVIDER` unset to run the platform on the
+  offline scripted model (no live model calls).
 
 The full set of variables is documented inline in
 [../../.env.example](../../.env.example).

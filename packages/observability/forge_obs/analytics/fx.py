@@ -11,10 +11,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from uuid import UUID
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
 
 __all__ = ["DbFxRateBook", "FxRate", "FxRateBook", "InMemoryFxRateBook", "convert"]
 
@@ -78,7 +81,7 @@ class InMemoryFxRateBook:
 class DbFxRateBook:
     """FX rate book over the real ``fx_rate`` table."""
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
     def resolve(self, *, base: str, quote: str, at: datetime) -> Decimal | None:

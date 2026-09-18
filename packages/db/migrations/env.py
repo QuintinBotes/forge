@@ -19,7 +19,13 @@ from forge_db.base import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers` defaults to True, which would disable every
+    # logger already created — not just reconfigure it. In-process that silences
+    # the whole application: `alembic upgrade` inside a running app, or a test
+    # session that touches migrations before an app test asserts on a log line,
+    # leaves those loggers permanently dead with no error. Alembic only needs to
+    # ADD its own handlers here.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

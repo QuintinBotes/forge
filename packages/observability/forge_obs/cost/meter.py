@@ -14,6 +14,7 @@ re-raises only in strict mode — cost/observability must never crash a run.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from forge_obs.cost.models import COST_KINDS, CostRecord, ModelUsage
 from forge_obs.cost.pricing import PriceBook, compute_cost
@@ -90,7 +91,7 @@ class UsageMeter:
             )
         return record
 
-    def _safe(self, emit) -> None:
+    def _safe(self, emit: Callable[[ForgeMetrics], object]) -> None:
         """Metric export must never break cost emission (spec AC7)."""
         try:
             emit(self._facade)

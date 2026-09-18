@@ -10,9 +10,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from forge_db.models.obs_analytics import CoverageSnapshot
 
 __all__ = [
     "CoverageSnapshotDTO",
@@ -53,11 +59,11 @@ class CoverageTrendPoint(BaseModel):
 class SqlCoverageRepository:
     """Recompute-and-upsert + trend/rollup reads over ``coverage_snapshot``."""
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
     @staticmethod
-    def _dto(row) -> CoverageSnapshotDTO:
+    def _dto(row: CoverageSnapshot) -> CoverageSnapshotDTO:
         return CoverageSnapshotDTO(
             id=row.id,
             project_id=row.project_id,

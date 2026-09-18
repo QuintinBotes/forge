@@ -1,11 +1,13 @@
 """Request/response schemas for the Adaptive Orchestration settings API
 (``ao-settings-api``): per-role model+effort config, the workspace-wide
-``tier -> model`` map / complexity thresholds / auto-route toggle, and a
-routing-preview endpoint.
+``tier -> model`` map / complexity thresholds / auto-route toggle, a
+routing-preview endpoint, and the Self-Eval Gate status/run surface.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -22,6 +24,10 @@ __all__ = [
     "RoleConfigUpsertRequest",
     "RoutingPreviewRequest",
     "RoutingPreviewResponse",
+    "SelfEvalBaselineOut",
+    "SelfEvalRunAccepted",
+    "SelfEvalStatusOut",
+    "SelfEvalSuiteOut",
 ]
 
 
@@ -110,3 +116,48 @@ class RoutingPreviewResponse(BaseModel):
     junior_max: int
     medior_max: int
     auto_route_enabled: bool
+
+
+class SelfEvalSuiteOut(BaseModel):
+    """The workspace's private Self-Eval suite (case content is never exposed)."""
+
+    id: UUID
+    slug: str
+    version: str
+    title: str
+    task_count: int
+    repo_id: str | None
+    published: bool
+
+
+class SelfEvalBaselineOut(BaseModel):
+    """The frozen baseline the Self-Eval Gate blocks regressions against."""
+
+    benchmark_suite_id: UUID
+    baseline_rate: float
+    resolved: int
+    total: int
+    #: When the baseline row was last minted/refreshed by a scoring run.
+    recorded_at: datetime
+
+
+class SelfEvalStatusOut(BaseModel):
+    """Body for ``GET /ao/self-eval/status`` — raw facts, no derived verdicts.
+
+    ``suite``/``baseline`` are ``None`` on cold start; ``enforced`` mirrors the
+    ``self_eval_enforce`` app setting. The UI derives gate status from these.
+    """
+
+    workspace_id: UUID
+    enforced: bool
+    suite: SelfEvalSuiteOut | None
+    baseline: SelfEvalBaselineOut | None
+
+
+class SelfEvalRunAccepted(BaseModel):
+    """Body for ``POST /ao/self-eval/runs`` (202): the run is queued, not done."""
+
+    status: Literal["queued"] = "queued"
+    task: str
+    workspace_id: UUID
+    benchmark_suite_id: UUID

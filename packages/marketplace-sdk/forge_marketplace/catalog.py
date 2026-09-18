@@ -100,7 +100,11 @@ def compatible_versions(
 
 def sort_versions(versions: list[RegistryIndexVersion]) -> list[RegistryIndexVersion]:
     """Return ``versions`` sorted ascending by semver precedence."""
-    return sorted(versions, key=cmp_to_key(lambda a, b: compare_semver(a.version, b.version)))
+
+    def _by_precedence(a: RegistryIndexVersion, b: RegistryIndexVersion) -> int:
+        return compare_semver(a.version, b.version)
+
+    return sorted(versions, key=cmp_to_key(_by_precedence))
 
 
 def latest_compatible(

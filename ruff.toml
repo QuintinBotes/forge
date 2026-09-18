@@ -7,7 +7,6 @@ extend-exclude = [
     ".venv",
     "node_modules",
     "apps/web",
-    "packages/ui-kit",
     "**/migrations/versions",
     # HARD-09 SAST fixtures deliberately contain rule-triggering constructs.
     "tests/security/fixtures",

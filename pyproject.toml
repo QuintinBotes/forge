@@ -60,7 +60,7 @@ package = false
 
 [tool.uv.workspace]
 members = ["packages/*", "apps/*"]
-exclude = ["packages/ui-kit", "apps/web"]
+exclude = ["apps/web"]
 
 [tool.uv.sources]
 forge-contracts = { workspace = true }

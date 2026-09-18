@@ -174,6 +174,78 @@ def test_outbound_only_records_skipped(
         assert row.status == PMDeliveryStatus.SKIPPED
 
 
+def _signed_linear(pm_service, vault, conn: dict, *, webhook_id: str) -> tuple[bytes, dict]:
+    secret = _webhook_secret(pm_service, uuid.UUID(conn["id"]), vault)
+    ts = int(datetime.now(UTC).timestamp() * 1000)
+    body = json.dumps(
+        {
+            "action": "update",
+            "type": "Issue",
+            "webhookTimestamp": ts,
+            "webhookId": webhook_id,
+            "data": {"id": "uuid-1", "identifier": "ENG-1"},
+        }
+    ).encode()
+    sig = sign_linear(secret, body)
+    return body, {"Linear-Signature": sig, "Content-Type": "application/json"}
+
+
+# --- Worker enqueue (board-write path) -------------------------------------- #
+
+
+def test_webhook_enqueues_board_write_once(
+    client, project_id, pm_service, vault, session_factory, enqueued
+) -> None:
+    """Post-persist the intake enqueues the worker task with the delivery row id;
+    a provider redelivery (same delivery id) never enqueues twice."""
+    conn = _create(client, project_id, "linear")
+    body, headers = _signed_linear(pm_service, vault, conn, webhook_id="wh-enq-1")
+    url = f"/integrations/pm/webhooks/linear/{conn['id']}"
+
+    assert client.post(url, content=body, headers=headers).status_code == 202
+    assert client.post(url, content=body, headers=headers).status_code == 202
+
+    from forge_db.models.pm import PMWebhookDelivery
+
+    with session_factory() as session:
+        row = session.query(PMWebhookDelivery).one()
+    assert enqueued == [row.id]
+
+
+def test_webhook_enqueue_failure_still_202(
+    client, project_id, pm_service, vault, monkeypatch, caplog
+) -> None:
+    """A broken broker must never fail the webhook response (fail-open + warn)."""
+    import logging
+
+    conn = _create(client, project_id, "linear")
+    body, headers = _signed_linear(pm_service, vault, conn, webhook_id="wh-enq-2")
+
+    def _boom(_row_id: uuid.UUID) -> None:
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(pm_service, "_enqueue_process_webhook", _boom)
+    with caplog.at_level(logging.WARNING, logger="forge_api.services.pm_service"):
+        resp = client.post(
+            f"/integrations/pm/webhooks/linear/{conn['id']}", content=body, headers=headers
+        )
+    assert resp.status_code == 202
+    assert "enqueue failed" in caplog.text
+
+
+def test_webhook_skipped_delivery_not_enqueued(
+    client, project_id, pm_service, vault, enqueued
+) -> None:
+    """Outbound-only connections persist a skipped delivery and never enqueue."""
+    conn = _create(client, project_id, "linear", sync_direction="outbound_only")
+    body, headers = _signed_linear(pm_service, vault, conn, webhook_id="wh-enq-3")
+    resp = client.post(
+        f"/integrations/pm/webhooks/linear/{conn['id']}", content=body, headers=headers
+    )
+    assert resp.status_code == 202
+    assert enqueued == []
+
+
 def test_webhook_unknown_connection_404(client) -> None:
     resp = client.post(
         f"/integrations/pm/webhooks/linear/{uuid.uuid4()}",

@@ -101,9 +101,10 @@ def test_slack_notify_approval_records_ts(authenticate_app: Callable[..., FastAP
     """POST /slack/approvals/{id}/notify posts the gate + stashes channel/ts (AC)."""
     import uuid
 
-    from forge_api.routers.approval import ApprovalStore, get_approval_store
     from forge_api.routers.integration import (
+        ApprovalStore,
         SlackApprovalRefStore,
+        get_approval_store,
         get_slack_notifier,
         get_slack_ref_store,
     )
@@ -137,8 +138,11 @@ def test_slack_notify_approval_404_for_unknown_gate(
 ) -> None:
     import uuid
 
-    from forge_api.routers.approval import ApprovalStore, get_approval_store
-    from forge_api.routers.integration import get_slack_notifier
+    from forge_api.routers.integration import (
+        ApprovalStore,
+        get_approval_store,
+        get_slack_notifier,
+    )
 
     store = ApprovalStore()
     slack = SlackNotifier(

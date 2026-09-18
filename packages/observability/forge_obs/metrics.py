@@ -23,7 +23,7 @@ The process singleton is owned by :func:`get_metrics` / :func:`set_metrics`;
 from __future__ import annotations
 
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Protocol, runtime_checkable
 
 __all__ = [
@@ -178,7 +178,7 @@ class NoopMetrics:
     forward-compat with facade methods added later.
     """
 
-    def _noop(self, **_kwargs) -> None:
+    def _noop(self, **_kwargs: object) -> None:
         return None
 
     record_model_cost = _noop
@@ -195,7 +195,8 @@ class NoopMetrics:
     record_mcp_call = _noop
     set_mcp_freshness_lag = _noop
 
-    def __getattr__(self, name: str):  # uniform no-op surface for new methods
+    def __getattr__(self, name: str) -> Callable[..., None]:
+        # Uniform no-op surface for facade methods added later.
         if name.startswith(("record_", "observe_", "set_")):
             return self._noop
         raise AttributeError(name)

@@ -12,6 +12,8 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 
+from sqlalchemy.orm import Session
+
 from forge_db.models.deployment import Deployment, Environment
 from forge_deploy.engine import DeploymentStateMachine
 from forge_deploy.freeze import Clock, SystemClock
@@ -53,7 +55,7 @@ def _default_health_resolver(config: dict) -> HealthChecker:
 class DeploymentOrchestrator:
     def __init__(
         self,
-        session,
+        session: Session,
         *,
         workspace_id: uuid.UUID,
         engine: DeploymentStateMachine | None = None,

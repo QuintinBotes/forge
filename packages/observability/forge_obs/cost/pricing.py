@@ -12,10 +12,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from uuid import UUID
 
 from forge_obs.cost.models import ModelPrice, ModelUsage
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
 
 __all__ = ["DbPriceBook", "InMemoryPriceBook", "PriceBook", "compute_cost"]
 
@@ -89,7 +92,7 @@ class InMemoryPriceBook:
 class DbPriceBook:
     """Price book over the durable ``model_price`` table (forge_db)."""
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
     def resolve(

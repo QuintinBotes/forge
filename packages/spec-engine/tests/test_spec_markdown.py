@@ -142,6 +142,22 @@ def test_unicode_survives_round_trip() -> None:
     assert parse_spec_md(render_spec_md(manifest)) == manifest
 
 
+def test_review_status_and_note_survive_round_trip() -> None:
+    # Reject / request-changes decisions are manifest state, so spec.md (the
+    # other canonical serialization) must carry them too — otherwise the two
+    # formats diverge on every load.
+    manifest = SpecManifest(
+        id="SPEC-7",
+        name="Reviewed spec",
+        status=SpecStatus.REJECTED,
+        review_note="Missing offline handling",
+    )
+    parsed = parse_spec_md(render_spec_md(manifest))
+    assert parsed == manifest
+    assert parsed.status is SpecStatus.REJECTED
+    assert parsed.review_note == "Missing offline handling"
+
+
 def test_goal_section_carries_the_name() -> None:
     text = render_spec_md(_full_manifest())
     assert "## Goal\n\nCustomer endpoint improvements" in text
