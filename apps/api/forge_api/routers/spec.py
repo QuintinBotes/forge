@@ -276,6 +276,7 @@ class SpecReviewRequest(BaseModel):
 
     note: str = ""
 
+
 async def read_document_body(request: Request) -> str:
     """The document to write, from either a raw body or the JSON wrapper.
 
