@@ -90,7 +90,9 @@
         "domain": {"type": "string", "minLength": 3},
         "publicUrl": {"type": "string"},
         "logLevel": {"enum": ["debug", "info", "warning", "error"]},
-        "modelProvider": {"type": "string"}
+        "modelProvider": {"type": "string", "enum": ["anthropic", "openai"]},
+        "modelName": {"type": "string"},
+        "multiAgentEnabled": {"type": "boolean"}
       }
     },
     "image": {

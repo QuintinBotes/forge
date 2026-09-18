@@ -189,15 +189,24 @@ jobs:
              cp CHANGELOG.md RELEASE_NOTES.md
 
       # --- Publish the GitHub Release (gh CLI, GITHUB_TOKEN) --- #
+      # Draft by default: a tag push always creates a draft (the `inputs`
+      # context is empty on a non-workflow_dispatch trigger, so the first
+      # disjunct short-circuits `true`); only an explicit `workflow_dispatch`
+      # run with draft=false produces a published (non-draft) release.
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_IS_DRAFT: ${{ (github.event_name != 'workflow_dispatch') || inputs.draft }}
         run: |
+          DRAFT_FLAG=""
+          if [ "$RELEASE_IS_DRAFT" = "true" ]; then
+            DRAFT_FLAG="--draft"
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --notes-file RELEASE_NOTES.md \
-            --draft \
+            $DRAFT_FLAG \
             release/sbom/forge-source.cdx.json \
             deploy/sbom/*.cdx.json \
             deploy/build-manifest.json \

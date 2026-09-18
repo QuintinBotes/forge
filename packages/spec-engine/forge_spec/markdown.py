@@ -17,6 +17,7 @@ Document shape (a YAML frontmatter block for scalar/list *metadata*, then
     ---
     id: SPEC-1
     status: draft
+    review_note: null
     constitution_refs: []
     repos: []
     execution_mode: single_agent
@@ -108,6 +109,7 @@ _FRONTMATTER_KEYS: tuple[str, ...] = (
     "id",
     "epic_id",
     "status",
+    "review_note",
     "constitution_refs",
     "repos",
     "execution_mode",

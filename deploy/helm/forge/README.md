@@ -16,8 +16,13 @@ helm install forge deploy/helm/forge -n forge --create-namespace \
   --set-string secrets.data.AUTH_SECRET="$(openssl rand -hex 32)" \
   --set-string secrets.data.API_KEY_PEPPER="$(openssl rand -hex 32)" \
   --set-string secrets.data.INTERNAL_SERVICE_TOKEN="$(openssl rand -hex 32)" \
-  --set-string secrets.data.MODEL_PROVIDER_KEY="$MODEL_KEY"
+  --set-string secrets.data.FORGE_MODEL_API_KEY="$MODEL_KEY"   # optional; omit for offline scripted model
 ```
+
+`forge.modelProvider` (default `anthropic`) sets the master switch
+`FORGE_MODEL_PROVIDER`; leave `secrets.data.FORGE_MODEL_API_KEY` blank to run the
+offline deterministic model, or set it (plus `forge.modelName` for openai) to
+drive a real provider.
 
 ## Source / dependencies
 

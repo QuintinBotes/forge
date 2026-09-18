@@ -25,8 +25,8 @@ text.
 Set the provider and key in `.env` for a quick local run:
 
 ```bash
-MODEL_PROVIDER=anthropic          # anthropic (default) or openai
-MODEL_PROVIDER_KEY=<your-api-key> # e.g. sk-ant-... or sk-...
+FORGE_MODEL_PROVIDER=anthropic     # anthropic or openai (unset -> offline scripted model)
+FORGE_MODEL_API_KEY=<your-api-key> # e.g. sk-ant-... or sk-...; or set ANTHROPIC_API_KEY / OPENAI_API_KEY
 # For OpenAI also set the model name:
 # FORGE_MODEL_NAME=gpt-4.1
 ```
@@ -43,7 +43,6 @@ secret under `MODEL_PROVIDER`, then the `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
 Hybrid retrieval can use a hosted embedding model and an optional reranker:
 
 ```bash
-EMBEDDING_PROVIDER=<provider>
 EMBEDDING_MODEL=<model>
 # Optional reranker (Jina / Cohere / a self-hosted endpoint):
 FORGE_RERANK_ENABLED=true

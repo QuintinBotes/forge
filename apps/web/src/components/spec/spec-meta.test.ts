@@ -11,6 +11,8 @@ import {
   plainCurrentStep,
   plainStepCompletion,
   plainStepState,
+  STATUS_LABELS,
+  statusBadgeClass,
   traceSealed,
 } from "./spec-meta";
 
@@ -37,6 +39,26 @@ describe("isApprovable", () => {
     expect(isApprovable("clarifying")).toBe(true);
     expect(isApprovable("approved")).toBe(false);
     expect(isApprovable("validated")).toBe(false);
+  });
+
+  it("keeps rejected / changes-requested specs reviewable (still before the gate)", () => {
+    expect(isApprovable("rejected")).toBe(true);
+    expect(isApprovable("changes_requested")).toBe(true);
+  });
+});
+
+describe("review decision statuses", () => {
+  it("labels and badges the review statuses", () => {
+    expect(STATUS_LABELS.rejected).toBe("Rejected");
+    expect(STATUS_LABELS.changes_requested).toBe("Changes requested");
+    expect(statusBadgeClass("rejected")).toContain("danger");
+    expect(statusBadgeClass("changes_requested")).toContain("warning");
+  });
+
+  it("does not count a rejected spec as past the Approve step on the lifecycle rail", () => {
+    const [describeDone, , approveDone] = plainStepCompletion({ status: "rejected" });
+    expect(describeDone).toBe(true); // requirements were captured and reviewed
+    expect(approveDone).toBe(false); // the human gate was NOT passed
   });
 });
 

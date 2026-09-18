@@ -11,6 +11,8 @@ import {
   useCreateSpec,
   useGenerateTasks,
   usePlanSpec,
+  useRejectSpec,
+  useRequestSpecChanges,
   useSpecOverview,
   useValidateSpec,
 } from "./spec";
@@ -105,6 +107,102 @@ describe("useApproveSpec (optimistic)", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     const data = queryClient.getQueryData<SpecDashboard>(specKeys.overview("p1"));
     expect(data?.specs.find((s) => s.id === "s1")?.status).toBe("clarifying");
+  });
+});
+
+describe("useRejectSpec (optimistic review decision)", () => {
+  it("posts the note and flips the spec's status to rejected before the request resolves", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    queryClient.setQueryData(specKeys.overview("p1"), dashboard);
+
+    let resolve!: (value: SpecManifest) => void;
+    const pending = new Promise<SpecManifest>((r) => {
+      resolve = r;
+    });
+    const client = {
+      rejectSpec: vi.fn(() => pending),
+    } as unknown as ForgeApiClient;
+
+    const { result } = renderHook(() => useRejectSpec(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ specId: "s1", note: "Missing offline handling" });
+    });
+
+    await waitFor(() => {
+      const data = queryClient.getQueryData<SpecDashboard>(specKeys.overview("p1"));
+      expect(data?.specs.find((s) => s.id === "s1")?.status).toBe("rejected");
+    });
+
+    act(() => {
+      resolve({
+        id: "s1",
+        name: "Passwordless auth",
+        status: "rejected",
+        review_note: "Missing offline handling",
+      });
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.rejectSpec).toHaveBeenCalledWith("s1", "Missing offline handling");
+  });
+
+  it("rolls the dashboard back when the rejection fails server-side", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    queryClient.setQueryData(specKeys.overview("p1"), dashboard);
+    const client = {
+      rejectSpec: vi.fn(() => Promise.reject(new Error("409 conflict"))),
+    } as unknown as ForgeApiClient;
+
+    const { result } = renderHook(() => useRejectSpec(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ specId: "s1", note: "too late" });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    const data = queryClient.getQueryData<SpecDashboard>(specKeys.overview("p1"));
+    expect(data?.specs.find((s) => s.id === "s1")?.status).toBe("clarifying");
+  });
+});
+
+describe("useRequestSpecChanges (optimistic review decision)", () => {
+  it("posts the note and flips the spec's status to changes_requested", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    queryClient.setQueryData(specKeys.overview("p1"), dashboard);
+
+    const client = {
+      requestSpecChanges: vi.fn(() =>
+        Promise.resolve({
+          id: "s1",
+          name: "Passwordless auth",
+          status: "changes_requested",
+          review_note: "Please add a rate limit",
+        } satisfies SpecManifest),
+      ),
+    } as unknown as ForgeApiClient;
+
+    const { result } = renderHook(() => useRequestSpecChanges(client), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ specId: "s1", note: "Please add a rate limit" });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.requestSpecChanges).toHaveBeenCalledWith("s1", "Please add a rate limit");
+    const data = queryClient.getQueryData<SpecDashboard>(specKeys.overview("p1"));
+    expect(data?.specs.find((s) => s.id === "s1")?.status).toBe("changes_requested");
   });
 });
 

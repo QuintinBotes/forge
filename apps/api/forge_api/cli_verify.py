@@ -31,9 +31,11 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import hashlib
 import sys
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -49,7 +51,13 @@ from forge_obs.attest.signing import DsseVerifier, pae
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
 
-__all__ = ["build_parser", "main"]
+__all__ = [
+    "StoredAttestationVerification",
+    "build_parser",
+    "main",
+    "resolve_verification_key",
+    "verify_stored_attestation",
+]
 
 
 # --------------------------------------------------------------------------- #
@@ -64,20 +72,77 @@ def _read_source(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
-def _resolve_public_key(explicit: str | None) -> str:
+def resolve_verification_key(explicit: str | None = None) -> str:
     """The base64 Ed25519 public key to verify against.
 
-    An explicit ``--public-key`` wins; otherwise fall back to the public half of
-    the env signing key (``FORGE_ATTEST_SIGNING_KEY``) so an attestation signed
-    on this host can be verified without re-passing the key. When no signing key
-    is set, ``EnvSigningKeyProvider`` warns and generates an ephemeral key whose
-    public half will simply not match a real signature — an honest REJECT.
+    An explicit key (``--public-key`` on the CLI) wins; otherwise fall back to
+    the public half of the env signing key (``FORGE_ATTEST_SIGNING_KEY``) so an
+    attestation signed on this host can be verified without re-passing the key.
+    When no signing key is set, ``EnvSigningKeyProvider`` warns and generates an
+    ephemeral key whose public half will simply not match a real signature — an
+    honest REJECT.
     """
     if explicit:
         return explicit
     from forge_obs.attest.signing import EnvSigningKeyProvider
 
     return EnvSigningKeyProvider().public_key_b64
+
+
+@dataclass(frozen=True)
+class StoredAttestationVerification:
+    """Outcome of verifying a stored :class:`Attestation` row's envelope.
+
+    ``payload_hash_ok`` — the sha256 over the envelope's PAE re-derivation
+    matches the recorded ``payload_hash`` column; ``signature_ok`` — an Ed25519
+    signature on the envelope verifies for the resolved public key. ``error``
+    is set (and both flags are ``False``) when the envelope payload is not
+    valid base64 — a malformed record is "not verified", never an exception.
+    """
+
+    payload_hash_ok: bool
+    signature_ok: bool
+    recomputed_payload_hash: str | None = None
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        """True iff the recorded hash matches AND the signature verifies."""
+        return self.payload_hash_ok and self.signature_ok
+
+
+def verify_stored_attestation(
+    envelope: DsseEnvelope,
+    recorded_payload_hash: str,
+    *,
+    public_key_b64: str | None = None,
+) -> StoredAttestationVerification:
+    """Verify a stored attestation exactly as ``forge-verify --run`` does.
+
+    Re-derives ``payload_hash`` from the envelope's PAE encoding, confirms it
+    matches the recorded column, and Ed25519-verifies the signature against
+    ``public_key_b64`` (resolved via :func:`resolve_verification_key` when not
+    given). This is the single DB-backed verification seam — the REST surface
+    (``forge_api.routers.attestations``) and the CLI's ``--run`` mode both call
+    it, so "verified" can never mean two different things.
+    """
+    try:
+        payload_bytes = base64.b64decode(envelope.payload, validate=True)
+    except (binascii.Error, ValueError, TypeError) as exc:
+        return StoredAttestationVerification(
+            payload_hash_ok=False,
+            signature_ok=False,
+            error=f"envelope payload is not valid base64: {exc}",
+        )
+    recomputed = hashlib.sha256(pae(envelope.payloadType, payload_bytes)).hexdigest()
+    signature_ok = DsseVerifier().verify(
+        envelope, public_key_b64=resolve_verification_key(public_key_b64)
+    )
+    return StoredAttestationVerification(
+        payload_hash_ok=recomputed == recorded_payload_hash,
+        signature_ok=signature_ok,
+        recomputed_payload_hash=recomputed,
+    )
 
 
 def _print_envelope_summary(envelope: DsseEnvelope) -> None:
@@ -129,7 +194,7 @@ def _cmd_attestation(args: argparse.Namespace) -> int:
     except (OSError, ValueError) as exc:
         print(f"error: invalid DSSE envelope: {exc}", file=sys.stderr)
         return 1
-    public_key = _resolve_public_key(args.public_key)
+    public_key = resolve_verification_key(args.public_key)
     ok = DsseVerifier().verify(envelope, public_key_b64=public_key)
     _print_envelope_summary(envelope)
     print("VERIFIED" if ok else "REJECTED")
@@ -174,24 +239,20 @@ def _cmd_run(args: argparse.Namespace) -> int:
         keyid = row.keyid
         attestation_id = row.id
 
-    try:
-        payload_bytes = base64.b64decode(envelope.payload, validate=True)
-    except (ValueError, TypeError) as exc:
-        print(f"error: envelope payload is not valid base64: {exc}", file=sys.stderr)
+    result = verify_stored_attestation(envelope, recorded_hash, public_key_b64=args.public_key)
+    if result.error is not None:
+        print(f"error: {result.error}", file=sys.stderr)
         return 1
-    recomputed_hash = hashlib.sha256(pae(envelope.payloadType, payload_bytes)).hexdigest()
-    hash_ok = recomputed_hash == recorded_hash
-
-    public_key = _resolve_public_key(args.public_key)
-    sig_ok = DsseVerifier().verify(envelope, public_key_b64=public_key)
 
     print(f"attestation: {attestation_id} (keyid {keyid})")
     _print_envelope_summary(envelope)
-    print(f"payload_hash match: {hash_ok} (recorded={recorded_hash}, recomputed={recomputed_hash})")
-    print(f"signature verified: {sig_ok}")
-    ok = hash_ok and sig_ok
-    print("VERIFIED" if ok else "REJECTED")
-    return 0 if ok else 1
+    print(
+        f"payload_hash match: {result.payload_hash_ok} "
+        f"(recorded={recorded_hash}, recomputed={result.recomputed_payload_hash})"
+    )
+    print(f"signature verified: {result.signature_ok}")
+    print("VERIFIED" if result.ok else "REJECTED")
+    return 0 if result.ok else 1
 
 
 # --------------------------------------------------------------------------- #

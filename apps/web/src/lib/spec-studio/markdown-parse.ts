@@ -275,7 +275,7 @@ function parseDecisions(section: Section, issues: MarkdownIssue[]): ADR[] {
 }
 
 const FRONTMATTER_STRING_ARRAY_FIELDS = ["constitution_refs", "repos"] as const;
-const FRONTMATTER_NULLABLE_STRING_FIELDS = ["plan_ref", "tasks_ref", "validation_ref", "skill_profile"] as const;
+const FRONTMATTER_NULLABLE_STRING_FIELDS = ["review_note", "plan_ref", "tasks_ref", "validation_ref", "skill_profile"] as const;
 
 /**
  * Parse `spec.md` `text` into a best-effort `SpecManifest` plus every

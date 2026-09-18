@@ -19,8 +19,9 @@ image:
 
 # Operator-managed Secret carrying every boot-critical + integration key
 # (SECRET_KEY, AUTH_SECRET, FORGE_VAULT_KEYS, API_KEY_PEPPER,
-# INTERNAL_SERVICE_TOKEN, MODEL_PROVIDER_KEY, FORGE_DATABASE_URL, FORGE_REDIS_URL,
-# object-store creds, GITHUB_*/SLACK_*). The chart renders NO Secret of its own.
+# INTERNAL_SERVICE_TOKEN, FORGE_DATABASE_URL, FORGE_REDIS_URL, object-store creds,
+# GITHUB_*/SLACK_*, plus the OPTIONAL BYOK FORGE_MODEL_API_KEY — blank runs the
+# offline scripted model). The chart renders NO Secret of its own.
 secrets:
   create: false
   existingSecret: forge-external

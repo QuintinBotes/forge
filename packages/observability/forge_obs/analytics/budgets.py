@@ -12,11 +12,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel
 
 from forge_obs.analytics.fx import FxRateBook, convert
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from forge_db.models.obs_analytics import Budget as BudgetRow
 
 __all__ = ["Budget", "BudgetStatus", "SqlBudgetReader", "evaluate_budget"]
 
@@ -95,10 +101,10 @@ def evaluate_budget(
 class SqlBudgetReader:
     """List/get ``budget`` rows for a workspace."""
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
-    def _dto(self, row) -> Budget:
+    def _dto(self, row: BudgetRow) -> Budget:
         return Budget(
             id=row.id,
             workspace_id=row.workspace_id,

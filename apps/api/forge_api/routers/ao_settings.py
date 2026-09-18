@@ -11,6 +11,10 @@
 * ``PUT  /ao/settings``             — partially update those (admin).
 * ``POST /ao/routing-preview``      — what tier/model/strategy a sample task
   would get, given this workspace's current settings.
+* ``GET  /ao/self-eval/status``     — the Self-Eval Gate facts: enforcement
+  flag, the workspace's private suite, and the recorded baseline.
+* ``POST /ao/self-eval/runs``       — enqueue the worker-owned
+  ``forge.self_eval.run`` task for this workspace (admin, 202).
 
 Reads are ``Permission.READ``-gated (a viewer may inspect its own workspace's
 AO configuration); every mutation is ``Permission.ADMIN``-gated, matching the
@@ -24,6 +28,8 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from forge_api.auth.rbac import Permission
 from forge_api.deps import DbSession, Principal, get_current_principal
@@ -36,7 +42,12 @@ from forge_api.schemas.ao_settings import (
     RoleConfigUpsertRequest,
     RoutingPreviewRequest,
     RoutingPreviewResponse,
+    SelfEvalBaselineOut,
+    SelfEvalRunAccepted,
+    SelfEvalStatusOut,
+    SelfEvalSuiteOut,
 )
+from forge_api.services import self_eval_service
 from forge_api.services.ao_settings_service import (
     AoSettingsService,
     EffectiveAoSettings,
@@ -47,6 +58,7 @@ from forge_api.settings import get_settings as get_app_settings
 from forge_contracts.audit import AuditEvent
 from forge_contracts.orchestration_config import AgentRole, EffectiveRoleConfig
 from forge_db.ao_settings import SqlAoSettingsStore
+from forge_db.models.benchmark import BenchmarkSuite, SelfEvalBaseline
 from forge_db.role_config import SqlRoleConfigStore
 from forge_eval.sweval import SelfEvalGate, SelfEvalRegressionError
 
@@ -314,4 +326,119 @@ def routing_preview(
         junior_max=preview.junior_max,
         medior_max=preview.medior_max,
         auto_route_enabled=preview.auto_route_enabled,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Self-Eval Gate: status read + run trigger (Phase A)                          #
+# --------------------------------------------------------------------------- #
+
+
+def _private_suite(
+    session: Session, workspace_id: uuid.UUID, *, published_only: bool = False
+) -> BenchmarkSuite | None:
+    """The workspace's private Self-Eval suite (published preferred), or ``None``."""
+    stmt = select(BenchmarkSuite).where(
+        BenchmarkSuite.workspace_id == workspace_id,
+        BenchmarkSuite.private.is_(True),
+    )
+    if published_only:
+        stmt = stmt.where(BenchmarkSuite.published.is_(True))
+    stmt = stmt.order_by(BenchmarkSuite.published.desc(), BenchmarkSuite.version.desc())
+    return session.scalars(stmt).first()
+
+
+def _effective_config_snapshot(session: Session, workspace_id: uuid.UUID) -> dict[str, Any]:
+    """The redacted effective AO settings a self-eval run scores (no secrets)."""
+    effective = _service(session).get_settings(workspace_id)
+    return {
+        "scope": "ao.settings",
+        "auto_route": effective.auto_route,
+        "tier_model_overrides": effective.tier_model_overrides,
+        "junior_max": effective.junior_max,
+        "medior_max": effective.medior_max,
+    }
+
+
+@router.get(
+    "/self-eval/status",
+    summary="Self-Eval Gate facts: enforcement flag, private suite, recorded baseline.",
+)
+def self_eval_status(principal: ReaderDep, session: DbSession) -> SelfEvalStatusOut:
+    suite = _private_suite(session, principal.workspace_id)
+    baseline = session.scalars(
+        select(SelfEvalBaseline)
+        .where(SelfEvalBaseline.workspace_id == principal.workspace_id)
+        .order_by(SelfEvalBaseline.updated_at.desc())
+    ).first()
+    return SelfEvalStatusOut(
+        workspace_id=principal.workspace_id,
+        enforced=get_app_settings().self_eval_enforce,
+        suite=SelfEvalSuiteOut(
+            id=suite.id,
+            slug=suite.slug,
+            version=suite.version,
+            title=suite.title,
+            task_count=suite.task_count,
+            repo_id=suite.repo_id,
+            published=suite.published,
+        )
+        if suite is not None
+        else None,
+        baseline=SelfEvalBaselineOut(
+            benchmark_suite_id=baseline.benchmark_suite_id,
+            baseline_rate=baseline.baseline_rate,
+            resolved=baseline.resolved,
+            total=baseline.total,
+            recorded_at=baseline.updated_at,
+        )
+        if baseline is not None
+        else None,
+    )
+
+
+@router.post(
+    "/self-eval/runs",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Enqueue the worker-owned self-eval run for this workspace (admin).",
+)
+def request_self_eval_run(principal: AdminDep, session: DbSession) -> SelfEvalRunAccepted:
+    """Queue ``forge.self_eval.run`` over the workspace's private suite.
+
+    The run itself stays in the worker (minutes-long, agent-driven, A4) — this
+    endpoint only enqueues it with the workspace's current effective AO config
+    snapshot. 409 when no published private suite exists: there is nothing the
+    worker could score, so we refuse rather than queue a guaranteed no-op.
+    """
+    suite = _private_suite(session, principal.workspace_id, published_only=True)
+    if suite is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "no_private_suite",
+                "message": (
+                    "No published private Self-Eval suite exists for this "
+                    "workspace; one is minted from merged PRs by the "
+                    "forge.self_eval.mint worker task."
+                ),
+            },
+        )
+    self_eval_service.enqueue_self_eval_run(
+        principal.workspace_id,
+        _effective_config_snapshot(session, principal.workspace_id),
+        recorded_by=principal.user_id,
+    )
+    _audit(
+        session,
+        principal,
+        "ao.self_eval.run_requested",
+        result="success",
+        severity="info",
+        details={"benchmark_suite_id": str(suite.id)},
+    )
+    session.commit()
+    return SelfEvalRunAccepted(
+        task=self_eval_service.SELF_EVAL_RUN_TASK,
+        workspace_id=principal.workspace_id,
+        benchmark_suite_id=suite.id,
     )

@@ -33,6 +33,8 @@ import type {
   RoleConfigUpsertRequest,
   RoutingPreviewRequest,
   RoutingPreviewResponse,
+  SelfEvalRunAccepted,
+  SelfEvalStatusOut,
 } from "./types";
 
 export const aoSettingsKeys = {
@@ -40,6 +42,7 @@ export const aoSettingsKeys = {
   roleConfig: (projectId?: string) =>
     ["ao-settings", "role-config", projectId ?? null] as const,
   settings: () => ["ao-settings", "workspace-settings"] as const,
+  selfEval: () => ["ao-settings", "self-eval"] as const,
 } as const;
 
 /** Every role's effective `{model_or_tier, effort}` (optionally project-scoped). */
@@ -131,5 +134,31 @@ export function usePreviewAoRouting(
 ): UseMutationResult<RoutingPreviewResponse, Error, RoutingPreviewRequest> {
   return useMutation<RoutingPreviewResponse, Error, RoutingPreviewRequest>({
     mutationFn: (body) => client.previewAoRouting(body),
+  });
+}
+
+/** Self-Eval Gate facts: enforcement flag, private suite, recorded baseline. */
+export function useSelfEvalStatus(
+  client: ForgeApiClient = apiClient,
+): UseQueryResult<SelfEvalStatusOut> {
+  return useQuery({
+    queryKey: aoSettingsKeys.selfEval(),
+    queryFn: () => client.getSelfEvalStatus(),
+  });
+}
+
+/**
+ * Queue the worker-owned `forge.self_eval.run` task (admin). Revalidates the
+ * status read so a freshly recorded baseline eventually shows up on refetch.
+ */
+export function useRunSelfEval(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<SelfEvalRunAccepted, Error, void> {
+  const queryClient = useQueryClient();
+  return useMutation<SelfEvalRunAccepted, Error, void>({
+    mutationFn: () => client.runSelfEval(),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: aoSettingsKeys.selfEval() });
+    },
   });
 }

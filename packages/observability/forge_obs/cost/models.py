@@ -101,7 +101,15 @@ class CostSummary(BaseModel):
     total_completion_tokens: int = 0
     group_by: str = "none"  # phase | provider | model | none
     buckets: list[CostBucket] = Field(default_factory=list)
-    from_: datetime | None = Field(default=None, alias="from")
+    # ``from`` is a Python keyword, so the attribute is ``from_``. Using
+    # ``validation_alias``/``serialization_alias`` (rather than ``alias``) keeps
+    # the wire key ``from`` on both read and write while letting the synthesized
+    # ``__init__`` use the real field name — so ``CostSummary(from_=...)`` is
+    # both valid Python and type-checks. ``populate_by_name`` still accepts the
+    # ``from`` key on validation, so behaviour is unchanged.
+    from_: datetime | None = Field(
+        default=None, validation_alias="from", serialization_alias="from"
+    )
     to: datetime | None = None
 
 

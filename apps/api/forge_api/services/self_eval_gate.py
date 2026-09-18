@@ -13,7 +13,8 @@ in the worker and must not block an HTTP request — and ``apps/api`` cannot imp
 API gate has no fresh scorecard for the *proposed* config and no-ops, while the
 gate MECHANISM (baseline lookup, regression block, force override, audit) is
 fully wired and exercised in tests by injecting a runner. Establishing/refreshing
-a baseline is the worker-owned ``POST /ao/self-eval/runs`` path (A4).
+a baseline is the worker-owned ``forge.self_eval.run`` Celery task (A4), which
+``POST /ao/self-eval/runs`` enqueues.
 """
 
 from __future__ import annotations

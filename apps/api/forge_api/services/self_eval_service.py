@@ -11,15 +11,53 @@ redacted ``config`` snapshot (no secrets ever land in this table).
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_db.models.benchmark import SelfEvalBaseline
+
+#: Must match ``apps/worker/forge_worker/tasks/self_eval_run.py``'s task name —
+#: duplicated (not imported) because ``forge-api`` cannot depend on
+#: ``forge-worker`` (the dependency runs the other way); mirrors the
+#: ``PROCESS_WEBHOOK_TASK`` pattern in ``pm_service.py``.
+SELF_EVAL_RUN_TASK = "forge.self_eval.run"
+
+
+@lru_cache(maxsize=1)
+def _celery_app() -> object:  # pragma: no cover - prod seam
+    from celery import Celery
+
+    url = os.environ.get("FORGE_REDIS_URL", "redis://localhost:6379/0")
+    return Celery("forge-api-enqueue", broker=url, backend=url)
+
+
+def enqueue_self_eval_run(  # pragma: no cover - prod seam
+    workspace_id: uuid.UUID,
+    proposed_config: Mapping[str, Any],
+    *,
+    recorded_by: uuid.UUID | None = None,
+) -> None:
+    """Enqueue the worker-owned private-suite run (``forge.self_eval.run``).
+
+    The run itself stays in the worker (minutes-long, agent-driven); this is the
+    thin API->worker seam the settings panel's "run self-eval" action goes
+    through. ``proposed_config`` must already be redacted (no secrets).
+    """
+    _celery_app().send_task(  # type: ignore[attr-defined]
+        SELF_EVAL_RUN_TASK,
+        args=[
+            str(workspace_id),
+            dict(proposed_config),
+            str(recorded_by) if recorded_by else None,
+        ],
+    )
 
 
 @dataclass(frozen=True)

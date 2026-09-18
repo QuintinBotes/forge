@@ -14,6 +14,7 @@ Start here and follow the path that fits you.
 | **[Getting started](./getting-started.md)** | From a clone to your first orchestrated run in ~15 minutes |
 | **[Concepts](./concepts.md)** | The mental model: specs, workflows, agents, runs, knowledge, approvals, policies + a glossary |
 | **[Architecture](./architecture.md)** | Services, package map, and how a change flows through the platform |
+| **[Trust layer](./trust-layer.md)** | Attested Changesets, Time-Travel Runs, Red-Team Gate, and the Self-Eval Gate — verifiable autonomous change |
 
 ## Connect your tools
 

@@ -7,6 +7,7 @@ import type { ForgeApiClient } from "@/lib/api/client";
 import type {
   ApprovalContext,
   ApprovalSummary,
+  AttestationOut,
   RedTeamGateOut,
 } from "@/lib/api/types";
 
@@ -66,9 +67,28 @@ function noRedTeamScan(): Promise<RedTeamGateOut> {
   return Promise.resolve({ workflow_run_id: "wf-1", latest: null, records: [] });
 }
 
+const verifiedAttestation: AttestationOut = {
+  id: "att-1",
+  changeset_hash: "sha256:" + "ab".repeat(32),
+  predicate_type: "https://forge.dev/attestations/changeset/v1",
+  keyid: "cd".repeat(32),
+  payload_hash: "ef".repeat(32),
+  created_at: "2026-07-19T00:00:00Z",
+  verified: true,
+  provenance: {
+    workflow_run_id: "wf-1",
+    agent_run_id: "ag-1",
+    pr_numbers: [7, 9],
+    spec_key: "F41",
+    spec_version: 2,
+    audit_seq: 12,
+  },
+};
+
 function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
   return {
     getWorkflowRunRedTeam: vi.fn(noRedTeamScan),
+    getApprovalAttestation: vi.fn(() => Promise.resolve<AttestationOut | null>(null)),
     ...overrides,
   } as unknown as ForgeApiClient;
 }
@@ -196,6 +216,26 @@ describe("ReviewPanel — nine must-show items", () => {
     expect(await screen.findByTestId("red-team-evidence")).toHaveTextContent(
       "AssertionError",
     );
+  });
+
+  it("surfaces a verified attested changeset on the run trace section", async () => {
+    const client = makeClient({
+      getApprovalAttestation: vi.fn(() => Promise.resolve(verifiedAttestation)),
+    });
+    renderPanel(fullContext, {}, client);
+
+    const panel = await screen.findByTestId("attestation-panel");
+    expect(panel).toHaveAttribute("data-state", "verified");
+    expect(within(panel).getByText(/signature verified/i)).toBeInTheDocument();
+    expect(client.getApprovalAttestation).toHaveBeenCalledWith("a1");
+  });
+
+  it("shows the honest not-attested state when the server confirms absence", async () => {
+    renderPanel(fullContext);
+
+    const panel = await screen.findByTestId("attestation-panel");
+    expect(panel).toHaveAttribute("data-state", "absent");
+    expect(within(panel).getByText(/not attested/i)).toBeInTheDocument();
   });
 
   it("shows no red-team badge before a scan has landed", async () => {

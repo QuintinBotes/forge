@@ -758,6 +758,9 @@ class SpecManifest(_Model):
     id: str
     name: str
     status: SpecStatus = SpecStatus.DRAFT
+    #: Reviewer note recorded with a reject / request-changes decision at the
+    #: human gate; cleared when the spec is approved.
+    review_note: str | None = None
     constitution_refs: list[str] = Field(default_factory=list)
     repos: list[str] = Field(default_factory=list)
     #: The epic this spec was created for. Carried on the manifest so generated

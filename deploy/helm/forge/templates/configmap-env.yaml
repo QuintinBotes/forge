@@ -18,7 +18,17 @@ data:
   FORGE_ENV: "production"
   LOG_LEVEL: {{ .Values.forge.logLevel | quote }}
   FORGE_PUBLIC_URL: {{ include "forge.publicUrl" . | quote }}
-  MODEL_PROVIDER: {{ .Values.forge.modelProvider | quote }}
+  # --- BYOK model provider. FORGE_MODEL_PROVIDER is the master switch; the key
+  #     itself is in the Secret (FORGE_MODEL_API_KEY). With the key blank the
+  #     worker runs the offline scripted model. FORGE_MODEL_NAME is optional for
+  #     anthropic (a reference default is applied) and required for openai. ---
+  FORGE_MODEL_PROVIDER: {{ .Values.forge.modelProvider | quote }}
+  {{- with .Values.forge.modelName }}
+  FORGE_MODEL_NAME: {{ . | quote }}
+  {{- end }}
+  # --- F27 multi-agent coordinator (supervised runs). Read by CoordinatorSettings;
+  #     the worker consumes this ConfigMap via envFrom. Default "false". ---
+  MULTI_AGENT_ENABLED: {{ .Values.forge.multiAgentEnabled | quote }}
   MCP_GATEWAY_URL: {{ printf "http://%s-mcp-gateway:%d" (include "forge.fullname" .) (int .Values.mcpGateway.service.port) | quote }}
   # --- BYOK vault: the ACTIVE key VERSION is non-secret; the key MATERIAL
   #     (FORGE_VAULT_KEYS) is in the Secret only (F37). ---
@@ -49,15 +59,11 @@ data:
   {{- else }}
   REDIS_PORT: {{ .Values.externalRedis.port | quote }}
   {{- end }}
-  # --- Object store (credentials are in the Secret) ---
-  MINIO_ENDPOINT: {{ include "forge.minioEndpoint" . | quote }}
-  {{- if .Values.minio.enabled }}
-  MINIO_BUCKET: {{ .Values.minio.defaultBuckets | quote }}
-  MINIO_REGION: "us-east-1"
-  {{- else }}
-  MINIO_BUCKET: {{ .Values.externalObjectStore.bucket | quote }}
-  MINIO_REGION: {{ .Values.externalObjectStore.region | quote }}
-  {{- end }}
+  # --- Object store: endpoint/bucket/region env is PARKED with the object-storage
+  #     scope. No code reads MINIO_ENDPOINT / MINIO_BUCKET / MINIO_REGION yet, so
+  #     they are omitted until wired. Object-store CREDENTIALS still flow via the
+  #     Secret (MINIO_ROOT_USER/PASSWORD) + the minio subchart / externalObjectStore
+  #     config; only the dead app-facing knobs are dropped here. ---
   # --- retrieval / reranker (F05) ---
   RERANK_ENABLED: {{ .Values.config.rerankEnabled | quote }}
   {{- with include "forge.rerankerUrl" . }}

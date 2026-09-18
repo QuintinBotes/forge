@@ -134,6 +134,40 @@ describe("ForgeApiClient spec-engine surface", () => {
     expect(report.passed).toBe(true);
   });
 
+  it("rejectSpec and requestSpecChanges post the note to the review endpoints", async () => {
+    const fetchImpl = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/request-changes")) {
+        return Promise.resolve(
+          json({ id: "SPEC-1", name: "x", status: "changes_requested", review_note: "tighten" }),
+        );
+      }
+      if (url.includes("/reject")) {
+        return Promise.resolve(
+          json({ id: "SPEC-1", name: "x", status: "rejected", review_note: "nope" }),
+        );
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+
+    const rejected = await client.rejectSpec("spec-1", "nope");
+    expect(rejected.status).toBe("rejected");
+    expect(rejected.review_note).toBe("nope");
+
+    const changed = await client.requestSpecChanges("spec-1", "tighten");
+    expect(changed.status).toBe("changes_requested");
+
+    const [rejectUrl, rejectInit] = fetchImpl.mock.calls[0];
+    expect(String(rejectUrl)).toContain("/spec/specs/spec-1/reject");
+    expect(rejectInit?.method).toBe("POST");
+    expect(JSON.parse(rejectInit?.body as string)).toEqual({ note: "nope" });
+
+    const [changesUrl, changesInit] = fetchImpl.mock.calls[1];
+    expect(String(changesUrl)).toContain("/spec/specs/spec-1/request-changes");
+    expect(JSON.parse(changesInit?.body as string)).toEqual({ note: "tighten" });
+  });
+
   it("getConstitution reads /spec/constitution/{project_id}", async () => {
     const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(json({ project_id: "proj-1", principles: ["Ship small"] })),

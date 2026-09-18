@@ -46,9 +46,10 @@ Edit `.env` and set, at minimum:
 
 To run agent work, also set your model provider:
 
-- `MODEL_PROVIDER=anthropic` and `MODEL_PROVIDER_KEY=<your key>` (or configure it
-  later through the encrypted vault — see
-  [BYOK](./integrations/byok-and-boards.md)).
+- `FORGE_MODEL_PROVIDER=anthropic` and a BYOK key (`ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY`, or `FORGE_MODEL_API_KEY`) — or configure it later through the
+  encrypted vault (see [BYOK](./integrations/byok-and-boards.md)). Left unset, the
+  worker runs an offline scripted model and logs a warning.
 
 Never commit `.env`; it is git-ignored.
 

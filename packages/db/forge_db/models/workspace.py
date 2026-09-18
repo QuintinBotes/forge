@@ -88,7 +88,7 @@ class APIKey(WorkspaceScopedModel):
     # and when the DEK was last re-wrapped (rotation audit). The wrapped DEK
     # itself travels inside ``encrypted_secret`` (self-describing envelope blob).
     key_version: Mapped[int] = mapped_column(
-        SmallInteger, default=1, server_default=text("1"), nullable=False
+        SmallInteger, default=1, server_default=text("1"), nullable=False, index=True
     )
     rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

@@ -106,14 +106,24 @@ def audit() -> AuditLog:
 
 
 @pytest.fixture
+def enqueued() -> list[uuid.UUID]:
+    """Delivery row ids handed to the worker-enqueue seam (recorded, no broker)."""
+    return []
+
+
+@pytest.fixture
 def pm_service(
-    session_factory: sessionmaker[Session], vault: SecretVault, audit: AuditLog
+    session_factory: sessionmaker[Session],
+    vault: SecretVault,
+    audit: AuditLog,
+    enqueued: list[uuid.UUID],
 ) -> PMConnectionService:
     return PMConnectionService(
         session_factory=session_factory,
         vault=vault,
         audit=audit,
         transport_factory=_transport_factory,
+        process_webhook_enqueue=enqueued.append,
     )
 
 

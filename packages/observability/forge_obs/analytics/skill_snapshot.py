@@ -11,12 +11,17 @@ never updated.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from pydantic import BaseModel
 
 from forge_contracts import SkillProfile
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from forge_db.models.obs_analytics import SkillProfileSnapshot
 
 __all__ = [
     "SkillProfileSnapshotDTO",
@@ -62,11 +67,11 @@ class SqlSkillProfileSnapshotRepository:
     "record the snapshot for this run" call must be a safe no-op, not a crash.
     """
 
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
     @staticmethod
-    def _dto(row) -> SkillProfileSnapshotDTO:
+    def _dto(row: SkillProfileSnapshot) -> SkillProfileSnapshotDTO:
         return SkillProfileSnapshotDTO(
             id=row.id,
             workspace_id=row.workspace_id,
@@ -85,7 +90,7 @@ class SqlSkillProfileSnapshotRepository:
 
         from forge_db.models.obs_analytics import SkillProfileSnapshot
 
-        def _existing(session) -> SkillProfileSnapshotDTO | None:
+        def _existing(session: Session) -> SkillProfileSnapshotDTO | None:
             row = session.scalars(
                 select(SkillProfileSnapshot).where(
                     SkillProfileSnapshot.agent_run_id == agent_run_id

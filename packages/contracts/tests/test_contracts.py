@@ -290,6 +290,8 @@ def test_spec_status_values() -> None:
     assert {s.value for s in fc.SpecStatus} == {
         "draft",
         "clarifying",
+        "changes_requested",
+        "rejected",
         "approved",
         "implementing",
         "validated",

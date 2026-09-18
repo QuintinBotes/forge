@@ -1,5 +1,6 @@
-"""Response schema for the Red-Team Gate surface
-(``GET /workflow/runs/{run_id}/red-team``, Red-Team Gate, slice redteam-surface).
+"""Response schemas for the Red-Team Gate surface
+(``GET``/``POST /workflow/runs/{run_id}/red-team``, Red-Team Gate,
+slices redteam-surface + redteam-trigger).
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-__all__ = ["RedTeamGateOut", "RedTeamRecordOut"]
+__all__ = ["RedTeamGateOut", "RedTeamRecordOut", "RedTeamTriggerOut"]
 
 
 class RedTeamRecordOut(BaseModel):
@@ -46,3 +47,16 @@ class RedTeamGateOut(BaseModel):
     workflow_run_id: uuid.UUID
     latest: RedTeamRecordOut | None = None
     records: list[RedTeamRecordOut] = Field(default_factory=list)
+
+
+class RedTeamTriggerOut(BaseModel):
+    """Acknowledgement of ``POST /workflow/runs/{run_id}/red-team``: the scan ran
+    and its verdict row was appended. ``record_id`` is the freshly-recorded
+    ``red_team_record`` the follow-up GET returns as ``latest``. ``kind="parked"``
+    means no adversary is configured — an explicit park, never a claimed
+    adversarial pass."""
+
+    workflow_run_id: uuid.UUID
+    record_id: uuid.UUID
+    verdict: str
+    kind: str

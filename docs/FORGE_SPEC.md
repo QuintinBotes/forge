@@ -187,7 +187,15 @@ forge/
 │   ├── policy-sdk/               # Repo policy loading, permission evaluation
 │   ├── skill-sdk/                # Skill profiles, workflow behavior injection
 │   ├── evaluation/               # Golden test set, RAGAS metrics, quality harness
-│   └── ui-kit/                   # Shared React components, design tokens
+│   ├── contracts/                # Shared DTOs/schemas used across services
+│   ├── db/                       # SQLAlchemy models, migrations, repositories
+│   ├── auth-sdk/                 # Auth/session primitives (BYOK, OAuth, API keys)
+│   ├── authz-sdk/                # RBAC/permission evaluation
+│   ├── approval-sdk/             # Human approval gate primitives
+│   ├── orchestration-policy/     # Workflow/orchestration policy evaluation
+│   ├── deploy-core/              # Deployment/environment-promotion domain logic
+│   ├── observability/            # Run traces, audit log, attestations, metrics
+│   └── marketplace-sdk/          # Integration/skill-profile marketplace primitives
 ├── docs/
 │   ├── self-hosting/             # quickstart, docker-compose, kubernetes, backup, upgrade
 │   ├── architecture/             # ADRs, service boundaries, data model
@@ -274,15 +282,35 @@ WorkflowRun
 
 ### SDD Lifecycle
 
-| Phase | CLI Action | Output | Gate |
-|---|---|---|---|
-| Constitution | `forge constitution init` | Engineering principles, arch guardrails | Human review |
-| Specify | `forge spec create` | Requirements, user journeys, acceptance criteria | Human approval |
-| Clarify | `forge spec clarify` | Resolved open questions | Human sign-off |
-| Plan | `forge spec plan` | Architecture, data model, interfaces, ADRs | Human approval |
-| Tasks | `forge spec tasks` | Phased implementation units | Auto-generated; human editable |
-| Implement | `forge run <task-id>` | Code, tests, PRs | Spec-gated |
-| Validate | `forge validate <task-id>` | Requirement-to-test traceability | Required before merge |
+> **Shipped reality:** the `forge` command surface in the table below
+> (`forge constitution init`, `forge spec create`, etc.) is a **roadmap**
+> command-line wrapper — it does not exist yet (see
+> [Phased Roadmap](#phased-roadmap)). Today the lifecycle ships **API/web-first**:
+> every phase is a live endpoint on the spec router
+> (`apps/api/forge_api/routers/spec.py`) driven from the web UI, plus an agent
+> run endpoint (`apps/api/forge_api/routers/agent.py`) for Implement. The
+> "CLI Action" column names the logical action; the "Shipped As" column is
+> what actually runs it today.
+>
+> Two SDD-adjacent console scripts do ship as real CLI entry points from
+> `apps/api/pyproject.toml`: `forge-verify` (offline attestation/audit-chain
+> verification) and `forge-replay` (Time-Travel Runs replay-and-diff) — see
+> [trust layer](./trust-layer.md). `forge bench` and `forge marketplace` also
+> exist as installed CLIs, but only their offline subcommands work standalone
+> (`bench freeze/hash/verify`, `marketplace package`); their `run`/`submit`/
+> `leaderboard` and `search`/`show`/`list`/`install`/`update` subcommands are
+> **parked stubs** that print `PARKED ... use the HTTP API or web UI` and exit
+> non-zero (`apps/api/forge_api/cli_bench.py`, `cli_marketplace.py`).
+
+| Phase | CLI Action (roadmap) | Shipped As | Output | Gate |
+|---|---|---|---|---|
+| Constitution | `forge constitution init` | `POST /spec/constitution` | Engineering principles, arch guardrails | Human review |
+| Specify | `forge spec create` | `POST /spec/specs` | Requirements, user journeys, acceptance criteria | Human approval |
+| Clarify | `forge spec clarify` | `POST /spec/specs/{id}/clarify` | Resolved open questions | Human sign-off |
+| Plan | `forge spec plan` | `POST /spec/specs/{id}/plan` | Architecture, data model, interfaces, ADRs | Human approval |
+| Tasks | `forge spec tasks` | `POST /spec/specs/{id}/tasks` | Phased implementation units | Auto-generated; human editable |
+| Implement | `forge run <task-id>` | `POST /agent/runs` | Code, tests, PRs | Spec-gated |
+| Validate | `forge validate <task-id>` | `POST /spec/tasks/{id}/validate` | Requirement-to-test traceability | Required before merge |
 
 ### Spec Folder Layout
 
@@ -839,7 +867,7 @@ sudo usermod -aG docker $USER && newgrp docker
 git clone https://github.com/QuintinBotes/forge
 cd forge
 cp .env.production.example .env.production
-# Fill in: SECRET_KEY, DB_PASSWORD, GITHUB_APP_*, MODEL_PROVIDER_KEY, DOMAIN
+# Fill in: SECRET_KEY, DB_PASSWORD, GITHUB_APP_*, FORGE_MODEL_PROVIDER + FORGE_MODEL_API_KEY (optional), DOMAIN
 
 docker compose -f docker-compose.yml --env-file .env.production up -d
 docker compose exec api forge-cli db migrate
@@ -892,6 +920,10 @@ docs/self-hosting/ must include:
 - upgrade.md (safe upgrade with rollback instructions)
 - security.md (hardening, credential rotation, network policies)
 - troubleshooting.md (common errors and fixes)
+
+**Shipped:** all nine files above exist in `docs/self-hosting/`.
+`reverse-proxy.md` documents both Caddy and the nginx alternative
+(`deploy/nginx/forge.conf`) side by side.
 
 ---
 
@@ -1008,6 +1040,7 @@ Cost: token cost per task, per workflow phase, per model provider.
 - [ ] Kubernetes Helm chart
 - [ ] Temporal workflow engine integration
 - [ ] Sprint management and velocity dashboards
+- [ ] Full `forge` CLI (`forge constitution init`, `forge spec create/clarify/plan/tasks`, `forge run`, `forge validate`) as a local command-line wrapper over the already-shipped API/web SDD lifecycle (see [SDD Lifecycle](#sdd-lifecycle))
 
 ### Phase 3 — Scale (V3)
 
@@ -1016,10 +1049,21 @@ Cost: token cost per task, per workflow phase, per model provider.
 - [ ] Advanced policy engine with conditional rules
 - [ ] Multi-team workspace controls and full RBAC hierarchy
 - [ ] Deployment gates and environment promotion workflows
-- [ ] Integration marketplace for community MCP connectors and skill profiles
-- [ ] Enterprise SSO (SAML, SCIM)
-- [ ] Firecracker / gVisor sandbox isolation
-- [ ] Benchmark suite and public evaluation leaderboard
+- [x] Integration marketplace for community MCP connectors and skill profiles — **shipped early** (F32; `packages/marketplace-sdk/`, `apps/web` marketplace screens), in-app publish flow (PR #57); `forge marketplace search/show/list/install/update` remain parked CLI stubs pending a live registry
+- [x] Enterprise SSO (SAML, SCIM) — **shipped early** (F33; `apps/api/forge_api/sso/`, `routers/saml.py`, `routers/scim.py`), plus OIDC (PR #57; `routers/oidc.py`)
+- [x] Firecracker / gVisor sandbox isolation — **shipped early** (F34; `packages/agent-runtime/forge_agent/sandbox/microvm.py`, `sandbox/gvisor.py`, Helm `runtimeclass-kata-fc`/`runtimeclass-gvisor` templates)
+- [x] Benchmark suite and public evaluation leaderboard — **shipped early** (PR #57/F35; `apps/web` leaderboard screen, benchmarks API); `forge bench run/submit/leaderboard` remain parked CLI stubs
+
+### Trust Layer — Shipped Ahead of Roadmap
+
+Not scoped in any phase above when this spec was first written; shipped as
+the platform's category-defining differentiator (PRs #61-#64). See
+[docs/trust-layer.md](./trust-layer.md) for the full write-up.
+
+- [x] Attested Changesets — DSSE-signed in-toto provenance over every changeset (PR #61)
+- [x] Time-Travel Runs — deterministic record-replay (and counterfactual fork) of an agent run (PR #62)
+- [x] Red-Team Gate — a heterogeneous adversary must fail to break the change in-sandbox before the human gate (PR #63)
+- [x] Self-Eval Gate — blocks a config change that regresses a workspace's private per-repo evaluation suite (PR #64)
 
 ---
 
