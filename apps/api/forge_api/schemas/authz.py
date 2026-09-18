@@ -96,6 +96,23 @@ class ProjectTeamAccessOut(BaseModel):
     access_level: AccessLevel
 
 
+class ProjectSummaryOut(BaseModel):
+    """A project as a listing shows it: enough to pick one and use its id.
+
+    `project_id` is required to create an epic, a sprint or a milestone, and
+    until this listing existed there was no API way to obtain one — the only
+    route was reading the `project` table directly.
+    """
+
+    id: UUID
+    key: str
+    name: str
+    description: str | None = None
+    status: str
+    visibility: ProjectVisibility
+    owner_team_id: UUID | None = None
+
+
 class ProjectAccessOut(BaseModel):
     project_id: UUID
     visibility: ProjectVisibility

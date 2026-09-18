@@ -16,6 +16,7 @@ from forge_api.authz.deps import AuthzServiceDep, PrincipalContextDep
 from forge_api.deps import get_current_principal
 from forge_api.schemas.authz import (
     ProjectAccessOut,
+    ProjectSummaryOut,
     ProjectTeamAccessIn,
     ProjectTeamAccessOut,
     ProjectVisibilityIn,
@@ -27,6 +28,30 @@ router = APIRouter(
     tags=["project-access"],
     dependencies=[Depends(get_current_principal)],
 )
+
+
+@router.get("", response_model=list[ProjectSummaryOut])
+def list_projects(ctx: PrincipalContextDep, service: AuthzServiceDep) -> list[ProjectSummaryOut]:
+    """Every project in the caller's workspace that they may read.
+
+    Filtered through the same resolver a single-project read uses, so a project
+    the caller cannot see is absent here exactly as it 404s there — a listing
+    must not become the side channel that leaks a project's existence.
+    """
+    with map_authz_errors():
+        projects = service.list_projects(ctx, ctx.workspace_id)
+    return [
+        ProjectSummaryOut(
+            id=p.id,
+            key=p.key,
+            name=p.name,
+            description=p.description,
+            status=p.status,
+            visibility=ProjectVisibility(p.visibility),
+            owner_team_id=p.owner_team_id,
+        )
+        for p in projects
+    ]
 
 
 @router.get("/{project_id}/access", response_model=ProjectAccessOut)

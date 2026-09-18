@@ -2,6 +2,7 @@
 
 import { useCallback, useState, type KeyboardEvent } from "react";
 
+import { constraintKey, constraintText } from "@/lib/spec-studio/constraints";
 import { actionForKey } from "@/components/approvals/approval-meta";
 import { DecisionBar } from "@/components/approvals/decision-bar";
 import { ManifestPanel } from "@/components/spec/manifest-panel";
@@ -177,8 +178,8 @@ export function ReadMode({
             <h3 className="font-display text-sm font-semibold text-foreground">Constraints</h3>
             <ul className="mt-1 flex flex-col gap-1">
               {constraints.map((c, i) => (
-                <li key={i} className="text-sm leading-relaxed text-foreground/90">
-                  {c}
+                <li key={constraintKey(c, i)} className="text-sm leading-relaxed text-foreground/90">
+                  {constraintText(c)}
                 </li>
               ))}
             </ul>

@@ -7,7 +7,8 @@ overwrites the target database.
 
 ## Prerequisites
 
-- A backup directory containing `postgres.dump` (and optionally `minio/`).
+- A backup directory containing `postgres.dump` (and optionally `minio/` and
+  `specs/`).
 - The **matching `.env`** — specifically the `SECRET_KEY` that was in effect
   when the backup was taken. Without it the BYOK secrets vault cannot be
   decrypted and integrations will fail even though every row restores cleanly.
@@ -42,7 +43,22 @@ existing objects before recreating them from the dump.
    deploy/scripts/restore.sh ./backups/<UTC-timestamp>
    ```
 
-3. **Restore MinIO artifacts.** The script restores Postgres only; re-upload the
+3. **Restore the spec documents.** `restore.sh` copies `specs/` back onto the
+   `forge-specs` volume for you when the backup contains it — this step is a
+   check, not extra work. Confirm it reported a restore rather than
+   `No spec documents`:
+
+   ```bash
+   docker compose -f deploy/docker-compose.yml exec -T api \
+     sh -c 'ls "${FORGE_SPEC_ROOT:-/srv/forge/specs}"'
+   ```
+
+   The spec engine is filesystem backed, so a database-only restore brings back
+   every spec's *version history* while every live spec 404s — and the key
+   allocator, which reads the documents, starts again at `SPEC-1` and hands out
+   keys that are already in use.
+
+4. **Restore MinIO artifacts.** The script does not cover these; re-upload the
    mirrored bucket from the backup:
 
    ```bash
@@ -53,7 +69,7 @@ existing objects before recreating them from the dump.
       && mc mirror --overwrite /tmp/minio-restore local/forge-artifacts'
    ```
 
-4. **Bring the application tier up** (it was held back until data was in place):
+5. **Bring the application tier up** (it was held back until data was in place):
 
    ```bash
    docker compose -f deploy/docker-compose.yml up -d
@@ -88,6 +104,13 @@ docker compose -f deploy/docker-compose.yml exec -T db \
 docker compose -f deploy/docker-compose.yml exec -T minio sh -c \
   'mc alias set local http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" \
    && mc ls --recursive local/forge-artifacts | head'
+
+# 4. Spec documents are back, and a known spec reads through the API rather
+#    than merely existing on disk
+docker compose -f deploy/docker-compose.yml exec -T api \
+  sh -c 'ls "${FORGE_SPEC_ROOT:-/srv/forge/specs}"'
+curl -fsS -H "Authorization: Bearer $KEY" \
+  http://localhost:8000/spec/specs/SPEC-1 | head -c 200
 ```
 
 Then verify at the application layer:

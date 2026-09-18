@@ -157,3 +157,110 @@ def test_a_malformed_key_is_rejected_by_validation(client: TestClient) -> None:
         json={"epic_id": str(uuid.uuid4()), "name": "Bad", "key": "mod 893"},
     )
     assert resp.status_code == 422, resp.text
+
+
+# --- malformed documents answer, rather than 500 (issue #103) -------------- #
+
+
+def test_a_manifest_that_fails_validation_is_422_with_the_errors(
+    client: TestClient,
+) -> None:
+    """A wrong field type used to be a bare 500 with the reason only in the log."""
+    _create(client)
+    # A constraint object missing its required `text`. (An object *with* both
+    # fields is valid now — see the constraint round-trip tests — so the invalid
+    # case has to be genuinely invalid.)
+    bad = "id: SPEC-1\nname: Customer search\nconstraints:\n  - id: C1\n"
+    resp = client.put("/spec/specs/SPEC-1/manifest", json={"content": bad})
+
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    # Pydantic's own error list — the same shape FastAPI returns for a bad body.
+    assert isinstance(detail, list) and detail
+    assert any("constraints" in str(item.get("loc", "")) for item in detail)
+
+
+def test_malformed_yaml_is_422_not_500(client: TestClient) -> None:
+    _create(client)
+    resp = client.put(
+        "/spec/specs/SPEC-1/manifest",
+        json={"content": "id: SPEC-1\nname: [unclosed\n"},
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "YAML" in resp.text or "yaml" in resp.text
+
+
+def test_unparseable_markdown_is_422_not_500(client: TestClient) -> None:
+    """The markdown endpoint takes a whole document too, and had the same hole."""
+    _create(client)
+    resp = client.put(
+        "/spec/specs/SPEC-1/markdown",
+        json={"content": "no frontmatter, no headings, not a spec document"},
+    )
+
+    assert resp.status_code == 422, resp.text
+
+
+def test_a_valid_manifest_still_saves(client: TestClient) -> None:
+    """The guard must not swallow good input."""
+    _create(client)
+    good = (
+        "id: SPEC-1\n"
+        "name: Renamed via manifest\n"
+        "status: draft\n"
+        "constraints:\n"
+        "  - ships off by default\n"
+    )
+    resp = client.put("/spec/specs/SPEC-1/manifest", json={"content": good})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["name"] == "Renamed via manifest"
+    # A bare string is still accepted and takes a positional id.
+    assert resp.json()["constraints"] == [{"id": "C1", "text": "ships off by default"}]
+
+
+# --- the manifest round-trips (issue #105) --------------------------------- #
+
+
+def test_a_get_can_be_piped_straight_back_into_a_put(client: TestClient) -> None:
+    """GET returns text/plain YAML; PUT used to accept only JSON-wrapped YAML.
+
+    So `curl GET > f.yaml; curl -X PUT --data-binary @f.yaml` failed with a 422
+    about a dictionary, and round-tripping needed a JSON-wrapping step between.
+    """
+    _create(client)
+    fetched = client.get("/spec/specs/SPEC-1/manifest")
+    assert fetched.status_code == 200
+    assert fetched.headers["content-type"].startswith("text/plain")
+
+    edited = fetched.text.replace("Customer search", "Edited in place")
+    resp = client.put(
+        "/spec/specs/SPEC-1/manifest",
+        content=edited,
+        headers={"Content-Type": "text/plain"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["name"] == "Edited in place"
+
+
+def test_the_json_wrapper_still_works(client: TestClient) -> None:
+    """Clients that prefer JSON keep working — this is additive."""
+    _create(client)
+    yaml_text = client.get("/spec/specs/SPEC-1/manifest").text.replace(
+        "Customer search", "Edited via JSON"
+    )
+    resp = client.put("/spec/specs/SPEC-1/manifest", json={"content": yaml_text})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["name"] == "Edited via JSON"
+
+
+def test_markdown_round_trips_as_raw_text_too(client: TestClient) -> None:
+    _create(client)
+    md = client.get("/spec/specs/SPEC-1/markdown").text
+    resp = client.put(
+        "/spec/specs/SPEC-1/markdown", content=md, headers={"Content-Type": "text/markdown"}
+    )
+    assert resp.status_code == 200, resp.text

@@ -117,3 +117,98 @@ def test_specs_with_different_prefixes_coexist(tmp_path) -> None:
 
     assert engine.read_manifest(spec_id_for_key("MOD-893")).name == "Imported"
     assert engine.read_manifest(spec_id_for_key("SPEC-1")).name == "Forge-numbered"
+
+
+# --- a create never silently becomes an update (issue #110) ---------------- #
+
+
+def test_an_allocated_key_that_collides_is_refused(tmp_path, monkeypatch) -> None:
+    """The allocator reads what is on disk, so it can hand back a used key.
+
+    A store that has lost documents — an unmounted `spec_root`, a restore, a
+    hand edit — restarts the ordinal at 1. Writing that key anyway folded the
+    new spec into the existing one as another version: silent data loss, with
+    the original recoverable only from `spec_version`.
+    """
+    engine = _engine(tmp_path)
+    engine.spec_create(uuid.uuid4(), "First", key="SPEC-1")
+
+    # Force the allocator to propose a key that is already taken.
+    monkeypatch.setattr(FileSpecEngine, "_next_spec_number", lambda self, prefix="SPEC": 1)
+
+    with pytest.raises(SpecKeyError, match="already in use"):
+        engine.spec_create(uuid.uuid4(), "Second")
+
+    # The original is untouched — not replaced, not versioned over.
+    assert engine.read_manifest(spec_id_for_key("SPEC-1")).name == "First"
+
+
+# --- generated content must not overstate itself (issues #108, #109) ------- #
+
+
+def test_no_acceptance_criteria_are_manufactured(tmp_path) -> None:
+    engine = _engine(tmp_path)
+    manifest = engine.spec_create(uuid.uuid4(), "Thing", [Requirement(id="R1", text="do a thing")])
+    assert manifest.acceptance_criteria == []
+
+
+def test_the_placeholder_adr_is_proposed_not_accepted(tmp_path) -> None:
+    """`accepted` asserted an architectural decision nobody had taken."""
+    engine = _engine(tmp_path)
+    manifest = engine.spec_create(uuid.uuid4(), "Thing", [Requirement(id="R1", text="do a thing")])
+    planned = engine.spec_plan(spec_id_for_key(manifest.id))
+
+    adr = planned.decisions[0]
+    assert adr.status == "proposed"
+    assert "TODO" in adr.decision
+
+
+# --- constraints gained ids without invalidating what is written (#107) ---- #
+
+
+def test_a_legacy_bare_string_manifest_still_loads(tmp_path) -> None:
+    """Every manifest written before constraints had ids is still on disk."""
+    from forge_spec.manifest import load_manifest
+
+    legacy = (
+        "id: SPEC-1\n"
+        "name: Legacy\n"
+        "constraints:\n"
+        "  - ships off by default\n"
+        "  - no new runtime dependencies\n"
+    )
+    manifest = load_manifest(legacy)
+
+    assert [(c.id, c.text) for c in manifest.constraints] == [
+        ("C1", "ships off by default"),
+        ("C2", "no new runtime dependencies"),
+    ]
+
+
+def test_a_legacy_spec_md_still_parses(tmp_path) -> None:
+    """`- <text>` is what every spec.md written before ids looks like."""
+    from forge_spec.markdown import parse_spec_md
+
+    legacy = (
+        "---\nid: SPEC-1\nstatus: draft\n---\n\n"
+        "## Goal\n\nLegacy\n\n"
+        "## Constraints\n\n- ships off by default\n"
+    )
+    manifest = parse_spec_md(legacy)
+
+    assert [(c.id, c.text) for c in manifest.constraints] == [("C1", "ships off by default")]
+
+
+def test_constraints_round_trip_through_markdown(tmp_path) -> None:
+    """An identified constraint survives render -> parse with its id intact."""
+    from forge_contracts import Constraint
+    from forge_spec.markdown import parse_spec_md, render_spec_md
+
+    engine = _engine(tmp_path)
+    manifest = engine.spec_create(uuid.uuid4(), "Round trip", key="SPEC-1")
+    manifest.constraints = [Constraint(id="C7", text="cite me by id")]
+    saved = engine.write_manifest(manifest)
+
+    reparsed = parse_spec_md(render_spec_md(saved))
+
+    assert [(c.id, c.text) for c in reparsed.constraints] == [("C7", "cite me by id")]

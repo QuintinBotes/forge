@@ -41,7 +41,7 @@ Document shape (a YAML frontmatter block for scalar/list *metadata*, then
 
     ## Constraints
 
-    - <constraint>
+    - **C1**: <text>
 
     ## Open Questions
 
@@ -72,6 +72,7 @@ import yaml
 from forge_contracts import (
     ADR,
     AcceptanceCriterion,
+    Constraint,
     ForgeError,
     OpenQuestion,
     Requirement,
@@ -202,7 +203,7 @@ def render_spec_md(manifest: SpecManifest) -> str:
 
     if manifest.constraints:
         parts += ["", f"{_H2}Constraints", ""]
-        parts += [f"- {c}" for c in manifest.constraints]
+        parts += [f"- **{c.id}**: {c.text}" for c in manifest.constraints]
 
     if manifest.open_questions:
         parts += ["", f"{_H2}Open Questions", ""]
@@ -343,12 +344,23 @@ def _parse_acceptance(section: _Section) -> list[AcceptanceCriterion]:
     return out
 
 
-def _parse_constraints(section: _Section) -> list[str]:
-    out: list[str] = []
+def _parse_constraints(section: _Section) -> list[Constraint]:
+    """Parse the Constraints section.
+
+    Accepts both shapes. `- **C1**: text` is what the renderer writes now; a
+    plain `- text` bullet is what every spec.md written before constraints had
+    ids looks like, and those documents are still on disk, so it keeps parsing
+    and takes a positional id.
+    """
+    out: list[Constraint] = []
     for line_no, text in _nonblank(section):
         if not text.startswith("- "):
             raise SpecParseError("constraint must be a '- ' bullet", line=line_no)
-        out.append(text[2:].strip())
+        match = _BOLD_BULLET.match(text)
+        if match:
+            out.append(Constraint(id=match["id"].strip(), text=match["text"].strip()))
+        else:
+            out.append(Constraint(id=f"C{len(out) + 1}", text=text[2:].strip()))
     return out
 
 

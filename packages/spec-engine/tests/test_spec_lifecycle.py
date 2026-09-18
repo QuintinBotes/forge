@@ -15,6 +15,7 @@ import pytest
 from forge_contracts import (
     CheckResult,
     Constitution,
+    Constraint,
     Requirement,
     SpecGateError,
     SpecManifest,
@@ -69,9 +70,12 @@ def test_spec_create_returns_draft_manifest(engine) -> None:
     assert manifest.status is SpecStatus.DRAFT
     assert manifest.id.startswith("SPEC-")
     assert [r.id for r in manifest.requirements] == ["R1", "R2"]
-    # An acceptance criterion is auto-derived per requirement (verifiable spec).
-    assert {a.id for a in manifest.acceptance_criteria}
-    assert all(a.req_refs for a in manifest.acceptance_criteria)
+    # No acceptance criteria are manufactured. One derived per requirement read
+    # "Implementation satisfies R1: <R1 verbatim>" — it restated the obligation
+    # instead of defining evidence for it, so it could not fail, while a
+    # dashboard counting 2/2 present reported the spec as well specified. An
+    # empty list the author must fill is the honest state.
+    assert manifest.acceptance_criteria == []
 
 
 def test_spec_create_writes_spec_md_and_manifest(engine) -> None:
@@ -295,11 +299,13 @@ def test_read_manifest_after_create(engine) -> None:
 
 def test_write_manifest_persists_edits(engine) -> None:
     manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
-    manifest.constraints = ["Follow existing auth middleware pattern"]
+    manifest.constraints = [Constraint(id="C1", text="Follow existing auth middleware pattern")]
     engine.write_manifest(manifest)
 
     reloaded = engine.read_manifest(spec_id_for_key(manifest.id))
-    assert reloaded.constraints == ["Follow existing auth middleware pattern"]
+    assert [(c.id, c.text) for c in reloaded.constraints] == [
+        ("C1", "Follow existing auth middleware pattern")
+    ]
 
 
 def test_read_manifest_unknown_spec_raises(engine) -> None:

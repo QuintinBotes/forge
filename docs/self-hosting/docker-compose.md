@@ -50,6 +50,15 @@ The production file follows the spec's "Production Docker Compose Requirements":
   is enabled (`otel-collector`, `prometheus`, `grafana`, `loki`, `tempo`,
   `alertmanager`); `temporal`, `temporal-ui`, and `temporal-worker` similarly
   only start under the `temporal` profile.
+
+  `minio-data`, `forge-specs`, `forge_repos`, `caddy-data`, `caddy-config`) —
+  never bind mounts. `forge-specs` is the spec engine's document store, mounted
+  into `api`, `worker` and `mcp-gateway` so all three read the same specs;
+  without it each container keeps its own copy on its writable layer and loses
+  every spec on redeploy. It is a **separate store from Postgres** and must be
+  in your backups — see [backup.md](backup.md).
+- **Segmented networks** — `edge`, `backend`, `data`, `mcp`; the `data` network
+  is marked `internal`, so the database is unreachable from the edge.
 - **Non-root** app containers (`user: "1000:1000"`).
 - **Log rotation** — `json-file` driver capped at `max-size: 100m`,
   `max-file: 5` per container.

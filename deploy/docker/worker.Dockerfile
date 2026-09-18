@@ -15,6 +15,11 @@ RUN uv sync --frozen --no-dev --no-editable
 
 RUN groupadd -g 1000 forge && useradd -u 1000 -g forge -m forge \
     && chown -R forge:forge /app
+# Spec-engine store. Created here, owned by `forge`, so that when compose mounts
+# a named volume over it Docker seeds the volume from this directory and the
+# non-root process can write. A volume mounted onto a path absent from the image
+# is created root-owned, and the engine then fails to write any spec.
+RUN mkdir -p /srv/forge/specs && chown -R forge:forge /srv/forge
 USER forge
 
 CMD ["celery", "-A", "forge_worker", "worker", "--loglevel=info"]

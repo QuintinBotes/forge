@@ -446,6 +446,18 @@ export interface Constitution {
 }
 
 /** Machine-readable spec metadata (GET /spec/specs/{id}). */
+/**
+ * A constraint the implementation must respect.
+ *
+ * Identified so it can be cited (an ADR rejecting an option "because it
+ * violates C2"). Manifests written before constraints had ids are bare strings
+ * and still valid, so both shapes appear on the wire.
+ */
+export interface SpecConstraint {
+  id: string;
+  text: string;
+}
+
 export interface SpecManifest {
   id: string;
   name: string;
@@ -457,7 +469,7 @@ export interface SpecManifest {
   requirements?: Requirement[];
   acceptance_criteria?: AcceptanceCriterion[];
   open_questions?: OpenQuestion[];
-  constraints?: string[];
+  constraints?: Array<string | SpecConstraint>;
   decisions?: ADR[];
   plan_ref?: string | null;
   tasks_ref?: string | null;

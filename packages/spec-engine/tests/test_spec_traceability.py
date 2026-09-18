@@ -12,6 +12,7 @@ import uuid
 import pytest
 
 from forge_contracts import (
+    AcceptanceCriterion,
     Requirement,
     RequirementTrace,
     ValidationReport,
@@ -31,9 +32,38 @@ def _requirements() -> list[Requirement]:
     ]
 
 
-def _approved_spec(engine: FileSpecEngine):
+def _acceptance() -> list[AcceptanceCriterion]:
+    """Criteria an author would actually write: checkable, not a restatement.
+
+    `spec_create` no longer manufactures these — a generated
+    "Implementation satisfies R1" cannot fail, so it proved nothing about the
+    traceability these tests exercise. Supplying real ones keeps the fixture
+    honest about what it is standing in for.
+    """
+    return [
+        AcceptanceCriterion(
+            id="A1",
+            req_refs=["R1"],
+            text="A search for a known surname returns that customer on page 1.",
+        ),
+        AcceptanceCriterion(
+            id="A2",
+            req_refs=["R2"],
+            text="A request with no bearer token is rejected with 401.",
+        ),
+    ]
+
+
+def _spec_with_acceptance(engine: FileSpecEngine):
+    """Create a spec and give it acceptance criteria, as an author would."""
     manifest = engine.spec_create(uuid.uuid4(), "Customer endpoint", _requirements())
-    spec_id = spec_id_for_key(manifest.id)
+    manifest.acceptance_criteria = _acceptance()
+    engine.write_manifest(manifest)
+    return spec_id_for_key(manifest.id), manifest
+
+
+def _approved_spec(engine: FileSpecEngine):
+    spec_id, manifest = _spec_with_acceptance(engine)
     engine.approve_spec(spec_id)
     return spec_id, manifest
 
@@ -85,10 +115,8 @@ def test_validate_marks_unsatisfied_requirement_without_acceptance(engine) -> No
     # A requirement with no acceptance criteria cannot be satisfied.
     manifest = engine.spec_create(uuid.uuid4(), "Sparse spec", _requirements())
     spec_id = spec_id_for_key(manifest.id)
-    # Strip acceptance criteria for R2 only, then re-persist.
-    manifest.acceptance_criteria = [
-        a for a in manifest.acceptance_criteria if "R2" not in a.req_refs
-    ]
+    # R1 is covered, R2 deliberately is not.
+    manifest.acceptance_criteria = [a for a in _acceptance() if "R2" not in a.req_refs]
     engine.write_manifest(manifest)
     engine.approve_spec(spec_id)
 
