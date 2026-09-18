@@ -169,6 +169,9 @@ class FileSpecEngine:
             id=key,
             name=name,
             status=SpecStatus.DRAFT,
+            # Persist the epic, so generated tasks can be linked back to the
+            # board. It used to be taken and dropped on the floor here.
+            epic_id=epic_id,
             requirements=reqs,
         )
         spec_dir = self.root / spec_dirname(key, name)

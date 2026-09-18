@@ -67,6 +67,16 @@ x-python-env: &python-env
   # reissues a key that is already in use, and the worker cannot see a spec the
   # API wrote because each container has its own copy.
   FORGE_SPEC_ROOT: /srv/forge/specs
+  # BYOK model provider, passed through so a key set in your shell or in
+  # deploy/.env.dev actually reaches the container. Unset, the API refuses agent
+  # runs rather than returning canned output (FORGE_ALLOW_SCRIPTED_AGENT=1 opts
+  # into the offline stub). Note this stack does NOT read the repo-root .env.
+  FORGE_MODEL_PROVIDER: ${FORGE_MODEL_PROVIDER:-}
+  FORGE_MODEL_NAME: ${FORGE_MODEL_NAME:-}
+  FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  FORGE_ALLOW_SCRIPTED_AGENT: ${FORGE_ALLOW_SCRIPTED_AGENT:-}
 
 services:
   # --------------------------------------------------------------------- #
