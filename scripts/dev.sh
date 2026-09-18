@@ -56,6 +56,21 @@ origin, so the browser needs no CORS and no separate API host:
 Demo workspace seeded: slug=demo  admin=admin@forge.local
 EOF
 
+  # The stack is fully healthy without a model provider, and gives no other
+  # hint that agent runs cannot work. Say so here rather than letting the first
+  # run fail with a 503 the reader has to go looking for.
+  if [ -z "${FORGE_MODEL_PROVIDER:-}" ]; then
+    cat <<EOF
+
+No model provider configured — agent runs will be REFUSED (HTTP 503).
+Everything else (board, specs, approvals) works.
+
+  Set FORGE_MODEL_PROVIDER (anthropic|openai) and a key in deploy/.env.dev or
+  your shell, then re-run. This stack does NOT read the repo-root .env.
+  For offline canned output instead: FORGE_ALLOW_SCRIPTED_AGENT=1
+EOF
+  fi
+
   if [ -n "${key}" ]; then
     cat <<EOF
 
