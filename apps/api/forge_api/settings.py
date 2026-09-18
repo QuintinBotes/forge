@@ -68,6 +68,30 @@ class Settings(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
+    def _empty_env_is_unset(cls, data: Any) -> Any:
+        """Treat an empty string as "not set" for every non-string field.
+
+        Compose writes ``VAR: ${VAR:-}`` to make a variable optional, and an
+        unset one then arrives as ``""`` rather than being absent. For a string
+        field that is harmless and intended; for a bool it is a hard
+        ValidationError at import time, so the API refuses to start at all —
+        which is how a single ``FORGE_ALLOW_SCRIPTED_AGENT: ${...:-}`` took the
+        whole dev stack down. Blanking a value in ``.env`` does the same.
+
+        An empty value means the operator expressed no preference, so drop it and
+        let the field default apply.
+        """
+        if not isinstance(data, dict):
+            return data
+        cleaned = dict(data)
+        for name, field in cls.model_fields.items():
+            for key in (name, name.upper()):
+                if cleaned.get(key) == "" and field.annotation is not str:
+                    cleaned.pop(key, None)
+        return cleaned
+
+    @model_validator(mode="before")
+    @classmethod
     def _apply_legacy_aliases(cls, data: Any) -> Any:
         """Map the deprecated ``SECRET_KEY``/``FORGE_ENV`` names (one release).
 
