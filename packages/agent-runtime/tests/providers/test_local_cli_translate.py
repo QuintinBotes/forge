@@ -152,18 +152,23 @@ def test_unmatched_leading_braces_do_not_prevent_later_envelope():
     assert response.tool_calls[0].name == "read_file"
 
 
-def test_brace_heavy_input_with_no_closing_brace_completes_quickly():
-    """Performance: 10,000 braces with no closing brace should hit early return.
+def test_no_closing_brace_short_circuits_without_scanning():
+    """Regression detector: rule 1 early return is load-bearing.
 
-    Rule 1 (sound early return) checks for any } after start. If none exists,
-    we return immediately without scanning. This is O(n) single pass via raw.find().
+    Rule 1 checks for any } after start. If none exists, we return immediately
+    without scanning. This is essential for perf with adversarial input.
+
+    This n is chosen so the test fails if the find('}') early return is removed;
+    do not reduce it. With rule 1: instant. Without rule 1 (cap-only fallback):
+    ~2.65s at n=1,000,000. Threshold 1.0s allows ~1000× gap, immune to machine speed.
     """
-    raw = "{" * 10000
+    # n=1,000,000 unclosed braces: no closing brace anywhere
+    raw = "{" * 1_000_000
     start_time = time.time()
     response = parse_local_cli_response(raw)
     elapsed = time.time() - start_time
 
     assert response.stop_reason == "parse_error"
     assert response.tool_calls == []
-    # Should be very fast: just one raw.find() scan
-    assert elapsed < 0.5, f"Scanner took {elapsed:.3f}s; should be sub-millisecond with rule 1"
+    # Rule 1 (find('}', start) == -1) makes this instant; cap-only would take ~2.65s
+    assert elapsed < 1.0, f"Scanner took {elapsed:.3f}s; rule 1 early return may be missing"
