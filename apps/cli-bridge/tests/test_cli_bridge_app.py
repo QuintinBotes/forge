@@ -7,6 +7,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from forge_agent.providers.local_cli.detect import CliName
 from forge_cli_bridge.app import create_app
 from forge_cli_bridge.settings import BridgeSettings
 
@@ -275,3 +276,96 @@ def test_main_module_refuses_to_build_without_a_token(monkeypatch):
     monkeypatch.delenv("FORGE_CLI_BRIDGE_TOKEN", raising=False)
     with pytest.raises(ValueError):
         importlib.reload(importlib.import_module("forge_cli_bridge.main"))
+
+
+# -- FORGE_LOCAL_CLI_PREFERENCE (final review, I3) -------------------------- #
+#
+# The bridge is the process that actually spawns a CLI, so it is the only
+# place the operator's preference can be acted on. It used to re-run
+# detect_clis() with the module DEFAULT_PREFERENCE and take detected[0]: an
+# operator asking for `codex` got `claude`, labelled `codex` on the worker
+# side -- a silent misroute to the one backend that has never been verified
+# against its live binary.
+
+
+def _which_both(name: str) -> str | None:
+    return f"/usr/local/bin/{name}" if name in {"claude", "codex"} else None
+
+
+def _capturing_runner(calls: list[list[str]]):
+    def runner(argv, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, stdout=ENVELOPE, stderr="")
+
+    return runner
+
+
+def test_configured_preference_selects_the_matching_backend(monkeypatch):
+    """Both CLIs present, `codex` preferred -> the codex binary is the one spawned."""
+    monkeypatch.setenv("PATH", "")
+    calls: list[list[str]] = []
+    app_client = _client(preference=(CliName.codex,))
+    app_client.app.state.runner = _capturing_runner(calls)
+    app_client.app.state.which = _which_both
+
+    response = app_client.post(
+        "/v1/complete", json=_body(), headers={"Authorization": "Bearer t0ken"}
+    )
+
+    assert response.status_code == 200
+    assert calls, "the bridge must have spawned a CLI"
+    assert calls[0][0] == "codex"
+
+
+def test_default_preference_still_prefers_claude(monkeypatch):
+    """No preference expressed -> detect_clis()'s own DEFAULT_PREFERENCE order."""
+    monkeypatch.setenv("PATH", "")
+    calls: list[list[str]] = []
+    app_client = _client()
+    app_client.app.state.runner = _capturing_runner(calls)
+    app_client.app.state.which = _which_both
+
+    app_client.post("/v1/complete", json=_body(), headers={"Authorization": "Bearer t0ken"})
+
+    assert calls[0][0] == "claude"
+
+
+def test_a_preference_naming_an_absent_cli_is_unavailable_not_substituted(monkeypatch):
+    """Same semantics as ``ModelClientConfig.from_env``: the preference is the
+    candidate set, so an operator who names only an uninstalled CLI is told
+    so rather than quietly served the other one.
+    """
+    monkeypatch.setenv("PATH", "")
+    app_client = _client(preference=(CliName.codex,))
+    app_client.app.state.which = _which_only_claude
+
+    response = app_client.post(
+        "/v1/complete", json=_body(), headers={"Authorization": "Bearer t0ken"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["stop_reason"] == "provider_unavailable"
+    # Namespaced even here, so the caller never meters it on a priced row.
+    assert response.json()["model"] == "local-cli"
+
+
+def test_health_reports_clis_in_the_configured_preference_order():
+    app_client = _client(preference=(CliName.codex, CliName.claude))
+    app_client.app.state.which = _which_both
+    assert app_client.get("/health").json()["clis"] == ["codex", "claude"]
+
+
+def test_settings_from_env_reads_the_preference(monkeypatch):
+    monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
+    monkeypatch.setenv("FORGE_LOCAL_CLI_PREFERENCE", "codex,claude")
+    from forge_cli_bridge.main import _settings_from_env
+
+    assert _settings_from_env().preference == (CliName.codex, CliName.claude)
+
+
+def test_settings_from_env_without_a_preference_is_none(monkeypatch):
+    monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
+    monkeypatch.delenv("FORGE_LOCAL_CLI_PREFERENCE", raising=False)
+    from forge_cli_bridge.main import _settings_from_env
+
+    assert _settings_from_env().preference is None

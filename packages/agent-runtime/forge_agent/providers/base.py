@@ -85,6 +85,10 @@ def build_model_client(
             return LocalCliBridgeClient(
                 base_url=config.bridge_url,
                 token=config.bridge_token,
+                # The operator's `FORGE_LOCAL_CLI_PREFERENCE`, so an untagged
+                # bridge reply is still metered inside the `local-cli`
+                # namespace rather than against the objective's pinned model.
+                cli_name=config.cli_name,
                 timeout_s=config.timeout_s,
                 redactor=redactor,
             )

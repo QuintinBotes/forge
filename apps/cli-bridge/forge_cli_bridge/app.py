@@ -107,7 +107,10 @@ def create_app(settings: BridgeSettings) -> FastAPI:
     def health() -> dict[str, object]:
         return {
             "status": "ok",
-            "clis": [d.name.value for d in detect_clis(which=app.state.which)],
+            "clis": [
+                d.name.value
+                for d in detect_clis(preference=settings.preference, which=app.state.which)
+            ],
             # Fix round 2, IMPORTANT: this used to be "loopback_only": a claim
             # about the actual bound socket. This app object cannot verify
             # that claim -- under `uvicorn forge_cli_bridge.main:app --host
@@ -126,9 +129,21 @@ def create_app(settings: BridgeSettings) -> FastAPI:
 
     @app.post("/v1/complete", dependencies=[Depends(_authorize)])
     async def complete(request: ModelRequest) -> ModelResponse:
-        detected = detect_clis(which=app.state.which)
+        # Fix wave (final review, I3): `settings.preference` --
+        # `FORGE_LOCAL_CLI_PREFERENCE` from the *bridge's* own environment --
+        # is honoured here, not just used for the run's label on the worker
+        # side. This call is the one place that decides which host binary
+        # actually runs, so ignoring it here made the operator's stated choice
+        # a no-op. `detect_clis` treats the preference as the set and order of
+        # candidates (same semantics as `ModelClientConfig.from_env`), so an
+        # operator who names only a CLI that is not installed gets
+        # `provider_unavailable` rather than a silent substitution.
+        detected = detect_clis(preference=settings.preference, which=app.state.which)
         if not detected:
-            return ModelResponse(content="", stop_reason="provider_unavailable")
+            # Namespaced even here, where no CLI was chosen: `model` is what
+            # the caller meters the run under, and it must never fall back to
+            # a priced API model id (spec F §5).
+            return ModelResponse(content="", model="local-cli", stop_reason="provider_unavailable")
         client = LocalCliModelClient(
             cli_name=CliName(detected[0].name),
             timeout_s=settings.timeout_s,

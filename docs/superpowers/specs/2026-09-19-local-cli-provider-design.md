@@ -221,9 +221,17 @@ with a diagnostic `stop_reason`:
 | Timeout | `timeout` |
 | Unparseable after one repair retry | `parse_error` |
 | CLI reported auth failure | `auth_error` |
+| Argument list too large for `execve` (`E2BIG`) | `input_too_large` |
 
 `LocalCliBridgeClient` maps transport failures (connection refused, 401, 5xx) onto the same set,
 so the worker cannot tell — and need not care — which transport was used.
+
+This vocabulary has exactly one definition, `forge_contracts.ProviderFailureStopReason` (and its
+derived `PROVIDER_FAILURE_STOP_REASONS` set), which the providers emit from and the agent runtime
+matches against. A response carrying one of these values **fails the run**: `AgentRunner` ends the
+turn with `RunStatus.FAILED` and an error naming the `stop_reason`, never an empty `SUCCEEDED`
+(§3's "fail loud", AC6). The SDK-backed providers are unaffected — they raise `ModelClientError`
+rather than returning any of these values.
 
 ## 8. Testing
 

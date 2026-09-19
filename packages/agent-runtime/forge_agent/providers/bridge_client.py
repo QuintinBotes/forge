@@ -15,7 +15,13 @@ from typing import Any
 import httpx
 
 from forge_agent.providers.base import ModelClientError
-from forge_contracts import ModelRequest, ModelResponse, ModelStreamEvent
+from forge_agent.providers.local_cli.detect import CliName
+from forge_contracts import (
+    ModelRequest,
+    ModelResponse,
+    ModelStreamEvent,
+    ProviderFailureStopReason,
+)
 
 __all__ = ["LocalCliBridgeClient"]
 
@@ -34,6 +40,7 @@ class LocalCliBridgeClient:
         *,
         base_url: str,
         token: str,
+        cli_name: CliName | None = None,
         timeout_s: float = 600.0,
         redactor: Callable[[str], str] = _identity,
         transport: Any | None = None,
@@ -57,15 +64,24 @@ class LocalCliBridgeClient:
         self._timeout_s = timeout_s
         self._redactor = redactor
         self._transport = transport
+        #: The namespaced model id this transport reports when the bridge does
+        #: not (every failure path, and any bridge that returns an untagged
+        #: response). ``cli_name`` is the operator's configured preference, so
+        #: it is a best guess at which backend the *host* actually ran -- the
+        #: bridge's own answer wins when it gives one. What matters for cost is
+        #: only that it always stays inside the ``local-cli`` namespace: a
+        #: subscription run must never be priced against a real API model's
+        #: row (spec F §5).
+        self._model_id = f"local-cli:{cli_name}" if cli_name is not None else "local-cli"
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         auth_header = self._auth_header()
         if auth_header is None:
-            return ModelResponse(content="", stop_reason="provider_error")
+            return self._failure("provider_error")
 
         body = self._encode_body(request)
         if body is None:
-            return ModelResponse(content="", stop_reason="provider_error")
+            return self._failure("provider_error")
 
         try:
             with httpx.Client(timeout=self._timeout_s, transport=self._transport) as client:
@@ -82,15 +98,15 @@ class LocalCliBridgeClient:
                     },
                 )
         except (httpx.ConnectError, httpx.ConnectTimeout):
-            return ModelResponse(content="", stop_reason="provider_unavailable")
+            return self._failure("provider_unavailable")
         except httpx.TimeoutException:
-            return ModelResponse(content="", stop_reason="timeout")
+            return self._failure("timeout")
         except httpx.HTTPError as exc:
             _logger.warning("cli bridge transport error: %s", self._redactor(str(exc)))
-            return ModelResponse(content="", stop_reason="provider_error")
+            return self._failure("provider_error")
 
         if response.status_code in (401, 403):
-            return ModelResponse(content="", stop_reason="auth_error")
+            return self._failure("auth_error")
         if not (200 <= response.status_code < 300):
             # Deliberate catch-all for everything outside 2xx that isn't a
             # clean auth rejection. The bridge never issues a redirect, but a
@@ -100,18 +116,44 @@ class LocalCliBridgeClient:
             # about what a non-2xx/non-auth status means. Handling the full
             # range here is deliberate instead.
             _logger.warning("cli bridge returned %s", response.status_code)
-            return ModelResponse(content="", stop_reason="provider_error")
+            return self._failure("provider_error")
 
         try:
-            return ModelResponse.model_validate(response.json())
+            return self._namespaced(ModelResponse.model_validate(response.json()))
         except Exception:
-            return ModelResponse(content="", stop_reason="parse_error")
+            return self._failure("parse_error")
 
     def stream(self, request: ModelRequest) -> Iterator[ModelStreamEvent]:
         response = self.complete(request)
         yield ModelStreamEvent(type="text", text=response.content, delta=response.content)
 
     # -- internals ---------------------------------------------------------
+
+    def _failure(self, reason: ProviderFailureStopReason) -> ModelResponse:
+        """A failed turn, carrying a namespaced model id like any other.
+
+        ``reason`` is typed with the shared ``ProviderFailureStopReason``
+        literal (``forge_contracts``) -- the same definition the agent runtime
+        matches against to fail the run, so a value outside it is a
+        type-checking error here rather than a silent empty success there.
+        """
+        return ModelResponse(content="", model=self._model_id, stop_reason=reason)
+
+    def _namespaced(self, response: ModelResponse) -> ModelResponse:
+        """Force the bridge's reply into the ``local-cli`` pricing namespace.
+
+        The host-side ``LocalCliModelClient`` already stamps
+        ``local-cli:<cli>``, and that value is the authoritative one (it names
+        the CLI that actually ran, which can differ from this side's
+        configured preference). Anything else -- an untagged reply, or a real
+        API model id from something that is not this bridge -- is replaced,
+        because the one thing that must hold is that a subscription run is
+        never metered against a priced model row (spec F §5).
+        """
+        reported = response.model or ""
+        if reported == "local-cli" or reported.startswith("local-cli:"):
+            return response
+        return response.model_copy(update={"model": self._model_id})
 
     def _auth_header(self) -> bytes | None:
         """Bytes for the ``Authorization`` header, latin-1 encoded.

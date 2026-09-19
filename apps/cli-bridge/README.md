@@ -53,6 +53,7 @@ of needing its own copy of the CLI.
 | `FORGE_CLI_BRIDGE_ALLOW_NON_LOOPBACK` | unset | Set to `1`/`true`/`yes`/`on` to allow a non-loopback `FORGE_CLI_BRIDGE_HOST`. |
 | `FORGE_LOCAL_CLI_TIMEOUT_S` | `600` | Per-request CLI subprocess timeout, in seconds. |
 | `FORGE_CLI_BRIDGE_MAX_CONCURRENCY` | `4` | Max concurrent `/v1/complete` CLI subprocess spawns. |
+| `FORGE_LOCAL_CLI_PREFERENCE` | `claude,codex` | Comma-separated order of CLIs to try. Read from **this** process's environment: the bridge is what spawns the binary, so this is the copy that decides which one runs (the worker's copy only labels the run). Also the candidate set — naming only an uninstalled CLI yields `provider_unavailable`. |
 
 ## Endpoints
 

@@ -282,3 +282,88 @@ def test_unserialisable_value_that_str_still_cannot_render_is_provider_error():
 
     response = _client(handler).complete(request)
     assert response.stop_reason == "provider_error"
+
+
+# -- namespaced model id (final review, I2) --------------------------------- #
+
+
+def test_bridge_model_id_falls_back_to_the_configured_cli():
+    """An untagged 200 reply is still metered inside the ``local-cli`` namespace."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=json.loads(ENVELOPE))
+
+    client = LocalCliBridgeClient(
+        base_url="http://host.docker.internal:8099",
+        token="t0ken",
+        cli_name=CliName.codex,
+        transport=httpx.MockTransport(handler),
+    )
+    assert client.complete(_request()).model == "local-cli:codex"
+
+
+def test_bridge_model_id_without_a_configured_cli_is_the_bare_namespace():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=json.loads(ENVELOPE))
+
+    assert _client(handler).complete(_request()).model == "local-cli"
+
+
+def test_the_bridges_own_model_id_wins():
+    """The host knows which CLI actually ran; this side only knows a preference."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(ENVELOPE) | {"model": "local-cli:claude"}
+        return httpx.Response(200, json=payload)
+
+    client = LocalCliBridgeClient(
+        base_url="http://host.docker.internal:8099",
+        token="t0ken",
+        cli_name=CliName.codex,
+        transport=httpx.MockTransport(handler),
+    )
+    assert client.complete(_request()).model == "local-cli:claude"
+
+
+def test_a_priced_model_id_from_the_wire_is_never_trusted():
+    """Whatever answered, a local-CLI run must not be priced on a real API row."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(ENVELOPE) | {"model": "claude-opus-4-8"}
+        return httpx.Response(200, json=payload)
+
+    client = LocalCliBridgeClient(
+        base_url="http://host.docker.internal:8099",
+        token="t0ken",
+        cli_name=CliName.claude,
+        transport=httpx.MockTransport(handler),
+    )
+    assert client.complete(_request()).model == "local-cli:claude"
+
+
+def test_bridge_model_id_is_namespaced_on_every_failure_path():
+    def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    handlers = {
+        "provider_unavailable": refused,
+        "timeout": slow,
+        "auth_error": lambda request: httpx.Response(401, json={"detail": "nope"}),
+        "provider_error": lambda request: httpx.Response(500, text="boom"),
+        "parse_error": lambda request: httpx.Response(200, text="not json"),
+    }
+    for expected_reason, handler in handlers.items():
+        client = LocalCliBridgeClient(
+            base_url="http://host.docker.internal:8099",
+            token="t0ken",
+            cli_name=CliName.claude,
+            transport=httpx.MockTransport(handler),
+        )
+        response = client.complete(_request())
+        assert response.stop_reason == expected_reason
+        assert response.model == "local-cli:claude", (
+            f"{expected_reason} must still be metered as a local-CLI run"
+        )

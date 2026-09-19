@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -1226,6 +1226,31 @@ class ModelRequest(_Model):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+#: The diagnostic ``stop_reason`` values a provider returns *instead of* raising
+#: when a turn could not be completed at all (local-CLI provider, spec F §7).
+#:
+#: The SDK-backed providers (anthropic / openai) raise ``ModelClientError`` on
+#: failure; the local-CLI providers cannot — ``complete()`` is contractually
+#: never-raising there — so they report the failure in this field instead. This
+#: ``Literal`` is the single definition both sides share: the providers annotate
+#: the values they emit with it (so a typo fails type-checking) and the agent
+#: runtime matches against ``PROVIDER_FAILURE_STOP_REASONS`` to fail the run
+#: visibly rather than completing it empty. Adding a value here is the only way
+#: to add one, which is what keeps the two sides from drifting apart.
+ProviderFailureStopReason = Literal[
+    "auth_error",
+    "input_too_large",
+    "parse_error",
+    "provider_error",
+    "provider_unavailable",
+    "timeout",
+]
+
+#: Runtime-checkable form of :data:`ProviderFailureStopReason`, derived from it
+#: so the set can never fall out of step with the type.
+PROVIDER_FAILURE_STOP_REASONS: frozenset[str] = frozenset(get_args(ProviderFailureStopReason))
+
+
 class ModelResponse(_Model):
     content: str = ""
     model: str | None = None
@@ -1242,6 +1267,7 @@ class ModelStreamEvent(_Model):
 
 __all__ = [
     "ADR",
+    "PROVIDER_FAILURE_STOP_REASONS",
     "AcceptanceCriterion",
     "AgentObjective",
     "AgentRunResult",
@@ -1286,6 +1312,7 @@ __all__ = [
     "PRGroup",
     "Policy",
     "PolicySkillProfiles",
+    "ProviderFailureStopReason",
     "PullRequest",
     "PullRequestRequest",
     "Ranked",

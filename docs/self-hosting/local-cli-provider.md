@@ -171,6 +171,29 @@ resolves, in order:
 which CLI is preferred when more than one is detected; it defaults to
 `claude,codex`.
 
+> **Set it where the bridge runs — not only in `deploy/.env.dev`.** On the
+> bridge transport (the normal containerised setup), the *bridge* process is
+> the one that spawns a CLI, so it is the only process whose
+> `FORGE_LOCAL_CLI_PREFERENCE` decides which binary actually runs. The
+> worker/API copy of the variable only labels the run (it becomes the
+> `local-cli:<cli>` model string in cost accounting); the worker cannot
+> execute a host binary, so it cannot act on the choice. Export it in the
+> same shell you start the bridge from:
+>
+> ```bash
+> export FORGE_CLI_BRIDGE_TOKEN=$(openssl rand -hex 16)
+> export FORGE_LOCAL_CLI_PREFERENCE=codex   # optional; defaults to claude,codex
+> make cli-bridge
+> ```
+>
+> Set it in **both** places if you set it at all, so the label and the binary
+> agree. The preference is the candidate set as well as the order (same
+> semantics as `ModelClientConfig.from_env`): naming only a CLI that is not
+> installed on the bridge's `PATH` yields `stop_reason: provider_unavailable`
+> rather than a silent substitution of the other one. `GET /health` lists the
+> detected CLIs in the configured order, so it shows you which one a run
+> would pick.
+
 ## Security posture
 
 | Control | Behavior |
@@ -180,7 +203,7 @@ which CLI is preferred when more than one is detected; it defaults to
 | CLI credentials | Never read or forwarded by the bridge. They stay in the host's keychain/CLI config and are used directly by the `claude`/`codex` subprocess the bridge spawns; the bridge itself only ever sees the request/response envelope text. |
 | Startup banner | An unconditional warning-level log line restates "DEVELOPMENT / SELF-HOST CONVENIENCE ONLY" every time the process starts, not only when the non-loopback override is set. |
 | Concurrency bound | At most `FORGE_CLI_BRIDGE_MAX_CONCURRENCY` (default 4) `/v1/complete` calls may spawn a CLI subprocess at once — each can run for up to `FORGE_LOCAL_CLI_TIMEOUT_S` (default 600s) and spends real subscription quota, so an unbounded burst is a plausible accident, not only an attack. |
-| CLI tool use | **Configured** off on every invocation (empty `--allowedTools` plus an explicit `--disallowedTools` deny-list, `--permission-mode plan`, `--permission-prompts none` for `claude`; `--sandbox read-only` for `codex`) — the CLI is meant to be a text oracle only. Configuration has been verified to be *accepted* by both real CLIs (they don't error on it). **Enforcement has not yet been exercised end to end**: no test sends a prompt engineered to provoke a tool call and asserts none occurs (see the `TODO(local_cli behavioural verification)` in `packages/agent-runtime/forge_agent/providers/local_cli/backends.py`). Treat suppression as the intended, configured design, not as independently proven. |
+| CLI tool use | **Configured** off on every invocation (empty `--allowedTools` plus an explicit `--disallowedTools` deny-list, `--permission-mode plan`, `--permission-prompts none` for `claude`; `--sandbox read-only` for `codex`) — the CLI is meant to be a text oracle only. Configuration has been verified to be *accepted* by the real `claude` CLI (it doesn't error on it); the `codex` flags have never been sent to the live binary at all (see "Verification status" above), so for `codex` even acceptance is unverified. **Enforcement has not yet been exercised end to end**: no test sends a prompt engineered to provoke a tool call and asserts none occurs (see the `TODO(local_cli behavioural verification)` in `packages/agent-runtime/forge_agent/providers/local_cli/backends.py`). Treat suppression as the intended, configured design, not as independently proven. |
 | Stderr redaction | Raw CLI stderr is passed through the shared `forge_api` secret redactor before it ever reaches the host log, when that package is installed; otherwise the bridge logs a loud warning that redaction is unavailable rather than silently skipping it. |
 | `/health` semantics | Reports detected CLIs and whether *this process's own* `FORGE_CLI_BRIDGE_ALLOW_NON_LOOPBACK` was set — it is not, and cannot be, a report of the actual bound socket (that depends on how the process was launched; see "Setup" above). Confirm real exposure with `lsof -i :8099` if you need to. |
 

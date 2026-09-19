@@ -17,7 +17,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from forge_agent.providers.local_cli.detect import CliName, DetectedCli, detect_clis
+from forge_agent.providers.local_cli.detect import (
+    CliName,
+    DetectedCli,
+    detect_clis,
+    parse_preference,
+)
 
 __all__ = ["ModelClientConfig", "ProviderName"]
 
@@ -138,7 +143,7 @@ class ModelClientConfig:
             return None
 
         bridge_url = (source.get("FORGE_CLI_BRIDGE_URL") or "").strip() or None
-        preference = _preference(source.get("FORGE_LOCAL_CLI_PREFERENCE"))
+        preference = parse_preference(source.get("FORGE_LOCAL_CLI_PREFERENCE"))
 
         cli_name: CliName | None = None
         if bridge_url is None:
@@ -158,18 +163,6 @@ class ModelClientConfig:
             bridge_token=(source.get("FORGE_CLI_BRIDGE_TOKEN") or "").strip(),
             timeout_s=_float(source.get("FORGE_LOCAL_CLI_TIMEOUT_S"), 600.0),
         )
-
-
-def _preference(raw: str | None) -> list[CliName] | None:
-    if not raw or not raw.strip():
-        return None
-    names: list[CliName] = []
-    for part in raw.split(","):
-        try:
-            names.append(CliName(part.strip().lower()))
-        except ValueError:
-            continue
-    return names or None
 
 
 def _int(value: str | None, default: int) -> int:

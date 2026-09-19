@@ -21,7 +21,12 @@ from collections.abc import Callable, Iterator
 from forge_agent.providers import translate
 from forge_agent.providers.local_cli.backends import CliResult, backend_for, run_cli
 from forge_agent.providers.local_cli.detect import CliName
-from forge_contracts import ModelRequest, ModelResponse, ModelStreamEvent
+from forge_contracts import (
+    ModelRequest,
+    ModelResponse,
+    ModelStreamEvent,
+    ProviderFailureStopReason,
+)
 
 __all__ = ["LocalCliModelClient"]
 
@@ -113,6 +118,14 @@ class LocalCliModelClient:
         self._timeout_s = timeout_s
         self._redactor = redactor
         self._runner = runner
+        #: The namespaced model id every response carries (success *and*
+        #: failure). A CLI subscription has no per-token price, so the cost
+        #: meter must never see a real API model id for one of these runs: an
+        #: objective that pins a per-role model (``AgentObjective.model``) is
+        #: what ``AgentRunner`` falls back to when a response reports no model,
+        #: which would price a subscription run at that model's API rates
+        #: (spec F §5). Matches ``ModelClientConfig``'s own ``local-cli:<cli>``.
+        self._model_id = f"local-cli:{cli_name}"
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         system, user = translate.build_local_cli_prompt(request)
@@ -123,14 +136,14 @@ class LocalCliModelClient:
 
         response = translate.parse_local_cli_response(self._unwrap(result.stdout))
         if response.stop_reason != "parse_error":
-            return response
+            return self._tagged(response)
 
         _logger.warning("local cli %s returned unparseable output; retrying once", self._cli_name)
         retry = self._invoke(f"{system}\n\n{_REPAIR}", user)
         failure = self._failure_for(retry)
         if failure is not None:
             return failure
-        return translate.parse_local_cli_response(self._unwrap(retry.stdout))
+        return self._tagged(translate.parse_local_cli_response(self._unwrap(retry.stdout)))
 
     def stream(self, request: ModelRequest) -> Iterator[ModelStreamEvent]:
         response = self.complete(request)
@@ -167,28 +180,49 @@ class LocalCliModelClient:
                 with contextlib.suppress(OSError):
                     os.unlink(schema_path)
 
+    def _tagged(self, response: ModelResponse) -> ModelResponse:
+        """Stamp the namespaced ``local-cli:<cli>`` model id onto a response.
+
+        The CLI envelope carries no model id of its own, and an untagged
+        response makes ``AgentRunner`` price the run under the objective's
+        pinned model instead (see ``_model_id``).
+        """
+        return response.model_copy(update={"model": self._model_id})
+
+    def _failure(self, reason: ProviderFailureStopReason) -> ModelResponse:
+        """A failed turn, carrying the namespaced model id like any other.
+
+        ``reason`` is typed with the shared ``ProviderFailureStopReason``
+        literal (``forge_contracts``), which is the same definition the agent
+        runtime matches against — a value outside it fails type-checking here
+        rather than becoming a silently-successful empty run downstream.
+        """
+        return ModelResponse(content="", model=self._model_id, stop_reason=reason)
+
     def _failure_for(self, result: CliResult) -> ModelResponse | None:
         if result.timed_out:
-            return ModelResponse(content="", stop_reason="timeout")
+            return self._failure("timeout")
         if result.input_too_large:
             # Distinct from provider_unavailable: the binary is present, the
             # call was simply too large for execve (Fix round 1, minor).
-            return ModelResponse(content="", stop_reason="input_too_large")
+            return self._failure("input_too_large")
         if result.binary_missing:
             # Amendment A: only a synthesized "binary not found" failure means
             # unavailable. A real CLI invocation can legitimately return 124/127
             # as ordinary shell-convention exit codes, so the numeric code alone
             # must never be treated as a sentinel (see backends.CliResult docs).
-            return ModelResponse(content="", stop_reason="provider_unavailable")
+            return self._failure("provider_unavailable")
         if result.returncode != 0:
             # Amendment C: this branch is reachable only on a non-zero exit;
             # stderr on a *successful* (zero-exit) run is never inspected here,
             # since a healthy CLI can still print startup noise to stderr.
             stderr = result.stderr or ""
             scrubbed = self._scrub(stderr)
-            reason = "auth_error" if _looks_like_auth_failure(stderr) else "provider_error"
+            reason: ProviderFailureStopReason = (
+                "auth_error" if _looks_like_auth_failure(stderr) else "provider_error"
+            )
             _logger.warning("local cli %s failed (%s): %s", self._cli_name, reason, scrubbed)
-            return ModelResponse(content="", stop_reason=reason)
+            return self._failure(reason)
         return None
 
     def _scrub(self, stderr: str) -> str:

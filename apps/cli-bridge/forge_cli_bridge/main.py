@@ -6,6 +6,7 @@ import os
 
 import uvicorn
 
+from forge_agent.providers.local_cli.detect import parse_preference
 from forge_cli_bridge.app import create_app
 from forge_cli_bridge.settings import BridgeSettings
 
@@ -40,6 +41,9 @@ def _settings_from_env() -> BridgeSettings:
         in {"1", "true", "yes", "on"},
         timeout_s=float(os.environ.get("FORGE_LOCAL_CLI_TIMEOUT_S", "600")),
         max_concurrent_completions=int(os.environ.get("FORGE_CLI_BRIDGE_MAX_CONCURRENCY", "4")),
+        # Read on the host, where the CLIs actually live: the worker's copy of
+        # this variable only labels the run (see BridgeSettings.preference).
+        preference=parse_preference(os.environ.get("FORGE_LOCAL_CLI_PREFERENCE")),
     )
 
 

@@ -316,3 +316,65 @@ def test_raising_redactor_degrades_to_placeholder_without_leaking_stderr(caplog)
 
     assert response.stop_reason == "provider_error"
     assert "sk-abc123" not in caplog.text, "a raising redactor must never leak the raw stderr"
+
+
+# -- namespaced model id (final review, I2) --------------------------------- #
+#
+# Neither local client used to set ``ModelResponse.model``, so ``AgentRunner``
+# fell back to ``AgentObjective.model`` and priced a subscription run at that
+# (real) model's API rates -- spec F §5's exact failure mode. The id must be
+# present on EVERY return path, success and failure alike. The end-to-end
+# assertion that it reaches the cost meter lives in
+# ``tests/test_local_cli_cost_attribution.py``.
+
+
+def test_model_id_is_namespaced_on_success():
+    client = LocalCliModelClient(cli_name=CliName.claude, runner=_runner(ENVELOPE))
+    assert client.complete(_request()).model == "local-cli:claude"
+
+
+def test_model_id_names_the_cli_that_ran():
+    client = LocalCliModelClient(cli_name=CliName.codex, runner=_runner(ENVELOPE))
+    assert client.complete(_request()).model == "local-cli:codex"
+
+
+def test_model_id_survives_a_repair_retry():
+    outputs = iter(["garbage", ENVELOPE])
+
+    def run(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, stdout=next(outputs), stderr="")
+
+    client = LocalCliModelClient(cli_name=CliName.claude, runner=run)
+    assert client.complete(_request()).model == "local-cli:claude"
+
+
+def _failing_runners():
+    """One runner per failure path in §7, keyed by the stop_reason it produces."""
+
+    def timed_out(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, 1.0)
+
+    def missing(argv, **kwargs):
+        raise FileNotFoundError("nope")
+
+    def too_large(argv, **kwargs):
+        raise OSError(errno.E2BIG, "Argument list too long")
+
+    return {
+        "timeout": timed_out,
+        "provider_unavailable": missing,
+        "input_too_large": too_large,
+        "provider_error": _runner("", returncode=2, stderr="boom"),
+        "auth_error": _runner("", returncode=1, stderr="Please run `claude login`"),
+        "parse_error": _runner("not json"),
+    }
+
+
+def test_model_id_is_namespaced_on_every_failure_path():
+    for expected_reason, runner in _failing_runners().items():
+        client = LocalCliModelClient(cli_name=CliName.claude, runner=runner, timeout_s=1.0)
+        response = client.complete(_request())
+        assert response.stop_reason == expected_reason
+        assert response.model == "local-cli:claude", (
+            f"{expected_reason} must still be metered as a local-CLI run"
+        )

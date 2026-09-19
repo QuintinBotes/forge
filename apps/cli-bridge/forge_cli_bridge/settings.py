@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from forge_agent.providers.local_cli.detect import CliName
+
 __all__ = ["BridgeSettings"]
 
 _LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
@@ -21,6 +23,18 @@ class BridgeSettings:
     #: can run for up to ``timeout_s``; an unbounded burst (accidental or not)
     #: is a plausible way to pin the host. See ``app.py``'s completion semaphore.
     max_concurrent_completions: int = 4
+    #: ``FORGE_LOCAL_CLI_PREFERENCE`` as read from *this* process's
+    #: environment. The bridge is the process that actually spawns a CLI, so
+    #: it is the only place the operator's choice can be honoured: the
+    #: worker-side value reaches ``ModelClientConfig`` and labels the run, but
+    #: the worker cannot execute a host binary and so cannot act on it. An
+    #: operator who asks for ``codex`` and silently gets ``claude`` is being
+    #: misrouted to the backend that has never been verified against its live
+    #: binary -- exactly the choice the self-hosting guide asks them to make
+    #: deliberately. ``None`` means no preference expressed -> ``detect_clis``
+    #: uses its own ``DEFAULT_PREFERENCE``. A tuple (not a list) so the frozen
+    #: dataclass stays hashable.
+    preference: tuple[CliName, ...] | None = None
 
     def __post_init__(self) -> None:
         if not self.token.strip():
