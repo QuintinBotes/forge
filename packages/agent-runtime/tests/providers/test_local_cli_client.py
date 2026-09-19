@@ -1,4 +1,5 @@
 import datetime
+import errno
 import json
 import logging
 import os
@@ -53,6 +54,19 @@ def test_missing_binary_is_provider_unavailable():
 
     client = LocalCliModelClient(cli_name=CliName.claude, runner=run)
     assert client.complete(_request()).stop_reason == "provider_unavailable"
+
+
+def test_input_too_large_is_distinguished_from_provider_unavailable():
+    """Fix round 1, minor: E2BIG means the binary is present but the call was
+    too large for execve — must not be reported as provider_unavailable
+    (which would wrongly tell the caller the CLI is missing).
+    """
+
+    def run(argv, **kwargs):
+        raise OSError(errno.E2BIG, "Argument list too long")
+
+    client = LocalCliModelClient(cli_name=CliName.claude, runner=run)
+    assert client.complete(_request()).stop_reason == "input_too_large"
 
 
 def test_timeout_is_reported_as_timeout():

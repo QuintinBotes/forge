@@ -18,6 +18,7 @@ default hermetic suite. Not yet written; see
 
 from __future__ import annotations
 
+import errno
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -48,12 +49,30 @@ class CliResult:
     #: synthesized failure). A real process can legitimately exit 127, so
     #: callers must key off this field, never off ``returncode == 127``.
     binary_missing: bool = False
+    #: True only when ``execve`` itself failed with ``E2BIG`` (the combined
+    #: argv/envp exceeded the OS limit, e.g. a very large ``--append-system-prompt``
+    #: value). Distinct from ``binary_missing``: the binary is present, the
+    #: input was simply too large for this call to ever have been executed.
+    input_too_large: bool = False
 
 
 class CliBackend(Protocol):
     needs_schema_file: bool
 
     def argv(self, *, system: str, user: str, schema_path: str | None) -> list[str]: ...
+
+    def stdin_payload(self, *, system: str, user: str) -> str | None:
+        """The text to send on stdin (then EOF), or ``None`` for none.
+
+        The caller-supplied prompt must never be an argv token: a value that
+        looks like a CLI flag (e.g. ``--dangerously-skip-permissions``) would
+        otherwise be parsed as one rather than as text, since only a ``--``
+        terminator (which nothing here emits before the old trailing
+        positional) disables option parsing for later tokens. Sending it on
+        stdin removes it from argv entirely, closing that class of bug
+        structurally rather than by blacklisting leading ``-`` characters.
+        """
+        ...
 
 
 class ClaudeCliBackend:
@@ -95,6 +114,26 @@ class ClaudeCliBackend:
     ``test_claude_argv_terminates_variadic_flags_before_bare_values``, which
     pins this ordering invariant so a reordering refactor cannot reintroduce
     the bug silently.
+
+    **The caller-supplied prompt is never an argv token (Fix round 1,
+    CRITICAL).** It used to be ``argv[-1]``, with no ``--`` terminator ahead
+    of it. ``claude``'s own parser scans every argv token for option syntax
+    regardless of position, so a prompt that happens to look like a real flag
+    (e.g. ``--dangerously-skip-permissions``, a genuine ``claude`` option) was
+    parsed as that flag rather than as text — bypassing the entire tool-
+    suppression invariant this class exists to enforce. A single-token form
+    like ``--settings={"x":1}`` needs no second argv slot to reach the CLI's
+    own configuration surface. Rejecting/escaping leading ``-`` characters
+    would be a blacklist over an open-ended parser surface; instead the
+    prompt is sent on stdin (via :meth:`stdin_payload`) and never appears in
+    argv at all — verified live: ``echo "say ok" | claude --print
+    --output-format json --allowedTools "" --disallowedTools "<tools>"
+    --permission-mode plan --permission-prompts none --append-system-prompt
+    "<system>"`` (no trailing positional) returned a normal
+    ``{"subtype":"success", ..., "result":"ok"}`` envelope with
+    ``permission_denials: []``, confirming ``--print`` reads the prompt from
+    stdin when no positional is given. See
+    ``test_claude_prompt_never_appears_in_argv``.
     """
 
     needs_schema_file = False
@@ -115,12 +154,29 @@ class ClaudeCliBackend:
             "none",
             "--append-system-prompt",
             system,
-            user,
         ]
+
+    def stdin_payload(self, *, system: str, user: str) -> str | None:
+        return user
 
 
 class CodexCliBackend:
-    """`codex exec` with a read-only sandbox and a schema-enforced result."""
+    """`codex exec` with a read-only sandbox and a schema-enforced result.
+
+    Like the claude backend, the prompt is sent on stdin rather than as an
+    argv positional (Fix round 1, CRITICAL — see ``ClaudeCliBackend``'s
+    docstring for the underlying argv-injection risk this closes). Confirmed
+    via ``codex exec --help`` (local help text only; no live model call was
+    made — the operator's codex quota was exhausted at the time of this fix):
+    the ``[PROMPT]`` argument's help text states verbatim "If not provided as
+    an argument (or if `-` is used), instructions are read from stdin. If
+    stdin is piped and a prompt is also provided, stdin is appended as a
+    `<stdin>` block" — so omitting the positional entirely (as done here) and
+    piping the prompt on stdin is a documented, first-class codex input mode,
+    not an inferred workaround. This is INFERRED-FROM-DOCS, not live-verified
+    against the real binary; see the Task 7 fix-round-1 report for the exact
+    ``--help`` transcript.
+    """
 
     needs_schema_file = True
 
@@ -128,8 +184,10 @@ class CodexCliBackend:
         argv = ["codex", "exec", "--json", "--sandbox", "read-only"]
         if schema_path:
             argv += ["--output-schema", schema_path]
-        argv.append(f"{system}\n\n{user}")
         return argv
+
+    def stdin_payload(self, *, system: str, user: str) -> str | None:
+        return f"{system}\n\n{user}"
 
 
 _BACKENDS: dict[CliName, CliBackend] = {
@@ -147,13 +205,35 @@ def run_cli(
     *,
     timeout_s: float,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    input: str | None = None,
 ) -> CliResult:
-    """Execute ``argv``. Never raises; failures come back as a ``CliResult``."""
+    """Execute ``argv``. Never raises; failures come back as a ``CliResult``.
+
+    ``input``, when given, is forwarded to ``runner`` as its ``input=``
+    keyword (``subprocess.run``-compatible: written to the child's stdin,
+    then EOF). This is how a backend's ``stdin_payload`` reaches the CLI
+    instead of argv — see ``CliBackend.stdin_payload``. It also closes a
+    related hang: previously, if the trailing argv prompt was ever swallowed
+    by a preceding flag, the child inherited the parent's real stdin (never
+    redirected) and blocked on it for the full timeout; a backend that always
+    supplies ``input`` never leaves stdin dangling like that.
+    """
     try:
-        completed = runner(argv, capture_output=True, text=True, timeout=timeout_s, check=False)
+        completed = runner(
+            argv, capture_output=True, text=True, timeout=timeout_s, check=False, input=input
+        )
     except subprocess.TimeoutExpired:
         return CliResult(stdout="", stderr="timed out", returncode=124, timed_out=True)
     except (FileNotFoundError, OSError) as exc:
+        if isinstance(exc, OSError) and exc.errno == errno.E2BIG:
+            # The binary IS present; execve itself refused because the
+            # combined argv/envp was too large (e.g. a very large
+            # --append-system-prompt value). Reporting this as
+            # binary_missing would misleadingly tell the caller the CLI is
+            # not installed when the input was simply oversized.
+            return CliResult(
+                stdout="", stderr=str(exc), returncode=1, timed_out=False, input_too_large=True
+            )
         return CliResult(
             stdout="", stderr=str(exc), returncode=127, timed_out=False, binary_missing=True
         )

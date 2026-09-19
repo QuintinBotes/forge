@@ -1,9 +1,16 @@
+import errno
 import subprocess
 
 import pytest
 
 from forge_agent.providers.local_cli.backends import backend_for, run_cli
 from forge_agent.providers.local_cli.detect import CliName
+
+#: Fix round 1, CRITICAL regression fixture: a prompt that is itself a real,
+#: known claude flag. Before the fix this was emitted as argv[-1] with no
+#: `--` terminator ahead of it, so claude's own parser matched it as this
+#: flag instead of treating it as prompt text.
+_DANGEROUS_PROMPT = "--dangerously-skip-permissions"
 
 
 def test_claude_argv_disables_tools_and_prints():
@@ -31,16 +38,14 @@ def test_claude_argv_terminates_variadic_flags_before_bare_values():
     """Pin the ordering invariant, not just flag membership.
 
     A refactor that moved a variadic flag (e.g. --disallowedTools) to
-    directly precede the trailing user prompt would pass every membership
-    assertion above (`"--disallowedTools" in argv` is still true) while
-    silently swallowing the user prompt as an extra tool name — the CLI
-    would receive no prompt at all. The only way to catch that class of
-    regression is to assert on order: the token immediately after each
-    variadic flag's value must itself be a `--`-prefixed flag, never a bare
-    value (including the trailing user prompt).
+    directly precede another bare value would pass every membership assertion
+    above (`"--disallowedTools" in argv` is still true) while silently
+    swallowing that value as an extra tool name. The only way to catch that
+    class of regression is to assert on order: the token immediately after
+    each variadic flag's value must itself be a `--`-prefixed flag, never a
+    bare value.
     """
     argv = backend_for(CliName.claude).argv(system="S", user="U", schema_path=None)
-    assert argv[-1] == "U", "the user prompt must be the final positional"
     for flag in _VARIADIC_TOOL_FLAGS:
         assert flag in argv
         value_index = argv.index(flag) + 1
@@ -51,8 +56,29 @@ def test_claude_argv_terminates_variadic_flags_before_bare_values():
         terminator = argv[terminator_index]
         assert terminator.startswith("--"), (
             f"{flag}'s value is immediately followed by bare token {terminator!r}; "
-            "a variadic flag would swallow it (and could swallow the prompt)"
+            "a variadic flag would swallow it"
         )
+
+
+def test_claude_prompt_never_appears_in_argv():
+    """Fix round 1, CRITICAL: the prompt must never be an argv token at all.
+
+    A prompt that is itself a real claude flag (--dangerously-skip-permissions)
+    must not appear anywhere in argv — including as the value of
+    --append-system-prompt, which would indicate the fix leaked the prompt
+    back onto argv through a different flag. It must be delivered only via
+    stdin_payload.
+    """
+    argv = backend_for(CliName.claude).argv(system="S", user=_DANGEROUS_PROMPT, schema_path=None)
+    assert _DANGEROUS_PROMPT not in argv
+    assert backend_for(CliName.claude).stdin_payload(system="S", user=_DANGEROUS_PROMPT) == (
+        _DANGEROUS_PROMPT
+    )
+
+
+def test_claude_stdin_payload_is_the_user_prompt():
+    payload = backend_for(CliName.claude).stdin_payload(system="S", user="U")
+    assert payload == "U"
 
 
 def test_codex_argv_is_read_only_and_schema_bound():
@@ -61,6 +87,22 @@ def test_codex_argv_is_read_only_and_schema_bound():
     assert "--sandbox" in argv and "read-only" in argv
     assert "--output-schema" in argv and "/tmp/s.json" in argv
     assert "--dangerously-bypass-approvals-and-sandbox" not in argv
+
+
+def test_codex_argv_never_carries_a_prompt_positional():
+    """Fix round 1, CRITICAL: codex now reads its prompt from stdin too (per
+    `codex exec --help`: "If not provided as an argument ... instructions are
+    read from stdin"), so argv must never contain a trailing prompt token —
+    dangerous or otherwise.
+    """
+    argv = backend_for(CliName.codex).argv(system="S", user=_DANGEROUS_PROMPT, schema_path=None)
+    assert _DANGEROUS_PROMPT not in argv
+    assert argv == ["codex", "exec", "--json", "--sandbox", "read-only"]
+
+
+def test_codex_stdin_payload_combines_system_and_user():
+    payload = backend_for(CliName.codex).stdin_payload(system="S", user="U")
+    assert payload == "S\n\nU"
 
 
 def test_codex_declares_it_needs_a_schema_file():
@@ -75,6 +117,35 @@ def test_run_cli_captures_output():
     result = run_cli(["x"], timeout_s=1.0, runner=runner)
     assert result.stdout == "out"
     assert result.returncode == 0
+    assert result.timed_out is False
+
+
+def test_run_cli_forwards_input_to_the_runner_as_stdin():
+    """Fix round 1, CRITICAL: the prompt reaches the CLI via stdin, not argv —
+    so run_cli must actually forward it to the runner as `input=`.
+    """
+    seen: dict[str, object] = {}
+
+    def runner(argv, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, stdout="out", stderr="")
+
+    run_cli(["x"], timeout_s=1.0, runner=runner, input="the prompt")
+    assert seen["input"] == "the prompt"
+
+
+def test_run_cli_distinguishes_oversized_input_from_missing_binary():
+    """Minor: E2BIG means the binary is present but the call (argv/envp) was
+    too large for execve — reporting that as binary_missing would wrongly
+    tell the caller the CLI is not installed.
+    """
+
+    def runner(argv, **kwargs):
+        raise OSError(errno.E2BIG, "Argument list too long")
+
+    result = run_cli(["x"], timeout_s=1.0, runner=runner)
+    assert result.input_too_large is True
+    assert result.binary_missing is False
     assert result.timed_out is False
 
 

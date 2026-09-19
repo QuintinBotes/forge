@@ -152,7 +152,10 @@ class LocalCliModelClient:
             if self._backend.needs_schema_file:
                 schema_path = _write_schema_file()
             argv = self._backend.argv(system=system, user=user, schema_path=schema_path)
-            return run_cli(argv, timeout_s=self._timeout_s, runner=self._runner)
+            stdin_payload = self._backend.stdin_payload(system=system, user=user)
+            return run_cli(
+                argv, timeout_s=self._timeout_s, runner=self._runner, input=stdin_payload
+            )
         except Exception as exc:
             # Mirrors run_cli's own "never raises" contract: anything that can go
             # wrong building/writing the schema file or constructing argv must
@@ -167,6 +170,10 @@ class LocalCliModelClient:
     def _failure_for(self, result: CliResult) -> ModelResponse | None:
         if result.timed_out:
             return ModelResponse(content="", stop_reason="timeout")
+        if result.input_too_large:
+            # Distinct from provider_unavailable: the binary is present, the
+            # call was simply too large for execve (Fix round 1, minor).
+            return ModelResponse(content="", stop_reason="input_too_large")
         if result.binary_missing:
             # Amendment A: only a synthesized "binary not found" failure means
             # unavailable. A real CLI invocation can legitimately return 124/127

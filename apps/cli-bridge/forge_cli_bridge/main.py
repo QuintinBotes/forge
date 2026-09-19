@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 
+import uvicorn
+
 from forge_cli_bridge.app import create_app
 from forge_cli_bridge.settings import BridgeSettings
 
@@ -18,7 +20,38 @@ def _settings_from_env() -> BridgeSettings:
         allow_non_loopback=os.environ.get("FORGE_CLI_BRIDGE_ALLOW_NON_LOOPBACK", "")
         in {"1", "true", "yes", "on"},
         timeout_s=float(os.environ.get("FORGE_LOCAL_CLI_TIMEOUT_S", "600")),
+        max_concurrent_completions=int(os.environ.get("FORGE_CLI_BRIDGE_MAX_CONCURRENCY", "4")),
     )
 
 
-app = create_app(_settings_from_env())
+#: Built at import time so `uvicorn forge_cli_bridge.main:app` (an ASGI server
+#: that imports the target directly, never running `__main__`) also gets the
+#: module-level app. `BridgeSettings.__post_init__` already refuses an empty
+#: token / unapproved non-loopback host at construction time, so a bare
+#: import fails loudly instead of silently starting unsafely.
+_settings = _settings_from_env()
+app = create_app(_settings)
+
+
+if __name__ == "__main__":
+    # Fix round 1, IMPORTANT: `settings.host`/`settings.port` used to be dead
+    # code -- `uvicorn ... --host/--port` on the command line decided the
+    # actual bind address, completely independent of `BridgeSettings`'s
+    # loopback guard. An operator following the README's own
+    # `uvicorn ... --host 127.0.0.1` example could change that one flag to
+    # `0.0.0.0`: `BridgeSettings` would validate happily (it never saw the
+    # non-loopback host) and `/health` would still report
+    # `loopback_only: true`. Binding here, from the SAME validated
+    # `_settings` object `app` was built from, makes the validated value the
+    # bound value -- there is no second, independently-typed place left to
+    # specify the host. `python -m forge_cli_bridge.main` is the supported
+    # way to run this (see README.md); `uvicorn forge_cli_bridge.main:app`
+    # still works for ASGI-managed deployments and is bound by whatever
+    # `--host`/`--port` that server is given, same as any other ASGI app --
+    # the assertion below is this module's own last-resort belt-and-braces
+    # check that a direct `python -m` run of *this* file never binds
+    # non-loopback silently.
+    assert _settings.allow_non_loopback or _settings.is_loopback, (
+        "refusing to bind a non-loopback host without FORGE_CLI_BRIDGE_ALLOW_NON_LOOPBACK=1"
+    )
+    uvicorn.run(app, host=_settings.host, port=_settings.port)

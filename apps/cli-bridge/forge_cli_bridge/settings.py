@@ -16,6 +16,11 @@ class BridgeSettings:
     port: int = 8099
     allow_non_loopback: bool = False
     timeout_s: float = 600.0
+    #: Fix round 1, minor: bounds how many /v1/complete calls may spawn a CLI
+    #: subprocess concurrently. Each call spends real subscription quota and
+    #: can run for up to ``timeout_s``; an unbounded burst (accidental or not)
+    #: is a plausible way to pin the host. See ``app.py``'s completion semaphore.
+    max_concurrent_completions: int = 4
 
     def __post_init__(self) -> None:
         if not self.token.strip():
@@ -28,3 +33,10 @@ class BridgeSettings:
                 f"refusing to bind {self.host!r}: set "
                 "FORGE_CLI_BRIDGE_ALLOW_NON_LOOPBACK=1 to override"
             )
+        if self.max_concurrent_completions < 1:
+            raise ValueError("max_concurrent_completions must be at least 1")
+
+    @property
+    def is_loopback(self) -> bool:
+        """True when ``host`` is a loopback address, independent of the override."""
+        return self.host in _LOOPBACK
