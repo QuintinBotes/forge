@@ -56,8 +56,12 @@ of needing its own copy of the CLI.
 
 ## Endpoints
 
-* `GET /health` — returns detected CLIs and whether the bridge is loopback-only.
-  No authentication required.
+* `GET /health` — returns detected CLIs and `non_loopback_override_set`: whether
+  `FORGE_CLI_BRIDGE_ALLOW_NON_LOOPBACK` was set on THIS process's config. This
+  is not a report of the actual bound socket — the process cannot see that
+  when launched via `uvicorn forge_cli_bridge.main:app --host ...` (see
+  "Running it" below); check the real listening socket (e.g. `lsof -i :8099`)
+  if you need to confirm actual exposure. No authentication required.
 * `POST /v1/complete` — accepts a `ModelRequest` body, returns a `ModelResponse`.
   Requires `Authorization: Bearer <FORGE_CLI_BRIDGE_TOKEN>`.
 

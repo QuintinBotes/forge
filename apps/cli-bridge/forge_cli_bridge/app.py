@@ -52,6 +52,18 @@ def _default_redactor() -> Callable[[str], str]:
     try:
         from forge_api.observability.redaction import redact_text
     except Exception:
+        # Fix round 2, minor: a standalone self-host install (precisely the
+        # deployment this bridge targets) will not have forge_api installed,
+        # so this is the COMMON case for an external user, not an edge case.
+        # Degrading to identity silently would mean "no redaction, no
+        # warning, raw CLI stderr in the host log" by default -- make the
+        # downgrade visible instead of assumed.
+        _logger.warning(
+            "forge-api's shared secret redactor is not installed; CLI stderr "
+            "will reach the host log UNREDACTED on failure. Install the full "
+            "Forge monorepo environment, or inject your own redactor, to "
+            "enable scrubbing."
+        )
         return lambda value: value
     return redact_text
 
@@ -77,7 +89,18 @@ def create_app(settings: BridgeSettings) -> FastAPI:
         expected = f"Bearer {settings.token}"
         # Fix round 1, minor: constant-time comparison. Not exploitable over
         # loopback (no network-observable timing channel), but it is free.
-        if not hmac.compare_digest(authorization, expected):
+        #
+        # Fix round 2, regression: hmac.compare_digest raises TypeError on a
+        # non-ASCII str, and Starlette decodes header values as latin-1, so a
+        # header like "Bearer t\xf6ken" used to reach here as a non-ASCII str
+        # and turn an unhandled TypeError into an HTTP 500 (with a traceback
+        # in the log) where the old plain `!=` returned a clean 401. Encoding
+        # both sides to bytes first never raises for a latin-1-sourced str
+        # (every latin-1 codepoint is representable in UTF-8) and keeps the
+        # constant-time comparison property `compare_digest` provides.
+        provided = authorization.encode("utf-8", "surrogateescape")
+        wanted = expected.encode("utf-8", "surrogateescape")
+        if not hmac.compare_digest(provided, wanted):
             raise HTTPException(status_code=401, detail="invalid or missing bridge token")
 
     @app.get("/health")
@@ -85,7 +108,20 @@ def create_app(settings: BridgeSettings) -> FastAPI:
         return {
             "status": "ok",
             "clis": [d.name.value for d in detect_clis(which=app.state.which)],
-            "loopback_only": not settings.allow_non_loopback,
+            # Fix round 2, IMPORTANT: this used to be "loopback_only": a claim
+            # about the actual bound socket. This app object cannot verify
+            # that claim -- under `uvicorn forge_cli_bridge.main:app --host
+            # 0.0.0.0`, main.py's own bind (and its loopback guard) is
+            # bypassed entirely, and the ASGI app has no visibility into what
+            # --host/--port that external uvicorn invocation was given. A
+            # health field asserting a property it has not checked is worse
+            # than omitting it -- an operator relying on it to confirm
+            # exposure would be actively misled. This reports only what IS
+            # genuinely known from inside the process: whether THIS
+            # BridgeSettings object's non-loopback override was set. It is
+            # not a substitute for checking the actual listening socket
+            # (e.g. `lsof -i :8099`) when running via the ASGI-import path.
+            "non_loopback_override_set": settings.allow_non_loopback,
         }
 
     @app.post("/v1/complete", dependencies=[Depends(_authorize)])

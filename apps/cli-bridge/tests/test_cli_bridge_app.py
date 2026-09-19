@@ -36,7 +36,21 @@ def _body():
 def test_health_reports_detected_clis():
     response = _client().get("/health")
     assert response.status_code == 200
-    assert "clis" in response.json()
+    body = response.json()
+    assert "clis" in body
+    assert body["non_loopback_override_set"] is False
+
+
+def test_health_reports_non_loopback_override_when_set():
+    """Fix round 2, IMPORTANT: /health no longer claims a "loopback_only"
+    property it cannot verify (main.py's bind can bypass BridgeSettings
+    entirely via `uvicorn forge_cli_bridge.main:app --host 0.0.0.0`). It now
+    reports only the one thing genuinely known in-process: whether this
+    settings object's override was set.
+    """
+    settings = BridgeSettings(token="t0ken", host="0.0.0.0", allow_non_loopback=True)
+    response = TestClient(create_app(settings)).get("/health")
+    assert response.json()["non_loopback_override_set"] is True
 
 
 def test_complete_requires_a_token():
@@ -47,6 +61,32 @@ def test_complete_rejects_a_wrong_token():
     response = _client().post(
         "/v1/complete", json=_body(), headers={"Authorization": "Bearer wrong"}
     )
+    assert response.status_code == 401
+
+
+async def test_complete_rejects_a_non_ascii_token_with_401_not_500():
+    """Fix round 2, regression (introduced by round 1's own hmac fix):
+    hmac.compare_digest raises TypeError on a non-ASCII str, and Starlette
+    decodes header values as latin-1, so "Authorization: Bearer t\\xf6ken"
+    used to produce an unhandled TypeError -> HTTP 500 with a traceback in
+    the log, where the old plain `!=` returned a clean 401.
+
+    A plain httpx str header can't reproduce this (httpx itself refuses to
+    ascii-encode a non-ASCII str client-side, before it would ever reach the
+    app); building the request with a raw (bytes, bytes) header pair and
+    sending it over ASGITransport reproduces exactly what Starlette hands
+    the route: a latin-1-decoded str containing a non-ASCII character.
+    """
+    app = create_app(BridgeSettings(token="t0ken"))
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://bridge.test") as client:
+        request = httpx.Request(
+            "POST",
+            "http://bridge.test/v1/complete",
+            headers=[(b"authorization", b"Bearer t\xf6ken")],
+            json=_body(),
+        )
+        response = await client.send(request)
     assert response.status_code == 401
 
 
@@ -114,7 +154,33 @@ def test_complete_redacts_secrets_from_failure_logs(caplog):
             "/v1/complete", json=_body(), headers={"Authorization": "Bearer t0ken"}
         )
     assert response.status_code == 200
+    # Cheap addition from the reviewer's out-of-scope list: this test would
+    # pass even if the failure were never logged at all, unless we also
+    # assert the (redacted) line actually appears.
+    assert "local cli" in caplog.text, "expected the CLI-failure warning to be logged"
+    assert "[REDACTED]" in caplog.text, "expected the redactor's replacement token in the log"
     assert "sk-abcdef0123456789" not in caplog.text, "raw stderr secret must never reach the log"
+
+
+def test_default_redactor_warns_when_forge_api_is_unavailable(monkeypatch, caplog):
+    """Fix round 2, minor: a standalone self-host install (the deployment
+    this bridge targets) will not have forge_api installed -- that is the
+    COMMON case for an external user, not an edge case. Degrading to
+    identity silently would mean "no redaction, no warning, raw CLI stderr
+    in the host log" by default; the downgrade must be visible.
+    """
+    import sys
+
+    from forge_cli_bridge.app import _default_redactor
+
+    monkeypatch.setitem(sys.modules, "forge_api.observability.redaction", None)
+    with caplog.at_level(logging.WARNING, logger="forge_cli_bridge"):
+        redactor = _default_redactor()
+
+    assert redactor("key sk-abcdef0123456789") == "key sk-abcdef0123456789", (
+        "the fallback redactor must be identity, not raise or mangle input"
+    )
+    assert "UNREDACTED" in caplog.text
 
 
 def test_startup_banner_is_logged_unconditionally(caplog):
@@ -171,6 +237,36 @@ async def test_completion_concurrency_is_bounded():
 
     assert response1.status_code == 200
     assert response2.status_code == 200
+
+
+def test_bind_guard_allows_loopback(monkeypatch):
+    monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
+    from forge_cli_bridge.main import _guard_non_loopback_bind
+
+    _guard_non_loopback_bind(is_loopback=True, allow_non_loopback=False)  # must not raise
+
+
+def test_bind_guard_allows_explicit_override(monkeypatch):
+    monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
+    from forge_cli_bridge.main import _guard_non_loopback_bind
+
+    _guard_non_loopback_bind(is_loopback=False, allow_non_loopback=True)  # must not raise
+
+
+def test_bind_guard_raises_for_non_loopback_without_override(monkeypatch):
+    """Fix round 2, IMPORTANT: the old guard was a bare `assert`, which
+    `python -O` strips entirely. It is now an explicit `if: raise
+    RuntimeError`, which cannot be compiled away. There is no way to re-run
+    the interpreter under `-O` from inside pytest, so this calls the guard
+    function directly instead -- an `assert` in *this test* would prove
+    nothing about `-O`, but a plain `if not raised: fail` inside
+    pytest.raises does not depend on assertions being enabled at all.
+    """
+    monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
+    from forge_cli_bridge.main import _guard_non_loopback_bind
+
+    with pytest.raises(RuntimeError):
+        _guard_non_loopback_bind(is_loopback=False, allow_non_loopback=False)
 
 
 def test_main_module_refuses_to_build_without_a_token(monkeypatch):
