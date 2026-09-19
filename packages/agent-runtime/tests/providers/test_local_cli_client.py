@@ -1,4 +1,8 @@
+import json
+import logging
+import os
 import subprocess
+import tempfile
 
 from forge_agent.providers.local_cli.client import LocalCliModelClient
 from forge_agent.providers.local_cli.detect import CliName
@@ -84,7 +88,12 @@ def test_repair_retry_can_succeed():
     assert client.complete(_request()).content == "ok"
 
 
-def test_stderr_passes_through_redactor():
+def test_stderr_passes_through_redactor(caplog):
+    """``response.content`` is unconditionally "" on every failure path, so
+    asserting the secret is absent from it is vacuous (it cannot fail). What
+    actually matters: the redactor sees the raw stderr, and only the
+    redacted value it returns ever reaches the log — never the raw secret.
+    """
     seen: list[str] = []
 
     def redactor(value: str) -> str:
@@ -96,9 +105,12 @@ def test_stderr_passes_through_redactor():
         runner=_runner("", returncode=2, stderr="key sk-abc123"),
         redactor=redactor,
     )
-    response = client.complete(_request())
-    assert "sk-abc123" not in (response.content or "")
-    assert seen, "redactor must be consulted on failure"
+    with caplog.at_level(logging.WARNING, logger="forge_agent.providers.local_cli"):
+        client.complete(_request())
+
+    assert seen == ["key sk-abc123"], "redactor must be consulted with the raw stderr"
+    assert "sk-abc123" not in caplog.text, "the raw secret must never reach the log"
+    assert "[scrubbed]" in caplog.text, "only the redacted value must reach the log"
 
 
 def test_stream_yields_one_chunk():
@@ -160,3 +172,78 @@ def test_zero_exit_with_noisy_stderr_parses_normally():
     response = client.complete(_request())
     assert response.content == "ok"
     assert response.stop_reason == "end_turn"
+
+
+# -- Fix round 1: schema-file write must never escape complete() ------------ #
+#
+# Only the codex backend needs a schema file (``needs_schema_file`` is True);
+# the schema write happens before ``run_cli`` is ever reached, so none of
+# ``run_cli``'s own "never raises" handling covers it.
+
+
+def test_schema_write_mkstemp_failure_is_provider_error(monkeypatch):
+    """A disk-full/unwritable-temp-dir failure inside ``tempfile.mkstemp``
+    must fold into a diagnostic ``ModelResponse``, not escape ``complete()``.
+    """
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(tempfile, "mkstemp", boom)
+    client = LocalCliModelClient(cli_name=CliName.codex, runner=_runner(ENVELOPE))
+    response = client.complete(_request())
+    assert response.stop_reason == "provider_error"
+
+
+def test_schema_write_mid_write_failure_is_provider_error_and_leaves_no_temp_file(
+    monkeypatch,
+):
+    """A failure while writing the schema (e.g. ``json.dump`` mid-write) must
+    also fold into ``provider_error`` rather than escape ``complete()`` — and
+    the half-written temp file it created must not be left behind.
+    """
+    created: list[str] = []
+    real_mkstemp = tempfile.mkstemp
+
+    def recording_mkstemp(*args, **kwargs):
+        fd, path = real_mkstemp(*args, **kwargs)
+        created.append(path)
+        return fd, path
+
+    def boom_dump(*args, **kwargs):
+        raise OSError("io error mid-write")
+
+    monkeypatch.setattr(tempfile, "mkstemp", recording_mkstemp)
+    monkeypatch.setattr(json, "dump", boom_dump)
+
+    client = LocalCliModelClient(cli_name=CliName.codex, runner=_runner(ENVELOPE))
+    response = client.complete(_request())
+
+    assert response.stop_reason == "provider_error"
+    assert created, "mkstemp should have been called for the codex schema file"
+    assert not os.path.exists(created[0]), "the half-written temp file must not be left behind"
+
+
+def test_schema_file_removed_after_run_cli_failure(monkeypatch):
+    """The schema temp file must be cleaned up even when the CLI invocation
+    itself fails (not just on the happy path)."""
+    created: list[str] = []
+    real_mkstemp = tempfile.mkstemp
+
+    def recording_mkstemp(*args, **kwargs):
+        fd, path = real_mkstemp(*args, **kwargs)
+        created.append(path)
+        return fd, path
+
+    monkeypatch.setattr(tempfile, "mkstemp", recording_mkstemp)
+
+    client = LocalCliModelClient(
+        cli_name=CliName.codex, runner=_runner("", returncode=2, stderr="boom")
+    )
+    response = client.complete(_request())
+
+    assert response.stop_reason == "provider_error"
+    assert created, "mkstemp should have been called for the codex schema file"
+    assert not os.path.exists(created[0]), (
+        "the schema temp file must be removed after a CLI failure"
+    )

@@ -68,6 +68,35 @@ def _looks_like_auth_failure(stderr: str) -> bool:
     return "please run" in lowered and "login" in lowered
 
 
+def _write_schema_file() -> str:
+    """Write the envelope JSON Schema to a fresh temp file; return its path.
+
+    On any failure, cleans up after itself before re-raising (to the caller,
+    ``LocalCliModelClient._invoke``, which folds the exception into a
+    diagnostic ``CliResult``):
+
+    * ``os.fdopen`` only hands ownership of the raw ``mkstemp`` fd to the
+      file object it returns once it *succeeds* — if ``os.fdopen`` itself
+      raises, that fd is never wrapped and would otherwise leak. It is
+      closed explicitly on the failure path.
+    * a write failure (e.g. ``json.dump`` mid-write) leaves a half-written
+      file on disk; it is unlinked rather than left behind. (``with
+      os.fdopen(...)`` already closes the fd itself on this path via
+      its own ``__exit__``; closing an already-closed fd is suppressed.)
+    """
+    handle, path = tempfile.mkstemp(suffix=".json", prefix="forge-cli-")
+    try:
+        with os.fdopen(handle, "w") as fh:
+            json.dump(translate.local_cli_output_schema(), fh)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.close(handle)
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+        raise
+    return path
+
+
 class LocalCliModelClient:
     """A ``ModelClient`` backed by a local agent CLI subprocess."""
 
@@ -112,16 +141,26 @@ class LocalCliModelClient:
     # -- internals ---------------------------------------------------------
 
     def _invoke(self, system: str, user: str) -> CliResult:
+        """Build argv (writing a schema temp file first if the backend needs
+        one) and run it. Like ``run_cli``, this never raises: a schema-file
+        write failure (disk full, an unwritable temp dir, an I/O error
+        mid-write) is folded into a generic-failure ``CliResult`` — the same
+        convention ``run_cli`` itself uses for an unexpected exception — so
+        ``complete()``'s never-raise contract holds even for the part of the
+        invocation that happens before ``run_cli`` is ever reached.
+        """
         schema_path: str | None = None
-        handle: int | None = None
         try:
             if self._backend.needs_schema_file:
-                handle, schema_path = tempfile.mkstemp(suffix=".json", prefix="forge-cli-")
-                with os.fdopen(handle, "w") as fh:
-                    json.dump(translate.local_cli_output_schema(), fh)
-                handle = None
+                schema_path = _write_schema_file()
             argv = self._backend.argv(system=system, user=user, schema_path=schema_path)
             return run_cli(argv, timeout_s=self._timeout_s, runner=self._runner)
+        except Exception as exc:
+            # Mirrors run_cli's own "never raises" contract: anything that can go
+            # wrong building/writing the schema file or constructing argv must
+            # fold into a CliResult, not escape complete(). 1 is the same
+            # generic-failure marker run_cli uses for its own catch-all.
+            return CliResult(stdout="", stderr=str(exc), returncode=1, timed_out=False)
         finally:
             if schema_path:
                 with contextlib.suppress(OSError):
