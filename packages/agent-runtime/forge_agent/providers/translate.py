@@ -362,9 +362,7 @@ def build_local_cli_prompt(request: ModelRequest) -> tuple[str, str]:
         # default=str: a tool schema is advisory prompt text, not a contract; a
         # non-JSON-serialisable value inside it (e.g. a stray datetime) should
         # degrade to its string form rather than crash prompt building.
-        parts.append(
-            "Available tools:\n" + json.dumps(request.tools, indent=2, default=str)
-        )
+        parts.append("Available tools:\n" + json.dumps(request.tools, indent=2, default=str))
     system = "\n\n".join(parts)
     user = "\n\n".join(m.content for m in request.messages if m.content)
     return system, user
@@ -418,12 +416,12 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
                         parsed = json.loads(raw[start : index + 1])
                     except json.JSONDecodeError:
                         break  # This candidate failed; try next
-                    if isinstance(parsed, dict):
-                        # Check if it has the required envelope fields
-                        if all(key in parsed for key in ["content", "tool_calls", "stop_reason"]):
-                            return parsed
-                        # Not a valid envelope; try next candidate
-                    break  # Not a dict; try next candidate
+                    if isinstance(parsed, dict) and all(
+                        key in parsed for key in ["content", "tool_calls", "stop_reason"]
+                    ):
+                        return parsed
+                    # Not a valid envelope or not a dict; try next candidate
+                    break
 
         # Scan closed but invalid, or ran to EOF unclosed: try next candidate
         start += 1

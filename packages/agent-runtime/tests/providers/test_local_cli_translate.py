@@ -16,8 +16,13 @@ def _request() -> ModelRequest:
         model="claude",
         system="You are terse.",
         messages=[ModelMessage(role="user", content="Read app/main.py")],
-        tools=[{"name": "read_file", "description": "Read a file",
-                "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}}],
+        tools=[
+            {
+                "name": "read_file",
+                "description": "Read a file",
+                "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+            }
+        ],
     )
 
 
@@ -45,7 +50,10 @@ def test_non_serialisable_tool_schema_value_degrades_instead_of_crashing():
 
 
 def test_parses_tool_calls():
-    raw = '{"content": "reading", "tool_calls": [{"name": "read_file", "arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
+    raw = (
+        '{"content": "reading", "tool_calls": [{"name": "read_file", '
+        '"arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
+    )
     response = parse_local_cli_response(raw)
     assert response.content == "reading"
     assert len(response.tool_calls) == 1
@@ -56,7 +64,9 @@ def test_parses_tool_calls():
 
 def test_parses_envelope_wrapped_in_prose():
     """CLIs sometimes surround JSON with commentary; extract the object."""
-    raw = 'Sure!\n```json\n{"content": "hi", "tool_calls": [], "stop_reason": "end_turn"}\n```\nDone.'
+    raw = (
+        'Sure!\n```json\n{"content": "hi", "tool_calls": [], "stop_reason": "end_turn"}\n```\nDone.'
+    )
     response = parse_local_cli_response(raw)
     assert response.content == "hi"
     assert response.stop_reason == "end_turn"
@@ -133,7 +143,11 @@ def test_boolean_usage_token_yields_parse_error():
 
 def test_skips_incidental_json_before_real_envelope():
     """CRITICAL: Don't commit to the first {; scan for a valid envelope."""
-    raw = 'Note: {"foo": "bar"} is unrelated.\n{"content": "hi", "tool_calls": [{"name": "read_file", "arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
+    raw = (
+        'Note: {"foo": "bar"} is unrelated.\n{"content": "hi", '
+        '"tool_calls": [{"name": "read_file", "arguments": {"path": "a.py"}}], '
+        '"stop_reason": "tool_use"}'
+    )
     response = parse_local_cli_response(raw)
     assert response.content == "hi"
     assert response.stop_reason == "tool_use"
@@ -159,7 +173,10 @@ def test_missing_arguments_in_tool_call_yields_parse_error():
 
 def test_null_arguments_in_tool_call_yields_parse_error():
     """MINOR: A tool call with null arguments is parse_error, not defaulted."""
-    raw = '{"content": "hi", "tool_calls": [{"name": "read_file", "arguments": null}], "stop_reason": "tool_use"}'
+    raw = (
+        '{"content": "hi", "tool_calls": [{"name": "read_file", '
+        '"arguments": null}], "stop_reason": "tool_use"}'
+    )
     response = parse_local_cli_response(raw)
     assert response.stop_reason == "parse_error"
     assert response.tool_calls == []
@@ -185,7 +202,8 @@ def test_multiple_invalid_objects_before_envelope():
     raw = (
         '{"invalid": 1} '
         '{"missing": "fields"} '
-        '{"content": "hi", "tool_calls": [{"name": "read_file", "arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
+        '{"content": "hi", "tool_calls": [{"name": "read_file", '
+        '"arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
     )
     response = parse_local_cli_response(raw)
     assert response.content == "hi"
@@ -199,7 +217,10 @@ def test_unmatched_leading_braces_do_not_prevent_later_envelope():
     This was the regression in round 2: early return on EOF-with-depth>0 was unsound.
     Stray leading braces in CLI prose (markdown, code) are plausible.
     """
-    raw = '{{{{{ {"content": "hi", "tool_calls": [{"name": "read_file", "arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
+    raw = (
+        '{{{{{ {"content": "hi", "tool_calls": [{"name": "read_file", '
+        '"arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
+    )
     response = parse_local_cli_response(raw)
     assert response.content == "hi"
     assert response.stop_reason == "tool_use"
@@ -215,7 +236,7 @@ def test_no_closing_brace_short_circuits_without_scanning():
 
     This n is chosen so the test fails if the find('}') early return is removed;
     do not reduce it. With rule 1: instant. Without rule 1 (cap-only fallback):
-    ~2.65s at n=1,000,000. Threshold 1.0s allows ~1000× gap, immune to machine speed.
+    ~2.65s at n=1,000,000. Threshold 1.0s allows ~1000x gap, immune to machine speed.
     """
     # n=1,000,000 unclosed braces: no closing brace anywhere
     raw = "{" * 1_000_000

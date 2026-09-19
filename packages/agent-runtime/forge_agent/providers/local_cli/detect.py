@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
-__all__ = ["CliName", "DetectedCli", "DEFAULT_PREFERENCE", "detect_clis"]
+__all__ = ["DEFAULT_PREFERENCE", "CliName", "DetectedCli", "detect_clis"]
 
 
 class CliName(StrEnum):
@@ -36,7 +36,7 @@ def detect_clis(
     for name in order:
         try:
             path = which(str(name))
-        except Exception:  # noqa: BLE001 - detection must never break resolution
+        except Exception:
             continue
         if path:
             found.append(DetectedCli(name=name, path=path))

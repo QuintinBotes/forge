@@ -125,9 +125,7 @@ class LocalCliModelClient:
         if response.stop_reason != "parse_error":
             return response
 
-        _logger.warning(
-            "local cli %s returned unparseable output; retrying once", self._cli_name
-        )
+        _logger.warning("local cli %s returned unparseable output; retrying once", self._cli_name)
         retry = self._invoke(f"{system}\n\n{_REPAIR}", user)
         failure = self._failure_for(retry)
         if failure is not None:

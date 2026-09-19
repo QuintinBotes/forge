@@ -260,10 +260,7 @@ def test_malformed_usage_in_envelope_does_not_crash_complete():
     non-integer value must fold into parse_error like any other schema
     violation, not escape complete() as a raw ValueError.
     """
-    raw = (
-        '{"content":"hi","tool_calls":[],"stop_reason":"end_turn",'
-        '"usage":{"input_tokens":"abc"}}'
-    )
+    raw = '{"content":"hi","tool_calls":[],"stop_reason":"end_turn","usage":{"input_tokens":"abc"}}'
     client = LocalCliModelClient(cli_name=CliName.claude, runner=_runner(raw))
     response = client.complete(_request())
     assert response.stop_reason == "parse_error"

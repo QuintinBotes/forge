@@ -25,12 +25,17 @@ from typing import Protocol
 
 from forge_agent.providers.local_cli.detect import CliName
 
-__all__ = ["CliBackend", "CliResult", "ClaudeCliBackend", "CodexCliBackend", "backend_for", "run_cli"]
+__all__ = [
+    "ClaudeCliBackend",
+    "CliBackend",
+    "CliResult",
+    "CodexCliBackend",
+    "backend_for",
+    "run_cli",
+]
 
 #: Claude Code tool names suppressed on every invocation.
-_CLAUDE_TOOLS = (
-    "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit,WebFetch,WebSearch,Task,TodoWrite"
-)
+_CLAUDE_TOOLS = "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit,WebFetch,WebSearch,Task,TodoWrite"
 
 
 @dataclass(frozen=True)
@@ -98,12 +103,18 @@ class ClaudeCliBackend:
         return [
             "claude",
             "--print",
-            "--output-format", "json",
-            "--allowedTools", "",
-            "--disallowedTools", _CLAUDE_TOOLS,
-            "--permission-mode", "plan",
-            "--permission-prompts", "none",
-            "--append-system-prompt", system,
+            "--output-format",
+            "json",
+            "--allowedTools",
+            "",
+            "--disallowedTools",
+            _CLAUDE_TOOLS,
+            "--permission-mode",
+            "plan",
+            "--permission-prompts",
+            "none",
+            "--append-system-prompt",
+            system,
             user,
         ]
 
@@ -139,16 +150,14 @@ def run_cli(
 ) -> CliResult:
     """Execute ``argv``. Never raises; failures come back as a ``CliResult``."""
     try:
-        completed = runner(
-            argv, capture_output=True, text=True, timeout=timeout_s, check=False
-        )
+        completed = runner(argv, capture_output=True, text=True, timeout=timeout_s, check=False)
     except subprocess.TimeoutExpired:
         return CliResult(stdout="", stderr="timed out", returncode=124, timed_out=True)
     except (FileNotFoundError, OSError) as exc:
         return CliResult(
             stdout="", stderr=str(exc), returncode=127, timed_out=False, binary_missing=True
         )
-    except Exception as exc:  # noqa: BLE001 - this seam's invariant is "never raises" (mirrors
+    except Exception as exc:
         # detect.py): ``runner`` is caller-injectable, so any exception it can raise — a decoding
         # error from ``text=True``, a bug in a test double, anything — must fold into a CliResult
         # rather than propagate. 1 is a generic failure marker; it carries no sentinel meaning of

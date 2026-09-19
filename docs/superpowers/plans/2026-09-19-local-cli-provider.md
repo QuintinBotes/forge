@@ -180,9 +180,7 @@ def test_explicit_provider_still_wins_over_local_cli():
 
 
 def test_local_cli_used_when_optin_and_cli_present():
-    config = ModelClientConfig.from_env(
-        {"FORGE_LOCAL_CLI_ENABLED": "1"}, detect=_detect_claude
-    )
+    config = ModelClientConfig.from_env({"FORGE_LOCAL_CLI_ENABLED": "1"}, detect=_detect_claude)
     assert config is not None
     assert config.provider is ProviderName.local_cli
     assert config.cli_name is CliName.claude
@@ -190,10 +188,7 @@ def test_local_cli_used_when_optin_and_cli_present():
 
 
 def test_optin_but_no_cli_returns_none():
-    assert (
-        ModelClientConfig.from_env({"FORGE_LOCAL_CLI_ENABLED": "1"}, detect=_detect_none)
-        is None
-    )
+    assert ModelClientConfig.from_env({"FORGE_LOCAL_CLI_ENABLED": "1"}, detect=_detect_none) is None
 
 
 def test_bridge_url_selects_local_cli_without_local_binary():
@@ -362,8 +357,13 @@ def _request() -> ModelRequest:
         model="claude",
         system="You are terse.",
         messages=[ModelMessage(role="user", content="Read app/main.py")],
-        tools=[{"name": "read_file", "description": "Read a file",
-                "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}}],
+        tools=[
+            {
+                "name": "read_file",
+                "description": "Read a file",
+                "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+            }
+        ],
     )
 
 
@@ -387,7 +387,9 @@ def test_parses_tool_calls():
 
 def test_parses_envelope_wrapped_in_prose():
     """CLIs sometimes surround JSON with commentary; extract the object."""
-    raw = 'Sure!\n```json\n{"content": "hi", "tool_calls": [], "stop_reason": "end_turn"}\n```\nDone.'
+    raw = (
+        'Sure!\n```json\n{"content": "hi", "tool_calls": [], "stop_reason": "end_turn"}\n```\nDone.'
+    )
     response = parse_local_cli_response(raw)
     assert response.content == "hi"
     assert response.stop_reason == "end_turn"
@@ -653,12 +655,17 @@ from typing import Protocol
 
 from forge_agent.providers.local_cli.detect import CliName
 
-__all__ = ["CliBackend", "CliResult", "ClaudeCliBackend", "CodexCliBackend", "backend_for", "run_cli"]
+__all__ = [
+    "CliBackend",
+    "CliResult",
+    "ClaudeCliBackend",
+    "CodexCliBackend",
+    "backend_for",
+    "run_cli",
+]
 
 #: Claude Code tool names suppressed on every invocation.
-_CLAUDE_TOOLS = (
-    "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit,WebFetch,WebSearch,Task,TodoWrite"
-)
+_CLAUDE_TOOLS = "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit,WebFetch,WebSearch,Task,TodoWrite"
 
 
 @dataclass(frozen=True)
@@ -684,10 +691,14 @@ class ClaudeCliBackend:
         return [
             "claude",
             "--print",
-            "--output-format", "json",
-            "--permission-mode", "plan",
-            "--disallowedTools", _CLAUDE_TOOLS,
-            "--append-system-prompt", system,
+            "--output-format",
+            "json",
+            "--permission-mode",
+            "plan",
+            "--disallowedTools",
+            _CLAUDE_TOOLS,
+            "--append-system-prompt",
+            system,
             user,
         ]
 
@@ -723,9 +734,7 @@ def run_cli(
 ) -> CliResult:
     """Execute ``argv``. Never raises; failures come back as a ``CliResult``."""
     try:
-        completed = runner(
-            argv, capture_output=True, text=True, timeout=timeout_s, check=False
-        )
+        completed = runner(argv, capture_output=True, text=True, timeout=timeout_s, check=False)
     except subprocess.TimeoutExpired:
         return CliResult(stdout="", stderr="timed out", returncode=124, timed_out=True)
     except (FileNotFoundError, OSError) as exc:
@@ -957,9 +966,7 @@ class LocalCliModelClient:
         if response.stop_reason != "parse_error":
             return response
 
-        _logger.warning(
-            "local cli %s returned unparseable output; retrying once", self._cli_name
-        )
+        _logger.warning("local cli %s returned unparseable output; retrying once", self._cli_name)
         retry = self._invoke(f"{system}\n\n{_REPAIR}", user)
         failure = self._failure_for(retry)
         if failure is not None:
@@ -1371,7 +1378,9 @@ def test_successful_round_trip_and_token_header():
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["auth"] = request.headers.get("authorization", "")
-        return httpx.Response(200, json={"content": "ok", "tool_calls": [], "stop_reason": "end_turn"})
+        return httpx.Response(
+            200, json={"content": "ok", "tool_calls": [], "stop_reason": "end_turn"}
+        )
 
     assert _client(handler).complete(_request()).content == "ok"
     assert seen["auth"] == "Bearer t0ken"
