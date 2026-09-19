@@ -72,3 +72,37 @@ def test_usage_is_parsed_when_present():
     assert response.usage is not None
     assert response.usage.input_tokens == 11
     assert response.usage.output_tokens == 22
+
+
+def test_skips_incidental_json_before_real_envelope():
+    """CRITICAL: Don't commit to the first {; scan for a valid envelope."""
+    raw = 'Note: {"foo": "bar"} is unrelated.\n{"content": "hi", "tool_calls": [{"name": "read_file", "arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
+    response = parse_local_cli_response(raw)
+    assert response.content == "hi"
+    assert response.stop_reason == "tool_use"
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].name == "read_file"
+
+
+def test_missing_required_fields_yields_parse_error():
+    """IMPORTANT: A valid JSON object without required envelope fields is parse_error."""
+    raw = '{"foo": 1}'
+    response = parse_local_cli_response(raw)
+    assert response.stop_reason == "parse_error"
+    assert response.tool_calls == []
+
+
+def test_missing_arguments_in_tool_call_yields_parse_error():
+    """MINOR: A tool call without arguments is parse_error, not defaulted."""
+    raw = '{"content": "hi", "tool_calls": [{"name": "read_file"}], "stop_reason": "tool_use"}'
+    response = parse_local_cli_response(raw)
+    assert response.stop_reason == "parse_error"
+    assert response.tool_calls == []
+
+
+def test_null_arguments_in_tool_call_yields_parse_error():
+    """MINOR: A tool call with null arguments is parse_error, not defaulted."""
+    raw = '{"content": "hi", "tool_calls": [{"name": "read_file", "arguments": null}], "stop_reason": "tool_use"}'
+    response = parse_local_cli_response(raw)
+    assert response.stop_reason == "parse_error"
+    assert response.tool_calls == []

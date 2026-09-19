@@ -360,35 +360,48 @@ def build_local_cli_prompt(request: ModelRequest) -> tuple[str, str]:
 
 
 def _extract_json_object(raw: str) -> dict[str, Any] | None:
-    """Find the outermost JSON object in ``raw``; tolerate surrounding prose."""
-    start = raw.find("{")
-    if start == -1:
-        return None
-    depth = 0
-    in_string = False
-    escaped = False
-    for index in range(start, len(raw)):
-        char = raw[index]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-            continue
-        if char == '"':
-            in_string = True
-        elif char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                try:
-                    parsed = json.loads(raw[start : index + 1])
-                except json.JSONDecodeError:
-                    return None
-                return parsed if isinstance(parsed, dict) else None
+    """Find a JSON object in ``raw`` that looks like an envelope; tolerate surrounding prose.
+
+    Scans for multiple candidate JSON objects, skipping those that fail to parse or
+    lack the required envelope fields (content, tool_calls, stop_reason).
+    """
+    start = 0
+    while True:
+        start = raw.find("{", start)
+        if start == -1:
+            return None
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(raw)):
+            char = raw[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(raw[start : index + 1])
+                    except json.JSONDecodeError:
+                        break  # This candidate failed; try next
+                    if isinstance(parsed, dict):
+                        # Check if it has the required envelope fields
+                        if all(key in parsed for key in ["content", "tool_calls", "stop_reason"]):
+                            return parsed
+                        # Not a valid envelope; try next candidate
+                    break  # Not a dict; try next candidate
+        # Move past this candidate and try the next one
+        start += 1
     return None
 
 
@@ -398,25 +411,41 @@ def parse_local_cli_response(raw: str) -> ModelResponse:
     Unparseable output yields ``stop_reason="parse_error"`` — never an empty
     ``tool_calls`` list, which would be indistinguishable from the model
     deliberately choosing to do nothing.
+
+    Validates that required fields (content, tool_calls, stop_reason) are present
+    and of the correct types. Rejects envelopes with invalid tool_calls entries.
     """
     payload = _extract_json_object(raw)
     if payload is None:
+        return ModelResponse(content="", stop_reason="parse_error")
+
+    # Validate required top-level fields are present and correct type
+    if not all(key in payload for key in ["content", "tool_calls", "stop_reason"]):
+        return ModelResponse(content="", stop_reason="parse_error")
+
+    if not isinstance(payload.get("content"), str):
+        return ModelResponse(content="", stop_reason="parse_error")
+
+    if not isinstance(payload.get("tool_calls"), list):
+        return ModelResponse(content="", stop_reason="parse_error")
+
+    if not isinstance(payload.get("stop_reason"), str):
         return ModelResponse(content="", stop_reason="parse_error")
 
     calls: list[ModelToolCall] = []
     for entry in payload.get("tool_calls") or []:
         if not isinstance(entry, dict) or not entry.get("name"):
             return ModelResponse(content="", stop_reason="parse_error")
-        arguments = entry.get("arguments") or {}
-        if not isinstance(arguments, dict):
+        # arguments is required and must be a dict
+        if "arguments" not in entry or not isinstance(entry.get("arguments"), dict):
             return ModelResponse(content="", stop_reason="parse_error")
-        calls.append(ModelToolCall(name=str(entry["name"]), arguments=arguments))
+        calls.append(ModelToolCall(name=str(entry["name"]), arguments=entry["arguments"]))
 
     usage = payload.get("usage") or {}
     return ModelResponse(
-        content=str(payload.get("content") or ""),
+        content=payload["content"],
         tool_calls=calls,
-        stop_reason=str(payload.get("stop_reason") or "end_turn"),
+        stop_reason=payload["stop_reason"],
         usage=TokenUsage(
             input_tokens=int(usage.get("input_tokens") or 0),
             output_tokens=int(usage.get("output_tokens") or 0),
