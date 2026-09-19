@@ -60,6 +60,22 @@ EOF
   # hint that agent runs cannot work. Say so here rather than letting the first
   # run fail with a 503 the reader has to go looking for.
   if [ -z "${FORGE_MODEL_PROVIDER:-}" ]; then
+    if command -v claude >/dev/null 2>&1 || command -v codex >/dev/null 2>&1; then
+      cat <<EOF
+
+Local agent CLI detected. To use it instead of an API key:
+
+  export FORGE_CLI_BRIDGE_TOKEN=\$(openssl rand -hex 16)
+  make cli-bridge                       # in another terminal, on the host
+
+  Then add to deploy/.env.dev and re-run 'make dev-up':
+    FORGE_LOCAL_CLI_ENABLED=1
+    FORGE_CLI_BRIDGE_URL=http://host.docker.internal:8099
+    FORGE_CLI_BRIDGE_TOKEN=<the same token>
+
+  Dev/self-host convenience only — see docs/self-hosting/local-cli-provider.md.
+EOF
+    fi
     cat <<EOF
 
 No model provider configured — agent runs will be REFUSED (HTTP 503).

@@ -32,6 +32,7 @@ Start here and follow the path that fits you.
 | **[Docker Compose (production)](./self-hosting/docker-compose.md)** | Hardened, digest-pinned production stack |
 | **[Kubernetes / Helm](./self-hosting/kubernetes.md)** | Clustered deployment |
 | **[Infrastructure as Code](./self-hosting/iac.md)** | OpenTofu apply for Hetzner + Cloudflare + Fly.io (dev/staging/prod) |
+| **[Local agent CLI provider](./self-hosting/local-cli-provider.md)** | Drive a locally installed `claude`/`codex` CLI instead of a BYOK API key (dev/self-host only) |
 | **[Backup](./self-hosting/backup.md)** · **[Restore](./self-hosting/restore.md)** · **[Upgrade](./self-hosting/upgrade.md)** | Day-2 operations |
 | **[Observability](./self-hosting/observability.md)** · **[Reliability](./self-hosting/reliability.md)** · **[Performance](./self-hosting/performance.md)** | Running it well |
 | **[Troubleshooting](./self-hosting/troubleshooting.md)** | When something won't come up |
