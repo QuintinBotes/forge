@@ -94,11 +94,30 @@ Reliability measures, in order of application:
 The CLIs are themselves agents. Left unconstrained, `claude -p` would plan and edit files on the
 host while Forge's own loop also tried to act — two agent loops, one working tree, no sandbox.
 
-The provider therefore always disables the CLI's own tool use:
+The provider therefore always disables the CLI's own tool use, in layers, most restrictive first:
 
-- `claude`: `--disallowedTools` covering the full tool set, `--permission-mode` set to the most
-  restrictive available
+- `claude`: `--allowedTools ""` — an allow-list permitting nothing, which is **fail-closed**;
+  then `--disallowedTools <known tools>` as a second layer; then `--permission-mode plan` and
+  `--permission-prompts none`. Never `--dangerously-skip-permissions`.
 - `codex`: `--sandbox read-only`, and never `--dangerously-bypass-approvals-and-sandbox`
+
+> **Revised 2026-09-19 during implementation.** This section originally specified only
+> `--disallowedTools`. Review found that shape **fail-open**: the list hardcodes eleven tool
+> names, so the day the CLI ships a twelfth it is silently permitted. Since tool suppression is
+> this provider's security property, the primary mechanism became an empty allow-list, which
+> denies by construction and cannot go stale. The deny-list is retained behind it. The empty
+> allow-list was verified accepted by the real CLI before adoption.
+
+Two flags in this argv are **variadic** — `--allowedTools` and `--disallowedTools` both take
+`<tools...>` and greedily consume bare tokens until the next `--`-prefixed flag. The trailing
+user prompt is a bare positional, so the ordering above is load-bearing: a reorder placing either
+variadic flag last would silently swallow the prompt as a tool name and send the CLI no prompt at
+all. A regression test asserts the ordering invariant.
+
+**What is demonstrated, and what is not.** A live call confirmed the CLI *accepts* this flag
+combination and returned `permission_denials: []`. That is acceptance, not enforcement: no test
+yet provokes a tool-use attempt and observes it denied end to end. Until one does, treat
+suppression as configured-and-plausible rather than proven.
 
 The CLI is used strictly as a text oracle. All tool execution stays inside Forge's sandbox, where
 it is audited.
