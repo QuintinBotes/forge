@@ -4,6 +4,16 @@ Every backend disables the CLI's own tool use. The CLIs are agents; left
 unconstrained they would plan and edit files on the host while Forge's own loop
 also acted — two agent loops, one working tree, no sandbox. Here they are text
 oracles only; all tool execution stays inside Forge's audited sandbox.
+
+TODO(local_cli behavioural verification): the suppression flags below have
+only been checked for *acceptance* by the real CLIs (they don't error), never
+for *enforcement* — no test yet sends a prompt engineered to provoke a tool
+call and asserts the CLI performs no tool use end to end. That test needs a
+real, authenticated CLI invocation (real subscription quota), so it belongs
+on an opt-in live lane (e.g. a ``live_local_cli`` pytest marker, following the
+``live_model``/``live_github``/etc. convention in ``pyproject.toml``), not the
+default hermetic suite. Not yet written; see
+``ClaudeCliBackend``'s docstring for the same caveat spelled out.
 """
 
 from __future__ import annotations
@@ -44,20 +54,30 @@ class CliBackend(Protocol):
 class ClaudeCliBackend:
     """`claude -p` with a JSON result and every tool disabled.
 
-    Layered, most-restrictive-first tool suppression:
+    Layered, most-restrictive-first tool suppression, as *configured*:
 
-    * ``--allowedTools ""`` — an empty allow-list, fail-closed: nothing is
-      permitted unless explicitly named. This is the primary layer, so a
-      future Claude Code release that ships a twelfth tool is denied by
-      default instead of silently slipping past a hardcoded deny-list
-      (which is fail-open by construction).
+    * ``--allowedTools ""`` — an empty allow-list. By construction, an empty
+      allow-list should deny anything not explicitly named — the primary
+      layer, intended so a future Claude Code release that ships a twelfth
+      tool is denied by default instead of silently slipping past a
+      hardcoded deny-list (which is fail-open by construction).
     * ``--disallowedTools <known names>`` — kept as a second, defence-in-depth
       layer naming today's known tools explicitly.
-    * ``--permission-mode plan`` / ``--permission-prompts none`` — guard the
-      case where a permission request arises anyway: under ``--print`` there
-      is no human and no SDK host to answer one, so without
+    * ``--permission-mode plan`` / ``--permission-prompts none`` — intended to
+      guard the case where a permission request arises anyway: under
+      ``--print`` there is no human and no SDK host to answer one, so without
       ``--permission-prompts none`` the subprocess would hang until the
       timeout instead of failing fast.
+
+    **What is proven vs. what is configured:** as of this commit, only flag
+    *acceptance* has been verified against the real CLI — a live call with
+    ``--allowedTools ""`` completed and returned ``permission_denials: []``
+    for a prompt ("say ok") that never attempted a tool call. That result is
+    consistent both with "nothing was ever attempted" and with "something
+    was attempted and blocked" — acceptance is not enforcement. No test yet
+    sends a prompt engineered to provoke a tool call and observes the CLI
+    perform no tool use end to end; see the module-level TODO below for the
+    missing behavioural test.
 
     ``--allowedTools``/``--disallowedTools`` are documented by ``claude
     --help`` as variadic (``<tools...>``): each greedily consumes every
