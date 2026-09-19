@@ -15,6 +15,7 @@ from forge_agent.providers.base import (
     ModelClientUnavailable,
     build_model_client,
 )
+from forge_agent.providers.bridge_client import LocalCliBridgeClient
 from forge_agent.providers.config import ModelClientConfig, ProviderName
 from forge_agent.providers.local_cli.client import LocalCliModelClient
 from forge_agent.providers.local_cli.detect import CliName, detect_clis
@@ -34,6 +35,7 @@ __all__ = [
     "MODEL_PRICING",
     "AnthropicModelClient",
     "CliName",
+    "LocalCliBridgeClient",
     "LocalCliModelClient",
     "ModelClientConfig",
     "ModelClientError",
