@@ -27,9 +27,12 @@ from forge_contracts import (
 __all__ = [
     "anthropic_cache_read_tokens",
     "anthropic_stream_kwargs",
+    "build_local_cli_prompt",
     "from_anthropic_message",
     "from_openai_completion",
+    "local_cli_output_schema",
     "openai_create_kwargs",
+    "parse_local_cli_response",
     "to_anthropic_tools",
     "to_openai_tools",
 ]
@@ -292,3 +295,132 @@ def _parse_arguments(raw: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+# --------------------------------------------------------------------------- #
+# Local CLI                                                                    #
+# --------------------------------------------------------------------------- #
+
+_ENVELOPE_INSTRUCTION = """
+Reply with a single JSON object and nothing else:
+
+{"content": "<prose, may be empty>",
+ "tool_calls": [{"name": "<tool name>", "arguments": {<json object>}}],
+ "stop_reason": "tool_use" | "end_turn"}
+
+Use "tool_calls" only for the tools listed below. Emit an empty list when you
+have no tool to call. Do not invoke any tool yourself; only describe the call.
+"""
+
+
+def local_cli_output_schema() -> dict[str, Any]:
+    """JSON Schema for the envelope, for CLIs that can enforce one."""
+    return {
+        "type": "object",
+        "required": ["content", "tool_calls", "stop_reason"],
+        "additionalProperties": False,
+        "properties": {
+            "content": {"type": "string"},
+            "stop_reason": {"type": "string", "enum": ["tool_use", "end_turn"]},
+            "tool_calls": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["name", "arguments"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "name": {"type": "string"},
+                        "arguments": {"type": "object"},
+                    },
+                },
+            },
+            "usage": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "input_tokens": {"type": "integer", "minimum": 0},
+                    "output_tokens": {"type": "integer", "minimum": 0},
+                },
+            },
+        },
+    }
+
+
+def build_local_cli_prompt(request: ModelRequest) -> tuple[str, str]:
+    """Return ``(system, user)`` for a CLI invocation."""
+    parts: list[str] = []
+    if request.system:
+        parts.append(request.system)
+    parts.append(_ENVELOPE_INSTRUCTION.strip())
+    if request.tools:
+        parts.append("Available tools:\n" + json.dumps(request.tools, indent=2))
+    system = "\n\n".join(parts)
+    user = "\n\n".join(m.content for m in request.messages if m.content)
+    return system, user
+
+
+def _extract_json_object(raw: str) -> dict[str, Any] | None:
+    """Find the outermost JSON object in ``raw``; tolerate surrounding prose."""
+    start = raw.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(raw)):
+        char = raw[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    parsed = json.loads(raw[start : index + 1])
+                except json.JSONDecodeError:
+                    return None
+                return parsed if isinstance(parsed, dict) else None
+    return None
+
+
+def parse_local_cli_response(raw: str) -> ModelResponse:
+    """Fold a CLI envelope into a ``ModelResponse``.
+
+    Unparseable output yields ``stop_reason="parse_error"`` — never an empty
+    ``tool_calls`` list, which would be indistinguishable from the model
+    deliberately choosing to do nothing.
+    """
+    payload = _extract_json_object(raw)
+    if payload is None:
+        return ModelResponse(content="", stop_reason="parse_error")
+
+    calls: list[ModelToolCall] = []
+    for entry in payload.get("tool_calls") or []:
+        if not isinstance(entry, dict) or not entry.get("name"):
+            return ModelResponse(content="", stop_reason="parse_error")
+        arguments = entry.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            return ModelResponse(content="", stop_reason="parse_error")
+        calls.append(ModelToolCall(name=str(entry["name"]), arguments=arguments))
+
+    usage = payload.get("usage") or {}
+    return ModelResponse(
+        content=str(payload.get("content") or ""),
+        tool_calls=calls,
+        stop_reason=str(payload.get("stop_reason") or "end_turn"),
+        usage=TokenUsage(
+            input_tokens=int(usage.get("input_tokens") or 0),
+            output_tokens=int(usage.get("output_tokens") or 0),
+        )
+        if usage
+        else None,
+    )
