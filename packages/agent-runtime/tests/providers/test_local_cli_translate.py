@@ -136,3 +136,34 @@ def test_multiple_invalid_objects_before_envelope():
     assert response.content == "hi"
     assert response.stop_reason == "tool_use"
     assert len(response.tool_calls) == 1
+
+
+def test_unmatched_leading_braces_do_not_prevent_later_envelope():
+    """Unmatched leading braces consume closing braces; later { can still close.
+
+    This was the regression in round 2: early return on EOF-with-depth>0 was unsound.
+    Stray leading braces in CLI prose (markdown, code) are plausible.
+    """
+    raw = '{{{{{ {"content": "hi", "tool_calls": [{"name": "read_file", "arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
+    response = parse_local_cli_response(raw)
+    assert response.content == "hi"
+    assert response.stop_reason == "tool_use"
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].name == "read_file"
+
+
+def test_brace_heavy_input_with_no_closing_brace_completes_quickly():
+    """Performance: 10,000 braces with no closing brace should hit early return.
+
+    Rule 1 (sound early return) checks for any } after start. If none exists,
+    we return immediately without scanning. This is O(n) single pass via raw.find().
+    """
+    raw = "{" * 10000
+    start_time = time.time()
+    response = parse_local_cli_response(raw)
+    elapsed = time.time() - start_time
+
+    assert response.stop_reason == "parse_error"
+    assert response.tool_calls == []
+    # Should be very fast: just one raw.find() scan
+    assert elapsed < 0.5, f"Scanner took {elapsed:.3f}s; should be sub-millisecond with rule 1"

@@ -313,6 +313,8 @@ have no tool to call. Do not invoke any tool yourself; only describe the call.
 """
 
 #: Maximum number of candidate JSON objects to scan before giving up.
+#: This is the load-bearing complexity bound for _extract_json_object: with early
+#: returns for "no } anywhere after start", and this cap, complexity is O(64n) = O(n).
 #: A real CLI reply does not contain 64 balanced objects before the envelope.
 _MAX_CANDIDATE_ATTEMPTS = 64
 
@@ -369,9 +371,10 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
     Scans for multiple candidate JSON objects, skipping those that fail to parse or
     lack the required envelope fields (content, tool_calls, stop_reason).
 
-    Distinguishes between unclosed braces (which cannot be recovered and end the scan)
-    and invalid envelopes (which may be followed by a valid one). Caps attempts to
-    prevent quadratic behaviour on adversarial input.
+    For each candidate, either the scan closes (depth==0) at some }, or runs to EOF
+    with depth>0. In either case, if the object is not a valid envelope, we advance
+    to the next { and retry. Capped at _MAX_CANDIDATE_ATTEMPTS to prevent adversarial
+    input from consuming unbounded CPU.
     """
     start = 0
     attempts = 0
@@ -380,10 +383,14 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
         if start == -1:
             return None
 
+        # Sound early return: if there is no closing brace anywhere after this position,
+        # no candidate rooted here or later can possibly close. Stop entirely.
+        if raw.find("}", start) == -1:
+            return None
+
         depth = 0
         in_string = False
         escaped = False
-        closed = False  # Track whether we found a closing brace (depth == 0)
 
         for index in range(start, len(raw)):
             char = raw[index]
@@ -402,7 +409,6 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
             elif char == "}":
                 depth -= 1
                 if depth == 0:
-                    closed = True
                     try:
                         parsed = json.loads(raw[start : index + 1])
                     except json.JSONDecodeError:
@@ -414,13 +420,7 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
                         # Not a valid envelope; try next candidate
                     break  # Not a dict; try next candidate
 
-        # If scan reached EOF with unclosed braces, stop entirely.
-        # No later { in the input can close these unclosed braces.
-        # This is the key to linear time: we do not rescan past unclosed depth.
-        if not closed:
-            return None
-
-        # Closed but invalid: try next candidate
+        # Scan closed but invalid, or ran to EOF unclosed: try next candidate
         start += 1
         attempts += 1
 
