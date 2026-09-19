@@ -58,6 +58,7 @@ known-first-party = [
     "forge_api",
     "forge_worker",
     "forge_mcp_gateway",
+    "forge_cli_bridge",
 ]
 
 [format]

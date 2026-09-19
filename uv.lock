@@ -15,6 +15,7 @@ members = [
     "forge-auth",
     "forge-authz",
     "forge-board",
+    "forge-cli-bridge",
     "forge-contracts",
     "forge-coordinator",
     "forge-db",
@@ -914,6 +915,7 @@ dependencies = [
     { name = "forge-auth" },
     { name = "forge-authz" },
     { name = "forge-board" },
+    { name = "forge-cli-bridge" },
     { name = "forge-contracts" },
     { name = "forge-coordinator" },
     { name = "forge-db" },
@@ -958,6 +960,7 @@ requires-dist = [
     { name = "forge-auth", editable = "packages/auth-sdk" },
     { name = "forge-authz", editable = "packages/authz-sdk" },
     { name = "forge-board", editable = "packages/board-core" },
+    { name = "forge-cli-bridge", editable = "apps/cli-bridge" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-coordinator", editable = "packages/multi-agent-coordinator" },
     { name = "forge-db", editable = "packages/db" },
@@ -1157,6 +1160,25 @@ requires-dist = [
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
     { name = "sqlalchemy", specifier = ">=2.0" },
+]
+
+[[package]]
+name = "forge-cli-bridge"
+version = "0.1.0"
+source = { editable = "apps/cli-bridge" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "forge-agent" },
+    { name = "forge-contracts" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.139.0" },
+    { name = "forge-agent", editable = "packages/agent-runtime" },
+    { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
 ]
 
 [[package]]

@@ -15,7 +15,7 @@ MYPY_PACKAGES := \
 	forge_spec forge_board forge_knowledge forge_integrations forge_mcp \
 	forge_policy forge_authz forge_skill forge_eval forge_approval forge_api \
 	forge_worker forge_mcp_gateway forge_orchestration_policy \
-	forge_deploy forge_auth forge_marketplace forge_obs
+	forge_deploy forge_auth forge_marketplace forge_obs forge_cli_bridge
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
