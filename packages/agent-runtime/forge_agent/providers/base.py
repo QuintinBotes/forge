@@ -9,6 +9,7 @@ optional provider SDK is not installed.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from typing import Any
 
@@ -70,5 +71,33 @@ def build_model_client(
             base_url=config.base_url,
             redactor=redactor,
             client=client,
+        )
+    if provider is ProviderName.local_cli:
+        from forge_agent.providers.local_cli.client import LocalCliModelClient
+
+        if config.bridge_url:
+            # LocalCliBridgeClient is created in Task 8; this import is lazy
+            # (inside the bridge_url branch) so it never executes until a
+            # bridge URL is configured. Do not hoist it to module level or
+            # stub the module here -- leave it to Task 8 (Amendment B).
+            from forge_agent.providers.bridge_client import LocalCliBridgeClient
+
+            return LocalCliBridgeClient(
+                base_url=config.bridge_url,
+                token=config.bridge_token,
+                timeout_s=config.timeout_s,
+                redactor=redactor,
+            )
+        if config.cli_name is None:
+            raise ModelClientError("local_cli provider requires a cli_name or bridge_url")
+        return LocalCliModelClient(
+            cli_name=config.cli_name,
+            timeout_s=config.timeout_s,
+            redactor=redactor,
+            # `client` is the anthropic/openai SDK-client injection seam; reused
+            # here as the subprocess runner injection point. It is NOT an
+            # SDK-shaped object for this provider -- LocalCliModelClient's
+            # `runner` expects a subprocess.run-compatible callable.
+            runner=client if client is not None else subprocess.run,
         )
     raise ModelClientError(f"unknown model provider: {provider!r}")
