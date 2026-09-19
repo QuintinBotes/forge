@@ -312,6 +312,10 @@ Use "tool_calls" only for the tools listed below. Emit an empty list when you
 have no tool to call. Do not invoke any tool yourself; only describe the call.
 """
 
+#: Maximum number of candidate JSON objects to scan before giving up.
+#: A real CLI reply does not contain 64 balanced objects before the envelope.
+_MAX_CANDIDATE_ATTEMPTS = 64
+
 
 def local_cli_output_schema() -> dict[str, Any]:
     """JSON Schema for the envelope, for CLIs that can enforce one."""
@@ -364,15 +368,23 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
 
     Scans for multiple candidate JSON objects, skipping those that fail to parse or
     lack the required envelope fields (content, tool_calls, stop_reason).
+
+    Distinguishes between unclosed braces (which cannot be recovered and end the scan)
+    and invalid envelopes (which may be followed by a valid one). Caps attempts to
+    prevent quadratic behaviour on adversarial input.
     """
     start = 0
-    while True:
+    attempts = 0
+    while attempts < _MAX_CANDIDATE_ATTEMPTS:
         start = raw.find("{", start)
         if start == -1:
             return None
+
         depth = 0
         in_string = False
         escaped = False
+        closed = False  # Track whether we found a closing brace (depth == 0)
+
         for index in range(start, len(raw)):
             char = raw[index]
             if in_string:
@@ -390,6 +402,7 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
             elif char == "}":
                 depth -= 1
                 if depth == 0:
+                    closed = True
                     try:
                         parsed = json.loads(raw[start : index + 1])
                     except json.JSONDecodeError:
@@ -400,8 +413,17 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
                             return parsed
                         # Not a valid envelope; try next candidate
                     break  # Not a dict; try next candidate
-        # Move past this candidate and try the next one
+
+        # If scan reached EOF with unclosed braces, stop entirely.
+        # No later { in the input can close these unclosed braces.
+        # This is the key to linear time: we do not rescan past unclosed depth.
+        if not closed:
+            return None
+
+        # Closed but invalid: try next candidate
         start += 1
+        attempts += 1
+
     return None
 
 

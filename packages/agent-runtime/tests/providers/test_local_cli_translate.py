@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from forge_agent.providers.translate import (
@@ -106,3 +108,31 @@ def test_null_arguments_in_tool_call_yields_parse_error():
     response = parse_local_cli_response(raw)
     assert response.stop_reason == "parse_error"
     assert response.tool_calls == []
+
+
+def test_deep_unclosed_braces_completes_quickly():
+    """Performance regression: unclosed braces should not trigger O(n²) scan."""
+    # 10,000 unclosed braces should complete in < 0.5s (linear, not quadratic).
+    # Quadratic would take ~2+ seconds based on measured baseline.
+    raw = "{" * 10000
+    start_time = time.time()
+    response = parse_local_cli_response(raw)
+    elapsed = time.time() - start_time
+
+    assert response.stop_reason == "parse_error"
+    assert response.tool_calls == []
+    assert elapsed < 0.5, f"Scanner took {elapsed:.3f}s; quadratic regression detected"
+
+
+def test_multiple_invalid_objects_before_envelope():
+    """Scan should skip multiple balanced-but-invalid JSON objects."""
+    # Multiple invalid envelopes before the real one
+    raw = (
+        '{"invalid": 1} '
+        '{"missing": "fields"} '
+        '{"content": "hi", "tool_calls": [{"name": "read_file", "arguments": {"path": "a.py"}}], "stop_reason": "tool_use"}'
+    )
+    response = parse_local_cli_response(raw)
+    assert response.content == "hi"
+    assert response.stop_reason == "tool_use"
+    assert len(response.tool_calls) == 1
