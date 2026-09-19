@@ -1,3 +1,4 @@
+import datetime
 import time
 
 import pytest
@@ -26,6 +27,21 @@ def test_prompt_carries_tool_schemas_and_envelope_instruction():
     assert "read_file" in system
     assert "tool_calls" in system
     assert "Read app/main.py" in user
+
+
+def test_non_serialisable_tool_schema_value_degrades_instead_of_crashing():
+    """IMPORTANT: a tool schema is internal (not attacker-controlled) data,
+    but json.dumps(request.tools) must not crash prompt building on a value
+    it can't natively serialise (e.g. a stray datetime); it should degrade
+    to that value's string form instead.
+    """
+    request = ModelRequest(
+        model="claude",
+        messages=[ModelMessage(role="user", content="hi")],
+        tools=[{"name": "t", "when": datetime.datetime(2026, 1, 1)}],
+    )
+    system, _user = build_local_cli_prompt(request)
+    assert "2026-01-01" in system
 
 
 def test_parses_tool_calls():
@@ -74,6 +90,45 @@ def test_usage_is_parsed_when_present():
     assert response.usage is not None
     assert response.usage.input_tokens == 11
     assert response.usage.output_tokens == 22
+
+
+def test_non_integer_usage_token_yields_parse_error():
+    """CRITICAL: usage is CLI-controlled output; a non-integer input_tokens
+    must not crash the parser (previously ``int("abc")`` raised ValueError).
+    """
+    raw = (
+        '{"content": "hi", "tool_calls": [], "stop_reason": "end_turn",'
+        ' "usage": {"input_tokens": "abc"}}'
+    )
+    response = parse_local_cli_response(raw)
+    assert response.stop_reason == "parse_error"
+    assert response.tool_calls == []
+
+
+def test_usage_not_an_object_yields_parse_error():
+    raw = '{"content": "hi", "tool_calls": [], "stop_reason": "end_turn", "usage": "bad"}'
+    response = parse_local_cli_response(raw)
+    assert response.stop_reason == "parse_error"
+
+
+def test_negative_usage_token_yields_parse_error():
+    raw = (
+        '{"content": "hi", "tool_calls": [], "stop_reason": "end_turn",'
+        ' "usage": {"input_tokens": -1}}'
+    )
+    response = parse_local_cli_response(raw)
+    assert response.stop_reason == "parse_error"
+
+
+def test_boolean_usage_token_yields_parse_error():
+    """bool is a subclass of int in Python; JSON Schema's "integer" does not
+    admit true/false, so it must be rejected explicitly."""
+    raw = (
+        '{"content": "hi", "tool_calls": [], "stop_reason": "end_turn",'
+        ' "usage": {"input_tokens": true}}'
+    )
+    response = parse_local_cli_response(raw)
+    assert response.stop_reason == "parse_error"
 
 
 def test_skips_incidental_json_before_real_envelope():

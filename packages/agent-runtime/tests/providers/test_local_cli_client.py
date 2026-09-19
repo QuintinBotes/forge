@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 import os
@@ -247,3 +248,60 @@ def test_schema_file_removed_after_run_cli_failure(monkeypatch):
     assert not os.path.exists(created[0]), (
         "the schema temp file must be removed after a CLI failure"
     )
+
+
+# -- Fix round 2: whole-contract re-trace found holes in translate.py's ----- #
+# CLI-controlled parsing and in an unguarded injected redactor.
+
+
+def test_malformed_usage_in_envelope_does_not_crash_complete():
+    """CRITICAL: parse_local_cli_response did ``int(usage["input_tokens"])``
+    unguarded on a field that comes straight from the CLI's own output. A
+    non-integer value must fold into parse_error like any other schema
+    violation, not escape complete() as a raw ValueError.
+    """
+    raw = (
+        '{"content":"hi","tool_calls":[],"stop_reason":"end_turn",'
+        '"usage":{"input_tokens":"abc"}}'
+    )
+    client = LocalCliModelClient(cli_name=CliName.claude, runner=_runner(raw))
+    response = client.complete(_request())
+    assert response.stop_reason == "parse_error"
+
+
+def test_non_serialisable_tool_schema_does_not_crash_prompt_building():
+    """IMPORTANT: build_local_cli_prompt did ``json.dumps(request.tools)``
+    unguarded. A tool schema containing a non-JSON-serialisable value (e.g. a
+    stray datetime) must degrade rather than crash before the CLI is ever
+    invoked.
+    """
+    request = ModelRequest(
+        model="claude",
+        messages=[ModelMessage(role="user", content="hi")],
+        tools=[{"name": "t", "when": datetime.datetime.now()}],
+    )
+    client = LocalCliModelClient(cli_name=CliName.claude, runner=_runner(ENVELOPE))
+    response = client.complete(request)
+    assert response.content == "ok"
+
+
+def test_raising_redactor_degrades_to_placeholder_without_leaking_stderr(caplog):
+    """MINOR: the injected redactor is caller-supplied; if it misbehaves,
+    complete() must still never raise, and the fallback must never be the
+    raw stderr it was supposed to scrub (that would turn a redactor bug into
+    a secret leak).
+    """
+
+    def bad_redactor(value: str) -> str:
+        raise RuntimeError("redactor exploded")
+
+    client = LocalCliModelClient(
+        cli_name=CliName.claude,
+        runner=_runner("", returncode=2, stderr="key sk-abc123"),
+        redactor=bad_redactor,
+    )
+    with caplog.at_level(logging.WARNING, logger="forge_agent.providers.local_cli"):
+        response = client.complete(_request())
+
+    assert response.stop_reason == "provider_error"
+    assert "sk-abc123" not in caplog.text, "a raising redactor must never leak the raw stderr"

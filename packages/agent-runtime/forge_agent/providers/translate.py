@@ -359,7 +359,12 @@ def build_local_cli_prompt(request: ModelRequest) -> tuple[str, str]:
         parts.append(request.system)
     parts.append(_ENVELOPE_INSTRUCTION.strip())
     if request.tools:
-        parts.append("Available tools:\n" + json.dumps(request.tools, indent=2))
+        # default=str: a tool schema is advisory prompt text, not a contract; a
+        # non-JSON-serialisable value inside it (e.g. a stray datetime) should
+        # degrade to its string form rather than crash prompt building.
+        parts.append(
+            "Available tools:\n" + json.dumps(request.tools, indent=2, default=str)
+        )
     system = "\n\n".join(parts)
     user = "\n\n".join(m.content for m in request.messages if m.content)
     return system, user
@@ -436,6 +441,11 @@ def parse_local_cli_response(raw: str) -> ModelResponse:
 
     Validates that required fields (content, tool_calls, stop_reason) are present
     and of the correct types. Rejects envelopes with invalid tool_calls entries.
+    An optional ``usage`` that violates the schema (not an object, or an
+    ``input_tokens``/``output_tokens`` that isn't a non-negative integer) is
+    likewise ``parse_error`` rather than silently coerced or dropped: this
+    field comes straight from CLI-controlled output, the same untrusted
+    surface this parser otherwise polices strictly.
     """
     payload = _extract_json_object(raw)
     if payload is None:
@@ -463,7 +473,20 @@ def parse_local_cli_response(raw: str) -> ModelResponse:
             return ModelResponse(content="", stop_reason="parse_error")
         calls.append(ModelToolCall(name=str(entry["name"]), arguments=entry["arguments"]))
 
-    usage = payload.get("usage") or {}
+    usage_raw = payload.get("usage")
+    if usage_raw is not None:
+        if not isinstance(usage_raw, dict):
+            return ModelResponse(content="", stop_reason="parse_error")
+        for token_field in ("input_tokens", "output_tokens"):
+            if token_field not in usage_raw:
+                continue
+            value = usage_raw[token_field]
+            # bool is a subclass of int in Python; JSON Schema's "integer"
+            # does not admit true/false, so exclude it explicitly.
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                return ModelResponse(content="", stop_reason="parse_error")
+
+    usage = usage_raw or {}
     return ModelResponse(
         content=payload["content"],
         tool_calls=calls,

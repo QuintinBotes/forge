@@ -180,11 +180,23 @@ class LocalCliModelClient:
             # stderr on a *successful* (zero-exit) run is never inspected here,
             # since a healthy CLI can still print startup noise to stderr.
             stderr = result.stderr or ""
-            scrubbed = self._redactor(stderr)
+            scrubbed = self._scrub(stderr)
             reason = "auth_error" if _looks_like_auth_failure(stderr) else "provider_error"
             _logger.warning("local cli %s failed (%s): %s", self._cli_name, reason, scrubbed)
             return ModelResponse(content="", stop_reason=reason)
         return None
+
+    def _scrub(self, stderr: str) -> str:
+        """Run the injected ``redactor``, degrading to a fixed placeholder on failure.
+
+        The redactor is caller-supplied and could itself misbehave; if it
+        raises, the fallback must never be the raw ``stderr`` it was asked to
+        scrub, or a redactor bug becomes a secret leak.
+        """
+        try:
+            return self._redactor(stderr)
+        except Exception:
+            return "[redaction failed]"
 
     @staticmethod
     def _unwrap(stdout: str) -> str:
