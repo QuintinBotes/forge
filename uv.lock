@@ -1092,7 +1092,7 @@ requires-dist = [
     { name = "redis", specifier = ">=5.0" },
     { name = "signxml", specifier = ">=5.1.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
 ]
 
 [[package]]
@@ -1365,7 +1365,7 @@ requires-dist = [
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "forge-mcp", editable = "packages/mcp-sdk" },
     { name = "forge-obs", editable = "packages/observability" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
 ]
 
 [[package]]
