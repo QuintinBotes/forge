@@ -1212,7 +1212,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "forge-contracts", editable = "packages/contracts" },
     { name = "pgvector", specifier = ">=0.5.0" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.5" },
     { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
