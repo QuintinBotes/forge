@@ -54,7 +54,7 @@ dependencies = [
     # RT-2 optional Redis pub/sub fan-out for the realtime broadcaster
     # (redis.asyncio); the in-process backend needs no live Redis.
     "redis>=5.0",
-    "pycrdt>=0.14.1",
+    "pycrdt>=0.14.6",
     "forge-integrations",
 ]
 
