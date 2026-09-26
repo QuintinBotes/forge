@@ -50,7 +50,7 @@ dev = [
     # HARD-12: single-source-of-truth versioning + conventional-commit lint +
     # SemVer bump + CHANGELOG generation. `uv run cz …` works with no global
     # install. Drives `make bump` / `make changelog` / the CI commit-lint step.
-    "commitizen>=3.29",
+    "commitizen>=4.19.0",
 ]
 
 # The workspace root is a virtual project: its dependencies (every member) are
