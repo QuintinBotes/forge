@@ -48,7 +48,7 @@ dependencies = [
     "celery>=5.3",
     "signxml>=5.1.0",
     # OIDC SSO: ID-token signature/claim validation (F33).
-    "pyjwt[crypto]>=2.13.0",
+    "pyjwt[crypto]>=2.15.1",
     "lxml>=5.3",
     "python-multipart>=0.0.9",
     # RT-2 optional Redis pub/sub fan-out for the realtime broadcaster
