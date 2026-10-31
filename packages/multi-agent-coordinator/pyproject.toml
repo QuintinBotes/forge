@@ -13,7 +13,7 @@ dependencies = [
     "forge-skill",
     "forge-db",
     "forge-knowledge",
-    "sqlalchemy>=2.0",
+    "sqlalchemy>=2.1.6",
 ]
 
 [build-system]
