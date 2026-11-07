@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import subprocess
 import uuid
 from collections.abc import Callable
@@ -31,6 +32,68 @@ TokenMinter = Callable[[str], str]
 
 def mirrors_dir() -> Path:
     return Path(os.environ.get("FORGE_REPO_MIRRORS_DIR", "/var/lib/forge/mirrors"))
+
+
+_REPO_PART = re.compile(r"[A-Za-z0-9_.-]{1,100}")
+
+
+def split_repo_name(repo_full_name: str) -> tuple[str, str]:
+    """``owner/name`` with GitHub's character set; anything path-like is refused."""
+    owner, sep, name = repo_full_name.partition("/")
+    for part in (owner, name):
+        if not sep or not _REPO_PART.fullmatch(part) or part in {".", ".."}:
+            raise ValueError(f"repo must be 'owner/name', got {repo_full_name!r}")
+    return owner, name
+
+
+def workspace_mirrors(workspace_id: uuid.UUID) -> Path:
+    """Mirrors are namespaced per workspace, so a run can only ever reach its own tenant's."""
+    return mirrors_dir() / str(workspace_id)
+
+
+class RepositoryUnavailable(RuntimeError):
+    """The run names a repository the worker cannot provide."""
+
+
+def resolve_run_repository(
+    objective: AgentObjective,
+    *,
+    credentials: GitHubAppCredentials | None = None,
+    minter: Callable[[GitHubAppCredentials], TokenMinter] | None = None,
+) -> AgentObjective:
+    """Point ``context["repo_path"]`` at the workspace's mirror of ``repo_full_name``.
+
+    ``repo_full_name`` and ``workspace_id`` are server-owned context keys (the API strips
+    callers' values and checks the repository is connected to the workspace). The path is
+    always derived here, never taken from the caller. With GitHub App credentials the
+    mirror is cloned or fetched with a read-only one-repo token; without them an existing
+    mirror is used as is, and a missing one refuses.
+    """
+    context = objective.context
+    full_name = context.get("repo_full_name")
+    if not full_name:
+        return objective
+    workspace_id = uuid.UUID(str(context["workspace_id"]))
+    try:
+        owner, name = split_repo_name(str(full_name))
+    except ValueError as exc:
+        raise RepositoryUnavailable(str(exc)) from exc
+    root = workspace_mirrors(workspace_id)
+    path = root / owner / name
+    creds = credentials if credentials is not None else GitHubAppCredentials.from_env()
+    if creds is not None:
+        token = (minter or read_token_minter)(creds)(name)
+        path = ensure_mirror(
+            str(full_name),
+            root=root,
+            remote_url=f"{creds.git_base_url}/{owner}/{name}.git",
+            token=token,
+        )
+    elif not (path / "HEAD").is_file():
+        raise RepositoryUnavailable(
+            f"no mirror of {full_name} for this workspace and no GitHub App credentials to fetch it"
+        )
+    return objective.model_copy(update={"context": {**context, "repo_path": str(path)}})
 
 
 def read_token_minter(credentials: GitHubAppCredentials) -> TokenMinter:
@@ -78,9 +141,7 @@ def ensure_mirror(
     added from it per run. No ``--prune``: run branches that were never pushed
     live only here and must not be deleted by a fetch.
     """
-    owner, _, name = repo_full_name.partition("/")
-    if not owner or not name or {".", ".."} & {owner, name}:
-        raise ValueError(f"repo must be 'owner/name', got {repo_full_name!r}")
+    owner, name = split_repo_name(repo_full_name)
     path = root / owner / name
     git = ["git", "-c", "core.hooksPath=/dev/null"]
     if not (path / "HEAD").is_file():
@@ -132,8 +193,12 @@ def objective_for_task(
 
 __all__ = [
     "MIRROR_TOKEN_PERMISSIONS",
+    "RepositoryUnavailable",
     "ensure_mirror",
     "mirrors_dir",
     "objective_for_task",
     "read_token_minter",
+    "resolve_run_repository",
+    "split_repo_name",
+    "workspace_mirrors",
 ]

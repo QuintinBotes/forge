@@ -1,30 +1,14 @@
-"""Agent runtime router (Task 1.9 — agent-runtime; wired in Phase 2 Task 2.1).
-
-Serves the single-agent loop (plan -> act -> observe) over HTTP:
-
-* ``POST /agent/runs``           — run an :class:`~forge_contracts.AgentObjective`
-  and return the :class:`~forge_contracts.AgentRunResult` (with its step trace).
-* ``GET  /agent/runs/{run_id}``  — fetch a previously-recorded run result.
-* ``POST /agent/runs/{run_id}/replay`` — Time-Travel Runs: replay a persisted
-  ``RunRecording`` cassette by substitution and report a step-by-step diff
-  against the tape (see ``forge_api.services.replay_service``).
-
-Handlers delegate to a process-wide :class:`~forge_agent.AgentRunner`. The default
-runner is driven by an offline-safe scripted model client (deterministic, no live
-provider calls) so the runtime executes end-to-end without network; a real BYOK
-:class:`~forge_contracts.ModelClient` is swapped in behind the same dependency via
-``app.dependency_overrides`` / config. Completed runs are kept in an in-memory
-store so ``GET /agent/runs/{run_id}`` can return them.
-"""
+"""Persist and enqueue agent objectives, read runs, and replay/fork recordings."""
 
 from __future__ import annotations
 
 import dataclasses
 import logging
+import os
 import uuid
 from collections.abc import Callable
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
@@ -58,8 +42,9 @@ from forge_api.services.fork_service import (
 )
 from forge_api.services.replay_service import replay_recording
 from forge_api.settings import get_settings
-from forge_contracts import AgentObjective, AgentRunResult, ModelClient
-from forge_db.models import RunRecording
+from forge_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
+from forge_db.models import AgentRun, RepositoryConnection, RunRecording
+from forge_db.models.enums import RunStatus as DbRunStatus
 from forge_policy import (
     SkillProfileNotAllowedError,
     enforce_skill_profile_allowed,
@@ -82,33 +67,50 @@ SessionDep = Annotated[Session, Depends(get_db)]
 
 
 # --------------------------------------------------------------------------- #
-# In-memory run store                                                          #
+# Durable run store                                                            #
 # --------------------------------------------------------------------------- #
 
 
 class AgentRunStore:
-    """A tiny in-memory store of completed agent run results (keyed by run_id).
+    """Database-backed runs; also serves the Slack status reader."""
 
-    Each result is tagged with the owning ``workspace_id`` so one tenant cannot
-    read another tenant's run (``AgentRunResult`` is a frozen contract with no
-    ``workspace_id`` field, so ownership is tracked alongside the results).
-    """
-
-    def __init__(self) -> None:
-        self._runs: dict[uuid.UUID, AgentRunResult] = {}
-        self._owner: dict[uuid.UUID, uuid.UUID] = {}
+    def __init__(self, session: Session) -> None:
+        self.session = session
 
     def put(self, result: AgentRunResult, *, workspace_id: uuid.UUID) -> AgentRunResult:
         if result.run_id is None:
             result.run_id = uuid.uuid4()
-        self._runs[result.run_id] = result
-        self._owner[result.run_id] = workspace_id
+        self.session.add(
+            AgentRun(
+                id=result.run_id,
+                workspace_id=workspace_id,
+                status=DbRunStatus(result.status.value),
+                steps=[step.model_dump(mode="json") for step in result.steps],
+                output=result.model_dump(mode="json"),
+                confidence=result.confidence,
+            )
+        )
+        self.session.commit()
         return result
 
     def get(self, run_id: uuid.UUID, *, workspace_id: uuid.UUID) -> AgentRunResult | None:
-        if self._owner.get(run_id) != workspace_id:
+        row = self.session.scalar(
+            select(AgentRun).where(AgentRun.id == run_id, AgentRun.workspace_id == workspace_id)
+        )
+        if row is None:
             return None
-        return self._runs.get(run_id)
+        return AgentRunResult.model_validate(
+            {
+                **(row.output or {}),
+                "run_id": row.id,
+                "task_id": row.task_id
+                or row.inputs.get("task_id")
+                or (row.output or {}).get("task_id"),
+                "status": row.status.value,
+                "steps": row.steps,
+                "confidence": row.confidence,
+            }
+        )
 
     def owner_of(self, run_id: uuid.UUID) -> uuid.UUID | None:
         """Return the workspace that owns ``run_id``, or ``None`` if unknown.
@@ -121,7 +123,7 @@ class AgentRunStore:
         the run back through the normal workspace-scoped :meth:`get`. An unknown
         id yields ``None`` -> the handler returns its not-found copy.
         """
-        return self._owner.get(run_id)
+        return self.session.scalar(select(AgentRun.workspace_id).where(AgentRun.id == run_id))
 
 
 # --------------------------------------------------------------------------- #
@@ -214,23 +216,40 @@ def _agent_runner_singleton() -> AgentRunner:
     return _default_runner()
 
 
-@lru_cache(maxsize=1)
-def _agent_store_singleton() -> AgentRunStore:
-    return AgentRunStore()
-
-
 def get_agent_runner() -> AgentRunner:
     """Return the process-wide agent runner (override in tests via DI)."""
     return _agent_runner_singleton()
 
 
-def get_agent_store() -> AgentRunStore:
-    """Return the process-wide agent run store (override in tests via DI)."""
-    return _agent_store_singleton()
+def get_agent_store(session: SessionDep) -> AgentRunStore:
+    """Return a request-scoped database store (override in tests via DI)."""
+    return AgentRunStore(session)
+
+
+@lru_cache(maxsize=1)
+def _celery_app() -> Any:
+    from celery import Celery
+
+    url = os.environ.get("FORGE_REDIS_URL", "redis://localhost:6379/0")
+    return Celery("forge-api-enqueue", broker=url, backend=url)
+
+
+def enqueue_agent_run(objective: AgentObjective) -> None:
+    _celery_app().send_task(
+        "forge.agent.run",
+        args=[objective.model_dump(mode="json")],
+        kwargs={"idempotency_key": objective.context["agent_run_id"]},
+        queue="forge",
+    )
+
+
+def get_agent_enqueue() -> Callable[[AgentObjective], None]:
+    return enqueue_agent_run
 
 
 RunnerDep = Annotated[AgentRunner, Depends(get_agent_runner)]
 StoreDep = Annotated[AgentRunStore, Depends(get_agent_store)]
+EnqueueDep = Annotated[Callable[[AgentObjective], None], Depends(get_agent_enqueue)]
 
 
 # --------------------------------------------------------------------------- #
@@ -325,17 +344,82 @@ def _enforce_skill_profiles(objective: AgentObjective) -> None:
             ) from exc
 
 
-@router.post("/runs", response_model=AgentRunResult, status_code=status.HTTP_201_CREATED)
+#: Run-context keys only the server sets; any caller-supplied value is dropped.
+SERVER_OWNED_CONTEXT = frozenset(
+    {
+        "agent_run_id",
+        "workspace_id",
+        "parent_agent_run_id",
+        "repo_path",
+        "repo_full_name",
+        "worktree_path",
+        "role",
+    }
+)
+
+
+def _repo_connected(session: Session, workspace_id: uuid.UUID, repo: str) -> bool:
+    """An active repository connection in this workspace names ``repo``."""
+    row = session.scalar(
+        select(RepositoryConnection.id).where(
+            RepositoryConnection.workspace_id == workspace_id,
+            RepositoryConnection.is_active.is_(True),
+            (RepositoryConnection.repo_id == repo) | (RepositoryConnection.name == repo),
+        )
+    )
+    return row is not None
+
+
+@router.post("/runs", response_model=AgentRunResult, status_code=status.HTTP_202_ACCEPTED)
 def run(
+    principal: RunnerPrincipalDep,
     runner: RunnerDep,
     store: StoreDep,
-    principal: RunnerPrincipalDep,
+    enqueue: EnqueueDep,
     objective: AgentObjective,
 ) -> AgentRunResult:
-    """Run an agent objective (plan -> act -> observe) and record the result."""
+    """Admit a run only when a provider is available, then dispatch to the worker."""
     _enforce_skill_profiles(objective)
-    result = runner.run(objective)
-    return store.put(result, workspace_id=principal.workspace_id)
+    run_id = uuid.uuid4()
+    # Trust boundary: paths, identities and roles in the run context are the server's to
+    # set. A caller-supplied repo_path or worktree_path would let a run act on another
+    # tenant's mirror or anywhere on the worker host.
+    context = {k: v for k, v in objective.context.items() if k not in SERVER_OWNED_CONTEXT}
+    context |= {"agent_run_id": str(run_id), "workspace_id": str(principal.workspace_id)}
+    for target in objective.repo_targets:
+        if not _repo_connected(store.session, principal.workspace_id, target.repo):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"repository {target.repo!r} is not connected to this workspace",
+            )
+    if objective.primary_repo_target is not None:
+        context["repo_full_name"] = objective.primary_repo_target.repo
+    if objective.execution_mode == ExecutionMode.SUPERVISED_MULTI_AGENT:
+        context["parent_agent_run_id"] = str(run_id)
+    objective = objective.model_copy(update={"context": context})
+    row = AgentRun(
+        id=run_id,
+        workspace_id=principal.workspace_id,
+        inputs=objective.model_dump(mode="json"),
+        skill_profile=objective.skill_profile.name if objective.skill_profile else None,
+        is_supervisor=objective.execution_mode == ExecutionMode.SUPERVISED_MULTI_AGENT,
+        status=DbRunStatus.PENDING,
+    )
+    store.session.add(row)
+    # A fast worker must see the row before it consumes the message.
+    store.session.commit()
+    try:
+        enqueue(objective)
+    except Exception as exc:
+        row.status = DbRunStatus.FAILED
+        row.output = {"error": "enqueue_failed"}
+        store.session.commit()
+        logger.exception("failed to enqueue agent run %s", run_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="agent run could not be enqueued",
+        ) from exc
+    return AgentRunResult(run_id=run_id, task_id=objective.task_id)
 
 
 @router.get("/runs/{run_id}", response_model=AgentRunResult)
