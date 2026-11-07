@@ -43,6 +43,7 @@ from forge_api.routers import (
     teams,
     workflow,
     workflow_editor,
+    world,
 )
 
 #: Mounted at the application root (no API prefix, no auth) for probes.
@@ -55,6 +56,7 @@ FEATURE_ROUTERS: tuple[APIRouter, ...] = (
     spec.router,
     spec.project_router,
     knowledge.router,
+    world.router,
     workflow.router,
     workflow_editor.router,
     agent.router,
@@ -119,4 +121,5 @@ __all__ = [
     "teams",
     "workflow",
     "workflow_editor",
+    "world",
 ]
