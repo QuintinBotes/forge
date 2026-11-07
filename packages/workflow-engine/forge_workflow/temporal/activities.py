@@ -2,9 +2,13 @@
 
 Each activity takes a typed payload carrying ``workflow_run_id`` + ``workspace_id``
 + an ``idempotency_key`` and delegates to the **existing** slice services through
-injected callables, so F25 wraps effect bodies rather than rewriting them. When a
-service is not wired (the SOFT deps F02/F06/F08/F16), a safe default keeps the
-durable spine runnable and the effect "parked" — exactly as the FSM engine does.
+injected callables, so F25 wraps effect bodies rather than rewriting them.
+
+Production paths fail closed (ADR-0007): an activity whose service is not
+injected raises a non-retryable ``ActivityNotConfigured`` error. The stand-in
+defaults (all-green agent result, passing checks, no-op notify/approval) run only
+when the caller opts in with ``allow_fakes=True`` — tests, or a dev worker
+started with ``FORGE_ALLOW_FAKE_ACTIVITIES=1``. The stand-ins never invent a PR.
 
 ``persist_transition`` is the projection writer: it keeps the Postgres
 ``workflow_run`` row (+ an append-only transition list in ``context``) byte-faithful
@@ -18,8 +22,10 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import NoReturn
 
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from forge_contracts import RunStatus, WorkflowRun, WorkflowState
 from forge_workflow.red_team_gate import evaluate_red_team
@@ -108,7 +114,8 @@ def _default_run_checks(_: RunChecksInput) -> ChecksResult:
 
 
 def _default_open_pr(_: OpenPrInput) -> OpenPrResult:
-    return OpenPrResult(pr_number=1, pr_url="https://example.invalid/pr/1")
+    # A stand-in reports that no PR exists rather than inventing one.
+    return OpenPrResult(pr_number=None, pr_url=None)
 
 
 def _default_notify(_: NotifyInput) -> bool:
@@ -132,11 +139,26 @@ def _default_red_team(inp: RedTeamInput) -> RedTeamResult:
     return evaluate_red_team(inp, red_team_fn=None)
 
 
+def _refuse(activity_name: str) -> Callable[[object], NoReturn]:
+    """A service stand-in that refuses: the activity is not configured."""
+
+    def _not_configured(_: object) -> NoReturn:
+        raise ApplicationError(
+            f"{activity_name} is not configured on this worker; refusing rather than "
+            "reporting a result it did not produce (ADR-0007)",
+            type="ActivityNotConfigured",
+            non_retryable=True,
+        )
+
+    return _not_configured
+
+
 class WorkflowActivities:
     """All Activity implementations, bound to a store + injected services.
 
     The bound methods are registered on the Temporal worker. Tests inject
-    scriptable fakes to drive specific paths (failing checks, awaiting input, …).
+    scriptable fakes to drive specific paths (failing checks, awaiting input, …)
+    and pass ``allow_fakes=True`` for the services they leave out.
     """
 
     def __init__(
@@ -152,17 +174,29 @@ class WorkflowActivities:
         cleanup_fn: CleanupFn | None = None,
         approval_fn: ApprovalFn | None = None,
         red_team_fn: RedTeamFn | None = None,
+        allow_fakes: bool = False,
     ) -> None:
+        def pick[I, O](
+            fn: Callable[[I], O] | None, fake: Callable[[I], O], name: str
+        ) -> Callable[[I], O]:
+            if fn is not None:
+                return fn
+            return fake if allow_fakes else _refuse(name)
+
         self._store: WorkflowStore = store or InMemoryWorkflowStore()
-        self._guard_inputs_fn = guard_inputs_fn or _default_guard_inputs
-        self._run_agent_fn = run_agent_fn or _default_run_agent
-        self._resume_agent_fn = resume_agent_fn or _default_resume_agent
-        self._run_checks_fn = run_checks_fn or _default_run_checks
-        self._open_pr_fn = open_pr_fn or _default_open_pr
-        self._notify_fn = notify_fn or _default_notify
-        self._cleanup_fn = cleanup_fn or _default_cleanup
-        self._approval_fn = approval_fn or _default_approval
-        self._red_team_fn = red_team_fn or _default_red_team
+        self._guard_inputs_fn = pick(
+            guard_inputs_fn, _default_guard_inputs, "forge.load_guard_inputs"
+        )
+        self._run_agent_fn = pick(run_agent_fn, _default_run_agent, "forge.run_agent")
+        self._resume_agent_fn = pick(resume_agent_fn, _default_resume_agent, "forge.resume_agent")
+        self._run_checks_fn = pick(run_checks_fn, _default_run_checks, "forge.run_checks")
+        self._open_pr_fn = pick(
+            open_pr_fn, _default_open_pr, "forge.open_pr_with_spec_traceability"
+        )
+        self._notify_fn = pick(notify_fn, _default_notify, "forge.pause_and_notify")
+        self._cleanup_fn = pick(cleanup_fn, _default_cleanup, "forge.cleanup_worktree")
+        self._approval_fn = pick(approval_fn, _default_approval, "forge.create_approval")
+        self._red_team_fn = pick(red_team_fn, _default_red_team, "forge.run_red_team_scan")
 
     @property
     def store(self) -> WorkflowStore:
