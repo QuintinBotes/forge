@@ -25,16 +25,20 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import subprocess
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
 from forge_agent import AgentRunner
+from forge_agent.budget import DEFAULT_RUN_TOKEN_BUDGET, BudgetedModelClient
 from forge_agent.providers import (
     ModelClientConfig,
     ModelClientError,
+    ModelClientUnavailable,
     build_model_client,
 )
 from forge_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
@@ -44,11 +48,13 @@ from forge_agent.sandbox.output import cap_output
 from forge_agent.testing import ScriptedModelClient, finish_response
 from forge_agent.tools import ToolRegistry
 from forge_auth.redaction import SecretRedactor
-from forge_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
+from forge_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient, RunStatus
 from forge_db.models import RunRecording
 from forge_db.session import create_session_factory
 from forge_worker.celery_app import celery_app
+from forge_worker.finalizer import GitHubAppCredentials, push_and_open_pr
 from forge_worker.reliability import ForgeTask
+from forge_worker.run_workspace import prepared_workspace
 
 __all__ = [
     "build_agent_runner",
@@ -105,14 +111,31 @@ class _RecordableAgentRunner(AgentRunner):
         *,
         tools: ToolRegistry | None = None,
         cassette: RunCassette | None = None,
+        repo_root: Path | None = None,
     ) -> None:
-        super().__init__(model, tools=tools)
+        super().__init__(model, tools=tools, repo_root=repo_root)
         self.cassette = cassette
 
 
 def _recording_enabled() -> bool:
     """``FORGE_RECORD_RUNS=1`` opt-in (default OFF) — the Time-Travel Runs recorder."""
     return os.environ.get("FORGE_RECORD_RUNS") == "1"
+
+
+def _run_token_budget() -> int:
+    """``FORGE_AGENT_RUN_TOKEN_BUDGET`` — the hard per-run token cap (ADR-0008)."""
+    raw = os.environ.get("FORGE_AGENT_RUN_TOKEN_BUDGET", "").strip()
+    return int(raw) if raw else DEFAULT_RUN_TOKEN_BUDGET
+
+
+def _scripted_agent_allowed() -> bool:
+    """``FORGE_ALLOW_SCRIPTED_AGENT`` — the same opt-in the API's agent router honours."""
+    return os.environ.get("FORGE_ALLOW_SCRIPTED_AGENT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _resolve_model_client(model_client: ModelClient | None) -> ModelClient:
@@ -132,11 +155,18 @@ def _resolve_model_client(model_client: ModelClient | None) -> ModelClient:
             # parent ``ModelClientError``. Catching the parent covers both;
             # catching only the subclass turned that typo into an unhandled
             # exception in the worker instead of the documented degrade.
-            # Never silently fake on a configured lane failure; degrade to the
-            # offline client and keep running.
+            # A configured lane that cannot build a client falls through to the
+            # same explicit-opt-in check as an unconfigured one below.
             pass
-    # Reached once per run when no live provider resolved: make the degrade loud
-    # so a self-hoster does not mistake canned scripted output for a real run.
+    if not _scripted_agent_allowed():
+        # ADR-0007: a run that cannot reach a model must fail, not report canned
+        # success. The API's agent router refuses the same way (503).
+        raise ModelClientUnavailable(
+            "no usable model provider for this agent run. Set FORGE_MODEL_PROVIDER and a "
+            "BYOK key, or FORGE_ALLOW_SCRIPTED_AGENT=1 for canned development output."
+        )
+    # Reached once per run when canned output was explicitly allowed: keep it loud
+    # so nobody mistakes scripted output for a real run.
     logger.warning(
         "No live model provider resolved; falling back to the offline "
         "ScriptedModelClient (canned, deterministic output — not a real agent "
@@ -151,6 +181,9 @@ def build_agent_runner(
     *,
     workspace_id: uuid.UUID | None = None,
     model_client: ModelClient | None = None,
+    tools: ToolRegistry | None = None,
+    repo_root: Path | None = None,
+    token_budget: int | None = None,
 ) -> AgentRunner:
     """Build the agent runner, resolving a real BYOK ``ModelClient`` when possible.
 
@@ -177,17 +210,23 @@ def build_agent_runner(
     """
     del workspace_id  # env-based resolution below; vault path lives in the API
     client = _resolve_model_client(model_client)
+    if token_budget is not None:
+        client = BudgetedModelClient(client, max_tokens=token_budget)
+    registry = tools if tools is not None else ToolRegistry()
 
     if not _recording_enabled():
-        return _RecordableAgentRunner(client, cassette=None)
+        return _RecordableAgentRunner(client, tools=registry, cassette=None, repo_root=repo_root)
 
     cassette = RunCassette.with_env(os.environ, redactor=SecretRedactor())
     # ``RecordingToolRegistry`` is a duck-typed ``ToolRegistry`` facade (delegates
     # every attribute it does not itself intercept) rather than a nominal
     # subclass — see its docstring in ``forge_agent.replay.recorder``.
-    tools = cast(ToolRegistry, RecordingToolRegistry(ToolRegistry(), cassette))
+    recorded = cast(ToolRegistry, RecordingToolRegistry(registry, cassette))
     return _RecordableAgentRunner(
-        RecordingModelClient(client, cassette), tools=tools, cassette=cassette
+        RecordingModelClient(client, cassette),
+        tools=recorded,
+        cassette=cassette,
+        repo_root=repo_root,
     )
 
 
@@ -340,18 +379,89 @@ def run_agent_task(
                 "idempotency_key": dedup_key,
             }
         return result.model_dump(mode="json")
-    runner = build_agent_runner()
-    try:
-        result = run_objective(runner, AgentObjective.model_validate(objective))
-    except SoftTimeLimitExceeded:
-        # A runaway loop tripped the soft time limit: escalate gracefully with a
-        # structured marker instead of letting the hard kill drop the run
-        # silently. ``acks_late`` means the message is not acked, so an operator
-        # can re-drive it (dedup-guarded) after raising the budget.
-        return {
-            "escalated": True,
-            "reason": "soft_time_limit_exceeded",
-            "idempotency_key": dedup_key,
-        }
+    parsed = AgentObjective.model_validate(objective)
+    context = parsed.context
+    run_id = _opt_uuid(context.get("agent_run_id")) or uuid.uuid4()
+    workspace_id = _opt_uuid(context.get("workspace_id")) or uuid.UUID(int=0)
+    with prepared_workspace(parsed, run_id=run_id, workspace_id=workspace_id) as workspace:
+        runner = build_agent_runner(
+            tools=workspace.tools if workspace else None,
+            repo_root=workspace.path if workspace else None,
+            token_budget=_run_token_budget(),
+        )
+        try:
+            result = run_objective(runner, parsed)
+        except SoftTimeLimitExceeded:
+            # A runaway loop tripped the soft time limit: escalate gracefully with a
+            # structured marker instead of letting the hard kill drop the run
+            # silently. ``acks_late`` means the message is not acked, so an operator
+            # can re-drive it (dedup-guarded) after raising the budget.
+            return {
+                "escalated": True,
+                "reason": "soft_time_limit_exceeded",
+                "idempotency_key": dedup_key,
+            }
+        if workspace is not None:
+            # The branch outlives the worktree; the finalizer pushes it below.
+            result.artifacts["branch"] = workspace.branch
+    if workspace is not None and result.status == RunStatus.SUCCEEDED:
+        _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
     _maybe_persist_recording(runner, objective)
     return result.model_dump(mode="json")
+
+
+def _commits_ahead(repo_path: Path, base: str, branch: str) -> int:
+    out = subprocess.run(
+        ["git", "rev-list", "--count", f"{base}..{branch}"],
+        cwd=repo_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return int(out.stdout.strip() or 0)
+
+
+def _finalize(
+    objective: AgentObjective, result: AgentRunResult, *, branch: str, run_id: uuid.UUID
+) -> None:
+    """Open the run's PR when the objective names a GitHub repository (spec G §4).
+
+    Records the outcome in ``result.artifacts["pull_request"]``: ``opened`` with
+    the PR, ``no_changes``, ``not_configured`` (no GitHub App credentials), or a
+    failure that fails the run — delivery that did not happen is not success.
+    """
+    repo_full_name = objective.context.get("repo_full_name")
+    if not repo_full_name:
+        return
+    repo_path = Path(str(objective.context["repo_path"]))
+    target = objective.primary_repo_target
+    base = target.base_branch if target else "main"
+    if _commits_ahead(repo_path, base, branch) == 0:
+        result.artifacts["pull_request"] = {"status": "no_changes"}
+        return
+    credentials = GitHubAppCredentials.from_env()
+    if credentials is None:
+        result.artifacts["pull_request"] = {"status": "not_configured"}
+        return
+    title = f"{objective.key + ': ' if objective.key else ''}{objective.objective}"[:120]
+    body = (
+        f"Opened by forge agent run `{run_id}`.\n\n{result.summary or result.output or ''}\n\n"
+        "Merging requires human approval through the forge `pr` gate."
+    )
+    try:
+        pr = push_and_open_pr(
+            repo_path=repo_path,
+            branch=branch,
+            repo_full_name=str(repo_full_name),
+            base_branch=base,
+            title=title,
+            body=body,
+            credentials=credentials,
+        )
+    except Exception as exc:  # push or API failure: the change was not delivered
+        message = _default_redactor()(f"{type(exc).__name__}: {exc}")
+        result.status = RunStatus.FAILED
+        result.error = f"pull request could not be opened: {message}"
+        result.artifacts["pull_request"] = {"status": "failed", "error": message}
+        return
+    result.artifacts["pull_request"] = {"status": "opened", "number": pr.number, "url": pr.url}
