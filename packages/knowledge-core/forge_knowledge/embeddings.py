@@ -47,11 +47,15 @@ from forge_knowledge.text import tokenize
 if TYPE_CHECKING:  # pragma: no cover - typing only, no runtime import of torch
     from sentence_transformers import SentenceTransformer
 
+    from forge_contracts.protocols import EmbeddingClient
+
 __all__ = [
     "DEFAULT_SENTENCE_TRANSFORMERS_MODEL",
     "DeterministicEmbeddingClient",
     "HttpEmbeddingClient",
     "SentenceTransformerEmbeddingClient",
+    "build_embedding_client",
+    "build_embedding_client_from_settings",
 ]
 
 #: Default open-weight local model: small, fast, 384-dim, permissive licence.
@@ -247,3 +251,116 @@ class SentenceTransformerEmbeddingClient:
 
     def embed_query(self, text: str) -> list[float]:
         return self._encode([text])[0]
+
+
+# --------------------------------------------------------------------------- #
+# Production embedder factory (spec J §2.5, ADR-0018)                          #
+# --------------------------------------------------------------------------- #
+
+#: Providers that mean "no embedder configured": search runs BM25-only and
+#: says so, instead of silently falling back to the hash embedder.
+_UNCONFIGURED_PROVIDERS = frozenset({"", "none"})
+
+
+def _expected_dimension() -> int:
+    """The ``retrieval_chunk.embedding`` column width (``EMBEDDING_DIM``)."""
+    try:
+        from forge_db.models.knowledge import EMBEDDING_DIM
+
+        return int(EMBEDDING_DIM)
+    except ImportError:  # pragma: no cover - forge_db is a workspace sibling
+        return DEFAULT_EMBEDDING_DIM
+
+
+def _refuse_dimension_mismatch(configured: int, expected: int) -> ValueError:
+    return ValueError(
+        f"embedding dimension {configured} does not match the "
+        f"retrieval_chunk.embedding column dimension {expected} "
+        "(forge_db EMBEDDING_DIM); refusing to start with an embedder whose "
+        "vectors would fail on insert — set FORGE_EMBEDDING_DIMENSION to "
+        f"{expected} or choose a {expected}-dimensional model"
+    )
+
+
+def build_embedding_client(
+    provider: str | None,
+    *,
+    model: str | None = None,
+    base_url: str | None = None,
+    dimension: int | None = None,
+    api_key: str | None = None,
+    url_validator: Callable[[str], object] | None = None,
+) -> EmbeddingClient | None:
+    """Return the configured production embedder, or ``None`` when unset.
+
+    * ``provider in {None, "", "none"}`` -> ``None`` (honest BM25-only mode;
+      the deterministic hash embedder is never a production default).
+    * ``"openai-compatible"`` -> :class:`HttpEmbeddingClient`; ``base_url``
+      is passed through the caller's SSRF ``url_validator`` seam.
+    * ``"local"`` -> :class:`SentenceTransformerEmbeddingClient` (its model
+      is loaded now so a dimension mismatch refuses at construction).
+
+    Raises ``ValueError`` for an unknown provider, a missing model, or any
+    dimension that does not equal the vector column's ``EMBEDDING_DIM``.
+    """
+    key = (provider or "").strip().lower()
+    if key in _UNCONFIGURED_PROVIDERS:
+        return None
+
+    expected = _expected_dimension()
+    if dimension is not None and dimension != expected:
+        raise _refuse_dimension_mismatch(dimension, expected)
+
+    if key == "openai-compatible":
+        if not model:
+            raise ValueError(
+                "FORGE_EMBEDDING_PROVIDER=openai-compatible requires "
+                "FORGE_EMBEDDING_MODEL to name the embedding model"
+            )
+        client = HttpEmbeddingClient(
+            model,
+            api_key=api_key,
+            base_url=base_url or "https://api.openai.com/v1",
+            dimension=dimension if dimension is not None else expected,
+            url_validator=url_validator,
+        )
+        if client.dimension != expected:  # pragma: no cover - guarded above
+            raise _refuse_dimension_mismatch(client.dimension, expected)
+        return client
+
+    if key == "local":
+        local = SentenceTransformerEmbeddingClient(model or DEFAULT_SENTENCE_TRANSFORMERS_MODEL)
+        actual = local.dimension  # loads the model; fail closed here, not on insert
+        if actual != expected:
+            raise _refuse_dimension_mismatch(actual, expected)
+        return local
+
+    raise ValueError(
+        f"unknown embedding provider {provider!r} "
+        "(expected one of: openai-compatible, local, or unset for BM25-only)"
+    )
+
+
+def build_embedding_client_from_settings(
+    settings: object,
+    *,
+    api_key: str | None = None,
+    url_validator: Callable[[str], object] | None = None,
+) -> EmbeddingClient | None:
+    """Build an embedder from a ``FORGE_EMBEDDING_*`` settings-like object.
+
+    Reads (via ``getattr``, so this package stays decoupled from
+    ``forge_api``): ``embedding_provider``, ``embedding_model``,
+    ``embedding_base_url``, ``embedding_dimension``. The BYOK ``api_key`` is
+    passed by the caller (resolved from the env/vault on demand) and never
+    read from settings; ``url_validator`` is the api's SSRF guard seam.
+    """
+    raw_dimension = getattr(settings, "embedding_dimension", None)
+    return build_embedding_client(
+        getattr(settings, "embedding_provider", None),
+        model=getattr(settings, "embedding_model", None) or None,
+        base_url=getattr(settings, "embedding_base_url", None) or None,
+        dimension=int(raw_dimension) if raw_dimension is not None else None,
+        api_key=api_key,
+        url_validator=url_validator,
+    )

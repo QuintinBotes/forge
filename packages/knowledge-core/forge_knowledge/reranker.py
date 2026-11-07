@@ -32,9 +32,12 @@ and the top-n survive. Implementations of the frozen
   redacted :class:`RerankTelemetry` record. A reranker outage therefore degrades
   *quality*, never availability.
 
-The :func:`build_reranker` / :func:`build_reranker_from_settings` factories pick
-the offline fixture by default and only build a live, budgeted, SSRF-guarded
-client when an operator opts in (``FORGE_RERANK_PROVIDER=jina|cohere|selfhosted``).
+The :func:`build_reranker` / :func:`build_reranker_from_settings` factories
+default to **no reranker** (``FORGE_RERANK_PROVIDER=none`` -> ``None``, reported
+as ``rerank: "off"``; spec J §2.5, ADR-0018) and only build a live, budgeted,
+SSRF-guarded client when an operator opts in (``jina|cohere|selfhosted``). The
+``fixture`` provider remains selectable by tests only — never a production
+default dressed up as a cross-encoder.
 """
 
 from __future__ import annotations
@@ -395,7 +398,9 @@ _PROVIDER_DEFAULTS: dict[str, dict[str, str | None]] = {
     },
 }
 
-_FIXTURE_PROVIDERS = frozenset({"", "fixture"})
+#: Providers meaning "no reranker": retrieval reports ``rerank: "off"`` and
+#: orders by weighted RRF. The production default (ADR-0018).
+_OFF_PROVIDERS = frozenset({"", "none", "off"})
 _TRUE = frozenset({"1", "true", "yes", "on"})
 
 
@@ -458,26 +463,30 @@ def build_reranker(
     timeout_ms: int = DEFAULT_RERANK_TIMEOUT_MS,
     allow_insecure_url: bool = False,
     url_validator: Callable[[str], object] | None = None,
-) -> RerankerClient:
-    """Return the configured reranker (offline fixture by default).
+) -> RerankerClient | None:
+    """Return the configured reranker (``None`` — rerank off — by default).
 
-    * ``provider in {None, "", "fixture"}`` or ``enabled=False`` -> a network-free
-      :class:`FixtureRerankerClient` (no client is built, no key is read).
+    * ``provider in {None, "", "none", "off"}`` or ``enabled=False`` -> ``None``
+      (no client is built, no key is read; search reports ``rerank: "off"``).
+    * ``"fixture"`` -> a network-free :class:`FixtureRerankerClient`. Test-only:
+      selectable explicitly, never the default (ADR-0018).
     * ``"jina" | "cohere" | "selfhosted"`` -> a :class:`GracefulReranker` wrapping
       a :class:`JinaRerankerClient` with the provider defaults, budgeted at
       ``timeout_ms`` and SSRF-guarded (:func:`_guard_base_url`, AC7).
 
     Raises ``ValueError`` for an unknown provider or an SSRF-rejected ``base_url``.
     """
-    if not enabled or provider is None or provider.strip().lower() in _FIXTURE_PROVIDERS:
-        return FixtureRerankerClient()
+    if not enabled or provider is None or provider.strip().lower() in _OFF_PROVIDERS:
+        return None
 
     key = provider.strip().lower()
+    if key == "fixture":
+        return FixtureRerankerClient()
     defaults = _PROVIDER_DEFAULTS.get(key)
     if defaults is None:
         raise ValueError(
             f"unknown reranker provider {provider!r} "
-            f"(expected one of: fixture, {', '.join(_PROVIDER_DEFAULTS)})"
+            f"(expected one of: none, fixture, {', '.join(_PROVIDER_DEFAULTS)})"
         )
 
     resolved_base = base_url or defaults["base_url"]
@@ -503,7 +512,9 @@ def build_reranker(
     return GracefulReranker(inner, timeout_ms=timeout_ms)
 
 
-def build_reranker_from_settings(settings: object, *, api_key: str | None = None) -> RerankerClient:
+def build_reranker_from_settings(
+    settings: object, *, api_key: str | None = None
+) -> RerankerClient | None:
     """Build a reranker from a ``FORGE_RERANK_*`` settings-like object.
 
     Reads (via ``getattr``, so this pure package stays decoupled from
@@ -512,9 +523,10 @@ def build_reranker_from_settings(settings: object, *, api_key: str | None = None
     self-hosted base URL falls back to the non-secret ``JINA_RERANKER_URL`` env
     var when ``rerank_base_url`` is unset. The BYOK ``api_key`` is passed by the
     caller (resolved from the vault/env on demand) and never read from settings.
+    An unset provider means ``none`` (rerank off), never the fixture.
     """
     enabled = bool(getattr(settings, "rerank_enabled", True))
-    provider = (getattr(settings, "rerank_provider", "fixture") or "fixture").strip().lower()
+    provider = (getattr(settings, "rerank_provider", "none") or "none").strip().lower()
     model = getattr(settings, "rerank_model", None) or None
     base_url = getattr(settings, "rerank_base_url", None) or None
     timeout_ms = int(getattr(settings, "rerank_timeout_ms", DEFAULT_RERANK_TIMEOUT_MS))

@@ -21,6 +21,12 @@ and orchestrates, per the spec's *Knowledge and Retrieval Architecture* diagram:
 ``index`` delegates to the pgvector store, which persists the rows both legs read
 (on Postgres it also populates the ``tsvector`` the BM25 leg ranks over), so a
 single index call feeds the whole hybrid pipeline.
+
+With no embedder configured the service runs **BM25-only** and says so
+(ADR-0018): :attr:`legs` is ``["bm25"]`` and :attr:`vector_leg` is
+``"unconfigured"``; indexing stores chunks without embeddings. It never
+substitutes a fake semantic leg. Likewise an unconfigured reranker is
+reported as :attr:`rerank_status` ``"off"`` (weighted-RRF order).
 """
 
 from __future__ import annotations
@@ -54,6 +60,7 @@ class KnowledgeService:
         retriever: HybridRetriever,
         *,
         vector_store: PgVectorStore | None = None,
+        vector_configured: bool | None = None,
         candidate_k: int = DEFAULT_CANDIDATE_K,
         rerank_candidates: int = DEFAULT_RERANK_CANDIDATES,
         rerank_enabled: bool = True,
@@ -61,6 +68,13 @@ class KnowledgeService:
     ) -> None:
         self._retriever = retriever
         self._vector_store = vector_store
+        if vector_configured is None:
+            vector_configured = (
+                vector_store.has_embedder
+                if vector_store is not None
+                else retriever.vector_configured
+            )
+        self._vector_configured = vector_configured
         self._candidate_k = candidate_k
         self._rerank_candidates = rerank_candidates
         self._rerank_enabled = rerank_enabled
@@ -70,23 +84,31 @@ class KnowledgeService:
     def from_session_factory(
         cls,
         session_factory: SessionFactory,
-        embedding_client: EmbeddingClient,
-        reranker: RerankerClient,
+        embedding_client: EmbeddingClient | None,
+        reranker: RerankerClient | None,
         *,
         candidate_k: int = DEFAULT_CANDIDATE_K,
         rerank_candidates: int = DEFAULT_RERANK_CANDIDATES,
         rerank_enabled: bool = True,
         rerank_budget_ms: int = DEFAULT_RERANK_BUDGET_MS,
     ) -> KnowledgeService:
-        """Build a service from a DB session factory and BYOK clients."""
+        """Build a service from a DB session factory and BYOK clients.
+
+        ``embedding_client=None`` selects honest BM25-only mode (ADR-0018);
+        ``reranker=None`` selects rerank-off (weighted-RRF order).
+        """
         vector_store = PgVectorStore(session_factory, embedding_client)
         keyword_store = Bm25Store(session_factory)
         retriever = HybridRetriever(
-            vector_store, keyword_store, reranker, rerank_enabled=rerank_enabled
+            vector_store if embedding_client is not None else None,
+            keyword_store,
+            reranker,
+            rerank_enabled=rerank_enabled,
         )
         return cls(
             retriever,
             vector_store=vector_store,
+            vector_configured=embedding_client is not None,
             candidate_k=candidate_k,
             rerank_candidates=rerank_candidates,
             rerank_enabled=rerank_enabled,
@@ -108,6 +130,26 @@ class KnowledgeService:
         """The underlying hybrid retriever (used by the eval ablation to score a
         single leg — ``semantic`` / ``keyword`` — against the full pipeline)."""
         return self._retriever
+
+    @property
+    def vector_configured(self) -> bool:
+        """Whether a real embedder backs the vector leg (ADR-0018)."""
+        return self._vector_configured
+
+    @property
+    def legs(self) -> list[str]:
+        """Retrieval legs a search runs: ``["bm25"]`` or ``["bm25", "vector"]``."""
+        return ["bm25", "vector"] if self._vector_configured else ["bm25"]
+
+    @property
+    def vector_leg(self) -> str:
+        """Vector-leg state for search responses: configured | unconfigured."""
+        return "configured" if self._vector_configured else "unconfigured"
+
+    @property
+    def rerank_status(self) -> str:
+        """Rerank state for search responses: ``"off"`` or the provider name."""
+        return self._retriever.rerank_status
 
     def index(self, source_id: str, chunks: list[Chunk]) -> IndexResult:
         """Embed and persist ``chunks`` for ``source_id`` (idempotent by hash)."""
@@ -132,9 +174,15 @@ class KnowledgeService:
         return self._vector_store
 
     def search(self, query: str, scope: KnowledgeScope, k: int = 10) -> list[RetrievedChunk]:
-        """Hybrid search: semantic + keyword -> RRF -> rerank -> attributed top-k."""
-        semantic = self._retriever.semantic(query, scope, self._candidate_k)
+        """Hybrid search: semantic + keyword -> RRF -> rerank -> attributed top-k.
+
+        In BM25-only mode (no embedder) only the keyword leg runs; callers
+        surface that via :attr:`legs` / :attr:`vector_leg` (ADR-0018).
+        """
         keyword = self._retriever.keyword(query, scope, self._candidate_k)
-        fused = self._retriever.fuse([semantic, keyword])
+        rankings = [keyword]
+        if self._vector_configured:
+            rankings.append(self._retriever.semantic(query, scope, self._candidate_k))
+        fused = self._retriever.fuse(rankings)
         candidates = fused[: self._rerank_candidates]
         return self._retriever.rerank(query, candidates, k)

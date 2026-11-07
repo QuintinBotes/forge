@@ -11,16 +11,20 @@ Serves the hybrid-retrieval spine over HTTP:
   incremental re-indexes only the files a git diff reports as changed.
 
 Handlers delegate to a :class:`KnowledgeService`. The default service is built
-from the API's DB session factory with the offline-safe deterministic embedding
-client and the fixture reranker (a real BYOK embedding client / Jina reranker is
-swapped in behind the same dependency via ``app.dependency_overrides`` / config).
+from the API's DB session factory with the *configured* production embedder and
+reranker (spec J §2.5, ADR-0018): ``FORGE_EMBEDDING_PROVIDER`` selects the
+embedder (unset -> honest BM25-only search whose responses carry
+``legs: ["bm25"]`` / ``vector_leg: "unconfigured"``; never the hash embedder)
+and ``FORGE_RERANK_PROVIDER`` defaults to ``none`` (``rerank: "off"``). Tests
+swap in deterministic clients behind the same dependency via
+``app.dependency_overrides``.
 """
 
 from __future__ import annotations
 
 import os
 import uuid
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -32,18 +36,20 @@ from forge_api.auth.rbac import Permission
 from forge_api.db import get_session_factory
 from forge_api.deps import CurrentPrincipal, Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
+from forge_api.schemas.knowledge import KnowledgeSearchResponse
+from forge_api.security.ssrf import assert_safe_url
 from forge_api.settings import Settings, get_settings
 from forge_contracts import (
     Chunk,
     IndexResult,
     KnowledgeScope,
-    RetrievedChunk,
 )
 from forge_contracts.enums import SyncMode
 from forge_db.models import KnowledgeSource
 from forge_knowledge import (
-    DeterministicEmbeddingClient,
     KnowledgeService,
+    VectorLegUnconfiguredError,
+    build_embedding_client_from_settings,
     build_reranker_from_settings,
     full_sync,
     sync_source,
@@ -79,7 +85,7 @@ def _resolve_reranker_key(settings: Settings) -> str | None:
     Returns ``None`` for the offline fixture / self-hosted providers so the
     default lane never requires a credential.
     """
-    provider = (settings.rerank_provider or "fixture").strip().lower()
+    provider = (settings.rerank_provider or "none").strip().lower()
     if provider == "jina":
         return os.environ.get("JINA_API_KEY")
     if provider == "cohere":
@@ -90,14 +96,27 @@ def _resolve_reranker_key(settings: Settings) -> str | None:
 @lru_cache(maxsize=1)
 def _knowledge_service_singleton() -> KnowledgeService:
     settings = get_settings()
-    # ``build_reranker_from_settings`` returns the offline FixtureRerankerClient
-    # by default (FORGE_RERANK_PROVIDER=fixture), and only builds a budgeted,
+    # ``build_reranker_from_settings`` returns None by default
+    # (FORGE_RERANK_PROVIDER=none -> rerank "off"), and only builds a budgeted,
     # SSRF-guarded live client when an operator opts in. The BYOK key is resolved
     # on demand and never stored on the settings object.
     reranker = build_reranker_from_settings(settings, api_key=_resolve_reranker_key(settings))
+    # The production embedder (ADR-0018): unset provider -> None -> BM25-only.
+    # The base_url goes through the api's SSRF guard seam; a dimension that
+    # does not match the vector column refuses here, at construction. The key
+    # is read from the env on demand, never stored on settings.
+    embedder = build_embedding_client_from_settings(
+        settings,
+        api_key=os.environ.get("FORGE_EMBEDDING_API_KEY"),
+        url_validator=partial(
+            assert_safe_url,
+            allow_private=settings.ssrf_allow_private,
+            allowlist=settings.outbound_allowlist,
+        ),
+    )
     return KnowledgeService.from_session_factory(
         get_session_factory(),
-        DeterministicEmbeddingClient(),
+        embedder,
         reranker,
         rerank_candidates=settings.rerank_candidates,
         rerank_enabled=settings.rerank_enabled,
@@ -159,6 +178,9 @@ class SearchRequest(BaseModel):
     query: str
     scope: KnowledgeScope = Field(default_factory=KnowledgeScope)
     k: int = 10
+    # Strict vector requirement (ADR-0018): when true, a search with no
+    # configured embedder refuses with 503 instead of answering BM25-only.
+    require_vector: bool = False
 
 
 class IndexRequest(BaseModel):
@@ -190,16 +212,35 @@ class SyncRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
-@router.post("/search", response_model=list[RetrievedChunk])
+@router.post("/search", response_model=KnowledgeSearchResponse)
 def search(
     svc: KnowledgeServiceDep, principal: CurrentPrincipal, request: SearchRequest
-) -> list[RetrievedChunk]:
+) -> KnowledgeSearchResponse:
     # Per-workspace isolation (mandatory): the caller may only search their own
     # workspace. Any ``workspace_id`` in the request scope is overridden so a
     # client cannot read another tenant's knowledge, and a default (empty) scope
     # never spans all workspaces.
     scope = request.scope.model_copy(update={"workspace_id": principal.workspace_id})
-    return svc.search(request.query, scope, k=request.k)
+    if request.require_vector and not svc.vector_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "vector search is unconfigured (set FORGE_EMBEDDING_PROVIDER); "
+                "BM25-only search remains available without require_vector"
+            ),
+        )
+    try:
+        results = svc.search(request.query, scope, k=request.k)
+    except VectorLegUnconfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    return KnowledgeSearchResponse(
+        results=results,
+        legs=svc.legs,
+        vector_leg=svc.vector_leg,
+        rerank=svc.rerank_status,
+    )
 
 
 @router.post("/index", response_model=IndexResult)

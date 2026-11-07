@@ -258,11 +258,14 @@ def test_graceful_enforces_latency_budget_without_hanging() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_build_reranker_fixture_and_disabled_make_no_client() -> None:
-    # AC2: fixture / disabled -> the offline fixture, no network client built.
+def test_build_reranker_fixture_explicit_and_off_by_default() -> None:
+    # ADR-0018: unset/none/disabled -> None (rerank "off"), never the fixture;
+    # the fixture is built only when a test selects it explicitly.
     assert isinstance(build_reranker("fixture"), FixtureRerankerClient)
-    assert isinstance(build_reranker(None), FixtureRerankerClient)
-    assert isinstance(build_reranker("jina", enabled=False), FixtureRerankerClient)
+    assert build_reranker(None) is None
+    assert build_reranker("none") is None
+    assert build_reranker("") is None
+    assert build_reranker("jina", enabled=False) is None
 
 
 def test_build_reranker_provider_defaults() -> None:
@@ -287,9 +290,17 @@ def test_build_reranker_rejects_unknown_provider() -> None:
         build_reranker("voyage")
 
 
-def test_build_reranker_from_settings_defaults_to_fixture() -> None:
+def test_build_reranker_from_settings_defaults_to_off() -> None:
     class _S:  # bare settings-like object, provider unset
         pass
+
+    # ADR-0018: an unset provider means no reranker, not the fixture.
+    assert build_reranker_from_settings(_S()) is None
+
+
+def test_build_reranker_from_settings_fixture_when_explicit() -> None:
+    class _S:
+        rerank_provider = "fixture"
 
     assert isinstance(build_reranker_from_settings(_S()), FixtureRerankerClient)
 

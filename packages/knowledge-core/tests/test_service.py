@@ -30,6 +30,7 @@ from forge_db.session import create_session_factory
 from forge_knowledge.embeddings import DeterministicEmbeddingClient
 from forge_knowledge.reranker import FixtureRerankerClient
 from forge_knowledge.service import KnowledgeService
+from forge_knowledge.stores import VectorLegUnconfiguredError
 
 
 @pytest.fixture
@@ -167,3 +168,61 @@ def test_index_delegates_and_is_idempotent(
     assert first.indexed == len(REPO)
     assert second.indexed == 0
     assert second.skipped == len(REPO)
+
+
+# --------------------------------------------------------------------------- #
+# Honest degradation: BM25-only + rerank off (spec J §2.5, ADR-0018)           #
+# --------------------------------------------------------------------------- #
+
+
+def test_configured_service_reports_both_legs(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = _service(session_factory)
+    assert service.vector_configured is True
+    assert service.legs == ["bm25", "vector"]
+    assert service.vector_leg == "configured"
+    assert service.rerank_status == "fixture"
+
+
+def test_bm25_only_service_searches_and_reports_unconfigured(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    source_id = _make_source(session_factory, workspace_id)
+    service = KnowledgeService.from_session_factory(session_factory, None, None)
+    assert service.vector_configured is False
+    assert service.legs == ["bm25"]
+    assert service.vector_leg == "unconfigured"
+    assert service.rerank_status == "off"
+
+    service.index(str(source_id), REPO)
+    scope = KnowledgeScope(workspace_id=workspace_id)
+    results = service.search("validate an oauth jwt token", scope, k=3)
+
+    assert results
+    assert results[0].path == "auth.py"
+    # No reranker ran: the degradation is visible on every chunk.
+    assert all(c.rerank_score is None for c in results)
+
+    # The vector leg itself refuses rather than faking semantic results.
+    with pytest.raises(VectorLegUnconfiguredError):
+        service.retriever.semantic("jwt", scope, k=3)
+
+
+def test_rerank_off_service_orders_by_weighted_rrf(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    source_id = _make_source(session_factory, workspace_id)
+    service = KnowledgeService.from_session_factory(
+        session_factory, DeterministicEmbeddingClient(dimension=512), None
+    )
+    assert service.rerank_status == "off"
+    assert service.legs == ["bm25", "vector"]
+
+    service.index(str(source_id), REPO)
+    results = service.search(
+        "validate an oauth jwt token", KnowledgeScope(workspace_id=workspace_id), k=3
+    )
+    assert results
+    assert results[0].path == "auth.py"
+    assert all(c.rerank_score is None for c in results)

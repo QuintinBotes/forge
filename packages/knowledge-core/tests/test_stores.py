@@ -6,8 +6,9 @@ Covers the two indexed stores that sit on top of the ``forge_db`` data model:
   Postgres it uses pgvector's ``cosine_distance``; on SQLite (the hermetic
   unit-test backend) it computes cosine in Python over the JSON-degraded
   ``embedding`` column. Same code path, dialect-aware.
-* :class:`Bm25Store` — keyword ``search`` (Postgres ``to_tsvector``/``ts_rank``;
-  Okapi-BM25 in Python on SQLite).
+* :class:`Bm25Store` — keyword ``search`` (exact Okapi BM25 via the shared
+  ``bm25_score`` on both dialects; Postgres candidate-then-rescore is covered
+  in ``test_stores_postgres.py``).
 
 The headline assertions:
 - indexing 5 chunks writes 5 ``RetrievalChunk`` rows and is idempotent
@@ -33,14 +34,23 @@ from forge_contracts.dtos import Chunk, KnowledgeScope
 from forge_contracts.enums import ChunkType
 from forge_contracts.protocols import KnowledgeStore
 from forge_db.base import Base
-from forge_db.models import KnowledgeSource, RetrievalChunk, Workspace
+from forge_db.models import (
+    KnowledgeSource,
+    RetrievalChunk,
+    RetrievalTermStat,
+    RetrievalWorkspaceStat,
+    Workspace,
+)
 from forge_db.session import create_session_factory
 from forge_knowledge.embeddings import DeterministicEmbeddingClient
 from forge_knowledge.stores import (
     Bm25Store,
     KnowledgeSourceNotFoundError,
     PgVectorStore,
+    VectorLegUnconfiguredError,
+    bm25_score,
 )
+from forge_knowledge.text import tokenize
 
 
 @pytest.fixture
@@ -297,3 +307,169 @@ def test_bm25_search_no_match_returns_empty(
         "zzzznotpresent", KnowledgeScope(workspace_id=workspace_id), k=5
     )
     assert hits == []
+
+
+# --------------------------------------------------------------------------- #
+# bm25_score — the shared pure scorer (spec J §2.5)                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_bm25_score_matches_hand_computed_okapi() -> None:
+    import math
+
+    # N=3 docs, avg_len=4; doc has tf(retry)=2 over 3 tokens; df(retry)=2.
+    doc = ["retry", "retry", "timeout"]
+    idf = math.log(1 + (3 - 2 + 0.5) / (2 + 0.5))
+    expected = idf * (2 * 2.5) / (2 + 1.5 * (1 - 0.75 + 0.75 * 3 / 4.0))
+    assert bm25_score(["retry"], doc, {"retry": 2}, 3, 4.0) == pytest.approx(expected)
+
+
+def test_bm25_score_edge_cases() -> None:
+    assert bm25_score(["x"], [], {"x": 1}, 3, 4.0) == 0.0
+    assert bm25_score(["x"], ["x"], {"x": 1}, 0, 4.0) == 0.0
+    assert bm25_score(["absent"], ["x", "y"], {}, 3, 4.0) == 0.0
+    # Repeated query terms count once; rarer terms (lower df) score higher.
+    doc = ["alpha", "beta", "gamma"]
+    single = bm25_score(["alpha"], doc, {"alpha": 1}, 10, 3.0)
+    doubled = bm25_score(["alpha", "alpha"], doc, {"alpha": 1}, 10, 3.0)
+    assert doubled == single
+    assert bm25_score(["alpha"], doc, {"alpha": 1}, 10, 3.0) > bm25_score(
+        ["alpha"], doc, {"alpha": 9}, 10, 3.0
+    )
+
+
+def test_bm25_or_semantics_partial_match_still_ranks(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    # OR (not plainto AND): a query mixing a present term with an absent one
+    # still returns the partial match — BM25's recall property.
+    source_id = _make_source(session_factory, workspace_id)
+    PgVectorStore(session_factory, DeterministicEmbeddingClient(dimension=128)).index(
+        source_id=str(source_id),
+        chunks=[_chunk("retry timeout backoff helper", "retry.py")],
+    )
+    hits = Bm25Store(session_factory).search(
+        "retry absentterm", KnowledgeScope(workspace_id=workspace_id), k=5
+    )
+    assert [h.path for h in hits] == ["retry.py"]
+
+
+# --------------------------------------------------------------------------- #
+# BM25 statistics maintenance (same transaction as chunk writes)               #
+# --------------------------------------------------------------------------- #
+
+
+def test_index_maintains_bm25_statistics(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    source_id = _make_source(session_factory, workspace_id)
+    store = PgVectorStore(session_factory, DeterministicEmbeddingClient(dimension=128))
+    contents = ["retry retry timeout", "single retry mention", "other words here"]
+    store.index(
+        source_id=str(source_id),
+        chunks=[_chunk(c, f"f{i}.py") for i, c in enumerate(contents)],
+    )
+
+    with session_factory() as session:
+        totals = session.scalar(
+            select(RetrievalWorkspaceStat).where(
+                RetrievalWorkspaceStat.workspace_id == workspace_id
+            )
+        )
+        assert totals is not None
+        assert totals.chunk_count == 3
+        assert totals.total_tokens == sum(len(tokenize(c)) for c in contents)
+
+        df = {
+            row.term: row.df
+            for row in session.scalars(
+                select(RetrievalTermStat).where(RetrievalTermStat.workspace_id == workspace_id)
+            )
+        }
+        assert df["retry"] == 2  # in two documents, counted once per document
+        assert df["timeout"] == 1
+
+        token_counts = {
+            row.path: row.token_count for row in session.scalars(select(RetrievalChunk))
+        }
+        assert token_counts == {f"f{i}.py": len(tokenize(c)) for i, c in enumerate(contents)}
+
+
+def test_delete_source_paths_backs_out_bm25_statistics(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    source_id = _make_source(session_factory, workspace_id)
+    store = PgVectorStore(session_factory, DeterministicEmbeddingClient(dimension=128))
+    store.index(
+        source_id=str(source_id),
+        chunks=[
+            _chunk("retry retry timeout", "retry.py"),
+            _chunk("single retry mention", "misc.py"),
+            _chunk("other words here", "other.py"),
+        ],
+    )
+
+    removed = store.delete_source_paths(str(source_id), ["retry.py"])
+    assert removed == 1
+
+    with session_factory() as session:
+        totals = session.scalar(
+            select(RetrievalWorkspaceStat).where(
+                RetrievalWorkspaceStat.workspace_id == workspace_id
+            )
+        )
+        assert totals is not None
+        assert totals.chunk_count == 2
+        assert totals.total_tokens == len(tokenize("single retry mention")) + len(
+            tokenize("other words here")
+        )
+        df = {
+            row.term: row.df
+            for row in session.scalars(
+                select(RetrievalTermStat).where(RetrievalTermStat.workspace_id == workspace_id)
+            )
+        }
+        assert df["retry"] == 1
+        assert "timeout" not in df  # df hit zero -> row removed
+
+    hits = Bm25Store(session_factory).search(
+        "retry", KnowledgeScope(workspace_id=workspace_id), k=5
+    )
+    assert [h.path for h in hits] == ["misc.py"]
+
+
+# --------------------------------------------------------------------------- #
+# No embedder configured: BM25-only, honestly (ADR-0018)                       #
+# --------------------------------------------------------------------------- #
+
+
+def test_index_without_embedder_stores_no_vectors_but_bm25_works(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    source_id = _make_source(session_factory, workspace_id)
+    store = PgVectorStore(session_factory, None)
+    assert store.has_embedder is False
+
+    result = store.index(
+        source_id=str(source_id),
+        chunks=[_chunk("validate the jwt token here", "auth.py")],
+    )
+    assert result.indexed == 1
+
+    with session_factory() as session:
+        row = session.scalars(select(RetrievalChunk)).one()
+    assert row.embedding is None
+    assert row.token_count == len(tokenize("validate the jwt token here"))
+
+    hits = Bm25Store(session_factory).search(
+        "jwt token", KnowledgeScope(workspace_id=workspace_id), k=5
+    )
+    assert [h.path for h in hits] == ["auth.py"]
+
+
+def test_vector_search_without_embedder_refuses_loudly(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    store = PgVectorStore(session_factory, None)
+    with pytest.raises(VectorLegUnconfiguredError, match="requires a configured embedder"):
+        store.search("jwt", KnowledgeScope(workspace_id=workspace_id), k=5)

@@ -3,6 +3,13 @@
 ``example.invalid`` was the URL of a PR that never existed, returned by the
 Temporal stand-in on production paths. It may appear in tests, never in shipped
 code.
+
+The retrieval fakes get the same treatment (ADR-0018): the hash embedder
+(``DeterministicEmbeddingClient``) and the fixture reranker
+(``FixtureRerankerClient``) may be *constructed* only by tests. Production
+wiring builds a configured embedder/reranker or runs honestly without one
+(BM25-only, ``rerank: "off"``) — it never dresses keyword/hash results up as
+semantic/cross-encoded ones.
 """
 
 from __future__ import annotations
@@ -31,3 +38,41 @@ def test_no_shipped_code_mentions_a_fabricated_pr_url() -> None:
         str(p.relative_to(ROOT)) for p in files if FORBIDDEN in p.read_text(errors="ignore")
     ]
     assert offenders == []
+
+
+# Construction sites of the retrieval fakes (ADR-0018). The defining modules
+# are exempt — the reranker factory in ``reranker.py`` legitimately builds the
+# fixture when a *test* selects ``FORGE_RERANK_PROVIDER=fixture`` — and so is
+# ``packages/evaluation``: the eval harness is test-grade tooling (its
+# deterministic-client path is a documented wiring check, never imported on a
+# production path), on par with a ``tests/`` directory.
+_FAKE_CONSTRUCTIONS = ("DeterministicEmbeddingClient(", "FixtureRerankerClient(")
+_FAKE_EXEMPT_FILES = {
+    Path("packages/knowledge-core/forge_knowledge/embeddings.py"),
+    Path("packages/knowledge-core/forge_knowledge/reranker.py"),
+}
+_FAKE_EXEMPT_TREES = (Path("packages/evaluation"),)
+
+
+def _fake_construction_offenders() -> list[str]:
+    offenders: list[str] = []
+    for path in _shipped_python_files():
+        relative = path.relative_to(ROOT)
+        if relative in _FAKE_EXEMPT_FILES:
+            continue
+        if any(relative.is_relative_to(tree) for tree in _FAKE_EXEMPT_TREES):
+            continue
+        source = path.read_text(errors="ignore")
+        if any(construction in source for construction in _FAKE_CONSTRUCTIONS):
+            offenders.append(str(relative))
+    return offenders
+
+
+def test_no_shipped_code_constructs_the_retrieval_fakes() -> None:
+    files = _shipped_python_files()
+    assert files, "scanned no files; the repository layout changed"
+    # The exempt defining modules must exist, so the exemption cannot silently
+    # rot into a blanket pass if the layout moves.
+    for exempt in _FAKE_EXEMPT_FILES:
+        assert (ROOT / exempt).is_file(), f"exempt module missing: {exempt}"
+    assert _fake_construction_offenders() == []

@@ -182,6 +182,10 @@ EXPECTED_MODELS = [
     # red-team-gate: append-only adversarial-review verdict (blocked|survived)
     # recorded before the human implementation gate, feeding the attestation.
     "RedTeamRecord",
+    # J retrieval (ADR-0017): incrementally maintained BM25 corpus statistics —
+    # per-workspace document frequencies + per-workspace corpus totals.
+    "RetrievalTermStat",
+    "RetrievalWorkspaceStat",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

@@ -17,6 +17,8 @@ from forge_knowledge.embeddings import (
     DeterministicEmbeddingClient,
     HttpEmbeddingClient,
     SentenceTransformerEmbeddingClient,
+    build_embedding_client,
+    build_embedding_client_from_settings,
 )
 from forge_knowledge.fusion import fuse
 from forge_knowledge.mcp_chunking import (
@@ -59,6 +61,8 @@ from forge_knowledge.stores import (
     Bm25Store,
     KnowledgeSourceNotFoundError,
     PgVectorStore,
+    VectorLegUnconfiguredError,
+    bm25_score,
 )
 from forge_knowledge.sync import (
     ChangeSet,
@@ -106,6 +110,10 @@ __all__ = [
     "SyncDirection",
     "SyncReport",
     "SyncRunRecorder",
+    "VectorLegUnconfiguredError",
+    "bm25_score",
+    "build_embedding_client",
+    "build_embedding_client_from_settings",
     "build_reranker",
     "build_reranker_from_settings",
     "chunk_code",

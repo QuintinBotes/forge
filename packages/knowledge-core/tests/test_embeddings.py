@@ -25,9 +25,13 @@ import pytest
 
 from forge_contracts.constants import DEFAULT_EMBEDDING_DIM
 from forge_contracts.protocols import EmbeddingClient
+from forge_db.models.knowledge import EMBEDDING_DIM
 from forge_knowledge.embeddings import (
     DeterministicEmbeddingClient,
     HttpEmbeddingClient,
+    SentenceTransformerEmbeddingClient,
+    build_embedding_client,
+    build_embedding_client_from_settings,
 )
 
 
@@ -158,3 +162,101 @@ def test_http_client_raises_on_error_status() -> None:
     )
     with pytest.raises(httpx.HTTPStatusError):
         client.embed(["x"])
+
+
+# --------------------------------------------------------------------------- #
+# Production embedder factory (spec J §2.5, ADR-0018)                          #
+# --------------------------------------------------------------------------- #
+
+
+def test_builder_unset_provider_means_no_embedder() -> None:
+    # Honest BM25-only mode: unset/empty/none never builds the hash embedder.
+    assert build_embedding_client(None) is None
+    assert build_embedding_client("") is None
+    assert build_embedding_client("none") is None
+
+
+def test_builder_openai_compatible_builds_http_client_with_ssrf_seam() -> None:
+    validated: list[str] = []
+    client = build_embedding_client(
+        "openai-compatible",
+        model="text-embedding-3-small",
+        base_url="https://vendor.example/v1",
+        api_key="sk-test",
+        url_validator=validated.append,
+    )
+    assert isinstance(client, HttpEmbeddingClient)
+    assert client.dimension == EMBEDDING_DIM
+    # The SSRF url_validator seam saw the fully resolved embeddings URL.
+    assert validated == ["https://vendor.example/v1/embeddings"]
+
+
+def test_builder_openai_compatible_requires_model() -> None:
+    with pytest.raises(ValueError, match="FORGE_EMBEDDING_MODEL"):
+        build_embedding_client("openai-compatible")
+
+
+def test_builder_refuses_dimension_mismatch_at_construction() -> None:
+    with pytest.raises(ValueError, match="does not match"):
+        build_embedding_client("openai-compatible", model="m", dimension=EMBEDDING_DIM + 1)
+    with pytest.raises(ValueError, match="does not match"):
+        build_embedding_client("local", dimension=384)
+
+
+def test_builder_rejects_unknown_provider() -> None:
+    with pytest.raises(ValueError, match="unknown embedding provider"):
+        build_embedding_client("voyage")
+
+
+class _FakeSentenceTransformer:
+    """Stand-in for a loaded sentence-transformers model (no torch, no I/O)."""
+
+    def __init__(self, dimension: int) -> None:
+        self._dimension = dimension
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self._dimension
+
+
+def test_builder_local_refuses_model_dimension_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A 384-dim local model cannot write to the 1536-dim column: the builder
+    # loads it and refuses at construction instead of failing on first insert.
+    def fake_load(self: SentenceTransformerEmbeddingClient) -> _FakeSentenceTransformer:
+        self._dimension = 384
+        return _FakeSentenceTransformer(384)
+
+    monkeypatch.setattr(SentenceTransformerEmbeddingClient, "_load", fake_load)
+    with pytest.raises(ValueError, match="does not match"):
+        build_embedding_client("local", model="sentence-transformers/all-MiniLM-L6-v2")
+
+
+def test_builder_local_accepts_matching_dimension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_load(self: SentenceTransformerEmbeddingClient) -> _FakeSentenceTransformer:
+        self._dimension = EMBEDDING_DIM
+        return _FakeSentenceTransformer(EMBEDDING_DIM)
+
+    monkeypatch.setattr(SentenceTransformerEmbeddingClient, "_load", fake_load)
+    client = build_embedding_client("local", model="some-1536-model")
+    assert isinstance(client, SentenceTransformerEmbeddingClient)
+    assert client.dimension == EMBEDDING_DIM
+
+
+def test_builder_from_settings_reads_embedding_fields() -> None:
+    class _S:  # bare settings-like object, provider unset
+        pass
+
+    assert build_embedding_client_from_settings(_S()) is None
+
+    class _Configured:
+        embedding_provider = "openai-compatible"
+        embedding_model = "text-embedding-3-small"
+        embedding_base_url = "https://vendor.example/v1"
+        embedding_dimension = EMBEDDING_DIM
+
+    client = build_embedding_client_from_settings(_Configured(), api_key="sk-test")
+    assert isinstance(client, HttpEmbeddingClient)
+    assert client.dimension == EMBEDDING_DIM

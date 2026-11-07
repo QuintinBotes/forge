@@ -329,11 +329,12 @@ class Settings(BaseSettings):
     # --- HARD-03 live cross-encoder reranker --------------------------------
     # Process-level reranker selection (BYOK keys are NOT stored here — they are
     # read on demand from the vault/env so they never land in a logged Settings
-    # field). ``fixture`` (default) keeps the offline, deterministic, network-free
-    # reranker; ``jina``/``cohere``/``selfhosted`` build a budgeted, SSRF-guarded
-    # live client. ``FORGE_RERANK_ENABLED=false`` -> weighted-RRF only, no client.
+    # field). ``none`` (default, ADR-0018) builds no reranker and search reports
+    # ``rerank: "off"`` (weighted-RRF order); ``jina``/``cohere``/``selfhosted``
+    # build a budgeted, SSRF-guarded live client; ``fixture`` is test-only.
+    # ``FORGE_RERANK_ENABLED=false`` -> weighted-RRF only, no client.
     rerank_enabled: bool = True
-    rerank_provider: str = "fixture"
+    rerank_provider: str = "none"
     rerank_model: str | None = None
     # SSRF-validated base_url override; self-hosted also honours JINA_RERANKER_URL.
     rerank_base_url: str | None = None
@@ -343,6 +344,21 @@ class Settings(BaseSettings):
     rerank_candidates: int = 50
     # Required to point a self-hosted reranker at a non-private (public) host.
     rerank_allow_insecure_url: bool = False
+
+    # --- J retrieval: production embedder (spec J §2.5, ADR-0018) -----------
+    # Unset (default) -> NO embedder: search runs BM25-only and reports
+    # ``vector_leg: "unconfigured"``; indexing stores chunks without vectors.
+    # ``openai-compatible`` -> HttpEmbeddingClient (SSRF-validated base_url);
+    # ``local`` -> SentenceTransformerEmbeddingClient. The API key is NOT a
+    # Settings field: it is read from ``FORGE_EMBEDDING_API_KEY`` on demand so
+    # it never lands in a logged settings object (mirrors the reranker key).
+    embedding_provider: str | None = None
+    embedding_model: str | None = None
+    # SSRF-validated base_url override for the openai-compatible provider.
+    embedding_base_url: str | None = None
+    # Must equal forge_db EMBEDDING_DIM (the vector column width) when set;
+    # a mismatch refuses at embedder construction, never on first insert.
+    embedding_dimension: int | None = None
 
     @property
     def docs_effectively_enabled(self) -> bool:

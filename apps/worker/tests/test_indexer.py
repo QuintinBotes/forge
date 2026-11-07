@@ -123,6 +123,48 @@ def test_build_knowledge_service_constructs(
     assert isinstance(service, KnowledgeService)
 
 
+def test_build_knowledge_service_defaults_to_honest_bm25_only(
+    monkeypatch: pytest.MonkeyPatch, session_factory: sessionmaker[Session]
+) -> None:
+    # ADR-0018: with no embedder/reranker configured the worker must build a
+    # BM25-only service (chunks stored without vectors), never the hash
+    # embedder or fixture reranker. Settings are pinned explicitly so the
+    # test does not depend on the developer's environment/.env.
+    from forge_api.settings import Settings
+
+    fake_settings = Settings(embedding_provider=None, rerank_provider="none")
+    monkeypatch.setattr("forge_api.settings.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("forge_db.create_session_factory", lambda *a, **k: session_factory)
+    monkeypatch.delenv("FORGE_EMBEDDING_API_KEY", raising=False)
+    from forge_worker.indexer import build_knowledge_service
+
+    service = build_knowledge_service()
+    assert service.vector_configured is False
+    assert service.legs == ["bm25"]
+    assert service.vector_leg == "unconfigured"
+    assert service.rerank_status == "off"
+
+
+def test_build_knowledge_service_refuses_bad_embedding_dimension(
+    monkeypatch: pytest.MonkeyPatch, session_factory: sessionmaker[Session]
+) -> None:
+    # A dimension that does not match the vector column refuses at build time.
+    from forge_api.settings import Settings
+
+    fake_settings = Settings(
+        embedding_provider="openai-compatible",
+        embedding_model="text-embedding-3-small",
+        embedding_dimension=384,
+        rerank_provider="none",
+    )
+    monkeypatch.setattr("forge_api.settings.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("forge_db.create_session_factory", lambda *a, **k: session_factory)
+    from forge_worker.indexer import build_knowledge_service
+
+    with pytest.raises(ValueError, match="does not match"):
+        build_knowledge_service()
+
+
 def test_index_source_task_delegates(
     monkeypatch: pytest.MonkeyPatch,
     service: KnowledgeService,
