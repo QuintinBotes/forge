@@ -261,7 +261,12 @@ export function WorldGraph({
               />
               <text
                 x={point.x}
-                y={point.y + NEIGHBOUR_RADIUS + 16}
+                // Outside the node, away from the centre, so no edge crosses it.
+                y={
+                  point.y < center.y
+                    ? point.y - NEIGHBOUR_RADIUS - 8
+                    : point.y + NEIGHBOUR_RADIUS + 16
+                }
                 textAnchor="middle"
                 fontSize={12}
                 fill="hsl(var(--foreground))"
