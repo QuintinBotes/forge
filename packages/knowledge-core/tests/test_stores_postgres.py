@@ -5,7 +5,7 @@ approximate: pgvector ``cosine_distance`` ordering and BM25
 candidate-then-rescore (OR ``tsquery`` candidates by ``ts_rank_cd``, rescored
 with exact Okapi BM25 — spec J §2.5, ADR-0017), including the proof that
 SQLite and Postgres rank the same corpus identically and that migration
-``0041_retrieval_bm25_stats`` backfills statistics for pre-existing chunks.
+``0042_retrieval_bm25_stats`` backfills statistics for pre-existing chunks.
 They use the shared ``pg_engine`` fixture (root ``conftest.py``), which yields
 a pgvector-enabled Postgres from ``FORGE_TEST_DATABASE_URL`` or a
 ``testcontainers`` container, and otherwise **skips** with a parked reason —
@@ -189,9 +189,9 @@ def test_sqlite_and_postgres_produce_identical_bm25_ranking(
 def test_migration_backfills_bm25_stats_for_existing_chunks(
     postgres_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Upgrade a scratch database only to 0040, insert chunks the way a
+    # Upgrade a scratch database only to 0041, insert chunks the way a
     # pre-migration deployment would have them (token_count at its 0 default,
-    # no statistics rows), then upgrade to head: 0041 must backfill token
+    # no statistics rows), then upgrade to head: 0042 must backfill token
     # counts, document frequencies, corpus totals and (on Postgres) tsv.
     from alembic import command
 
@@ -219,7 +219,7 @@ def test_migration_backfills_bm25_stats_for_existing_chunks(
         "other.py": "unrelated words entirely",
     }
     try:
-        command.upgrade(cfg, "0040_self_eval_baseline")
+        command.upgrade(cfg, "0041_world_model")
         engine = create_engine(scratch_url, future=True)
         try:
             with engine.begin() as conn:
@@ -292,8 +292,8 @@ def test_migration_backfills_bm25_stats_for_existing_chunks(
                 ).scalar()
                 assert missing_tsv == 0
 
-            # Downgrade removes exactly what 0041 introduced.
-            command.downgrade(cfg, "0040_self_eval_baseline")
+            # Downgrade removes exactly what 0042 introduced.
+            command.downgrade(cfg, "0041_world_model")
             inspector = inspect(engine)
             assert "retrieval_term_stats" not in inspector.get_table_names()
             assert "retrieval_workspace_stats" not in inspector.get_table_names()

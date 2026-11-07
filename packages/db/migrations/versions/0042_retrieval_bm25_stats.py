@@ -22,8 +22,8 @@ what this revision introduced. The backfill is likewise guarded: token counts
 are recomputed only for rows still at the ``0`` default, and the statistics
 tables are built only when empty.
 
-Revision ID: 0041_retrieval_bm25_stats
-Revises: 0040_self_eval_baseline
+Revision ID: 0042_retrieval_bm25_stats
+Revises: 0041_world_model
 Create Date: 2026-11-07
 """
 
@@ -40,8 +40,8 @@ import forge_db.models  # noqa: F401  (registers all models on Base.metadata)
 from forge_db.base import Base
 
 # revision identifiers, used by Alembic.
-revision: str = "0041_retrieval_bm25_stats"
-down_revision: str | None = "0040_self_eval_baseline"
+revision: str = "0042_retrieval_bm25_stats"
+down_revision: str | None = "0041_world_model"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
