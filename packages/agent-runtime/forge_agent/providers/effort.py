@@ -57,7 +57,7 @@ _OPENAI_EFFORT_BY_LEVEL: dict[str, str] = {
 _DEFAULT_EFFORT = "high"
 
 #: Prefixes of OpenAI model families that accept ``reasoning_effort``.
-_OPENAI_REASONING_PREFIXES: tuple[str, ...] = ("o1", "o3", "o4", "gpt-5")
+_OPENAI_REASONING_PREFIXES: tuple[str, ...] = ("o1", "o3", "o4", "gpt-5", "gpt-6")
 
 
 def _key(effort: Any) -> str:
@@ -84,12 +84,13 @@ def openai_reasoning_effort(effort: Any) -> str:
 
 
 def openai_supports_reasoning_effort(model: str) -> bool:
-    """Whether ``model`` accepts ``reasoning_effort`` (the ``o*`` / ``gpt-5`` families).
+    """Whether ``model`` accepts ``reasoning_effort`` (``o*``, ``gpt-5*``, ``gpt-6*``).
 
     Non-reasoning models (``gpt-4o``, ``gpt-4.1``) reject the parameter with a
     400, so the OpenAI translator only sets it when this returns ``True``.
     """
     name = model.strip().lower()
     return any(
-        name == prefix or name.startswith(f"{prefix}-") for prefix in _OPENAI_REASONING_PREFIXES
+        name == prefix or name.startswith((f"{prefix}-", f"{prefix}."))
+        for prefix in _OPENAI_REASONING_PREFIXES
     )

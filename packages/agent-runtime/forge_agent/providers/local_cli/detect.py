@@ -2,21 +2,30 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
-__all__ = ["DEFAULT_PREFERENCE", "CliName", "DetectedCli", "detect_clis", "parse_preference"]
+__all__ = [
+    "DEFAULT_PREFERENCE",
+    "CliName",
+    "DetectedCli",
+    "detect_clis",
+    "parse_cli_model",
+    "parse_preference",
+]
 
 
 class CliName(StrEnum):
     claude = "claude"
     codex = "codex"
+    muse = "muse"
 
 
 #: Order tried when the operator expresses no preference.
-DEFAULT_PREFERENCE: tuple[CliName, ...] = (CliName.claude, CliName.codex)
+DEFAULT_PREFERENCE: tuple[CliName, ...] = (CliName.claude, CliName.codex, CliName.muse)
 
 
 @dataclass(frozen=True)
@@ -41,6 +50,19 @@ def detect_clis(
         if path:
             found.append(DetectedCli(name=name, path=path))
     return found
+
+
+#: A CLI model id becomes an argv value, so it may not look like a flag.
+_CLI_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}")
+
+
+def parse_cli_model(raw: str | None) -> str | None:
+    """``FORGE_LOCAL_CLI_MODEL``, or ``None`` when unset or unsafe as an argv value.
+
+    Shared by the worker and ``forge_cli_bridge`` like :func:`parse_preference`.
+    """
+    model = (raw or "").strip()
+    return model if _CLI_MODEL.fullmatch(model) else None
 
 
 def parse_preference(raw: str | None) -> tuple[CliName, ...] | None:

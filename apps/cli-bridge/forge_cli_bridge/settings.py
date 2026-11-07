@@ -35,6 +35,8 @@ class BridgeSettings:
     #: uses its own ``DEFAULT_PREFERENCE``. A tuple (not a list) so the frozen
     #: dataclass stays hashable.
     preference: tuple[CliName, ...] | None = None
+    #: ``FORGE_LOCAL_CLI_MODEL``: the CLI's own ``--model``; ``None`` keeps its default.
+    cli_model: str | None = None
 
     def __post_init__(self) -> None:
         if not self.token.strip():

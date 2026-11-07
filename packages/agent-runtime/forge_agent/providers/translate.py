@@ -219,13 +219,13 @@ def openai_create_kwargs(
     only for reasoning models (``o*`` / ``gpt-5``) — non-reasoning models reject
     the parameter with a 400.
     """
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": _openai_messages(request),
-        "max_tokens": max_tokens,
-    }
+    kwargs: dict[str, Any] = {"model": model, "messages": _openai_messages(request)}
     if effort_map.openai_supports_reasoning_effort(model):
+        # Reasoning models reject ``max_tokens``; local servers expect it.
+        kwargs["max_completion_tokens"] = max_tokens
         kwargs["reasoning_effort"] = effort_map.openai_reasoning_effort(effort)
+    else:
+        kwargs["max_tokens"] = max_tokens
     if request.tools:
         kwargs["tools"] = to_openai_tools(request.tools)
     if request.stop:

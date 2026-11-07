@@ -129,13 +129,17 @@ covered by the hermetic unit suite (argv construction, envelope parsing,
 error mapping); the difference below is specifically about live, real-binary
 verification.
 
-| | `claude` | `codex` |
-| --- | --- | --- |
-| Implemented + unit-tested | Yes | Yes |
-| Tool suppression *configured* | Yes — empty `--allowedTools`, an explicit `--disallowedTools` deny-list, `--permission-mode plan`, `--permission-prompts none` | Yes — `--sandbox read-only` |
-| Tool suppression *enforced end to end* | **Not yet exercised by a test** (flag *acceptance* only — see "Security posture" below) | **Not yet exercised by a test** (same caveat) |
-| Run against the real binary at all | **Yes** — this task's own end-to-end verification drove a real `claude` subprocess through the bridge in a real agent run | **No.** Argv construction, `--output-schema` handling, and stdin behavior are inferred from `codex exec --help` text, not from a live invocation |
-| Why | — | The operator's `codex` subscription quota has been exhausted since before this sub-project started; every live verification across every task used `claude` only |
+| | `claude` | `codex` | `muse` |
+| --- | --- | --- | --- |
+| Implemented + unit-tested | Yes | Yes | Yes |
+| Tool suppression *configured* | Yes — empty `--allowedTools`, an explicit `--disallowedTools` deny-list, `--permission-mode plan`, `--permission-prompts none` | Yes — `--sandbox read-only` | Yes — `--preset empty`, `--disable-shell`, `--disable-write`, `--disable-web-tools`, `--disable-request-user-input`, `--approval-mode untrusted`, and a fresh empty `--workspace` |
+| Tool suppression *enforced end to end* | **Not yet exercised by a test** (flag *acceptance* only — see "Security posture" below) | **Not yet exercised by a test** (same caveat) | **Not yet exercised by a test** (same caveat) |
+| Run against the real binary at all | **Yes** — this task's own end-to-end verification drove a real `claude` subprocess through the bridge in a real agent run | **No.** Argv construction, `--output-schema` handling, and stdin behavior are inferred from `codex exec --help` text, not from a live invocation | **Offline only.** The exact argv was run against the real binary with muse's offline `echo` provider: it is accepted, and the answer arrives as the `run.terminal.completed` event. `muse exec` cannot read stdin, so the prompt goes in a private (0600) temp file passed with `--prompt-file`. No live `meta` model call yet |
+| Why | — | The operator's `codex` subscription quota has been exhausted since before this sub-project started; every live verification across every task used `claude` only | — |
+
+Pick the CLI's model with `FORGE_LOCAL_CLI_MODEL` (for example
+`muse-wonder-full-1.0` or `muse-spark-1.3`); it becomes that CLI's `--model`
+flag (`-m` for codex). With the bridge, set it in the bridge's environment.
 
 **If you set `FORGE_LOCAL_CLI_PREFERENCE=codex` (or let `codex` win auto-detect
 because `claude` isn't installed), your own first run is the first real test
