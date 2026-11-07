@@ -14,6 +14,7 @@ import {
   Layers,
   LayoutList,
   Menu,
+  Network,
   Rocket,
   Route,
   ScrollText,
@@ -81,6 +82,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Incidents", href: "/incidents", icon: AlertTriangle },
       { label: "Leaderboard", href: "/leaderboard", icon: Trophy },
       { label: "Audit", href: "/audit", icon: ScrollText },
+      { label: "Knowledge graph", href: "/world", icon: Network },
     ],
   },
   {
