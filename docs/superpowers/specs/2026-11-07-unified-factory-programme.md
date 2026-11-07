@@ -4,7 +4,7 @@
 **Status:** Approved (decomposition and sequencing)
 **Extends:** `2026-09-19-software-factory-programme.md` (A–F). Its six principles bind here too.
 **Architecture:** `docs/architecture/unified-factory.md`
-**Decisions:** `docs/architecture/adr/0001`–`0018`
+**Decisions:** `docs/architecture/adr/0001`–`0019`
 **Research:** `research_notes/Forge unified software factory plan/` on the operator's machine (not
 tracked); summarised in §2.
 
@@ -42,6 +42,7 @@ Make forge the one software factory by absorbing three neighbouring systems:
 | **J** | Context and memory (lore++ part 1) | H1, I | DRAFT — scope and interfaces | `assemble_context`, memory lifecycle, wider index, eval gate |
 | **K** | Automation lines (lore++ part 2) | G, J | DRAFT — scope and interfaces | Ticket → PR loop, review, triage, merge bookkeeping, digests, on `workflow-engine` |
 | **L** | Tervin bridge | I, G | DRAFT — scope and interfaces | Run event SSE stream, `forge --json`, ACP stdio shim, token-by-env-var auth |
+| **M** | Bring your own tracker | G | Approved (M1, M2 ready; M3 after G1d) | Tracker owns work items (ADR-0019); GitHub Issues adapter; tracker-wins write-back; issue-driven dispatch |
 
 Ordering: **G** and **H1** are independent and can run in parallel. **I** needs H1's read surface.
 **J** needs H1 and I. **K** needs G and J. **L** needs I and G's run events.
@@ -74,7 +75,7 @@ items become acceptance criteria in the owning spec.
 | Implementation loop | `workflow-engine` + G | Parallel tickets, hard per-run budget, lint before push, real PRs | K |
 | PR code review | `workflow-engine` + red-team gate | Fail-closed; severity with audit trail | K |
 | Auto-merge | approvals + policy | Fail-closed (lore #2374 fails open); shadow until measured agreement | K |
-| Issue triage | `workflow-engine` + incidents | Duplicate detection; Jira/Linear via existing PM adapters | K |
+| Issue triage | `workflow-engine` + incidents | Duplicate detection; any connected tracker (Linear, Jira, GitHub Issues, …) owns the item (ADR-0019) | K, M |
 | Feature planning | `forge_spec` Spec Studio | Already real-time co-editing; add approvals and live traceability | — |
 | Repo onboarding | K | Idempotent with verified checklist | K |
 | Digests / changelog | K | Audience-specific; Slack and email | K |

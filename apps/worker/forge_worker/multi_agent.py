@@ -35,14 +35,35 @@ child ``agent_run`` linkage that is still parked (see
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import Callable
+from contextlib import ExitStack, suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 from forge_agent import AgentRunner
-from forge_contracts import AgentObjective, AgentRunResult, ModelClient
+from forge_agent.sandbox import (
+    SandboxError,
+    WorktreeSandbox,
+    build_sandbox_provider,
+    resolve_sandbox_settings,
+)
+from forge_agent.sandbox.settings import SandboxSettings
+from forge_agent.tools import ToolRegistry, agent_tool_belt
+from forge_contracts import (
+    ROLE_TOOLS,
+    AgentObjective,
+    AgentRunResult,
+    CommandOutput,
+    ModelClient,
+    RunStatus,
+    SandboxSession,
+    SubAgentRole,
+)
 from forge_coordinator import (
     CoordinatorDeps,
     CoordinatorSettings,
@@ -53,6 +74,8 @@ from forge_coordinator import (
 )
 from forge_db.models.enums import RunStatus as DbRunStatus
 from forge_db.session import create_session_factory
+from forge_worker.dispatch import RepositoryUnavailable, resolve_run_repository
+from forge_worker.run_workspace import _repo_policy
 
 __all__ = ["run_supervised_objective"]
 
@@ -77,7 +100,8 @@ def _with_parent_run_id(objective: AgentObjective) -> AgentObjective:
     id internally that this adapter could not have created the parent row for)."""
     if _as_uuid(objective.context.get("parent_agent_run_id")) is not None:
         return objective
-    context = {**objective.context, "parent_agent_run_id": str(uuid.uuid4())}
+    parent_id = _as_uuid(objective.context.get("agent_run_id")) or uuid.uuid4()
+    context = {**objective.context, "parent_agent_run_id": str(parent_id)}
     return objective.model_copy(update={"context": context})
 
 
@@ -174,12 +198,94 @@ def _resolve_sub_agent_sink(
         return InMemorySubAgentRunSink(), None
 
 
-def _agent_factory(default_client: ModelClient) -> Callable[[ModelClient | None], AgentRunner]:
+@dataclass
+class _SubAgentRuntime:
+    model_client: ModelClient
+    workspace_id: uuid.UUID
+    #: The parent run's resolved mirror (dispatch.resolve_run_repository), never a
+    #: caller-supplied path: ``repo_targets[].repo`` is a name, not a filesystem location.
+    repo_root: Path | None = None
+
+    def run(self, objective: AgentObjective) -> AgentRunResult:
+        role = SubAgentRole(objective.context["role"])
+        allowed = ROLE_TOOLS[role].intersection(objective.allowed_actions)
+        root = objective.context.get("worktree_path")
+        target = objective.primary_repo_target
+        with ExitStack() as stack:
+            # The coordinator only provisions worktrees for code-producing roles.
+            if root is None and self.repo_root is not None:
+                root = stack.enter_context(
+                    WorktreeSandbox(
+                        self.repo_root, base_branch=target.base_branch if target else "main"
+                    )
+                )
+            if root is None:
+                return AgentRunner(self.model_client).run(objective)
+            return self._run_in_worktree(objective, Path(root), allowed)
+
+    def _run_in_worktree(
+        self, objective: AgentObjective, root: Path, allowed: frozenset[str]
+    ) -> AgentRunResult:
+        run_id = uuid.uuid4()
+        policy = _repo_policy(root)
+        settings = SandboxSettings.from_env()
+        spec = resolve_sandbox_settings(
+            settings,
+            policy.sandbox if policy else None,
+            language=(policy.languages[0] if policy and policy.languages else "python"),
+            agent_run_id=run_id,
+            workspace_id=self.workspace_id,
+            host_worktree_path=str(root),
+        )
+        provider = build_sandbox_provider(settings.model_copy(update={"kind": spec.kind}))
+        with asyncio.Runner() as loop:
+            loop.run(provider.preflight())
+            session = cast(SandboxSession, loop.run(provider.create(spec)))
+            try:
+
+                def run_command(command: str) -> CommandOutput:
+                    return loop.run(
+                        session.run(
+                            command,
+                            cwd=session.workspace_dir,
+                            timeout_s=spec.exec_timeout_seconds,
+                        )
+                    )
+
+                belt = agent_tool_belt(
+                    root,
+                    run_id=str(run_id),
+                    commands=policy.commands if policy else None,
+                    run_command=run_command,
+                )
+                tools = ToolRegistry()
+                for name in belt.names():
+                    tool = belt.get(name)
+                    if tool is not None and tool.policy_action in allowed:
+                        tools.register(tool)
+                result = AgentRunner(
+                    self.model_client, tools=tools, repo_root=root, use_worktree=False
+                ).run(objective)
+                result.run_id = run_id
+                return result
+            finally:
+                with suppress(SandboxError):
+                    loop.run(session.teardown(reason="run_complete"))
+
+
+def _agent_factory(
+    default_client: ModelClient,
+    *,
+    workspace_id: uuid.UUID | None = None,
+    repo_root: Path | None = None,
+) -> Callable[[ModelClient | None], _SubAgentRuntime]:
     """Build one subagent runtime per dispatch, on the per-role client when the
     coordinator routed one, else the run's shared default client."""
 
-    def factory(model_client: ModelClient | None = None) -> AgentRunner:
-        return AgentRunner(model_client or default_client)
+    def factory(model_client: ModelClient | None = None) -> _SubAgentRuntime:
+        return _SubAgentRuntime(
+            model_client or default_client, workspace_id or uuid.UUID(int=0), repo_root
+        )
 
     return factory
 
@@ -207,6 +313,16 @@ def run_supervised_objective(
         payload if isinstance(payload, AgentObjective) else AgentObjective.model_validate(payload)
     )
     objective = _with_parent_run_id(objective)
+    try:
+        objective = resolve_run_repository(objective)
+    except RepositoryUnavailable as exc:
+        return AgentRunResult(
+            run_id=_as_uuid(objective.context.get("parent_agent_run_id")),
+            task_id=objective.task_id,
+            status=RunStatus.FAILED,
+            error=str(exc),
+        )
+    repo_path = objective.context.get("repo_path")
 
     if _recording_enabled():
         logger.warning(
@@ -222,7 +338,11 @@ def run_supervised_objective(
 
     client = _resolve_model_client(model_client)
     deps = CoordinatorDeps(
-        agent_factory=_agent_factory(client),
+        agent_factory=_agent_factory(
+            client,
+            workspace_id=_as_uuid(objective.context.get("workspace_id")) or uuid.UUID(int=0),
+            repo_root=Path(repo_path) if repo_path else None,
+        ),
         sub_agent_sink=sub_agent_sink,
         settings=settings or CoordinatorSettings.from_env(),
     )

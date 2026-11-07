@@ -58,12 +58,13 @@ def build_model_client(
             redactor=redactor,
             client=client,
         )
-    if provider is ProviderName.openai:
+    if provider in (ProviderName.openai, ProviderName.openai_compatible):
         from forge_agent.providers.openai_client import OpenAIModelClient
 
         return OpenAIModelClient(
             model=config.model,
-            api_key=config.api_key,
+            # The SDK refuses an empty key; local servers ignore whatever is sent.
+            api_key=config.api_key or "unused",
             effort=config.effort,
             max_tokens=config.max_tokens,
             timeout_s=config.timeout_s,
@@ -96,6 +97,7 @@ def build_model_client(
             raise ModelClientError("local_cli provider requires a cli_name or bridge_url")
         return LocalCliModelClient(
             cli_name=config.cli_name,
+            model=config.cli_model,
             timeout_s=config.timeout_s,
             redactor=redactor,
             # `client` is the anthropic/openai SDK-client injection seam; reused

@@ -283,6 +283,18 @@ def test_routing_preview_trivial_task_is_junior_single(
     assert body["reasons"]
 
 
+def test_routing_preview_for_a_provider_without_a_tier_map_is_422(
+    client_for: Callable[[UserRole], TestClient],
+) -> None:
+    client = client_for(UserRole.VIEWER)
+    resp = client.post(
+        "/ao/routing-preview",
+        json={"kind": "doc", "priority": "low", "provider": "openai_compatible"},
+    )
+    assert resp.status_code == 422
+    assert "no model configured" in resp.json()["detail"]
+
+
 def test_routing_preview_senior_swarm_task(client_for: Callable[[UserRole], TestClient]) -> None:
     client = client_for(UserRole.VIEWER)
     resp = client.post(

@@ -714,7 +714,7 @@ def get_draft_binding(
                 "and a BYOK key"
             ),
         )
-    model = ModelRouter(provider=config.provider).resolve(_DRAFT_TIER)
+    model = ModelRouter(provider=config.provider, default_model=config.model).resolve(_DRAFT_TIER)
     try:
         client = get_auth_service().resolve_model_client(principal.workspace_id, model=model)
     except ModelClientError as exc:

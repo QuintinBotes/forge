@@ -18,22 +18,32 @@ __all__ = ["MODEL_PRICING", "cost_usd"]
 
 #: USD price per **million** tokens: ``model -> (input, output)``.
 #:
-#: Anthropic figures track the claude-api pricing table (Opus 4.x $5/$25, Sonnet
-#: $3/$15, Haiku $1/$5, Fable 5 $10/$50). OpenAI figures are representative list
-#: prices for the models an operator is most likely to select via
-#: ``FORGE_MODEL_NAME``; an absent entry simply costs ``0.0`` (see ``cost_usd``).
+#: Anthropic figures track the claude-api pricing table (cached 2026-10-06).
+#: OpenAI GPT-6 figures are list prices reported by third-party trackers at the
+#: October 2026 API launch, not read from OpenAI's own page; re-check before
+#: relying on them for billing. An absent entry simply costs ``0.0`` (see
+#: ``cost_usd``), which is also what a local model costs.
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     # --- Anthropic (claude-api reference table) ---------------------------- #
+    "claude-fable-5-1": (10.0, 50.0),
+    "claude-fable-5": (10.0, 50.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-opus-5": (5.0, 25.0),
     "claude-opus-4-8": (5.0, 25.0),
     "claude-opus-4-7": (5.0, 25.0),
     "claude-opus-4-6": (5.0, 25.0),
     "claude-opus-4-5": (5.0, 25.0),
-    "claude-sonnet-5": (3.0, 15.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-sonnet-5": (2.0, 10.0),
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-sonnet-4-5": (3.0, 15.0),
+    "claude-haiku-5-5": (0.10, 0.50),
     "claude-haiku-4-5": (1.0, 5.0),
-    "claude-fable-5": (10.0, 50.0),
-    # --- OpenAI (representative list prices) ------------------------------- #
+    # --- OpenAI ------------------------------------------------------------ #
+    "gpt-6-astra": (10.0, 50.0),
+    "gpt-6.1-sol": (2.0, 10.0),
+    "gpt-6-sol": (2.0, 10.0),
+    "gpt-6-luna": (0.10, 0.50),
     "gpt-4o": (2.5, 10.0),
     "gpt-4o-mini": (0.15, 0.6),
     "gpt-4.1": (2.0, 8.0),

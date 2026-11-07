@@ -13,8 +13,11 @@ from collections.abc import Callable, Iterator
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
+from forge_api.db import get_db
 from forge_api.main import create_app
+from forge_api.routers.agent import _agent_runner_singleton, get_agent_enqueue
 from forge_api.settings import get_settings
 
 
@@ -29,15 +32,22 @@ def _no_provider(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         "FORGE_ALLOW_SCRIPTED_AGENT",
     ):
         monkeypatch.delenv(var, raising=False)
+    _agent_runner_singleton.cache_clear()
     get_settings.cache_clear()
     yield
+    _agent_runner_singleton.cache_clear()
     get_settings.cache_clear()
 
 
 @pytest.fixture
-def client(authenticate_app: Callable[..., FastAPI]) -> Iterator[TestClient]:
+def client(
+    authenticate_app: Callable[..., FastAPI],
+    agent_session: Session,
+) -> Iterator[TestClient]:
     app = create_app()
     authenticate_app(app)
+    app.dependency_overrides[get_db] = lambda: agent_session
+    app.dependency_overrides[get_agent_enqueue] = lambda: lambda objective: None
     with TestClient(app) as c:
         yield c
 
@@ -79,16 +89,23 @@ def test_the_offline_stub_is_reachable_only_by_explicit_opt_in(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FORGE_ALLOW_SCRIPTED_AGENT", "1")
+    _agent_runner_singleton.cache_clear()
     get_settings.cache_clear()
 
     resp = _run(client)
 
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 202, resp.text
     payload = resp.json()
-    # It runs, but it says plainly that it did nothing...
-    assert "no model was called" in payload["output"]
-    # ...and claims no confidence in it.
-    assert all(step.get("confidence") is None for step in payload["steps"])
+    assert payload["status"] == "pending"
+    assert payload["output"] is None
+    assert payload["steps"] == []
+    # The opt-in still yields a clearly labelled, confidence-free offline runner.
+    from forge_api.routers.agent import _default_runner
+    from forge_contracts import AgentObjective
+
+    result = _default_runner().run(AgentObjective(objective="offline"))
+    assert "no model was called" in result.output
+    assert all(step.confidence is None for step in result.steps)
 
 
 def test_a_blank_bridge_token_is_a_503_not_a_500(monkeypatch: pytest.MonkeyPatch) -> None:

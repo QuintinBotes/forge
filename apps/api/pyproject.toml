@@ -17,6 +17,8 @@ dependencies = [
     "forge-marketplace",
     # F36 — Human Approval System SDK (unified gate service, authorizer, registry).
     "forge-approval",
+    # H1 — world model (bitemporal fact ledger: domain, repository, extraction).
+    "forge-world",
     # F38 — observability & cost metrics SDK (metrics facade, cost ledger seams,
     # usage meter, structured logging).
     "forge-obs",
@@ -65,6 +67,9 @@ forge-verify = "forge_api.cli_verify:main"
 # Time-Travel Runs: replay a persisted RunRecording cassette by substitution
 # and diff it against the tape (exit non-zero on divergence).
 forge-replay = "forge_api.cli_replay:main"
+# Operator commands plus the remote board/specs/approvals/runs reads desktop
+# clients such as tervin draw (spec L seam 2).
+forge-cli = "forge_api.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -75,3 +80,4 @@ packages = ["forge_api"]
 
 [tool.uv.sources]
 forge-integrations = { workspace = true }
+forge-world = { workspace = true }

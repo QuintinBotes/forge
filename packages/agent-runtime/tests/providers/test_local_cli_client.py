@@ -378,3 +378,29 @@ def test_model_id_is_namespaced_on_every_failure_path():
         assert response.model == "local-cli:claude", (
             f"{expected_reason} must still be metered as a local-CLI run"
         )
+
+
+def test_muse_reads_a_private_prompt_file_that_is_removed_afterwards():
+    seen = {}
+
+    def run(argv, **kwargs):
+        path = argv[argv.index("--prompt-file") + 1]
+        seen["path"] = path
+        seen["mode"] = os.stat(path).st_mode & 0o777
+        with open(path, encoding="utf-8") as fh:
+            seen["prompt"] = fh.read()
+        seen["model"] = argv[argv.index("--model") + 1]
+        seen["stdin"] = kwargs.get("input")
+        event = {"payload_type": "run.terminal.completed", "payload": {"text": ENVELOPE}}
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(event) + "\n", stderr="")
+
+    client = LocalCliModelClient(cli_name=CliName.muse, model="muse-spark-1.3", runner=run)
+    response = client.complete(_request())
+    assert response.stop_reason != "parse_error"
+    assert response.model == "local-cli:muse"
+    assert seen["mode"] == 0o600
+    assert seen["model"] == "muse-spark-1.3"
+    assert seen["stdin"] is None
+    assert "hi" in seen["prompt"]
+    assert not os.path.exists(seen["path"])
+    assert not os.path.exists(os.path.dirname(seen["path"]))

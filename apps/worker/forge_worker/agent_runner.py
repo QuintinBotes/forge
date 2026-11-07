@@ -28,6 +28,7 @@ import os
 import subprocess
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -49,9 +50,11 @@ from forge_agent.testing import ScriptedModelClient, finish_response
 from forge_agent.tools import ToolRegistry
 from forge_auth.redaction import SecretRedactor
 from forge_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient, RunStatus
-from forge_db.models import RunRecording
+from forge_db.models import AgentRun, RunRecording
+from forge_db.models.enums import RunStatus as DbRunStatus
 from forge_db.session import create_session_factory
 from forge_worker.celery_app import celery_app
+from forge_worker.dispatch import RepositoryUnavailable, resolve_run_repository
 from forge_worker.finalizer import GitHubAppCredentials, push_and_open_pr
 from forge_worker.reliability import ForgeTask
 from forge_worker.run_workspace import prepared_workspace
@@ -381,8 +384,18 @@ def run_agent_task(
         return result.model_dump(mode="json")
     parsed = AgentObjective.model_validate(objective)
     context = parsed.context
+    persisted_row = context.get("agent_run_id") is not None
     run_id = _opt_uuid(context.get("agent_run_id")) or uuid.uuid4()
     workspace_id = _opt_uuid(context.get("workspace_id")) or uuid.UUID(int=0)
+    try:
+        parsed = resolve_run_repository(parsed)
+    except RepositoryUnavailable as exc:
+        refused = AgentRunResult(
+            run_id=run_id, task_id=parsed.task_id, status=RunStatus.FAILED, error=str(exc)
+        )
+        if persisted_row:
+            _record_run_outcome(run_id, workspace_id, refused)
+        return refused.model_dump(mode="json")
     with prepared_workspace(parsed, run_id=run_id, workspace_id=workspace_id) as workspace:
         runner = build_agent_runner(
             tools=workspace.tools if workspace else None,
@@ -406,8 +419,38 @@ def run_agent_task(
             result.artifacts["branch"] = workspace.branch
     if workspace is not None and result.status == RunStatus.SUCCEEDED:
         _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
+    if persisted_row:
+        _record_run_outcome(run_id, workspace_id, result)
     _maybe_persist_recording(runner, objective)
     return result.model_dump(mode="json")
+
+
+def _record_run_outcome(
+    run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    result: AgentRunResult,
+    *,
+    session_factory: Callable[[], Session] | None = None,
+) -> None:
+    """Write a run's terminal state onto the ``agent_run`` row the API created.
+
+    Scoped to the row's own workspace, so a forged id from another tenant is a no-op.
+    A failure is logged, not raised: the result is still returned to the broker.
+    """
+    try:
+        factory = session_factory or create_session_factory()
+        with factory() as session:
+            row = session.get(AgentRun, run_id)
+            if row is None or row.workspace_id != workspace_id:
+                return
+            row.status = DbRunStatus(result.status.value)
+            row.steps = [step.model_dump(mode="json") for step in result.steps]
+            row.output = result.model_dump(mode="json")
+            row.confidence = result.confidence
+            row.completed_at = datetime.now(UTC)
+            session.commit()
+    except Exception:
+        logger.exception("failed to record the outcome of agent run %s", run_id)
 
 
 def _commits_ahead(repo_path: Path, base: str, branch: str) -> int:

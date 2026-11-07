@@ -300,22 +300,26 @@ def routing_preview(
     body: RoutingPreviewRequest, principal: ReaderDep, session: DbSession
 ) -> RoutingPreviewResponse:
     service = _service(session)
-    preview = service.preview_routing(
-        principal.workspace_id,
-        kind=body.kind,
-        priority=body.priority,
-        blast_radius=body.blast_radius,
-        file_count=body.file_count,
-        repo_count=body.repo_count,
-        requirement_count=body.requirement_count,
-        acceptance_criteria_count=body.acceptance_criteria_count,
-        touches_contracts=body.touches_contracts,
-        touches_security=body.touches_security,
-        dependency_count=body.dependency_count,
-        open_questions_count=body.open_questions_count,
-        underspecified=body.underspecified,
-        provider=body.provider,
-    )
+    try:
+        preview = service.preview_routing(
+            principal.workspace_id,
+            kind=body.kind,
+            priority=body.priority,
+            blast_radius=body.blast_radius,
+            file_count=body.file_count,
+            repo_count=body.repo_count,
+            requirement_count=body.requirement_count,
+            acceptance_criteria_count=body.acceptance_criteria_count,
+            touches_contracts=body.touches_contracts,
+            touches_security=body.touches_security,
+            dependency_count=body.dependency_count,
+            open_questions_count=body.open_questions_count,
+            underspecified=body.underspecified,
+            provider=body.provider,
+        )
+    except ValueError as exc:
+        # e.g. a provider with no built-in tier map and no overrides for it.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     return RoutingPreviewResponse(
         tier=preview.tier,
         strategy=preview.strategy,

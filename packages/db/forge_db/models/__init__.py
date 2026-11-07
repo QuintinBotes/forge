@@ -178,6 +178,18 @@ from forge_db.models.workflow_editor import (
     WorkflowDefinitionSource,
 )
 from forge_db.models.workspace import APIKey, User, Workspace
+from forge_db.models.world import (
+    WorldClass,
+    WorldDecision,
+    WorldDerivation,
+    WorldEntity,
+    WorldEntityMerge,
+    WorldEvidence,
+    WorldExtractionDrop,
+    WorldFact,
+    WorldProposal,
+    WorldRelation,
+)
 
 __all__ = [
     "CHUNK_TYPE_WEIGHTS",
@@ -346,5 +358,15 @@ __all__ = [
     "WorkflowRun",
     "WorkflowState",
     "Workspace",
+    "WorldClass",
+    "WorldDecision",
+    "WorldDerivation",
+    "WorldEntity",
+    "WorldEntityMerge",
+    "WorldEvidence",
+    "WorldExtractionDrop",
+    "WorldFact",
+    "WorldProposal",
+    "WorldRelation",
     "enums",
 ]

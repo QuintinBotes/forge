@@ -472,7 +472,7 @@ export function GuidedMode({ value, onChange, onSave, saving = false, dirty = fa
             <li
               key={nudge.id}
               data-testid={`guided-nudge-${nudge.id}`}
-              className="rounded-md border border-dashed border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning-foreground"
+              className="rounded-md border border-dashed border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-foreground"
             >
               {nudge.message}
             </li>

@@ -34,7 +34,7 @@ def test_anthropic_defaults() -> None:
     )
     assert config is not None
     assert config.provider is ProviderName.anthropic
-    assert config.model == "claude-opus-4-8"  # reference default
+    assert config.model == "claude-opus-5-5"  # reference default
     assert config.effort == "high"
     assert config.max_tokens == 16000
     assert config.prompt_cache is True
@@ -97,3 +97,58 @@ def test_bad_numeric_overrides_fall_back_to_defaults() -> None:
     )
     assert config is not None
     assert config.max_tokens == 16000
+
+
+def test_openai_compatible_needs_a_base_url_and_a_model_but_no_key() -> None:
+    base = {"FORGE_MODEL_PROVIDER": "openai_compatible", "FORGE_MODEL_NAME": "qwen3-coder"}
+    assert ModelClientConfig.from_env(base) is None
+    url = "http://localhost:11434/v1"
+    assert (
+        ModelClientConfig.from_env(
+            {"FORGE_MODEL_PROVIDER": "openai_compatible", "FORGE_MODEL_BASE_URL": url}
+        )
+        is None
+    )
+    config = ModelClientConfig.from_env({**base, "FORGE_MODEL_BASE_URL": url})
+    assert config is not None
+    assert config.provider is ProviderName.openai_compatible
+    assert (config.model, config.base_url, config.api_key) == ("qwen3-coder", url, "")
+
+
+def test_openai_compatible_never_borrows_the_openai_key() -> None:
+    config = ModelClientConfig.from_env(
+        {
+            "FORGE_MODEL_PROVIDER": "openai_compatible",
+            "FORGE_MODEL_NAME": "qwen3-coder",
+            "FORGE_MODEL_BASE_URL": "http://localhost:8000/v1",
+            "OPENAI_API_KEY": _OPENAI_KEY,
+        }
+    )
+    assert config is not None
+    assert config.api_key == ""
+    config = ModelClientConfig.from_env(
+        {
+            "FORGE_MODEL_PROVIDER": "openai_compatible",
+            "FORGE_MODEL_NAME": "qwen3-coder",
+            "FORGE_MODEL_BASE_URL": "http://localhost:8000/v1",
+            "FORGE_MODEL_API_KEY": "gateway-key",
+        }
+    )
+    assert config is not None
+    assert config.api_key == "gateway-key"
+
+
+def test_local_cli_model_is_read_and_flag_shaped_values_are_dropped() -> None:
+    def detect(**_: object) -> list:
+        from forge_agent.providers.local_cli.detect import CliName, DetectedCli
+
+        return [DetectedCli(name=CliName.muse, path="/usr/local/bin/muse")]
+
+    env = {"FORGE_MODEL_PROVIDER": "local_cli", "FORGE_LOCAL_CLI_MODEL": "muse-wonder-full-1.0"}
+    config = ModelClientConfig.from_env(env, detect=detect)
+    assert config is not None
+    assert config.cli_model == "muse-wonder-full-1.0"
+    for bad in ("--yolo", "-m", "a b", ""):
+        config = ModelClientConfig.from_env({**env, "FORGE_LOCAL_CLI_MODEL": bad}, detect=detect)
+        assert config is not None
+        assert config.cli_model is None

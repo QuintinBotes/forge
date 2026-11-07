@@ -186,6 +186,18 @@ EXPECTED_MODELS = [
     # per-workspace document frequencies + per-workspace corpus totals.
     "RetrievalTermStat",
     "RetrievalWorkspaceStat",
+    # world-model (H1): the bitemporal fact ledger — ontology, identity,
+    # append-only facts/evidence/drops/proofs, proposals, decisions.
+    "WorldClass",
+    "WorldRelation",
+    "WorldEntity",
+    "WorldFact",
+    "WorldEvidence",
+    "WorldExtractionDrop",
+    "WorldProposal",
+    "WorldEntityMerge",
+    "WorldDerivation",
+    "WorldDecision",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.
