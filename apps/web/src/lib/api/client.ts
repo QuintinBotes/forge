@@ -117,9 +117,20 @@ import type {
   Sprint,
   SprintDTO,
   SprintReport,
+  ChangesOut,
+  ConflictsOut,
+  EntityListOut,
+  EntityProfileOut,
+  ProposalDecisionIn,
+  ProposalDecisionOut,
+  ProposalListOut,
   TaskDTO,
   TaskStatus,
   ValidationReport,
+  WorldChangeQuery,
+  WorldEntityQuery,
+  WorldProposalQuery,
+  WorldTimeQuery,
   VelocityDashboard,
   HrdDiscoverRequest,
   HrdDiscoverResponse,
@@ -1495,6 +1506,62 @@ export class ForgeApiClient {
   listWorkflowRevisions(name: string): Promise<WorkflowRevisionSummary[]> {
     return this.request<WorkflowRevisionSummary[]>(
       `/workflow/editor/definitions/${encodeURIComponent(name)}/revisions`,
+    );
+  }
+
+  // --- World model (bitemporal knowledge graph, /world router) ------------ //
+
+  /** Search entities by name/label on both clocks (`at` / `as_of`). */
+  listWorldEntities(query?: WorldEntityQuery): Promise<EntityListOut> {
+    return this.request<EntityListOut>("/world/entities", {
+      query: query as RequestOptions["query"],
+    });
+  }
+
+  /** One entity's profile: names plus its subject- and object-side facts. */
+  getWorldEntity(
+    entityId: string,
+    query?: WorldTimeQuery,
+  ): Promise<EntityProfileOut> {
+    return this.request<EntityProfileOut>(
+      `/world/entities/${encodeURIComponent(entityId)}`,
+      { query: query as RequestOptions["query"] },
+    );
+  }
+
+  /** Record-axis events for an entity: asserted / invalidated (with reason). */
+  getWorldEntityChanges(
+    entityId: string,
+    query?: WorldChangeQuery,
+  ): Promise<ChangesOut> {
+    return this.request<ChangesOut>(
+      `/world/entities/${encodeURIComponent(entityId)}/changes`,
+      { query: query as RequestOptions["query"] },
+    );
+  }
+
+  /** Functional conflicts and reasoning violations at a world time. */
+  listWorldConflicts(query?: { at?: string }): Promise<ConflictsOut> {
+    return this.request<ConflictsOut>("/world/conflicts", {
+      query: query as RequestOptions["query"],
+    });
+  }
+
+  /** The proposal review queue, newest first, optionally by status. */
+  listWorldProposals(query?: WorldProposalQuery): Promise<ProposalListOut> {
+    return this.request<ProposalListOut>("/world/proposals", {
+      query: query as RequestOptions["query"],
+    });
+  }
+
+  /** Accept or reject a proposal (people decide; never its proposer). */
+  decideWorldProposal(
+    proposalId: string,
+    body: ProposalDecisionIn,
+  ): Promise<ProposalDecisionOut> {
+    return this.request<ProposalDecisionOut>(
+      `/world/proposals/${encodeURIComponent(proposalId)}/decision`,
+      { method: "POST", body },
     );
   }
 }
