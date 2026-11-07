@@ -112,7 +112,7 @@ export function DepthRoadmap({
                   key={m.id}
                   data-testid={`milestone-${m.id}`}
                   title={m.dueAt ?? m.label}
-                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-[11px] text-warning-foreground"
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-[11px] text-foreground"
                 >
                   <Flag aria-hidden className="h-3 w-3 text-warning" />
                   <span className="truncate">{m.label}</span>
