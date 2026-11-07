@@ -1,10 +1,10 @@
 # J + K — Context, memory and automation lines (lore++)
 
 **Date:** 2026-11-07
-**Status:** DRAFT — scope and interfaces only. Each becomes implementation-ready after H1 and I land.
+**Status:** J: Approved, implementation-ready (decisions in §2.5). K: DRAFT — scope and interfaces only.
 **Depends on:** J: H1, I. K: G, J.
 **Blocks:** programme acceptance (unified-factory-programme §5 items 4–5)
-**Decisions:** ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0014
+**Decisions:** ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0014, ADR-0017, ADR-0018
 
 ---
 
@@ -61,6 +61,56 @@ named entities and decisions from them into `forge_world`. A code-symbol index m
 - A port of lore's 60-question agent benchmark runs in `forge_eval`. **Bar: ≥ 0.86** (utopia's
   score on lore's set), hallucination ≤ 7%, p50 ≤ 17.8k tokens. A regression fails CI.
 
+### 2.5 Decisions (settled 2026-11-07)
+
+**Lexical leg — real BM25 on Postgres, no new dependency (ADR-0017).** Today `Bm25Store` ranks with
+`ts_rank` on Postgres (not BM25; lore has the same flaw) and with real Okapi BM25 only on SQLite.
+J replaces the Postgres path with *candidate-then-rescore*:
+
+1. Candidates: chunks matching an **OR** tsquery of the query terms (`to_tsquery('english', t1 | t2 …)`,
+   built from the existing `tokenize`), ordered by `ts_rank_cd`, limit 200, workspace/scope filtered.
+   OR semantics keeps BM25's recall; `plainto_tsquery` (AND) loses it.
+2. Rescore the candidates with exact Okapi BM25 (k1, b as today) using corpus statistics kept
+   incrementally at index time in `retrieval_term_stats(workspace_id, term, df)` and
+   `retrieval_chunk.token_count`, plus a per-workspace `chunk_count`/`total_tokens` row. Upserts and
+   deletes adjust the counts in the same transaction as the chunk write.
+3. One shared `bm25_score(query_terms, doc_terms, df, n_docs, avg_len)` pure function serves both
+   dialects, so SQLite and Postgres rank identically on the same corpus (tested).
+
+Migration slug: `retrieval_bm25_stats` (next free number, ADR-0009), with a backfill over existing chunks.
+
+**Vector leg and reranker — configured or explicitly absent, never faked (ADR-0018).**
+
+- Embedder: `HttpEmbeddingClient` (OpenAI-compatible) from `FORGE_EMBEDDING_MODEL`,
+  `FORGE_EMBEDDING_BASE_URL` (SSRF-validated with the existing `url_validator` seam),
+  `FORGE_EMBEDDING_DIMENSION` (must equal the `retrieval_chunk.embedding` column's
+  `EMBEDDING_DIM`, else startup refuses), and the key from `FORGE_EMBEDDING_API_KEY`.
+  `SentenceTransformerEmbeddingClient` remains selectable with `FORGE_EMBEDDING_PROVIDER=local`.
+- With no embedder configured: search runs **BM25-only** and every response carries
+  `legs: ["bm25"]` and `vector_leg: "unconfigured"`; indexing stores chunks without embeddings; any
+  route that requires vectors returns 503. `DeterministicEmbeddingClient` is constructed only by
+  tests (a repository test forbids it outside test code, like `example.invalid`).
+- Reranker: default `FORGE_RERANK_PROVIDER` becomes `none` (no rerank, reported as
+  `rerank: "off"`); `fixture` is test-only; `jina`/`cohere`/`selfhosted` unchanged.
+
+**`context_refs`.** A JSON list on `agent_run` of `{"kind": "fact"|"chunk"|"spec"|"memory", "id": str}`,
+written by `assemble_context` when called with an `agent_run_id`, and copied into the run result
+artifacts. Migration slug `agent_run_context_refs`.
+
+**Memory and outcome feedback.**
+
+- `world_fact_feedback(fact_id, run_id, outcome ∈ {reinforced, weakened}, created_at)` — append-only.
+- Effective confidence (computed on read, never stored):
+  `min(1, confidence × 0.5^(age_days / half_life_days) × 1.1^reinforced × 0.8^weakened)` with
+  `half_life_days = 30` for `layer = memory` and no decay for other layers.
+- Trigger: the GitHub `pull_request` webhook already handled by the integration router. A closed PR
+  whose head branch is `forge/run-<hex>` (the finalizer's naming) resolves to its `agent_run`;
+  `merged = true` writes `reinforced` for every fact/memory ref in `context_refs`, otherwise
+  `weakened`. Idempotent per `(run_id, fact_id)`.
+
+**Not now.** `lore_*` MCP aliases: deferred until a lore user asks. The benchmark port (§2.4) follows
+J's implementation as its own task.
+
 ## 3. K — Automation lines
 
 Lines are forge workflow-DSL definitions with `agent`, `service` and `human` stations, distributed
@@ -81,12 +131,12 @@ as signed `workflow_template` marketplace packages (the kind is reserved today).
 Measured bars on a dogfood repository over a comparable batch: merged-PR yield above lore's 43% and
 all-in cost per merged PR below lore's ~$105 (self-reported by lore; measured by programme C/D).
 
-## 4. Interfaces to settle before implementation-ready
+## 4. Interfaces to settle before K is implementation-ready
 
 - The DSL station kinds (`agent`, `service`, `human`) and their persistence in `workflow-engine`.
 - The `workflow_template` installer in `forge_marketplace`.
-- The `context_refs` column on `agent_run` (migration: next free number, ADR-0009).
-- Whether to ship `lore_*` MCP aliases for existing lore users (cheap; decided by demand).
+
+(J's open interfaces are settled in §2.5.)
 
 ## 5. Out of scope
 

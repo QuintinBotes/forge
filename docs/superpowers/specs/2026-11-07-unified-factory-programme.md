@@ -4,7 +4,7 @@
 **Status:** Approved (decomposition and sequencing)
 **Extends:** `2026-09-19-software-factory-programme.md` (A–F). Its six principles bind here too.
 **Architecture:** `docs/architecture/unified-factory.md`
-**Decisions:** `docs/architecture/adr/0001`–`0016`
+**Decisions:** `docs/architecture/adr/0001`–`0018`
 **Research:** `research_notes/Forge unified software factory plan/` on the operator's machine (not
 tracked); summarised in §2.
 
