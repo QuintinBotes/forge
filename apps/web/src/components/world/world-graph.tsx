@@ -188,7 +188,8 @@ export function WorldGraph({
     <div className="flex flex-col gap-3">
       <svg
         viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
-        className="w-full rounded-lg border border-border bg-card"
+        // Never drawn larger than its viewBox, so a wide column cannot blow it up.
+        className="max-h-[480px] w-full rounded-lg border border-border bg-card"
         role="group"
         aria-label={`Graph of ${focal.label} and its neighbours`}
       >

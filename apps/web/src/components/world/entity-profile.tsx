@@ -22,7 +22,10 @@ import {
   formatConfidence,
   formatTimestamp,
   formatValidRange,
+  shortId,
 } from "./world-format";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface EntityProfileProps {
   profile: EntityProfileOut;
@@ -136,8 +139,9 @@ function FactsTable({
                   <td className="py-2 pr-3">
                     {formatConfidence(fact.confidence)}
                   </td>
-                  <td className="py-2 pr-3">
-                    {fact.source_kind} · {fact.actor}
+                  <td className="py-2 pr-3" title={fact.actor}>
+                    {fact.source_kind} ·{" "}
+                    {UUID.test(fact.actor) ? shortId(fact.actor) : fact.actor}
                   </td>
                   <td className="py-2">
                     <Button
