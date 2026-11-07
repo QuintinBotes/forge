@@ -67,9 +67,14 @@ named entities and decisions from them into `forge_world`. A code-symbol index m
 `ts_rank` on Postgres (not BM25; lore has the same flaw) and with real Okapi BM25 only on SQLite.
 J replaces the Postgres path with *candidate-then-rescore*:
 
-1. Candidates: chunks matching an **OR** tsquery of the query terms (`to_tsquery('english', t1 | t2 …)`,
+1. Candidates: chunks matching an **OR** tsquery of the query terms (`to_tsquery('simple', t1 | t2 …)`,
    built from the existing `tokenize`), ordered by `ts_rank_cd`, limit 200, workspace/scope filtered.
-   OR semantics keeps BM25's recall; `plainto_tsquery` (AND) loses it.
+   OR semantics keeps BM25's recall; `plainto_tsquery` (AND) loses it. The stored `tsv` is
+   `to_tsvector('simple', ' '.join(tokenize(content)))`, so candidates and the rescorer see the same
+   tokens: the `english` config kept `self.retry` or `v1.2.3` as one lexeme, stemmed, and dropped
+   stopwords, so Postgres missed chunks SQLite found (review of the first pass, 2026-11-07).
+   Queries drop one shared English stopword list on both dialects; a stopword-only query returns
+   nothing on either.
 2. Rescore the candidates with exact Okapi BM25 (k1, b as today) using corpus statistics kept
    incrementally at index time in `retrieval_term_stats(workspace_id, term, df)` and
    `retrieval_chunk.token_count`, plus a per-workspace `chunk_count`/`total_tokens` row. Upserts and
