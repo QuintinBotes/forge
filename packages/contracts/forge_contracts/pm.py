@@ -71,6 +71,7 @@ class PMProvider(StrEnum):
     asana = "asana"
     monday = "monday"
     github_projects = "github_projects"
+    github_issues = "github_issues"
     clickup = "clickup"
     trello = "trello"
     gitlab = "gitlab"

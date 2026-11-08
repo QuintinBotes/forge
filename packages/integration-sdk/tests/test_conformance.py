@@ -42,6 +42,26 @@ def test_pm_adapter_conforms() -> None:
     assert isinstance(adapter, PMAdapterProtocol)
 
 
+def test_github_issues_conforms_to_async_pm_contract() -> None:
+    from uuid import uuid4
+
+    from forge_contracts.pm import AdapterContext, PMAdapter, PMProvider
+    from forge_integrations.pm import GitHubIssuesAdapter
+    from forge_integrations.pm.base import BaseAdapter
+
+    ctx = AdapterContext(
+        connection_id=uuid4(),
+        workspace_id=uuid4(),
+        provider=PMProvider.github_issues,
+        external_project_key="acme/widgets",
+        external_project_id="10",
+    )
+    with GitHubClient(token="t") as client:
+        adapter = GitHubIssuesAdapter(client, ctx)
+        assert isinstance(adapter, PMAdapter)
+        assert isinstance(adapter, BaseAdapter)
+
+
 def test_public_exports_present() -> None:
     import forge_integrations as mod
 
