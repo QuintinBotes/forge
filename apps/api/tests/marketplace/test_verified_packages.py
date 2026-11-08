@@ -145,7 +145,7 @@ def test_tampered_manifest_refused_on_update(
         assert row.installed_version == "1.2.0"  # unchanged
 
 
-@pytest.mark.parametrize("kind", ["workflow_template", "policy_template"])
+@pytest.mark.parametrize("kind", ["policy_template"])  # workflow_template is supported
 def test_reserved_kind_install_is_422_with_audit_row(
     admin_client: TestClient, registry, session_factory, kind: str
 ) -> None:
@@ -158,7 +158,7 @@ def test_reserved_kind_install_is_422_with_audit_row(
     assert any(r.listing_slug == "some-line" and r.operation == "install" for r in rows)
 
 
-@pytest.mark.parametrize("kind", ["workflow_template", "policy_template"])
+@pytest.mark.parametrize("kind", ["policy_template"])  # workflow_template is supported
 def test_reserved_kind_publish_is_422_with_audit_row(
     admin_client: TestClient, registry, session_factory, kind: str
 ) -> None:

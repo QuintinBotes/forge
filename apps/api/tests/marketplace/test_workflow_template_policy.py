@@ -3,87 +3,36 @@
 ``workflow_template`` installs and updates only with a ``verified`` signature,
 at every registry trust level, and never from a yanked version.
 ``acknowledge_unverified`` never helps, including the update path's forced one.
-
-The kind stays reserved until its installer lands (P1), so these tests make it
-supported for the duration of a test: they patch the service's kind sets and
-register a stub validator in ``INSTALLERS``. The per-kind apply/update dispatch
-has no ``workflow_template`` branch yet, so the "allowed" cases assert that the
-request got past the policy, not that it installed.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 
 import pytest
-from conftest import WS_ID, FakeGateway, Keypair, count_rows, make_skill_version
+from conftest import (
+    LINE_SLUG,
+    WS_ID,
+    FakeGateway,
+    Keypair,
+    count_rows,
+    make_line_version,
+    make_skill_version,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from forge_api.services import marketplace_service
-from forge_api.services.marketplace_service import InstallBlockedError, MarketplaceService
+from forge_api.services.marketplace_service import MarketplaceService
 from forge_db.models.marketplace import (
     MarketplaceAuditLog,
     MarketplaceInstallation,
     MarketplaceRegistry,
 )
-from forge_marketplace.installer import INSTALLERS, ValidatedArtifact
-from forge_marketplace.manifest import compute_manifest_hash
-from forge_marketplace.models import ArtifactKind, InstallRequest, RegistryIndexVersion
-from forge_marketplace.packaging import build_package
+from forge_db.models.workflow_editor import WorkflowDefinition
+from forge_marketplace.models import ArtifactKind, InstallRequest
 
-SLUG = "impl-loop"
-
-
-class _StubWorkflowInstaller:
-    kind = ArtifactKind.workflow_template
-    target_kind = "workflow_definition"
-
-    def validate(self, artifact: dict) -> ValidatedArtifact:
-        return ValidatedArtifact(target_kind=self.target_kind, resolved_config=dict(artifact))
-
-
-class _ReachedApply(Exception):
-    pass
-
-
-@pytest.fixture(autouse=True)
-def workflow_template_supported(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        marketplace_service, "_RESERVED_KINDS", frozenset({ArtifactKind.policy_template})
-    )
-    monkeypatch.setattr(
-        marketplace_service,
-        "_SUPPORTED_KINDS",
-        marketplace_service._SUPPORTED_KINDS | {ArtifactKind.workflow_template},
-    )
-    monkeypatch.setitem(INSTALLERS, ArtifactKind.workflow_template, _StubWorkflowInstaller())  # type: ignore[arg-type]
-
-
-def _wt_version(
-    keypair: Keypair, *, version: str = "1.0.0", sign: bool = True, yanked: bool = False
-):
-    manifest = build_package(
-        kind=ArtifactKind.workflow_template,
-        artifact={"name": SLUG, "title": "Impl loop", "dsl_yaml": f"workflow: {SLUG}\n"},
-        slug=SLUG,
-        name=SLUG,
-        version=version,
-        summary="implementation loop",
-        validate_artifact=False,
-    )
-    mh = compute_manifest_hash(manifest)
-    return manifest, RegistryIndexVersion(
-        version=version,
-        content_hash=manifest.content_hash,
-        manifest_hash=mh,
-        signature=keypair.sign(mh) if sign else None,
-        manifest_uri=f"workflow_template/{SLUG}/{version}/forge-package.yaml",
-        published_at=datetime(2026, 6, 20, tzinfo=UTC),
-        yanked=yanked,
-        yanked_reason="withdrawn" if yanked else None,
-    )
+SLUG = LINE_SLUG
+_wt_version = make_line_version
 
 
 def _registry(session_factory, *, trust_level: str, public_key: str | None):
@@ -183,26 +132,21 @@ def test_verified_install_passes_the_policy(
     gateway: FakeGateway,
     keypair: Keypair,
     session_factory,
-    monkeypatch: pytest.MonkeyPatch,
     trust_level: str,
 ) -> None:
     reg = _registry(session_factory, trust_level=trust_level, public_key=keypair.public_b64)
     gateway.add(*_wt_version(keypair))
 
-    def _reached(*_args, **_kwargs):
-        raise _ReachedApply
-
-    monkeypatch.setattr(MarketplaceService, "_apply", _reached)
-    with pytest.raises(_ReachedApply):
-        service.install(
-            workspace_id=WS_ID,
-            actor="admin",
-            actor_user_id=None,
-            request=InstallRequest(
-                registry_id=reg.id, kind=ArtifactKind.workflow_template, slug=SLUG
-            ),
-        )
+    result = service.install(
+        workspace_id=WS_ID,
+        actor="admin",
+        actor_user_id=None,
+        request=InstallRequest(registry_id=reg.id, kind=ArtifactKind.workflow_template, slug=SLUG),
+    )
+    assert (result.target_kind, result.status.value) == ("workflow_definition", "installed")
     assert not _denied(session_factory, "signature_required")
+    with session_factory() as s:
+        assert s.get(WorkflowDefinition, result.target_object_id) is not None
 
 
 def _seed_installation(session_factory, registry, keypair: Keypair) -> uuid.UUID:
@@ -253,17 +197,26 @@ def test_update_refused_despite_forced_acknowledgement(
 
 
 def test_verified_update_passes_the_policy(
-    service: MarketplaceService, registry, gateway: FakeGateway, keypair: Keypair, session_factory
+    service: MarketplaceService, registry, gateway: FakeGateway, keypair: Keypair
 ) -> None:
-    installation_id = _seed_installation(session_factory, registry, keypair)
+    gateway.add(*_wt_version(keypair))
+    installed = service.install(
+        workspace_id=WS_ID,
+        actor="admin",
+        actor_user_id=None,
+        request=InstallRequest(
+            registry_id=registry.id, kind=ArtifactKind.workflow_template, slug=SLUG
+        ),
+    )
     gateway.add(*_wt_version(keypair, version="1.1.0"))
 
-    with pytest.raises(InstallBlockedError) as exc:
-        service.update_installation(
-            workspace_id=WS_ID, actor="admin", installation_id=installation_id, version="1.1.0"
-        )
-    # Past the kind policy; stopped at the per-kind dispatch, whose branch lands in P1.
-    assert exc.value.error_code == "unknown_kind"
+    result = service.update_installation(
+        workspace_id=WS_ID,
+        actor="admin",
+        installation_id=installed.installation_id,
+        version="1.1.0",
+    )
+    assert (result.version, result.target_object_id) == ("1.1.0", installed.target_object_id)
 
 
 def test_yanked_skill_still_installs_with_a_warning(
