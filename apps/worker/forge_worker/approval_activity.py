@@ -12,6 +12,7 @@ on the database repository — one pending request per ``(run, gate)``
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -43,7 +44,9 @@ def _task_title(factory: sessionmaker[Session], task_id: uuid.UUID) -> str | Non
         return task.title if task is not None else None
 
 
-def make_create_approval_fn(factory: sessionmaker[Session]):
+def make_create_approval_fn(
+    factory: sessionmaker[Session],
+) -> Callable[[ApprovalInput], Awaitable[uuid.UUID]]:
     """Build the async ``forge.create_approval`` body bound to ``factory``."""
 
     async def _create_approval(inp: ApprovalInput) -> uuid.UUID:
