@@ -11,7 +11,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
-import { useCreateWorkflowDefinition } from "@/lib/api/workflow";
+import {
+  useCreateWorkflowDefinition,
+  useForkWorkflowDefinition,
+} from "@/lib/api/workflow";
 import type { WorkflowDefinitionDetail } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
@@ -24,29 +27,33 @@ export interface NewWorkflowDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: (definition: WorkflowDefinitionDetail) => void;
+  /** Copy this definition (a marketplace line) to the new name instead of a starter. */
+  forkFrom?: string | null;
   client?: ForgeApiClient;
 }
 
-function createErrorMessage(error: unknown): string {
+function createErrorMessage(error: unknown, verb: string): string {
   if (error instanceof ApiError) {
     if (error.status === 403)
-      return "You need admin access to create a workflow.";
+      return `You need admin access to ${verb} a workflow.`;
     if (error.status === 409) return "A workflow with that name already exists.";
     if (error.status === 422)
       return "That name is invalid. Use lower_snake_case.";
   }
-  return "Couldn't create the workflow. Please try again.";
+  return `Couldn't ${verb} the workflow. Please try again.`;
 }
 
 /**
  * Create a new custom workflow — the empty-state first action. Seeds an initial
  * one-state draft server-side; the editor opens on it so the author can start
- * adding transitions immediately.
+ * adding transitions immediately. With `forkFrom`, the same name + title form
+ * copies that definition instead (how a marketplace line is customized).
  */
 export function NewWorkflowDialog({
   open,
   onOpenChange,
   onCreated,
+  forkFrom = null,
   client = apiClient,
 }: NewWorkflowDialogProps) {
   const nameId = useId();
@@ -57,6 +64,9 @@ export function NewWorkflowDialog({
   const [error, setError] = useState<string | null>(null);
 
   const create = useCreateWorkflowDefinition(client);
+  const fork = useForkWorkflowDefinition(client);
+  const pending = create.isPending || fork.isPending;
+  const verb = forkFrom ? "fork" : "create";
 
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
@@ -69,23 +79,22 @@ export function NewWorkflowDialog({
   }
 
   const nameValid = NAME_PATTERN.test(name);
-  const canSubmit =
-    nameValid && title.trim().length > 0 && !create.isPending;
+  const canSubmit = nameValid && title.trim().length > 0 && !pending;
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!canSubmit) return;
     setError(null);
-    create.mutate(
-      { name: name.trim(), title: title.trim() },
-      {
-        onSuccess: (definition) => {
-          onCreated?.(definition);
-          onOpenChange(false);
-        },
-        onError: (err) => setError(createErrorMessage(err)),
+    const body = { name: name.trim(), title: title.trim() };
+    const callbacks = {
+      onSuccess: (definition: WorkflowDefinitionDetail) => {
+        onCreated?.(definition);
+        onOpenChange(false);
       },
-    );
+      onError: (err: Error) => setError(createErrorMessage(err, verb)),
+    };
+    if (forkFrom) fork.mutate({ source: forkFrom, body }, callbacks);
+    else create.mutate(body, callbacks);
   }
 
   return (
@@ -94,11 +103,12 @@ export function NewWorkflowDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-display">
             <Workflow aria-hidden className="h-5 w-5 text-primary" />
-            New workflow
+            {forkFrom ? "Fork workflow" : "New workflow"}
           </DialogTitle>
           <DialogDescription>
-            Creates a custom workflow with a starter draft. You can add states and
-            transitions right after.
+            {forkFrom
+              ? `Copies ${forkFrom} to a new, editable workflow. The installed one stays as it is.`
+              : "Creates a custom workflow with a starter draft. You can add states and transitions right after."}
           </DialogDescription>
         </DialogHeader>
 
@@ -152,7 +162,13 @@ export function NewWorkflowDialog({
               disabled={!canSubmit}
               className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
             >
-              {create.isPending ? "Creating…" : "Create workflow"}
+              {forkFrom
+                ? fork.isPending
+                  ? "Forking…"
+                  : "Fork workflow"
+                : create.isPending
+                  ? "Creating…"
+                  : "Create workflow"}
             </button>
           </div>
         </form>

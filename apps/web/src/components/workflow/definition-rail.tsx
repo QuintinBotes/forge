@@ -116,6 +116,14 @@ function OriginBadge({
       </Badge>
     );
   }
+  if (origin === "marketplace") {
+    return (
+      <Badge className="border-border bg-muted text-muted-foreground">
+        <Lock className="h-2.5 w-2.5" aria-hidden />
+        Marketplace
+      </Badge>
+    );
+  }
   if (origin === "bundled_fork") {
     return (
       <Badge className="border-border bg-muted text-muted-foreground">Fork</Badge>

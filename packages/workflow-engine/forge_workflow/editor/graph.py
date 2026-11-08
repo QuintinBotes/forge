@@ -13,21 +13,32 @@ Round-trip guarantees (AC 1):
 * ``yaml_to_graph(graph_to_yaml(graph)) == graph`` (fixed point — layout is
   deterministic via :func:`auto_layout` and edge ids are positional, so the
   parsed-back graph reproduces the original exactly).
+
+DSL v2 lines (spec K §4.3): the graph carries ``dsl_version``, ``initial``,
+``terminals``, ``budget`` and ``concurrency``, and each station state's node
+carries its ``station`` (the station model dumped as a mapping); the node kind
+is the station's kind. ``parse_line`` of the YAML round-trips without loss. These
+fields are ``None`` on a v1 graph and left out of its dump, so v1 graphs and YAML
+are byte-identical to before.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from forge_contracts import (
     EscalationPolicy,
+    LineDefinition,
     RetryPolicy,
     WorkflowDefinition,
     WorkflowTransition,
+    parse_line,
 )
+from forge_workflow.dsl import _V2_ONLY_KEYS
 from forge_workflow.exceptions import WorkflowDefinitionError
 
 #: States that complete a run (no forward transition). Matches both bundled
@@ -52,6 +63,13 @@ HUMAN_GATE_STATES: frozenset[str] = frozenset(
 _INITIAL_STATES: frozenset[str] = frozenset({"created", "alert_received"})
 
 
+NodeKind = Literal["normal", "initial", "terminal", "human_gate", "agent", "service", "human"]
+
+
+def _is_none(value: object) -> bool:
+    return value is None
+
+
 class NodeLayout(BaseModel):
     """Canvas position of a node (UI-only; persisted in ``graph_json``)."""
 
@@ -64,8 +82,10 @@ class StateNode(BaseModel):
 
     id: str
     label: str | None = None
-    kind: Literal["normal", "initial", "terminal", "human_gate"] = "normal"
+    kind: NodeKind = "normal"
     layout: NodeLayout
+    #: DSL v2: the state's station as a mapping (``None`` on v1 and on terminals).
+    station: dict[str, Any] | None = Field(default=None, exclude_if=_is_none)
 
 
 class TransitionEdge(BaseModel):
@@ -102,6 +122,12 @@ class WorkflowGraph(BaseModel):
     escalation_policy: EscalationPolicy = Field(default_factory=EscalationPolicy)
     nodes: list[StateNode] = Field(default_factory=list)
     edges: list[TransitionEdge] = Field(default_factory=list)
+    # DSL v2 line header (spec K §4.1); all None on a v1 graph.
+    dsl_version: Literal["2"] | None = Field(default=None, exclude_if=_is_none)
+    initial: str | None = Field(default=None, exclude_if=_is_none)
+    terminals: dict[str, str] | None = Field(default=None, exclude_if=_is_none)
+    budget: dict[str, Any] | None = Field(default=None, exclude_if=_is_none)
+    concurrency: dict[str, Any] | None = Field(default=None, exclude_if=_is_none)
 
 
 # --------------------------------------------------------------------------- #
@@ -184,7 +210,7 @@ def auto_layout(nodes: list[StateNode], edges: list[TransitionEdge]) -> dict[str
 # --------------------------------------------------------------------------- #
 
 
-def _ordered_states(transitions: list[WorkflowTransition]) -> list[str]:
+def _ordered_states(transitions: Sequence[WorkflowTransition]) -> list[str]:
     """Distinct states in first-appearance order (from before to)."""
     seen: list[str] = []
     for t in transitions:
@@ -207,6 +233,8 @@ def definition_to_graph(
     rule (positional ids). Node kinds are derived; positions come from ``layout``
     or :func:`auto_layout`.
     """
+    if isinstance(defn, LineDefinition):
+        return _line_to_graph(defn, title=title, description=description, layout=layout)
     edges: list[TransitionEdge] = []
     for index, t in enumerate(defn.transitions):
         edges.append(
@@ -258,11 +286,122 @@ def definition_to_graph(
     )
 
 
+def _line_to_graph(
+    defn: LineDefinition,
+    *,
+    title: str,
+    description: str | None,
+    layout: dict[str, NodeLayout] | None,
+) -> WorkflowGraph:
+    # exclude_unset keeps exactly what the author wrote (defaults stay implicit).
+    doc = defn.model_dump(mode="json", by_alias=True, exclude_unset=True)
+    stations: dict[str, dict[str, Any]] = doc.get("stations", {})
+    edges = [
+        TransitionEdge(
+            id=f"e{index}",
+            from_state=t.from_state,
+            to_state=t.to_state,
+            when=t.when,
+            condition=t.condition,
+        )
+        for index, t in enumerate(defn.transitions)
+    ]
+    # Mapping order is not part of a line, so the node order must not depend on it.
+    states = dict.fromkeys(
+        [
+            defn.initial,
+            *_ordered_states(defn.transitions),
+            *sorted(stations),
+            *sorted(defn.terminals),
+        ]
+    )
+    kinds: dict[str, NodeKind] = dict.fromkeys(defn.all_terminals, "terminal")
+    kinds.update({s: station["kind"] for s, station in stations.items()})
+    nodes = [
+        StateNode(
+            id=s,
+            kind=kinds.get(s, "normal"),
+            station=stations.get(s),
+            layout=NodeLayout(x=0, y=0),
+        )
+        for s in states
+    ]
+    positions = layout or auto_layout(nodes, edges)
+    for node in nodes:
+        node.layout = positions.get(node.id, NodeLayout(x=0, y=0))
+    return WorkflowGraph(
+        name=defn.name,
+        version=defn.version,
+        title=title,
+        description=description,
+        nodes=nodes,
+        edges=edges,
+        dsl_version="2",
+        initial=defn.initial,
+        terminals=doc.get("terminals"),
+        budget=doc.get("budget"),
+        concurrency=doc.get("concurrency"),
+    )
+
+
+def _line_document(graph: WorkflowGraph) -> dict[str, Any]:
+    """The DSL v2 mapping for a v2 graph. Unvalidated, so an invalid draft still saves."""
+    document: dict[str, Any] = {
+        "workflow": graph.name,
+        "version": graph.version,
+        "dsl_version": "2",
+        "initial": graph.initial,
+    }
+    for key in ("terminals", "budget", "concurrency"):
+        value = getattr(graph, key)
+        if value is not None:
+            document[key] = value
+    document["stations"] = {n.id: n.station for n in graph.nodes if n.station is not None}
+    document["transitions"] = [_transition_to_dict(e) for e in graph.edges]
+    return document
+
+
+def graph_to_line(graph: WorkflowGraph) -> LineDefinition:
+    """Parse a v2 graph as a line. Raises ``pydantic.ValidationError`` on a bad shape."""
+    return parse_line(_line_document(graph))
+
+
+def canonical_graph(graph: WorkflowGraph) -> WorkflowGraph:
+    """A v2 graph rebuilt from the line it describes, keeping the client's layout.
+
+    Node kinds come from the stations and there is one node per state, so the
+    canvas that is stored (and published) is exactly the line that runs (spec K
+    §4.3). A v1 graph, or a v2 graph that does not parse yet, is returned as is;
+    the latter saves as an invalid draft and cannot publish.
+    """
+    if graph.dsl_version != "2":
+        return graph
+    try:
+        line = graph_to_line(graph)
+    except ValidationError:
+        return graph
+    layout = {node.id: node.layout for node in graph.nodes}
+    rebuilt = _line_to_graph(line, title=graph.title, description=graph.description, layout=layout)
+    # Transitions keep the edge order, so the client's edge ids carry over by index.
+    for edge, client in zip(rebuilt.edges, graph.edges, strict=True):
+        edge.id = client.id
+    # Kept so validation still refuses them on a line (§4.1), never dropped silently.
+    return rebuilt.model_copy(
+        update={
+            "modes": graph.modes,
+            "retry_policy": graph.retry_policy,
+            "escalation_policy": graph.escalation_policy,
+        }
+    )
+
+
 def graph_to_definition(graph: WorkflowGraph) -> WorkflowDefinition:
     """Map a graph back to a :class:`WorkflowDefinition` (pure; structural only).
 
-    Layout and edge ids (UI-only) are dropped.
+    Layout and edge ids (UI-only) are dropped. A v2 graph gives a ``LineDefinition``.
     """
+    if graph.dsl_version == "2":
+        return graph_to_line(graph)
     transitions = [
         WorkflowTransition.model_validate(
             {
@@ -294,7 +433,7 @@ def graph_to_definition(graph: WorkflowGraph) -> WorkflowDefinition:
 # --------------------------------------------------------------------------- #
 
 
-def _transition_to_dict(t: WorkflowTransition) -> dict[str, Any]:
+def _transition_to_dict(t: WorkflowTransition | TransitionEdge) -> dict[str, Any]:
     """Canonical, minimal DSL mapping for a transition (omits empty fields)."""
     out: dict[str, Any] = {"from": t.from_state, "to": t.to_state}
     if t.action is not None:
@@ -316,6 +455,8 @@ def _transition_to_dict(t: WorkflowTransition) -> dict[str, Any]:
 
 def graph_to_yaml(graph: WorkflowGraph) -> str:
     """Serialize a graph to canonical DSL YAML (round-trips with :func:`yaml_to_graph`)."""
+    if graph.dsl_version == "2":
+        return yaml.safe_dump(_line_document(graph), sort_keys=False, default_flow_style=False)
     defn = graph_to_definition(graph)
     document: dict[str, Any] = {
         "workflow": defn.name,
@@ -341,6 +482,24 @@ def yaml_to_graph(yaml_text: str, *, title: str | None = None) -> WorkflowGraph:
     if not isinstance(raw, dict):
         raise WorkflowDefinitionError("workflow definition must be a mapping")
 
+    # The same dsl_version dispatch and v1 guards as ``parse_definition`` (spec K §4.1).
+    dsl_version = raw.get("dsl_version")
+    if dsl_version == "2":
+        try:
+            line = parse_line(raw)
+        except ValidationError as exc:
+            raise WorkflowDefinitionError(f"invalid line definition: {exc}") from exc
+        return definition_to_graph(line, title=title or line.name)
+    if dsl_version is not None and str(dsl_version) != "1":
+        raise WorkflowDefinitionError(
+            f"unsupported dsl_version {dsl_version!r}; expected '1' or '2'"
+        )
+    v2_keys = sorted(raw.keys() & _V2_ONLY_KEYS)
+    if v2_keys:
+        raise WorkflowDefinitionError(
+            f"a dsl_version '1' workflow cannot carry {', '.join(v2_keys)}; set dsl_version: '2'"
+        )
+
     data: dict[str, Any] = dict(raw)
     if "name" not in data and "workflow" in data:
         data["name"] = data["workflow"]
@@ -353,9 +512,23 @@ def yaml_to_graph(yaml_text: str, *, title: str | None = None) -> WorkflowGraph:
     return definition_to_graph(defn, title=resolved_title)
 
 
+def line_graph_from_yaml(dsl_yaml: str, *, title: str | None = None) -> tuple[dict[str, Any], str]:
+    """``(graph_json, normalized dsl_yaml)`` for a DSL v2 line, auto-laid-out.
+
+    For the ``workflow_template`` installer (spec K §4.4, install step 2), which
+    stores its ``dsl_yaml`` verbatim and uses only ``graph_json``. Pure. Raises
+    :class:`WorkflowDefinitionError` on a malformed line or a v1 document.
+    """
+    graph = yaml_to_graph(dsl_yaml, title=title)
+    if graph.dsl_version != "2":
+        raise WorkflowDefinitionError("not a dsl_version '2' line")
+    return graph.model_dump(mode="json"), graph_to_yaml(graph)
+
+
 __all__ = [
     "HUMAN_GATE_STATES",
     "TERMINAL_STATES",
+    "NodeKind",
     "NodeLayout",
     "StateNode",
     "TransitionEdge",
@@ -365,6 +538,8 @@ __all__ = [
     "derive_kind",
     "edge_triggers",
     "graph_to_definition",
+    "graph_to_line",
     "graph_to_yaml",
+    "line_graph_from_yaml",
     "yaml_to_graph",
 ]
