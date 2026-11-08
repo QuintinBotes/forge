@@ -560,6 +560,23 @@ Found by the P0 verification; none is a regression, and each has an owner phase.
 - **For P2.** `TemporalWorkflowEngine.atransition` returns `str` for station runs (§4.3), and
   `/transition` refuses everything but `resume` and `cancel` on them (§4.2).
 
+### 4.10 Installer decisions (2026-11-08)
+
+- **Secret scan.** The API and the offline signer use one detector, the marketplace SDK's
+  token-shape detector (private-key blocks, GitHub, AWS, Slack, `sk-` keys, JWTs), over the raw
+  `dsl_yaml`, every decoded string and key, and the title and description. The observability
+  redactor is not used: its header patterns refuse ordinary text such as "Write basic tests", and
+  a package must never sign cleanly and then fail every install.
+- **Names.** A line's definition name is its DSL `workflow` name and follows the editor rule
+  `^[a-z][a-z0-9_]{1,62}$`. `override_name` is refused for lines (422 `override_not_supported`).
+  A line renamed upstream is refused (422 `name_mismatch`); a registry publishes a renamed line
+  under a new slug. Bundled names are reserved.
+- **Concurrency.** Install, update and uninstall of one line installation run one at a time (row
+  lock). Uninstall clears the pin.
+- **Audit names.** Publishing and archiving an installed line reuse the editor's
+  `workflow_definition.published` and `workflow_definition.archived` events, so one query finds
+  every publish and archive.
+
 ## 5. Out of scope
 
 Running lore, its `floor` engine or its planning-editor packages (unlicensed; ADR-0010). Kubernetes `Agent` CRDs.
