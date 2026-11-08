@@ -49,6 +49,9 @@ x-persistence-env: &persistence-env
   FORGE_POLICY_AUDIT_BACKEND: ${FORGE_POLICY_AUDIT_BACKEND:-db}
   FORGE_PROJECTION_BACKEND: ${FORGE_PROJECTION_BACKEND:-db}
   FORGE_SECRET_BACKEND: ${FORGE_SECRET_BACKEND:-db}
+  # /ws fan-out through Redis: worker, Temporal and SLA-sweep approval events
+  # reach live clients, and every API worker's sockets (spec L §6a).
+  FORGE_REALTIME_BACKEND: ${FORGE_REALTIME_BACKEND:-redis}
 
 # Shared env for the Python services (api / worker / mcp-gateway / migrate / seed).
 x-python-env: &python-env

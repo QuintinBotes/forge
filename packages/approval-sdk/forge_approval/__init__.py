@@ -41,6 +41,7 @@ from forge_approval.events import (
     InMemoryActivityBus,
 )
 from forge_approval.models import (
+    ENFORCED_GATES,
     ApprovalAction,
     ApprovalContext,
     ApprovalDecisionRecord,
@@ -78,6 +79,7 @@ __version__ = "0.1.0"
 __all__ = [
     "APPROVAL_REQUESTED_TOPIC",
     "APPROVAL_RESOLVED_TOPIC",
+    "ENFORCED_GATES",
     "GATE_MIN_ROLE",
     "ActivityBus",
     "AlreadyResolvedError",

@@ -40,6 +40,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Annotated
 
+import anyio.from_thread
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -47,6 +48,8 @@ from sqlalchemy.orm import Session
 from forge_api.auth.rbac import Permission
 from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
+from forge_api.realtime import approval_events
+from forge_api.realtime.broadcaster import Broadcaster, emit_event, get_broadcaster
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.red_team import RedTeamGateOut, RedTeamRecordOut, RedTeamTriggerOut
 from forge_api.services.approval_service import get_approval_service
@@ -134,6 +137,7 @@ def get_red_team_fn() -> RedTeamFn | None:
 EngineDep = Annotated[WorkflowEngineImpl, Depends(get_workflow_engine)]
 RedTeamFnDep = Annotated[RedTeamFn | None, Depends(get_red_team_fn)]
 ApprovalDep = Annotated[ApprovalService, Depends(get_approval_service)]
+BroadcasterDep = Annotated[Broadcaster, Depends(get_broadcaster)]
 
 #: Run states at which a red-team scan may be triggered, mapped to the gate
 #: phase the scan runs before (mirrors ``RedTeamInput.phase``: spec | pr).
@@ -243,6 +247,7 @@ def _task_title(session: Session, task_id: uuid.UUID) -> str | None:
 def _open_gate_approval(
     service: ApprovalService,
     session: Session,
+    broadcaster: Broadcaster,
     *,
     workspace_id: uuid.UUID,
     run: WorkflowRun,
@@ -252,13 +257,14 @@ def _open_gate_approval(
     The same request the Temporal ``forge.create_approval`` activity opens
     (one pending per ``(run, gate)`` — :meth:`ApprovalService.create` is
     idempotent while pending), requested by the run's agent identity so the
-    approval authorizer's rules decide who may resolve it.
+    approval authorizer's rules decide who may resolve it. The gate is then
+    announced on ``/ws`` (spec L §6a).
     """
     gate = GATE_BY_STATE[run.current_state]
     run_id = _run_id(run)
     task_id = _run_task_id(run)
     title = _task_title(session, task_id) or f"{gate.value} approval for run {run_id}"
-    asyncio.run(
+    request = asyncio.run(
         service.create(
             workspace_id=workspace_id,
             gate_type=gate,
@@ -270,6 +276,8 @@ def _open_gate_approval(
             requested_actor=agent_actor_for_run(run_id),
         )
     )
+    # From this worker thread onto the app's loop, where the sockets live.
+    anyio.from_thread.run(emit_event, broadcaster, approval_events.requested(request))
 
 
 def _durable_engine_required() -> HTTPException:
@@ -441,6 +449,7 @@ def transition(
     principal: WriterDep,
     red_team_fn: RedTeamFnDep,
     approvals: ApprovalDep,
+    broadcaster: BroadcasterDep,
     run_id: uuid.UUID,
     request: TransitionRequest,
 ) -> WorkflowRun:
@@ -491,7 +500,9 @@ def transition(
         )
         session.commit()
     if isinstance(engine, WorkflowEngineImpl) and run.current_state in GATE_BY_STATE:
-        _open_gate_approval(approvals, session, workspace_id=principal.workspace_id, run=run)
+        _open_gate_approval(
+            approvals, session, broadcaster, workspace_id=principal.workspace_id, run=run
+        )
     return run
 
 

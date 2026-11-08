@@ -168,3 +168,74 @@ def test_redis_broadcaster_roundtrip_or_park() -> None:
         assert socket.sent[-1]["type"] == "task.updated"
 
     anyio.run(_run)
+
+
+# --------------------------------------------------------------------------- #
+# Redis relay robustness (spec L §6a: the compose default is redis)            #
+# --------------------------------------------------------------------------- #
+
+
+class _ScriptedRedis:
+    """A Redis whose pub/sub plays one scripted stream across reconnects.
+
+    An ``Exception`` in the script is raised from ``listen`` (a dropped
+    connection); once the script runs out, ``listen`` idles like a quiet channel.
+    """
+
+    def __init__(self, script: list[Any]) -> None:
+        self.script = script
+        self.subscribes = 0
+
+    def pubsub(self) -> _ScriptedPubSub:
+        return _ScriptedPubSub(self)
+
+
+class _ScriptedPubSub:
+    def __init__(self, redis: _ScriptedRedis) -> None:
+        self._redis = redis
+
+    async def psubscribe(self, *_: str) -> None:
+        self._redis.subscribes += 1
+
+    async def aclose(self) -> None:
+        return None
+
+    async def listen(self) -> Any:
+        while self._redis.script:
+            item = self._redis.script.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            yield item
+        await anyio.sleep_forever()
+
+
+_GOOD = RealtimeEvent(type=RealtimeEventType.TASK_UPDATED, workspace_id=WORKSPACE)
+
+
+@pytest.mark.parametrize(
+    ("trouble", "subscribes"),
+    [
+        # A newer deploy's event type this worker does not know.
+        ({"type": "pmessage", "data": _GOOD.model_dump_json().replace("task.", "task.x")}, 1),
+        (ConnectionError("redis restarted"), 2),
+    ],
+)
+def test_the_relay_keeps_delivering_after_a_bad_message_or_a_lost_connection(
+    trouble: Any, subscribes: int
+) -> None:
+    async def _run() -> _ScriptedRedis:
+        manager = ConnectionManager()
+        socket = _RecordingSocket()
+        await manager.connect(WORKSPACE, socket)  # type: ignore[arg-type]
+        redis = _ScriptedRedis([trouble, {"type": "pmessage", "data": _GOOD.model_dump_json()}])
+        relay = RedisBroadcaster(redis, manager, reconnect_delay=0.01)
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(relay.run_forever)
+            with anyio.fail_after(5):
+                while not socket.sent:
+                    await anyio.sleep(0.01)
+            tg.cancel_scope.cancel()
+        assert [e["type"] for e in socket.sent] == ["task.updated"]
+        return redis
+
+    assert anyio.run(_run).subscribes == subscribes
