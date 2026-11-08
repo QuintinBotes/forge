@@ -201,6 +201,15 @@ from forge_contracts.realtime import (
     RealtimeEvent,
     RealtimeEventType,
 )
+from forge_contracts.run_events import (
+    ENFORCEMENT,
+    TERMINAL_EVENTS,
+    Enforcement,
+    RunEvent,
+    RunEventDraft,
+    RunEventType,
+    events_for_step,
+)
 from forge_contracts.sandbox import (
     CONTAINER_BACKED_KINDS,
     SANDBOX_KIND_RANK,
@@ -226,6 +235,7 @@ __all__ = [
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_EMBEDDING_DIM",
     "DEFAULT_MAX_RETRIES",
+    "ENFORCEMENT",
     "KNOWN_ACTIONS",
     "POLICY_CONDITION_FIELDS",
     "PROVIDER_FAILURE_STOP_REASONS",
@@ -233,6 +243,7 @@ __all__ = [
     "ROLE_TOOLS",
     "RRF_K",
     "SANDBOX_KIND_RANK",
+    "TERMINAL_EVENTS",
     # F31 deployment gates
     "TERMINAL_STATES",
     "APIKeyKind",
@@ -279,6 +290,7 @@ __all__ = [
     "DeploymentTrigger",
     "Direction",
     "EmbeddingClient",
+    "Enforcement",
     "EpicDTO",
     "EscalationPolicy",
     "ExecutionMode",
@@ -356,6 +368,9 @@ __all__ = [
     "RetryPolicy",
     "ReviewRules",
     "RuleEffect",
+    "RunEvent",
+    "RunEventDraft",
+    "RunEventType",
     "RunStatus",
     "SandboxCommandRunner",
     "SandboxInstanceRead",
@@ -408,4 +423,5 @@ __all__ = [
     "WorkflowTransition",
     "WriteRules",
     "evaluate_condition",
+    "events_for_step",
 ]

@@ -24,6 +24,30 @@ helm install forge deploy/helm/forge -n forge --create-namespace \
 offline deterministic model, or set it (plus `forge.modelName` for openai) to
 drive a real provider.
 
+## Retrieval embedder (spec J, ADR-0018)
+
+Knowledge search runs **BM25-only** until a real embedder is configured
+(responses say so: `vector_leg: "unconfigured"`). No chart change is needed
+to enable the semantic leg: every workload already receives the chart Secret
+via the shared `forge.envFrom` block (ConfigMap then Secret), so set the
+`FORGE_EMBEDDING_*` keys in `secrets.data` (or your `secrets.existingSecret`)
+and both api and worker pick them up identically — they must match, or
+stored vectors and query vectors come from different models:
+
+```bash
+  --set-string secrets.data.FORGE_EMBEDDING_PROVIDER=openai-compatible \
+  --set-string secrets.data.FORGE_EMBEDDING_MODEL=text-embedding-3-small \
+  --set-string secrets.data.FORGE_EMBEDDING_BASE_URL=https://api.openai.com/v1 \
+  --set-string secrets.data.FORGE_EMBEDDING_DIMENSION=1536 \
+  --set-string secrets.data.FORGE_EMBEDDING_API_KEY="$EMBEDDING_KEY"
+```
+
+`FORGE_EMBEDDING_DIMENSION` is required for `openai-compatible` and must
+equal the vector column width (1536); a missing or mismatched value refuses
+api/worker startup rather than failing on first insert. After configuring an
+embedder, run one full knowledge sync so pre-existing chunks (indexed
+BM25-only, or NULLed by migration 0042) get real vectors.
+
 ## Source / dependencies
 
 | Repository | Name | Version |

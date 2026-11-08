@@ -15,22 +15,25 @@ it is fully unit-testable without Celery or a live database:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from functools import lru_cache
 from typing import Any
 
 from forge_contracts import Chunk, IndexResult
-from forge_contracts.protocols import KnowledgeStore
+from forge_contracts.protocols import EmbeddingClient, KnowledgeStore
 from forge_knowledge import (
-    DeterministicEmbeddingClient,
     KnowledgeService,
+    build_embedding_client_from_settings,
     build_reranker_from_settings,
     chunk_file,
 )
+from forge_knowledge.sync import embed_backlog
 from forge_worker.celery_app import celery_app
 from forge_worker.reliability import ForgeTask
 
 __all__ = [
     "build_knowledge_service",
     "chunk_files",
+    "get_configured_embedder",
     "index_source",
     "index_source_task",
 ]
@@ -46,17 +49,54 @@ def chunk_files(files: Mapping[str, str]) -> list[Chunk]:
 
 def index_source(store: KnowledgeStore, source_id: str, files: Mapping[str, str]) -> IndexResult:
     """Chunk ``files`` and index them into ``store`` for ``source_id``."""
-    return store.index(source_id, chunk_files(files))
+    result = store.index(source_id, chunk_files(files))
+    embedded, errors = embed_backlog(store, source_id)
+    return result.model_copy(
+        update={"updated": result.updated + embedded, "errors": [*result.errors, *errors]}
+    )
+
+
+@lru_cache(maxsize=1)
+def get_configured_embedder() -> EmbeddingClient | None:
+    """Build (once per process) the configured production embedder, or None.
+
+    Cached per process so a ``local`` sentence-transformer model loads once,
+    not on every task. Warmed by the Celery ``worker_init`` hook in
+    :mod:`forge_worker.celery_app` so a bad config refuses worker startup
+    (ADR-0018) instead of failing every knowledge task. The base_url goes
+    through the api's SSRF guard seam; the key is read from the env on
+    demand, never stored on settings.
+    """
+    import os
+    from functools import partial
+
+    from forge_api.security.ssrf import assert_safe_url
+    from forge_api.settings import get_settings
+
+    settings = get_settings()
+    return build_embedding_client_from_settings(
+        settings,
+        api_key=os.environ.get("FORGE_EMBEDDING_API_KEY"),
+        url_validator=partial(
+            assert_safe_url,
+            allow_private=settings.ssrf_allow_private,
+            allowlist=settings.outbound_allowlist,
+        ),
+    )
 
 
 def build_knowledge_service() -> KnowledgeService:
     """Build the default knowledge service from configuration.
 
-    Uses the offline-safe deterministic embedding client. The reranker is
-    resolved by the shared :func:`build_reranker_from_settings` factory (HARD-03)
-    so a worker-side ``search`` uses the same budgeted, SSRF-guarded live reranker
-    the API does when ``FORGE_RERANK_PROVIDER`` is set — and the offline fixture
-    otherwise. Reranking is query-time only, so indexing throughput is unaffected.
+    Uses the *configured* production embedder (spec J §2.5, ADR-0018):
+    ``FORGE_EMBEDDING_PROVIDER`` unset means no embedder, so indexing stores
+    chunks without embeddings for honest BM25-only search — never the hash
+    embedder. The reranker is resolved by the shared
+    :func:`build_reranker_from_settings` factory (HARD-03) so a worker-side
+    ``search`` uses the same budgeted, SSRF-guarded live reranker the API does
+    when ``FORGE_RERANK_PROVIDER`` is set — and no reranker (``"off"``)
+    otherwise. Reranking is query-time only, so indexing throughput is
+    unaffected.
     """
     import os
 
@@ -64,7 +104,7 @@ def build_knowledge_service() -> KnowledgeService:
     from forge_db import create_session_factory
 
     settings = get_settings()
-    provider = (settings.rerank_provider or "fixture").strip().lower()
+    provider = (settings.rerank_provider or "none").strip().lower()
     api_key = None
     if provider == "jina":
         api_key = os.environ.get("JINA_API_KEY")
@@ -73,7 +113,7 @@ def build_knowledge_service() -> KnowledgeService:
 
     return KnowledgeService.from_session_factory(
         create_session_factory(),
-        DeterministicEmbeddingClient(),
+        get_configured_embedder(),
         build_reranker_from_settings(settings, api_key=api_key),
         rerank_candidates=settings.rerank_candidates,
         rerank_enabled=settings.rerank_enabled,

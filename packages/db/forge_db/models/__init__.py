@@ -99,6 +99,8 @@ from forge_db.models.knowledge import (
     EMBEDDING_DIM,
     KnowledgeSource,
     RetrievalChunk,
+    RetrievalTermStat,
+    RetrievalWorkspaceStat,
 )
 from forge_db.models.marketplace import (
     MarketplaceAuditLog,
@@ -143,7 +145,13 @@ from forge_db.models.red_team import RedTeamRecord
 from forge_db.models.role_config import AgentRoleConfig
 from forge_db.models.role_grant import RoleGrant
 from forge_db.models.run_recording import RunRecording
-from forge_db.models.runs import AgentRun, ApprovalRequest, SubAgentRun, WorkflowRun
+from forge_db.models.runs import (
+    AgentRun,
+    AgentRunEvent,
+    ApprovalRequest,
+    SubAgentRun,
+    WorkflowRun,
+)
 from forge_db.models.sandbox import SandboxInstance
 from forge_db.models.secret import Secret
 from forge_db.models.spec_version import SpecVersion
@@ -199,6 +207,7 @@ __all__ = [
     "AgentRole",
     "AgentRoleConfig",
     "AgentRun",
+    "AgentRunEvent",
     "AoWorkspaceSettings",
     "ApprovalDecision",
     "ApprovalGate",
@@ -303,6 +312,8 @@ __all__ = [
     "RepoRole",
     "RepositoryConnection",
     "RetrievalChunk",
+    "RetrievalTermStat",
+    "RetrievalWorkspaceStat",
     "RevisionStatus",
     "RevisionValidationStatus",
     "RoleGrant",

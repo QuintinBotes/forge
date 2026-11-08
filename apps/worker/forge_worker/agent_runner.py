@@ -49,7 +49,16 @@ from forge_agent.sandbox.output import cap_output
 from forge_agent.testing import ScriptedModelClient, finish_response
 from forge_agent.tools import ToolRegistry
 from forge_auth.redaction import SecretRedactor
-from forge_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient, RunStatus
+from forge_contracts import (
+    AgentObjective,
+    AgentRunResult,
+    ExecutionMode,
+    ModelClient,
+    RunEventDraft,
+    RunEventType,
+    RunStatus,
+    Step,
+)
 from forge_db.models import AgentRun, RunRecording
 from forge_db.models.enums import RunStatus as DbRunStatus
 from forge_db.session import create_session_factory
@@ -57,6 +66,7 @@ from forge_worker.celery_app import celery_app
 from forge_worker.dispatch import RepositoryUnavailable, resolve_run_repository
 from forge_worker.finalizer import GitHubAppCredentials, push_and_open_pr
 from forge_worker.reliability import ForgeTask
+from forge_worker.run_events import RunEventSink, terminal_drafts
 from forge_worker.run_workspace import prepared_workspace
 
 __all__ = [
@@ -115,8 +125,9 @@ class _RecordableAgentRunner(AgentRunner):
         tools: ToolRegistry | None = None,
         cassette: RunCassette | None = None,
         repo_root: Path | None = None,
+        on_step: Callable[[Step], None] | None = None,
     ) -> None:
-        super().__init__(model, tools=tools, repo_root=repo_root)
+        super().__init__(model, tools=tools, repo_root=repo_root, on_step=on_step)
         self.cassette = cassette
 
 
@@ -187,6 +198,7 @@ def build_agent_runner(
     tools: ToolRegistry | None = None,
     repo_root: Path | None = None,
     token_budget: int | None = None,
+    on_step: Callable[[Step], None] | None = None,
 ) -> AgentRunner:
     """Build the agent runner, resolving a real BYOK ``ModelClient`` when possible.
 
@@ -218,7 +230,9 @@ def build_agent_runner(
     registry = tools if tools is not None else ToolRegistry()
 
     if not _recording_enabled():
-        return _RecordableAgentRunner(client, tools=registry, cassette=None, repo_root=repo_root)
+        return _RecordableAgentRunner(
+            client, tools=registry, cassette=None, repo_root=repo_root, on_step=on_step
+        )
 
     cassette = RunCassette.with_env(os.environ, redactor=SecretRedactor())
     # ``RecordingToolRegistry`` is a duck-typed ``ToolRegistry`` facade (delegates
@@ -230,6 +244,7 @@ def build_agent_runner(
         tools=recorded,
         cassette=cassette,
         repo_root=repo_root,
+        on_step=on_step,
     )
 
 
@@ -387,21 +402,35 @@ def run_agent_task(
     persisted_row = context.get("agent_run_id") is not None
     run_id = _opt_uuid(context.get("agent_run_id")) or uuid.uuid4()
     workspace_id = _opt_uuid(context.get("workspace_id")) or uuid.UUID(int=0)
+    events = _event_sink(run_id, workspace_id) if persisted_row else None
     try:
         parsed = resolve_run_repository(parsed)
     except RepositoryUnavailable as exc:
         refused = AgentRunResult(
             run_id=run_id, task_id=parsed.task_id, status=RunStatus.FAILED, error=str(exc)
         )
+        _emit_terminal(events, refused)
         if persisted_row:
             _record_run_outcome(run_id, workspace_id, refused)
             _maybe_tracker_writeback(parsed, run_id, workspace_id, refused)
         return refused.model_dump(mode="json")
     with prepared_workspace(parsed, run_id=run_id, workspace_id=workspace_id) as workspace:
+        if events is not None:
+            events.emit(
+                RunEventDraft(
+                    type=RunEventType.THREAD_STARTED,
+                    summary=parsed.objective[:120],
+                    payload={
+                        "repo": parsed.context.get("repo_full_name"),
+                        "branch": workspace.branch if workspace else None,
+                    },
+                )
+            )
         runner = build_agent_runner(
             tools=workspace.tools if workspace else None,
             repo_root=workspace.path if workspace else None,
             token_budget=_run_token_budget(),
+            on_step=events.on_step if events is not None else None,
         )
         try:
             result = run_objective(runner, parsed)
@@ -420,11 +449,30 @@ def run_agent_task(
             result.artifacts["branch"] = workspace.branch
     if workspace is not None and result.status == RunStatus.SUCCEEDED:
         _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
+    # Terminal events first: a stream that sees the run's final status may
+    # stop, so its last events must already be stored.
+    _emit_terminal(events, result)
     if persisted_row:
         _record_run_outcome(run_id, workspace_id, result)
         _maybe_tracker_writeback(parsed, run_id, workspace_id, result)
     _maybe_persist_recording(runner, objective)
     return result.model_dump(mode="json")
+
+
+def _event_sink(run_id: uuid.UUID, workspace_id: uuid.UUID) -> RunEventSink:
+    return RunEventSink(
+        run_id,
+        workspace_id,
+        session_factory=create_session_factory(),
+        redact=_default_redactor(),
+    )
+
+
+def _emit_terminal(events: RunEventSink | None, result: AgentRunResult) -> None:
+    if events is None:
+        return
+    for draft in terminal_drafts(result):
+        events.emit(draft)
 
 
 def _record_run_outcome(

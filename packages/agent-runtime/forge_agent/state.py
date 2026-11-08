@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from forge_agent.providers.usage import UsageAccumulator
@@ -44,7 +46,16 @@ class AgentState:
     usage: UsageAccumulator = field(default_factory=UsageAccumulator)
     model_name: str | None = None
 
+    #: Called with every step as it is recorded (run events, ADR-0013). A
+    #: listener that raises is logged and ignored: observing never fails a run.
+    on_step: Callable[[Step], None] | None = None
+
     def add_step(self, step: Step) -> Step:
         step.index = len(self.steps)
         self.steps.append(step)
+        if self.on_step is not None:
+            try:
+                self.on_step(step)
+            except Exception:
+                logging.getLogger("forge_agent.state").exception("step listener failed")
         return step
