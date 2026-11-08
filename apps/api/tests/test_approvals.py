@@ -363,3 +363,22 @@ def test_expired_gates_swept(
     asyncio.run(service.expire_pending())
     stored = client.get(f"/approvals/{created['id']}").json()
     assert stored["status"] == "expired"
+
+
+def test_callers_cannot_open_workflow_run_gates(make_client: Callable[..., TestClient]) -> None:
+    """Only the workflow engines open them: their payload feeds the merge guard."""
+    client = make_client()
+    resp = client.post(
+        "/approvals",
+        json={
+            "gate_type": "pr",
+            "subject_type": "workflow_run",
+            "subject_id": str(uuid.uuid4()),
+            "workflow_run_id": str(uuid.uuid4()),
+            "requested_actor": f"agent:{uuid.uuid4()}",
+            "title": "forged merge gate",
+            "gate_payload": {"ci_status_green": True, "spec_validated": True},
+        },
+    )
+    assert resp.status_code == 422
+    assert "workflow engine" in resp.text

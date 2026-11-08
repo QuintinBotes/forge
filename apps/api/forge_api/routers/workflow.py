@@ -33,6 +33,7 @@ owning its own scan inside ``FeatureWorkflow.run`` (the mint is V1-engine-only).
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -48,7 +49,20 @@ from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.red_team import RedTeamGateOut, RedTeamRecordOut, RedTeamTriggerOut
+from forge_api.services.approval_service import get_approval_service
+from forge_api.services.workflow_gate_hook import (
+    GATE_BY_STATE,
+    GATE_EVENTS,
+    WAITING_STATE_BY_GATE,
+    WORKFLOW_RUN_SUBJECT,
+    agent_actor_for_run,
+    event_for_resolution,
+    submit_gate_event,
+)
+from forge_approval import ApprovalService
+from forge_approval.models import GateStatus, GateType
 from forge_contracts import WorkflowRun, WorkflowState
+from forge_db.models import Task
 from forge_db.redteam import RedTeamRepository
 from forge_workflow import (
     AmbiguousTransitionError,
@@ -163,6 +177,7 @@ def get_red_team_fn() -> RedTeamFn | None:
 EngineDep = Annotated[WorkflowEngineImpl, Depends(get_workflow_engine)]
 OwnershipDep = Annotated[WorkflowOwnership, Depends(get_workflow_ownership)]
 RedTeamFnDep = Annotated[RedTeamFn | None, Depends(get_red_team_fn)]
+ApprovalDep = Annotated[ApprovalService, Depends(get_approval_service)]
 
 #: Run states at which a red-team scan may be triggered, mapped to the gate
 #: phase the scan runs before (mirrors ``RedTeamInput.phase``: spec | pr).
@@ -252,6 +267,49 @@ def _run_id(run: WorkflowRun) -> uuid.UUID:
     return run.id
 
 
+def _task_title(session: Session, task_id: uuid.UUID) -> str | None:
+    """The run's task title for the gate inbox (best-effort: a title lookup
+    must never be the reason a gate fails to open)."""
+    try:
+        task = session.get(Task, task_id)
+    except Exception:  # noqa: BLE001 — title is cosmetic; the gate still opens
+        session.rollback()
+        return None
+    return task.title if task is not None else None
+
+
+def _open_gate_approval(
+    service: ApprovalService,
+    session: Session,
+    *,
+    workspace_id: uuid.UUID,
+    run: WorkflowRun,
+) -> None:
+    """Open the approval request for the gate ``run`` just entered (A2).
+
+    The same request the Temporal ``forge.create_approval`` activity opens
+    (one pending per ``(run, gate)`` — :meth:`ApprovalService.create` is
+    idempotent while pending), requested by the run's agent identity so the
+    approval authorizer's rules decide who may resolve it.
+    """
+    gate = GATE_BY_STATE[run.current_state]
+    run_id = _run_id(run)
+    task_id = _run_task_id(run)
+    title = _task_title(session, task_id) or f"{gate.value} approval for run {run_id}"
+    asyncio.run(
+        service.create(
+            workspace_id=workspace_id,
+            gate_type=gate,
+            subject_type=WORKFLOW_RUN_SUBJECT,
+            subject_id=run_id,
+            workflow_run_id=run_id,
+            task_id=task_id,
+            title=title,
+            requested_actor=agent_actor_for_run(run_id),
+        )
+    )
+
+
 @router.post("/runs", response_model=WorkflowRun, status_code=status.HTTP_201_CREATED)
 def start_run(
     engine: EngineDep,
@@ -283,6 +341,7 @@ def transition(
     session: SessionDep,
     principal: WriterDep,
     red_team_fn: RedTeamFnDep,
+    approvals: ApprovalDep,
     run_id: uuid.UUID,
     request: TransitionRequest,
 ) -> WorkflowRun:
@@ -300,8 +359,22 @@ def transition(
     the mint (``ensure_red_team_verdict`` is idempotent on "no existing
     record"); alternatively, ``POST /workflow/runs/{run_id}/red-team`` records
     the verdict directly as a manual recovery path.
+
+    Gates (spec K §4.7): the four gate events
+    (``spec_approved_by_human`` / ``plan_approved_by_human`` /
+    ``review_approved_by_human`` / ``spec_changes_requested``) are refused
+    here — they may only arrive from an approval resolution (the gate hook
+    submits them engine-direct). And when a V1 transition lands the run in a
+    review state, the matching approval request is opened next to the
+    red-team mint, exactly where the Temporal spine calls
+    ``forge.create_approval``.
     """
     _require_owned(ownership, run_id, principal.workspace_id)
+    if request.event in GATE_EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="gate_events_come_from_approvals",
+        )
     with _workflow_errors():
         engine.transition(run_id, request.event)
         run = engine.get_run(run_id)
@@ -318,7 +391,60 @@ def transition(
             red_team_fn=red_team_fn,
         )
         session.commit()
+    if isinstance(engine, WorkflowEngineImpl) and run.current_state in GATE_BY_STATE:
+        _open_gate_approval(approvals, session, workspace_id=principal.workspace_id, run=run)
     return run
+
+
+@router.post("/runs/{run_id}/gates/{gate}/sync", response_model=WorkflowRun)
+def sync_gate(
+    engine: EngineDep,
+    ownership: OwnershipDep,
+    principal: WriterDep,
+    approvals: ApprovalDep,
+    run_id: uuid.UUID,
+    gate: GateType,
+) -> WorkflowRun:
+    """Re-submit a resolved gate's event if the run is still waiting (A4).
+
+    The recovery path for a gate hook whose engine submit failed after the
+    decision was recorded: re-reads the run's latest request for ``gate`` and,
+    when it is resolved and the run still sits at that gate, submits the
+    event engine-direct with the deciding user as actor. Idempotent: a run
+    that already advanced (or a gate still pending) is returned unchanged.
+    Unknown or foreign runs read as ``404`` (no existence leak).
+    """
+    _require_owned(ownership, run_id, principal.workspace_id)
+    if gate not in WAITING_STATE_BY_GATE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"gate '{gate.value}' is not a workflow-run gate",
+        )
+    with _workflow_errors():
+        run = engine.get_run(run_id)
+    request = asyncio.run(
+        approvals.latest_for_gate(
+            workspace_id=principal.workspace_id,
+            subject_type=WORKFLOW_RUN_SUBJECT,
+            subject_id=run_id,
+            gate_type=gate,
+        )
+    )
+    if (
+        request is not None
+        and request.status is not GateStatus.PENDING
+        and run.current_state == WAITING_STATE_BY_GATE[gate]
+        and event_for_resolution(gate, request.status) is not None
+    ):
+        actor_ref = (
+            f"user:{request.resolver_user_id}"
+            if request.resolver_user_id is not None
+            else f"user:{principal.user_id}"
+        )
+        with _workflow_errors():
+            asyncio.run(submit_gate_event(engine, request=request, actor_ref=actor_ref))
+    with _workflow_errors():
+        return engine.get_run(run_id)
 
 
 @router.get("/runs/{run_id}/red-team", response_model=RedTeamGateOut)

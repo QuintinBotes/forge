@@ -25,11 +25,19 @@ from sqlalchemy.orm import Session, sessionmaker
 from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
 from forge_api.main import create_app
+from forge_api.observability.redaction import redact_mapping
 from forge_api.routers.workflow import (
     WorkflowOwnership,
     get_workflow_engine,
     get_workflow_ownership,
 )
+from forge_api.services.approval_service import build_gate_registry, get_approval_service
+from forge_approval import (
+    ApprovalAuthorizer,
+    ApprovalService,
+    InMemoryApprovalRepository,
+)
+from forge_approval.providers import InMemoryGrantStore
 from forge_contracts import UserRole
 from forge_db.base import Base
 from forge_db.models import Workspace
@@ -81,9 +89,19 @@ def harness(factory: sessionmaker[Session]):
         with factory() as session:
             yield session
 
+    # Spec K P0: gate events come from approvals — wire the real approval
+    # service (gate hook -> this test's engine) so tests can decide gates
+    # through the approvals API instead of posting gate events.
+    approvals = ApprovalService(
+        InMemoryApprovalRepository(),
+        build_gate_registry(InMemoryGrantStore(), engine_factory=lambda: engine),
+        ApprovalAuthorizer(),
+        redactor=redact_mapping,
+    )
     app.dependency_overrides[get_db] = _get_db
     app.dependency_overrides[get_workflow_engine] = lambda: engine
     app.dependency_overrides[get_workflow_ownership] = lambda: ownership
+    app.dependency_overrides[get_approval_service] = lambda: approvals
 
     def make_client(principal: Principal) -> TestClient:
         app.dependency_overrides[get_current_principal] = lambda: principal
@@ -102,6 +120,25 @@ def _drive(client: TestClient, run_id: str, *events: str) -> None:
     for event in events:
         resp = client.post(f"/workflow/runs/{run_id}/transition", json={"event": event})
         assert resp.status_code == 200, f"{event}: {resp.text}"
+
+
+def _request_changes(client: TestClient, run_id: str) -> None:
+    """Decide the run's pending spec gate as ``request_changes`` via the
+    approvals API (the only way a gate event may reach the run now)."""
+    listing = client.get("/approvals", params={"status": "pending"})
+    assert listing.status_code == 200, listing.text
+    approval_id = None
+    for summary in listing.json():
+        detail = client.get(f"/approvals/{summary['id']}")
+        assert detail.status_code == 200, detail.text
+        if detail.json()["workflow_run_id"] == run_id:
+            approval_id = summary["id"]
+            break
+    assert approval_id is not None, "no pending approval for the run"
+    resp = client.post(f"/approvals/{approval_id}/decision", json={"decision": "request_changes"})
+    assert resp.status_code == 200, resp.text
+    run = client.get(f"/workflow/runs/{run_id}")
+    assert run.json()["current_state"] == "clarification", run.text
 
 
 def _records(client: TestClient, run_id: str) -> dict:
@@ -140,7 +177,8 @@ def test_v1_gate_mint_is_once_per_run(harness) -> None:
     client = make_client(_principal())
     run_id = _start(client)
     _drive(client, run_id, *_TO_SPEC_REVIEW)
-    _drive(client, run_id, "spec_changes_requested", "submit_spec_for_review")
+    _request_changes(client, run_id)  # spec_review -> clarification, via approval
+    _drive(client, run_id, "submit_spec_for_review")
 
     body = _records(client, run_id)
     assert len(body["records"]) == 1

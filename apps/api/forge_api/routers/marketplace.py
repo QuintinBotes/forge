@@ -432,6 +432,11 @@ def uninstall(service: ServiceDep, principal: AdminDep, installation_id: uuid.UU
         )
     except InstallationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InstallBlockedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": exc.error_code, "message": str(exc)},
+        ) from exc
 
 
 # --------------------------------------------------------------------------- #

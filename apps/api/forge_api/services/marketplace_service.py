@@ -24,7 +24,7 @@ import asyncio
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import NoReturn, Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -48,9 +48,9 @@ from forge_marketplace.catalog import (
     has_newer_compatible,
     latest_compatible,
 )
-from forge_marketplace.errors import SchemaInvalid
+from forge_marketplace.errors import SchemaInvalid, UnknownArtifactKind
 from forge_marketplace.installer import build_install_plan
-from forge_marketplace.manifest import canonical_artifact_bytes, compute_manifest_hash
+from forge_marketplace.manifest import compute_manifest_hash
 from forge_marketplace.models import (
     ArtifactKind,
     InstallPlan,
@@ -67,7 +67,7 @@ from forge_marketplace.models import (
 )
 from forge_marketplace.packaging import build_package
 from forge_marketplace.registry_client import HttpIndexRegistryClient
-from forge_marketplace.verifier import verify_version
+from forge_marketplace.verifier import verify_package
 
 DEFAULT_FORGE_VERSION = "3.0.0"
 
@@ -103,6 +103,10 @@ class NameConflictError(MarketplaceServiceError):
 
 class PublishValidationError(MarketplaceServiceError):
     """A published artifact failed the authoritative installer schema (-> 422)."""
+
+    def __init__(self, message: str, *, error_code: str = "schema_invalid") -> None:
+        super().__init__(message)
+        self.error_code = error_code
 
 
 class VersionConflictError(MarketplaceServiceError):
@@ -163,6 +167,27 @@ def _slugify(name: str) -> str:
     while "--" in out:
         out = out.replace("--", "-")
     return (out or "registry")[:64]
+
+
+#: Kinds with a registered installer today. Everything else is refused
+#: explicitly (spec K §4.4): reserved kinds (``workflow_template`` /
+#: ``policy_template``) are ``unsupported_kind`` until their installers land,
+#: anything outside the enum is ``unknown_kind`` — never "else means MCP".
+_SUPPORTED_KINDS = frozenset({ArtifactKind.mcp_connector, ArtifactKind.skill_profile})
+_RESERVED_KINDS = frozenset({ArtifactKind.workflow_template, ArtifactKind.policy_template})
+
+
+def _kind_error_code(kind: ArtifactKind | str) -> str | None:
+    """The 422 audit code for an uninstallable kind, or ``None`` if supported."""
+    try:
+        parsed = ArtifactKind(kind)
+    except ValueError:
+        return "unknown_kind"
+    if parsed in _RESERVED_KINDS:
+        return "unsupported_kind"
+    if parsed not in _SUPPORTED_KINDS:  # pragma: no cover — enum is exhaustive today
+        return "unknown_kind"
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -610,6 +635,26 @@ class MarketplaceService:
                 raise RegistryConflictError(
                     "cannot publish directly into the read-only official registry"
                 )
+            kind_code = _kind_error_code(kind)
+            if kind_code is not None:
+                kind_value = kind.value if isinstance(kind, ArtifactKind) else str(kind)
+                self._write_audit(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="listing.publish",
+                    registry_slug=registry.slug,
+                    listing_slug=slug,
+                    version=version,
+                    result_status="denied",
+                    error_code=kind_code,
+                    detail=f"no installer registered for kind '{kind_value}'",
+                )
+                s.commit()
+                raise PublishValidationError(
+                    f"{kind_code}: no installer registered for kind '{kind_value}'",
+                    error_code=kind_code,
+                )
             try:
                 manifest = build_package(
                     kind=kind,
@@ -625,7 +670,12 @@ class MarketplaceService:
                     tags=tags or [],
                     min_forge_version=min_forge_version,
                 )
-            except SchemaInvalid as exc:
+            except (SchemaInvalid, UnknownArtifactKind) as exc:
+                code = (
+                    _kind_error_code(kind) or "unknown_kind"
+                    if isinstance(exc, UnknownArtifactKind)
+                    else "schema_invalid"
+                )
                 self._write_audit(
                     s,
                     workspace_id=workspace_id,
@@ -635,11 +685,11 @@ class MarketplaceService:
                     listing_slug=slug,
                     version=version,
                     result_status="denied",
-                    error_code="schema_invalid",
+                    error_code=code,
                     detail=str(exc)[:500],
                 )
                 s.commit()
-                raise PublishValidationError(str(exc)) from exc
+                raise PublishValidationError(str(exc), error_code=code) from exc
 
             now = datetime.now(UTC)
             listing = s.execute(
@@ -737,9 +787,19 @@ class MarketplaceService:
 
     def preview(self, *, workspace_id: uuid.UUID, request: InstallRequest) -> InstallPlan:
         """Side-effect-free fetch + verify + validate (AC11)."""
+        code = _kind_error_code(request.kind)
+        if code is not None:
+            raise InstallBlockedError(
+                f"no installer registered for kind '{request.kind.value}'", error_code=code
+            )
         with self._sf() as s:
             registry = self._require_registry(s, workspace_id, request.registry_id)
-            _, plan = self._fetch_and_plan(registry, request)
+            try:
+                _, plan = self._fetch_and_plan(registry, request)
+            except UnknownArtifactKind as exc:
+                raise InstallBlockedError(
+                    str(exc), error_code=_kind_error_code(request.kind) or "unknown_kind"
+                ) from exc
             return plan
 
     def install(
@@ -752,7 +812,34 @@ class MarketplaceService:
     ) -> InstallResult:
         with self._sf() as s:
             registry = self._require_registry(s, workspace_id, request.registry_id)
-            manifest, plan = self._fetch_and_plan(registry, request)
+            code = _kind_error_code(request.kind)
+            if code is not None:
+                self._deny_kind(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="install",
+                    registry_slug=registry.slug,
+                    listing_slug=request.slug,
+                    version=request.version,
+                    kind=request.kind.value,
+                    code=code,
+                )
+            try:
+                manifest, plan = self._fetch_and_plan(registry, request)
+            except UnknownArtifactKind as exc:
+                self._deny_kind(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="install",
+                    registry_slug=registry.slug,
+                    listing_slug=request.slug,
+                    version=request.version,
+                    kind=request.kind.value,
+                    code=_kind_error_code(request.kind) or "unknown_kind",
+                    detail=str(exc),
+                )
             self._enforce_install_policy(s, workspace_id, actor, registry, plan, request)
             result = self._apply(
                 s,
@@ -781,10 +868,16 @@ class MarketplaceService:
             )
         version = self._resolve_version(entry, request.version)
         manifest, _raw = self._gateway.fetch_manifest(registry, version.manifest_uri)
-        verification = verify_version(
-            artifact_bytes=canonical_artifact_bytes(manifest.artifact),
-            version=version,
-            registry_public_key=registry.public_key,
+        # Bind the fetched manifest to the signed index identity before the
+        # signature is even considered (spec K §4.4): kind/slug/version,
+        # manifest_hash and content_hash mismatches hard-block every kind at
+        # every trust level.
+        verification = verify_package(
+            manifest,
+            entry,
+            version,
+            request,
+            registry.public_key,
         )
         plan = build_install_plan(
             manifest=manifest,
@@ -848,6 +941,8 @@ class MarketplaceService:
     @staticmethod
     def _block_code(plan: InstallPlan) -> str:
         status = plan.verification.status
+        if status is VerificationStatus.manifest_mismatch:
+            return "manifest_mismatch"
         if status is VerificationStatus.hash_mismatch:
             return "hash_mismatch"
         if status is VerificationStatus.signature_invalid:
@@ -873,8 +968,13 @@ class MarketplaceService:
             target_kind, target_id = self._apply_skill(
                 s, workspace_id, plan, request, existing=None
             )
-        else:
+        elif manifest.kind is ArtifactKind.mcp_connector:
             target_kind, target_id = self._apply_mcp(s, workspace_id, manifest, plan)
+        else:
+            raise InstallBlockedError(
+                f"no installer registered for kind '{manifest.kind.value}'",
+                error_code=_kind_error_code(manifest.kind) or "unknown_kind",
+            )
 
         installation = self._upsert_installation(
             s,
@@ -1077,6 +1177,19 @@ class MarketplaceService:
     ) -> InstallResult:
         with self._sf() as s:
             row = self._require_installation(s, workspace_id, installation_id)
+            code = _kind_error_code(row.kind)
+            if code is not None:
+                self._deny_kind(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="update",
+                    registry_slug=row.registry_slug,
+                    listing_slug=row.listing_slug,
+                    version=version or row.installed_version,
+                    kind=str(row.kind),
+                    code=code,
+                )
             registry = s.execute(
                 select(MarketplaceRegistry).where(
                     MarketplaceRegistry.workspace_id == workspace_id,
@@ -1093,7 +1206,21 @@ class MarketplaceService:
                 version=target_version,
                 acknowledge_unverified=True,  # update path re-verifies + re-validates
             )
-            manifest, plan = self._fetch_and_plan(registry, request)
+            try:
+                manifest, plan = self._fetch_and_plan(registry, request)
+            except UnknownArtifactKind as exc:
+                self._deny_kind(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="update",
+                    registry_slug=row.registry_slug,
+                    listing_slug=row.listing_slug,
+                    version=target_version,
+                    kind=str(row.kind),
+                    code=_kind_error_code(row.kind) or "unknown_kind",
+                    detail=str(exc),
+                )
             self._enforce_install_policy(s, workspace_id, actor, registry, plan, request)
 
             if manifest.kind is ArtifactKind.skill_profile:
@@ -1103,12 +1230,17 @@ class MarketplaceService:
                 target_kind, target_id = self._apply_skill(
                     s, workspace_id, plan, request, existing=existing
                 )
-            else:
+            elif manifest.kind is ArtifactKind.mcp_connector:
                 existing_conn = (
                     s.get(MCPConnection, row.target_object_id) if row.target_object_id else None
                 )
                 target_kind, target_id = self._apply_mcp(
                     s, workspace_id, manifest, plan, existing=existing_conn
+                )
+            else:
+                raise InstallBlockedError(
+                    f"no installer registered for kind '{manifest.kind.value}'",
+                    error_code=_kind_error_code(manifest.kind) or "unknown_kind",
                 )
 
             row.installed_version = plan.version
@@ -1149,8 +1281,21 @@ class MarketplaceService:
                 obj: SkillProfile | MCPConnection | None
                 if row.target_kind == "skill_profile":
                     obj = s.get(SkillProfile, row.target_object_id)
-                else:
+                elif row.target_kind == "mcp_connection":
                     obj = s.get(MCPConnection, row.target_object_id)
+                else:
+                    self._deny_kind(
+                        s,
+                        workspace_id=workspace_id,
+                        actor=actor,
+                        operation="uninstall",
+                        registry_slug=row.registry_slug,
+                        listing_slug=row.listing_slug,
+                        version=row.installed_version,
+                        kind=str(row.target_kind),
+                        code="unknown_kind",
+                        detail=f"unknown installation target kind '{row.target_kind}'",
+                    )
                 if obj is not None:
                     s.delete(obj)
             row.status = InstallStatus.uninstalled.value
@@ -1292,6 +1437,40 @@ class MarketplaceService:
         if row is None:
             raise InstallationNotFoundError("installation not found")
         return row
+
+    def _deny_kind(
+        self,
+        s: Session,
+        *,
+        workspace_id: uuid.UUID,
+        actor: str,
+        operation: str,
+        registry_slug: str | None,
+        listing_slug: str | None,
+        version: str | None,
+        kind: str,
+        code: str,
+        detail: str | None = None,
+    ) -> NoReturn:
+        """Refuse an unknown/reserved kind: committed denied audit row, then 422.
+
+        Always raises :class:`InstallBlockedError` (the audit row is committed
+        first, so the refusal itself is on the record).
+        """
+        self._write_audit(
+            s,
+            workspace_id=workspace_id,
+            actor=actor,
+            operation=operation,
+            registry_slug=registry_slug,
+            listing_slug=listing_slug,
+            version=version,
+            result_status="denied",
+            error_code=code,
+            detail=detail or f"no installer registered for kind '{kind}'",
+        )
+        s.commit()
+        raise InstallBlockedError(f"no installer registered for kind '{kind}'", error_code=code)
 
     def _audit_denied(
         self,

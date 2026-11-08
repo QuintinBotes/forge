@@ -60,6 +60,7 @@ class VerificationStatus(StrEnum):
     untrusted_registry = "untrusted_registry"  # signature present but registry has no key
     signature_invalid = "signature_invalid"  # hard block
     hash_mismatch = "hash_mismatch"  # hard block
+    manifest_mismatch = "manifest_mismatch"  # hard block: manifest != signed identity
 
 
 class InstallStatus(StrEnum):
@@ -165,6 +166,7 @@ class VerificationResult(BaseModel):
         return self.status in (
             VerificationStatus.hash_mismatch,
             VerificationStatus.signature_invalid,
+            VerificationStatus.manifest_mismatch,
         )
 
     @property
