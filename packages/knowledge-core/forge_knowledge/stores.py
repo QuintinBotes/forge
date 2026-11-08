@@ -75,7 +75,12 @@ from forge_db.models import (
     RetrievalWorkspaceStat,
 )
 from forge_knowledge.text import query_terms as _query_terms_of
-from forge_knowledge.text import tokenize, tsquery_literal, tsvector_literal
+from forge_knowledge.text import (
+    strip_uri_credentials,
+    tokenize,
+    tsquery_literal,
+    tsvector_literal,
+)
 
 __all__ = [
     "Bm25Store",
@@ -221,9 +226,9 @@ def _to_retrieved(row: RetrievalChunk, *, score: float) -> RetrievedChunk:
 
     Called inside an open session so the ``source`` relationship can supply
     ``source_uri`` and ``metadata["source_kind"]`` (set last, so stored chunk
-    metadata cannot forge it) for attribution.
+    metadata cannot forge it) for attribution. The uri never carries credentials.
     """
-    source_uri = row.source.uri if row.source is not None else None
+    source_uri = strip_uri_credentials(row.source.uri) if row.source is not None else None
     metadata = dict(row.chunk_metadata or {})
     if row.source is not None:
         metadata["source_kind"] = row.source.kind.value

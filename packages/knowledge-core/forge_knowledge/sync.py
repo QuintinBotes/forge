@@ -39,7 +39,7 @@ import subprocess
 from collections import defaultdict
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -55,14 +55,17 @@ __all__ = [
     "DEFAULT_EXCLUDE_SUFFIXES",
     "DEFAULT_MAX_COMMITS",
     "DEFAULT_MAX_FILE_BYTES",
+    "DEFAULT_MCP_FRESHNESS_SLA_MINUTES",
     "MAX_COMMITS",
     "ChangeSet",
     "SyncStore",
     "commit_limit",
+    "freshness_sla_minutes",
     "full_sync",
     "git_changed_files",
     "git_log",
     "incremental_sync",
+    "is_stale",
     "is_tracker_source",
     "iter_source_files",
     "read_repo_files",
@@ -626,6 +629,35 @@ def is_tracker_source(source: KnowledgeSource) -> bool:
     """Whether ``source`` is a GitHub tracker (``kind=URL``, ``config.tracker == "github"``)."""
     tracker = (source.config or {}).get("tracker")
     return source.kind == KnowledgeSourceKind.URL and tracker == "github"
+
+
+# --------------------------------------------------------------------------- #
+# Freshness (one rule for the MCP index status and the knowledge page)         #
+# --------------------------------------------------------------------------- #
+
+#: The freshness SLA of an MCP source that sets none of its own.
+DEFAULT_MCP_FRESHNESS_SLA_MINUTES = 30
+
+
+def freshness_sla_minutes(source: KnowledgeSource) -> int | None:
+    """The SLA ``source`` is held to: its own, else 30 minutes for an MCP
+    source, else none (a non-MCP source is stale only past an explicit SLA)."""
+    if source.kind == KnowledgeSourceKind.MCP:
+        return source.freshness_sla_minutes or DEFAULT_MCP_FRESHNESS_SLA_MINUTES
+    return source.freshness_sla_minutes
+
+
+def is_stale(source: KnowledgeSource, now: datetime) -> bool:
+    """Whether ``source`` is past its SLA (never synced counts); no SLA, never stale."""
+    sla = freshness_sla_minutes(source)
+    if sla is None:
+        return False
+    last = source.last_synced_at
+    if last is None:
+        return True
+    if last.tzinfo is None:  # stored as naive UTC
+        last = last.replace(tzinfo=UTC)
+    return (now - last).total_seconds() > sla * 60
 
 
 def tracker_repo(uri: str) -> str:

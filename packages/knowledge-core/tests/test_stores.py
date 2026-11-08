@@ -223,6 +223,21 @@ def test_vector_search_scopes_by_workspace(
     assert results == []
 
 
+def test_retrieved_chunks_never_carry_source_uri_credentials(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    source_id = _make_source(
+        session_factory, workspace_id, uri="oauth2:glpat-secret@gitlab.test/o/r?private_token=t"
+    )
+    vector = PgVectorStore(session_factory, DeterministicEmbeddingClient(dimension=64))
+    vector.index(source_id=str(source_id), chunks=[_chunk("alpha beta gamma", "a.py")])
+    scope = KnowledgeScope(workspace_id=workspace_id)
+
+    hits = [*vector.search("alpha", scope, k=1), *Bm25Store(session_factory).search("alpha", scope)]
+
+    assert [hit.source_uri for hit in hits] == ["gitlab.test/o/r", "gitlab.test/o/r"]
+
+
 # --------------------------------------------------------------------------- #
 # Bm25Store + the hybrid value proposition (keyword beats vector)             #
 # --------------------------------------------------------------------------- #

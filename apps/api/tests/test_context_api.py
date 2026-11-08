@@ -1040,6 +1040,76 @@ def test_passages_from_one_repository_get_distinct_kind_labels(factory, clock, k
     assert [p["source"] for p in by_label["passages"]] == ["url:github.com/o/a:issues/9"]
 
 
+def test_no_label_or_source_uri_carries_the_source_credentials(factory, clock, knowledge, engine):
+    """A git remote with a token (and a query token) never leaves the server (U1)."""
+    member = _client(factory, clock, knowledge, engine, _principal())
+    with factory() as session:
+        source = session.get(KnowledgeSource, _source_id(WS))
+        source.uri = "oauth2:glpat-SECRET@gitlab.test/o/a?private_token=SECRET"
+        session.commit()
+    _index(
+        knowledge,
+        WS,
+        [
+            Chunk(content="Rotation policy: tokens rotate daily.", path="docs/rotation.md"),
+            Chunk(content="Rotation policy: run make check before pushing.", path="AGENTS.md"),
+        ],
+    )
+
+    bundle = member.post(
+        "/context/assemble", json={"task": "rotation policy", "budget_tokens": 8_000}
+    )
+    rest = member.post("/knowledge/search", json={"query": "rotation policy"})
+    doc = member.get(
+        "/knowledge/document",
+        params={"source": str(_source_id(WS)), "path": "docs/rotation.md"},
+    )
+    mcp = _tool(member, "knowledge_search", {"query": "rotation policy"})
+
+    for resp in (bundle, rest, doc):
+        assert resp.status_code == 200, resp.text
+        assert "SECRET" not in resp.text and "glpat" not in resp.text
+    assert "SECRET" not in json.dumps(mcp)
+    items = bundle.json()["items"]
+    assert "repo:gitlab.test/o/a:docs/rotation.md" in {
+        i["source"] for i in items if i["section"] == "knowledge"
+    }
+    assert "gitlab.test/o/a:AGENTS.md" in {
+        i["source"] for i in items if i["section"] == "instructions"
+    }
+    results = rest.json()["results"]
+    assert "repo:gitlab.test/o/a:docs/rotation.md" in {r["source"] for r in results}
+    assert {r["source_uri"] for r in results} == {"gitlab.test/o/a"}
+    body = doc.json()
+    assert body["source"] == "gitlab.test/o/a"
+    assert [(p["source_uri"], p["source"]) for p in body["passages"]] == [
+        ("gitlab.test/o/a", "repo:gitlab.test/o/a:docs/rotation.md")
+    ]
+
+
+@pytest.mark.parametrize(
+    "stored",
+    ["git@github.test:o/a.git", "ssh://git@github.test/o/a.git", "https://wiki.test/view?pageId=7"],
+)
+def test_a_label_leads_back_to_its_document(factory, clock, knowledge, engine, stored):
+    """The label carries the stripped uri; following it with knowledge_document works."""
+    member = _client(factory, clock, knowledge, engine, _principal())
+    with factory() as session:
+        session.get(KnowledgeSource, _source_id(WS)).uri = stored
+        session.commit()
+    _index(knowledge, WS, [Chunk(content="Rotation policy: daily.", path="docs/rotation.md")])
+
+    items = member.post(
+        "/context/assemble", json={"task": "rotation policy", "budget_tokens": 4_000}
+    ).json()["items"]
+    [label] = [i["source"] for i in items if i["section"] == "knowledge"]
+    kind_uri = label.removesuffix(":docs/rotation.md")
+
+    doc = member.get("/knowledge/document", params={"source": kind_uri, "path": "docs/rotation.md"})
+    assert doc.status_code == 200, doc.text
+    assert [p["source"] for p in doc.json()["passages"]] == [label]
+
+
 def test_knowledge_document_stops_at_an_oversized_chunk_and_skips_summaries(
     factory, clock, knowledge, engine
 ):
