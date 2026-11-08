@@ -138,6 +138,9 @@ class SqlAlchemyWorkflowStore:
             started_at=run.started_at,
             completed_at=run.completed_at,
         )
+        revision = context.get("definition_revision_id")
+        if revision is not None:
+            model.definition_revision_id = uuid.UUID(str(revision))
         if run.id is not None:
             model.id = run.id
         self._session.add(model)
@@ -168,7 +171,8 @@ class SqlAlchemyWorkflowStore:
         from forge_db.models.runs import WorkflowRun as DbWorkflowRun
 
         model = self._session.get(DbWorkflowRun, run_id)
-        if model is None:
+        # Ownership is the row's workspace: a foreign run reads as missing.
+        if model is None or model.workspace_id != self._workspace_id:
             raise WorkflowRunNotFoundError(run_id)
         return model
 

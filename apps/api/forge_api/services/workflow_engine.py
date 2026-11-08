@@ -4,7 +4,7 @@ Both engines implement the **frozen** :class:`forge_contracts.WorkflowEngine`
 protocol, so the ``/workflow/*`` router is engine-agnostic. ``WORKFLOW_ENGINE_BACKEND``
 selects which one is wired:
 
-* ``postgres_fsm`` (default) → F07's in-process FSM (``WorkflowEngineImpl``).
+* ``postgres_fsm`` (default) → F07's FSM (``WorkflowEngineImpl``) over the Postgres run store.
 * ``temporal`` → the V2 durable :class:`TemporalWorkflowEngine`.
 
 The Temporal engine connects lazily (via a ``client_factory``) so selecting it
@@ -32,29 +32,25 @@ def resolve_backend(settings: TemporalSettings | None = None) -> str:
 
 def select_workflow_engine(
     *,
-    session: Session | None = None,
-    workspace_id: uuid.UUID | None = None,
+    session: Session,
+    workspace_id: uuid.UUID,
     settings: TemporalSettings | None = None,
 ) -> WorkflowEngineImpl | TemporalWorkflowEngine:
-    """Build the engine the deployment selects.
+    """Build the deployment's engine over ``workspace_id``'s runs in Postgres.
 
-    The FSM engine is process-local (no session needed). The Temporal engine is
-    workspace-scoped: it reads/writes the Postgres projection through a
-    ``SqlAlchemyWorkflowStore`` when a session is supplied, else an in-memory
-    store (used only where the caller has no DB session).
+    Both engines read and write ``workflow_run`` through a workspace-scoped
+    ``SqlAlchemyWorkflowStore``, so runs survive restarts, the worker's
+    projection writes find their row, and a foreign run reads as missing
+    (spec K §4.3 prerequisites). The caller commits.
     """
+    from forge_workflow.store import SqlAlchemyWorkflowStore
+
     settings = settings or TemporalSettings()
+    store = SqlAlchemyWorkflowStore(session, workspace_id=workspace_id)
     if settings.workflow_engine_backend != "temporal":
-        return WorkflowEngineImpl()
-
-    store = None
-    if session is not None and workspace_id is not None:
-        from forge_workflow.store import SqlAlchemyWorkflowStore
-
-        store = SqlAlchemyWorkflowStore(session, workspace_id=workspace_id)
-
+        return WorkflowEngineImpl(store=store)
     return TemporalWorkflowEngine(
-        workspace_id=workspace_id or uuid.UUID(int=0),
+        workspace_id=workspace_id,
         store=store,
         client_factory=lambda: get_temporal_client(settings),
         task_queue=settings.temporal_task_queue,

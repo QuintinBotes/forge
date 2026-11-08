@@ -37,7 +37,6 @@ import asyncio
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -90,75 +89,26 @@ router = APIRouter(
 WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
 SessionDep = Annotated[Session, Depends(get_db)]
+PrincipalDep = Annotated[Principal, Depends(get_current_principal)]
 
 
 # --------------------------------------------------------------------------- #
-# Run ownership (per-workspace tenant isolation)                               #
+# Engine dependency                                                            #
 # --------------------------------------------------------------------------- #
 
 
-class WorkflowOwnership:
-    """Maps a workflow run id to the workspace that started it.
-
-    The process-wide :class:`WorkflowEngineImpl` is shared across tenants and
-    ``WorkflowRun`` (a frozen contract) carries no ``workspace_id``; this registry
-    scopes every fetch/transition so one tenant cannot read or drive another
-    tenant's run. Unknown *or* foreign ids are reported as 404 (no existence leak).
-    """
-
-    def __init__(self) -> None:
-        self._owner: dict[uuid.UUID, uuid.UUID] = {}
-
-    def record(self, run_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
-        self._owner[run_id] = workspace_id
-
-    def owns(self, run_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
-        return self._owner.get(run_id) == workspace_id
-
-
-# --------------------------------------------------------------------------- #
-# Engine dependency (overridable for tests / Phase-2 DB swap)                  #
-# --------------------------------------------------------------------------- #
-
-
-@lru_cache(maxsize=1)
-def _workflow_engine_singleton() -> WorkflowEngineImpl:
-    return WorkflowEngineImpl()
-
-
-@lru_cache(maxsize=1)
-def _workflow_ownership_singleton() -> WorkflowOwnership:
-    return WorkflowOwnership()
-
-
-@lru_cache(maxsize=1)
-def _temporal_engine_singleton() -> object:
-    # F25 — the V2 durable engine, selected by WORKFLOW_ENGINE_BACKEND=temporal.
-    # Connects lazily (client_factory); the projection store is in-process here.
-    # NOTE: a DB-backed, per-request engine sharing the worker's Postgres
-    # projection is the production wiring (parked — see slice notes).
-    from forge_api.services.workflow_engine import select_workflow_engine
-
-    return select_workflow_engine()
-
-
-def get_workflow_engine() -> object:
-    """Return the configured workflow engine (override in tests via DI).
+def get_workflow_engine(session: SessionDep, principal: PrincipalDep) -> object:
+    """The configured engine over the caller's workspace (override in tests).
 
     ``WORKFLOW_ENGINE_BACKEND=temporal`` selects the durable Temporal engine;
-    otherwise the V1 in-process FSM. Both satisfy the frozen ``WorkflowEngine``
-    protocol so the handlers below are engine-agnostic.
+    otherwise the V1 FSM. Both read and write runs through the caller's
+    workspace-scoped Postgres store, so a run in another workspace, or none,
+    is a 404 (no existence leak) and nothing is lost on restart. Handlers
+    commit after a mutation.
     """
-    from forge_api.services.workflow_engine import resolve_backend
+    from forge_api.services.workflow_engine import select_workflow_engine
 
-    if resolve_backend() == "temporal":
-        return _temporal_engine_singleton()
-    return _workflow_engine_singleton()
-
-
-def get_workflow_ownership() -> WorkflowOwnership:
-    """Return the process-wide run-ownership registry (override in tests via DI)."""
-    return _workflow_ownership_singleton()
+    return select_workflow_engine(session=session, workspace_id=principal.workspace_id)
 
 
 def get_red_team_fn() -> RedTeamFn | None:
@@ -175,7 +125,6 @@ def get_red_team_fn() -> RedTeamFn | None:
 
 
 EngineDep = Annotated[WorkflowEngineImpl, Depends(get_workflow_engine)]
-OwnershipDep = Annotated[WorkflowOwnership, Depends(get_workflow_ownership)]
 RedTeamFnDep = Annotated[RedTeamFn | None, Depends(get_red_team_fn)]
 ApprovalDep = Annotated[ApprovalService, Depends(get_approval_service)]
 
@@ -225,16 +174,6 @@ class TransitionRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 # Routes                                                                      #
 # --------------------------------------------------------------------------- #
-
-
-def _require_owned(
-    ownership: WorkflowOwnership, run_id: uuid.UUID, workspace_id: uuid.UUID
-) -> None:
-    """Reject access to a run outside the caller's workspace (404, no leak)."""
-    if not ownership.owns(run_id, workspace_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"no workflow run {run_id}"
-        )
 
 
 def _run_task_id(run: WorkflowRun) -> uuid.UUID:
@@ -313,23 +252,28 @@ def _open_gate_approval(
 @router.post("/runs", response_model=WorkflowRun, status_code=status.HTTP_201_CREATED)
 def start_run(
     engine: EngineDep,
-    ownership: OwnershipDep,
+    session: SessionDep,
     principal: WriterDep,
     request: StartRunRequest,
 ) -> WorkflowRun:
-    """Start a workflow run for a task in the default workflow's initial state."""
+    """Start a workflow run for a task in the default workflow's initial state.
+
+    The task must be in the caller's workspace (404 otherwise): the run, its
+    gate titles and its attestation all read through it.
+    """
+    task = session.get(Task, request.task_id)
+    if task is None or task.workspace_id != principal.workspace_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"no task {request.task_id}"
+        )
     with _workflow_errors():
         run = engine.start(request.task_id)
-    if run.id is not None:
-        ownership.record(run.id, principal.workspace_id)
+    session.commit()
     return run
 
 
 @router.get("/runs/{run_id}", response_model=WorkflowRun)
-def get_run(
-    engine: EngineDep, ownership: OwnershipDep, principal: ReaderDep, run_id: uuid.UUID
-) -> WorkflowRun:
-    _require_owned(ownership, run_id, principal.workspace_id)
+def get_run(engine: EngineDep, principal: ReaderDep, run_id: uuid.UUID) -> WorkflowRun:
     with _workflow_errors():
         return engine.get_run(run_id)
 
@@ -337,7 +281,6 @@ def get_run(
 @router.post("/runs/{run_id}/transition", response_model=WorkflowRun)
 def transition(
     engine: EngineDep,
-    ownership: OwnershipDep,
     session: SessionDep,
     principal: WriterDep,
     red_team_fn: RedTeamFnDep,
@@ -369,7 +312,6 @@ def transition(
     red-team mint, exactly where the Temporal spine calls
     ``forge.create_approval``.
     """
-    _require_owned(ownership, run_id, principal.workspace_id)
     if request.event in GATE_EVENTS:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -378,6 +320,7 @@ def transition(
     with _workflow_errors():
         engine.transition(run_id, request.event)
         run = engine.get_run(run_id)
+    session.commit()
     if (
         isinstance(engine, WorkflowEngineImpl)
         and run.current_state == WorkflowState.SPEC_REVIEW.value
@@ -399,7 +342,7 @@ def transition(
 @router.post("/runs/{run_id}/gates/{gate}/sync", response_model=WorkflowRun)
 def sync_gate(
     engine: EngineDep,
-    ownership: OwnershipDep,
+    session: SessionDep,
     principal: WriterDep,
     approvals: ApprovalDep,
     run_id: uuid.UUID,
@@ -414,7 +357,6 @@ def sync_gate(
     that already advanced (or a gate still pending) is returned unchanged.
     Unknown or foreign runs read as ``404`` (no existence leak).
     """
-    _require_owned(ownership, run_id, principal.workspace_id)
     if gate not in WAITING_STATE_BY_GATE:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -443,6 +385,7 @@ def sync_gate(
         )
         with _workflow_errors():
             asyncio.run(submit_gate_event(engine, request=request, actor_ref=actor_ref))
+        session.commit()
     with _workflow_errors():
         return engine.get_run(run_id)
 
@@ -475,7 +418,6 @@ def get_run_red_team(
 )
 def trigger_run_red_team(
     engine: EngineDep,
-    ownership: OwnershipDep,
     session: SessionDep,
     principal: WriterDep,
     red_team_fn: RedTeamFnDep,
@@ -492,7 +434,6 @@ def trigger_run_red_team(
     (``spec_review`` for the spec phase; ``pr_opened``/``awaiting_review`` for
     the pr phase); unknown or foreign runs read as ``404`` (no existence leak).
     """
-    _require_owned(ownership, run_id, principal.workspace_id)
     with _workflow_errors():
         run = engine.get_run(run_id)
     phase = _GATEABLE_STATES.get(run.current_state)
@@ -526,9 +467,7 @@ def trigger_run_red_team(
 __all__ = [
     "StartRunRequest",
     "TransitionRequest",
-    "WorkflowOwnership",
     "get_red_team_fn",
     "get_workflow_engine",
-    "get_workflow_ownership",
     "router",
 ]

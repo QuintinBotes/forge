@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 from typing import Any, ClassVar
 
 from forge_approval.models import (
@@ -66,9 +67,10 @@ GATE_BY_STATE: dict[str, GateType] = {state: gate for gate, state in WAITING_STA
 #: guard, the failure is recorded, and gate sync retries it later.
 _MERGE_SIGNALS = ("ci_status_green", "spec_validated")
 
-#: ``Callable[[], engine]`` — resolved lazily so tests can substitute the
-#: engine instance the runs actually live in.
-EngineFactory = Callable[[], Any]
+#: ``workspace_id -> context manager yielding that workspace's engine``. The
+#: default opens its own session and commits when the block exits cleanly;
+#: tests substitute the engine their runs live in.
+EngineFactory = Callable[[uuid.UUID], AbstractContextManager[Any]]
 
 
 def agent_actor_for_run(run_id: uuid.UUID) -> str:
@@ -133,12 +135,16 @@ async def submit_gate_event(engine: Any, *, request: ApprovalRequest, actor_ref:
     return state.value if hasattr(state, "value") else str(state)
 
 
-def _default_engine_factory() -> Any:
-    """The process-wide workflow engine (lazy — avoids an import cycle with
-    the workflow router, which depends on the approval service)."""
-    from forge_api.routers.workflow import get_workflow_engine
+@contextmanager
+def _default_engine_factory(workspace_id: uuid.UUID) -> Iterator[Any]:
+    """The workspace's engine on a session of its own, like the attestation
+    hook (the deciding request's session belongs to the approval service)."""
+    from forge_api.db import get_session_factory
+    from forge_api.services.workflow_engine import select_workflow_engine
 
-    return get_workflow_engine()
+    with get_session_factory()() as session:
+        yield select_workflow_engine(session=session, workspace_id=workspace_id)
+        session.commit()
 
 
 class _WorkflowRunGateHook:
@@ -184,9 +190,10 @@ class _WorkflowRunGateHook:
             return outcome
 
         try:
-            new_state = await submit_gate_event(
-                self._engine_factory(), request=request, actor_ref=actor.actor_ref
-            )
+            with self._engine_factory(request.workspace_id) as engine:
+                new_state = await submit_gate_event(
+                    engine, request=request, actor_ref=actor.actor_ref
+                )
         except Exception as exc:  # never raised: the decision stands (A3)
             logger.exception(
                 "workflow gate %s for run %s resolved %s but submitting %r failed; "
