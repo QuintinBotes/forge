@@ -120,7 +120,6 @@ class SqlAlchemyWorkflowStore:
         from forge_db.models.enums import EngineBackend as DbEngineBackend
         from forge_db.models.enums import ExecutionMode as DbExecutionMode
         from forge_db.models.enums import RunStatus as DbRunStatus
-        from forge_db.models.enums import WorkflowState as DbWorkflowState
         from forge_db.models.runs import WorkflowRun as DbWorkflowRun
 
         context, engine_backend, wf_id, run_id = self._split_engine_context(run.context)
@@ -128,7 +127,7 @@ class SqlAlchemyWorkflowStore:
             workspace_id=self._workspace_id,
             task_id=run.task_id,
             workflow_name=run.workflow_name,
-            current_state=DbWorkflowState(run.current_state),
+            current_state=run.current_state,
             execution_mode=DbExecutionMode(run.execution_mode.value),
             status=DbRunStatus(run.status.value),
             context=context,
@@ -183,14 +182,13 @@ class SqlAlchemyWorkflowStore:
         from forge_db.models.enums import EngineBackend as DbEngineBackend
         from forge_db.models.enums import ExecutionMode as DbExecutionMode
         from forge_db.models.enums import RunStatus as DbRunStatus
-        from forge_db.models.enums import WorkflowState as DbWorkflowState
 
         if run.id is None:
             raise WorkflowRunNotFoundError(run.id)
         model = self._load(run.id)
         context, engine_backend, wf_id, run_id = self._split_engine_context(run.context)
         model.workflow_name = run.workflow_name
-        model.current_state = DbWorkflowState(run.current_state)
+        model.current_state = run.current_state
         model.execution_mode = DbExecutionMode(run.execution_mode.value)
         model.status = DbRunStatus(run.status.value)
         model.context = context

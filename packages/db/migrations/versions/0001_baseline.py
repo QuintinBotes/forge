@@ -82,6 +82,8 @@ DEFERRED_TABLES = frozenset(
         # 0024_board_persistence.
         "task_dependency",
         "world_fact_feedback",
+        # Spec K station visits — created by 0045_workflow_lines.
+        "workflow_station_visit",
     }
 )
 
