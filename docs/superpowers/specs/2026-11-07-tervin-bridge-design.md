@@ -56,7 +56,8 @@ ADR-0013 fixes the vocabulary, the gated/observed mapping and the envelope. Inte
   ts)`, unique `(run_id, seq)`, append-only.
 - The worker attaches a listener to the run state's `add_step` and appends events as steps happen,
   plus `thread.started`, `artifact.created`, `cost.updated` and the terminal event from
-  `run_agent_task`; supervised sub-agent runs do the same under their own run ids.
+  `run_agent_task`. Supervised multi-agent runs do not emit events yet (next: each sub-agent run
+  under its own run id).
 - `GET /agent/runs/{id}/events` (reader permission, workspace-scoped, foreign ids 404):
   `text/event-stream`, one SSE message per event (`id: <seq>`, `event: <type>`, `data: <json>`),
   replay after `Last-Event-ID` or `?after=`, poll for new rows about once a second, keep-alive
