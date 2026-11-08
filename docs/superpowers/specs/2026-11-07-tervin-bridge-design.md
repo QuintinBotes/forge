@@ -1,11 +1,11 @@
 # L — Tervin bridge
 
 **Date:** 2026-11-07
-**Status:** DRAFT — scope and interfaces only
+**Status:** Seams 1–3 implementation-ready (seam 2 built); seams 4–6 DRAFT, scope and interfaces only
 **Depends on:** I (forge MCP server), G (real runs and their events)
 **Blocks:** nothing in forge
 **Decisions:** ADR-0002 (forge is the system of record, tervin its desktop face), ADR-0013 (one
-run-event vocabulary, proposed), ADR-0015 (desktop integration contract)
+run-event vocabulary), ADR-0015 (desktop integration contract)
 
 ---
 
@@ -39,6 +39,32 @@ Tervin admits a tool only as a process, a CLI whose JSON it draws, MCP, or `.ter
 | 4 | **Approval push** | Approval requested/resolved events on `/ws` for the principal's workspace | Inbox + Touch ID; posts the decision to `POST /approvals/{id}/decision` |
 | 5 | **Runner protocol** | Register a runner, lease a task, stream events, submit result + attestation inputs | Runs the agent locally behind Tervin Rules; forge records it as `gated` with tervin as the gate |
 | 6 | **ACP shim** | `forge acp` stdio wrapper around a forge run: forge tool calls map to `session/request_permission` | Treats forge as one more ACP agent it can gate |
+
+### 2.1 Seam 1, MCP tools (implementation-ready)
+
+Five read-only tools join the world tools in I's registry, each calling the handler its REST route
+serves so the two cannot drift: `spec_list` (a project's specs), `spec_get`, `board_items` (board
+tasks, `limit` ≤ 100), `approvals_pending`, `run_status`. Workspace scoping comes from the token's
+principal; a foreign id looks nonexistent. Every result carries the §4 provenance fields.
+
+### 2.2 Seam 3, run event stream (implementation-ready)
+
+ADR-0013 fixes the vocabulary, the gated/observed mapping and the envelope. Interfaces:
+
+- `forge_contracts.run_events.RunEvent` (the envelope) and `RunEventType` (the emitted names).
+- `agent_run_event(id, workspace_id, run_id → agent_run, seq, type, enforcement, summary, payload,
+  ts)`, unique `(run_id, seq)`, append-only.
+- The worker attaches a listener to the run state's `add_step` and appends events as steps happen,
+  plus `thread.started`, `artifact.created`, `cost.updated` and the terminal event from
+  `run_agent_task`; supervised sub-agent runs do the same under their own run ids.
+- `GET /agent/runs/{id}/events` (reader permission, workspace-scoped, foreign ids 404):
+  `text/event-stream`, one SSE message per event (`id: <seq>`, `event: <type>`, `data: <json>`),
+  replay after `Last-Event-ID` or `?after=`, poll for new rows about once a second, keep-alive
+  every 15 s, close after the terminal event or after 30 minutes.
+- Acceptance: a run's events arrive in `seq` order with the flag the ADR-0013 table gives; a
+  reconnect with `Last-Event-ID` resumes without gaps or duplicates; a denied tool call appears as
+  `tool.requested` (observed) then `permission.denied` (gated); secrets in tool output are redacted;
+  an event-write failure does not fail the run.
 
 ## 3. Auth
 
