@@ -8,10 +8,19 @@ those events), with the deciding user as the transition actor — so the
 approval service's rules (required approvals, no self-approval, attestation)
 are the only way a feature run passes a gate (ADR-0005).
 
+A ``plan`` or ``pr`` request resolved ``rejected`` or ``changes_requested``
+ends the run: the hook cancels it with the decider as actor and the reason
+``gate_<gate>_<status>`` (spec K §4.11); ``spec`` keeps its
+``spec_changes_requested`` edge.
+
 Failure contract: a failed submit is logged and recorded on the request
 (``gate_payload.workflow_event``), never raised, and never rolls back the
 recorded decision. ``POST /workflow/runs/{id}/gates/{gate}/sync`` is the
-recovery path and shares :func:`submit_gate_event` with the hook.
+recovery path and shares :func:`submit_gate_event` with the hook. When the
+wrapped hook (the ``pr`` attestation) raises, the gate is ``blocked``: no event
+is submitted and the error reaches the approval service (which reports it).
+Sync merges an approved ``pr`` gate only on proof of attestation
+(:func:`attested_or_blocked`), so it is also the blocked gate's recovery route.
 """
 
 from __future__ import annotations
@@ -20,9 +29,10 @@ import logging
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from forge_approval.models import (
+    ApprovalAction,
     ApprovalDecisionRequest,
     ApprovalRequest,
     GateStatus,
@@ -33,6 +43,12 @@ from forge_approval.models import (
 from forge_approval.registry import GateResolutionHook
 from forge_contracts import WorkflowState
 from forge_contracts.automation import HUMAN_GATE_EVENTS
+from forge_db.attest.repository import AttestationRepository
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from forge_approval import ApprovalService
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +56,10 @@ logger = logging.getLogger(__name__)
 WORKFLOW_RUN_SUBJECT = "workflow_run"
 
 EVENT_SPEC_CHANGES = "spec_changes_requested"
+EVENT_CANCEL = "cancel"
+
+#: ``gate_payload.workflow_event.status`` of a gate whose wrapped hook failed.
+GATE_BLOCKED = "blocked"
 
 #: Events only an approval resolution may produce. ``/transition`` refuses all
 #: four; automations already refuse the three ``*_by_human`` approvals.
@@ -83,19 +103,77 @@ def agent_actor_for_run(run_id: uuid.UUID) -> str:
 def event_for_resolution(gate_type: GateType, status: GateStatus) -> str | None:
     """The workflow event a resolved gate submits (``None`` = no event).
 
-    ``approved`` submits the gate's ``*_by_human`` event; a ``spec``
-    ``rejected`` / ``changes_requested`` submits ``spec_changes_requested``.
-    Every other resolution (plan/pr rejection, expiry) has no FSM event — the
-    run stays at its gate for a person to act on.
+    ``approved`` submits the gate's ``*_by_human`` event. ``rejected`` /
+    ``changes_requested`` submits ``spec_changes_requested`` on ``spec`` and
+    ``cancel`` on ``plan`` / ``pr`` (the run ends; rework is a new run). Expiry
+    submits nothing.
     """
     if status is GateStatus.APPROVED:
         return APPROVED_EVENT_BY_GATE.get(gate_type)
-    if gate_type is GateType.SPEC and status in (
-        GateStatus.REJECTED,
-        GateStatus.CHANGES_REQUESTED,
-    ):
-        return EVENT_SPEC_CHANGES
+    if status in (GateStatus.REJECTED, GateStatus.CHANGES_REQUESTED):
+        if gate_type is GateType.SPEC:
+            return EVENT_SPEC_CHANGES
+        if gate_type in (GateType.PLAN, GateType.PR):
+            return EVENT_CANCEL
     return None
+
+
+def cancel_reason(request: ApprovalRequest) -> str:
+    """Why a gate resolution cancelled its run, e.g. ``gate_plan_rejected``."""
+    return f"gate_{request.gate_type.value}_{request.status.value}"
+
+
+def mark_blocked(request: ApprovalRequest, *, event: str | None, actor_ref: str) -> None:
+    """Record on ``request`` that its attestation failed, so its run must not move."""
+    request.gate_payload = {
+        **request.gate_payload,
+        "workflow_event": {
+            "status": GATE_BLOCKED,
+            "reason": "attestation_failed",
+            "event": event,
+            "actor": actor_ref,
+        },
+    }
+
+
+async def attested_or_blocked(
+    approvals: ApprovalService, session: Session, request: ApprovalRequest, actor: Principal
+) -> bool:
+    """Gate sync for an approved ``pr`` gate: True once an attestation proves it.
+
+    An attestation already recorded for the run is the proof (it is never made
+    twice). Otherwise the wrapped attestation hook (the one the gate hook runs)
+    runs now; when it fails, ``request`` is marked blocked, that is persisted,
+    and the answer is False: the run must not merge.
+    """
+    assert request.workflow_run_id is not None
+    existing = AttestationRepository(session).get_by_run(
+        request.workspace_id, workflow_run_id=request.workflow_run_id
+    )
+    if existing is not None:
+        return True
+    hook = approvals.resolution_hook(GateType.PR)
+    try:
+        if not isinstance(hook, _WorkflowRunGateHook) or hook._wrapped is None:
+            raise LookupError("the pr gate wraps no attestation hook")
+        approve = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
+        outcome = await hook._wrapped.on_resolved(request, approve, actor)
+        if not outcome.completed:
+            raise RuntimeError(f"attestation did not complete: {outcome.blocking_reasons}")
+    except Exception:
+        logger.exception(
+            "attesting pr gate %s for run %s failed; the gate stays blocked",
+            request.id,
+            request.workflow_run_id,
+        )
+        mark_blocked(
+            request,
+            event=event_for_resolution(request.gate_type, request.status),
+            actor_ref=actor.actor_ref,
+        )
+        await approvals.save_gate_payload(request)
+        return False
+    return True
 
 
 def _merge_signals(request: ApprovalRequest) -> dict[str, bool]:
@@ -124,6 +202,8 @@ async def submit_gate_event(engine: Any, *, request: ApprovalRequest, actor_ref:
     run_id = request.workflow_run_id
     if run_id is None:
         raise ValueError(f"approval request {request.id} carries no workflow_run_id")
+    if event == EVENT_CANCEL:
+        return await _cancel_run(engine, run_id, actor_ref=actor_ref, reason=cancel_reason(request))
     signals = _merge_signals(request)
     atransition = getattr(engine, "atransition", None)
     if atransition is not None:
@@ -133,6 +213,15 @@ async def submit_gate_event(engine: Any, *, request: ApprovalRequest, actor_ref:
         engine.update_context(run_id, signals)
     state = engine.transition(run_id, event, actor=actor_ref)
     return state.value if hasattr(state, "value") else str(state)
+
+
+async def _cancel_run(engine: Any, run_id: uuid.UUID, *, actor_ref: str, reason: str) -> str:
+    """Cancel ``run_id`` as ``actor_ref``; an already-finished V1 run is left as it is."""
+    atransition = getattr(engine, "atransition", None)
+    if atransition is not None:
+        state = await atransition(run_id, EVENT_CANCEL, actor=actor_ref, reason=reason)
+        return state.value if hasattr(state, "value") else str(state)
+    return str(engine.cancel(run_id, actor=actor_ref, reason=reason).current_state)
 
 
 @contextmanager
@@ -176,17 +265,32 @@ class _WorkflowRunGateHook:
         *,
         session: Any = None,
     ) -> ResolutionOutcome:
+        for_run = (
+            request.subject_type == WORKFLOW_RUN_SUBJECT and request.workflow_run_id is not None
+        )
+        event = event_for_resolution(request.gate_type, request.status)
         if self._wrapped is not None:
-            outcome = await self._wrapped.on_resolved(request, decision, actor, session=session)
+            try:
+                outcome = await self._wrapped.on_resolved(request, decision, actor, session=session)
+            except Exception:
+                if for_run:
+                    # A failed pr attestation blocks the gate: the run never moves on it.
+                    mark_blocked(request, event=event, actor_ref=actor.actor_ref)
+                raise
         else:
             outcome = ResolutionOutcome(
                 completed=True, follow_up_state=f"{request.gate_type.value}_{request.status.value}"
             )
 
-        if request.subject_type != WORKFLOW_RUN_SUBJECT or request.workflow_run_id is None:
+        if not for_run or event is None:
             return outcome
-        event = event_for_resolution(request.gate_type, request.status)
-        if event is None:
+        if (
+            self._wrapped is not None
+            and not outcome.completed
+            and request.status == GateStatus.APPROVED
+        ):
+            # An attestation that did not complete is no proof: block exactly as if it raised.
+            mark_blocked(request, event=event, actor_ref=actor.actor_ref)
             return outcome
 
         try:
@@ -228,15 +332,15 @@ class _WorkflowRunGateHook:
                 ]
             return outcome
 
-        request.gate_payload = {
-            **request.gate_payload,
-            "workflow_event": {
-                "status": "submitted",
-                "event": event,
-                "actor": actor.actor_ref,
-                "to_state": new_state,
-            },
+        submitted: dict[str, Any] = {
+            "status": "submitted",
+            "event": event,
+            "actor": actor.actor_ref,
+            "to_state": new_state,
         }
+        if event == EVENT_CANCEL:
+            submitted["reason"] = cancel_reason(request)
+        request.gate_payload = {**request.gate_payload, "workflow_event": submitted}
         outcome.details = {
             **outcome.details,
             "workflow_event": event,
@@ -262,6 +366,7 @@ class PrWorkflowGateHook(_WorkflowRunGateHook):
 
 __all__ = [
     "APPROVED_EVENT_BY_GATE",
+    "EVENT_CANCEL",
     "GATE_BY_STATE",
     "GATE_EVENTS",
     "WAITING_STATE_BY_GATE",
@@ -271,6 +376,9 @@ __all__ = [
     "PrWorkflowGateHook",
     "SpecWorkflowGateHook",
     "agent_actor_for_run",
+    "attested_or_blocked",
+    "cancel_reason",
     "event_for_resolution",
+    "mark_blocked",
     "submit_gate_event",
 ]

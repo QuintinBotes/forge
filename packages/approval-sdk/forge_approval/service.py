@@ -8,6 +8,7 @@ through :meth:`resolve` (identical authorization + audit everywhere).
 from __future__ import annotations
 
 import builtins
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -45,12 +46,22 @@ from forge_approval.models import (
     risk_rank,
 )
 from forge_approval.redaction import Redactor, passthrough_redactor
-from forge_approval.registry import GateRegistry, MissingProviderError, default_actions
+from forge_approval.registry import (
+    GateRegistry,
+    GateResolutionHook,
+    MissingProviderError,
+    default_actions,
+)
 from forge_approval.repository import (
     AlreadyResolvedError,
     ApprovalNotFoundError,
     ApprovalRepository,
 )
+
+logger = logging.getLogger(__name__)
+
+#: ``ResolutionOutcome.details["error_code"]`` when the gate's hook raised.
+HOOK_FAILED = "resolution_hook_failed"
 
 
 class ApprovalService:
@@ -264,6 +275,17 @@ class ApprovalService:
         matches = [r for r in rows if r.subject_type == subject_type and r.subject_id == subject_id]
         return matches[-1] if matches else None
 
+    def resolution_hook(self, gate_type: GateType) -> GateResolutionHook | None:
+        """The hook :meth:`resolve` runs for ``gate_type`` (gate sync re-runs part of it)."""
+        return self._registry.hook(gate_type)
+
+    async def save_gate_payload(self, request: ApprovalRequest) -> ApprovalRequest:
+        """Persist ``request.gate_payload`` alone: a marker recorded outside :meth:`resolve`
+        (gate sync's ``blocked``). The decision fields are never written here."""
+        stored = await self.get(request.id, workspace_id=request.workspace_id)
+        stored.gate_payload = request.gate_payload
+        return await self._repo.update(stored)
+
     async def decisions(
         self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID
     ) -> builtins.list[ApprovalDecisionRecord]:
@@ -331,7 +353,20 @@ class ApprovalService:
                 details={"result": "not_implemented"},
             )
         else:
-            outcome = await hook.on_resolved(request, decision, actor, session=session)
+            try:
+                outcome = await hook.on_resolved(request, decision, actor, session=session)
+            except Exception as exc:
+                # The decision stands: a hook error is reported, never a 500 (spec K §4.11).
+                logger.exception(
+                    "resolution hook for %s gate %s failed after the decision was recorded",
+                    request.gate_type.value,
+                    request.id,
+                )
+                outcome = ResolutionOutcome(
+                    completed=False,
+                    blocking_reasons=["the gate's resolution hook failed"],
+                    details={"error_code": HOOK_FAILED, "error_type": type(exc).__name__},
+                )
             # Persist anything the hook recorded on the request (e.g. a failed
             # downstream hand-off stamped into ``gate_payload``). The decision
             # itself was already committed by the update above, so a hook
@@ -635,4 +670,4 @@ _STATUS_FOR_ACTION: dict[ApprovalAction, GateStatus] = {
 }
 
 
-__all__ = ["ApprovalService"]
+__all__ = ["HOOK_FAILED", "ApprovalService"]
