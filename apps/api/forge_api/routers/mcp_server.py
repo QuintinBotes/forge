@@ -15,6 +15,7 @@ from __future__ import annotations
 import functools
 import logging
 import time
+from collections.abc import Callable, Mapping
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -56,9 +57,10 @@ logger = logging.getLogger(__name__)
 @functools.cache
 def get_mcp_tool_registry() -> ToolRegistry:
     """The tools this server exposes (spec I §5)."""
+    from forge_api.mcp_server.factory_tools import FACTORY_TOOLS
     from forge_api.mcp_server.world_tools import WORLD_TOOLS
 
-    return ToolRegistry(WORLD_TOOLS)
+    return ToolRegistry((*WORLD_TOOLS, *FACTORY_TOOLS))
 
 
 @functools.cache
@@ -82,6 +84,7 @@ def _dispatch(
     session: Session,
     registry: ToolRegistry,
     audit: AuditLog,
+    overrides: Mapping[Any, Callable[[], Any]],
 ) -> dict[str, Any]:
     method = message.method
     if method == "initialize":
@@ -101,7 +104,7 @@ def _dispatch(
         started = time.monotonic()
         outcome = "error"
         try:
-            result = registry.call(ToolContext(principal, session), name, arguments)
+            result = registry.call(ToolContext(principal, session, overrides), name, arguments)
             outcome = "error" if result["isError"] else "ok"
             return result
         except JsonRpcError:
@@ -156,6 +159,7 @@ async def mcp_endpoint(
             session=session,
             registry=registry,
             audit=audit,
+            overrides=request.app.dependency_overrides,
         )
     except JsonRpcError as exc:
         return JSONResponse(failure(message.request_id, exc.code, exc.message))
