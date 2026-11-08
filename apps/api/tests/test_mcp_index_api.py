@@ -207,6 +207,36 @@ def test_get_index_status_reflects_source(
     assert body["stale"] is True  # never synced yet
 
 
+@pytest.mark.parametrize(
+    ("own_sla", "minutes_ago", "stale"),
+    [(None, 10, False), (None, 31, True), (60, 31, False), (60, 61, True)],
+)
+def test_index_status_staleness_follows_the_shared_rule(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    own_sla: int | None,
+    minutes_ago: int,
+    stale: bool,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from forge_db.models import KnowledgeSource
+
+    slug = _register(client)
+    client.patch(f"/mcp/connections/{slug}", json={"index_strategy": "sync_and_index"})
+    source_id = client.get(f"/mcp/connections/{slug}/index").json()["source_id"]
+    with session_factory() as session:
+        source = session.get(KnowledgeSource, uuid.UUID(source_id))
+        source.freshness_sla_minutes = own_sla
+        source.last_synced_at = datetime.now(UTC) - timedelta(minutes=minutes_ago)
+        session.commit()
+
+    body = client.get(f"/mcp/connections/{slug}/index").json()
+
+    assert body["stale"] is stale
+    assert body["freshness_sla_minutes"] == (own_sla or 30)
+
+
 def test_reindex_409_when_not_indexed(client: TestClient) -> None:
     slug = _register(client)  # default sample connection is sync_and_index? -> set query_through
     client.patch(f"/mcp/connections/{slug}", json={"index_strategy": "query_through"})

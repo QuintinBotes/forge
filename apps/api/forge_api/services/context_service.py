@@ -43,6 +43,7 @@ from forge_db.models import (
     RunStatus,
 )
 from forge_knowledge import KnowledgeService
+from forge_knowledge.text import strip_uri_credentials
 from forge_spec import FileSpecEngine, SpecNotFoundError, is_spec_key, spec_id_for_key
 from forge_world import (
     KNOWN_AS_KEY,
@@ -334,9 +335,9 @@ def source_label(kind: str | None, uri: str | None, path: str | None) -> str:
     """A knowledge passage's label (ADR-0014): ``"{source kind}:{source uri}:{path}"``.
 
     The kind keeps a tracker issue, a commit and a file of one repository
-    (one uri) apart.
+    (one uri) apart. The uri never carries credentials.
     """
-    return f"{kind or 'unknown'}:{uri or ''}:{path or ''}"
+    return f"{kind or 'unknown'}:{strip_uri_credentials(uri or '')}:{path or ''}"
 
 
 def chunk_label(chunk: RetrievedChunk) -> str:
@@ -390,7 +391,7 @@ def _instruction_candidates(
             _Candidate(
                 kind="instruction",
                 id=str(row.id),
-                source=f"{source_row.uri}:{row.path}",
+                source=f"{strip_uri_credentials(source_row.uri)}:{row.path}",
                 text=row.content,
                 section="instructions",
                 ref_kind="chunk",

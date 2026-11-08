@@ -12,6 +12,8 @@ Serves the hybrid-retrieval spine over HTTP:
   GitHub tracker source (spec J §2.3) is enqueued for the worker instead.
 * ``GET /knowledge/document`` — one document's chunks in order, capped at
   ``max_tokens`` (spec J §2.4.1, D-e; the ``knowledge_document`` MCP tool).
+* ``GET /knowledge/sources`` — the workspace's sources with chunk counts,
+  embedding coverage and freshness (the web knowledge page).
 
 Handlers delegate to a :class:`KnowledgeService`. The default service is built
 from the API's DB session factory with the *configured* production embedder and
@@ -27,12 +29,13 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC, datetime
 from functools import lru_cache, partial
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api._stubs import NotImplementedResponse
@@ -44,6 +47,7 @@ from forge_api.schemas.knowledge import (
     KnowledgeDocumentResponse,
     KnowledgePassage,
     KnowledgeSearchResponse,
+    KnowledgeSourceSummary,
     KnowledgeSyncEnqueued,
 )
 from forge_api.security.ssrf import assert_safe_url
@@ -67,7 +71,14 @@ from forge_knowledge import (
     full_sync,
     sync_source,
 )
-from forge_knowledge.sync import commit_limit, embed_backlog, is_tracker_source
+from forge_knowledge.sync import (
+    commit_limit,
+    embed_backlog,
+    freshness_sla_minutes,
+    is_stale,
+    is_tracker_source,
+)
+from forge_knowledge.text import strip_uri_credentials
 
 router = APIRouter(
     prefix="/knowledge",
@@ -335,7 +346,7 @@ def sync(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="incremental sync requires 'root' and 'base_ref'",
                 )
-            return sync_source(
+            result = sync_source(
                 svc,
                 request.source_id,
                 request.root,
@@ -344,11 +355,10 @@ def sync(
                 head_ref=request.head_ref,
                 max_commits=max_commits,
             )
-
-        if request.files is not None:
-            return full_sync(svc, request.source_id, request.files, prune=request.prune)
-        if request.root is not None:
-            return sync_source(
+        elif request.files is not None:
+            result = full_sync(svc, request.source_id, request.files, prune=request.prune)
+        elif request.root is not None:
+            result = sync_source(
                 svc,
                 request.source_id,
                 request.root,
@@ -356,14 +366,98 @@ def sync(
                 prune=request.prune,
                 max_commits=max_commits,
             )
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="full sync requires either 'files' or 'root'",
-        )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="full sync requires either 'files' or 'root'",
+            )
     except ValueError as exc:  # bad ref / unsupported mode surfaced as 422
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
+    if not result.errors:  # a sync that reported errors is not fresh
+        _record_sync(factory, source.id)
+    return result
+
+
+def _record_sync(factory: sessionmaker[Session], source_id: uuid.UUID) -> None:
+    """Stamp ``last_synced_at`` after a sync that succeeded (never after a failure)."""
+    with factory() as session:
+        source = session.get(KnowledgeSource, source_id)
+        if source is not None:
+            source.last_synced_at = datetime.now(UTC)
+            session.commit()
+
+
+def _utc(moment: datetime | None) -> datetime | None:
+    """A stored time as UTC (``last_synced_at`` is a naive UTC column)."""
+    if moment is None or moment.tzinfo is not None:
+        return moment
+    return moment.replace(tzinfo=UTC)
+
+
+@router.get("/sources", response_model=list[KnowledgeSourceSummary])
+def sources(
+    principal: ReaderDep, factory: KnowledgeSessionFactoryDep
+) -> list[KnowledgeSourceSummary]:
+    """The caller's knowledge sources by name, with counts and freshness (READ).
+
+    One grouped query. ``config`` stays server-side except ``config.tracker``;
+    the uri loses its credentials. ``syncable`` is what ``POST /knowledge/sync``
+    can sync with only a source id (a GitHub tracker source).
+    """
+    stmt = (
+        select(
+            KnowledgeSource,
+            func.count(RetrievalChunk.id),
+            func.count(RetrievalChunk.embedding),
+            func.max(RetrievalChunk.created_at),
+        )
+        .outerjoin(
+            RetrievalChunk,
+            and_(
+                RetrievalChunk.knowledge_source_id == KnowledgeSource.id,
+                RetrievalChunk.workspace_id == KnowledgeSource.workspace_id,
+            ),
+        )
+        .where(KnowledgeSource.workspace_id == principal.workspace_id)
+        .group_by(KnowledgeSource.id)
+        .order_by(KnowledgeSource.name, KnowledgeSource.id)
+    )
+    now = datetime.now(UTC)
+    out: list[KnowledgeSourceSummary] = []
+    with factory() as session:
+        for source, chunks, embedded, newest in session.execute(stmt).all():
+            tracker = (source.config or {}).get("tracker")
+            out.append(
+                KnowledgeSourceSummary(
+                    id=str(source.id),
+                    name=source.name,
+                    kind=source.kind.value,
+                    uri=strip_uri_credentials(source.uri),
+                    tracker=tracker if isinstance(tracker, str) else None,
+                    syncable=is_tracker_source(source),
+                    sync_mode=source.sync_mode.value,
+                    last_synced_at=_utc(source.last_synced_at),
+                    freshness_sla_minutes=freshness_sla_minutes(source),
+                    stale=is_stale(source, now),
+                    chunk_count=chunks,
+                    embedded_chunk_count=embedded,
+                    newest_chunk_at=_utc(newest),
+                )
+            )
+    return out
+
+
+_KINDS = frozenset(k.value for k in KnowledgeSourceKind)
+
+
+def source_is_id(source: str) -> bool:
+    try:
+        uuid.UUID(source)
+    except ValueError:
+        return False
+    return True
 
 
 def _workspace_source(session: Session, workspace_id: uuid.UUID, source: str) -> KnowledgeSource:
@@ -385,6 +479,22 @@ def _workspace_source(session: Session, workspace_id: uuid.UUID, source: str) ->
         .order_by(KnowledgeSource.id)
         .limit(2)
     ).all()
+    if not found and not source_is_id(source):
+        # Labels carry the uri as it may leave the server (credentials, query and
+        # fragment stripped), so a label's uri is matched in that form too.
+        wanted_kind = KnowledgeSourceKind(kind) if kind in _KINDS and uri else None
+        wanted = strip_uri_credentials(uri if wanted_kind else source)
+        candidates = session.scalars(
+            select(KnowledgeSource)
+            .where(KnowledgeSource.workspace_id == workspace_id)
+            .order_by(KnowledgeSource.id)
+        )
+        found = [
+            s
+            for s in candidates
+            if strip_uri_credentials(s.uri) == wanted
+            and (wanted_kind is None or s.kind == wanted_kind)
+        ][:2]
     if not found:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="knowledge source not found"
@@ -428,6 +538,7 @@ def document(
     ).all()
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    uri = strip_uri_credentials(found.uri)
     passages: list[KnowledgePassage] = []
     tokens = 0
     for row in rows:
@@ -445,14 +556,14 @@ def document(
                 end_line=row.end_line,
                 weight=row.weight,
                 source_id=str(found.id),
-                source_uri=found.uri,
+                source_uri=uri,
                 metadata={**(row.chunk_metadata or {}), "source_kind": found.kind.value},
-                source=source_label(found.kind.value, found.uri, row.path),
+                source=source_label(found.kind.value, uri, row.path),
             )
         )
     return KnowledgeDocumentResponse(
         source_id=str(found.id),
-        source=found.uri,
+        source=uri,
         path=path,
         passages=passages,
         tokens=tokens,

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from forge_contracts import IndexResult
@@ -155,6 +156,15 @@ def _load_source(store: KnowledgeService, source_id: str) -> KnowledgeSource | N
         return session.get(KnowledgeSource, uuid.UUID(source_id))
 
 
+def _record_sync(store: KnowledgeService, source_id: str) -> None:
+    """Stamp ``last_synced_at`` after a successful sync (the knowledge page's freshness)."""
+    with store.session_factory() as session:
+        source = session.get(KnowledgeSource, uuid.UUID(source_id))
+        if source is not None:
+            source.last_synced_at = datetime.now(UTC)
+            session.commit()
+
+
 #: The tracker client factory the task uses (tests swap in a fake).
 tracker_client_factory: TrackerClientFactory = _github_tracker_client
 
@@ -203,4 +213,6 @@ def sync_source_task(
         result = sync_tracker_source(service, source, tracker_client_factory)
     else:
         raise ValueError("sync_source_task requires either 'files' or 'root'")
+    if not result.errors:  # a sync that raised or reported errors is not fresh
+        _record_sync(service, source_id)
     return result.model_dump()

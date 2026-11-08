@@ -348,3 +348,60 @@ def test_sync_source_task_indexes_commits_only_when_the_source_enables_them(
             for row in session.query(RetrievalChunk).filter_by(knowledge_source_id=source_id)
         }
     assert len({p for p in paths if p and p.startswith("commits/")}) == commit_paths
+
+
+# --------------------------------------------------------------------------- #
+# Freshness: a successful sync stamps last_synced_at, a failed one never does  #
+# --------------------------------------------------------------------------- #
+
+
+def _last_synced(session_factory: sessionmaker[Session], source_id: uuid.UUID) -> object:
+    with session_factory() as session:
+        source = session.get(KnowledgeSource, source_id)
+        assert source is not None
+        return source.last_synced_at
+
+
+def test_a_successful_sync_records_freshness(
+    monkeypatch: pytest.MonkeyPatch,
+    service: KnowledgeService,
+    session_factory: sessionmaker[Session],
+    source_id: uuid.UUID,
+    tracker_id: uuid.UUID,
+) -> None:
+    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("forge_worker.syncer.tracker_client_factory", lambda _s: _FakeGitHub())
+
+    sync_source_task(str(source_id), files=FILES)
+    sync_source_task(str(tracker_id))
+
+    assert _last_synced(session_factory, source_id) is not None
+    assert _last_synced(session_factory, tracker_id) is not None
+
+
+def test_a_failed_sync_never_records_freshness(
+    monkeypatch: pytest.MonkeyPatch,
+    service: KnowledgeService,
+    session_factory: sessionmaker[Session],
+    source_id: uuid.UUID,
+    tracker_id: uuid.UUID,
+) -> None:
+    from forge_contracts import IndexResult
+
+    def no_connection(_source: KnowledgeSource) -> _FakeGitHub:
+        raise TrackerNotConnectedError("tracker_not_connected: no GitHub Issues connection")
+
+    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("forge_worker.syncer.tracker_client_factory", no_connection)
+    monkeypatch.setattr(
+        "forge_worker.syncer.sync_files",
+        lambda _svc, sid, _files, prune: IndexResult(source_id=sid, errors=["embedding: down"]),
+    )
+
+    with pytest.raises(TrackerNotConnectedError):
+        sync_source_task(str(tracker_id))
+    reported = sync_source_task(str(source_id), files=FILES)
+
+    assert reported["errors"] == ["embedding: down"]
+    assert _last_synced(session_factory, tracker_id) is None
+    assert _last_synced(session_factory, source_id) is None

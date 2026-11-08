@@ -12,6 +12,7 @@ implies semantic ranking that did not happen.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -22,6 +23,7 @@ __all__ = [
     "KnowledgeDocumentResponse",
     "KnowledgePassage",
     "KnowledgeSearchResponse",
+    "KnowledgeSourceSummary",
     "KnowledgeSyncEnqueued",
 ]
 
@@ -63,3 +65,29 @@ class KnowledgeSyncEnqueued(BaseModel):
 
     status: Literal["enqueued"] = "enqueued"
     source_id: str
+
+
+class KnowledgeSourceSummary(BaseModel):
+    """One ``GET /knowledge/sources`` row: never the source's config or a uri credential.
+
+    ``stale`` is true past ``freshness_sla_minutes`` (or when never synced): an
+    MCP source without its own SLA is held to 30 minutes, any other source only
+    to an explicit one. ``syncable`` says ``POST /knowledge/sync`` can sync it
+    from its id alone (a GitHub tracker source). ``embedded_chunk_count`` of
+    ``chunk_count`` is the embedding coverage (ADR-0018: chunks without vectors
+    are shown, not hidden).
+    """
+
+    id: str
+    name: str
+    kind: str
+    uri: str
+    tracker: str | None = None
+    syncable: bool = False
+    sync_mode: str
+    last_synced_at: datetime | None = None
+    freshness_sla_minutes: int | None = None
+    stale: bool = False
+    chunk_count: int = 0
+    embedded_chunk_count: int = 0
+    newest_chunk_at: datetime | None = None

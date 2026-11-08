@@ -13,6 +13,7 @@ import {
   KeyRound,
   Layers,
   LayoutList,
+  Library,
   Menu,
   Network,
   Rocket,
@@ -83,6 +84,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Leaderboard", href: "/leaderboard", icon: Trophy },
       { label: "Audit", href: "/audit", icon: ScrollText },
       { label: "Knowledge graph", href: "/world", icon: Network },
+      { label: "Knowledge base", href: "/knowledge", icon: Library },
     ],
   },
   {
