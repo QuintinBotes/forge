@@ -142,7 +142,7 @@ def verify_package(
     3. ``manifest.content_hash == version.content_hash``;
     4. the existing signature verification (:func:`verify_version`).
 
-    A failure in checks 1–3 is a hard block (``manifest_mismatch``), whatever
+    A failure in checks 1-3 is a hard block (``manifest_mismatch``), whatever
     the registry trust level or the signature's validity.
     """
     if not (manifest.kind == entry.kind == request.kind):

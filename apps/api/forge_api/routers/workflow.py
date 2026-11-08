@@ -272,7 +272,7 @@ def _task_title(session: Session, task_id: uuid.UUID) -> str | None:
     must never be the reason a gate fails to open)."""
     try:
         task = session.get(Task, task_id)
-    except Exception:  # noqa: BLE001 — title is cosmetic; the gate still opens
+    except Exception:
         session.rollback()
         return None
     return task.title if task is not None else None

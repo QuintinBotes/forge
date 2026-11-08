@@ -27,8 +27,8 @@ from sqlalchemy.orm import Session
 
 from forge_api.deps import Principal
 from forge_api.observability.redaction import redact_mapping
-from forge_api.services.workflow_gate_hook import EngineFactory
 from forge_api.observability.service import get_observability_service
+from forge_api.services.workflow_gate_hook import EngineFactory
 from forge_approval import (
     ApprovalAuthorizer,
     ApprovalRepository,
