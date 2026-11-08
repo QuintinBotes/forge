@@ -61,6 +61,38 @@ named entities and decisions from them into `forge_world`. A code-symbol index m
 - A port of lore's 60-question agent benchmark runs in `forge_eval`. **Bar: ≥ 0.86** (utopia's
   score on lore's set), hallucination ≤ 7%, p50 ≤ 17.8k tokens. A regression fails CI.
 
+### 2.4.1 Benchmark port and wider index decisions (2026-11-08)
+
+The port (`ctxbench`) follows lore's published method; its harness, prompts and rubric are not
+public, so forge's are new and comparable in shape, not byte for byte.
+- **Bar.** Only lore's own 30 questions can be run (the other 30 target a private repository).
+  On those 30, utopia scored 0.92 with 5.6% hallucination, so 0.86 would not beat it. J is accepted
+  at **≥ 0.92, hallucination ≤ 5.6%, p50 ≤ 17.8k tokens, in two consecutive live runs**; 0.86 /
+  7% / 17.8k is the hard floor a CI run fails under.
+- **Asker and judge.** Each ask is a fresh Claude Code `--print` run (sonnet, medium effort, no
+  built-in tools, only forge's MCP server with a read-only key), three asks per question; an Opus
+  judge without tools grades correct / partial / wrong / don't-know with lore's scoring. A run whose
+  MCP server is unreachable or whose retrieval legs are missing or degraded is invalid, never scored.
+- **Corpus.** lore's tree and history at a pinned commit plus a GitHub dump of issues, PRs and
+  comments cut off at 2026-10-27T00:00Z, recorded once as a private bundle that never enters this
+  repository. The repository owner is a runtime variable, never source text.
+- **Bank.** JSON (lore lost eight gold answers to YAML comments), gold answers verbatim, frozen by
+  content hash, with attribution (Apache-2.0).
+- **CI.** A deterministic, model-free proxy (does `assemble_context` return the gold evidence?)
+  blocks every PR; the live run is weekly, on dispatch, and on labelled PRs.
+- **Scope.** Knowledge only in v1 (no extracted world facts). BM25 stays in-repo with a
+  deterministic tie-break; the embedder default stays ADR-0018's; a reranker becomes a default only
+  if it measurably helps within the token bar.
+- **Wider index (§2.3) shape.** Issues (`issues/<n>`), PRs with review threads (`pulls/<n>`) and
+  commits (`commits/<sha>`, with touched paths) are knowledge chunks under a URL-kind tracker
+  source, each piece repeating its header (number, state, dates, merge commit); tree-sitter symbols
+  are persisted and indexed as `path: symbol — signature` summaries. Idempotent by content hash.
+- **Retrieval fixes found by reading the code.** Markdown chunks become whole sections prefixed
+  with `path › headings (status: …)`; `assemble_context` keeps instruction-file search hits unless
+  the instruction section actually includes them; the BM25 candidate cut gets a tie-break; MCP gains
+  read-only `knowledge_search` (k ≤ 50) and `knowledge_document` tools, because one
+  `assemble_context` call per question leaves an agent no way to follow up.
+
 ### 2.5 Decisions (settled 2026-11-07)
 
 **Lexical leg — real BM25 on Postgres, no new dependency (ADR-0017).** Today `Bm25Store` ranks with
