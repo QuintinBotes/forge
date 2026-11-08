@@ -56,6 +56,7 @@ EXPECTED_MODELS = [
     "Milestone",
     "WorkflowRun",
     "AgentRun",
+    "AgentRunEvent",
     "ApprovalRequest",
     "SubAgentRun",
     # F17 incident-workflow tables.

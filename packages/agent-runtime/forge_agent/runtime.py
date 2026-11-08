@@ -11,6 +11,7 @@ dispatch), ``observe`` (model reaction to observations), and ``finalize``
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,7 @@ class AgentRunner:
         max_iterations: int = 12,
         use_worktree: bool = False,
         escalate_on_denied: bool = True,
+        on_step: Callable[[Step], None] | None = None,
     ) -> None:
         self._model = model
         self._tools = tools if tools is not None else ToolRegistry()
@@ -60,6 +62,7 @@ class AgentRunner:
         self._max_iterations = max_iterations
         self._use_worktree = use_worktree
         self._escalate_on_denied = escalate_on_denied
+        self._on_step = on_step
         self._graph: CompiledGraph[AgentState] = self._build_graph()
 
     # ------------------------------------------------------------------ #
@@ -114,6 +117,7 @@ class AgentRunner:
             messages=[ModelMessage(role="user", content=user)],
             max_iterations=self._max_iterations,
             artifacts=artifacts,
+            on_step=self._on_step,
         )
 
     def _build_graph(self) -> CompiledGraph[AgentState]:
