@@ -164,7 +164,21 @@ class HttpEmbeddingClient:
         rows = response.json()["data"]
         # Honour the provider's ``index`` field rather than assuming order.
         ordered = sorted(rows, key=lambda row: row.get("index", 0))
-        return [list(row["embedding"]) for row in ordered]
+        vectors = [list(row["embedding"]) for row in ordered]
+        # The provider chooses the returned width (e.g. text-embedding-3-large
+        # returns 3072); the factory can only check the *configured* width.
+        # Refuse a mismatch here — RuntimeError, not ValueError, because
+        # /knowledge/sync maps ValueError to 422 — instead of storing vectors
+        # Postgres would reject on insert (and SQLite would store silently).
+        for vector in vectors:
+            if len(vector) != self._dimension:
+                raise RuntimeError(
+                    f"embedding model {self._model!r} returned "
+                    f"{len(vector)}-dimensional vectors, expected "
+                    f"{self._dimension}; set FORGE_EMBEDDING_DIMENSION to the "
+                    "model's output width or choose a matching model"
+                )
+        return vectors
 
     def embed_query(self, text: str) -> list[float]:
         return self.embed([text])[0]
@@ -296,12 +310,16 @@ def build_embedding_client(
     * ``provider in {None, "", "none"}`` -> ``None`` (honest BM25-only mode;
       the deterministic hash embedder is never a production default).
     * ``"openai-compatible"`` -> :class:`HttpEmbeddingClient`; ``base_url``
-      is passed through the caller's SSRF ``url_validator`` seam.
+      is passed through the caller's SSRF ``url_validator`` seam. Requires an
+      explicit ``dimension``: the provider's output width cannot be known
+      without a paid probe call, and silently defaulting it built a
+      1536-wide client for a 3072-wide model.
     * ``"local"`` -> :class:`SentenceTransformerEmbeddingClient` (its model
       is loaded now so a dimension mismatch refuses at construction).
 
-    Raises ``ValueError`` for an unknown provider, a missing model, or any
-    dimension that does not equal the vector column's ``EMBEDDING_DIM``.
+    Raises ``ValueError`` for an unknown provider, a missing model, a
+    missing dimension for ``openai-compatible``, or any dimension that does
+    not equal the vector column's ``EMBEDDING_DIM``.
     """
     key = (provider or "").strip().lower()
     if key in _UNCONFIGURED_PROVIDERS:
@@ -317,16 +335,20 @@ def build_embedding_client(
                 "FORGE_EMBEDDING_PROVIDER=openai-compatible requires "
                 "FORGE_EMBEDDING_MODEL to name the embedding model"
             )
-        client = HttpEmbeddingClient(
+        if dimension is None:
+            raise ValueError(
+                "FORGE_EMBEDDING_PROVIDER=openai-compatible requires "
+                "FORGE_EMBEDDING_DIMENSION to state the model's output "
+                f"width (the vector column is {expected}-dimensional); "
+                "refusing to guess it and fail on first insert"
+            )
+        return HttpEmbeddingClient(
             model,
             api_key=api_key,
             base_url=base_url or "https://api.openai.com/v1",
-            dimension=dimension if dimension is not None else expected,
+            dimension=dimension,
             url_validator=url_validator,
         )
-        if client.dimension != expected:  # pragma: no cover - guarded above
-            raise _refuse_dimension_mismatch(client.dimension, expected)
-        return client
 
     if key == "local":
         local = SentenceTransformerEmbeddingClient(model or DEFAULT_SENTENCE_TRANSFORMERS_MODEL)

@@ -153,6 +153,25 @@ def test_http_client_embed_empty_list_makes_no_request() -> None:
     assert captured == []
 
 
+def test_http_client_refuses_wrong_width_vectors() -> None:
+    # The provider chooses the returned width (3072 for
+    # text-embedding-3-large); a mismatched client must refuse loudly with
+    # RuntimeError (not ValueError, which /knowledge/sync maps to 422)
+    # instead of storing vectors Postgres would reject on insert.
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        data = [
+            {"index": i, "embedding": [1.0, 2.0, 3.0, 4.0]} for i, _ in enumerate(body["input"])
+        ]
+        return httpx.Response(200, json={"data": data, "model": body["model"]})
+
+    client = HttpEmbeddingClient(
+        "text-embed", dimension=3, client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    with pytest.raises(RuntimeError, match="returned 4-dimensional vectors, expected 3"):
+        client.embed(["x"])
+
+
 def test_http_client_raises_on_error_status() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"error": "boom"})
@@ -182,6 +201,7 @@ def test_builder_openai_compatible_builds_http_client_with_ssrf_seam() -> None:
         "openai-compatible",
         model="text-embedding-3-small",
         base_url="https://vendor.example/v1",
+        dimension=EMBEDDING_DIM,
         api_key="sk-test",
         url_validator=validated.append,
     )
@@ -194,6 +214,13 @@ def test_builder_openai_compatible_builds_http_client_with_ssrf_seam() -> None:
 def test_builder_openai_compatible_requires_model() -> None:
     with pytest.raises(ValueError, match="FORGE_EMBEDDING_MODEL"):
         build_embedding_client("openai-compatible")
+
+
+def test_builder_openai_compatible_requires_dimension() -> None:
+    # Guessing 1536 built a 1536-wide client for 3072-wide models and failed
+    # on first insert; the width must be stated explicitly.
+    with pytest.raises(ValueError, match="FORGE_EMBEDDING_DIMENSION"):
+        build_embedding_client("openai-compatible", model="text-embedding-3-large")
 
 
 def test_builder_refuses_dimension_mismatch_at_construction() -> None:

@@ -365,9 +365,10 @@ def test_search_survives_reranker_outage_with_weighted_rrf(
     results = resp.json()["results"]
     assert results, "a degraded reranker must still return weighted-RRF results"
     assert all(c["rerank_score"] is None for c in results)
-    # The configured provider is still named; the per-call degradation shows in
-    # rerank_score=None above and the server-side fallback telemetry below.
-    assert resp.json()["rerank"] == "jina"
+    # The envelope names what this call did: the configured provider's call
+    # degraded to weighted-RRF, so it reports "fallback", not "jina". The
+    # server-side fallback telemetry agrees.
+    assert resp.json()["rerank"] == "fallback"
     assert service.last_rerank is not None
     assert service.last_rerank.fallback_used is True
 

@@ -41,17 +41,20 @@ def test_no_shipped_code_mentions_a_fabricated_pr_url() -> None:
 
 
 # Construction sites of the retrieval fakes (ADR-0018). The defining modules
-# are exempt — the reranker factory in ``reranker.py`` legitimately builds the
-# fixture when a *test* selects ``FORGE_RERANK_PROVIDER=fixture`` — and so is
-# ``packages/evaluation``: the eval harness is test-grade tooling (its
-# deterministic-client path is a documented wiring check, never imported on a
-# production path), on par with a ``tests/`` directory.
+# are exempt (they define the classes; the reranker factory no longer builds
+# the fixture at all — ``FORGE_RERANK_PROVIDER=fixture`` is refused, tests
+# construct ``FixtureRerankerClient()`` directly), as are the two eval
+# harness modules whose deterministic-client path is a documented wiring
+# check. The rest of ``packages/evaluation`` — sweval, benchmark, golden and
+# mint — is imported by the API and worker, so it is production code and
+# stays guarded; a whole-tree exemption would hide fakes there.
 _FAKE_CONSTRUCTIONS = ("DeterministicEmbeddingClient(", "FixtureRerankerClient(")
 _FAKE_EXEMPT_FILES = {
     Path("packages/knowledge-core/forge_knowledge/embeddings.py"),
     Path("packages/knowledge-core/forge_knowledge/reranker.py"),
+    Path("packages/evaluation/forge_eval/retrieval_eval.py"),
+    Path("packages/evaluation/forge_eval/corpus_eval.py"),
 }
-_FAKE_EXEMPT_TREES = (Path("packages/evaluation"),)
 
 
 def _fake_construction_offenders() -> list[str]:
@@ -59,8 +62,6 @@ def _fake_construction_offenders() -> list[str]:
     for path in _shipped_python_files():
         relative = path.relative_to(ROOT)
         if relative in _FAKE_EXEMPT_FILES:
-            continue
-        if any(relative.is_relative_to(tree) for tree in _FAKE_EXEMPT_TREES):
             continue
         source = path.read_text(errors="ignore")
         if any(construction in source for construction in _FAKE_CONSTRUCTIONS):

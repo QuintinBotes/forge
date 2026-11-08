@@ -15,7 +15,9 @@ combines them lands in Task 1.3):
 
 * :class:`Bm25Store` — the *lexical* leg. ``search`` ranks by exact Okapi BM25
   on **both** dialects (spec J §2.5, ADR-0017): on Postgres an OR ``tsquery``
-  picks up to 200 candidates by ``ts_rank_cd`` (candidate-then-rescore) and the
+  (``'simple'`` config over the shared tokeniser's output, never raw content —
+  so dotted/code lexemes match the rescorer exactly) picks up to 200
+  candidates by ``ts_rank_cd`` (candidate-then-rescore) and the
   shared pure :func:`bm25_score` rescores them with corpus statistics that
   indexing maintains incrementally (``retrieval_term_stats``,
   ``retrieval_chunk.token_count``, ``retrieval_workspace_stats``); on SQLite
@@ -36,14 +38,32 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 import uuid
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, cast
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-from sqlalchemy import CursorResult, Select, delete, func, or_, select
+from sqlalchemy import (
+    Select,
+    bindparam,
+    case,
+    delete,
+    func,
+    insert,
+    or_,
+    select,
+    update,
+)
+from sqlalchemy import cast as cast_
+from sqlalchemy.dialects.postgresql import TSQUERY, TSVECTOR
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from sqlalchemy import Table
 
 from forge_contracts.dtos import Chunk, IndexResult, KnowledgeScope, RetrievedChunk
 from forge_contracts.enums import ChunkType
@@ -54,7 +74,8 @@ from forge_db.models import (
     RetrievalTermStat,
     RetrievalWorkspaceStat,
 )
-from forge_knowledge.text import tokenize
+from forge_knowledge.text import query_terms as _query_terms_of
+from forge_knowledge.text import tokenize, tsquery_literal, tsvector_literal
 
 __all__ = [
     "Bm25Store",
@@ -62,6 +83,7 @@ __all__ = [
     "PgVectorStore",
     "VectorLegUnconfiguredError",
     "bm25_score",
+    "rebuild_bm25_stats",
 ]
 
 # A session factory: anything callable that returns a new ``Session`` (e.g. a
@@ -74,6 +96,42 @@ _BM25_B = 0.75
 
 #: Postgres candidate-pool size for BM25 candidate-then-rescore (spec J §2.5).
 _BM25_CANDIDATE_LIMIT = 200
+
+#: Page size for ``IN`` lists and bulk cleanups. SQLite caps bound variables
+#: at 32,766 and Postgres at 65,535 per statement, so every term/path list
+#: that can grow with corpus size is paged well below both.
+_IN_PAGE = 5_000
+
+#: Texts per ``embed`` call, for new chunks and the NULL-embedding backlog
+#: alike (``HttpEmbeddingClient`` sends one POST per call; OpenAI accepts at
+#: most 2,048 inputs per request).
+_EMBED_BATCH = 256
+
+#: Keyset page size for :func:`rebuild_bm25_stats`.
+_REBUILD_PAGE = 2_000
+
+#: Batch size for bulk term-stat inserts in :func:`rebuild_bm25_stats`.
+_TERM_INSERT_BATCH = 10_000
+
+#: ``retrieval_term_stats.term`` column width; longer terms are not tracked.
+_TERM_MAX_LEN = 255
+
+#: Tokens from :func:`~forge_knowledge.text.tokenize` are ``[a-z0-9_]+``, so
+#: they are safe inside a quoted tsvector/tsquery lexeme. Asserted at query time.
+_SAFE_LEXEME_RE = re.compile(r"[a-z0-9_]+")
+
+
+def _pages(items: Sequence[Any], size: int) -> Iterator[Sequence[Any]]:
+    """Yield ``items`` in slices of at most ``size`` (IN-list paging)."""
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
+def _dialect_insert(session: Session, model: Any) -> Any:
+    """The dialect ``insert`` for ``model`` (for ``on_conflict_do_update``)."""
+    if session.get_bind().dialect.name == "postgresql":
+        return pg_insert(model)
+    return sqlite_insert(model)
 
 
 class KnowledgeSourceNotFoundError(LookupError):
@@ -186,30 +244,46 @@ def _to_retrieved(row: RetrievalChunk, *, score: float) -> RetrievedChunk:
 def _bump_term_stats(
     session: Session, workspace_id: uuid.UUID, df_delta: Counter[str], *, sign: int
 ) -> None:
-    """Apply signed document-frequency deltas for one workspace (uncommitted)."""
+    """Apply signed document-frequency deltas for one workspace (uncommitted).
+
+    A single additive dialect upsert (``df = df + excluded.df``) evaluated by
+    the database, so two concurrent indexers in one workspace cannot lose
+    each other's increments the way a Python read-modify-write under READ
+    COMMITTED did; it also closes the get-or-create race. Rows run in sorted
+    term order for a stable lock order. Decrements send a negative ``df``
+    (a not-yet-existing term briefly lands at a negative value inside this
+    transaction) and are followed by a paged ``df <= 0`` cleanup.
+    """
     # Terms beyond the column width (pathological single-token blobs) are not
     # tracked; ``bm25_score`` then reads their df as 0 (maximally rare).
-    df_delta = Counter({t: d for t, d in df_delta.items() if len(t) <= 255})
-    if not df_delta:
+    items = sorted(
+        (term, sign * delta)
+        for term, delta in df_delta.items()
+        if len(term) <= _TERM_MAX_LEN and delta
+    )
+    if not items:
         return
-    rows = {
-        row.term: row
-        for row in session.scalars(
-            select(RetrievalTermStat).where(
-                RetrievalTermStat.workspace_id == workspace_id,
-                RetrievalTermStat.term.in_(list(df_delta)),
+    ins = _dialect_insert(session, RetrievalTermStat)
+    stmt = ins.on_conflict_do_update(
+        index_elements=["workspace_id", "term"],
+        set_={
+            "df": RetrievalTermStat.df + ins.excluded.df,
+            "updated_at": func.now(),
+        },
+    )
+    session.execute(
+        stmt,
+        [{"workspace_id": workspace_id, "term": term, "df": signed} for term, signed in items],
+    )
+    if sign < 0:
+        for page in _pages([term for term, _ in items], _IN_PAGE):
+            session.execute(
+                delete(RetrievalTermStat).where(
+                    RetrievalTermStat.workspace_id == workspace_id,
+                    RetrievalTermStat.term.in_(list(page)),
+                    RetrievalTermStat.df <= 0,
+                )
             )
-        )
-    }
-    for term, delta in df_delta.items():
-        row = rows.get(term)
-        if row is None:
-            if sign > 0:
-                session.add(RetrievalTermStat(workspace_id=workspace_id, term=term, df=delta))
-            continue
-        row.df += sign * delta
-        if row.df <= 0:
-            session.delete(row)
 
 
 def _bump_workspace_stat(
@@ -219,25 +293,122 @@ def _bump_workspace_stat(
     chunks_delta: int,
     tokens_delta: int,
 ) -> None:
-    """Apply signed corpus-total deltas for one workspace (uncommitted)."""
+    """Apply signed corpus-total deltas for one workspace (uncommitted).
+
+    Additive dialect upsert keyed on ``workspace_id`` (see
+    :func:`_bump_term_stats` for why the arithmetic must happen in the
+    database); totals are clamped at zero with ``case`` (``greatest``/``max``
+    are not portable across the dialects). The insert side carries the
+    clamped delta so a decrement against a missing row inserts zeros.
+    """
     if chunks_delta == 0 and tokens_delta == 0:
         return
-    row = session.scalar(
-        select(RetrievalWorkspaceStat).where(RetrievalWorkspaceStat.workspace_id == workspace_id)
+    ins = _dialect_insert(session, RetrievalWorkspaceStat).values(
+        workspace_id=workspace_id,
+        chunk_count=max(chunks_delta, 0),
+        total_tokens=max(tokens_delta, 0),
     )
-    if row is None:
-        if chunks_delta <= 0:
-            return
+    stmt = ins.on_conflict_do_update(
+        index_elements=["workspace_id"],
+        set_={
+            "chunk_count": case(
+                (RetrievalWorkspaceStat.chunk_count + chunks_delta < 0, 0),
+                else_=RetrievalWorkspaceStat.chunk_count + chunks_delta,
+            ),
+            "total_tokens": case(
+                (RetrievalWorkspaceStat.total_tokens + tokens_delta < 0, 0),
+                else_=RetrievalWorkspaceStat.total_tokens + tokens_delta,
+            ),
+            "updated_at": func.now(),
+        },
+    )
+    session.execute(stmt)
+
+
+def rebuild_bm25_stats(session: Session, workspace_id: uuid.UUID) -> int:
+    """Recompute one workspace's BM25 rows and statistics from scratch.
+
+    Idempotent repair for drifted statistics (concurrent-writer losses from
+    before the additive upserts, the purge/cascade gap, pre-J pods writing
+    ``token_count=0`` chunks during a rolling upgrade): deletes the
+    workspace's term/workspace statistics, then re-derives them — plus every
+    chunk's ``token_count`` and, on Postgres, its ``'simple'``-config ``tsv``
+    over the tokeniser's output — in keyset pages of
+    :data:`_REBUILD_PAGE` rows, tokenising each row once in Python and
+    writing one executemany per page. Terms longer than the stats column
+    width are excluded from the df table but still count toward
+    ``token_count``/``total_tokens``, exactly as the store maintains them.
+
+    Runs inside the caller's transaction (flushed, not committed) so the
+    delete/rebuild swap is atomic. Returns the number of chunks rebuilt.
+    """
+    is_postgres = session.get_bind().dialect.name == "postgresql"
+    session.execute(delete(RetrievalTermStat).where(RetrievalTermStat.workspace_id == workspace_id))
+    session.execute(
+        delete(RetrievalWorkspaceStat).where(RetrievalWorkspaceStat.workspace_id == workspace_id)
+    )
+
+    doc_freq: Counter[str] = Counter()
+    chunk_count = 0
+    total_tokens = 0
+    last_id: uuid.UUID | None = None
+    while True:
+        stmt = select(RetrievalChunk.id, RetrievalChunk.content).where(
+            RetrievalChunk.workspace_id == workspace_id
+        )
+        if last_id is not None:
+            stmt = stmt.where(RetrievalChunk.id > last_id)
+        rows = session.execute(stmt.order_by(RetrievalChunk.id.asc()).limit(_REBUILD_PAGE)).all()
+        if not rows:
+            break
+        updates: list[dict[str, Any]] = []
+        for row in rows:
+            tokens = tokenize(row.content or "")
+            chunk_count += 1
+            total_tokens += len(tokens)
+            doc_freq.update({t for t in set(tokens) if len(t) <= _TERM_MAX_LEN})
+            entry: dict[str, Any] = {"b_id": row.id, "b_count": len(tokens)}
+            if is_postgres:
+                entry["b_text"] = tsvector_literal(tokens)
+            updates.append(entry)
+        # Core (table-level) UPDATE: bindparam names must not equal column
+        # names in an executemany UPDATE, and the ORM bulk path would demand
+        # the pk under its own name.
+        chunk_table = cast("Table", RetrievalChunk.__table__)
+        if is_postgres:
+            update_stmt = (
+                update(chunk_table)
+                .where(chunk_table.c.id == bindparam("b_id"))
+                .values(
+                    token_count=bindparam("b_count"),
+                    tsv=cast_(bindparam("b_text"), TSVECTOR),
+                )
+            )
+        else:
+            update_stmt = (
+                update(chunk_table)
+                .where(chunk_table.c.id == bindparam("b_id"))
+                .values(token_count=bindparam("b_count"))
+            )
+        session.execute(update_stmt, updates)
+        last_id = rows[-1].id
+
+    if chunk_count:
         session.add(
             RetrievalWorkspaceStat(
                 workspace_id=workspace_id,
-                chunk_count=chunks_delta,
-                total_tokens=max(tokens_delta, 0),
+                chunk_count=chunk_count,
+                total_tokens=total_tokens,
             )
         )
-        return
-    row.chunk_count = max(row.chunk_count + chunks_delta, 0)
-    row.total_tokens = max(row.total_tokens + tokens_delta, 0)
+    term_rows = [
+        {"workspace_id": workspace_id, "term": term, "df": df}
+        for term, df in sorted(doc_freq.items())
+    ]
+    for page in _pages(term_rows, _TERM_INSERT_BATCH):
+        session.execute(insert(RetrievalTermStat), list(page))
+    session.flush()
+    return chunk_count
 
 
 class PgVectorStore:
@@ -285,13 +456,14 @@ class PgVectorStore:
 
             # No embedder configured (ADR-0018): chunks are stored without
             # embeddings so BM25-only search still works — never faked vectors.
+            # Embedded before any statistics row is locked, in bounded batches.
             vectors: list[list[float] | None]
             if self._embedding is not None:
-                vectors = (
-                    list(self._embedding.embed([chunk.content for chunk, _ in pending]))
-                    if pending
-                    else []
-                )
+                vectors = []
+                for batch in _pages(pending, _EMBED_BATCH):
+                    vectors.extend(
+                        list(v) for v in self._embedding.embed([c.content for c, _ in batch])
+                    )
             else:
                 vectors = [None] * len(pending)
 
@@ -318,7 +490,10 @@ class PgVectorStore:
                     token_count=len(tokens),
                 )
                 if is_postgres:
-                    row.tsv = func.to_tsvector("english", chunk.content)
+                    # The tokens themselves as lexemes, written without any
+                    # text-search parser (see ``forge_knowledge.text``).
+                    tsv: Any = cast_(tsvector_literal(tokens), TSVECTOR)
+                    row.tsv = tsv
                 session.add(row)
 
             # BM25 statistics move in the same transaction as the chunk writes.
@@ -333,6 +508,63 @@ class PgVectorStore:
             session.commit()
 
         return IndexResult(source_id=str(source_id), indexed=len(pending), skipped=skipped)
+
+    def embed_missing(self, source_id: str) -> tuple[int, list[str]]:
+        """Embed this source's ``embedding IS NULL`` rows; ``(embedded, errors)``.
+
+        Rows indexed before an embedder was configured (BM25-only mode, or
+        pre-J hash vectors NULLed by migration 0042) are never re-indexed, since
+        content-hash dedup skips them, so every sync calls this after its own
+        writes. Each batch of :data:`_EMBED_BATCH` rows commits on its own and
+        touches only ``embedding``, so no statistics lock is held while the
+        provider answers and a failure never undoes newly indexed chunks. A
+        batch the provider rejects is retried one row at a time; a row that
+        still fails is skipped and reported, so one bad row cannot block the
+        rest of the backlog.
+        """
+        if self._embedding is None:
+            return 0, []
+        source_uuid = uuid.UUID(str(source_id))
+        embedded = 0
+        errors: list[str] = []
+        last_id: uuid.UUID | None = None
+        while True:
+            with self._session_factory() as session:
+                stmt = select(RetrievalChunk.id, RetrievalChunk.content).where(
+                    RetrievalChunk.knowledge_source_id == source_uuid,
+                    RetrievalChunk.embedding.is_(None),
+                )
+                if last_id is not None:
+                    stmt = stmt.where(RetrievalChunk.id > last_id)
+                batch = session.execute(
+                    stmt.order_by(RetrievalChunk.id.asc()).limit(_EMBED_BATCH)
+                ).all()
+            if not batch:
+                return embedded, errors
+            last_id = batch[-1].id
+            vectors = self._embed_rows(batch, errors)
+            if vectors:
+                with self._session_factory() as session:
+                    for row_id, vector in vectors.items():
+                        row = session.get(RetrievalChunk, row_id)
+                        if row is not None and row.embedding is None:
+                            row.embedding = vector
+                            embedded += 1
+                    session.commit()
+
+    def _embed_rows(self, batch: Sequence[Any], errors: list[str]) -> dict[uuid.UUID, list[float]]:
+        assert self._embedding is not None
+        try:
+            vectors = self._embedding.embed([row.content for row in batch])
+            return {row.id: list(v) for row, v in zip(batch, vectors, strict=True)}
+        except Exception as exc:
+            if len(batch) == 1:
+                errors.append(f"chunk {batch[0].id}: {type(exc).__name__}")
+                return {}
+        out: dict[uuid.UUID, list[float]] = {}
+        for row in batch:
+            out.update(self._embed_rows([row], errors))
+        return out
 
     # -- introspection / deletion (foundation for sync, Task 1.4) -------- #
 
@@ -354,42 +586,39 @@ class PgVectorStore:
         Returns the number of rows removed. Used by incremental sync to drop the
         chunks of files that changed (before re-indexing) or were deleted.
         """
-        path_list = list(dict.fromkeys(paths))
+        # Sorted, so concurrent deletes page through rows in the same order.
+        path_list = sorted(set(paths))
         if not path_list:
             return 0
         source_uuid = uuid.UUID(str(source_id))
         with self._session_factory() as session:
-            # Read the doomed rows first so their BM25 statistics can be backed
-            # out in the same transaction as the delete.
-            doomed = list(
-                session.scalars(
-                    select(RetrievalChunk)
-                    .where(RetrievalChunk.knowledge_source_id == source_uuid)
-                    .where(RetrievalChunk.path.in_(path_list))
-                )
-            )
-            if not doomed:
-                return 0
+            # DELETE … RETURNING (no pre-SELECT): statistics are backed out
+            # for exactly the rows this statement removed, so a row committed
+            # concurrently between a read and a delete can neither be deleted
+            # unaccounted nor backed out twice. The path IN list is paged.
             df_by_workspace: dict[uuid.UUID, Counter[str]] = {}
             totals_by_workspace: dict[uuid.UUID, tuple[int, int]] = {}
-            for row in doomed:
-                tokens = tokenize(row.content)
-                df_by_workspace.setdefault(row.workspace_id, Counter()).update(set(tokens))
-                chunks_n, tokens_n = totals_by_workspace.get(row.workspace_id, (0, 0))
-                totals_by_workspace[row.workspace_id] = (
-                    chunks_n + 1,
-                    tokens_n + (row.token_count or len(tokens)),
-                )
-
-            result = cast(
-                "CursorResult[Any]",
-                session.execute(
+            removed = 0
+            for page in _pages(path_list, _IN_PAGE):
+                rows = session.execute(
                     delete(RetrievalChunk)
                     .where(RetrievalChunk.knowledge_source_id == source_uuid)
-                    .where(RetrievalChunk.path.in_(path_list))
-                ),
-            )
-            removed = int(result.rowcount or 0)
+                    .where(RetrievalChunk.path.in_(list(page)))
+                    .returning(
+                        RetrievalChunk.workspace_id,
+                        RetrievalChunk.content,
+                        RetrievalChunk.token_count,
+                    )
+                ).all()
+                removed += len(rows)
+                for row in rows:
+                    tokens = tokenize(row.content)
+                    df_by_workspace.setdefault(row.workspace_id, Counter()).update(set(tokens))
+                    chunks_n, tokens_n = totals_by_workspace.get(row.workspace_id, (0, 0))
+                    totals_by_workspace[row.workspace_id] = (
+                        chunks_n + 1,
+                        tokens_n + (row.token_count or len(tokens)),
+                    )
             if removed:
                 for workspace_id, df_delta in df_by_workspace.items():
                     _bump_term_stats(session, workspace_id, df_delta, sign=-1)
@@ -470,7 +699,9 @@ class Bm25Store:
 
     def search(self, query: str, scope: KnowledgeScope, k: int = 10) -> list[RetrievedChunk]:
         """Return up to ``k`` chunks ranked by BM25 relevance to ``query``."""
-        query_terms = list(dict.fromkeys(tokenize(query)))
+        # Shared query view (stopwords dropped identically on both dialects):
+        # a stopword-only query returns [] everywhere.
+        query_terms = _query_terms_of(query)
         if not query_terms:
             return []
         with self._session_factory() as session:
@@ -508,22 +739,19 @@ class Bm25Store:
         self, session: Session, query_terms: list[str], scope: KnowledgeScope
     ) -> list[RetrievalChunk]:
         # OR semantics keep BM25's recall (``plainto_tsquery`` ANDs and loses
-        # it). Terms come from ``tokenize`` (``[a-z0-9_]`` only), so they are
-        # safe bare tsquery lexemes; edge underscores are stripped because the
-        # tsquery parser treats them as separators.
-        lexemes = [term.strip("_") for term in query_terms]
-        lexemes = [lexeme for lexeme in lexemes if lexeme]
-        if not lexemes:
-            return []
-        ts_query = func.to_tsquery("english", " | ".join(dict.fromkeys(lexemes)))
-        # The stored ``tsv`` is populated at index time; ``coalesce`` keeps any
-        # legacy/direct-inserted row (``tsv IS NULL``) discoverable exactly as
-        # the previous compute-on-read path did.
-        ts_vector = func.coalesce(
-            RetrievalChunk.tsv, func.to_tsvector("english", RetrievalChunk.content)
+        # it). The query is the exact tokens as quoted lexemes, matching the
+        # stored vector built the same way, so a candidate contains a query
+        # token exactly as ``tokenize`` sees it (``retry`` never matches
+        # ``retry_count``; ``__all__`` matches itself).
+        assert all(_SAFE_LEXEME_RE.fullmatch(term) for term in query_terms), (
+            "query terms must be tokenizer output ([a-z0-9_]+)"
         )
-        rank = func.ts_rank_cd(ts_vector, ts_query)
-        stmt: Select = select(RetrievalChunk).where(ts_vector.op("@@")(ts_query))
+        ts_query = cast_(tsquery_literal(query_terms), TSQUERY)
+        # ``tsv`` is set by every writer and backfilled for every pre-existing
+        # row by migration 0042, so query it directly — the GIN index
+        # ``ix_retrieval_chunk_tsv`` is usable (a ``coalesce`` wrapper was not).
+        rank = func.ts_rank_cd(RetrievalChunk.tsv, ts_query)
+        stmt: Select = select(RetrievalChunk).where(RetrievalChunk.tsv.op("@@")(ts_query))
         stmt = _scope_filter(stmt, scope).order_by(rank.desc()).limit(_BM25_CANDIDATE_LIMIT)
         return list(session.scalars(stmt))
 
@@ -538,7 +766,7 @@ class Bm25Store:
         the same statistics — and therefore the same ranking — on both
         dialects.
         """
-        tracked = [term for term in query_terms if len(term) <= 255]
+        tracked = [term for term in query_terms if len(term) <= _TERM_MAX_LEN]
         if scope.workspace_id is not None:
             totals = session.scalar(
                 select(RetrievalWorkspaceStat).where(
@@ -549,19 +777,19 @@ class Bm25Store:
                 return {}, 0, 1.0
             n_docs = totals.chunk_count
             avg_len = totals.total_tokens / n_docs or 1.0
-            df = (
-                {
-                    term: int(value)
-                    for term, value in session.execute(
-                        select(RetrievalTermStat.term, RetrievalTermStat.df).where(
-                            RetrievalTermStat.workspace_id == scope.workspace_id,
-                            RetrievalTermStat.term.in_(tracked),
-                        )
-                    ).all()
-                }
-                if tracked
-                else {}
-            )
+            df: dict[str, int] = {}
+            for page in _pages(tracked, _IN_PAGE):
+                df.update(
+                    {
+                        term: int(value)
+                        for term, value in session.execute(
+                            select(RetrievalTermStat.term, RetrievalTermStat.df).where(
+                                RetrievalTermStat.workspace_id == scope.workspace_id,
+                                RetrievalTermStat.term.in_(list(page)),
+                            )
+                        ).all()
+                    }
+                )
             return df, n_docs, avg_len
 
         chunks_total, tokens_total = session.execute(
@@ -574,21 +802,21 @@ class Bm25Store:
         if n_docs <= 0:
             return {}, 0, 1.0
         avg_len = int(tokens_total or 0) / n_docs or 1.0
-        df = (
-            {
-                term: int(value)
-                for term, value in session.execute(
-                    select(
-                        RetrievalTermStat.term,
-                        func.coalesce(func.sum(RetrievalTermStat.df), 0),
-                    )
-                    .where(RetrievalTermStat.term.in_(tracked))
-                    .group_by(RetrievalTermStat.term)
-                ).all()
-            }
-            if tracked
-            else {}
-        )
+        df = {}
+        for page in _pages(tracked, _IN_PAGE):
+            df.update(
+                {
+                    term: int(value)
+                    for term, value in session.execute(
+                        select(
+                            RetrievalTermStat.term,
+                            func.coalesce(func.sum(RetrievalTermStat.df), 0),
+                        )
+                        .where(RetrievalTermStat.term.in_(list(page)))
+                        .group_by(RetrievalTermStat.term)
+                    ).all()
+                }
+            )
         return df, n_docs, avg_len
 
     @staticmethod

@@ -9,8 +9,10 @@ self-hosted, open-weight, 15-30% quality improvement*).
 The reranker is a swappable implementation of the frozen
 `forge_contracts.protocols.RerankerClient` (note: **synchronous**). Three ship:
 
-- `FixtureRerankerClient` — the offline, deterministic, network-free default
-  (token-overlap). Used by the whole hermetic test suite.
+- `FixtureRerankerClient` — the offline, deterministic, network-free
+  **test-only** client (token-overlap). Used by the whole hermetic test
+  suite, which constructs it directly; it is never a runtime default and
+  `FORGE_RERANK_PROVIDER=fixture` is refused by the factory (ADR-0018).
 - `JinaRerankerClient` — the provider-agnostic BYOK HTTP client. It speaks the
   Jina Reranker v2 schema, which **Cohere v2 rerank** mirrors byte-for-byte, so
   the same client drives Jina, Cohere, or a self-hosted reranker by changing
@@ -24,15 +26,18 @@ This runbook covers turning the live path on.
 
 ## 1. When it activates
 
-`FORGE_RERANK_PROVIDER` is the master switch. With it **`fixture`** (default) or
-`FORGE_RERANK_ENABLED=false`, behavior is exactly today's — offline,
-deterministic, network-free (fixture path, or weighted-RRF when disabled). Set a
-real provider (plus a key or a self-hosted URL) and the API/worker build a live,
-budgeted, SSRF-guarded reranker on next boot:
+`FORGE_RERANK_PROVIDER` is the master switch. With it **`none`** (default,
+ADR-0018) or `FORGE_RERANK_ENABLED=false`, no reranker is built — search
+answers in weighted-RRF order and reports `rerank: "off"`. (`fixture` is
+test-only: the factory refuses it, and tests construct
+`FixtureRerankerClient()` directly.) Set a real provider (plus a key or a
+self-hosted URL) and the API/worker build a live, budgeted, SSRF-guarded
+reranker on next boot:
 
 ```
 build_reranker_from_settings(get_settings(), api_key=…)   # forge_knowledge
-  provider fixture / disabled  -> FixtureRerankerClient()          (no network)
+  provider none / disabled     -> None  (rerank "off", weighted-RRF order)
+  provider fixture             -> ValueError (test-only, refused)
   provider jina|cohere         -> GracefulReranker(JinaRerankerClient(...))
   provider selfhosted+URL      -> GracefulReranker(JinaRerankerClient(...))
 ```
@@ -59,7 +64,7 @@ are read on demand so they never become logged settings fields):
 | Var | Default | Meaning |
 |---|---|---|
 | `FORGE_RERANK_ENABLED` | `true` | master switch; `false` -> weighted-RRF only, no client built |
-| `FORGE_RERANK_PROVIDER` | `fixture` | `fixture` \| `jina` \| `cohere` \| `selfhosted` |
+| `FORGE_RERANK_PROVIDER` | `none` | `none` \| `jina` \| `cohere` \| `selfhosted` (`fixture` refused: test-only) |
 | `FORGE_RERANK_MODEL` | provider default | e.g. `jina-reranker-v2-base-multilingual`, `rerank-v3.5` |
 | `FORGE_RERANK_BASE_URL` | provider default | override; SSRF-validated |
 | `FORGE_RERANK_TIMEOUT_MS` | `800` | per-call latency budget; exceed -> fallback |

@@ -45,6 +45,7 @@ from forge_contracts import (
     KnowledgeScope,
 )
 from forge_contracts.enums import SyncMode
+from forge_contracts.protocols import EmbeddingClient
 from forge_db.models import KnowledgeSource
 from forge_knowledge import (
     KnowledgeService,
@@ -54,6 +55,7 @@ from forge_knowledge import (
     full_sync,
     sync_source,
 )
+from forge_knowledge.sync import embed_backlog
 
 router = APIRouter(
     prefix="/knowledge",
@@ -94,18 +96,19 @@ def _resolve_reranker_key(settings: Settings) -> str | None:
 
 
 @lru_cache(maxsize=1)
-def _knowledge_service_singleton() -> KnowledgeService:
+def get_configured_embedder() -> EmbeddingClient | None:
+    """Build (once) the configured production embedder, or ``None``.
+
+    Split out of the service singleton so the API lifespan can warm it at
+    startup: a bad embedder config (unknown provider, missing/mismatched
+    dimension, unloadable local model) must refuse the *process* at boot
+    (ADR-0018), not 500 every ``/knowledge/*`` call while health stays 200.
+    Warming only the embedder avoids building the DB engine at boot. The
+    base_url goes through the api's SSRF guard seam; the key is read from
+    the env on demand, never stored on settings.
+    """
     settings = get_settings()
-    # ``build_reranker_from_settings`` returns None by default
-    # (FORGE_RERANK_PROVIDER=none -> rerank "off"), and only builds a budgeted,
-    # SSRF-guarded live client when an operator opts in. The BYOK key is resolved
-    # on demand and never stored on the settings object.
-    reranker = build_reranker_from_settings(settings, api_key=_resolve_reranker_key(settings))
-    # The production embedder (ADR-0018): unset provider -> None -> BM25-only.
-    # The base_url goes through the api's SSRF guard seam; a dimension that
-    # does not match the vector column refuses here, at construction. The key
-    # is read from the env on demand, never stored on settings.
-    embedder = build_embedding_client_from_settings(
+    return build_embedding_client_from_settings(
         settings,
         api_key=os.environ.get("FORGE_EMBEDDING_API_KEY"),
         url_validator=partial(
@@ -114,9 +117,19 @@ def _knowledge_service_singleton() -> KnowledgeService:
             allowlist=settings.outbound_allowlist,
         ),
     )
+
+
+@lru_cache(maxsize=1)
+def _knowledge_service_singleton() -> KnowledgeService:
+    settings = get_settings()
+    # ``build_reranker_from_settings`` returns None by default
+    # (FORGE_RERANK_PROVIDER=none -> rerank "off"), and only builds a budgeted,
+    # SSRF-guarded live client when an operator opts in. The BYOK key is resolved
+    # on demand and never stored on the settings object.
+    reranker = build_reranker_from_settings(settings, api_key=_resolve_reranker_key(settings))
     return KnowledgeService.from_session_factory(
         get_session_factory(),
-        embedder,
+        get_configured_embedder(),
         reranker,
         rerank_candidates=settings.rerank_candidates,
         rerank_enabled=settings.rerank_enabled,
@@ -235,11 +248,19 @@ def search(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
+    # The envelope names what *this call* did: a configured reranker whose
+    # call degraded to weighted-RRF (every rerank_score None) reports
+    # "fallback", not the provider name. Derived from this call's own
+    # results — never svc.last_rerank, which a concurrent request on the
+    # shared singleton can overwrite.
+    rerank = svc.rerank_status
+    if rerank != "off" and results and all(c.rerank_score is None for c in results):
+        rerank = "fallback"
     return KnowledgeSearchResponse(
         results=results,
         legs=svc.legs,
         vector_leg=svc.vector_leg,
-        rerank=svc.rerank_status,
+        rerank=rerank,
     )
 
 
@@ -251,7 +272,11 @@ def index(
     request: IndexRequest,
 ) -> IndexResult:
     _assert_source_in_workspace(factory, request.source_id, principal.workspace_id)
-    return svc.index(request.source_id, request.chunks)
+    result = svc.index(request.source_id, request.chunks)
+    embedded, errors = embed_backlog(svc, request.source_id)
+    return result.model_copy(
+        update={"updated": result.updated + embedded, "errors": [*result.errors, *errors]}
+    )
 
 
 @router.post("/sync", response_model=IndexResult)

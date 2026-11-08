@@ -155,6 +155,10 @@ class KnowledgeService:
         """Embed and persist ``chunks`` for ``source_id`` (idempotent by hash)."""
         return self._require_store().index(source_id, chunks)
 
+    def embed_missing(self, source_id: str) -> tuple[int, list[str]]:
+        """Embed rows indexed before an embedder was configured (see the store)."""
+        return self._require_store().embed_missing(source_id)
+
     # -- sync surface (Task 1.4): makes the service a ``sync.SyncStore``) ---- #
 
     def source_paths(self, source_id: str) -> set[str]:
@@ -182,7 +186,9 @@ class KnowledgeService:
         keyword = self._retriever.keyword(query, scope, self._candidate_k)
         rankings = [keyword]
         if self._vector_configured:
-            rankings.append(self._retriever.semantic(query, scope, self._candidate_k))
+            # Semantic first: RRF ties break by leg order, and the eval
+            # "fused" ablation (corpus_eval) fuses [semantic, keyword].
+            rankings.insert(0, self._retriever.semantic(query, scope, self._candidate_k))
         fused = self._retriever.fuse(rankings)
         candidates = fused[: self._rerank_candidates]
         return self._retriever.rerank(query, candidates, k)

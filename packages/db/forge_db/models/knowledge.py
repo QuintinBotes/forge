@@ -111,8 +111,13 @@ class RetrievalChunk(WorkspaceScopedModel):
     chunk_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", json_type(), default=dict, nullable=False
     )
+    # ``none_as_null`` on SQLite: without it Python ``None`` is stored as the
+    # JSON literal ``'null'``, which passes ``isnot(None)`` and resurrected
+    # unembedded rows as score-0.0 vector hits (dialect disagreement). No DDL
+    # difference — the column type is unchanged.
     embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(EMBEDDING_DIM).with_variant(JSON(), "sqlite"), nullable=True
+        Vector(EMBEDDING_DIM).with_variant(JSON(none_as_null=True), "sqlite"),
+        nullable=True,
     )
     tsv: Mapped[str | None] = mapped_column(
         TSVECTOR().with_variant(Text(), "sqlite"), nullable=True

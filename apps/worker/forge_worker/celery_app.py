@@ -77,4 +77,33 @@ try:  # connecting the signal is safe at import; it fires only in real workers
 except Exception:  # pragma: no cover - celery signal API unavailable
     pass
 
+
+# ADR-0018: a bad embedder config refuses worker startup, not every knowledge
+# task. ``worker_init`` fires once in the main worker process (unlike
+# ``worker_process_init``, whose failure would respawn pool children in a
+# loop). Celery's signal dispatch swallows ``Exception``, so a factory
+# refusal is re-raised as ``SystemExit`` — a ``BaseException`` the dispatcher
+# cannot swallow — which stops the worker boot. Warming the per-process
+# cached embedder here also means a ``local`` model loads once at boot.
+def _init_worker_embedder(**_kwargs: object) -> None:
+    from forge_api.settings import get_settings
+    from forge_knowledge.reranker import check_rerank_provider
+    from forge_worker.indexer import get_configured_embedder
+
+    try:
+        get_configured_embedder()
+        settings = get_settings()
+        if settings.rerank_enabled:
+            check_rerank_provider(settings.rerank_provider)
+    except (ValueError, RuntimeError) as exc:
+        raise SystemExit(f"refusing to start worker: {exc}") from exc
+
+
+try:  # connecting the signal is safe at import; it fires only in real workers
+    from celery.signals import worker_init
+
+    worker_init.connect(_init_worker_embedder, weak=False)
+except Exception:  # pragma: no cover - celery signal API unavailable
+    pass
+
 __all__ = ["celery_app", "get_broker_url"]

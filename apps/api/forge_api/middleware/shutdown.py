@@ -163,9 +163,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     close the Redis pool, flush the telemetry exporters.
     """
     from forge_api.realtime.broadcaster import shutdown_realtime, startup_realtime
+    from forge_api.routers.knowledge import get_configured_embedder
     from forge_api.settings import get_settings
+    from forge_knowledge.reranker import check_rerank_provider
 
     settings = get_settings()
+    # ADR-0018: a bad embedder config refuses at startup, not on the first
+    # /knowledge/* request while health stays 200. Warm only the embedder
+    # (no DB engine is built here); a ValueError/RuntimeError from the
+    # factory propagates and the process does not start serving.
+    get_configured_embedder()
+    if settings.rerank_enabled:
+        check_rerank_provider(settings.rerank_provider)
     state = ShutdownState(serving=True)
     set_current_state(state)
     app.state.shutdown_state = state

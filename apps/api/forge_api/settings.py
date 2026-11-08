@@ -356,8 +356,10 @@ class Settings(BaseSettings):
     embedding_model: str | None = None
     # SSRF-validated base_url override for the openai-compatible provider.
     embedding_base_url: str | None = None
-    # Must equal forge_db EMBEDDING_DIM (the vector column width) when set;
-    # a mismatch refuses at embedder construction, never on first insert.
+    # Required for the openai-compatible provider (its output width cannot be
+    # probed without a paid call) and must equal forge_db EMBEDDING_DIM (the
+    # vector column width); a missing or mismatched value refuses at startup
+    # (embedder construction), never on first insert.
     embedding_dimension: int | None = None
 
     @property

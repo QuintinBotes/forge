@@ -69,6 +69,7 @@ __all__ = [
     "RerankerUnavailableError",
     "build_reranker",
     "build_reranker_from_settings",
+    "check_rerank_provider",
 ]
 
 #: Default per-call latency budget (ms). A real hosted cross-encoder adds
@@ -452,6 +453,30 @@ def _guard_base_url(provider: str, base_url: str, *, allow_insecure: bool) -> No
         )
 
 
+def check_rerank_provider(provider: str | None) -> str:
+    """The normalised provider name, or ``ValueError`` for one forge refuses.
+
+    Callable at process start with no credentials: the API lifespan and the
+    worker's init hook use it so ``fixture`` (test-only, ADR-0018) or a typo
+    stops the process instead of failing every knowledge request later.
+    """
+    key = (provider or "none").strip().lower()
+    if key in _OFF_PROVIDERS:
+        return "none"
+    if key == "fixture":
+        raise ValueError(
+            "FORGE_RERANK_PROVIDER=fixture is test-only (ADR-0018); "
+            "set none or a real provider. Tests construct "
+            "FixtureRerankerClient() directly."
+        )
+    if key not in _PROVIDER_DEFAULTS:
+        raise ValueError(
+            f"unknown reranker provider {provider!r} "
+            f"(expected one of: none, {', '.join(_PROVIDER_DEFAULTS)})"
+        )
+    return key
+
+
 def build_reranker(
     provider: str | None,
     *,
@@ -468,26 +493,23 @@ def build_reranker(
 
     * ``provider in {None, "", "none", "off"}`` or ``enabled=False`` -> ``None``
       (no client is built, no key is read; search reports ``rerank: "off"``).
-    * ``"fixture"`` -> a network-free :class:`FixtureRerankerClient`. Test-only:
-      selectable explicitly, never the default (ADR-0018).
     * ``"jina" | "cohere" | "selfhosted"`` -> a :class:`GracefulReranker` wrapping
       a :class:`JinaRerankerClient` with the provider defaults, budgeted at
       ``timeout_ms`` and SSRF-guarded (:func:`_guard_base_url`, AC7).
 
-    Raises ``ValueError`` for an unknown provider or an SSRF-rejected ``base_url``.
+    ``"fixture"`` is refused, never built: the network-free
+    :class:`FixtureRerankerClient` is test-only (ADR-0018) and tests
+    construct it directly — config must not be able to select a fake
+    reranker in a running process.
+
+    Raises ``ValueError`` for ``"fixture"``, an unknown provider, or an
+    SSRF-rejected ``base_url``.
     """
     if not enabled or provider is None or provider.strip().lower() in _OFF_PROVIDERS:
         return None
 
-    key = provider.strip().lower()
-    if key == "fixture":
-        return FixtureRerankerClient()
-    defaults = _PROVIDER_DEFAULTS.get(key)
-    if defaults is None:
-        raise ValueError(
-            f"unknown reranker provider {provider!r} "
-            f"(expected one of: none, fixture, {', '.join(_PROVIDER_DEFAULTS)})"
-        )
+    key = check_rerank_provider(provider)
+    defaults = _PROVIDER_DEFAULTS[key]
 
     resolved_base = base_url or defaults["base_url"]
     if not resolved_base:

@@ -63,6 +63,7 @@ from forge_knowledge.stores import (
     PgVectorStore,
     VectorLegUnconfiguredError,
     bm25_score,
+    rebuild_bm25_stats,
 )
 from forge_knowledge.sync import (
     ChangeSet,
@@ -73,7 +74,7 @@ from forge_knowledge.sync import (
     read_repo_files,
     sync_source,
 )
-from forge_knowledge.text import tokenize
+from forge_knowledge.text import ENGLISH_STOPWORDS, query_terms, tokenize
 
 __version__ = "0.1.0"
 
@@ -81,6 +82,7 @@ __all__ = [
     "DEFAULT_MAX_CHARS",
     "DEFAULT_RERANK_TIMEOUT_MS",
     "DEFAULT_SENTENCE_TRANSFORMERS_MODEL",
+    "ENGLISH_STOPWORDS",
     "TREE_SITTER_LANGUAGES",
     "Bm25Store",
     "ChangeSet",
@@ -129,7 +131,9 @@ __all__ = [
     "latest_run",
     "provenance_uri",
     "purge_index",
+    "query_terms",
     "read_repo_files",
+    "rebuild_bm25_stats",
     "redact_secrets",
     "retrieve_with_mcp",
     "sync_source",

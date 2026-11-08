@@ -31,7 +31,7 @@ import subprocess
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from forge_contracts.dtos import Chunk, IndexResult
 from forge_contracts.enums import SyncMode
@@ -133,6 +133,27 @@ class SyncStore(Protocol):
     def source_paths(self, source_id: str) -> set[str]: ...
 
     def delete_source_paths(self, source_id: str, paths: Iterable[str]) -> int: ...
+
+
+@runtime_checkable
+class BacklogStore(Protocol):
+    """A store that can embed rows indexed before an embedder was configured."""
+
+    def embed_missing(self, source_id: str) -> tuple[int, list[str]]: ...
+
+
+def embed_backlog(store: object, source_id: str) -> tuple[int, list[str]]:
+    """Embed ``source_id``'s NULL-embedding rows, if the store can; never raises.
+
+    Called by every sync after its own writes (and after pruning), so newly
+    indexed chunks are committed whatever the provider does with old rows.
+    """
+    if not isinstance(store, BacklogStore):
+        return 0, []
+    try:
+        return store.embed_missing(source_id)
+    except Exception as exc:  # the backlog retries on the next sync
+        return 0, [f"embedding backlog: {type(exc).__name__}"]
 
 
 # --------------------------------------------------------------------------- #
@@ -319,13 +340,15 @@ def full_sync(
         if orphans:
             deleted = store.delete_source_paths(source_id, orphans)
 
+    # After pruning, so a vanished file's text is never sent to the provider.
+    embedded, backlog_errors = embed_backlog(store, source_id)
     return IndexResult(
         source_id=str(source_id),
         indexed=indexed.indexed,
-        updated=indexed.updated,
+        updated=indexed.updated + embedded,
         deleted=deleted,
         skipped=indexed.skipped,
-        errors=list(indexed.errors),
+        errors=[*indexed.errors, *backlog_errors],
     )
 
 
@@ -355,12 +378,14 @@ def incremental_sync(
     chunks = _chunk_files(files, changed, max_chars)
     indexed = store.index(source_id, chunks) if chunks else None
 
+    embedded, backlog_errors = embed_backlog(store, source_id)
     return IndexResult(
         source_id=str(source_id),
         indexed=indexed.indexed if indexed else 0,
-        updated=updated,
+        updated=updated + embedded,
         deleted=deleted,
         skipped=indexed.skipped if indexed else 0,
+        errors=[*(indexed.errors if indexed else []), *backlog_errors],
     )
 
 

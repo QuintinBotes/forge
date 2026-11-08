@@ -447,6 +447,38 @@ def test_api_env_carries_model_provider_contract() -> None:
         assert key in env, f"api env missing {key}"
 
 
+# --------------------------------------------------------------------------- #
+# Spec J — production embedder env contract (ADR-0018)                         #
+# The api embeds queries and the worker embeds chunks; both read             #
+# FORGE_EMBEDDING_* from env, and the services use explicit `environment:`    #
+# maps with no env_file, so the keys reach the containers ONLY if listed in   #
+# both maps. They must match, or stored vectors and query vectors come from   #
+# different models. Empty-default == unset == honest BM25-only search.        #
+# --------------------------------------------------------------------------- #
+
+_EMBEDDING_ENV_KEYS = (
+    "FORGE_EMBEDDING_PROVIDER",
+    "FORGE_EMBEDDING_MODEL",
+    "FORGE_EMBEDDING_BASE_URL",
+    "FORGE_EMBEDDING_DIMENSION",
+    "FORGE_EMBEDDING_API_KEY",
+)
+
+
+def test_api_and_worker_env_carry_embedding_contract() -> None:
+    api_env = _service("api")["environment"]
+    worker_env = _service("worker")["environment"]
+    for key in _EMBEDDING_ENV_KEYS:
+        for name, env in (("api", api_env), ("worker", worker_env)):
+            assert key in env, f"{name} env missing {key}"
+            # Empty-default form so an unset var stays unset-equivalent
+            # (BM25-only); an empty DIMENSION parses to None.
+            assert env[key] == f"${{{key}:-}}", f"{name} {key} not passed empty-default"
+    # The same ${VAR:-} source on both sides: one operator value feeds both.
+    for key in _EMBEDDING_ENV_KEYS:
+        assert api_env[key] == worker_env[key], key
+
+
 def test_worker_env_carries_multi_agent_toggle() -> None:
     """F27 MULTI_AGENT_ENABLED must reach the worker (the coordinator reader)."""
     env = _service("worker")["environment"]
