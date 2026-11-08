@@ -70,7 +70,7 @@ from forge_marketplace.registry_client import (
     HttpIndexRegistryClient,
     guard_url,
 )
-from forge_marketplace.verifier import Ed25519SignatureVerifier, verify_version
+from forge_marketplace.verifier import Ed25519SignatureVerifier, verify_package, verify_version
 
 __version__ = "0.1.0"
 
@@ -128,5 +128,6 @@ __all__ = [
     "load_manifest",
     "parse_index",
     "parse_semver",
+    "verify_package",
     "verify_version",
 ]

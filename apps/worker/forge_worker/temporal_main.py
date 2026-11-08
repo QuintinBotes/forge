@@ -77,9 +77,18 @@ class SessionPerCallStore:
 
 
 def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowActivities:
-    """Build the worker's Activities over a DB-backed projection store."""
+    """Build the worker's Activities over a DB-backed projection store.
+
+    ``forge.create_approval`` is wired to the real approval service (spec K
+    P0): a Temporal feature run opens its spec/plan/pr gate requests in
+    Postgres instead of failing at the first gate.
+    """
+    from forge_worker.approval_activity import make_create_approval_fn
+
+    session_factory = factory or create_session_factory()
     return WorkflowActivities(
-        store=SessionPerCallStore(factory or create_session_factory()),
+        store=SessionPerCallStore(session_factory),
+        approval_fn=make_create_approval_fn(session_factory),
         allow_fakes=os.environ.get("FORGE_ALLOW_FAKE_ACTIVITIES") == "1",
     )
 

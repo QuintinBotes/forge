@@ -199,8 +199,10 @@ class TemporalWorkflowEngine:
     def start(self, task_id: uuid.UUID, definition_name: str = "default_feature") -> WorkflowRun:
         return self._runner(self.astart(task_id, definition_name))
 
-    def transition(self, run_id: uuid.UUID, event: str) -> WorkflowState:
-        return self._runner(self.atransition(run_id, event))
+    def transition(
+        self, run_id: uuid.UUID, event: str, *, actor: str = "system", **payload: Any
+    ) -> WorkflowState:
+        return self._runner(self.atransition(run_id, event, actor=actor, **payload))
 
     def load_definition(self, source: str | Path) -> WorkflowDefinition:
         if not isinstance(source, str | Path):
