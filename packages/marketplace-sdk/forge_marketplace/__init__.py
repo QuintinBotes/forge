@@ -36,7 +36,10 @@ from forge_marketplace.installer import (
     McpConnectorInstaller,
     SkillProfileInstaller,
     ValidatedArtifact,
+    WorkflowTemplateArtifact,
+    WorkflowTemplateInstaller,
     build_install_plan,
+    default_secret_like,
     get_installer,
 )
 from forge_marketplace.manifest import (
@@ -114,6 +117,8 @@ __all__ = [
     "ValidatedArtifact",
     "VerificationResult",
     "VerificationStatus",
+    "WorkflowTemplateArtifact",
+    "WorkflowTemplateInstaller",
     "YankedVersion",
     "__version__",
     "build_install_plan",
@@ -122,6 +127,7 @@ __all__ = [
     "compare_semver",
     "compute_content_hash",
     "compute_manifest_hash",
+    "default_secret_like",
     "dump_manifest",
     "get_installer",
     "guard_url",

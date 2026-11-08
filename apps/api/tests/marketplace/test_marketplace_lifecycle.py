@@ -152,7 +152,9 @@ def test_pinned_not_flagged(
         actor_user_id=None,
         request=_req(registry, "skill_profile", "pinme"),
     )
-    service.set_pin(workspace_id=WS_ID, installation_id=result.installation_id, pinned=True)
+    service.set_pin(
+        workspace_id=WS_ID, actor="u", installation_id=result.installation_id, pinned=True
+    )
     m2, v2 = make_skill_version(keypair, slug="pinme", name="pinme", version="2.0.0")
     gateway.add(m2, v2)
     service.sync_registry(workspace_id=WS_ID, actor="u", registry_id=registry.id)

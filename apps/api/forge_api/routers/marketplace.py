@@ -41,6 +41,7 @@ from forge_api.services.marketplace_service import (
     HttpRegistryGateway,
     InstallationNotFoundError,
     InstallBlockedError,
+    InstallConflictError,
     ListingNotFoundError,
     MarketplaceService,
     NameConflictError,
@@ -274,11 +275,18 @@ def list_listings(
 
 @router.get("/listings/{registry_slug}/{slug}", response_model=ListingDetailResponse)
 def get_listing(
-    service: ServiceDep, principal: ReaderDep, registry_slug: str, slug: str
+    service: ServiceDep,
+    principal: ReaderDep,
+    registry_slug: str,
+    slug: str,
+    kind: Annotated[str | None, Query()] = None,
 ) -> ListingDetailResponse:
     try:
         listing, registry, versions = service.get_listing_detail(
-            workspace_id=principal.workspace_id, registry_slug=registry_slug, slug=slug
+            workspace_id=principal.workspace_id,
+            registry_slug=registry_slug,
+            slug=slug,
+            kind=kind,
         )
     except ListingNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -361,6 +369,11 @@ def install(service: ServiceDep, principal: AdminDep, body: InstallRequest) -> I
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except NameConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except InstallConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": exc.error_code, "message": str(exc)},
+        ) from exc
     except InstallBlockedError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -392,11 +405,17 @@ def update_installation(
             actor=f"user:{principal.user_id}",
             installation_id=installation_id,
             version=version,
+            actor_user_id=principal.user_id,
         )
     except InstallationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (RegistryNotFoundError, ListingNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InstallConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": exc.error_code, "message": str(exc)},
+        ) from exc
     except InstallBlockedError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -414,6 +433,7 @@ def patch_installation(
     try:
         row = service.set_pin(
             workspace_id=principal.workspace_id,
+            actor=f"user:{principal.user_id}",
             installation_id=installation_id,
             pinned=pinned,
         )

@@ -22,11 +22,13 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import NoReturn, Protocol
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.observability.audit import AuditCategory, AuditLog
@@ -42,6 +44,11 @@ from forge_db.models.marketplace import (
     MarketplaceRegistry,
 )
 from forge_db.models.profiles import SkillProfile
+from forge_db.models.workflow_editor import (
+    RevisionValidationStatus,
+    WorkflowDefinition,
+    WorkflowDefinitionSource,
+)
 from forge_marketplace.catalog import (
     compare_semver,
     find_version,
@@ -69,6 +76,15 @@ from forge_marketplace.packaging import build_package
 from forge_marketplace.policy import kind_policy_violation
 from forge_marketplace.registry_client import HttpIndexRegistryClient
 from forge_marketplace.verifier import verify_package
+from forge_workflow.editor.graph import line_graph_from_yaml
+from forge_workflow.editor.repository import DbWorkflowDefinitionRepository
+from forge_workflow.editor.service import (
+    AUDIT_ACTION_ARCHIVED,
+    AUDIT_ACTION_PUBLISHED,
+    AUDIT_RESOURCE_WORKFLOW_DEFINITION,
+)
+from forge_workflow.editor.store import default_bundled_loader
+from forge_workflow.exceptions import WorkflowDefinitionError
 
 DEFAULT_FORGE_VERSION = "3.0.0"
 
@@ -122,6 +138,10 @@ class InstallBlockedError(MarketplaceServiceError):
         self.error_code = error_code
 
 
+class InstallConflictError(InstallBlockedError):
+    """Install/update conflicts with workspace state (-> 409). Carries the audit code."""
+
+
 # --------------------------------------------------------------------------- #
 # Registry fetch seam (sync; backs onto the async SDK client in prod)           #
 # --------------------------------------------------------------------------- #
@@ -171,11 +191,24 @@ def _slugify(name: str) -> str:
 
 
 #: Kinds with a registered installer today. Everything else is refused
-#: explicitly (spec K §4.4): reserved kinds (``workflow_template`` /
-#: ``policy_template``) are ``unsupported_kind`` until their installers land,
-#: anything outside the enum is ``unknown_kind`` — never "else means MCP".
-_SUPPORTED_KINDS = frozenset({ArtifactKind.mcp_connector, ArtifactKind.skill_profile})
-_RESERVED_KINDS = frozenset({ArtifactKind.workflow_template, ArtifactKind.policy_template})
+#: explicitly (spec K §4.4): the reserved ``policy_template`` is
+#: ``unsupported_kind`` until its installer lands, anything outside the enum is
+#: ``unknown_kind`` — never "else means MCP".
+_SUPPORTED_KINDS = frozenset(
+    {ArtifactKind.mcp_connector, ArtifactKind.skill_profile, ArtifactKind.workflow_template}
+)
+_RESERVED_KINDS = frozenset({ArtifactKind.policy_template})
+_LINE_TARGET = "workflow_definition"
+
+
+_OVERRIDE_REFUSED = (
+    "override_name is not supported for workflow_template: "
+    "a line's definition name is its DSL workflow name"
+)
+
+
+def _override_refused(request: InstallRequest) -> bool:
+    return request.kind is ArtifactKind.workflow_template and bool(request.override_name)
 
 
 def _kind_error_code(kind: ArtifactKind | str) -> str | None:
@@ -298,6 +331,7 @@ class MarketplaceService:
                 operation="registry.add",
                 registry_slug=resolved_slug,
                 result_status="ok",
+                detail=f"trust_level={trust_level}; public_key={'set' if public_key else 'none'}",
             )
             s.commit()
             s.refresh(registry)
@@ -319,17 +353,32 @@ class MarketplaceService:
     ) -> MarketplaceRegistry:
         with self._sf() as s:
             registry = self._require_registry(s, workspace_id, registry_id)
+            changes: list[str] = []
             if name is not None:
                 registry.name = name
             if enabled is not None:
                 registry.enabled = enabled
-            if public_key is not None:
+            if public_key is not None and public_key != registry.public_key:
                 registry.public_key = public_key
+                changes.append("public_key changed")
             if trust_level is not None:
                 # The seeded official registry's trust is immutable-official.
                 if registry.slug == "official" and trust_level != TrustLevel.official.value:
                     raise RegistryConflictError("cannot downgrade the official registry's trust")
+                if trust_level != registry.trust_level:
+                    changes.append(f"trust_level {registry.trust_level} -> {trust_level}")
                 registry.trust_level = trust_level
+            if changes:
+                # The registry key is the trust root for lines (spec K §4.4).
+                self._write_audit(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="registry.update",
+                    registry_slug=registry.slug,
+                    result_status="ok",
+                    detail="; ".join(changes),
+                )
             s.flush()
             s.commit()
             s.refresh(registry)
@@ -559,10 +608,15 @@ class MarketplaceService:
             return out
 
     def get_listing_detail(
-        self, *, workspace_id: uuid.UUID, registry_slug: str, slug: str
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        registry_slug: str,
+        slug: str,
+        kind: str | None = None,
     ) -> tuple[MarketplaceListing, MarketplaceRegistry, list[MarketplaceListingVersion]]:
         with self._sf() as s:
-            row = s.execute(
+            stmt = (
                 select(MarketplaceListing, MarketplaceRegistry)
                 .join(
                     MarketplaceRegistry,
@@ -573,7 +627,11 @@ class MarketplaceService:
                     MarketplaceRegistry.slug == registry_slug,
                     MarketplaceListing.slug == slug,
                 )
-            ).first()
+            )
+            if kind:
+                stmt = stmt.where(MarketplaceListing.kind == kind)
+            # Two kinds may share a slug: without a kind, the first by kind, deterministically.
+            row = s.execute(stmt.order_by(MarketplaceListing.kind)).first()
             if row is None:
                 raise ListingNotFoundError(f"listing '{registry_slug}/{slug}' not found")
             listing, registry = row
@@ -793,6 +851,8 @@ class MarketplaceService:
             raise InstallBlockedError(
                 f"no installer registered for kind '{request.kind.value}'", error_code=code
             )
+        if _override_refused(request):
+            raise InstallBlockedError(_OVERRIDE_REFUSED, error_code="override_not_supported")
         with self._sf() as s:
             registry = self._require_registry(s, workspace_id, request.registry_id)
             try:
@@ -826,6 +886,18 @@ class MarketplaceService:
                     kind=request.kind.value,
                     code=code,
                 )
+            if _override_refused(request):
+                self._deny(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="install",
+                    registry_slug=registry.slug,
+                    listing_slug=request.slug,
+                    version=request.version,
+                    code="override_not_supported",
+                    message=_OVERRIDE_REFUSED,
+                )
             try:
                 manifest, plan, yanked = self._fetch_and_plan(registry, request)
             except UnknownArtifactKind as exc:
@@ -842,17 +914,26 @@ class MarketplaceService:
                     detail=str(exc),
                 )
             self._enforce_install_policy(s, workspace_id, actor, registry, plan, request, yanked)
-            result = self._apply(
+            with self._race_is_conflict(
                 s,
                 workspace_id=workspace_id,
                 actor=actor,
-                actor_user_id=actor_user_id,
-                registry=registry,
-                manifest=manifest,
-                plan=plan,
-                request=request,
-            )
-            s.commit()
+                operation="install",
+                registry_slug=registry.slug,
+                listing_slug=request.slug,
+                version=plan.version,
+            ):
+                result = self._apply(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    actor_user_id=actor_user_id,
+                    registry=registry,
+                    manifest=manifest,
+                    plan=plan,
+                    request=request,
+                )
+                s.commit()
             return result
 
     def _fetch_and_plan(
@@ -970,6 +1051,9 @@ class MarketplaceService:
         reason = (plan.block_reason or "").lower()
         if "requires forge" in reason:
             return "forge_version_incompatible"
+        if plan.kind is ArtifactKind.workflow_template:
+            # The line installer's refusals start with their code, e.g. "reserved_name: ...".
+            return (plan.block_reason or "schema_invalid").partition(":")[0]
         return "schema_invalid"
 
     def _apply(
@@ -984,6 +1068,17 @@ class MarketplaceService:
         plan: InstallPlan,
         request: InstallRequest,
     ) -> InstallResult:
+        if manifest.kind is ArtifactKind.workflow_template:
+            return self._apply_line(
+                s,
+                workspace_id=workspace_id,
+                actor=actor,
+                actor_user_id=actor_user_id,
+                registry=registry,
+                manifest=manifest,
+                plan=plan,
+                operation="install",
+            )
         if manifest.kind is ArtifactKind.skill_profile:
             target_kind, target_id = self._apply_skill(
                 s, workspace_id, plan, request, existing=None
@@ -1105,6 +1200,195 @@ class MarketplaceService:
         s.flush()
         return "mcp_connection", existing.id
 
+    def _apply_line(
+        self,
+        s: Session,
+        *,
+        workspace_id: uuid.UUID,
+        actor: str,
+        actor_user_id: uuid.UUID | None,
+        registry: MarketplaceRegistry,
+        manifest: PackageManifest,
+        plan: InstallPlan,
+        operation: str,
+    ) -> InstallResult:
+        """Install, reinstall or update a ``workflow_template`` (spec K §4.4).
+
+        Flush only, on the marketplace session (never ``WorkflowEditorService``, which
+        commits); every refusal comes before the first write, so it leaves only its
+        denied audit row.
+        """
+        # Serializes installs, updates and uninstalls of this line; populate_existing
+        # re-reads a row the update path loaded before the lock.
+        row = self._installation_row(s, workspace_id, registry.slug, manifest, lock=True)
+        live = row if row is not None and row.status != InstallStatus.uninstalled.value else None
+
+        def deny(code: str, message: str, *, conflict: bool = True) -> NoReturn:
+            self._deny(
+                s,
+                workspace_id=workspace_id,
+                actor=actor,
+                operation=operation,
+                registry_slug=registry.slug,
+                listing_slug=manifest.slug,
+                version=plan.version,
+                code=code,
+                message=message,
+                conflict=conflict,
+            )
+
+        if operation == "update" and live is None:
+            # An uninstall committed first: updating must not resurrect the line.
+            deny("installation_uninstalled", "installation was uninstalled; install it again")
+        if (
+            live is not None
+            and live.target_object_id is not None
+            and live.content_hash == manifest.content_hash
+            and not (live.pinned and live.installed_version != plan.version)
+        ):
+            if live.installed_version != plan.version:  # same content, another version
+                live.installed_version = plan.version
+                live.available_version = None
+                live.status = InstallStatus.installed.value
+            self._write_audit(
+                s,
+                workspace_id=workspace_id,
+                actor=actor,
+                operation=operation,
+                registry_slug=registry.slug,
+                listing_slug=manifest.slug,
+                version=plan.version,
+                content_hash=manifest.content_hash,
+                verification_status=plan.verification.status.value,
+                result_status="noop",
+            )
+            return InstallResult(
+                installation_id=live.id,
+                target_kind=_LINE_TARGET,
+                target_object_id=live.target_object_id,
+                status=InstallStatus(live.status),
+                version=live.installed_version,
+                verification=plan.verification,
+                warnings=plan.warnings,
+            )
+        if live is not None:
+            operation = "update"  # another version of a live installation
+            if live.pinned:
+                deny("installation_pinned", "installation is pinned; unpin it to update")
+
+        cfg = plan.resolved_config
+        name: str = cfg["name"]
+        if default_bundled_loader(name) is not None:
+            deny(
+                "reserved_name", f"reserved_name: {name!r} is a bundled definition", conflict=False
+            )
+        try:
+            graph_json, _ = line_graph_from_yaml(cfg["dsl_yaml"], title=cfg["title"])
+        except WorkflowDefinitionError as exc:
+            deny("line_invalid", f"line_invalid: {exc}", conflict=False)
+
+        repo = DbWorkflowDefinitionRepository(s)
+        target = (
+            s.get(WorkflowDefinition, row.target_object_id)
+            if row is not None and row.target_object_id is not None
+            else None
+        )
+        if target is not None and target.name != name:
+            # Start parses the DSL name, so a line cannot be renamed under its definition.
+            deny(
+                "name_mismatch",
+                f"name_mismatch: installed as {target.name!r}, the package names {name!r}",
+                conflict=False,
+            )
+        holder = repo.get(workspace_id, name)
+        if holder is not None and holder is not target:
+            deny("name_conflict", f"a workflow definition named {name!r} already exists")
+        if target is not None and repo.get_draft(target.id) is not None:
+            deny("open_draft", f"workflow definition {name!r} has an open draft")
+
+        if target is None:
+            target = repo.create_definition(
+                workspace_id=workspace_id,
+                name=name,
+                title=cfg["title"],
+                description=cfg.get("description"),
+                source=WorkflowDefinitionSource.MARKETPLACE,
+                base_bundled_name=None,
+                actor=actor_user_id,
+            )
+        elif not target.is_active:
+            repo.set_active(target, is_active=True)
+        draft = repo.create_draft(
+            target,
+            dsl_yaml=cfg["dsl_yaml"],
+            graph_json=graph_json,
+            dsl_version="2",
+            notes=f"{registry.slug}/{manifest.slug}@{plan.version} {manifest.content_hash}",
+            validation_status=RevisionValidationStatus.VALID,
+            validation_issues=[],
+            actor=actor_user_id,
+        )
+        revision = repo.publish_draft(target, draft)
+        installation = self._upsert_installation(
+            s,
+            workspace_id=workspace_id,
+            registry=registry,
+            manifest=manifest,
+            plan=plan,
+            target_kind=_LINE_TARGET,
+            target_id=target.id,
+            actor_user_id=actor_user_id,
+        )
+        self._write_audit(
+            s,
+            workspace_id=workspace_id,
+            actor=actor,
+            operation=operation,
+            registry_slug=registry.slug,
+            listing_slug=manifest.slug,
+            version=plan.version,
+            content_hash=manifest.content_hash,
+            verification_status=plan.verification.status.value,
+            result_status="ok",
+        )
+        self._audit.record(
+            category=AuditCategory.SYSTEM,
+            action=AUDIT_ACTION_PUBLISHED,
+            actor=actor,
+            workspace_id=workspace_id,
+            target=f"{AUDIT_RESOURCE_WORKFLOW_DEFINITION}:{target.id}",
+            metadata={"name": name, "revision": revision.revision, "source": "marketplace"},
+        )
+        return InstallResult(
+            installation_id=installation.id,
+            target_kind=_LINE_TARGET,
+            target_object_id=target.id,
+            status=InstallStatus.installed,
+            version=plan.version,
+            verification=plan.verification,
+            warnings=plan.warnings,
+        )
+
+    @staticmethod
+    def _installation_row(
+        s: Session,
+        workspace_id: uuid.UUID,
+        registry_slug: str,
+        manifest: PackageManifest,
+        *,
+        lock: bool = False,
+    ) -> MarketplaceInstallation | None:
+        # Two kinds may share a slug, so the kind is part of the key (spec K §4.9).
+        stmt = select(MarketplaceInstallation).where(
+            MarketplaceInstallation.workspace_id == workspace_id,
+            MarketplaceInstallation.registry_slug == registry_slug,
+            MarketplaceInstallation.kind == manifest.kind.value,
+            MarketplaceInstallation.listing_slug == manifest.slug,
+        )
+        if lock:  # SELECT ... FOR UPDATE; SQLite ignores it
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
+        return s.execute(stmt).scalar_one_or_none()
+
     def _upsert_installation(
         self,
         s: Session,
@@ -1117,13 +1401,7 @@ class MarketplaceService:
         target_id: uuid.UUID,
         actor_user_id: uuid.UUID | None,
     ) -> MarketplaceInstallation:
-        row = s.execute(
-            select(MarketplaceInstallation).where(
-                MarketplaceInstallation.workspace_id == workspace_id,
-                MarketplaceInstallation.registry_slug == registry.slug,
-                MarketplaceInstallation.listing_slug == manifest.slug,
-            )
-        ).scalar_one_or_none()
+        row = self._installation_row(s, workspace_id, registry.slug, manifest)
         status = InstallStatus.installed.value
         if row is None:
             row = MarketplaceInstallation(
@@ -1173,14 +1451,25 @@ class MarketplaceService:
             return list(rows)
 
     def set_pin(
-        self, *, workspace_id: uuid.UUID, installation_id: uuid.UUID, pinned: bool
+        self, *, workspace_id: uuid.UUID, actor: str, installation_id: uuid.UUID, pinned: bool
     ) -> MarketplaceInstallation:
         with self._sf() as s:
-            row = self._require_installation(s, workspace_id, installation_id)
+            # Locked: the status test below must not act on a row an uninstall just changed.
+            row = self._require_installation(s, workspace_id, installation_id, lock=True)
             row.pinned = pinned
             if pinned and row.status == InstallStatus.update_available.value:
                 row.status = InstallStatus.installed.value
                 row.available_version = None
+            self._write_audit(
+                s,
+                workspace_id=workspace_id,
+                actor=actor,
+                operation="pin" if pinned else "unpin",
+                registry_slug=row.registry_slug,
+                listing_slug=row.listing_slug,
+                version=row.installed_version,
+                result_status="ok",
+            )
             s.flush()
             s.commit()
             s.refresh(row)
@@ -1194,6 +1483,7 @@ class MarketplaceService:
         actor: str,
         installation_id: uuid.UUID,
         version: str | None = None,
+        actor_user_id: uuid.UUID | None = None,
     ) -> InstallResult:
         with self._sf() as s:
             row = self._require_installation(s, workspace_id, installation_id)
@@ -1209,6 +1499,19 @@ class MarketplaceService:
                     version=version or row.installed_version,
                     kind=str(row.kind),
                     code=code,
+                )
+            if row.kind == ArtifactKind.workflow_template.value and row.pinned:
+                self._deny(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="update",
+                    registry_slug=row.registry_slug,
+                    listing_slug=row.listing_slug,
+                    version=version or row.installed_version,
+                    code="installation_pinned",
+                    message="installation is pinned; unpin it to update",
+                    conflict=True,
                 )
             registry = s.execute(
                 select(MarketplaceRegistry).where(
@@ -1246,6 +1549,28 @@ class MarketplaceService:
                 s, workspace_id, actor, registry, plan, request, yanked, operation="update"
             )
 
+            if manifest.kind is ArtifactKind.workflow_template:
+                with self._race_is_conflict(
+                    s,
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    operation="update",
+                    registry_slug=registry.slug,
+                    listing_slug=row.listing_slug,
+                    version=plan.version,
+                ):
+                    result = self._apply_line(
+                        s,
+                        workspace_id=workspace_id,
+                        actor=actor,
+                        actor_user_id=actor_user_id,
+                        registry=registry,
+                        manifest=manifest,
+                        plan=plan,
+                        operation="update",
+                    )
+                    s.commit()
+                return result
             if manifest.kind is ArtifactKind.skill_profile:
                 existing = (
                     s.get(SkillProfile, row.target_object_id) if row.target_object_id else None
@@ -1299,10 +1624,24 @@ class MarketplaceService:
 
     def uninstall(self, *, workspace_id: uuid.UUID, actor: str, installation_id: uuid.UUID) -> None:
         with self._sf() as s:
-            row = self._require_installation(s, workspace_id, installation_id)
+            # Locked: a line update in flight finishes first, or sees this uninstall.
+            row = self._require_installation(s, workspace_id, installation_id, lock=True)
             if row.target_object_id is not None:
-                obj: SkillProfile | MCPConnection | None
-                if row.target_kind == "skill_profile":
+                obj: SkillProfile | MCPConnection | None = None
+                if row.target_kind == _LINE_TARGET:
+                    # Archive, never delete: in-flight runs keep loading their revision.
+                    definition = s.get(WorkflowDefinition, row.target_object_id)
+                    if definition is not None:
+                        DbWorkflowDefinitionRepository(s).set_active(definition, is_active=False)
+                        self._audit.record(
+                            category=AuditCategory.SYSTEM,
+                            action=AUDIT_ACTION_ARCHIVED,
+                            actor=actor,
+                            workspace_id=workspace_id,
+                            target=f"{AUDIT_RESOURCE_WORKFLOW_DEFINITION}:{definition.id}",
+                            metadata={"name": definition.name, "source": "marketplace"},
+                        )
+                elif row.target_kind == "skill_profile":
                     obj = s.get(SkillProfile, row.target_object_id)
                 elif row.target_kind == "mcp_connection":
                     obj = s.get(MCPConnection, row.target_object_id)
@@ -1322,7 +1661,10 @@ class MarketplaceService:
                 if obj is not None:
                     s.delete(obj)
             row.status = InstallStatus.uninstalled.value
-            row.target_object_id = None
+            if row.kind == ArtifactKind.workflow_template.value:
+                row.pinned = False
+            if row.target_kind != _LINE_TARGET:  # deleted; an archived definition is kept
+                row.target_object_id = None
             row.available_version = None
             self._write_audit(
                 s,
@@ -1340,9 +1682,12 @@ class MarketplaceService:
         """Flag installed items with a newer compatible version / yank (AC13/15)."""
         flagged = 0
         with self._sf() as s:
+            # Locked (rows an install, update or uninstall holds are skipped until the next
+            # run), so a flag is never written over a row that changed after this read.
             installs = (
                 s.execute(
-                    select(MarketplaceInstallation).where(
+                    select(MarketplaceInstallation)
+                    .where(
                         MarketplaceInstallation.workspace_id == workspace_id,
                         MarketplaceInstallation.status.in_(
                             [
@@ -1351,6 +1696,8 @@ class MarketplaceService:
                             ]
                         ),
                     )
+                    .with_for_update(skip_locked=True)
+                    .execution_options(populate_existing=True)
                 )
                 .scalars()
                 .all()
@@ -1371,6 +1718,10 @@ class MarketplaceService:
                     inst.status = InstallStatus.update_available.value
                     inst.available_version = newer.version
                     flagged += 1
+                elif inst.status == InstallStatus.update_available.value:
+                    # The newer version is installed or gone: clear a stale flag.
+                    inst.status = InstallStatus.installed.value
+                    inst.available_version = None
             s.commit()
         return flagged
 
@@ -1391,6 +1742,7 @@ class MarketplaceService:
                 .where(
                     MarketplaceListing.workspace_id == workspace_id,
                     MarketplaceRegistry.slug == inst.registry_slug,
+                    MarketplaceListing.kind == inst.kind,
                     MarketplaceListing.slug == inst.listing_slug,
                 )
             )
@@ -1449,14 +1801,20 @@ class MarketplaceService:
         return registry
 
     def _require_installation(
-        self, s: Session, workspace_id: uuid.UUID, installation_id: uuid.UUID
+        self,
+        s: Session,
+        workspace_id: uuid.UUID,
+        installation_id: uuid.UUID,
+        *,
+        lock: bool = False,
     ) -> MarketplaceInstallation:
-        row = s.execute(
-            select(MarketplaceInstallation).where(
-                MarketplaceInstallation.workspace_id == workspace_id,
-                MarketplaceInstallation.id == installation_id,
-            )
-        ).scalar_one_or_none()
+        stmt = select(MarketplaceInstallation).where(
+            MarketplaceInstallation.workspace_id == workspace_id,
+            MarketplaceInstallation.id == installation_id,
+        )
+        if lock:
+            stmt = stmt.with_for_update()
+        row = s.execute(stmt).scalar_one_or_none()
         if row is None:
             raise InstallationNotFoundError("installation not found")
         return row
@@ -1475,10 +1833,38 @@ class MarketplaceService:
         code: str,
         detail: str | None = None,
     ) -> NoReturn:
-        """Refuse an unknown/reserved kind: committed denied audit row, then 422.
+        """Refuse an unknown/reserved kind: committed denied audit row, then 422."""
+        self._deny(
+            s,
+            workspace_id=workspace_id,
+            actor=actor,
+            operation=operation,
+            registry_slug=registry_slug,
+            listing_slug=listing_slug,
+            version=version,
+            code=code,
+            message=f"no installer registered for kind '{kind}'",
+            detail=detail,
+        )
 
-        Always raises :class:`InstallBlockedError` (the audit row is committed
-        first, so the refusal itself is on the record).
+    def _deny(
+        self,
+        s: Session,
+        *,
+        workspace_id: uuid.UUID,
+        actor: str,
+        operation: str,
+        registry_slug: str | None,
+        listing_slug: str | None,
+        version: str | None,
+        code: str,
+        message: str,
+        detail: str | None = None,
+        conflict: bool = False,
+    ) -> NoReturn:
+        """Commit a denied audit row, then raise 422 (409 when ``conflict``).
+
+        The audit row is committed first, so the refusal itself is on the record.
         """
         self._write_audit(
             s,
@@ -1490,10 +1876,56 @@ class MarketplaceService:
             version=version,
             result_status="denied",
             error_code=code,
-            detail=detail or f"no installer registered for kind '{kind}'",
+            detail=detail or message,
         )
         s.commit()
-        raise InstallBlockedError(f"no installer registered for kind '{kind}'", error_code=code)
+        raise (InstallConflictError if conflict else InstallBlockedError)(message, error_code=code)
+
+    @contextmanager
+    def _race_is_conflict(
+        self,
+        s: Session,
+        *,
+        workspace_id: uuid.UUID,
+        actor: str,
+        operation: str,
+        registry_slug: str,
+        listing_slug: str,
+        version: str,
+    ) -> Iterator[None]:
+        """A lost unique-key race is a 409; a value the database refuses is a 422.
+
+        Either way: roll back, then commit the denied audit row.
+        """
+        try:
+            yield
+        except DataError:
+            s.rollback()
+            self._deny(
+                s,
+                workspace_id=workspace_id,
+                actor=actor,
+                operation=operation,
+                registry_slug=registry_slug,
+                listing_slug=listing_slug,
+                version=version,
+                code="database_refused",
+                message="the database refused a value in this package",
+            )
+        except IntegrityError:
+            s.rollback()
+            self._deny(
+                s,
+                workspace_id=workspace_id,
+                actor=actor,
+                operation=operation,
+                registry_slug=registry_slug,
+                listing_slug=listing_slug,
+                version=version,
+                code="concurrent_install",
+                message="a concurrent install of this package won; retry",
+                conflict=True,
+            )
 
     def _audit_denied(
         self,
@@ -1536,6 +1968,11 @@ class MarketplaceService:
         error_code: str | None = None,
         detail: str | None = None,
     ) -> None:
+        # A refusal's own record must not fail: package text may hold any character.
+        registry_slug, listing_slug, version, error_code = (
+            _audit_text(v, 64) for v in (registry_slug, listing_slug, version, error_code)
+        )
+        detail = _audit_text(detail)
         s.add(
             MarketplaceAuditLog(
                 workspace_id=workspace_id,
@@ -1544,7 +1981,7 @@ class MarketplaceService:
                 registry_slug=registry_slug,
                 listing_slug=listing_slug,
                 version=version,
-                content_hash=content_hash,
+                content_hash=_audit_text(content_hash, 80),
                 verification_status=verification_status,
                 result_status=result_status,
                 error_code=error_code,
@@ -1567,6 +2004,14 @@ class MarketplaceService:
                 "error_code": error_code,
             },
         )
+
+
+def _audit_text(value: str | None, width: int | None = None) -> str | None:
+    """Fit a value to an audit column: Postgres text refuses NUL and lone surrogates."""
+    if value is None:
+        return None
+    text = value.encode("utf-8", "backslashreplace").decode().replace("\x00", "\\x00")
+    return text[:width] if width else text
 
 
 def seed_official_registry(
@@ -1614,6 +2059,7 @@ def backfill_official_registries(session: Session, *, url: str, public_key: str 
 __all__ = [
     "HttpRegistryGateway",
     "InstallBlockedError",
+    "InstallConflictError",
     "InstallationNotFoundError",
     "ListingNotFoundError",
     "MarketplaceService",
