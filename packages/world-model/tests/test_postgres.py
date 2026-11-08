@@ -247,7 +247,9 @@ def _load_migration() -> ModuleType:
 
 def test_migration_upgrades_and_downgrades_cleanly(pg_engine: Engine) -> None:
     Base.metadata.create_all(pg_engine)
-    world_tables = [Base.metadata.tables[name] for name in WORLD_TABLES]
+    # 0044's feedback table FKs world_fact, so it must go before 0041's
+    # tables can drop; it is not one of 0041's own tables.
+    world_tables = [Base.metadata.tables[name] for name in [*WORLD_TABLES, "world_fact_feedback"]]
     Base.metadata.drop_all(bind=pg_engine, tables=world_tables)
     assert not (set(WORLD_TABLES) & set(inspect(pg_engine).get_table_names()))
 

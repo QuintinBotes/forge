@@ -61,6 +61,11 @@ class ProposalStatus(enum.StrEnum):
     REJECTED = "rejected"
 
 
+class FeedbackOutcome(enum.StrEnum):
+    REINFORCED = "reinforced"
+    WEAKENED = "weakened"
+
+
 class WorldModelError(Exception):
     """Base for every world-model domain failure."""
 
@@ -244,6 +249,46 @@ class FactData:
 
 
 @dataclass(frozen=True)
+class FeedbackData:
+    """A ``world_fact_feedback`` row as pure data (spec J §2.5)."""
+
+    id: uuid.UUID
+    fact_id: uuid.UUID
+    run_id: uuid.UUID
+    outcome: FeedbackOutcome
+    created_at: datetime
+
+
+#: Half-life of a memory's stored confidence, in days (spec J §2.5).
+MEMORY_HALF_LIFE_DAYS = 30.0
+
+_SECONDS_PER_DAY = 86_400.0
+
+
+def effective_confidence(
+    fact: FactData, *, reinforced: int = 0, weakened: int = 0, now: datetime
+) -> float:
+    """A fact's confidence as read *now* (spec J §2.5) — computed, never stored.
+
+    ``min(1, confidence x 0.5^(age_days / 30) x 1.1^reinforced x
+    0.8^weakened)`` for ``layer = memory`` (age from ``recorded_at``);
+    other layers get the feedback multipliers only, with no decay. The
+    feedback counts come from the append-only ``world_fact_feedback``
+    rows a run's PR outcome wrote.
+    """
+    if reinforced < 0 or weakened < 0:
+        raise WorldValidationError("feedback counts must be non-negative")
+    value = fact.confidence * (1.1**reinforced) * (0.8**weakened)
+    if fact.layer is Layer.MEMORY:
+        age_days = max(
+            0.0,
+            (ensure_utc(now) - ensure_utc(fact.recorded_at)).total_seconds() / _SECONDS_PER_DAY,
+        )
+        value *= 0.5 ** (age_days / MEMORY_HALF_LIFE_DAYS)
+    return min(1.0, value)
+
+
+@dataclass(frozen=True)
 class ClassDef:
     """A ``world_class`` row as pure data."""
 
@@ -361,12 +406,15 @@ __all__ = [
     "KEY_RE",
     "KNOWN_AS_KEY",
     "KNOWN_AS_RELATION",
+    "MEMORY_HALF_LIFE_DAYS",
     "ClassDef",
     "ConflictError",
     "DecisionData",
     "EntityData",
     "EvidenceData",
     "FactData",
+    "FeedbackData",
+    "FeedbackOutcome",
     "ForbiddenError",
     "InvalidatedReason",
     "Layer",
@@ -383,6 +431,7 @@ __all__ = [
     "WorldModelError",
     "WorldValidationError",
     "dedup_key",
+    "effective_confidence",
     "normalise_phrase",
     "normalise_value",
     "validate_key",

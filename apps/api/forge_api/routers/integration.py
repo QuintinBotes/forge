@@ -18,22 +18,26 @@ HTTP 502. The webhook parser is fully offline (no network).
 from __future__ import annotations
 
 import contextlib
+import json
 import uuid
 from datetime import UTC, datetime
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.auth.rbac import Permission
+from forge_api.db import get_session_factory
 from forge_api.deps import Principal, SettingsDep
 from forge_api.observability.audit import AuditCategory, AuditLog
 from forge_api.observability.redaction import redact_mapping, redact_text
 from forge_api.routers._rbac import require_permission
 from forge_api.routers.agent import AgentRunStore, get_agent_store
+from forge_api.services.context_service import record_pull_request_outcome
 from forge_api.settings import Settings, get_settings
 from forge_contracts import (
     ApprovalRequest,
@@ -368,6 +372,15 @@ def get_github_webhook_secret() -> str | None:
     return get_settings().github_webhook_secret
 
 
+def get_feedback_session_factory() -> sessionmaker[Session]:
+    """Session factory for the webhook's PR-outcome feedback write (spec J).
+
+    Separate (overridable) dependency, opened only for ``pull_request``
+    deliveries, so the offline CI-parsing path never touches the database.
+    """
+    return get_session_factory()
+
+
 def get_slack_signing_secret() -> str | None:
     """Return the configured Slack signing secret (overridable in tests).
 
@@ -381,6 +394,7 @@ GitHubDep = Annotated[GitHubClient, Depends(get_github_client)]
 GitHubOptionalDep = Annotated[GitHubClient | None, Depends(get_github_client_optional)]
 SlackDep = Annotated[SlackNotifier, Depends(get_slack_notifier)]
 WebhookSecretDep = Annotated[str | None, Depends(get_github_webhook_secret)]
+FeedbackFactoryDep = Annotated[sessionmaker[Session], Depends(get_feedback_session_factory)]
 SlackSigningSecretDep = Annotated[str | None, Depends(get_slack_signing_secret)]
 ApprovalStoreDep = Annotated[ApprovalStore, Depends(get_approval_store)]
 SlackRefStoreDep = Annotated[SlackApprovalRefStore, Depends(get_slack_ref_store)]
@@ -457,11 +471,81 @@ def github_health(client: GitHubOptionalDep) -> HealthResult:
     return client.health()
 
 
+def _record_pr_feedback(factory: sessionmaker[Session], event: WebhookEvent) -> None:
+    """Write outcome feedback for a closed PR (spec J §2.5); else no-op.
+
+    Only a ``pull_request`` event with ``action == "closed"`` resolves to
+    an agent run (recorded repo + PR number, else the head branch);
+    ``merged`` reinforces every fact/memory in the run's ``context_refs``,
+    an unmerged close weakens them. Idempotent per ``(run_id, fact_id)``;
+    a PR that maps to no run is ignored.
+    """
+    if (event.event_type or "").lower() != "pull_request":
+        return
+    payload: dict[str, Any] = event.payload or {}
+    if payload.get("action") != "closed":
+        return
+    pull_request = payload.get("pull_request")
+    if not isinstance(pull_request, dict):
+        return
+    raw_number = pull_request.get("number", payload.get("number"))
+    is_int = isinstance(raw_number, int) and not isinstance(raw_number, bool)
+    number = raw_number if is_int else None
+    if number is None and isinstance(raw_number, str) and raw_number.isdigit():
+        number = int(raw_number)
+    repository = payload.get("repository")
+    repo_full_name = repository.get("full_name") if isinstance(repository, dict) else None
+    head = pull_request.get("head")
+    head_ref = head.get("ref") if isinstance(head, dict) else None
+    # A fork PR (head repository differs from the base repository) can
+    # never be a Forge run branch, so its head ref must not reach the
+    # branch-name fallback — anyone can name a fork branch after a run.
+    head_repo = head.get("repo") if isinstance(head, dict) else None
+    head_repo_name = head_repo.get("full_name") if isinstance(head_repo, dict) else None
+    base = pull_request.get("base")
+    base_repo = base.get("repo") if isinstance(base, dict) else None
+    base_repo_name = base_repo.get("full_name") if isinstance(base_repo, dict) else None
+    base_name = base_repo_name if isinstance(base_repo_name, str) else repo_full_name
+    effective_head_ref = head_ref if isinstance(head_ref, str) else None
+    if (
+        isinstance(head_repo_name, str)
+        and isinstance(base_name, str)
+        and head_repo_name != base_name
+    ):
+        effective_head_ref = None
+    with factory() as session:
+        record_pull_request_outcome(
+            session,
+            repo_full_name=repo_full_name if isinstance(repo_full_name, str) else None,
+            number=number,
+            merged=pull_request.get("merged") is True,
+            head_ref=effective_head_ref,
+        )
+
+
+def _webhook_event(body: bytes, github_event: str | None) -> WebhookEvent:
+    """Forge's own envelope, or a GitHub App delivery wrapped into one.
+
+    GitHub sends the raw event JSON and names the event in ``X-GitHub-Event``;
+    without this, every real delivery to the configured App webhook URL was a 422.
+    """
+    if github_event:
+        try:
+            raw = json.loads(body)
+        except ValueError:
+            raw = None
+        if isinstance(raw, dict) and not {"source", "event_type"} <= raw.keys():
+            return WebhookEvent(source="github", event_type=github_event, payload=raw)
+    return WebhookEvent.model_validate_json(body)
+
+
 @router.post("/github/webhooks", response_model=CIStatus)
 async def github_webhook(
     request: Request,
     secret: WebhookSecretDep,
+    feedback_factory: FeedbackFactoryDep,
     x_hub_signature_256: Annotated[str | None, Header()] = None,
+    x_github_event: Annotated[str | None, Header()] = None,
 ) -> CIStatus:
     """Ingest a GitHub webhook and return the parsed CI status (offline; pure).
 
@@ -479,12 +563,16 @@ async def github_webhook(
             detail="invalid or missing webhook signature",
         )
     try:
-        event = WebhookEvent.model_validate_json(body)
+        event = _webhook_event(body, x_github_event)
     except ValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="invalid webhook payload",
         ) from exc
+    # Signature-verified by here: a closed PR writes outcome feedback for
+    # the facts its run consumed (spec J §2.5). Every other event keeps
+    # the long-standing pure CI-parsing behaviour and response.
+    _record_pr_feedback(feedback_factory, event)
     return parse_github_webhook(event)
 
 
