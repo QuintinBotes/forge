@@ -40,7 +40,7 @@ Make forge the one software factory by absorbing three neighbouring systems:
 | **H** | World model (utopia++) | — | Approved, implementation-ready (H1); H2–H4 at interface depth | `packages/world-model` (`forge_world`), migration, `/world` API |
 | **I** | Forge MCP server | H1 | Approved, implementation-ready | `POST {api_prefix}/mcp` Streamable-HTTP JSON-RPC server, read-only by default |
 | **J** | Context and memory (lore++ part 1) | H1, I | DRAFT — scope and interfaces | `assemble_context`, memory lifecycle, wider index, eval gate |
-| **K** | Automation lines (lore++ part 2) | G, J | DRAFT — scope and interfaces | Ticket → PR loop, review, triage, merge bookkeeping, digests, on `workflow-engine` |
+| **K** | Automation lines (lore++ part 2) | G, J | Approved, implementation-ready (ADR-0020; P0 first) | Ticket → PR loop, review, triage, merge bookkeeping, digests, on `workflow-engine` |
 | **L** | Tervin bridge | I, G | DRAFT — scope and interfaces | Run event SSE stream, `forge --json`, ACP stdio shim, token-by-env-var auth |
 | **M** | Bring your own tracker | G | Approved (M1, M2 ready; M3 after G1d) | Tracker owns work items (ADR-0019); GitHub Issues adapter; tracker-wins write-back; issue-driven dispatch |
 
