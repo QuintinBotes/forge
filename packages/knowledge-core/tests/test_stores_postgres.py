@@ -137,6 +137,28 @@ def test_bm25_or_query_keeps_recall_on_postgres(
     assert [h.path for h in hits] == ["retry.py"]
 
 
+def test_bm25_candidate_cut_breaks_ties_on_a_stable_key(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    # Spec J §2.4.1 D-d: 250 equal-score chunks overflow the 200-row candidate
+    # cut. Inserted in reverse key order, so without the (source, path, line)
+    # tie-break the cut keeps whatever the scan meets first.
+    workspace_id, source_id = _seed(pg_session_factory)
+    PgVectorStore(pg_session_factory, None).index(
+        source_id=str(source_id),
+        chunks=[
+            Chunk(content="tiebreak" + " " * (i + 1) + "token", path=f"p{i:03d}.md")
+            for i in reversed(range(250))
+        ],
+    )
+    scope = KnowledgeScope(workspace_id=workspace_id)
+    first = Bm25Store(pg_session_factory).search("tiebreak token", scope, k=10)
+    second = Bm25Store(pg_session_factory).search("tiebreak token", scope, k=10)
+    assert len({h.score for h in first}) == 1  # truly tied
+    assert [h.path for h in first] == [h.path for h in second]
+    assert [h.path for h in first] == [f"p{i:03d}.md" for i in range(10)]
+
+
 _PARITY_CORPUS = [
     Chunk(content="retry retry retry timeout backoff helper", path="retry.py"),
     Chunk(content="timeout timeout configuration network calls retry", path="timeouts.py"),

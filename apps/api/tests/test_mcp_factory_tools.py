@@ -47,6 +47,9 @@ FACTORY_TOOLS = {
     "run_status",
     # Spec J: the context-assembly read tool (context_tools).
     "assemble_context",
+    # Spec J §2.4.1 D-e: direct knowledge reads (knowledge_tools).
+    "knowledge_search",
+    "knowledge_document",
 }
 WORLD_TOOLS = {
     "world_search",

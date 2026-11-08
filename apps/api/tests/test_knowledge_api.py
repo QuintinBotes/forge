@@ -15,14 +15,16 @@ connection), deterministic embedding, fixture reranker. No network.
 
 from __future__ import annotations
 
+import subprocess
 import uuid
 from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import StaticPool, create_engine
+from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.main import create_app
@@ -32,7 +34,7 @@ from forge_api.routers.knowledge import (
 )
 from forge_contracts import Chunk
 from forge_db.base import Base
-from forge_db.models import KnowledgeSource, Workspace
+from forge_db.models import KnowledgeSource, RetrievalChunk, Workspace
 from forge_db.session import create_session_factory
 from forge_knowledge import (
     DeterministicEmbeddingClient,
@@ -448,3 +450,97 @@ def test_require_vector_succeeds_when_configured(client: TestClient, source_id: 
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["vector_leg"] == "configured"
+
+
+# --------------------------------------------------------------------------- #
+# Tracker sources and commit history (spec J §2.3)                             #
+# --------------------------------------------------------------------------- #
+
+
+def _add_source(
+    session_factory: sessionmaker[Session], workspace_id: str, **columns: object
+) -> uuid.UUID:
+    with session_factory() as session:
+        source = KnowledgeSource(workspace_id=uuid.UUID(workspace_id), name="s", **columns)
+        session.add(source)
+        session.commit()
+        return source.id
+
+
+def test_sync_of_a_tracker_source_enqueues_the_worker_sync(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    source_id: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from forge_api.routers import knowledge as knowledge_router
+
+    enqueued: list[str] = []
+    monkeypatch.setattr(knowledge_router, "enqueue_source_sync", enqueued.append)
+    tracker = _add_source(
+        session_factory,
+        WORKSPACE_ID,
+        kind="url",
+        uri="https://github.com/org/api",
+        config={"tracker": "github"},
+    )
+
+    resp = client.post("/knowledge/sync", json={"source_id": str(tracker), "mode": "full"})
+
+    assert resp.status_code == 202, resp.text
+    assert resp.json() == {"status": "enqueued", "source_id": str(tracker)}
+    assert enqueued == [str(tracker)]
+    assert knowledge_router.SYNC_SOURCE_TASK == "forge.knowledge.sync_source"
+
+    # Another tenant's tracker is never enqueued.
+    other_ws, _ = _seed_other_workspace(session_factory)
+    foreign = _add_source(
+        session_factory,
+        str(other_ws),
+        kind="url",
+        uri="https://github.com/other/secret",
+        config={"tracker": "github"},
+    )
+    assert client.post("/knowledge/sync", json={"source_id": str(foreign)}).status_code == 404
+    assert enqueued == [str(tracker)]
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
+
+
+def test_sync_of_a_repo_source_indexes_commits_only_when_its_config_enables_them(
+    client: TestClient, session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "forge@example.com")
+    _git(repo, "config", "user.name", "Forge Test")
+    _git(repo, "config", "commit.gpgsign", "false")
+    for i in range(2):
+        (repo / "a.py").write_text(f"a = {i}\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", f"Commit {i}")
+
+    plain = _add_source(session_factory, WORKSPACE_ID, kind="repo", uri="github.com/org/plain")
+    enabled = _add_source(
+        session_factory,
+        WORKSPACE_ID,
+        kind="repo",
+        uri="github.com/org/history",
+        config={"commits": {"enabled": True, "max_count": 1}},
+    )
+    for source in (plain, enabled):
+        resp = client.post("/knowledge/sync", json={"source_id": str(source), "root": str(repo)})
+        assert resp.status_code == 200, resp.text
+
+    def commit_paths(source: uuid.UUID) -> list[str]:
+        with session_factory() as session:
+            paths = session.scalars(
+                select(RetrievalChunk.path).where(RetrievalChunk.knowledge_source_id == source)
+            )
+            return sorted(p for p in paths if p and p.startswith("commits/"))
+
+    assert commit_paths(plain) == []
+    assert len(commit_paths(enabled)) == 1

@@ -41,7 +41,7 @@ import math
 import re
 import uuid
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -220,9 +220,13 @@ def _to_retrieved(row: RetrievalChunk, *, score: float) -> RetrievedChunk:
     """Project a ``RetrievalChunk`` ORM row to a contract ``RetrievedChunk``.
 
     Called inside an open session so the ``source`` relationship can supply
-    ``source_uri`` for attribution.
+    ``source_uri`` and ``metadata["source_kind"]`` (set last, so stored chunk
+    metadata cannot forge it) for attribution.
     """
     source_uri = row.source.uri if row.source is not None else None
+    metadata = dict(row.chunk_metadata or {})
+    if row.source is not None:
+        metadata["source_kind"] = row.source.kind.value
     return RetrievedChunk(
         id=str(row.id),
         content=row.content,
@@ -234,7 +238,7 @@ def _to_retrieved(row: RetrievalChunk, *, score: float) -> RetrievedChunk:
         weight=row.weight,
         source_id=str(row.knowledge_source_id),
         source_uri=source_uri,
-        metadata=dict(row.chunk_metadata or {}),
+        metadata=metadata,
     )
 
 
@@ -427,8 +431,14 @@ class PgVectorStore:
 
     # -- indexing -------------------------------------------------------- #
 
-    def index(self, source_id: str, chunks: list[Chunk]) -> IndexResult:
-        """Embed and persist ``chunks`` for ``source_id`` (idempotent by hash)."""
+    def index(
+        self, source_id: str, chunks: list[Chunk], *, defer_embedding: bool = False
+    ) -> IndexResult:
+        """Embed and persist ``chunks`` for ``source_id`` (idempotent by hash).
+
+        ``defer_embedding`` writes the rows without calling the provider; the
+        embedding backlog (:meth:`embed_missing`) fills them in.
+        """
         source_uuid = uuid.UUID(str(source_id))
         with self._session_factory() as session:
             source = session.get(KnowledgeSource, source_uuid)
@@ -458,7 +468,7 @@ class PgVectorStore:
             # embeddings so BM25-only search still works — never faked vectors.
             # Embedded before any statistics row is locked, in bounded batches.
             vectors: list[list[float] | None]
-            if self._embedding is not None:
+            if self._embedding is not None and not defer_embedding:
                 vectors = []
                 for batch in _pages(pending, _EMBED_BATCH):
                     vectors.extend(
@@ -474,6 +484,10 @@ class PgVectorStore:
                 tokens = tokenize(chunk.content)
                 tokens_total += len(tokens)
                 df_delta.update(set(tokens))
+                metadata = dict(chunk.metadata)
+                if chunk.symbol and chunk.chunk_type is ChunkType.CODE:
+                    # The tree-sitter symbol, else lost at the store (D-c).
+                    metadata.setdefault("symbol", chunk.symbol)
                 row = RetrievalChunk(
                     workspace_id=source.workspace_id,
                     knowledge_source_id=source_uuid,
@@ -485,7 +499,7 @@ class PgVectorStore:
                     end_line=chunk.end_line,
                     language=chunk.language,
                     content_hash=content_hash,
-                    chunk_metadata=dict(chunk.metadata),
+                    chunk_metadata=metadata,
                     embedding=vector,
                     token_count=len(tokens),
                 )
@@ -586,24 +600,48 @@ class PgVectorStore:
         Returns the number of rows removed. Used by incremental sync to drop the
         chunks of files that changed (before re-indexing) or were deleted.
         """
-        # Sorted, so concurrent deletes page through rows in the same order.
-        path_list = sorted(set(paths))
-        if not path_list:
-            return 0
+        return self._delete_in(uuid.UUID(str(source_id)), RetrievalChunk.path, paths)
+
+    def delete_stale(self, source_id: str, current: Mapping[str, Collection[str]]) -> int:
+        """Delete chunks at ``current``'s paths whose hash is not listed for that path.
+
+        Sync calls this *after* indexing the new chunks, so a re-chunked file
+        (a changed file, or every file after a chunker change) is replaced
+        without a window in which the source has no chunks for it.
+        """
         source_uuid = uuid.UUID(str(source_id))
+        stale: list[uuid.UUID] = []
+        with self._session_factory() as session:
+            for page in _pages(sorted(current), _IN_PAGE):
+                rows = session.execute(
+                    select(RetrievalChunk.id, RetrievalChunk.path, RetrievalChunk.content_hash)
+                    .where(RetrievalChunk.knowledge_source_id == source_uuid)
+                    .where(RetrievalChunk.path.in_(list(page)))
+                ).all()
+                stale.extend(
+                    row.id for row in rows if row.content_hash not in current.get(row.path, ())
+                )
+        return self._delete_in(source_uuid, RetrievalChunk.id, stale)
+
+    def _delete_in(self, source_uuid: uuid.UUID, column: Any, values: Iterable[Any]) -> int:
+        """Delete this source's rows whose ``column`` is in ``values``; back out stats."""
+        # Sorted, so concurrent deletes page through rows in the same order.
+        value_list = sorted(set(values))
+        if not value_list:
+            return 0
         with self._session_factory() as session:
             # DELETE … RETURNING (no pre-SELECT): statistics are backed out
             # for exactly the rows this statement removed, so a row committed
             # concurrently between a read and a delete can neither be deleted
-            # unaccounted nor backed out twice. The path IN list is paged.
+            # unaccounted nor backed out twice. The IN list is paged.
             df_by_workspace: dict[uuid.UUID, Counter[str]] = {}
             totals_by_workspace: dict[uuid.UUID, tuple[int, int]] = {}
             removed = 0
-            for page in _pages(path_list, _IN_PAGE):
+            for page in _pages(value_list, _IN_PAGE):
                 rows = session.execute(
                     delete(RetrievalChunk)
                     .where(RetrievalChunk.knowledge_source_id == source_uuid)
-                    .where(RetrievalChunk.path.in_(list(page)))
+                    .where(column.in_(list(page)))
                     .returning(
                         RetrievalChunk.workspace_id,
                         RetrievalChunk.content,
@@ -752,7 +790,19 @@ class Bm25Store:
         # ``ix_retrieval_chunk_tsv`` is usable (a ``coalesce`` wrapper was not).
         rank = func.ts_rank_cd(RetrievalChunk.tsv, ts_query)
         stmt: Select = select(RetrievalChunk).where(RetrievalChunk.tsv.op("@@")(ts_query))
-        stmt = _scope_filter(stmt, scope).order_by(rank.desc()).limit(_BM25_CANDIDATE_LIMIT)
+        # Ties at the cut break on a stable key (never the random chunk id), so
+        # the same index always yields the same candidates (spec J §2.4.1).
+        stmt = (
+            _scope_filter(stmt, scope)
+            .order_by(
+                rank.desc(),
+                RetrievalChunk.knowledge_source_id,
+                RetrievalChunk.path,
+                RetrievalChunk.start_line,
+                RetrievalChunk.content_hash,
+            )
+            .limit(_BM25_CANDIDATE_LIMIT)
+        )
         return list(session.scalars(stmt))
 
     @staticmethod
