@@ -57,7 +57,7 @@ class PMConnection(WorkspaceScopedModel):
         Index("ix_pm_connection_workspace_status", "workspace_id", "status"),
     )
 
-    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider, length=32), nullable=False)
+    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("project.id", ondelete="CASCADE"), nullable=False
@@ -119,7 +119,7 @@ class PMTaskLink(WorkspaceScopedModel):
     forge_task_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("task.id", ondelete="CASCADE"), nullable=False
     )
-    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider, length=32), nullable=False)
+    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider), nullable=False)
     external_id: Mapped[str] = mapped_column(String(255), nullable=False)
     external_key: Mapped[str] = mapped_column(String(255), nullable=False)
     external_url: Mapped[str] = mapped_column(String(1024), nullable=False)
@@ -147,7 +147,7 @@ class PMWebhookDelivery(ForgeModel):
         Index("ix_pm_webhook_delivery_conn_received", "connection_id", "received_at"),
     )
 
-    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider, length=32), nullable=False)
+    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider), nullable=False)
     connection_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("pm_connection.id", ondelete="SET NULL"),

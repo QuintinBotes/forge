@@ -30,11 +30,6 @@ def test_pm_provider_has_github_issues() -> None:
     assert PMProvider("github_issues") is PMProvider.GITHUB_ISSUES
 
 
-def test_pm_provider_columns_have_32_char_headroom() -> None:
-    for table in ("pm_connection", "pm_task_link", "pm_webhook_delivery"):
-        assert Base.metadata.tables[table].c.provider.type.length == 32, table
-
-
 def test_new_connection_defaults_to_external_wins(factory: sessionmaker[Session]) -> None:
     ws_id = uuid.uuid4()
     with factory() as session:
