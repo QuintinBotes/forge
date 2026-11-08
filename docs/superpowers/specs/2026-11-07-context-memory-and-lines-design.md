@@ -658,6 +658,21 @@ Execution details §4.2 left open:
 - Agent activities run their body off the event loop and heartbeat, so a long agent outlives the
   heartbeat timeout and a cancel reaches it.
 
+**After wave 1 (2026-11-08).** Built: the evaluator and payload seams, heartbeating agent
+activities, commit-first start (a failed start marks the row failed and terminates any workflow the
+server may have started), hook errors that keep the decision, rejection ending the run on both
+engines (the cancel Signal carries the decider), review rules on pr gates, conditional expiry and a
+bound, budgeted `cleanup_worktree`. A pr gate advances only on proof of attestation: an existing
+attestation, or one `sync` makes and that completes. Open:
+- **Deploy order.** Workers before the API: an old worker cannot read the cancel Signal's new
+  actor argument (old one-argument histories replay on the new code).
+- **A task with malformed or missing repo targets stalls its pr gate** (review rules fail closed
+  and `forge.create_approval` retries), and a cancel waits until that activity returns. Making the
+  gate open cancel-aware changes `FeatureWorkflow`'s command order, so it waits for a
+  `workflow.patched` change.
+- **Two concurrent `sync` calls (or a sync during the hook) can attest twice.** Sync is manual
+  only; per-run serialization comes with wave 3's API work.
+
 ## 5. Out of scope
 
 Running lore, its `floor` engine or its planning-editor packages (unlicensed; ADR-0010). Kubernetes `Agent` CRDs.
