@@ -97,8 +97,10 @@ to a "user" that does not exist, against ADR-0005), key scopes were not enforced
 opened by the engines, the worker and the SLA sweep never reached `/ws`, and approval audit rows
 carried no workspace, so the audit query never returned them.
 - **Transport.** `/ws` (ADR-0015), not a new stream. Non-browser clients authenticate with
-  `Authorization: Bearer` (or `X-API-Key`); a socket opened with an API key closes after 30 minutes,
-  so a revoked key stops receiving, and the client reconnects.
+  `Authorization: Bearer` (or `X-API-Key`). A socket authenticated by a narrowed key, or by any
+  API key sent in a header, closes after 30 minutes and never outlives the key, so a revoked key
+  stops receiving and the client reconnects; the web's `?token=` socket with its unscoped key, and
+  session sockets, stay open.
 - **Events.** `approval.requested`, `approval.decided` (final statuses only) and a new
   `approval.updated` (still pending: escalated, partially approved, routed). Payloads carry
   identifiers, gate, title, risk, expiry and, on decisions, `decided_by` and `surface`; never
@@ -107,12 +109,25 @@ carried no workspace, so the audit query never returned them.
   spec, plan, pr, deploy, policy_override). Every path that creates or changes a gate publishes:
   the API, the V1 engine, the Temporal worker and the SLA sweep (through the Redis channel the API
   relays, published after commit), and station gates.
-- **Who can decide.** Only a person: a session, or a personal token bound to its owner and minted
-  with `approvals:decide`. Unbound and unscoped keys are machine principals and are refused.
-- **Personal tokens.** Minted by the person themselves (`POST /auth/personal-tokens`, session
-  only), with their own role, a surface (`tervin` or `cli`), an optional `approvals:decide` scope,
-  and a 90-day default expiry. A token narrowed to reads (and decide) acts as a viewer everywhere
-  else.
+- **Who can decide.** Only a person: a session, or an API key bound to a person (`user_id` set).
+  A bound key with no scopes (the web's pasted key, SSO login keys, the seed's person-bound
+  bootstrap key) acts as that person; a bound narrowed key decides only with `approvals:decide`.
+  Unbound keys are machine principals and are refused; agent-runner tokens are agents. At decision
+  time a key decides with the lower of its own role and its owner's current role (`User.role` and
+  the owner's workspace grants); a missing or inactive owner, or one whose workspace grants have
+  all expired, is refused, so demoting or deactivating someone takes effect on their keys' next
+  decision. Removing a person is deactivation (which also revokes their keys): deleting their
+  workspace grant alone leaves `User.role` in force, because seed, SSO and SCIM provisioning write
+  no grants. A token is minted only by a credential holding its owner's full current role. A real session login for the web
+  is a follow-up; until then the web's person-bound key is the person.
+- **Personal tokens.** Minted by the person themselves (`POST /auth/personal-tokens`) from a
+  session or their own person-bound unscoped key (the web's credential); narrowed and unbound keys
+  are refused. A token names a surface (`tervin` or `cli`), carries `read` and optionally
+  `approvals:decide`, and expires (90 days by default). It is stored with role viewer (scopes
+  kept), so code that ignores scopes fails closed: it is a viewer everywhere else, and F30 sees only
+  a workspace viewer grant, never its owner's grants or teams. It decides with its owner's current
+  role. Only a key bound to a person can carry `approvals:decide`. Keys an SSO login mints carry
+  the surface `web`.
 - **Surface.** Taken only from the credential (the token's surface, `web` for a session, `system`
   for the sweep), never from a request header, and recorded with the key id in the decision's audit
   metadata. It is honest about the credential, not the binary; the key id keeps it traceable and

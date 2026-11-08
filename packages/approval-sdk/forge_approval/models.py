@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from forge_contracts.enums import ApprovalGate, UserRole
 
@@ -35,6 +35,45 @@ Role = UserRole
 RISK_LEVELS: tuple[str, ...] = ("info", "warning", "critical")
 
 RiskLevel = Literal["info", "warning", "critical"]
+
+#: Gates whose resolution hook acts on the decision (spec L §6a): approving one
+#: changes something forge controls. The others only record the decision, so a
+#: client must not present them as enforced. Pinned to the registry by a test.
+ENFORCED_GATES: frozenset[ApprovalGate] = frozenset(
+    {
+        ApprovalGate.SPEC,
+        ApprovalGate.PLAN,
+        ApprovalGate.PR,
+        ApprovalGate.DEPLOY,
+        ApprovalGate.POLICY_OVERRIDE,
+    }
+)
+
+
+class _Provenance:
+    """ADR-0015 provenance, computed from the gate (nothing stored).
+
+    A plain mixin, so the models keep their own fields in their own order.
+    """
+
+    if TYPE_CHECKING:
+        gate_type: ApprovalGate
+        requested_at: datetime | None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def observed_by(self) -> Literal["forge"]:
+        return "forge"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def recorded_at(self) -> datetime | None:
+        return self.requested_at
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def enforceable(self) -> bool:
+        return self.gate_type in ENFORCED_GATES
 
 
 class GateStatus(enum.StrEnum):
@@ -63,6 +102,10 @@ class Principal(BaseModel):
     id: UUID | None = None
     role: Role | None = None
     workspace_id: UUID
+    #: The surface the credential names (``web``, ``tervin``, ``cli``, ``api``,
+    #: ``system``) and the key that carried it, recorded with the decision.
+    surface: str | None = None
+    credential_id: UUID | None = None
 
     @property
     def actor_ref(self) -> str:
@@ -97,7 +140,7 @@ class ApprovalContext(BaseModel):
     gate_payload: dict[str, Any] = Field(default_factory=dict)  # gate-specific extras
 
 
-class ApprovalRequest(BaseModel):
+class ApprovalRequest(BaseModel, _Provenance):
     """The domain view of one ``approval_request`` row."""
 
     id: UUID
@@ -127,7 +170,7 @@ class ApprovalRequest(BaseModel):
     resolved_at: datetime | None = None
 
 
-class ApprovalSummary(BaseModel):
+class ApprovalSummary(BaseModel, _Provenance):
     """One approval-inbox row."""
 
     id: UUID
@@ -207,6 +250,7 @@ def max_risk(a: str, b: str) -> str:
 
 
 __all__ = [
+    "ENFORCED_GATES",
     "RISK_LEVELS",
     "ApprovalAction",
     "ApprovalContext",

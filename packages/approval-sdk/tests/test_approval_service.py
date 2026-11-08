@@ -475,3 +475,30 @@ async def test_expire_pending_marks_and_emits(
     assert isinstance(event, ApprovalResolvedEvent)
     assert event.status is GateStatus.EXPIRED
     assert event.outcome.follow_up_state == "needs_human_input"
+
+
+async def test_audit_rows_carry_the_workspace_and_decisions_the_credential(
+    service: ApprovalService, fake_audit: RecordingAuditSink
+) -> None:
+    """Spec L §6a: every row names its workspace; a decision names its surface and key."""
+    key_id = uuid.uuid4()
+    decider = make_principal().model_copy(update={"surface": "tervin", "credential_id": key_id})
+    created = await _create(service)
+
+    await service.resolve(created.id, APPROVE, decider, workspace_id=WS)
+
+    requested, decided = fake_audit.records
+    assert (requested["workspace_id"], requested["metadata"]) == (WS, None)
+    assert decided["workspace_id"] == WS
+    assert decided["metadata"] == {"surface": "tervin", "key_id": str(key_id)}
+
+
+async def test_gates_carry_adr_0015_provenance(service: ApprovalService) -> None:
+    pr = await _create(service, GateType.PR)
+    incident = await _create(service, GateType.INCIDENT_REMEDIATION)
+
+    assert (pr.observed_by, pr.recorded_at, pr.enforceable) == ("forge", pr.requested_at, True)
+    assert incident.enforceable is False
+    inbox = {s.id: s for s in await service.list(workspace_id=WS, actor=make_principal())}
+    assert inbox[pr.id].model_dump(mode="json")["enforceable"] is True
+    assert inbox[incident.id].model_dump(mode="json")["enforceable"] is False

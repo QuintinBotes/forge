@@ -22,7 +22,7 @@ from forge_api.routers import agent as agent_router
 from forge_api.routers import approvals as approvals_router
 from forge_api.routers import board as board_router
 from forge_api.routers import spec as spec_router
-from forge_api.services.approval_service import get_approval_service
+from forge_api.services.approval_service import get_approval_service, to_approval_principal
 from forge_approval.models import GateStatus
 from forge_contracts import RunStatus
 
@@ -141,6 +141,7 @@ def _approvals_pending(ctx: ToolContext, args: ApprovalsPendingIn) -> BaseModel:
             lambda: approvals_router.list_approvals(
                 service=service,
                 principal=ctx.principal,
+                actor=to_approval_principal(ctx.principal),  # mine=False: no live role needed
                 status_filter=GateStatus.PENDING,
                 gate_type=None,
                 project_id=args.project_id,

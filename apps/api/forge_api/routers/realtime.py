@@ -14,19 +14,30 @@ a WebSocket handshake rejection (Starlette only maps that for HTTP routes). So w
 ``accept()`` the socket, resolve the ``?token=`` credential ourselves, and
 ``close(1008)`` on failure — the policy-violation close code — exactly as the
 spec's WS-auth contract requires.
+
+Non-browser clients (tervin, spec L §6a) send ``Authorization: Bearer`` or
+``X-API-Key`` instead. A socket opened with a narrowed key, or with a key sent
+in a header, closes after a bounded lifetime (never past the key's expiry), so a
+revoked key stops receiving and the client reconnects. The web's ``?token=``
+socket with an unscoped key, and every session socket, has no lifetime.
 """
 
 from __future__ import annotations
 
+import math
+import os
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 
 from forge_api.auth.rbac import Permission, can
 from forge_api.auth.service import (
     AuthenticationError,
     AuthService,
+    _extract_token,
     get_auth_service,
 )
 from forge_api.deps import Principal
@@ -39,16 +50,38 @@ router = APIRouter(tags=["realtime"])
 #: RFC 6455 policy-violation close code — used for auth failures on an
 #: already-accepted socket.
 WS_POLICY_VIOLATION = 1008
+#: RFC 6455 normal closure: an API-key socket reached its lifetime; reconnect.
+WS_NORMAL_CLOSURE = 1000
+#: Default lifetime of a socket opened with a token (spec L §6a).
+DEFAULT_API_KEY_SOCKET_SECONDS = 1800.0
+
+
+def get_api_key_socket_lifetime() -> float:
+    """Seconds a socket opened with a token (see :func:`_socket_lifetime`) stays open.
+
+    ``FORGE_WS_API_KEY_LIFETIME_SECONDS`` overrides the 30-minute default (an
+    unparseable or non-positive value keeps it); tests override this dependency.
+    """
+    try:
+        seconds = float(os.environ["FORGE_WS_API_KEY_LIFETIME_SECONDS"])
+    except (KeyError, ValueError):
+        return DEFAULT_API_KEY_SOCKET_SECONDS
+    return seconds if seconds > 0 else DEFAULT_API_KEY_SOCKET_SECONDS
 
 
 def _extract_ws_token(websocket: WebSocket) -> str | None:
-    """Pull the bearer credential from ``?token=`` or the WS subprotocol header.
+    """Pull the bearer credential from the headers, ``?token=``, or the WS subprotocol.
 
-    Browsers cannot set ``Authorization`` on a WebSocket handshake, so the token
-    rides the query string (matching the web hook). The
-    ``Sec-WebSocket-Protocol`` header is accepted as a fallback for clients that
-    prefer to smuggle the credential through the subprotocol negotiation.
+    Non-browser clients send ``Authorization: Bearer`` or ``X-API-Key``, read
+    first exactly as an HTTP request reads them. Browsers cannot set
+    ``Authorization`` on a WebSocket handshake, so the token rides the query
+    string (matching the web hook). The ``Sec-WebSocket-Protocol`` header is
+    accepted as a fallback for clients that prefer to smuggle the credential
+    through the subprotocol negotiation.
     """
+    token = _header_token(websocket)
+    if token:
+        return token
     token = websocket.query_params.get("token")
     if token:
         return token.strip()
@@ -60,6 +93,28 @@ def _extract_ws_token(websocket: WebSocket) -> str | None:
         if candidate:
             return candidate
     return None
+
+
+def _header_token(websocket: WebSocket) -> str | None:
+    headers = websocket.headers
+    return _extract_token(headers.get("authorization"), headers.get("x-api-key"))
+
+
+def _socket_lifetime(principal: Principal, websocket: WebSocket, lifetime: float) -> float | None:
+    """How long this socket may stay open; ``None``: until the peer leaves.
+
+    Only an API key that is narrowed or came in a header gets a lifetime, capped
+    at the key's expiry. The web's ``?token=`` socket with an unscoped key and
+    session sockets keep the unbounded behaviour the board hook relies on.
+    """
+    if principal.auth_method != "api_key":
+        return None
+    if not (principal.narrowed or _header_token(websocket)):
+        return None
+    if principal.credential_expires_at is not None:
+        left = (principal.credential_expires_at - datetime.now(UTC)).total_seconds()
+        lifetime = min(lifetime, max(left, 0.0))
+    return lifetime
 
 
 def _authenticate_ws(service: AuthService, token: str | None) -> Principal | None:
@@ -77,12 +132,15 @@ async def board_ws(
     websocket: WebSocket,
     manager: Annotated[ConnectionManager, Depends(get_connection_manager)],
     service: Annotated[AuthService, Depends(get_auth_service)],
+    api_key_lifetime: Annotated[float, Depends(get_api_key_socket_lifetime)],
 ) -> None:
     """Authenticated, per-workspace board-push socket.
 
-    Accepts the socket, authenticates the ``?token=`` credential, then registers
-    the connection under the caller's ``workspace_id`` and blocks receiving until
+    Accepts the socket, authenticates the credential, then registers the
+    connection under the caller's ``workspace_id`` and blocks receiving until
     the peer disconnects. Broadcasts scoped to that workspace reach this socket.
+    A token socket (:func:`_socket_lifetime`) is closed (1000) when its
+    lifetime ends; the client reconnects, which re-verifies the key.
     """
     await websocket.accept()
 
@@ -94,12 +152,16 @@ async def board_ws(
         return
 
     workspace_id = principal.workspace_id
+    lifetime = _socket_lifetime(principal, websocket, api_key_lifetime)
     await manager.connect(workspace_id, websocket)
     try:
         # Board push is server->client only; we drain inbound frames so the
         # socket stays open (and detect disconnects) but ignore their content.
-        while True:
-            await websocket.receive_text()
+        with anyio.move_on_after(lifetime) as scope:
+            while True:
+                await websocket.receive_text()
+        if scope.cancelled_caught:
+            await websocket.close(code=WS_NORMAL_CLOSURE, reason="credential lifetime reached")
     except WebSocketDisconnect:
         pass
     finally:
@@ -112,6 +174,7 @@ async def spec_collab_ws(
     spec_id: uuid.UUID,
     rooms: Annotated[SpecRoomRegistry, Depends(get_spec_room_registry)],
     service: Annotated[AuthService, Depends(get_auth_service)],
+    api_key_lifetime: Annotated[float, Depends(get_api_key_socket_lifetime)],
 ) -> None:
     """Collaborative spec-editing socket (Yjs binary sync protocol).
 
@@ -124,6 +187,7 @@ async def spec_collab_ws(
     Write gating: any authenticated principal may connect and observe, but a
     principal without :attr:`Permission.WRITE` that sends a doc-mutating frame is
     a policy violation and is closed 1008 (mutations are rejected, never applied).
+    A token socket closes (1000) when its lifetime ends, exactly as on ``/ws``.
     """
     principal = _authenticate_ws(service, _extract_ws_token(websocket))
     if principal is None:
@@ -139,11 +203,18 @@ async def spec_collab_ws(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     can_write = can(principal.role, Permission.WRITE)
+    lifetime = _socket_lifetime(principal, websocket, api_key_lifetime)
+    deadline = math.inf if lifetime is None else anyio.current_time() + lifetime
     await websocket.accept()
     await room.connect(websocket)
     try:
         while True:
-            data = await websocket.receive_bytes()
+            # Only the wait is cut short, never an update the room is applying.
+            with anyio.CancelScope(deadline=deadline) as scope:
+                data = await websocket.receive_bytes()
+            if scope.cancelled_caught:
+                await websocket.close(code=WS_NORMAL_CLOSURE, reason="credential lifetime reached")
+                return
             allowed = await room.receive(
                 websocket,
                 data,

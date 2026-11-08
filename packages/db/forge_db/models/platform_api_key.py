@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -25,6 +26,7 @@ from sqlalchemy import (
     Uuid,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from forge_db.base import WorkspaceScopedModel, enum_type
@@ -67,6 +69,17 @@ class PlatformAPIKey(WorkspaceScopedModel):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Non-null ⇒ rejected immediately; rows are kept for audit.
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: NULL = the key acts with its full role; otherwise a narrowed scope set
+    #: (``["read"]`` or ``["approvals:decide", "read"]``, spec L §6a, migration 0046).
+    #: ``none_as_null``: ``None`` is stored as SQL NULL (like every pre-0046 row),
+    #: never as a JSON ``null``, so ``scopes IS NULL`` finds every unscoped key.
+    scopes: Mapped[list[str] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        nullable=True,
+    )
+    #: The surface a key names (``tervin`` / ``cli``, or ``web`` for an SSO
+    #: login's key); NULL for other keys.
+    surface: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - trivial, secret-safe
         return (
