@@ -1,19 +1,23 @@
-"""Execution models: WorkflowRun, AgentRun, ApprovalRequest, SubAgentRun."""
+"""Execution models: WorkflowRun, AgentRun, ApprovalRequest, SubAgentRun, WorkflowStationVisit."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -64,8 +68,10 @@ class WorkflowRun(WorkspaceScopedModel):
     workflow_name: Mapped[str] = mapped_column(
         String(128), default="default_feature", nullable=False
     )
-    current_state: Mapped[WorkflowState] = mapped_column(
-        enum_type(WorkflowState), default=WorkflowState.CREATED, nullable=False
+    # An open string (spec K §4.3): feature runs hold a ``WorkflowState`` value,
+    # station runs hold their line's state names. Integrity is app-enforced.
+    current_state: Mapped[str] = mapped_column(
+        String(64), default=WorkflowState.CREATED.value, nullable=False
     )
     execution_mode: Mapped[ExecutionMode] = mapped_column(
         enum_type(ExecutionMode), default=ExecutionMode.SINGLE_AGENT, nullable=False
@@ -360,3 +366,52 @@ class AgentRunEvent(WorkspaceScopedModel):
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     payload: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkflowStationVisit(WorkspaceScopedModel):
+    """One visit of a station in a line run (spec K §4.3).
+
+    ``id`` is the visit id, ``uuid5(run_id, f"{state}#{visit}")``. Written only by
+    ``forge.persist_station``, an idempotent upsert whose status only moves
+    forward. ``definition_revision_id``, ``agent_run_id`` and
+    ``approval_request_id`` are plain UUIDs (no DB-level FK; app-enforced).
+    """
+
+    __tablename__ = "workflow_station_visit"
+    __table_args__ = (
+        CheckConstraint("kind IN ('agent','service','human')", name="workflow_station_visit_kind"),
+        CheckConstraint(
+            "status IN ('running','waiting','succeeded','failed','parked','cancelled')",
+            name="workflow_station_visit_status",
+        ),
+        UniqueConstraint(
+            "workflow_run_id", "state", "visit", name="uq_workflow_station_visit_run_state_visit"
+        ),
+        Index("ix_workflow_station_visit_run", "workspace_id", "workflow_run_id"),
+    )
+
+    workflow_run_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("workflow_run.id", ondelete="CASCADE"), nullable=False
+    )
+    definition_revision_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(64), nullable=False)
+    visit: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: ``agent`` | ``service`` | ``human``.
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: ``running`` | ``waiting`` | ``succeeded`` | ``failed`` | ``parked`` | ``cancelled``.
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    outcome: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    #: Redacted, at most 16 KiB (enforced by the writer).
+    outputs: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: Redacted.
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    service_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    approval_request_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: NULL while running or when the model is unpriced.
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    priced: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
