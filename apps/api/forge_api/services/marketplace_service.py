@@ -66,6 +66,7 @@ from forge_marketplace.models import (
     VerificationStatus,
 )
 from forge_marketplace.packaging import build_package
+from forge_marketplace.policy import kind_policy_violation
 from forge_marketplace.registry_client import HttpIndexRegistryClient
 from forge_marketplace.verifier import verify_package
 
@@ -795,7 +796,7 @@ class MarketplaceService:
         with self._sf() as s:
             registry = self._require_registry(s, workspace_id, request.registry_id)
             try:
-                _, plan = self._fetch_and_plan(registry, request)
+                _, plan, _ = self._fetch_and_plan(registry, request)
             except UnknownArtifactKind as exc:
                 raise InstallBlockedError(
                     str(exc), error_code=_kind_error_code(request.kind) or "unknown_kind"
@@ -826,7 +827,7 @@ class MarketplaceService:
                     code=code,
                 )
             try:
-                manifest, plan = self._fetch_and_plan(registry, request)
+                manifest, plan, yanked = self._fetch_and_plan(registry, request)
             except UnknownArtifactKind as exc:
                 self._deny_kind(
                     s,
@@ -840,7 +841,7 @@ class MarketplaceService:
                     code=_kind_error_code(request.kind) or "unknown_kind",
                     detail=str(exc),
                 )
-            self._enforce_install_policy(s, workspace_id, actor, registry, plan, request)
+            self._enforce_install_policy(s, workspace_id, actor, registry, plan, request, yanked)
             result = self._apply(
                 s,
                 workspace_id=workspace_id,
@@ -856,7 +857,8 @@ class MarketplaceService:
 
     def _fetch_and_plan(
         self, registry: MarketplaceRegistry, request: InstallRequest
-    ) -> tuple[PackageManifest, InstallPlan]:
+    ) -> tuple[PackageManifest, InstallPlan, bool]:
+        """Fetch, verify and plan. The bool is whether the resolved version is yanked."""
         index = self._gateway.fetch_index(registry)
         entry = next(
             (e for e in index.entries if e.kind == request.kind and e.slug == request.slug),
@@ -889,7 +891,7 @@ class MarketplaceService:
         )
         if version.yanked:
             plan.warnings.append(f"Yanked: {version.yanked_reason or 'this version was withdrawn'}")
-        return manifest, plan
+        return manifest, plan, version.yanked
 
     def _resolve_version(
         self, entry: RegistryIndexEntry, version: str | None
@@ -915,12 +917,23 @@ class MarketplaceService:
         registry: MarketplaceRegistry,
         plan: InstallPlan,
         request: InstallRequest,
+        yanked: bool,
     ) -> None:
         if plan.blocked:
             code = self._block_code(plan)
             self._audit_denied(s, workspace_id, actor, registry, plan, code)
             s.commit()
             raise InstallBlockedError(plan.block_reason or "install blocked", error_code=code)
+
+        # Kind policy (spec K §4.4): acknowledge_unverified is not an input, so
+        # the update path's forced acknowledgement cannot relax it.
+        violation = kind_policy_violation(plan.kind, plan.verification.status, yanked)
+        if violation is not None:
+            self._audit_denied(s, workspace_id, actor, registry, plan, violation)
+            s.commit()
+            raise InstallBlockedError(
+                f"{plan.kind.value} refused by kind policy: {violation}", error_code=violation
+            )
 
         strict = registry.trust_level in (TrustLevel.official.value, TrustLevel.trusted.value)
         if strict and plan.verification.status is not VerificationStatus.verified:
@@ -1204,10 +1217,11 @@ class MarketplaceService:
                 kind=ArtifactKind(row.kind),
                 slug=row.listing_slug,
                 version=target_version,
-                acknowledge_unverified=True,  # update path re-verifies + re-validates
+                # Update re-verifies + re-validates; the kind policy ignores this flag.
+                acknowledge_unverified=True,
             )
             try:
-                manifest, plan = self._fetch_and_plan(registry, request)
+                manifest, plan, yanked = self._fetch_and_plan(registry, request)
             except UnknownArtifactKind as exc:
                 self._deny_kind(
                     s,
@@ -1221,7 +1235,7 @@ class MarketplaceService:
                     code=_kind_error_code(row.kind) or "unknown_kind",
                     detail=str(exc),
                 )
-            self._enforce_install_policy(s, workspace_id, actor, registry, plan, request)
+            self._enforce_install_policy(s, workspace_id, actor, registry, plan, request, yanked)
 
             if manifest.kind is ArtifactKind.skill_profile:
                 existing = (

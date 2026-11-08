@@ -236,6 +236,29 @@ def _policy_test(path: str) -> int:
     return 0 if report.ok else 1
 
 
+def _marketplace_sign(key_file: str, manifest_path: str) -> int:
+    """Print a manifest's ``manifest_hash`` and its base64 Ed25519 signature.
+
+    The private key is only ever passed to the signer: never printed or logged.
+    """
+    from pathlib import Path
+
+    from forge_marketplace.errors import SchemaInvalid
+    from forge_marketplace.manifest import compute_manifest_hash, load_manifest
+    from forge_marketplace.signing import load_private_key, sign_manifest_hash
+
+    try:
+        manifest = load_manifest(Path(manifest_path).read_text(encoding="utf-8"))
+        key = load_private_key(key_file)
+    except (OSError, ValueError, SchemaInvalid) as exc:  # SigningKeyError is a ValueError
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    manifest_hash = compute_manifest_hash(manifest)
+    print(f"manifest_hash: {manifest_hash}")
+    print(f"signature:     {sign_manifest_hash(manifest_hash, key)}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="forge-cli")
     sub = parser.add_subparsers(dest="group", required=True)
@@ -279,6 +302,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rebuild.add_argument("workspace_id")
 
+    marketplace = sub.add_parser("marketplace", help="Marketplace authoring commands")
+    msub = marketplace.add_subparsers(dest="command", required=True)
+    sign = msub.add_parser("sign", help="sign a package manifest's manifest_hash (Ed25519)")
+    sign.add_argument(
+        "--key-file", required=True, help="Ed25519 private key: PEM or raw 32-byte base64"
+    )
+    sign.add_argument("--manifest", required=True, help="forge-package manifest (YAML or JSON)")
+
     cli_remote.add_parsers(sub)
     return parser
 
@@ -303,6 +334,8 @@ def main(argv: list[str] | None = None) -> int:
             return _policy_test(args.path)
     if args.group == "knowledge" and args.command == "rebuild-bm25-stats":
         return _knowledge_rebuild_bm25_stats(args.workspace_id)
+    if args.group == "marketplace" and args.command == "sign":
+        return _marketplace_sign(args.key_file, args.manifest)
     if args.group in cli_remote.REMOTE_GROUPS:
         return cli_remote.run(args)
     return 2  # pragma: no cover
