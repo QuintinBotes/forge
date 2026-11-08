@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import StaticPool, create_engine
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.deps import Principal, get_current_principal
@@ -27,9 +27,12 @@ OTHER = uuid.UUID("00000000-0000-0000-0000-0000000000e2")
 
 
 @pytest.fixture
-def factory() -> Iterator[sessionmaker[Session]]:
+def factory(tmp_path) -> Iterator[sessionmaker[Session]]:
+    # A file database with a connection per thread: the live-follow test writes
+    # from one thread while the stream reads from another, and a single shared
+    # in-memory connection lets the reader's rollback undo the writer's insert.
     engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        f"sqlite:///{tmp_path / 'events.db'}", connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     sf = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
