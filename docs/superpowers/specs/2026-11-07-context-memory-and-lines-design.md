@@ -245,13 +245,14 @@ No merge-capable entry exists.
 - `DEAD_END_STATE`: a state has no outgoing edge and is not in `terminals`. A mistyped `to:` fails here instead of ending the run.
 - `UNROUTED_SUCCESS`: `succeeded`, a decision value or `approved` has no edge.
 - `FAIL_OPEN_ROUTE` (lore #2374):
-  - a failure-class outcome (`failed`, `timed_out`, `rejected`, `expired`, `visit_limit`, `no_checks`) routes to the target of the station's success edge, or to a `succeeded` terminal;
+  - after a failure-class outcome, a path reaches a `succeeded` terminal without running the failing station again, however many states it passes through. The failure-class outcomes are `failed`, `timed_out`, `rejected`, `expired`, `visit_limit`, `no_checks`, `changes_requested`, `low_confidence`, `awaiting_input`, and each catalog entry's own failure outcomes (`checks_failed` for `forge.run_checks` and `forge.await_ci`, `not_red` for `forge.confirm_red`). A failure may share a `failed` or `cancelled` ending, or a notify step, with a decision;
   - any edge exists on `not_configured` or `budget_exhausted`.
+- `VISIT_LIMIT_CYCLE`: `visit_limit` edges lead back to their own station. Past their limits, those stations would hand the run around forever without doing any work.
 - `UNKNOWN_SERVICE`, `STATION_PARAMS_INVALID`, `UNKNOWN_OUTCOME`, `UNKNOWN_REFERENCE`, `AGENT_STATION_UNBUDGETED`, `INVALID_HUMAN_GATE` and `RETRY_GUARD_IN_V2`, plus the existing reachability and nondeterminism checks.
 - `LINE_INVARIANTS`, always applied, whatever `base_bundled_name` is:
   - `no_merge`: no merge-capable service is reachable. If one is ever registered, every path to it must cross the `approved` edge of a `gate: pr` human station.
   - `agent_no_write_tools`: agent tools never include `open_pr`, `push`, `merge`, `approve` or `write_review_comment`.
-  - `trusted_inputs`: catalog inputs marked `trust: task` take only `task.*`, `trigger.*`, `run.*` or a service station's output, never an agent output. Untrusted issue text therefore cannot redirect where a finalizer writes (ADR-0014).
+  - `trusted_inputs`: catalog inputs marked `trust: task` take only `task.id`, `task.key`, `task.repo`, `trigger.external_ref`, `run.id`, or a service output the catalog labels `trust: task` (such as `pr_ref`). `task.title`, `task.description`, agent outputs and CI text such as `failure_summary` are `trust: any`. Untrusted issue text therefore cannot redirect where a finalizer writes (ADR-0014).
   - `agent_outputs_not_guards`.
 - `FEATURE_INVARIANTS` apply whenever the invariant's `from_state` appears in the graph. This applies on the v2 and marketplace paths only. The v1 editor path is unchanged.
 
