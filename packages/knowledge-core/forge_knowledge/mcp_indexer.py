@@ -17,6 +17,7 @@ match the in-memory connection identity used everywhere in the foundation.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -31,6 +32,9 @@ from forge_knowledge.mcp_chunking import (
     provenance_uri,
 )
 from forge_knowledge.redaction import redact_secrets
+from forge_knowledge.sync import embed_backlog
+
+_logger = logging.getLogger("forge_knowledge.mcp_indexer")
 
 __all__ = [
     "ChunkIndexStore",
@@ -101,6 +105,8 @@ class SyncReport(BaseModel):
     chunks_indexed: int = 0
     chunks_deleted: int = 0
     chunks_skipped: int = 0
+    #: Rows embedded from the backlog (indexed before an embedder was configured).
+    chunks_embedded: int = 0
     sweep_skipped: bool = False
     cap_hit: bool = False
     started_at: datetime = Field(default_factory=_now)
@@ -235,6 +241,12 @@ class McpSyncIndexer:
                 self._sweep(source_id, source_id_str, connection_slug, run_id, report)
             else:
                 report.sweep_skipped = True
+            # Unchanged resources skip ``index`` entirely, so rows indexed before
+            # an embedder was configured are embedded here, after the sweep.
+            embedded, errors = embed_backlog(self._indexer, source_id_str)
+            report.chunks_embedded += embedded
+            if errors:  # the backlog retries next sync; it never fails this one
+                _logger.warning("mcp sync %s: %d backlog rows not embedded", run_id, len(errors))
         except Exception as exc:  # record the failure on the run row, never crash beat
             report.error = str(exc)
             report.sweep_skipped = True

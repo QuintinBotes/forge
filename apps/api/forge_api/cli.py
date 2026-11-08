@@ -89,10 +89,34 @@ async def _replay(settings: TemporalSettings, workflow_id: str) -> int:
     return 0
 
 
-def _sprint_session_factory() -> sessionmaker[Session]:
+def _db_session_factory() -> sessionmaker[Session]:
     from forge_db import create_db_engine, create_session_factory, get_database_url
 
     return create_session_factory(create_db_engine(get_database_url()))
+
+
+def _sprint_session_factory() -> sessionmaker[Session]:
+    return _db_session_factory()
+
+
+def _knowledge_rebuild_bm25_stats(workspace_id: str) -> int:
+    """Recompute a workspace's BM25 statistics from scratch (idempotent).
+
+    Local operator repair for drifted ``retrieval_term_stats`` /
+    ``retrieval_workspace_stats``: re-derives them, every chunk's
+    ``token_count`` and (on Postgres) its ``tsv`` from chunk content, in one
+    transaction. Safe to re-run — it derives the same values.
+    """
+    import uuid
+
+    from forge_knowledge import rebuild_bm25_stats
+
+    factory = _db_session_factory()
+    with factory() as session:
+        rebuilt = rebuild_bm25_stats(session, uuid.UUID(workspace_id))
+        session.commit()
+    print(f"rebuilt BM25 statistics for workspace {workspace_id!r}: {rebuilt} chunks")
+    return 0
 
 
 def _sprint_reconcile(sprint_id: str) -> int:
@@ -247,6 +271,14 @@ def build_parser() -> argparse.ArgumentParser:
     test = psub.add_parser("test", help="run .forge/policy.tests.yaml (exit 0/1)")
     test.add_argument("path", help="repo directory or a policy .yaml file path")
 
+    knowledge = sub.add_parser("knowledge", help="Knowledge/BM25 maintenance commands")
+    ksub = knowledge.add_subparsers(dest="command", required=True)
+    rebuild = ksub.add_parser(
+        "rebuild-bm25-stats",
+        help="recompute a workspace's BM25 statistics from scratch (idempotent)",
+    )
+    rebuild.add_argument("workspace_id")
+
     cli_remote.add_parsers(sub)
     return parser
 
@@ -269,6 +301,8 @@ def main(argv: list[str] | None = None) -> int:
             return _policy_simulate(args)
         if args.command == "test":
             return _policy_test(args.path)
+    if args.group == "knowledge" and args.command == "rebuild-bm25-stats":
+        return _knowledge_rebuild_bm25_stats(args.workspace_id)
     if args.group in cli_remote.REMOTE_GROUPS:
         return cli_remote.run(args)
     return 2  # pragma: no cover

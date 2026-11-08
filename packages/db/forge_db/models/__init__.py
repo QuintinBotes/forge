@@ -99,6 +99,8 @@ from forge_db.models.knowledge import (
     EMBEDDING_DIM,
     KnowledgeSource,
     RetrievalChunk,
+    RetrievalTermStat,
+    RetrievalWorkspaceStat,
 )
 from forge_db.models.marketplace import (
     MarketplaceAuditLog,
@@ -303,6 +305,8 @@ __all__ = [
     "RepoRole",
     "RepositoryConnection",
     "RetrievalChunk",
+    "RetrievalTermStat",
+    "RetrievalWorkspaceStat",
     "RevisionStatus",
     "RevisionValidationStatus",
     "RoleGrant",

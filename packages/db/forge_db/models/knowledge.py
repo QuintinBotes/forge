@@ -20,9 +20,12 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
+    text,
 )
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -108,11 +111,46 @@ class RetrievalChunk(WorkspaceScopedModel):
     chunk_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", json_type(), default=dict, nullable=False
     )
+    # ``none_as_null`` on SQLite: without it Python ``None`` is stored as the
+    # JSON literal ``'null'``, which passes ``isnot(None)`` and resurrected
+    # unembedded rows as score-0.0 vector hits (dialect disagreement). No DDL
+    # difference — the column type is unchanged.
     embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(EMBEDDING_DIM).with_variant(JSON(), "sqlite"), nullable=True
+        Vector(EMBEDDING_DIM).with_variant(JSON(none_as_null=True), "sqlite"),
+        nullable=True,
     )
     tsv: Mapped[str | None] = mapped_column(
         TSVECTOR().with_variant(Text(), "sqlite"), nullable=True
     )
+    # Token length under ``forge_knowledge.text.tokenize``, maintained by the
+    # store in the same transaction as the chunk write (spec J §2.5, ADR-0017).
+    # Feeds exact Okapi BM25 document-length normalisation.
+    token_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"), nullable=False
+    )
 
     source: Mapped[KnowledgeSource] = relationship(back_populates="chunks")
+
+
+class RetrievalTermStat(WorkspaceScopedModel):
+    """Per-workspace document frequency for one term (BM25 IDF input)."""
+
+    __tablename__ = "retrieval_term_stats"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "term", name="uq_retrieval_term_stats_workspace_term"),
+    )
+
+    term: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    df: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class RetrievalWorkspaceStat(WorkspaceScopedModel):
+    """Per-workspace corpus totals for BM25 (``N`` and average document length)."""
+
+    __tablename__ = "retrieval_workspace_stats"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", name="uq_retrieval_workspace_stats_workspace"),
+    )
+
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
