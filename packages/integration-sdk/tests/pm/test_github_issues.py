@@ -236,17 +236,41 @@ def test_forge_marker_comment_surfaces_run_id_without_body(github_issues_adapter
 async def test_transition_external_writes_only_status(
     github_issues_adapter, github_issues_requests
 ):
-    """Spec M M2: the one mapped transition never rewrites tracker-owned fields."""
+    """Spec M M2: the one mapped transition never rewrites tracker-owned fields.
+
+    PATCH carries ``state`` alone (never the whole label set); only the
+    forge-managed status labels are added/removed, so concurrent human
+    labels survive.
+    """
     external = await github_issues_adapter.transition_external("42", StatusCategory.completed)
     assert external.status_category == StatusCategory.completed
     patch = [r for r in github_issues_requests if r.method == "PATCH"]
     assert len(patch) == 1
-    payload = json.loads(patch[0].content)
-    assert set(payload) == {"labels", "state"}  # no title/body/assignee rewrite
-    assert payload["state"] == "closed"
-    assert "status:in-progress" not in payload["labels"]
-    assert "bug" in payload["labels"]
-    assert "priority:high" in payload["labels"]
+    assert json.loads(patch[0].content) == {"state": "closed"}
+    deletes = [r for r in github_issues_requests if r.method == "DELETE"]
+    assert len(deletes) == 1
+    assert "status%3Ain-progress" in str(deletes[0].url)
+    # No request ever carries the whole label set.
+    for request in github_issues_requests:
+        if request.method in ("PATCH", "PUT"):
+            assert "labels" not in json.loads(request.content)
+    assert "status:in-progress" not in external.labels
+    assert "bug" in external.labels
+    assert "priority:high" in external.labels
+
+
+async def test_transition_external_adds_target_status_label(
+    github_issues_adapter, github_issues_requests
+):
+    external = await github_issues_adapter.transition_external("42", StatusCategory.backlog)
+    assert external.status_category == StatusCategory.backlog
+    adds = [
+        r for r in github_issues_requests if r.method == "POST" and str(r.url).endswith("/labels")
+    ]
+    assert len(adds) == 1
+    assert json.loads(adds[0].content) == {"labels": ["status:backlog"]}
+    assert "status:backlog" in external.labels
+    assert "status:in-progress" not in external.labels
 
 
 @pytest.mark.parametrize("action", ["created", "edited", "deleted"])

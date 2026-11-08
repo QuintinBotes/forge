@@ -32,10 +32,11 @@ import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from forge_api.observability.audit import AuditCategory, AuditLog
 from forge_api.schemas.pm import PMDispatchConfig
@@ -47,12 +48,12 @@ from forge_api.services.agent_dispatch import (
     repo_connected,
 )
 from forge_api.services.pm_service import PMConnectionService
-from forge_contracts import AgentObjective, AgentRunResult
-from forge_contracts.pm import StatusCategory
+from forge_contracts import AgentObjective, AgentRunResult, RunStatus
 from forge_db.models import AgentRun
-from forge_db.models.enums import PMProvider
+from forge_db.models.enums import PMConnectionStatus, PMProvider, PMSyncDirection
 from forge_db.models.enums import RunStatus as DbRunStatus
 from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
+from forge_integrations.github import GitHubClient
 from forge_integrations.pm.sync_engine import run_comment_marker
 from forge_worker.celery_app import celery_app
 from forge_worker.reliability import ForgeTask as ForgeReliableTask
@@ -92,10 +93,19 @@ def _parse_dispatch_config(connection: PMConnection) -> PMDispatchConfig | None:
         return None
 
 
-def _tracker_block(run: AgentRun) -> dict:
-    context = (run.inputs or {}).get("context") or {}
-    tracker = context.get("tracker") or {}
-    return tracker if isinstance(tracker, dict) else {}
+def _aware(value: datetime | None) -> datetime:
+    """Normalise a (possibly naive, e.g. SQLite-read) timestamp to aware UTC."""
+    if value is None:
+        return datetime.now(UTC)
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _hard_time_limit_s() -> int:
+    """The worker's hard task time limit (Celery config), with a safe fallback."""
+    try:
+        return int(celery_app.conf.task_time_limit or 360)
+    except (TypeError, ValueError):  # pragma: no cover - misconfigured conf
+        return 360
 
 
 def _dispatch_guard(
@@ -105,28 +115,57 @@ def _dispatch_guard(
     connection_id: uuid.UUID,
     external_id: str,
     delivery_id: str,
+    payload_hash: str | None = None,
     max_active_runs: int,
+    now: datetime | None = None,
 ) -> str | None:
     """A skip reason when an idempotency / concurrency guard trips, else None.
 
-    Guards, in order: this very delivery already produced a run (a re-queued
-    task can never enqueue twice); another run for the same issue is still
-    queued/running; the connection is at its ``max_active_runs`` cap.
+    Guards, in order: this very delivery — or another delivery with the same
+    signed body (``payload_hash``) — already produced a run (a re-queued or
+    replayed task can never enqueue twice); another run for the same issue is
+    still queued/running; the connection is at its ``max_active_runs`` cap.
+
+    Only the scalars the guard needs are selected (status plus the tracker
+    ``connection_id`` / ``external_id`` / ``delivery_id`` / ``payload_hash``
+    read through JSON paths), restricted to rows that are active or created
+    in the last 7 days — ``steps``/``output`` are never loaded.
+
+    A PENDING/RUNNING row counts as active only when created within the
+    hard task time limit plus 10 minutes, so a run whose worker died without
+    recording an outcome cannot block its issue and cap slot forever.
     """
-    runs = (
-        session.execute(select(AgentRun).where(AgentRun.workspace_id == workspace_id))
-        .scalars()
-        .all()
-    )
+    now = _aware(now) if now is not None else datetime.now(UTC)
+    recent_cutoff = now - timedelta(days=7)
+    # shortcut: this age bound stands in for a stale-run reaper that should
+    # terminally close dead PENDING/RUNNING runs; replace the bound with it.
+    active_cutoff = now - timedelta(seconds=_hard_time_limit_s() + 600)
+    tracker_connection = AgentRun.inputs[("context", "tracker", "connection_id")].as_string()
+    tracker_external = AgentRun.inputs[("context", "tracker", "external_id")].as_string()
+    tracker_delivery = AgentRun.inputs[("context", "tracker", "delivery_id")].as_string()
+    tracker_hash = AgentRun.inputs[("context", "tracker", "payload_hash")].as_string()
+    rows = session.execute(
+        select(
+            AgentRun.status,
+            AgentRun.created_at,
+            tracker_external,
+            tracker_delivery,
+            tracker_hash,
+        ).where(
+            AgentRun.workspace_id == workspace_id,
+            tracker_connection == str(connection_id),
+            or_(
+                AgentRun.status.in_(_ACTIVE_RUN_STATUSES),
+                AgentRun.created_at >= recent_cutoff,
+            ),
+        )
+    ).all()
     active_for_connection = 0
-    for run in runs:
-        tracker = _tracker_block(run)
-        if tracker.get("connection_id") != str(connection_id):
-            continue
-        if tracker.get("delivery_id") == delivery_id:
+    for status, created_at, run_external, run_delivery, run_hash in rows:
+        if run_delivery == delivery_id or (payload_hash and run_hash == payload_hash):
             return "already_dispatched"
-        if run.status in _ACTIVE_RUN_STATUSES:
-            if tracker.get("external_id") == external_id:
+        if status in _ACTIVE_RUN_STATUSES and _aware(created_at) > active_cutoff:
+            if run_external == external_id:
                 return "issue_run_active"
             active_for_connection += 1
     if active_for_connection >= max_active_runs:
@@ -178,7 +217,7 @@ def maybe_dispatch(
     payload_repo = payload.get("repository_full_name")
     if (
         not isinstance(payload_repo, str)
-        or payload_repo.lower() != connection.external_project_key.lower()
+        or payload_repo.lower() != GitHubClient.owner_repo(connection.external_project_key).lower()
     ):
         return skipped("repository_mismatch")
     if payload.get("label") != config.label:
@@ -200,6 +239,7 @@ def maybe_dispatch(
             connection_id=connection.id,
             external_id=delivery.external_id,
             delivery_id=delivery.delivery_id,
+            payload_hash=delivery.payload_hash,
             max_active_runs=config.max_active_runs,
         )
         if guard is not None:
@@ -223,9 +263,30 @@ def maybe_dispatch(
         actor=f"pm:{connection.id}",
         sender_login=sender_login if isinstance(sender_login, str) else None,
         delivery_id=delivery.delivery_id,
+        payload_hash=delivery.payload_hash,
         task_id=task_id,
     )
     with session_factory() as session:
+        # Serialise dispatch per connection: the fetch above sits between the
+        # first guard and the insert, so without this row lock two concurrent
+        # deliveries could both pass the guard. The guard re-runs under the
+        # lock in the session that creates the run; create_and_enqueue_run's
+        # commit (row before broker enqueue) releases it. SQLite ignores
+        # FOR UPDATE, so the hermetic tests are unaffected.
+        session.execute(
+            select(PMConnection.id).where(PMConnection.id == connection.id).with_for_update()
+        )
+        guard = _dispatch_guard(
+            session,
+            workspace_id=connection.workspace_id,
+            connection_id=connection.id,
+            external_id=delivery.external_id,
+            delivery_id=delivery.delivery_id,
+            payload_hash=delivery.payload_hash,
+            max_active_runs=config.max_active_runs,
+        )
+        if guard is not None:
+            return skipped(guard)
         try:
             result = create_and_enqueue_run(
                 session,
@@ -236,7 +297,27 @@ def maybe_dispatch(
             )
         except RepoNotConnected:
             return skipped("repository_not_connected")
-        except AgentEnqueueFailed:
+        except AgentEnqueueFailed as exc:
+            # The persisted run is already terminal FAILED; the person who
+            # added the label still gets its run-state comment.
+            try:
+                failed_run_id = uuid.UUID(str(exc.args[0]))
+            except (IndexError, ValueError):  # pragma: no cover - defensive
+                failed_run_id = None
+            if failed_run_id is not None:
+                post_run_writeback(
+                    session_factory,
+                    run_id=failed_run_id,
+                    workspace_id=connection.workspace_id,
+                    result=AgentRunResult(
+                        run_id=failed_run_id,
+                        task_id=task_id,
+                        status=RunStatus.FAILED,
+                        error="enqueue_failed",
+                    ),
+                    tracker=server_context["tracker"],
+                    connections=connections,
+                )
             return skipped("enqueue_failed")
     if audit is not None:
         audit.record(
@@ -267,6 +348,25 @@ def _record_writeback(
         session.commit()
 
 
+def _claim_writeback(session_factory: sessionmaker[Session], run_id: uuid.UUID) -> bool:
+    """Claim the one write-back for ``run_id``; False when already claimed/done.
+
+    Sets ``output.tracker_writeback = {"status": "posting"}`` in one
+    transaction only when no record exists yet, so concurrent or redelivered
+    write-backs post at most once. A missing row cannot be claimed; proceed
+    (legacy best-effort) rather than suppress the comment.
+    """
+    with session_factory() as session:
+        row = session.get(AgentRun, run_id)
+        if row is None:  # pragma: no cover - row deleted mid-flight
+            return True
+        if (row.output or {}).get("tracker_writeback"):
+            return False
+        row.output = {**(row.output or {}), "tracker_writeback": {"status": "posting"}}
+        session.commit()
+        return True
+
+
 def post_run_writeback(
     session_factory: sessionmaker[Session],
     *,
@@ -278,22 +378,35 @@ def post_run_writeback(
 ) -> str:
     """Post the one run-state comment for a tracker-born run; never raises.
 
-    Returns ``"posted"``, ``"already_recorded"``, ``"unsupported"`` or
-    ``"failed"``. The outcome is stamped onto the run row's output under
-    ``tracker_writeback`` (the exactly-once guard for redeliveries) without
-    touching the run's recorded status. ``status_on_pr_opened`` is applied
-    only when the run actually opened a pull request.
+    Returns ``"posted"``, ``"already_recorded"``, ``"skipped"``,
+    ``"unsupported"`` or ``"failed"``. The write-back is claimed on the run
+    row (``output.tracker_writeback = {"status": "posting"}``) before
+    anything is posted, then the outcome replaces the claim — at most one
+    comment, without touching the run's recorded status. A disabled or
+    inbound-only connection is skipped with the reason recorded.
+    ``status_on_pr_opened`` is applied only when the run actually opened a
+    pull request.
     """
     try:
-        with session_factory() as session:
-            row = session.get(AgentRun, run_id)
-            if row is not None and (row.output or {}).get("tracker_writeback"):
-                return "already_recorded"
+        if not _claim_writeback(session_factory, run_id):
+            return "already_recorded"
         connection_id = uuid.UUID(str(tracker["connection_id"]))
         external_id = str(tracker["external_id"])
         connection = connections.get_connection_any_workspace(connection_id)
         if connection is None or connection.workspace_id != workspace_id:
             raise LookupError(f"tracker connection {connection_id} not in run workspace")
+        if connection.status == PMConnectionStatus.DISABLED:
+            _record_writeback(
+                session_factory,
+                run_id,
+                {"status": "skipped", "reason": "connection_disabled"},
+            )
+            return "skipped"
+        if connection.sync_direction == PMSyncDirection.INBOUND_ONLY:
+            _record_writeback(
+                session_factory, run_id, {"status": "skipped", "reason": "inbound_only"}
+            )
+            return "skipped"
         adapter: Any = connections.get_adapter_for_project(
             connection.workspace_id, connection.project_id, connection.provider.value
         )
@@ -308,15 +421,32 @@ def post_run_writeback(
         if pr_opened:
             lines.append(f"Pull request: {pr['url']}")
         lines.append(run_comment_marker(run_id))
-        comment_id = asyncio.run(comment(external_id, "\n\n".join(lines)))
+        body = "\n\n".join(lines)
+        config = _parse_dispatch_config(connection) if pr_opened else None
+        category = config.status_on_pr_opened if config is not None else None
+
+        # One event loop for comment + transition: the production adapter's
+        # HTTP client is bound to the loop that first used it, so a second
+        # asyncio.run would fail with "Event loop is closed".
+        async def _post_and_transition() -> tuple[Any, str | None]:
+            comment_id = await comment(external_id, body)
+            if category is None:
+                return comment_id, None
+            transition = getattr(adapter, "transition_external", None)
+            if transition is None:
+                return comment_id, "unsupported"
+            try:
+                await transition(external_id, category)
+            except Exception as exc:
+                logger.exception("tracker status transition failed for %s (non-fatal)", external_id)
+                return comment_id, f"failed: {exc}"[:200]
+            return comment_id, "applied"
+
+        comment_id, transition_record = asyncio.run(_post_and_transition())
 
         record: dict[str, Any] = {"status": "posted", "comment_id": str(comment_id)}
-        if pr_opened:
-            config = _parse_dispatch_config(connection)
-            if config is not None and config.status_on_pr_opened is not None:
-                record["transition"] = _apply_status_transition(
-                    adapter, external_id, config.status_on_pr_opened
-                )
+        if transition_record is not None:
+            record["transition"] = transition_record
         _record_writeback(session_factory, run_id, record)
         return "posted"
     except Exception as exc:
@@ -328,18 +458,6 @@ def post_run_writeback(
         except Exception:
             logger.exception("tracker write-back outcome could not be recorded for %s", run_id)
         return "failed"
-
-
-def _apply_status_transition(adapter: Any, external_id: str, category: StatusCategory) -> str:
-    transition = getattr(adapter, "transition_external", None)
-    if transition is None:
-        return "unsupported"
-    try:
-        asyncio.run(transition(external_id, category))
-    except Exception as exc:
-        logger.exception("tracker status transition failed for %s (non-fatal)", external_id)
-        return f"failed: {exc}"[:200]
-    return "applied"
 
 
 # --------------------------------------------------------------------------- #

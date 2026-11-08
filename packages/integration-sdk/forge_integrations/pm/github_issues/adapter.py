@@ -12,7 +12,7 @@ import re
 import time
 from datetime import datetime
 from typing import Any, ClassVar
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import httpx
 
@@ -181,35 +181,36 @@ class GitHubIssuesAdapter(BaseAdapter):
     async def transition_external(self, external_id: str, category: StatusCategory) -> ExternalTask:
         """Move only the issue's status (spec M M2's one mapped transition).
 
-        Re-fetches the issue and PATCHes just its state + status labels,
-        computed from the tracker's own current labels — title, description,
-        assignee, priority and free labels are never rewritten.
+        PATCHes ``state`` alone, adds the target status label, and removes
+        stale managed status labels one by one — the whole label set is never
+        sent, so a label a person adds concurrently cannot be dropped, and
+        title, description, assignee, priority and free labels are never
+        rewritten.
         """
         current = await self.fetch_external(external_id)
         status = self.map_status(category.value, Direction.OUT)
+        # ``open``/``closed`` are states, never labels; every other managed
+        # status label is forge's to add/remove.
         managed_status = {
             value.lower()
             for table in (self.status_out_table, self.status_map)
             for value in table.values()
-        }
-        # ``open``/``closed`` are states, never labels; every other managed
-        # status label is replaced by the target category's mapped label.
-        labels = [
-            label
-            for label in current.labels
-            if label.lower() not in managed_status and label.lower() not in ("open", "closed")
-        ]
+        } - {"open", "closed"}
         state = "closed" if category in _TERMINAL else "open"
+        target_label: str | None = None
         if status.lower() in ("open", "closed"):
             state = status.lower()
         else:
-            labels.append(status)
-        response = await self._request(
-            "PATCH",
-            self._issue_path(external_id),
-            json={"labels": list(dict.fromkeys(labels)), "state": state},
-        )
-        return self._issue_to_external(response.json())
+            target_label = status
+        issue_path = self._issue_path(external_id)
+        await self._request("PATCH", issue_path, json={"state": state})
+        current_labels = {label.lower() for label in current.labels}
+        if target_label is not None and target_label.lower() not in current_labels:
+            await self._request("POST", f"{issue_path}/labels", json={"labels": [target_label]})
+        for label in current.labels:
+            if label.lower() in managed_status and label.lower() != (target_label or "").lower():
+                await self._request("DELETE", f"{issue_path}/labels/{quote(label, safe='')}")
+        return await self.fetch_external(external_id)
 
     async def list_external(
         self, *, cursor: str | None = None, limit: int = 50

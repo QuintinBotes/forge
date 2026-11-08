@@ -221,7 +221,7 @@ def test_webhook_enqueue_failure_still_202(
     conn = _create(client, project_id, "linear")
     body, headers = _signed_linear(pm_service, vault, conn, webhook_id="wh-enq-2")
 
-    def _boom(_row_id: uuid.UUID) -> None:
+    def _boom(_row_id: uuid.UUID, _payload: dict | None = None) -> None:
         raise RuntimeError("broker down")
 
     monkeypatch.setattr(pm_service, "_enqueue_process_webhook", _boom)

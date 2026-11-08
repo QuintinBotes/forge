@@ -38,6 +38,8 @@ same `BaseAdapter` / `PMAdapter` contract, with `PMProvider.github_issues`:
   tag so the echo suppressor ignores them.
 - The native board shows linked items with forge's data (specs, runs, approvals, cost) beside the
   tracker's fields; for unlinked teams it remains the record.
+- Under `external_wins` a board edit to a tracker-owned field reverts at the next sync of that item.
+- Automation actions a person configures (`CREATE_EXTERNAL_ISSUE`) may still create tracker issues, and are refused when the connection is disabled.
 
 ## 4. M3 — Issue-driven dispatch
 

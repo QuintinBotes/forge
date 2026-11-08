@@ -33,7 +33,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import lru_cache
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.auth.vault import SecretNotFoundError, SecretVault
@@ -403,9 +403,22 @@ class PMConnectionService:
 
         payload_hash = hashlib.sha256(body).hexdigest()
         with self._sf() as session:
+            # Dedupe on what is signed: the HMAC covers only the body, so the
+            # unsigned delivery-id header alone cannot be the key — a replayed
+            # signed body under a fresh delivery id is still a duplicate.
             dupe = session.execute(
-                select(PMWebhookDelivery).where(PMWebhookDelivery.delivery_id == event.delivery_id)
-            ).scalar_one_or_none()
+                select(PMWebhookDelivery.id)
+                .where(
+                    or_(
+                        PMWebhookDelivery.delivery_id == event.delivery_id,
+                        and_(
+                            PMWebhookDelivery.connection_id == connection.id,
+                            PMWebhookDelivery.payload_hash == payload_hash,
+                        ),
+                    )
+                )
+                .limit(1)
+            ).first()
             if dupe is not None:
                 return 202, event
             delivery = PMWebhookDelivery(
@@ -496,6 +509,10 @@ class PMConnectionService:
             config={
                 "granted_scopes": connection.granted_scopes or [],
                 **(connection.config or {}),
+                # Server-set last so a stored config cannot spoof it; lets
+                # adapter consumers (e.g. CREATE_EXTERNAL_ISSUE) refuse a
+                # disabled connection without another lookup.
+                "connection_status": connection.status.value,
             },
         )
         transport = self._transport_factory(connection)

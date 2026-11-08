@@ -438,6 +438,14 @@ class PMSyncEngine:
         link = self.links.get(link_id)
         if link is None:
             raise SyncConflict("link not found", link_id=str(link_id))
+        if winner == "forge" and self.conflict_policy == ConflictPolicy.external_wins:
+            # ADR-0019: under external_wins the tracker owns those fields, so
+            # a forge win can never be pushed (a stale conflict from an
+            # earlier policy does not change that).
+            raise SyncConflict(
+                "external_wins: tracker-owned fields cannot be pushed",
+                link_id=str(link_id),
+            )
         detail = link.conflict_detail or {}
         if winner == "forge":
             forge_task = ForgeTask.model_validate(detail["forge"])

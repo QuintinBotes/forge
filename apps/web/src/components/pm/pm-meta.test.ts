@@ -21,6 +21,7 @@ describe("labels", () => {
     expect(providerLabel("asana")).toBe("Asana");
     expect(providerLabel("monday")).toBe("monday.com");
     expect(providerLabel("github_projects")).toBe("GitHub Projects");
+    expect(providerLabel("github_issues")).toBe("GitHub Issues");
     expect(providerLabel("clickup")).toBe("ClickUp");
     expect(providerLabel("trello")).toBe("Trello");
     expect(providerLabel("gitlab")).toBe("GitLab");

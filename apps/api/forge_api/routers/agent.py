@@ -56,6 +56,7 @@ from forge_api.settings import get_settings
 from forge_contracts import AgentObjective, AgentRunResult, ModelClient
 from forge_db.models import AgentRun, RunRecording
 from forge_db.models.enums import RunStatus as DbRunStatus
+from forge_integrations.github import GitHubClient
 from forge_integrations.pm.errors import ExternalNotFound
 from forge_policy import (
     SkillProfileNotAllowedError,
@@ -362,7 +363,11 @@ class CreateRunRequest(AgentObjective):
     With ``tracker_ref`` (``provider:key``, e.g.
     ``github_issues:acme/widgets#42``) the objective is built from the
     re-fetched tracker item instead and the caller's ``objective`` text is not
-    required (spec M M3); without it, today's contract is unchanged.
+    required (spec M M3). Two changes from the pre-M3 contract: without
+    ``tracker_ref`` a blank ``objective`` is refused (422) instead of admitted,
+    and caller-supplied context keys beyond the server-owned set — ``source``,
+    ``actor``, ``tracker``, ``tracker_ref``, ``pm_connection_id`` and
+    ``sender_login`` — are stripped before the run is persisted.
     """
 
     objective: str = ""
@@ -421,7 +426,7 @@ def _objective_from_tracker_ref(
     if repository is None and body.primary_repo_target is not None:
         repository = body.primary_repo_target.repo
     if repository is None:
-        key = resolved.connection.external_project_key
+        key = GitHubClient.owner_repo(resolved.connection.external_project_key)
         repository = key if "/" in key else None
     return build_tracker_objective(
         external,

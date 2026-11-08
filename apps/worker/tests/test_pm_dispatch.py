@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -43,7 +43,7 @@ from forge_contracts.pm import ExternalTask, StatusCategory
 from forge_contracts.pm import PMProvider as ContractsProvider
 from forge_db.base import Base
 from forge_db.models import AgentRun, Project, RepositoryConnection, Workspace
-from forge_db.models.enums import PMConnectionStatus, PMDeliveryStatus
+from forge_db.models.enums import PMConnectionStatus, PMDeliveryStatus, PMSyncDirection
 from forge_db.models.enums import PMProvider as DbPMProvider
 from forge_db.models.enums import RunStatus as DbRunStatus
 from forge_db.models.pm import PMConnection, PMWebhookDelivery
@@ -183,6 +183,7 @@ def _seed_connection(
     *,
     dispatch: dict | None = None,
     connect_repo: bool = True,
+    external_project_key: str = "acme/widgets",
 ) -> uuid.UUID:
     with factory() as session:
         if connect_repo:
@@ -196,7 +197,7 @@ def _seed_connection(
             provider=DbPMProvider.GITHUB_ISSUES,
             name="GitHub Issues",
             project_id=project_id,
-            external_project_key="acme/widgets",
+            external_project_key=external_project_key,
             external_project_id="10",
             config={"dispatch": _dispatch_config() if dispatch is None else dispatch},
             status=PMConnectionStatus.CONNECTED,
@@ -212,6 +213,7 @@ def _seed_delivery(
     *,
     delivery_id: str = "gh-1",
     external_id: str | None = "42",
+    payload_hash: str = "deadbeef",
 ) -> uuid.UUID:
     with factory() as session:
         row = PMWebhookDelivery(
@@ -220,7 +222,7 @@ def _seed_delivery(
             delivery_id=delivery_id,
             event_type="issue.updated",
             external_id=external_id,
-            payload_hash="deadbeef",
+            payload_hash=payload_hash,
             signature_valid=True,
             received_at=datetime.now(UTC),
             status=PMDeliveryStatus.RECEIVED,
@@ -433,9 +435,15 @@ def _dispatch_delivery(
     delivery_id: str,
     external_id: str,
     enqueued: list[AgentObjective],
+    payload_hash: str | None = None,
 ) -> dict:
     row_id = _seed_delivery(
-        factory, connection_id, delivery_id=delivery_id, external_id=external_id
+        factory,
+        connection_id,
+        delivery_id=delivery_id,
+        external_id=external_id,
+        # Each distinct delivery carries a distinct signed body by default.
+        payload_hash=payload_hash or f"hash-{delivery_id}",
     )
     return process_webhook(
         factory,
@@ -728,3 +736,204 @@ def test_non_github_connection_dispatch_is_not_applicable(
 def test_dispatch_task_registered() -> None:
     assert PM_DISPATCH_TASK == "forge.pm.dispatch_issue"
     assert PM_DISPATCH_TASK in celery_app.tasks
+
+
+# --------------------------------------------------------------------------- #
+# Correction pass (spec M review)                                             #
+# --------------------------------------------------------------------------- #
+
+
+def test_guard_blocks_replay_with_identical_signed_body(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+) -> None:
+    """A new delivery id carrying the same signed body cannot dispatch."""
+    connection_id = _seed_connection(factory, project_id)
+    enqueued: list[AgentObjective] = []
+    first = _dispatch_delivery(
+        factory,
+        connections,
+        connection_id,
+        delivery_id="gh-1",
+        external_id="42",
+        enqueued=enqueued,
+        payload_hash="signed-body-hash",
+    )
+    assert first["dispatch_action"] == "dispatched"
+    with factory() as session:
+        run = session.get(AgentRun, uuid.UUID(first["run_id"]))
+        assert run is not None
+        run.status = DbRunStatus.SUCCEEDED  # even after the first run finished
+        session.commit()
+
+    replay = _dispatch_delivery(
+        factory,
+        connections,
+        connection_id,
+        delivery_id="attacker-guid-2",
+        external_id="42",
+        enqueued=enqueued,
+        payload_hash="signed-body-hash",
+    )
+    assert replay["dispatch_reason"] == "already_dispatched"
+    assert len(enqueued) == 1
+
+
+def test_url_form_project_key_dispatches(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+) -> None:
+    connection_id = _seed_connection(
+        factory, project_id, external_project_key="https://github.com/acme/widgets"
+    )
+    enqueued: list[AgentObjective] = []
+    result = _dispatch_delivery(
+        factory, connections, connection_id, delivery_id="gh-1", external_id="42", enqueued=enqueued
+    )
+    assert result["dispatch_action"] == "dispatched"
+    assert len(enqueued) == 1
+
+
+def test_stale_pending_run_no_longer_blocks_issue_or_cap(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+) -> None:
+    """A PENDING run older than the hard limit + 10m counts as dead."""
+    connection_id = _seed_connection(
+        factory, project_id, dispatch=_dispatch_config(max_active_runs=1)
+    )
+    enqueued: list[AgentObjective] = []
+    first = _dispatch_delivery(
+        factory, connections, connection_id, delivery_id="gh-1", external_id="42", enqueued=enqueued
+    )
+    assert first["dispatch_action"] == "dispatched"
+    with factory() as session:
+        run = session.get(AgentRun, uuid.UUID(first["run_id"]))
+        assert run is not None
+        run.created_at = datetime.now(UTC) - timedelta(hours=2)  # worker died
+        session.commit()
+
+    second = _dispatch_delivery(
+        factory, connections, connection_id, delivery_id="gh-2", external_id="42", enqueued=enqueued
+    )
+    assert second["dispatch_action"] == "dispatched"
+    assert len(enqueued) == 2
+
+
+def test_failed_broker_enqueue_writes_back_failed(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+) -> None:
+    connection_id = _seed_connection(factory, project_id)
+    row_id = _seed_delivery(factory, connection_id, payload_hash="hash-enq")
+
+    def _broker_down(_objective: AgentObjective) -> None:
+        raise ConnectionError("broker down")
+
+    result = process_webhook(
+        factory,
+        row_id,
+        connections=connections,
+        payload=_payload(),
+        enqueue_run=_broker_down,
+    )
+    assert result["dispatch_reason"] == "enqueue_failed"
+    runs = _runs(factory)
+    assert len(runs) == 1 and runs[0].status == DbRunStatus.FAILED
+    assert len(fake_adapter.comments) == 1
+    assert "failed" in fake_adapter.comments[0][1]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "reason"),
+    [
+        (lambda conn: setattr(conn, "status", PMConnectionStatus.DISABLED), "connection_disabled"),
+        (
+            lambda conn: setattr(conn, "sync_direction", PMSyncDirection.INBOUND_ONLY),
+            "inbound_only",
+        ),
+    ],
+)
+def test_writeback_skipped_on_disabled_or_inbound_only_connection(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    mutate,
+    reason: str,
+) -> None:
+    run_id, tracker = _dispatched_run(factory, connections, project_id)
+    with factory() as session:
+        conn = session.get(PMConnection, uuid.UUID(tracker["connection_id"]))
+        assert conn is not None
+        mutate(conn)
+        session.commit()
+    result = AgentRunResult(run_id=run_id, status=RunStatus.SUCCEEDED)
+
+    status = post_run_writeback(
+        factory,
+        run_id=run_id,
+        workspace_id=WS_ID,
+        result=result,
+        tracker=tracker,
+        connections=connections,
+    )
+
+    assert status == "skipped"
+    assert fake_adapter.comments == [] and fake_adapter.transitions == []
+    with factory() as session:
+        row = session.get(AgentRun, run_id)
+        assert row is not None
+        assert row.output["tracker_writeback"] == {"status": "skipped", "reason": reason}
+
+
+def test_writeback_claim_survives_outcome_rewrite(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+) -> None:
+    """A redelivered run records its outcome again, then must not re-post."""
+    from forge_worker.agent_runner import _record_run_outcome
+
+    run_id, tracker = _dispatched_run(factory, connections, project_id)
+    result = AgentRunResult(run_id=run_id, status=RunStatus.SUCCEEDED)
+    assert (
+        post_run_writeback(
+            factory,
+            run_id=run_id,
+            workspace_id=WS_ID,
+            result=result,
+            tracker=tracker,
+            connections=connections,
+        )
+        == "posted"
+    )
+    assert len(fake_adapter.comments) == 1
+
+    _record_run_outcome(run_id, WS_ID, result, session_factory=factory)
+    with factory() as session:
+        row = session.get(AgentRun, run_id)
+        assert row is not None
+        assert row.output["tracker_writeback"]["status"] == "posted"
+
+    assert (
+        post_run_writeback(
+            factory,
+            run_id=run_id,
+            workspace_id=WS_ID,
+            result=result,
+            tracker=tracker,
+            connections=connections,
+        )
+        == "already_recorded"
+    )
+    assert len(fake_adapter.comments) == 1

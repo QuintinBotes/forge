@@ -22,6 +22,7 @@ const PROVIDER_LABELS: Record<PmProvider, string> = {
   asana: "Asana",
   monday: "monday.com",
   github_projects: "GitHub Projects",
+  github_issues: "GitHub Issues",
   clickup: "ClickUp",
   trello: "Trello",
   gitlab: "GitLab",

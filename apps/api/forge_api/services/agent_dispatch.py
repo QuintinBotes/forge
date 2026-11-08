@@ -28,7 +28,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from forge_contracts import (
@@ -43,6 +43,7 @@ from forge_db.models import AgentRun, RepositoryConnection
 from forge_db.models.enums import PMProvider as DbPMProvider
 from forge_db.models.enums import RunStatus as DbRunStatus
 from forge_db.models.pm import PMConnection, PMTaskLink
+from forge_integrations.github import GitHubClient
 
 logger = logging.getLogger("forge_api.services.agent_dispatch")
 
@@ -183,6 +184,7 @@ def build_tracker_objective(
     actor: str,
     sender_login: str | None = None,
     delivery_id: str | None = None,
+    payload_hash: str | None = None,
     task_id: uuid.UUID | None = None,
 ) -> tuple[AgentObjective, dict]:
     """Objective + forge-set server context for one re-fetched tracker item.
@@ -215,6 +217,9 @@ def build_tracker_objective(
             "sender_login": sender_login,
             "actor": actor,
             "delivery_id": delivery_id,
+            # The signed body's hash: the dispatch guard dedupes on it too,
+            # so a re-driven delivery with an identical body cannot dispatch.
+            "payload_hash": payload_hash,
         },
     }
     return objective, server_context
@@ -272,12 +277,25 @@ def resolve_tracker_ref(
     if provider is DbPMProvider.GITHUB_ISSUES:
         match = _GITHUB_KEY.match(key)
         if match is not None:
-            connection = session.scalar(
-                select(PMConnection).where(
-                    PMConnection.workspace_id == workspace_id,
-                    PMConnection.provider == provider,
-                    func.lower(PMConnection.external_project_key) == match["repo"].lower(),
+            # The stored key may be URL-form; compare normalised owner/repo.
+            candidates = (
+                session.execute(
+                    select(PMConnection).where(
+                        PMConnection.workspace_id == workspace_id,
+                        PMConnection.provider == provider,
+                    )
                 )
+                .scalars()
+                .all()
+            )
+            connection = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if GitHubClient.owner_repo(candidate.external_project_key).lower()
+                    == match["repo"].lower()
+                ),
+                None,
             )
             if connection is not None:
                 return ResolvedTrackerRef(connection=connection, external_id=match["number"])

@@ -23,6 +23,7 @@ from forge_contracts.pm import (
     SyncDirection,
     WebhookEvent,
 )
+from forge_integrations.pm.errors import SyncConflict
 from forge_integrations.pm.hashing import external_content_hash, forge_content_hash
 from forge_integrations.pm.sync_engine import (
     InMemoryAuditSink,
@@ -431,6 +432,24 @@ async def test_resolve_conflict_applies_winner_external() -> None:
     assert outcome.winner == "external"
     assert len(board.updated_sources) == 1
     assert links.get(seeded.id).sync_state is PMSyncState.synced
+
+
+async def test_resolve_conflict_forge_winner_refused_under_external_wins() -> None:
+    """ADR-0019: even a manual resolve cannot push tracker-owned fields."""
+    adapter = FakeAdapter()
+    links = InMemoryLinkRepository()
+    task = _forge()
+    seeded = _seed_conflict_link(links, task)
+    adapter.externals["ext-1"] = _external(title="external edit")
+    # Create the conflict under manual, then resolve under external_wins
+    # (e.g. the connection's policy changed after the conflict was raised).
+    manual_engine = _engine(adapter, links=links, policy=ConflictPolicy.manual)
+    await manual_engine.sync_out(task)
+    engine = _engine(adapter, links=links, policy=ConflictPolicy.external_wins)
+
+    with pytest.raises(SyncConflict, match="tracker-owned fields cannot be pushed"):
+        await engine.resolve_conflict(seeded.id, "forge")
+    assert adapter.update_calls == []
 
 
 # --- Direction enforcement — AC19 ------------------------------------------ #

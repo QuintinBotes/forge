@@ -46,14 +46,21 @@ def _secret(pm_service, vault, connection_id: str) -> str:
     return vault.get_secret(WORKSPACE_ID, uuid.UUID(conn.webhook_secret_ref))
 
 
-def _post_webhook(client: TestClient, connection_id: str, body: bytes, secret: str, event: str):
+def _post_webhook(
+    client: TestClient,
+    connection_id: str,
+    body: bytes,
+    secret: str,
+    event: str,
+    delivery: str = "delivery-42",
+):
     return client.post(
         f"/integrations/pm/webhooks/github_issues/{connection_id}",
         content=body,
         headers={
             "X-Hub-Signature-256": sign_github_payload(secret, body),
             "X-GitHub-Event": event,
-            "X-GitHub-Delivery": "delivery-42",
+            "X-GitHub-Delivery": delivery,
             "Content-Type": "application/json",
         },
     )
@@ -90,6 +97,26 @@ def test_github_webhook_signed_202_and_replay_deduped(
         assert rows[0].provider == PMProvider.GITHUB_ISSUES
         assert rows[0].status == PMDeliveryStatus.RECEIVED
     assert enqueued == [rows[0].id]
+
+
+def test_signed_body_replay_under_fresh_delivery_id_is_deduped(
+    client, project_id, pm_service, vault, session_factory, enqueued
+) -> None:
+    """The HMAC covers only the body: the same signed body re-sent with a new
+    (unsigned) ``X-GitHub-Delivery`` header is still a duplicate."""
+    conn = _create_github(client, project_id)
+    secret = _secret(pm_service, vault, conn["id"])
+    body = json.dumps(_fixture("issue_labeled.json")).encode()
+
+    assert _post_webhook(client, conn["id"], body, secret, "issues").status_code == 202
+    replay = _post_webhook(client, conn["id"], body, secret, "issues", delivery="attacker-guid-2")
+    assert replay.status_code == 202
+
+    with session_factory() as session:
+        rows = session.query(PMWebhookDelivery).all()
+        assert len(rows) == 1
+        assert rows[0].delivery_id == "delivery-42"
+    assert enqueued == [rows[0].id]  # the replay never enqueues
 
 
 def test_github_webhook_unsigned_and_forged_401(client, project_id, pm_service, vault) -> None:

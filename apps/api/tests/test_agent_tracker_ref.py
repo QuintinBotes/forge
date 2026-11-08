@@ -108,6 +108,7 @@ def _seed_tracker(
     *,
     workspace_id: uuid.UUID = TEST_WORKSPACE_ID,
     with_link: bool = False,
+    external_project_key: str = "acme/widgets",
 ) -> tuple[uuid.UUID, uuid.UUID | None]:
     """Seed project + repo connection + github_issues PM connection (+ link)."""
     if session.get(Workspace, workspace_id) is None:
@@ -126,7 +127,7 @@ def _seed_tracker(
         provider=DbPMProvider.GITHUB_ISSUES,
         name="GitHub Issues",
         project_id=project.id,
-        external_project_key="acme/widgets",
+        external_project_key=external_project_key,
         external_project_id="10",
         config={"dispatch": {"repository": "acme/widgets"}},
         status=PMConnectionStatus.CONNECTED,
@@ -172,6 +173,19 @@ def test_tracker_ref_builds_objective_from_refetched_issue(
     assert objective.context["actor"].startswith("user:")
     assert objective.context["repo_full_name"] == "acme/widgets"
     assert objective.context["workspace_id"] == str(TEST_WORKSPACE_ID)
+
+
+def test_tracker_ref_resolves_url_form_project_key(
+    client: TestClient,
+    agent_session: Session,
+    enqueued: list[AgentObjective],
+    tracker_adapter: FakeTrackerAdapter,
+) -> None:
+    """A connection stored with a URL-form key still resolves owner/repo refs."""
+    _seed_tracker(agent_session, external_project_key="https://github.com/acme/widgets")
+    resp = client.post("/agent/runs", json={"tracker_ref": "github_issues:acme/widgets#42"})
+    assert resp.status_code == 202, resp.text
+    assert tracker_adapter.fetch_calls == ["42"]
 
 
 def test_tracker_ref_resolves_through_link_store_to_task(
