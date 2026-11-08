@@ -34,13 +34,14 @@ owning its own scan inside ``FeatureWorkflow.run`` (the mint is V1-engine-only).
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from forge_api.auth.rbac import Permission
@@ -60,7 +61,7 @@ from forge_api.services.workflow_gate_hook import (
 )
 from forge_approval import ApprovalService
 from forge_approval.models import GateStatus, GateType
-from forge_contracts import WorkflowRun, WorkflowState
+from forge_contracts import LineDefinition, WorkflowRun, WorkflowState
 from forge_db.models import Task
 from forge_db.redteam import RedTeamRepository
 from forge_workflow import (
@@ -69,14 +70,21 @@ from forge_workflow import (
     GuardFailedError,
     InvalidTransitionError,
     PreconditionError,
+    WorkflowDefinitionError,
     WorkflowEngineImpl,
     WorkflowRunNotFoundError,
 )
+from forge_workflow.default_workflow import DEFAULT_WORKFLOW_NAME
+from forge_workflow.editor.errors import UnknownDefinitionError
+from forge_workflow.engine import DEFINITION_REVISION_KEY
 from forge_workflow.red_team_gate import (
     RedTeamFn,
     ensure_red_team_verdict,
     run_and_record_red_team,
 )
+
+if TYPE_CHECKING:
+    from forge_workflow.temporal.engine import TemporalWorkflowEngine
 
 router = APIRouter(
     prefix="/workflow",
@@ -159,10 +167,26 @@ def _workflow_errors() -> Iterator[None]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
+class StartTrigger(BaseModel):
+    """What started a run (spec K §4.2), kept in the run's context under ``trigger``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # No control characters: Postgres JSON refuses NUL, and that must fail here,
+    # before the Temporal engine has started a workflow.
+    external_ref: str | None = Field(default=None, max_length=512, pattern=r"^[^\x00-\x1f\x7f]*$")
+
+
 class StartRunRequest(BaseModel):
-    """Body for ``POST /workflow/runs``."""
+    """Body for ``POST /workflow/runs``.
+
+    ``definition`` names the workflow to run; omitted, the run is ``default_feature``
+    exactly as before definitions could be named.
+    """
 
     task_id: uuid.UUID
+    definition: str | None = None
+    trigger: StartTrigger | None = None
 
 
 class TransitionRequest(BaseModel):
@@ -249,6 +273,112 @@ def _open_gate_approval(
     )
 
 
+def _durable_engine_required() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="durable_engine_required"
+    )
+
+
+def _unparseable_definition(
+    session: Session, *, workspace_id: uuid.UUID, name: str
+) -> HTTPException:
+    """The refusal for a published revision this release cannot parse.
+
+    A line (raw ``dsl_version: "2"``) waits for the durable engine like any other
+    line; anything else is a broken definition.
+    """
+    from forge_api.services.workflow_engine import published_revision_is_line
+
+    if published_revision_is_line(session, workspace_id=workspace_id, name=name):
+        return _durable_engine_required()
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="definition_invalid")
+
+
+#: The editor's definition-name rule (bundled names follow it too).
+_DEFINITION_NAME = re.compile(r"[a-z][a-z0-9_]{1,62}")
+
+
+def _unknown_definition(name: str) -> HTTPException:
+    # The name is not echoed: it is caller input and may not be printable.
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown_definition")
+
+
+def _admit_definition(
+    engine: object, session: Session, *, workspace_id: uuid.UUID, name: str
+) -> uuid.UUID | None:
+    """Refuse, before anything is created or started, a definition this deployment cannot run.
+
+    The name resolves as the engine will resolve it (the workspace's published
+    revision over the bundled file); an unknown name never falls back to
+    ``default_feature``. Lines need ``forge.StationWorkflow``, which does not exist
+    yet (spec K §4.6, ADR-0007). The V1 FSM's gates and status mapping speak only
+    :class:`WorkflowState`, so a definition with other states (``incident``) is
+    409. ``FeatureWorkflow`` runs only the bundled ``default_feature``, so anything
+    else on the Temporal engine, a published fork of it included, would start a
+    workflow that can never make progress.
+
+    Returns the admitted revision id (``None`` for a bundled definition).
+    """
+    from forge_api.services.workflow_engine import build_definition_provider
+
+    if not _DEFINITION_NAME.fullmatch(name):
+        # Not a name the editor or a bundle can hold; never sent to the database.
+        raise _unknown_definition(name)
+    try:
+        definition, revision_id, _ = build_definition_provider(session).resolve(
+            name, workspace_id=workspace_id
+        )
+    except UnknownDefinitionError as exc:
+        raise _unknown_definition(name) from exc
+    except WorkflowDefinitionError as exc:
+        raise _unparseable_definition(session, workspace_id=workspace_id, name=name) from exc
+    if isinstance(definition, LineDefinition):
+        raise _durable_engine_required()
+    if isinstance(engine, WorkflowEngineImpl):
+        if not all(
+            t.from_state in WorkflowState and t.to_state in WorkflowState
+            for t in definition.transitions
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="definition_unsupported_by_engine"
+            )
+    elif revision_id is not None or name != DEFAULT_WORKFLOW_NAME:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="definition_unsupported_by_engine",
+        )
+    return revision_id
+
+
+def _started_as_admitted(session: Session, run: WorkflowRun, admitted: uuid.UUID | None) -> bool:
+    """True when the V1 start pinned the revision admission resolved, and it is not a line.
+
+    ``engine.start`` resolves the name again, so a revision published after
+    admission would otherwise start unchecked.
+    """
+    from forge_api.services.workflow_engine import build_definition_provider
+
+    pinned = run.context.get(DEFINITION_REVISION_KEY)
+    pinned_id = uuid.UUID(str(pinned)) if pinned else None
+    if pinned_id != admitted:
+        return False
+    return pinned_id is None or not isinstance(
+        build_definition_provider(session).load_pinned(pinned_id), LineDefinition
+    )
+
+
+def _record_trigger(
+    engine: WorkflowEngineImpl | TemporalWorkflowEngine,
+    run: WorkflowRun,
+    trigger: dict[str, object],
+) -> WorkflowRun:
+    """Keep the start trigger in the run's context (same transaction as the run row)."""
+    if isinstance(engine, WorkflowEngineImpl):
+        return engine.update_context(_run_id(run), {"trigger": trigger})
+    run.context["trigger"] = trigger
+    return engine.store.update(run)
+
+
 @router.post("/runs", response_model=WorkflowRun, status_code=status.HTTP_201_CREATED)
 def start_run(
     engine: EngineDep,
@@ -256,18 +386,46 @@ def start_run(
     principal: WriterDep,
     request: StartRunRequest,
 ) -> WorkflowRun:
-    """Start a workflow run for a task in the default workflow's initial state.
+    """Start a workflow run for a task in its workflow's initial state.
 
     The task must be in the caller's workspace (404 otherwise): the run, its
-    gate titles and its attestation all read through it.
+    gate titles and its attestation all read through it. Without ``definition``
+    the run is ``default_feature``, as before. With one, the name must resolve in
+    the caller's workspace (404 ``unknown_definition``) to a definition this
+    engine can run (409 or 503, see :func:`_admit_definition`); the V1 engine pins
+    the resolved revision on the run.
     """
     task = session.get(Task, request.task_id)
     if task is None or task.workspace_id != principal.workspace_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no task {request.task_id}"
         )
+    admitted: uuid.UUID | None = None
+    if request.definition is not None:
+        admitted = _admit_definition(
+            engine, session, workspace_id=principal.workspace_id, name=request.definition
+        )
     with _workflow_errors():
-        run = engine.start(request.task_id)
+        if request.definition is not None and isinstance(engine, WorkflowEngineImpl):
+            try:
+                run = engine.start(
+                    request.task_id, request.definition, workspace_id=principal.workspace_id
+                )
+            except UnknownDefinitionError as exc:  # archived since admission
+                raise _unknown_definition(request.definition) from exc
+            except WorkflowDefinitionError as exc:  # republished unparseable since admission
+                raise _unparseable_definition(
+                    session, workspace_id=principal.workspace_id, name=request.definition
+                ) from exc
+            if not _started_as_admitted(session, run, admitted):
+                session.rollback()
+                raise _durable_engine_required()
+        else:
+            # Omitted, or default_feature on the Temporal engine (the only name it
+            # admits): today's start, unchanged.
+            run = engine.start(request.task_id)
+        if request.trigger is not None:
+            run = _record_trigger(engine, run, request.trigger.model_dump(exclude_none=True))
     session.commit()
     return run
 
@@ -467,6 +625,7 @@ def trigger_run_red_team(
 
 __all__ = [
     "StartRunRequest",
+    "StartTrigger",
     "TransitionRequest",
     "get_red_team_fn",
     "get_workflow_engine",
