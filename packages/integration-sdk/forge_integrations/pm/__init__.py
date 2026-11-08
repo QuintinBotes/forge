@@ -26,6 +26,7 @@ from forge_integrations.pm.errors import (
     WebhookVerificationError,
 )
 from forge_integrations.pm.generic.adapter import GenericAdapter
+from forge_integrations.pm.github_issues.adapter import GitHubIssuesAdapter
 from forge_integrations.pm.github_projects.adapter import GitHubProjectsAdapter
 from forge_integrations.pm.gitlab.adapter import GitLabAdapter
 from forge_integrations.pm.hashing import external_content_hash, forge_content_hash
@@ -56,6 +57,7 @@ __all__ = [
     "FixturePMTransport",
     "ForgeTaskPatch",
     "GenericAdapter",
+    "GitHubIssuesAdapter",
     "GitHubProjectsAdapter",
     "GitLabAdapter",
     "HttpResponse",

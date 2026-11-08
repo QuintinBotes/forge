@@ -1,0 +1,15 @@
+{
+  "id": 123456790,
+  "number": 43,
+  "html_url": "https://github.com/acme/widgets/pull/43",
+  "title": "Implement widgets",
+  "body": null,
+  "state": "open",
+  "labels": [],
+  "assignee": null,
+  "updated_at": "2026-11-07T10:00:00Z",
+  "pull_request": {
+    "url": "https://api.github.com/repos/acme/widgets/pulls/43",
+    "html_url": "https://github.com/acme/widgets/pull/43"
+  }
+}
