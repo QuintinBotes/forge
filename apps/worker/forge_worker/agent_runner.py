@@ -402,59 +402,117 @@ def run_agent_task(
     persisted_row = context.get("agent_run_id") is not None
     run_id = _opt_uuid(context.get("agent_run_id")) or uuid.uuid4()
     workspace_id = _opt_uuid(context.get("workspace_id")) or uuid.UUID(int=0)
+    if persisted_row:
+        _mark_started(run_id, workspace_id)
     events = _event_sink(run_id, workspace_id) if persisted_row else None
     try:
-        parsed = resolve_run_repository(parsed)
-    except RepositoryUnavailable as exc:
-        refused = AgentRunResult(
-            run_id=run_id, task_id=parsed.task_id, status=RunStatus.FAILED, error=str(exc)
-        )
-        _emit_terminal(events, refused)
-        if persisted_row:
-            _record_run_outcome(run_id, workspace_id, refused)
-        return refused.model_dump(mode="json")
-    with prepared_workspace(parsed, run_id=run_id, workspace_id=workspace_id) as workspace:
-        if events is not None:
-            events.emit(
-                RunEventDraft(
-                    type=RunEventType.THREAD_STARTED,
-                    summary=parsed.objective[:120],
-                    payload={
-                        "repo": parsed.context.get("repo_full_name"),
-                        "branch": workspace.branch if workspace else None,
-                    },
-                )
-            )
-        runner = build_agent_runner(
-            tools=workspace.tools if workspace else None,
-            repo_root=workspace.path if workspace else None,
-            token_budget=_run_token_budget(),
-            on_step=events.on_step if events is not None else None,
-        )
         try:
+            parsed = resolve_run_repository(parsed)
+        except RepositoryUnavailable as exc:
+            refused = AgentRunResult(
+                run_id=run_id, task_id=parsed.task_id, status=RunStatus.FAILED, error=str(exc)
+            )
+            _record_terminal(
+                parsed, run_id, workspace_id, refused, events=events, persisted_row=persisted_row
+            )
+            return refused.model_dump(mode="json")
+        with prepared_workspace(parsed, run_id=run_id, workspace_id=workspace_id) as workspace:
+            if events is not None:
+                events.emit(
+                    RunEventDraft(
+                        type=RunEventType.THREAD_STARTED,
+                        summary=parsed.objective[:120],
+                        payload={
+                            "repo": parsed.context.get("repo_full_name"),
+                            "branch": workspace.branch if workspace else None,
+                        },
+                    )
+                )
+            runner = build_agent_runner(
+                tools=workspace.tools if workspace else None,
+                repo_root=workspace.path if workspace else None,
+                token_budget=_run_token_budget(),
+                on_step=events.on_step if events is not None else None,
+            )
             result = run_objective(runner, parsed)
-        except SoftTimeLimitExceeded:
-            # A runaway loop tripped the soft time limit: escalate gracefully with a
-            # structured marker instead of letting the hard kill drop the run
-            # silently. ``acks_late`` means the message is not acked, so an operator
-            # can re-drive it (dedup-guarded) after raising the budget.
-            return {
-                "escalated": True,
-                "reason": "soft_time_limit_exceeded",
-                "idempotency_key": dedup_key,
-            }
-        if workspace is not None:
-            # The branch outlives the worktree; the finalizer pushes it below.
-            result.artifacts["branch"] = workspace.branch
-    if workspace is not None and result.status == RunStatus.SUCCEEDED:
-        _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
-    # Terminal events first: a stream that sees the run's final status may
-    # stop, so its last events must already be stored.
+            if workspace is not None:
+                # The branch outlives the worktree; the finalizer pushes it below.
+                result.artifacts["branch"] = workspace.branch
+        if workspace is not None and result.status == RunStatus.SUCCEEDED:
+            _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
+    except SoftTimeLimitExceeded:
+        # A runaway loop tripped the soft time limit: record a terminal
+        # ESCALATED outcome (so the run does not stay PENDING and block its
+        # issue / cap slot forever), write back, then return the escalation
+        # marker. ``acks_late`` means the message is not acked, so an operator
+        # can re-drive it (dedup-guarded) after raising the budget.
+        escalated = AgentRunResult(
+            run_id=run_id,
+            task_id=parsed.task_id,
+            status=RunStatus.ESCALATED,
+            error="soft_time_limit_exceeded",
+        )
+        _record_terminal(
+            parsed, run_id, workspace_id, escalated, events=events, persisted_row=persisted_row
+        )
+        return {
+            "escalated": True,
+            "reason": "soft_time_limit_exceeded",
+            "idempotency_key": dedup_key,
+        }
+    except Exception as exc:
+        # Any other unhandled failure: still close the persisted run out
+        # (terminal events, outcome, tracker write-back), then re-raise so
+        # Celery's own failure semantics apply unchanged.
+        failed = AgentRunResult(
+            run_id=run_id,
+            task_id=parsed.task_id,
+            status=RunStatus.FAILED,
+            error=type(exc).__name__,
+        )
+        _record_terminal(
+            parsed, run_id, workspace_id, failed, events=events, persisted_row=persisted_row
+        )
+        raise
+    _record_terminal(
+        parsed, run_id, workspace_id, result, events=events, persisted_row=persisted_row
+    )
+    _maybe_persist_recording(runner, objective)
+    return result.model_dump(mode="json")
+
+
+def _record_terminal(
+    objective: AgentObjective,
+    run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    result: AgentRunResult,
+    *,
+    events: RunEventSink | None,
+    persisted_row: bool,
+) -> None:
+    """Close a run out: terminal events, outcome, then tracker write-back.
+
+    Terminal events first: a stream that sees the run's final status may
+    stop, so its last events must already be stored. Best-effort on the
+    failure paths: a recording error must never mask the original exception
+    or marker (the sinks themselves already swallow their own errors).
+    """
     _emit_terminal(events, result)
     if persisted_row:
         _record_run_outcome(run_id, workspace_id, result)
-    _maybe_persist_recording(runner, objective)
-    return result.model_dump(mode="json")
+        _maybe_tracker_writeback(objective, run_id, workspace_id, result)
+
+
+def _mark_started(run_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
+    """Stamp ``started_at`` when a worker picks the run up (best effort)."""
+    try:
+        with create_session_factory()() as session:
+            row = session.get(AgentRun, run_id)
+            if row is not None and row.workspace_id == workspace_id and row.started_at is None:
+                row.started_at = datetime.now(UTC)
+                session.commit()
+    except Exception:
+        logger.exception("could not mark agent run %s started", run_id)
 
 
 def _event_sink(run_id: uuid.UUID, workspace_id: uuid.UUID) -> RunEventSink:
@@ -488,17 +546,64 @@ def _record_run_outcome(
     try:
         factory = session_factory or create_session_factory()
         with factory() as session:
-            row = session.get(AgentRun, run_id)
+            row = session.get(AgentRun, run_id, with_for_update=True)
             if row is None or row.workspace_id != workspace_id:
                 return
             row.status = DbRunStatus(result.status.value)
             row.steps = [step.model_dump(mode="json") for step in result.steps]
-            row.output = result.model_dump(mode="json")
+            # Preserve the write-back claim/record: replacing output wholesale
+            # would erase the at-most-once guard on a redelivery.
+            previous_writeback = (row.output or {}).get("tracker_writeback")
+            row.output = result.model_dump(mode="json") | (
+                {"tracker_writeback": previous_writeback} if previous_writeback else {}
+            )
             row.confidence = result.confidence
             row.completed_at = datetime.now(UTC)
             session.commit()
     except Exception:
         logger.exception("failed to record the outcome of agent run %s", run_id)
+
+
+def _maybe_tracker_writeback(
+    objective: AgentObjective,
+    run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    result: AgentRunResult,
+    *,
+    session_factory: Any = None,
+    connections: Any = None,
+) -> None:
+    """Spec M M2: one run-state comment to the originating tracker issue.
+
+    Runs after :func:`_record_run_outcome` for every terminal state. Only a
+    forge-set ``context["tracker"]`` block (stripped from callers at run
+    creation) triggers it. Best-effort by construction —
+    :func:`forge_worker.tasks.pm_dispatch.post_run_writeback` never raises,
+    and this wrapper swallows even seam failures so a tracker outage can
+    never change a run's recorded outcome.
+    """
+    tracker = objective.context.get("tracker")
+    if not isinstance(tracker, dict) or not tracker.get("connection_id"):
+        return
+    try:
+        from forge_worker.tasks.pm_dispatch import post_run_writeback
+
+        factory = session_factory or create_session_factory()
+        service = connections
+        if service is None:  # pragma: no cover - prod seam
+            from forge_worker.tasks.pm_dispatch import _connection_service
+
+            service = _connection_service(factory)
+        post_run_writeback(
+            factory,
+            run_id=run_id,
+            workspace_id=workspace_id,
+            result=result,
+            tracker=tracker,
+            connections=service,
+        )
+    except Exception:
+        logger.exception("tracker write-back seam failed for run %s (non-fatal)", run_id)
 
 
 def _commits_ahead(repo_path: Path, base: str, branch: str) -> int:

@@ -1917,6 +1917,7 @@ export const PM_PROVIDERS = [
   "asana",
   "monday",
   "github_projects",
+  "github_issues",
   "clickup",
   "trello",
   "gitlab",

@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -47,7 +48,7 @@ from forge_api.observability.audit import AuditCategory, AuditLog
 from forge_api.services.pm_link_repository_db import DbLinkRepository
 from forge_api.services.pm_service import PMConnectionService
 from forge_board import EntityNotFoundError, SqlAlchemyBoardService
-from forge_contracts import TaskDTO
+from forge_contracts import AgentObjective, TaskDTO
 from forge_contracts.enums import Priority, TaskStatus
 from forge_contracts.pm import (
     ConflictPolicy,
@@ -63,6 +64,10 @@ from forge_integrations.pm.sync_engine import ForgeTaskPatch, PMSyncEngine
 from forge_worker.celery_app import celery_app
 from forge_worker.reliability import ForgeTask as ForgeReliableTask
 from forge_worker.reliability import TransientError
+
+# Importing pm_dispatch registers ``forge.pm.dispatch_issue`` (this module is
+# in the Celery ``include`` list; pm_dispatch rides the import).
+from forge_worker.tasks.pm_dispatch import DispatchOutcome, maybe_dispatch
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
@@ -270,12 +275,21 @@ async def _fetch_and_sync(
     return await engine.sync_in(external)
 
 
+def _dispatch_error(outcome: DispatchOutcome | None) -> str | None:
+    """The delivery-row note for a refused dispatch (spec M M3: record why)."""
+    if outcome is not None and outcome.action == "skipped":
+        return f"dispatch_skipped: {outcome.reason}"
+    return None
+
+
 def process_webhook(
     session_factory: sessionmaker[Session],
     delivery_row_id: uuid.UUID,
     *,
     connections: PMConnectionService,
     audit: AuditLog | None = None,
+    payload: dict | None = None,
+    enqueue_run: Callable[[AgentObjective], None] | None = None,
 ) -> dict[str, str | None]:
     """Re-fetch the changed issue for one persisted delivery and upsert the board.
 
@@ -313,7 +327,13 @@ def process_webhook(
         _mark(session_factory, delivery_row_id, PMDeliveryStatus.SKIPPED)
         return _result("skipped_delete", delivery_row_id)
 
-    if row.connection_id is None or row.external_id is None:
+    if payload and payload.get("forge_run_marker"):
+        # Spec M M2: the tracker echoed forge's own run-state comment. Intake
+        # normally suppresses this before enqueue; this guards a re-drive.
+        _mark(session_factory, delivery_row_id, PMDeliveryStatus.ECHO_SUPPRESSED)
+        return _result("skipped_echo", delivery_row_id)
+
+    if row.connection_id is None:
         _mark(session_factory, delivery_row_id, PMDeliveryStatus.SKIPPED)
         return _result("skipped", delivery_row_id)
 
@@ -328,8 +348,27 @@ def process_webhook(
         _mark(session_factory, delivery_row_id, PMDeliveryStatus.SKIPPED)
         return _result("skipped", delivery_row_id)
 
+    dispatch: DispatchOutcome | None = None
     try:
-        outcome = _sync_delivery(session_factory, connections, connection, row, audit)
+        # Board sync first, so a dispatch-created run can link to the board
+        # task; a delivery with no actionable external id (a pull request,
+        # another repository) skips sync but still gets its dispatch refusal
+        # recorded below.
+        outcome = (
+            None
+            if row.external_id is None
+            else _sync_delivery(session_factory, connections, connection, row, audit)
+        )
+        if payload is not None:
+            dispatch = maybe_dispatch(
+                session_factory,
+                connection=connection,
+                delivery=row,
+                payload=payload,
+                connections=connections,
+                enqueue_run=enqueue_run,
+                audit=audit,
+            )
     except Exception as exc:
         _mark(session_factory, delivery_row_id, PMDeliveryStatus.ERROR, error=str(exc)[:2000])
         logger.exception(
@@ -343,17 +382,34 @@ def process_webhook(
             raise TransientError(str(exc)) from exc
         raise
 
+    if outcome is None:
+        _mark(
+            session_factory,
+            delivery_row_id,
+            PMDeliveryStatus.SKIPPED,
+            error=_dispatch_error(dispatch),
+        )
+        return _result(
+            "skipped",
+            delivery_row_id,
+            dispatch_action=dispatch.action if dispatch else None,
+            dispatch_reason=dispatch.reason if dispatch else None,
+        )
+
     status = (
         PMDeliveryStatus.ECHO_SUPPRESSED
         if outcome.action == "skipped_echo"
         else PMDeliveryStatus.PROCESSED
     )
-    _mark(session_factory, delivery_row_id, status)
+    _mark(session_factory, delivery_row_id, status, error=_dispatch_error(dispatch))
     return _result(
         outcome.action,
         delivery_row_id,
         forge_task_id=str(outcome.forge_task_id) if outcome.forge_task_id else None,
         external_id=outcome.external_id,
+        dispatch_action=dispatch.action if dispatch else None,
+        dispatch_reason=dispatch.reason if dispatch else None,
+        run_id=dispatch.run_id if dispatch else None,
     )
 
 
@@ -407,13 +463,16 @@ def _connection_service(
     )
 
 
-def process_webhook_task(delivery_row_id: str) -> dict[str, str | None]:  # pragma: no cover
+def process_webhook_task(
+    delivery_row_id: str, payload: dict | None = None
+) -> dict[str, str | None]:  # pragma: no cover
     factory = _session_factory()
     return process_webhook(
         factory,
         uuid.UUID(delivery_row_id),
         connections=_connection_service(factory),
         audit=AuditLog(),
+        payload=payload,
     )
 
 

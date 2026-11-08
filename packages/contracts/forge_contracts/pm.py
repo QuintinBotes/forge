@@ -249,11 +249,17 @@ class PMConnectionConfig(_PMModel):
     api_token: str | None = None  # stored to vault, never returned
     api_token_email: str | None = None  # Jira Basic (email + token)
     sync_direction: SyncDirection = SyncDirection.bidirectional
-    conflict_policy: ConflictPolicy = ConflictPolicy.newest_wins
+    # Spec M (M2, tracker wins): new connections default to external_wins so a
+    # connected tracker owns its fields; existing rows keep their stored policy.
+    conflict_policy: ConflictPolicy = ConflictPolicy.external_wins
     status_map: dict = Field(default_factory=dict)
     priority_map: dict = Field(default_factory=dict)
     field_map: dict = Field(default_factory=dict)
     on_external_delete: Literal["unlink", "archive"] = "unlink"
+    # Spec M (M3, issue-driven dispatch): raw ``dispatch`` config persisted at
+    # ``PMConnection.config["dispatch"]`` after validation by the API schema
+    # model (``forge_api.schemas.pm.PMDispatchConfig``).
+    dispatch: dict = Field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #

@@ -21,6 +21,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import ValidationError
 
 from forge_api.auth.rbac import Permission
 from forge_api.deps import Principal
@@ -29,6 +30,7 @@ from forge_api.schemas.pm import (
     PMConnectionDetail,
     PMConnectionPatch,
     PMConnectionResponse,
+    PMDispatchConfig,
     PMLinkResponse,
 )
 from forge_api.services.pm_service import (
@@ -70,10 +72,15 @@ PMServiceDep = Annotated[PMConnectionService, Depends(get_pm_service)]
 
 def _to_response(service: PMConnectionService, conn: PMConnection) -> PMConnectionResponse:
     resp = PMConnectionResponse.model_validate(conn)
+    try:
+        dispatch = PMDispatchConfig.model_validate((conn.config or {}).get("dispatch") or {})
+    except ValidationError:
+        dispatch = PMDispatchConfig()
     resp = resp.model_copy(
         update={
             "has_credential": bool(conn.credential_ref),
             "has_webhook_secret": bool(conn.webhook_secret_ref),
+            "dispatch": dispatch,
         }
     )
     return resp
@@ -92,6 +99,11 @@ def create_connection(
         conn = service.create(principal.workspace_id, config)
     except PMConflictExists as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"invalid dispatch config: {exc.errors()[0]['msg']}",
+        ) from exc
     return _to_response(service, conn)
 
 
@@ -129,6 +141,7 @@ def patch_connection(
             field_map=patch.field_map,
             sync_direction=patch.sync_direction,
             conflict_policy=patch.conflict_policy,
+            dispatch=patch.dispatch,
             enabled=patch.enabled,
         )
     except PMConnectionNotFound as exc:
@@ -180,7 +193,7 @@ def list_links(
 # Headers that carry a webhook's authenticity proof. An inbound request lacking
 # all of them is rejected up-front (cheap, no DB) as unsigned — both correct
 # security behaviour and what keeps a bare/unsigned probe from reaching storage.
-_SIGNATURE_HEADERS = ("linear-signature", "x-forge-pm-secret")
+_SIGNATURE_HEADERS = ("linear-signature", "x-forge-pm-secret", "x-hub-signature-256")
 
 
 async def _intake(
@@ -208,6 +221,13 @@ async def jira_webhook(
 
 @router.post("/webhooks/linear/{connection_id}")
 async def linear_webhook(
+    connection_id: uuid.UUID, request: Request, service: PMServiceDep
+) -> Response:
+    return await _intake(connection_id, request, service)
+
+
+@router.post("/webhooks/github_issues/{connection_id}")
+async def github_issues_webhook(
     connection_id: uuid.UUID, request: Request, service: PMServiceDep
 ) -> Response:
     return await _intake(connection_id, request, service)

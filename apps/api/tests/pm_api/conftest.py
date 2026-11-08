@@ -123,7 +123,7 @@ def pm_service(
         vault=vault,
         audit=audit,
         transport_factory=_transport_factory,
-        process_webhook_enqueue=enqueued.append,
+        process_webhook_enqueue=lambda row_id, payload=None: enqueued.append(row_id),
     )
 
 
