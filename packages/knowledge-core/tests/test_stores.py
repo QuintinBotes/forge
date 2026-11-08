@@ -779,7 +779,9 @@ def test_a_backlog_failure_never_undoes_new_chunks_and_skips_only_bad_rows(
     result = full_sync(PgVectorStore(session_factory, spy), source_id, {**old, "d.py": "new"})
 
     assert result.indexed == 1
-    assert result.updated == 2  # a.py and c.py; b.py is reported, not retried forever
+    # a.py and c.py, each a code chunk plus its symbol summary (D-c); b.py is
+    # reported, not retried forever.
+    assert result.updated == 4
     assert len(result.errors) == 1
     with session_factory() as session:
         by_path = {row.path: row.embedding for row in session.scalars(select(RetrievalChunk))}
@@ -805,4 +807,5 @@ def test_full_sync_never_sends_a_vanished_files_text_to_the_embedder(
     )
     sent = [text for call in spy.calls for text in call]
     assert not any("vanished_secret_file" in text for text in sent)
-    assert (result.deleted, result.updated) == (1, 1)
+    # One code chunk plus one symbol summary (D-c) per file.
+    assert (result.deleted, result.updated) == (2, 2)

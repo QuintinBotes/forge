@@ -36,7 +36,7 @@ from forge_api.routers.mcp_server import get_mcp_server_audit_log
 from forge_api.routers.spec import get_spec_engine
 from forge_api.services.world_service import get_world_service, make_world_service
 from forge_contracts import Chunk, Requirement, SpecManifest, UserRole
-from forge_contracts.enums import SpecStatus
+from forge_contracts.enums import ChunkType, SpecStatus
 from forge_db.base import Base
 from forge_db.models import (
     AgentRun,
@@ -814,3 +814,257 @@ def test_a_conflict_is_included_whole_or_not_at_all(client, knowledge, engine):
     bundle = _assemble(client, task="Where is Acme based?", budget_tokens=1_000)
     contested = [i for i in bundle["items"] if i["section"] == "facts" and i["conflict"]]
     assert len(contested) in (0, 2)
+
+
+# --- D-b: instruction-file search hits (spec J §2.4.1) -------------------------- #
+
+_FILLER = "Contributors keep commits small and reviewed. " * 52  # ~2,400 chars
+
+
+def _seed_instruction_hit(knowledge: KnowledgeService) -> None:
+    # AGENTS.md sorts first by path, but only CLAUDE.md answers the task;
+    # each is ~600 tokens, so a 1,000-token bundle holds one of them.
+    _index(
+        knowledge,
+        WS,
+        [
+            Chunk(content="zebracheck " * 3 + "must pass. " + _FILLER, path="CLAUDE.md"),
+            Chunk(content="General rules. " + _FILLER, path="AGENTS.md"),
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    ("template", "section"),
+    [
+        ("default", "instructions"),
+        ("review", "instructions"),
+        ("implementation", "instructions"),
+        ("research", "knowledge"),
+    ],
+)
+def test_an_instruction_hit_is_never_invisible(client, knowledge, engine, template, section):
+    _seed_instruction_hit(knowledge)
+    bundle = _assemble(client, task="zebracheck", budget_tokens=1_000, template=template)
+    found = [i for i in bundle["items"] if "zebracheck must pass" in i["text"]]
+    assert [i["section"] for i in found] == [section]
+    if section == "instructions":
+        # Search hits first: the hit, not the path-first AGENTS.md, got the share.
+        assert found[0]["source"] == "github.com/o/a:CLAUDE.md"
+        assert not [i for i in bundle["items"] if i["text"].startswith("General rules.")]
+    else:
+        # A 0% instruction share leaves it a labelled knowledge passage.
+        assert found[0]["kind"] == "chunk"
+        assert found[0]["source"] == "repo:github.com/o/a:CLAUDE.md"
+
+
+def test_an_instruction_hit_that_misses_its_share_stays_knowledge(client, knowledge, engine):
+    _seed_instruction_hit(knowledge)
+    # A ~500-token knowledge passage eats the roll-forward, so the instruction
+    # section (default share) cannot hold the ~600-token hit.
+    _index(knowledge, WS, [Chunk(content="quokka notes. " + "word " * 397, path="notes.md")])
+    bundle = _assemble(client, task="zebracheck quokka", budget_tokens=1_000)
+    found = [i for i in bundle["items"] if "zebracheck must pass" in i["text"]]
+    assert [(i["section"], i["kind"]) for i in found] == [("knowledge", "chunk")]
+    assert bundle["total_tokens"] <= 1_000
+
+
+# --- D-e: knowledge_search / knowledge_document MCP tools (spec J §2.4.1) -------- #
+
+_GUIDE = "\n\n".join(
+    f"## Step {i}\n\nThe walrus step {i} explains deployment detail number {i}." for i in range(8)
+)
+
+
+def _seed_guide(knowledge: KnowledgeService) -> list[Chunk]:
+    from forge_knowledge import chunk_markdown
+
+    chunks = chunk_markdown("docs/guide.md", f"# Guide\n\n{_GUIDE}\n", max_chars=120)
+    assert len(chunks) > 4
+    _index(knowledge, WS, chunks)
+    _index(
+        knowledge, WS2, [Chunk(content="walrus secret of the other tenant", path="docs/guide.md")]
+    )
+    return chunks
+
+
+def _tool(client: TestClient, name: str, arguments: dict) -> dict:
+    return _rpc(client, "tools/call", {"name": name, "arguments": arguments})
+
+
+@pytest.mark.parametrize("role", [UserRole.MEMBER, UserRole.VIEWER])
+def test_knowledge_tools_are_listed_for_readers(factory, clock, knowledge, engine, role):
+    reader = _client(factory, clock, knowledge, engine, _principal(role))
+    names = {tool["name"] for tool in _rpc(reader, "tools/list", {})["result"]["tools"]}
+    assert {"knowledge_search", "knowledge_document"} <= names
+
+
+def test_knowledge_search_matches_rest_and_caps_k(factory, clock, knowledge, engine):
+    member = _client(factory, clock, knowledge, engine, _principal())
+    _seed_guide(knowledge)
+    rest = member.post("/knowledge/search", json={"query": "walrus deployment", "k": 50})
+    assert rest.status_code == 200, rest.text
+    result = _tool(member, "knowledge_search", {"query": "walrus deployment", "k": 50})["result"]
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    expected = rest.json()
+    assert [r["id"] for r in structured["results"]] == [r["id"] for r in expected["results"]]
+    assert [r["content"] for r in structured["results"]] == [
+        r["content"] for r in expected["results"]
+    ]
+    for key in ("legs", "vector_leg", "rerank"):
+        assert structured[key] == expected[key]  # the envelope, as-is
+    assert structured["results"] and all(r["source_uri"] for r in structured["results"])
+    assert all("other tenant" not in r["content"] for r in structured["results"])
+
+    too_many = _tool(member, "knowledge_search", {"query": "walrus", "k": 51})
+    assert too_many["error"]["code"] == -32602
+    url_only = _tool(member, "knowledge_search", {"query": "walrus", "kinds": ["url"]})
+    assert url_only["result"]["structuredContent"]["results"] == []
+
+
+def test_knowledge_document_matches_rest_caps_tokens_and_is_workspace_scoped(
+    factory, clock, knowledge, engine
+):
+    member = _client(factory, clock, knowledge, engine, _principal())
+    chunks = _seed_guide(knowledge)
+    source = str(_source_id(WS))
+    params = {"source": source, "path": "docs/guide.md", "max_tokens": 8_000}
+
+    whole = member.get("/knowledge/document", params=params)
+    assert whole.status_code == 200, whole.text
+    body = whole.json()
+    assert [p["content"] for p in body["passages"]] == [c.content for c in chunks]
+    assert body["truncated"] is False
+    assert body["total_chunks"] == len(chunks)
+    assert all(p["source_uri"] == "github.com/o/a" for p in body["passages"])
+    # By uri as well as by id.
+    by_uri = member.get("/knowledge/document", params={**params, "source": "github.com/o/a"})
+    assert by_uri.json()["passages"] == body["passages"]
+
+    mcp = _tool(member, "knowledge_document", params)["result"]
+    assert mcp["isError"] is False
+    assert mcp["structuredContent"]["passages"] == body["passages"]
+
+    cap = sum(math.ceil(len(c.content) / 4) for c in chunks[:2])
+    capped = _tool(member, "knowledge_document", {**params, "max_tokens": cap})["result"]
+    capped_body = capped["structuredContent"]
+    assert [p["content"] for p in capped_body["passages"]] == [c.content for c in chunks[:2]]
+    assert capped_body["tokens"] == cap
+    assert capped_body["truncated"] is True
+
+    foreign = {**params, "source": str(_source_id(WS2))}
+    assert member.get("/knowledge/document", params=foreign).status_code == 404
+    refused = _tool(member, "knowledge_document", foreign)["result"]
+    assert refused["isError"] is True
+    assert "not found" in refused["structuredContent"]["error"]
+    over = _tool(member, "knowledge_document", {**params, "max_tokens": 64_001})
+    assert over["error"]["code"] == -32602
+
+
+# --- ADR-0014 labels: "{source kind}:{source uri}:{path}" (spec J §2.3) ---------- #
+
+_SHA = "c" * 40
+
+
+def _seed_one_repository_three_ways(factory, knowledge: KnowledgeService) -> None:
+    """A file and a commit of github.com/o/a, and an issue of its tracker (same uri)."""
+    tracker = uuid.uuid5(uuid.NAMESPACE_DNS, "ctx-tracker")
+    with factory() as session:
+        session.add(
+            KnowledgeSource(
+                id=tracker,
+                workspace_id=WS,
+                kind="url",
+                name="tracker",
+                uri="github.com/o/a",
+                config={"tracker": "github"},
+            )
+        )
+        session.commit()
+    _index(
+        knowledge,
+        WS,
+        [
+            Chunk(content="Rotation policy: tokens rotate daily.", path="docs/rotation.md"),
+            Chunk(content=f"{_SHA} 2026-10-01 Tune rotation policy", path=f"commits/{_SHA}"),
+        ],
+    )
+    result = knowledge.index(
+        str(tracker),
+        # Stored metadata claiming another kind must not change the label.
+        [
+            Chunk(
+                content="Issue #9 [open] Rotation policy",
+                path="issues/9",
+                metadata={"source_kind": "repo"},
+            )
+        ],
+    )
+    assert result.errors == []
+
+
+_LABELS = {
+    "repo:github.com/o/a:docs/rotation.md",
+    f"repo:github.com/o/a:commits/{_SHA}",
+    "url:github.com/o/a:issues/9",
+}
+
+
+def test_passages_from_one_repository_get_distinct_kind_labels(factory, clock, knowledge, engine):
+    member = _client(factory, clock, knowledge, engine, _principal())
+    _seed_one_repository_three_ways(factory, knowledge)
+
+    bundle = _assemble(member, task="rotation policy", budget_tokens=4_000)
+    assert {i["source"] for i in bundle["items"] if i["section"] == "knowledge"} == _LABELS
+
+    rest = member.post("/knowledge/search", json={"query": "rotation policy", "k": 10}).json()
+    assert {r["source"] for r in rest["results"]} == _LABELS
+    mcp = _tool(member, "knowledge_search", {"query": "rotation policy"})["result"]
+    assert {r["source"] for r in mcp["structuredContent"]["results"]} == _LABELS
+
+    doc = member.get(
+        "/knowledge/document", params={"source": str(_source_id(WS)), "path": f"commits/{_SHA}"}
+    ).json()
+    assert [p["source"] for p in doc["passages"]] == [f"repo:github.com/o/a:commits/{_SHA}"]
+    # The repository and its tracker share a uri: a passage label's kind:uri resolves it.
+    assert (
+        member.get(
+            "/knowledge/document", params={"source": "github.com/o/a", "path": "issues/9"}
+        ).status_code
+        == 409
+    )
+    by_label = member.get(
+        "/knowledge/document", params={"source": "url:github.com/o/a", "path": "issues/9"}
+    ).json()
+    assert [p["source"] for p in by_label["passages"]] == ["url:github.com/o/a:issues/9"]
+
+
+def test_knowledge_document_stops_at_an_oversized_chunk_and_skips_summaries(
+    factory, clock, knowledge, engine
+):
+    member = _client(factory, clock, knowledge, engine, _principal())
+    big = "word " * 400  # ~500 tokens
+    _index(
+        knowledge,
+        WS,
+        [
+            Chunk(content=big, path="docs/big.md", start_line=1, end_line=1),
+            Chunk(content="small tail", path="docs/big.md", start_line=2, end_line=2),
+            Chunk(
+                content="docs/big.md: tail — summary",
+                path="docs/big.md",
+                chunk_type=ChunkType.SUMMARY,
+                start_line=1,
+                end_line=2,
+            ),
+        ],
+    )
+    params = {"source": str(_source_id(WS)), "path": "docs/big.md"}
+
+    capped = member.get("/knowledge/document", params={**params, "max_tokens": 100}).json()
+    assert capped["passages"] == [] and capped["truncated"] is True
+
+    whole = member.get("/knowledge/document", params=params).json()
+    assert [p["content"] for p in whole["passages"]] == [big, "small tail"]
+    assert whole["total_chunks"] == 2

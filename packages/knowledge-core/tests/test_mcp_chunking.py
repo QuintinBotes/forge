@@ -18,8 +18,13 @@ def _snap(
 
 def test_markdown_is_split_on_headings() -> None:
     md = "# Title\n\nIntro paragraph.\n\n## Section\n\nMore text here."
-    chunks = McpResourceChunker().chunk(_snap(md, "text/markdown"))
-    assert len(chunks) >= 3
+    # Section chunking (spec J §2.4.1): the small doc is one chunk at the
+    # default size; a small max_chars splits it at the heading.
+    assert len(McpResourceChunker().chunk(_snap(md, "text/markdown"))) == 1
+    chunks = McpResourceChunker(max_chars=60).chunk(_snap(md, "text/markdown"))
+    assert len(chunks) == 2
+    assert chunks[1].content.endswith("## Section\n\nMore text here.")
+    assert chunks[1].metadata["heading_path"] == "Title > Section"
     assert all(c.chunk_type is ChunkType.MCP_RESOURCE for c in chunks)
     assert all(c.weight == 1.0 for c in chunks)
     # Provenance + per-resource path on every chunk.

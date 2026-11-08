@@ -8,7 +8,10 @@ Serves the hybrid-retrieval spine over HTTP:
 * ``POST /knowledge/index`` — index a batch of chunks into a knowledge source.
 * ``POST /knowledge/sync`` — full or incremental (git-diff) source sync
   (Task 1.4): full re-chunks + indexes a tree (pruning vanished files);
-  incremental re-indexes only the files a git diff reports as changed.
+  incremental re-indexes only the files a git diff reports as changed. A
+  GitHub tracker source (spec J §2.3) is enqueued for the worker instead.
+* ``GET /knowledge/document`` — one document's chunks in order, capped at
+  ``max_tokens`` (spec J §2.4.1, D-e; the ``knowledge_document`` MCP tool).
 
 Handlers delegate to a :class:`KnowledgeService`. The default service is built
 from the API's DB session factory with the *configured* production embedder and
@@ -27,26 +30,35 @@ import uuid
 from functools import lru_cache, partial
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api._stubs import NotImplementedResponse
 from forge_api.auth.rbac import Permission
 from forge_api.db import get_session_factory
-from forge_api.deps import CurrentPrincipal, Principal, get_current_principal
+from forge_api.deps import CurrentPrincipal, DbSession, Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
-from forge_api.schemas.knowledge import KnowledgeSearchResponse
+from forge_api.schemas.knowledge import (
+    KnowledgeDocumentResponse,
+    KnowledgePassage,
+    KnowledgeSearchResponse,
+    KnowledgeSyncEnqueued,
+)
 from forge_api.security.ssrf import assert_safe_url
+from forge_api.services.context_service import chunk_label, count_tokens, source_label
 from forge_api.settings import Settings, get_settings
 from forge_contracts import (
     Chunk,
     IndexResult,
     KnowledgeScope,
 )
+from forge_contracts import ChunkType as ContractChunkType
 from forge_contracts.enums import SyncMode
 from forge_contracts.protocols import EmbeddingClient
-from forge_db.models import KnowledgeSource
+from forge_db.models import ChunkType, KnowledgeSource, RetrievalChunk
+from forge_db.models.enums import KnowledgeSourceKind
 from forge_knowledge import (
     KnowledgeService,
     VectorLegUnconfiguredError,
@@ -55,7 +67,7 @@ from forge_knowledge import (
     full_sync,
     sync_source,
 )
-from forge_knowledge.sync import embed_backlog
+from forge_knowledge.sync import commit_limit, embed_backlog, is_tracker_source
 
 router = APIRouter(
     prefix="/knowledge",
@@ -70,6 +82,21 @@ router = APIRouter(
 # authenticated role. The gate yields the principal so the handler can still scope
 # the source to the caller's workspace.
 WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
+ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
+
+#: Largest ``max_tokens`` one ``GET /knowledge/document`` may ask for.
+MAX_DOCUMENT_TOKENS = 64_000
+
+#: The worker's ``forge_worker.syncer.sync_source_task`` — by name, because
+#: ``forge-api`` cannot import ``forge-worker`` (mirrors ``FULL_SYNC_TASK``).
+SYNC_SOURCE_TASK = "forge.knowledge.sync_source"
+
+
+def enqueue_source_sync(source_id: str) -> None:  # pragma: no cover - prod seam
+    """Enqueue the worker sync of one source (monkeypatched in tests)."""
+    from forge_api.services.mcp_index_service import _celery_app
+
+    _celery_app().send_task(SYNC_SOURCE_TASK, args=[source_id])  # type: ignore[attr-defined]
 
 
 # --------------------------------------------------------------------------- #
@@ -159,7 +186,7 @@ KnowledgeSessionFactoryDep = Annotated[
 
 def _assert_source_in_workspace(
     factory: sessionmaker[Session], source_id: str, workspace_id: uuid.UUID
-) -> None:
+) -> KnowledgeSource:
     """Guard cross-tenant writes: a source must belong to the caller's workspace.
 
     Raises 404 (not 403) for a missing *or* foreign source so the endpoint never
@@ -178,6 +205,7 @@ def _assert_source_in_workspace(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="knowledge source not found",
             )
+        return source
 
 
 # --------------------------------------------------------------------------- #
@@ -257,7 +285,9 @@ def search(
     if rerank != "off" and results and all(c.rerank_score is None for c in results):
         rerank = "fallback"
     return KnowledgeSearchResponse(
-        results=results,
+        results=[
+            KnowledgePassage(**chunk.model_dump(), source=chunk_label(chunk)) for chunk in results
+        ],
         legs=svc.legs,
         vector_leg=svc.vector_leg,
         rerank=rerank,
@@ -279,16 +309,26 @@ def index(
     )
 
 
-@router.post("/sync", response_model=IndexResult)
+@router.post("/sync", response_model=IndexResult | KnowledgeSyncEnqueued)
 def sync(
     svc: KnowledgeServiceDep,
     factory: KnowledgeSessionFactoryDep,
     principal: WriterDep,
     request: SyncRequest,
-) -> IndexResult:
-    """Full or incremental (git-diff) sync of a knowledge source."""
-    _assert_source_in_workspace(factory, request.source_id, principal.workspace_id)
+    response: Response,
+) -> IndexResult | KnowledgeSyncEnqueued:
+    """Full or incremental (git-diff) sync of a knowledge source.
+
+    A GitHub tracker source reads GitHub through the workspace's connection,
+    so it is enqueued for the worker (202) rather than synced in the request.
+    """
+    source = _assert_source_in_workspace(factory, request.source_id, principal.workspace_id)
+    if is_tracker_source(source):
+        enqueue_source_sync(str(source.id))
+        response.status_code = status.HTTP_202_ACCEPTED
+        return KnowledgeSyncEnqueued(source_id=str(source.id))
     try:
+        max_commits = commit_limit(source.config)
         if request.mode == SyncMode.INCREMENTAL:
             if not request.root or not request.base_ref:
                 raise HTTPException(
@@ -302,6 +342,7 @@ def sync(
                 mode=SyncMode.INCREMENTAL,
                 base_ref=request.base_ref,
                 head_ref=request.head_ref,
+                max_commits=max_commits,
             )
 
         if request.files is not None:
@@ -313,6 +354,7 @@ def sync(
                 request.root,
                 mode=SyncMode.FULL,
                 prune=request.prune,
+                max_commits=max_commits,
             )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -322,3 +364,98 @@ def sync(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
+
+
+def _workspace_source(session: Session, workspace_id: uuid.UUID, source: str) -> KnowledgeSource:
+    """The caller's source by id, uri, or a passage label's ``kind:uri``; 404 for a
+    missing *or* foreign one."""
+    kind, _, uri = source.partition(":")
+    try:
+        match = KnowledgeSource.id == uuid.UUID(source)
+    except ValueError:
+        if kind in {k.value for k in KnowledgeSourceKind} and uri:
+            match = and_(
+                KnowledgeSource.kind == KnowledgeSourceKind(kind), KnowledgeSource.uri == uri
+            )
+        else:
+            match = KnowledgeSource.uri == source
+    found = session.scalars(
+        select(KnowledgeSource)
+        .where(KnowledgeSource.workspace_id == workspace_id, match)
+        .order_by(KnowledgeSource.id)
+        .limit(2)
+    ).all()
+    if not found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="knowledge source not found"
+        )
+    if len(found) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="several knowledge sources have this uri; pass the source id",
+        )
+    return found[0]
+
+
+@router.get("/document", response_model=KnowledgeDocumentResponse)
+def document(
+    principal: ReaderDep,
+    session: DbSession,
+    source: Annotated[str, Query(min_length=1, description="Knowledge source id or uri")],
+    path: Annotated[str, Query(min_length=1, description="Document path in that source")],
+    max_tokens: Annotated[int, Query(ge=1, le=MAX_DOCUMENT_TOKENS)] = 8_000,
+) -> KnowledgeDocumentResponse:
+    """A whole document's chunks in order, capped at ``max_tokens`` (READ).
+
+    Whole chunks only, never a cut one; ``truncated`` says the rest was left
+    out. Symbol summaries are index entries, not document text, so they are
+    skipped. Workspace-scoped: another workspace's source is not found.
+    """
+    found = _workspace_source(session, principal.workspace_id, source)
+    rows = session.scalars(
+        select(RetrievalChunk)
+        .where(
+            RetrievalChunk.knowledge_source_id == found.id,
+            RetrievalChunk.workspace_id == principal.workspace_id,
+            RetrievalChunk.path == path,
+            RetrievalChunk.chunk_type != ChunkType.SUMMARY,
+        )
+        .order_by(
+            RetrievalChunk.start_line.asc().nulls_last(),
+            RetrievalChunk.end_line,
+            RetrievalChunk.content_hash,
+        )
+    ).all()
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    passages: list[KnowledgePassage] = []
+    tokens = 0
+    for row in rows:
+        cost = count_tokens(row.content)
+        if tokens + cost > max_tokens:
+            break
+        tokens += cost
+        passages.append(
+            KnowledgePassage(
+                id=str(row.id),
+                content=row.content,
+                chunk_type=ContractChunkType(row.chunk_type.value),
+                path=row.path,
+                start_line=row.start_line,
+                end_line=row.end_line,
+                weight=row.weight,
+                source_id=str(found.id),
+                source_uri=found.uri,
+                metadata={**(row.chunk_metadata or {}), "source_kind": found.kind.value},
+                source=source_label(found.kind.value, found.uri, row.path),
+            )
+        )
+    return KnowledgeDocumentResponse(
+        source_id=str(found.id),
+        source=found.uri,
+        path=path,
+        passages=passages,
+        tokens=tokens,
+        total_chunks=len(rows),
+        truncated=len(passages) < len(rows),
+    )
