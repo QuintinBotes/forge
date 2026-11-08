@@ -81,6 +81,7 @@ DEFERRED_TABLES = frozenset(
         # F01 board persistence (task dependency adjacency) — created by
         # 0024_board_persistence.
         "task_dependency",
+        "world_fact_feedback",
     }
 )
 

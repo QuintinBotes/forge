@@ -491,6 +491,9 @@ def _record_run_outcome(
             row = session.get(AgentRun, run_id)
             if row is None or row.workspace_id != workspace_id:
                 return
+            if row.context_refs:
+                # The bundle's refs travel with the recorded outcome (spec J §2.5).
+                result.artifacts["context_refs"] = list(row.context_refs)
             row.status = DbRunStatus(result.status.value)
             row.steps = [step.model_dump(mode="json") for step in result.steps]
             row.output = result.model_dump(mode="json")

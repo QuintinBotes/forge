@@ -54,25 +54,33 @@ class McpTool:
     input_model: type[BaseModel]
     handler: Callable[[ToolContext, Any], BaseModel]
     write: bool = False
+    #: Cap for strings in the result; ``None`` keeps redaction but skips
+    #: the cap (for tools whose output is already budgeted, e.g.
+    #: ``assemble_context``).
+    max_text_chars: int | None = MAX_TEXT_CHARS
 
 
 def can_write(principal: Principal) -> bool:
     return bool(permissions_for(principal.role) & _WRITE_PERMISSIONS)
 
 
-def _clean(value: Any, flags: dict[str, bool]) -> Any:
+def _clean(
+    value: Any, flags: dict[str, bool], *, max_text_chars: int | None = MAX_TEXT_CHARS
+) -> Any:
     """Redact secrets and cap string length throughout a JSON-ish value."""
     if isinstance(value, str):
         # The two redactors cover different patterns (PEM/key=value vs GitHub/provider keys).
         text = redact_text(redact_secrets(value))
-        if len(text) > MAX_TEXT_CHARS:
+        if max_text_chars is not None and len(text) > max_text_chars:
             flags["truncated"] = True
-            return text[:MAX_TEXT_CHARS]
+            return text[:max_text_chars]
         return text
     if isinstance(value, dict):
-        return {key: _clean(item, flags) for key, item in value.items()}
+        return {
+            key: _clean(item, flags, max_text_chars=max_text_chars) for key, item in value.items()
+        }
     if isinstance(value, list):
-        return [_clean(item, flags) for item in value]
+        return [_clean(item, flags, max_text_chars=max_text_chars) for item in value]
     return value
 
 
@@ -128,7 +136,9 @@ class ToolRegistry:
         except ToolError as exc:
             return _text_result({"error": str(exc)}, is_error=True)
         flags: dict[str, bool] = {}
-        structured = _clean(output.model_dump(mode="json"), flags)
+        structured = _clean(
+            output.model_dump(mode="json"), flags, max_text_chars=tool.max_text_chars
+        )
         if flags:
             structured["truncated"] = True
         return _text_result(structured)

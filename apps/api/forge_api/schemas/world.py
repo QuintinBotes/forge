@@ -78,6 +78,9 @@ class FactOut(BaseModel):
     mood: str | None
     qualifiers: dict[str, Any]
     confidence: float
+    #: Confidence as read now (spec J §2.5): memory decay + outcome
+    #: feedback applied on read; ``confidence`` above stays the stored value.
+    effective_confidence: float
     valid_from: datetime | None
     valid_from_precision: str
     valid_to: datetime | None

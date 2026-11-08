@@ -35,6 +35,8 @@ from forge_world.ledger import (
     EntityData,
     EvidenceData,
     FactData,
+    FeedbackData,
+    FeedbackOutcome,
     ForbiddenError,
     InvalidatedReason,
     Layer,
@@ -50,6 +52,7 @@ from forge_world.ledger import (
     Statement,
     WorldValidationError,
     dedup_key,
+    effective_confidence,
     normalise_phrase,
     normalise_value,
     validate_key,
@@ -1079,6 +1082,73 @@ class WorldModelService:
     ) -> dict[uuid.UUID, list[EvidenceData]]:
         return self._repo.evidence_for(workspace_id, fact_ids)
 
+    # --- outcome feedback (spec J §2.5) --------------------------------- #
+
+    def record_feedback(
+        self,
+        workspace_id: uuid.UUID,
+        *,
+        run_id: uuid.UUID,
+        fact_ids: Sequence[uuid.UUID],
+        outcome: FeedbackOutcome,
+    ) -> int:
+        """Write one outcome row per referenced fact; returns rows written.
+
+        Facts that do not exist in this workspace are skipped (a stale or
+        foreign ref can never create a row), and a fact the run already has
+        a row for is skipped — the write is idempotent per ``(run_id,
+        fact_id)`` so a replayed PR webhook changes nothing.
+        """
+        unique_ids = list(dict.fromkeys(fact_ids))
+        known = self._repo.facts_by_ids(workspace_id, unique_ids)
+        now = self._now()
+        written = 0
+        for fact_id in unique_ids:
+            if fact_id not in known:
+                continue
+            if self._repo.insert_feedback(
+                workspace_id, fact_id=fact_id, run_id=run_id, outcome=outcome, now=now
+            ):
+                written += 1
+        return written
+
+    def feedback_counts(
+        self, workspace_id: uuid.UUID, fact_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, tuple[int, int]]:
+        """``fact_id -> (reinforced, weakened)`` for the facts that have rows."""
+        return self._repo.feedback_counts(workspace_id, fact_ids)
+
+    def list_feedback(
+        self,
+        workspace_id: uuid.UUID,
+        *,
+        fact_id: uuid.UUID | None = None,
+        run_id: uuid.UUID | None = None,
+    ) -> list[FeedbackData]:
+        return self._repo.list_feedback(workspace_id, fact_id=fact_id, run_id=run_id)
+
+    def effective_confidences(
+        self,
+        workspace_id: uuid.UUID,
+        facts: Sequence[FactData],
+        *,
+        now: datetime | None = None,
+    ) -> dict[uuid.UUID, float]:
+        """Every fact's effective confidence at ``now`` (default: the clock).
+
+        One grouped feedback read for the whole batch; the decay/feedback
+        arithmetic is :func:`forge_world.ledger.effective_confidence`.
+        """
+        moment = ensure_utc(now) if now is not None else self._now()
+        counts = self._repo.feedback_counts(workspace_id, [fact.id for fact in facts])
+        result: dict[uuid.UUID, float] = {}
+        for fact in facts:
+            reinforced, weakened = counts.get(fact.id, (0, 0))
+            result[fact.id] = effective_confidence(
+                fact, reinforced=reinforced, weakened=weakened, now=moment
+            )
+        return result
+
     def search_entities(
         self,
         workspace_id: uuid.UUID,
@@ -1618,8 +1688,20 @@ class WorldModelService:
             violations=tuple(violations),
         )
 
-    def conflicts(self, workspace_id: uuid.UUID, *, at: datetime | None = None) -> list[Conflict]:
-        """Functional overlaps + unordered successions + reasoning violations."""
+    def conflicts(
+        self,
+        workspace_id: uuid.UUID,
+        *,
+        at: datetime | None = None,
+        entity_ids: Sequence[uuid.UUID] | None = None,
+    ) -> list[Conflict]:
+        """Functional overlaps + unordered successions + reasoning violations.
+
+        With ``entity_ids``, only facts touching those entities (merge
+        closures included, as subject or object) are considered, so a
+        caller assembling context for a few entities does not pay for a
+        whole-workspace derivation. The default considers every fact.
+        """
         now = self._now()
         at_moment = ensure_utc(at) if at is not None else now
         relations = self._relations_map(workspace_id)
@@ -1637,14 +1719,38 @@ class WorldModelService:
                 ),
             )
 
-        holding = self._repo.query_facts(workspace_id, at=at_moment, as_of=now)
+        if entity_ids is not None:
+            if not entity_ids:
+                return []
+            closure: set[uuid.UUID] = set()
+            for entity_id in entity_ids:
+                closure.update(self._closure_ids(self._resolve_id(entity_id, merge_map), merge_map))
+            closure_ids = sorted(closure, key=str)
+
+            def _touching(facts: list[FactData], more: list[FactData]) -> list[FactData]:
+                by_id = {fact.id: fact for fact in facts}
+                for fact in more:
+                    by_id.setdefault(fact.id, fact)
+                return sorted(by_id.values(), key=lambda f: (f.recorded_at, str(f.id)))
+
+            holding = _touching(
+                self._repo.query_facts(
+                    workspace_id, at=at_moment, as_of=now, subject_ids=closure_ids
+                ),
+                self._repo.query_facts(
+                    workspace_id, at=at_moment, as_of=now, object_ids=closure_ids
+                ),
+            )
+            held_all = _touching(
+                self._repo.group_facts(workspace_id, as_of=now, subject_ids=closure_ids),
+                self._repo.group_facts(workspace_id, as_of=now, object_ids=closure_ids),
+            )
+        else:
+            holding = self._repo.query_facts(workspace_id, at=at_moment, as_of=now)
+            held_all = self._repo.group_facts(workspace_id, as_of=now)
         found = functional_conflicts([_remap(fact) for fact in holding], relations)
 
-        held = [
-            fact
-            for fact in self._repo.group_facts(workspace_id, as_of=now)
-            if fact.layer is not Layer.DERIVED
-        ]
+        held = [fact for fact in held_all if fact.layer is not Layer.DERIVED]
         held_remapped = [_remap(fact) for fact in held]
         functional_keys = {
             relation.key
