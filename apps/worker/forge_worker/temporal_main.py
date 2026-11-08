@@ -20,60 +20,59 @@ import asyncio
 import os
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_contracts import WorkflowRun
 from forge_db import create_session_factory
+from forge_db.models.runs import WorkflowRun as DbWorkflowRun
+from forge_workflow import WorkflowRunNotFoundError
 from forge_workflow.store import SqlAlchemyWorkflowStore
 from forge_workflow.temporal.activities import WorkflowActivities
 from forge_workflow.temporal.client import get_temporal_client
 from forge_workflow.temporal.config import TemporalSettings
 from forge_workflow.temporal.worker import build_temporal_worker
 
-# A nil workspace for store ops that do not create rows (get/update are keyed by
-# the run's PK, so workspace scoping is irrelevant there; create runs in the API).
-_NIL_WORKSPACE = uuid.UUID(int=0)
-
 
 class SessionPerCallStore:
     """A :class:`WorkflowStore` that opens a fresh committed session per call.
 
     Suitable for the Temporal worker, where each Activity invocation is an
-    independent unit of work. ``persist_transition`` only uses ``get`` + ``update``
-    (keyed by run id), so the placeholder workspace id is never consulted.
+    independent unit of work. The worker only reads and updates runs the API
+    created (``persist_transition``); the run id comes from the workflow's own
+    params, so each call scopes the store to that run's workspace.
     """
 
     def __init__(self, factory: sessionmaker[Session]) -> None:
         self._factory = factory
 
-    def _store(
-        self, session: Session, workspace_id: uuid.UUID = _NIL_WORKSPACE
-    ) -> SqlAlchemyWorkflowStore:
+    @staticmethod
+    def _store_for(session: Session, run_id: uuid.UUID | None) -> SqlAlchemyWorkflowStore:
+        workspace_id = session.scalar(
+            select(DbWorkflowRun.workspace_id).where(DbWorkflowRun.id == run_id)
+        )
+        if workspace_id is None:
+            raise WorkflowRunNotFoundError(run_id)
         return SqlAlchemyWorkflowStore(session, workspace_id=workspace_id)
 
     def create(self, run: WorkflowRun) -> WorkflowRun:
-        with self._factory() as session:
-            result = self._store(session).create(run)
-            session.commit()
-            return result
+        raise NotImplementedError("runs are created by the API in their workspace")
 
     def get(self, run_id: uuid.UUID) -> WorkflowRun:
         with self._factory() as session:
-            return self._store(session).get(run_id)
+            return self._store_for(session, run_id).get(run_id)
 
     def update(self, run: WorkflowRun) -> WorkflowRun:
         with self._factory() as session:
-            result = self._store(session).update(run)
+            result = self._store_for(session, run.id).update(run)
             session.commit()
             return result
 
     def find_active_by_task(self, task_id: uuid.UUID) -> WorkflowRun | None:
-        with self._factory() as session:
-            return self._store(session).find_active_by_task(task_id)
+        raise NotImplementedError("task lookups need a workspace; the worker has none")
 
     def list_by_task(self, task_id: uuid.UUID) -> list[WorkflowRun]:
-        with self._factory() as session:
-            return self._store(session).list_by_task(task_id)
+        raise NotImplementedError("task lookups need a workspace; the worker has none")
 
 
 def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowActivities:

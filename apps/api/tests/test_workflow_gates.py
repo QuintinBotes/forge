@@ -504,6 +504,24 @@ def test_failed_submit_is_recorded_and_sync_recovers_it_once(
     assert again.json() == synced.json()
 
 
+def test_sync_uses_the_latest_request_for_the_gate(
+    h: Harness, member: TestClient, decider: TestClient
+) -> None:
+    """Changes requested, resubmitted, then an approval whose submit fails:
+    sync must apply the approval, never re-apply the old changes request."""
+    run_id = _to_gate(h, member, decider, "spec")
+    _decide(decider, _the_pending(h, run_id, "spec").id, "request_changes")
+    _drive(member, run_id, "submit_spec_for_review")
+    h.failing_submits = 1
+    _decide(decider, _the_pending(h, run_id, "spec").id, "approve")
+    assert _run(member, run_id)["current_state"] == "spec_review"
+
+    synced = member.post(f"/workflow/runs/{run_id}/gates/spec/sync")
+
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["current_state"] == "spec_approved"
+
+
 def test_sync_of_a_foreign_run_is_404(h: Harness, member: TestClient, decider: TestClient) -> None:
     run_id = _to_gate(h, member, decider, "spec")
     h.failing_submits = 1
@@ -622,23 +640,15 @@ def test_post_approvals_refuses_workflow_run_gates(
     assert asyncio.run(h.repo.list(workspace_id=WS)) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "production bug: POST /approvals refuses a workflow_run gate only when "
-        "workflow_run_id is set; one keyed by subject_id alone is accepted and the "
-        "engine's idempotent open reuses it, so approving the run's gate never "
-        "advances the run (the request has no workflow_run_id)"
-    ),
-)
 def test_a_caller_made_request_cannot_take_over_a_runs_gate(
     h: Harness, member: TestClient, decider: TestClient
 ) -> None:
     run_id = _start(h, member)
-    member.post(
+    forged = member.post(
         "/approvals",
         json={"gate_type": "spec", "subject_type": "workflow_run", "subject_id": run_id},
     )
+    assert forged.status_code == 422, forged.text
     _drive(member, run_id, *_TO_SPEC_REVIEW)
 
     _decide(decider, _the_pending(h, run_id, "spec").id, "approve")

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import sys
 from datetime import timedelta
 from typing import TYPE_CHECKING
@@ -256,6 +257,9 @@ def _marketplace_sign(key_file: str, manifest_path: str) -> int:
     manifest_hash = compute_manifest_hash(manifest)
     print(f"manifest_hash: {manifest_hash}")
     print(f"signature:     {sign_manifest_hash(manifest_hash, key)}")
+    # Not secret: lets the author check the key against the registry's public_key.
+    public = base64.b64encode(key.public_key().public_bytes_raw()).decode("ascii")
+    print(f"public_key:    {public}")
     return 0
 
 

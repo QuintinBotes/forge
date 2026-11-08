@@ -73,6 +73,7 @@ def test_sign_prints_hash_and_verifying_signature(
         signature_b64=lines["signature"].strip(),
         public_key_b64=public_b64,
     )
+    assert lines["public_key"].strip() == public_b64
     assert secret_b64 not in out + err
 
 

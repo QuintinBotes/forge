@@ -33,6 +33,8 @@ def load_private_key(path: str | Path) -> Ed25519PrivateKey:
     """
     with open(path, "rb") as fh:
         # fstat on the open fd: the mode checked is the file actually read.
+        # shortcut: mode bits only, ACLs are not checked (as OpenSSH);
+        # check them too if signing keys ever live on shared hosts.
         if os.fstat(fh.fileno()).st_mode & 0o077:
             raise SigningKeyError(
                 f"key file {path} is accessible by group/others; run: chmod 600 {path}"

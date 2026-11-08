@@ -141,6 +141,8 @@ class TemporalWorkflowEngine:
                 "transitions": [],
             },
         )
+        # shortcut: the caller commits this row after start_workflow; a commit failure
+        # leaves an orphaned workflow (spec K §4.8). Commit first in P2.
         self._store.create(run)
 
         params = WorkflowParams(

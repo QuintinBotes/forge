@@ -918,10 +918,11 @@ class MarketplaceService:
         plan: InstallPlan,
         request: InstallRequest,
         yanked: bool,
+        operation: str = "install",
     ) -> None:
         if plan.blocked:
             code = self._block_code(plan)
-            self._audit_denied(s, workspace_id, actor, registry, plan, code)
+            self._audit_denied(s, workspace_id, actor, registry, plan, code, operation=operation)
             s.commit()
             raise InstallBlockedError(plan.block_reason or "install blocked", error_code=code)
 
@@ -929,7 +930,9 @@ class MarketplaceService:
         # the update path's forced acknowledgement cannot relax it.
         violation = kind_policy_violation(plan.kind, plan.verification.status, yanked)
         if violation is not None:
-            self._audit_denied(s, workspace_id, actor, registry, plan, violation)
+            self._audit_denied(
+                s, workspace_id, actor, registry, plan, violation, operation=operation
+            )
             s.commit()
             raise InstallBlockedError(
                 f"{plan.kind.value} refused by kind policy: {violation}", error_code=violation
@@ -937,14 +940,18 @@ class MarketplaceService:
 
         strict = registry.trust_level in (TrustLevel.official.value, TrustLevel.trusted.value)
         if strict and plan.verification.status is not VerificationStatus.verified:
-            self._audit_denied(s, workspace_id, actor, registry, plan, "signature_required")
+            self._audit_denied(
+                s, workspace_id, actor, registry, plan, "signature_required", operation=operation
+            )
             s.commit()
             raise InstallBlockedError(
                 f"{registry.trust_level} registries require a verified signature",
                 error_code="signature_required",
             )
         if plan.verification.needs_acknowledgement and not request.acknowledge_unverified:
-            self._audit_denied(s, workspace_id, actor, registry, plan, "signature_required")
+            self._audit_denied(
+                s, workspace_id, actor, registry, plan, "signature_required", operation=operation
+            )
             s.commit()
             raise InstallBlockedError(
                 "package is unverified — acknowledge_unverified is required",
@@ -1235,7 +1242,9 @@ class MarketplaceService:
                     code=_kind_error_code(row.kind) or "unknown_kind",
                     detail=str(exc),
                 )
-            self._enforce_install_policy(s, workspace_id, actor, registry, plan, request, yanked)
+            self._enforce_install_policy(
+                s, workspace_id, actor, registry, plan, request, yanked, operation="update"
+            )
 
             if manifest.kind is ArtifactKind.skill_profile:
                 existing = (
@@ -1494,12 +1503,14 @@ class MarketplaceService:
         registry: MarketplaceRegistry,
         plan: InstallPlan,
         error_code: str,
+        *,
+        operation: str = "install",
     ) -> None:
         self._write_audit(
             s,
             workspace_id=workspace_id,
             actor=actor,
-            operation="install",
+            operation=operation,
             registry_slug=registry.slug,
             listing_slug=plan.slug,
             version=plan.version,

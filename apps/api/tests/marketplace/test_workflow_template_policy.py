@@ -105,7 +105,9 @@ def _registry(session_factory, *, trust_level: str, public_key: str | None):
         return reg
 
 
-def _denied(session_factory, error_code: str) -> list[MarketplaceAuditLog]:
+def _denied(
+    session_factory, error_code: str, operation: str = "install"
+) -> list[MarketplaceAuditLog]:
     with session_factory() as s:
         return list(
             s.execute(
@@ -113,6 +115,7 @@ def _denied(session_factory, error_code: str) -> list[MarketplaceAuditLog]:
                     MarketplaceAuditLog.result_status == "denied",
                     MarketplaceAuditLog.error_code == error_code,
                     MarketplaceAuditLog.listing_slug == SLUG,
+                    MarketplaceAuditLog.operation == operation,
                 )
             )
             .scalars()
@@ -242,7 +245,7 @@ def test_update_refused_despite_forced_acknowledgement(
     resp = admin_client.post(f"/marketplace/installations/{installation_id}/update?version=1.1.0")
     assert resp.status_code == 422, resp.text
     assert resp.json()["detail"]["error_code"] == code
-    assert _denied(session_factory, code)
+    assert _denied(session_factory, code, "update")
     with session_factory() as s:
         row = s.get(MarketplaceInstallation, installation_id)
         assert row is not None

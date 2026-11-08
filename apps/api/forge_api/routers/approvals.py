@@ -95,13 +95,9 @@ async def create_approval(
     payload feeds the run's merge guard, so a caller-made one could assert
     signals (e.g. ``ci_status_green``) forge never observed (spec K §4.7).
     """
-    if (
-        body.subject_type == WORKFLOW_RUN_SUBJECT
-        and body.workflow_run_id is not None
-        and body.gate_type in APPROVED_EVENT_BY_GATE
-    ):
-        # Exactly the shape the gate hook advances a run on; the engine's
-        # idempotent open would otherwise reuse a caller-made request.
+    if body.subject_type == WORKFLOW_RUN_SUBJECT and body.gate_type in APPROVED_EVENT_BY_GATE:
+        # With or without workflow_run_id: the engine's idempotent open keys on
+        # (subject, gate), so a caller-made request would be reused for the run.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="workflow_run gates are opened by the workflow engine",

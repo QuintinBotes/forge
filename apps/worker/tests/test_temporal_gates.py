@@ -158,15 +158,6 @@ async def test_spec_gate_opens_a_request_and_its_approval_moves_the_run(
         assert approved["actor"] == f"user:{decider.id}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "production bug: the worker's SessionPerCallStore reads runs as the nil "
-        "workspace, and SqlAlchemyWorkflowStore treats a run in any other "
-        "workspace as missing (8010d86), so forge.persist_transition never finds "
-        "a run the API created and retries forever before the first gate"
-    ),
-)
 async def test_a_run_on_the_workers_activities_reaches_its_spec_gate(
     time_skip_env: Any, factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -188,7 +179,6 @@ async def test_a_run_on_the_workers_activities_reaches_its_spec_gate(
     assert request.workflow_run_id == run.id
 
 
-@pytest.mark.xfail(strict=True, reason="production bug: see the test above")
 def test_the_workers_store_reads_a_run_the_api_created(factory: sessionmaker[Session]) -> None:
     task_id = _seed_task(factory)
     with factory() as s:

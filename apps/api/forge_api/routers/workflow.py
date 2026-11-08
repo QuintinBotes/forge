@@ -374,6 +374,7 @@ def sync_gate(
     )
     if (
         request is not None
+        and request.workflow_run_id == run_id
         and request.status is not GateStatus.PENDING
         and run.current_state == WAITING_STATE_BY_GATE[gate]
         and event_for_resolution(gate, request.status) is not None

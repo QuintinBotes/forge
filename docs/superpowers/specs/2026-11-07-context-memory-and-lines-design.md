@@ -524,6 +524,25 @@ Not in this spec:
 - **To verify in P2:** an exception in an `ApprovalService.resolve` hook must not roll back the
   recorded decision (the wrapped `pr` attestation hook can raise).
 
+### 4.8 Known gaps after P0 (2026-11-08)
+
+Found by the P0 verification; none is a regression, and each has an owner phase.
+- **A rejected plan or pr gate leaves a `default_feature` run at its gate.** The definition has no
+  edge out of `plan_review` or `awaiting_review` other than approval, so after a rejection the run
+  can only be cancelled. P2 decides the route (an edge back to drafting, or reopening the gate),
+  alongside the station routing for lines.
+- **Feature-run gates need one approval.** Both engines open them with `required_approvals = 1` and
+  no `review_rules` in the payload, so repo policy cannot raise the quorum yet. P2 stamps the
+  repo's resolved review rules when the engines open a gate.
+- **The V1 engine cannot pass the pr merge guard.** Nothing in V1 produces `ci_status_green` or
+  `spec_validated`, so an approved pr gate records `workflow_event.status = failed` and the run
+  waits for sync. This predates P0. Feature runs that must merge use the Temporal engine.
+- **Temporal start launches the workflow before the API commits the run row.** If the commit fails
+  after `start_workflow`, the workflow retries `persist_transition` on a row that never landed.
+  P2 commits the row first and terminates the workflow when the commit fails.
+- **A raising `pr` attestation hook returns 500 after the decision is recorded.** Already listed
+  under "To verify in P2".
+
 ## 5. Out of scope
 
 Running lore, its `floor` engine or its planning-editor packages (unlicensed; ADR-0010). Kubernetes `Agent` CRDs.
