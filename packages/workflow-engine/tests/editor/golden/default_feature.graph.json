@@ -1,0 +1,400 @@
+{
+  "name": "default_feature",
+  "version": "1",
+  "title": "Default Feature",
+  "description": null,
+  "modes": {
+    "default": "single_agent",
+    "optional": [
+      "supervised_multi_agent"
+    ]
+  },
+  "retry_policy": {
+    "max_retries": 3,
+    "backoff": "exponential",
+    "initial_delay_seconds": 30
+  },
+  "escalation_policy": {
+    "confidence_threshold": 0.72,
+    "on_low_confidence": "pause_and_notify",
+    "on_policy_conflict": "escalate_to_admin"
+  },
+  "nodes": [
+    {
+      "id": "created",
+      "label": null,
+      "kind": "initial",
+      "layout": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "spec_drafting",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 240.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "clarification",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 8160.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "spec_review",
+      "label": null,
+      "kind": "human_gate",
+      "layout": {
+        "x": 7920.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "spec_approved",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 8160.0,
+        "y": 120.0
+      }
+    },
+    {
+      "id": "plan_drafting",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 8400.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "plan_review",
+      "label": null,
+      "kind": "human_gate",
+      "layout": {
+        "x": 8640.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "task_generation",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 8880.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "task_ready",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 9120.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "executing",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 9840.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "verifying",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 9600.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "needs_human_input",
+      "label": null,
+      "kind": "human_gate",
+      "layout": {
+        "x": 9840.0,
+        "y": 120.0
+      }
+    },
+    {
+      "id": "pr_opened",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 9840.0,
+        "y": 240.0
+      }
+    },
+    {
+      "id": "awaiting_review",
+      "label": null,
+      "kind": "human_gate",
+      "layout": {
+        "x": 10080.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "merged",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 10320.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "closed",
+      "label": null,
+      "kind": "terminal",
+      "layout": {
+        "x": 10560.0,
+        "y": 0.0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from_state": "created",
+      "to_state": "spec_drafting",
+      "action": "generate_spec_draft",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": "spec-analyst"
+    },
+    {
+      "id": "e1",
+      "from_state": "spec_drafting",
+      "to_state": "clarification",
+      "action": "gather_clarifications",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e2",
+      "from_state": "clarification",
+      "to_state": "spec_review",
+      "action": "submit_spec_for_review",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e3",
+      "from_state": "spec_review",
+      "to_state": "spec_approved",
+      "action": null,
+      "when": "spec_approved_by_human",
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": "approval_event",
+      "skill": null
+    },
+    {
+      "id": "e4",
+      "from_state": "spec_review",
+      "to_state": "clarification",
+      "action": null,
+      "when": "spec_changes_requested",
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e5",
+      "from_state": "spec_approved",
+      "to_state": "plan_drafting",
+      "action": "generate_plan",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e6",
+      "from_state": "plan_drafting",
+      "to_state": "plan_review",
+      "action": "submit_plan_for_review",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e7",
+      "from_state": "plan_review",
+      "to_state": "task_generation",
+      "action": null,
+      "when": "plan_approved_by_human",
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": "approval_event",
+      "skill": null
+    },
+    {
+      "id": "e8",
+      "from_state": "task_generation",
+      "to_state": "task_ready",
+      "action": "generate_tasks",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e9",
+      "from_state": "task_ready",
+      "to_state": "executing",
+      "action": "start_agent_run",
+      "when": null,
+      "condition": null,
+      "preconditions": [
+        "repo_target_set",
+        "policy_loaded",
+        "skill_profile_set",
+        "knowledge_synced"
+      ],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e10",
+      "from_state": "executing",
+      "to_state": "verifying",
+      "action": "run_checks",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [
+        "lint",
+        "type_check",
+        "tests",
+        "coverage"
+      ],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e11",
+      "from_state": "executing",
+      "to_state": "needs_human_input",
+      "action": null,
+      "when": "low_confidence",
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e12",
+      "from_state": "verifying",
+      "to_state": "pr_opened",
+      "action": "open_pr_with_spec_traceability",
+      "when": "all_checks_passed",
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e13",
+      "from_state": "verifying",
+      "to_state": "executing",
+      "action": null,
+      "when": "checks_failed",
+      "condition": "retry_budget_remaining",
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e14",
+      "from_state": "verifying",
+      "to_state": "needs_human_input",
+      "action": null,
+      "when": "checks_failed",
+      "condition": "retry_budget_exhausted",
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e15",
+      "from_state": "pr_opened",
+      "to_state": "awaiting_review",
+      "action": "request_reviews",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e16",
+      "from_state": "awaiting_review",
+      "to_state": "merged",
+      "action": null,
+      "when": [
+        "review_approved_by_human",
+        "ci_status_green",
+        "spec_validated"
+      ],
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e17",
+      "from_state": "merged",
+      "to_state": "closed",
+      "action": "close_task",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    }
+  ]
+}

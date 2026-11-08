@@ -19,14 +19,16 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from forge_contracts import LineErrorCode, validate_line
 from forge_workflow.editor.catalog import Vocabulary
 from forge_workflow.editor.graph import (
     TERMINAL_STATES,
     TransitionEdge,
     WorkflowGraph,
     edge_triggers,
+    graph_to_line,
 )
 
 #: A non-terminal dead-end here is tolerated (it is an explicit human gate).
@@ -51,10 +53,15 @@ class IssueCode(StrEnum):
     NONDETERMINISTIC_RULES = "nondeterministic_rules"
     DUPLICATE_EDGE = "duplicate_edge"
     PROTECTED_INVARIANT_VIOLATION = "protected_invariant_violation"
+    #: DSL v2: the line does not parse (``parse_line``); one issue per pydantic error.
+    INVALID_DEFINITION = "invalid_definition"
+    #: DSL v2: a line cannot take a bundled definition's name (default_feature, incident).
+    RESERVED_NAME = "reserved_name"
 
 
 class ValidationIssue(BaseModel):
-    code: IssueCode
+    #: A v2 line's ``validate_line`` errors keep their ``LineErrorCode``.
+    code: IssueCode | LineErrorCode
     severity: Severity
     message: str
     node_id: str | None = None
@@ -332,6 +339,47 @@ def collect_validation_issues(
     return issues
 
 
+def collect_line_issues(graph: WorkflowGraph) -> list[ValidationIssue]:
+    """DSL v2: ``parse_line`` then ``validate_line`` (spec K §4.1), as editor issues.
+
+    Every ``LineError`` is an ERROR and keeps its code; its edge index maps to the
+    graph's edge id. The v1 checks do not run: a line's ``when`` tokens are outcomes.
+    """
+    # §4.1 rejects these on a line; the graph always has them, so only a non-default counts.
+    issues = [
+        ValidationIssue(
+            code=IssueCode.INVALID_DEFINITION,
+            severity=Severity.ERROR,
+            message=f"{key}: not allowed on a dsl_version '2' line (DSL v1 only)",
+        )
+        for key in ("modes", "retry_policy", "escalation_policy")
+        if getattr(graph, key)
+        != WorkflowGraph.model_fields[key].get_default(call_default_factory=True)
+    ]
+    try:
+        line = graph_to_line(graph)
+    except ValidationError as exc:
+        return issues + [
+            ValidationIssue(
+                code=IssueCode.INVALID_DEFINITION,
+                severity=Severity.ERROR,
+                message=f"{'.'.join(map(str, e['loc']))}: {e['msg']}",
+            )
+            for e in exc.errors()
+        ]
+    return issues + [
+        ValidationIssue(
+            code=e.code,
+            severity=Severity.ERROR,
+            message=e.message,
+            node_id=e.state,
+            edge_id=None if e.edge is None else graph.edges[e.edge].id,
+            invariant_id=e.invariant,
+        )
+        for e in validate_line(line)
+    ]
+
+
 def _reachable(graph: WorkflowGraph, initials: list[str]) -> set[str]:
     adjacency: dict[str, list[str]] = {n.id: [] for n in graph.nodes}
     for edge in graph.edges:
@@ -366,6 +414,7 @@ __all__ = [
     "ProtectedInvariant",
     "Severity",
     "ValidationIssue",
+    "collect_line_issues",
     "collect_validation_issues",
     "error_count",
     "has_errors",

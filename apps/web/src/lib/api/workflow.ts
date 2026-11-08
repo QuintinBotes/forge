@@ -24,6 +24,7 @@ import {
 import { apiClient, type ForgeApiClient } from "./client";
 import type {
   CreateWorkflowDefinition,
+  ForkWorkflowRequest,
   SaveWorkflowDraftRequest,
   WorkflowCatalog,
   WorkflowDefinitionDetail,
@@ -97,6 +98,24 @@ export function useForkBundledWorkflow(
   const queryClient = useQueryClient();
   return useMutation<WorkflowDefinitionDetail, Error, string>({
     mutationFn: (name) => client.forkBundledWorkflow(name),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: workflowKeys.all() });
+    },
+  });
+}
+
+export interface ForkWorkflowVariables {
+  source: string;
+  body: ForkWorkflowRequest;
+}
+
+/** Copy a definition (e.g. a marketplace line) to a new name; refreshes the list. */
+export function useForkWorkflowDefinition(
+  client: ForgeApiClient = apiClient,
+): UseMutationResult<WorkflowDefinitionDetail, Error, ForkWorkflowVariables> {
+  const queryClient = useQueryClient();
+  return useMutation<WorkflowDefinitionDetail, Error, ForkWorkflowVariables>({
+    mutationFn: ({ source, body }) => client.forkWorkflowDefinition(source, body),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: workflowKeys.all() });
     },

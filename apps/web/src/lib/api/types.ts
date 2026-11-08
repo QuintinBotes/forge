@@ -2062,8 +2062,20 @@ export interface PmHealthResult {
 
 export type WorkflowRevisionStatus = "draft" | "published" | "archived";
 export type WorkflowValidationState = "valid" | "invalid" | "unvalidated";
-export type WorkflowDefinitionOrigin = "bundled" | "bundled_fork" | "custom";
-export type WorkflowNodeKind = "normal" | "initial" | "terminal" | "human_gate";
+export type WorkflowDefinitionOrigin =
+  | "bundled"
+  | "bundled_fork"
+  | "custom"
+  | "marketplace";
+/** `agent` / `service` / `human` are DSL v2 station states. */
+export type WorkflowNodeKind =
+  | "normal"
+  | "initial"
+  | "terminal"
+  | "human_gate"
+  | "agent"
+  | "service"
+  | "human";
 export type WorkflowIssueSeverity = "error" | "warning";
 
 /** Canvas position of a state node (UI-only; persisted in `graph_json`). */
@@ -2078,6 +2090,8 @@ export interface WorkflowStateNode {
   label?: string | null;
   kind: WorkflowNodeKind;
   layout: WorkflowNodeLayout;
+  /** DSL v2 only: the state's station, as the server dumps it. */
+  station?: Record<string, unknown> | null;
 }
 
 /** A workflow transition rendered as a graph edge (mirrors `WorkflowTransition`). */
@@ -2117,6 +2131,12 @@ export interface WorkflowGraph {
   escalation_policy: WorkflowEscalationPolicy;
   nodes: WorkflowStateNode[];
   edges: WorkflowTransitionEdge[];
+  /** DSL v2 line header; absent on a v1 graph. */
+  dsl_version?: "2" | null;
+  initial?: string | null;
+  terminals?: Record<string, string> | null;
+  budget?: Record<string, unknown> | null;
+  concurrency?: Record<string, unknown> | null;
 }
 
 /** One server-authoritative validation problem, anchored to a node or edge. */
@@ -2190,6 +2210,25 @@ export interface WorkflowCatalog {
   effects: WorkflowEffectMeta[];
   skills: string[];
   modes: string[];
+  /** DSL v2 station palette (spec K §4.3). */
+  services?: WorkflowServiceMeta[];
+  gates?: string[];
+  context_templates?: string[];
+}
+
+/** A DSL v2 service a service station can call (`SERVICE_CATALOG`). */
+export interface WorkflowServiceMeta {
+  name: string;
+  effect: "read" | "write_external";
+  idempotent: boolean;
+  max_timeout_seconds: number;
+  max_attempts: number;
+  /** input name -> trust */
+  inputs: Record<string, "task" | "any">;
+  outputs: Record<string, { type: string; trust: "task" | "any" }>;
+  /** Outcomes beyond the common service outcomes. */
+  outcomes: string[];
+  failure_outcomes: string[];
 }
 
 export interface CreateWorkflowDefinition {
@@ -2197,6 +2236,12 @@ export interface CreateWorkflowDefinition {
   title: string;
   description?: string | null;
   graph?: WorkflowGraph | null;
+}
+
+/** Copy a workspace definition (e.g. a marketplace line) to a new name. */
+export interface ForkWorkflowRequest {
+  name: string;
+  title: string;
 }
 
 export interface SaveWorkflowDraftRequest {

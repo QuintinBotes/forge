@@ -28,6 +28,7 @@ from forge_api.routers._rbac import require_permission
 from forge_workflow.editor.catalog import CatalogResponse, RegistryCatalog
 from forge_workflow.editor.errors import (
     BundledReadOnlyError,
+    DefinitionManagedByMarketplaceError,
     DefinitionNameConflictError,
     DefinitionNotFoundError,
     PublishBlockedError,
@@ -39,6 +40,7 @@ from forge_workflow.editor.schemas import (
     DefinitionDetail,
     DefinitionDiff,
     DefinitionSummary,
+    ForkRequest,
     ImportRequest,
     RevisionDetail,
     RevisionSummary,
@@ -121,6 +123,8 @@ def _editor_errors() -> Iterator[None]:
                 "errors": [e.model_dump(mode="json") for e in exc.errors],
             },
         ) from exc
+    except DefinitionManagedByMarketplaceError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.code) from exc
     except (DefinitionNotFoundError, RevisionNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (BundledReadOnlyError, DefinitionNameConflictError) as exc:
@@ -167,9 +171,14 @@ def create_definition(
     response_model=DefinitionDetail,
     status_code=status.HTTP_201_CREATED,
 )
-def fork_bundled(service: ServiceDep, principal: AdminDep, name: str) -> DefinitionDetail:
+def fork_bundled(
+    service: ServiceDep, principal: AdminDep, name: str, body: ForkRequest | None = None
+) -> DefinitionDetail:
+    """No body: fork a bundled definition in place. A body: copy ``name`` to ``body.name``."""
     with _editor_errors():
-        return service.fork_bundled(principal.workspace_id, name, actor=principal.user_id)
+        if body is None:
+            return service.fork_bundled(principal.workspace_id, name, actor=principal.user_id)
+        return service.fork_definition(principal.workspace_id, name, body, actor=principal.user_id)
 
 
 # --------------------------------------------------------------------------- #

@@ -17,7 +17,11 @@ from forge_workflow.editor.validation import ValidationIssue
 
 RevisionStatus = Literal["draft", "published", "archived"]
 ValidationState = Literal["valid", "invalid", "unvalidated"]
-DefinitionOrigin = Literal["bundled", "bundled_fork", "custom"]
+DefinitionOrigin = Literal["bundled", "bundled_fork", "custom", "marketplace"]
+
+
+def _is_none(value: object) -> bool:
+    return value is None
 
 
 class RevisionSummary(BaseModel):
@@ -74,6 +78,13 @@ class ImportRequest(BaseModel):
     dsl_yaml: str = Field(max_length=200_000)
 
 
+class ForkRequest(BaseModel):
+    """Copy a workspace definition (such as a marketplace-managed line) to a new name."""
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{1,62}$")
+    title: str = Field(min_length=1, max_length=160)
+
+
 class RollbackRequest(BaseModel):
     to_revision: int = Field(ge=1)
 
@@ -95,6 +106,11 @@ class DefinitionDiff(BaseModel):
     states_added: list[str] = Field(default_factory=list)
     states_removed: list[str] = Field(default_factory=list)
     policy_changed: bool = False
+    # DSL v2 only (None, and left out of the dump, when neither side is a line).
+    #: States in both revisions whose station changed.
+    stations_changed: list[str] | None = Field(default=None, exclude_if=_is_none)
+    #: ``initial``, ``terminals``, ``budget`` or ``concurrency`` changed.
+    header_changed: bool | None = Field(default=None, exclude_if=_is_none)
 
 
 __all__ = [
@@ -103,6 +119,7 @@ __all__ = [
     "DefinitionDiff",
     "DefinitionOrigin",
     "DefinitionSummary",
+    "ForkRequest",
     "ImportRequest",
     "RevisionDetail",
     "RevisionStatus",
