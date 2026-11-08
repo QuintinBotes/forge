@@ -8,14 +8,18 @@ run, and builds the main-path tool belt over it. Declared ``policy.commands``
 run inside that session; the model only chooses which one.
 
 The worktree is removed afterwards but the run branch and its commits stay in
-the clone, so the finalizer (G2) can push them.
+the clone, so the finalizer (G2) can push them. :func:`remove_run_worktrees`
+removes a worktree a crashed or cancelled run left behind (``forge.cleanup_worktree``).
 """
 
 from __future__ import annotations
 
 import asyncio
+import shutil
+import subprocess
+import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +42,56 @@ class RunWorkspace:
     path: Path
     branch: str
     tools: ToolRegistry
+
+
+def run_branch(prefix: str, run_id: uuid.UUID) -> str:
+    """The branch :func:`prepared_workspace` creates for ``run_id``."""
+    return f"{prefix}/run-{run_id.hex[:12]}"
+
+
+def remove_run_worktrees(
+    repos: Iterable[Path], run_ids: Iterable[uuid.UUID], *, deadline: float | None = None
+) -> list[Path]:
+    """Remove the worktrees left in ``repos`` on these runs' branches; return what was removed.
+
+    Idempotent: a run with no worktree left is a no-op. The run branches stay, as
+    after a normal run. Past ``deadline`` (``time.monotonic()``) it raises
+    ``TimeoutError`` instead of starting another git call.
+    """
+
+    def git(repo: Path, *args: str) -> str:
+        timeout = _GIT_TIMEOUT
+        if deadline is not None:
+            timeout = min(timeout, deadline - time.monotonic())
+            if timeout <= 0:
+                raise TimeoutError("worktree cleanup ran out of time")
+        return _git_out(repo, *args, timeout=timeout)
+
+    suffixes = tuple(run_branch("", run_id) for run_id in run_ids)
+    removed: list[Path] = []
+    if not suffixes:
+        return removed
+    for repo in repos:
+        listing = git(repo, "worktree", "list", "--porcelain")
+        for entry in listing.split("\n\n"):
+            fields = dict(line.partition(" ")[::2] for line in entry.splitlines())
+            if fields.get("branch", "").endswith(suffixes):
+                path = Path(fields["worktree"])
+                git(repo, "worktree", "remove", "--force", str(path))
+                if path.parent.name.startswith("forge-wt-"):  # WorktreeSandbox's temp holder
+                    shutil.rmtree(path.parent, ignore_errors=True)
+                removed.append(path)
+        git(repo, "worktree", "prune")
+    return removed
+
+
+_GIT_TIMEOUT = 60.0
+
+
+def _git_out(repo: Path, *args: str, timeout: float = _GIT_TIMEOUT) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True, timeout=timeout
+    ).stdout
 
 
 def _repo_policy(worktree: Path) -> Policy | None:
@@ -64,7 +118,7 @@ def prepared_workspace(
     base_branch = target.base_branch if target else "main"
     prefix = (target.branch_prefix if target else None) or "forge"
     worktree_sandbox = WorktreeSandbox(repo_path, base_branch=base_branch, branch_prefix=prefix)
-    worktree = worktree_sandbox.create(branch=f"{prefix}/run-{run_id.hex[:12]}")
+    worktree = worktree_sandbox.create(branch=run_branch(prefix, run_id))
     loop = asyncio.new_event_loop()
     session: SandboxSession | None = None
     try:
@@ -107,4 +161,4 @@ def prepared_workspace(
         worktree_sandbox.cleanup()
 
 
-__all__ = ["RunWorkspace", "prepared_workspace"]
+__all__ = ["RunWorkspace", "prepared_workspace", "remove_run_worktrees", "run_branch"]

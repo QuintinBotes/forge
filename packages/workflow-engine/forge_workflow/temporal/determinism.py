@@ -14,6 +14,7 @@ import-purity assertion in ``test_determinism.py``).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -55,6 +56,14 @@ class PureGuardContext:
     #: from the load_guard_inputs Activity: preconditions + plan flag.
     preconditions: dict[str, bool] | None = None
     plan_required: bool = True
+    #: Station runs (spec K §4.2): service boolean outputs, keyed ``"<state>.<key>"``.
+    station_flags: dict[str, bool] | None = None
+
+    def __post_init__(self) -> None:
+        for key in self.station_flags or {}:
+            state, _, name = key.partition(".")
+            if not (state and name):  # a bare key could shadow a flag such as all_checks_passed
+                raise ValueError(f"station flag {key!r} is not '<state>.<key>'")
 
     def as_flags(self) -> dict[str, Any]:
         """Flatten into the boolean flag map the guard evaluator reads."""
@@ -69,6 +78,8 @@ class PureGuardContext:
         }
         for key, value in (self.merge_signals or {}).items():
             flags[key] = bool(value)
+        for key, value in (self.station_flags or {}).items():
+            flags[key] = bool(value)
         return flags
 
 
@@ -76,7 +87,7 @@ class PureGuardContext:
 class TransitionDecision:
     """The resolved transition for a ``(state, event)`` pair."""
 
-    to_state: WorkflowState
+    to_state: WorkflowState | str
     guard_results: dict[str, bool] = field(default_factory=dict)
     effects: list[str] = field(default_factory=list)
     record: str | None = None
@@ -96,10 +107,19 @@ def _triggers(t: WorkflowTransition) -> set[str]:
 
 
 class TransitionEvaluator:
-    """A pure evaluator over a :class:`WorkflowDefinition` (no IO, no clock)."""
+    """A pure evaluator over a :class:`WorkflowDefinition` (no IO, no clock).
 
-    def __init__(self, definition: WorkflowDefinition) -> None:
+    ``state_cast`` types the resolved ``to_state``: the default keeps the feature
+    path on :class:`WorkflowState`; station runs pass ``str`` (open states).
+    """
+
+    def __init__(
+        self,
+        definition: WorkflowDefinition,
+        state_cast: Callable[[str], WorkflowState | str] = WorkflowState,
+    ) -> None:
         self._definition = definition
+        self._state_cast = state_cast
 
     @property
     def definition(self) -> WorkflowDefinition:
@@ -157,7 +177,7 @@ class TransitionEvaluator:
             results, unmet = self._evaluate_guards(t, event, ctx, flags)
             if not unmet:
                 return TransitionDecision(
-                    to_state=WorkflowState(t.to_state),
+                    to_state=self._state_cast(t.to_state),
                     guard_results=results,
                     effects=[t.action] if t.action else [],
                     record=t.record,

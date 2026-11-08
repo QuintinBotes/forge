@@ -134,3 +134,48 @@ def test_load_definition_round_trips(engine: WorkflowEngineImpl) -> None:
 
     definition = engine.load_definition(DEFAULT_FEATURE_WORKFLOW_YAML)
     assert definition.name == "default_feature"
+
+
+# -- cancel (spec K §4.11: a rejected plan or pr gate ends the run) ---------- #
+
+
+def test_cancel_ends_a_running_run_as_the_actor(engine: WorkflowEngineImpl) -> None:
+    run = engine.start(uuid.uuid4())
+    assert run.id is not None
+
+    cancelled = engine.cancel(run.id, actor="user:decider", reason="gate_plan_rejected")
+
+    assert (cancelled.current_state, cancelled.status) == ("cancelled", RunStatus.CANCELLED)
+    assert cancelled.completed_at is not None
+    assert cancelled.context["last_event"] == "cancel"
+    assert cancelled.context["last_actor"] == "user:decider"
+    assert cancelled.context["cancel_reason"] == "gate_plan_rejected"
+    assert engine.get_run(run.id) == cancelled
+
+
+def test_cancelling_a_cancelled_run_changes_nothing(engine: WorkflowEngineImpl) -> None:
+    run = engine.start(uuid.uuid4())
+    assert run.id is not None
+    first = engine.cancel(run.id, actor="user:a", reason="gate_plan_rejected").model_copy(deep=True)
+
+    again = engine.cancel(run.id, actor="user:b", reason="gate_pr_rejected")
+
+    assert again == first
+
+
+@pytest.mark.parametrize(
+    ("state", "status"),
+    [("merged", RunStatus.SUCCEEDED), ("failed", RunStatus.FAILED)],
+)
+def test_cancel_leaves_a_finished_run_as_it_is(state: str, status: RunStatus) -> None:
+    store = InMemoryWorkflowStore()
+    engine = WorkflowEngineImpl(store=store)
+    run = engine.start(uuid.uuid4())
+    assert run.id is not None
+    run.current_state, run.status = state, status
+    store.update(run)
+
+    after = engine.cancel(run.id, actor="user:decider", reason="gate_pr_rejected")
+
+    assert (after.current_state, after.status) == (state, status)
+    assert "cancel_reason" not in after.context
