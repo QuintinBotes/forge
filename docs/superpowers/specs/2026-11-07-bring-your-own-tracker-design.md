@@ -49,6 +49,8 @@ same `BaseAdapter` / `PMAdapter` contract, with `PMProvider.github_issues`:
   enqueues a run through the same path as `POST /agent/runs` (server-owned context, connected-repo
   check). Idempotent per `(issue, label event id)`.
 - The run's outcome is written back per M2.
+- Next: status-transition triggers, and label triggers for Linear/Jira (M3 ships GitHub Issues
+  `issues.labeled` only).
 
 ## 5. Acceptance criteria
 

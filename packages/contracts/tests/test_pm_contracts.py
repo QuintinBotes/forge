@@ -92,8 +92,10 @@ def test_connection_config_defaults() -> None:
     )
     assert cfg.auth_type == "oauth"
     assert cfg.sync_direction is pm.SyncDirection.bidirectional
-    assert cfg.conflict_policy is pm.ConflictPolicy.newest_wins
+    # Spec M (M2): new connections default to tracker-wins.
+    assert cfg.conflict_policy is pm.ConflictPolicy.external_wins
     assert cfg.on_external_delete == "unlink"
+    assert cfg.dispatch == {}
 
 
 def test_pm_adapter_is_runtime_checkable_protocol() -> None:

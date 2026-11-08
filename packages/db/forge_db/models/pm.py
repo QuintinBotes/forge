@@ -57,7 +57,7 @@ class PMConnection(WorkspaceScopedModel):
         Index("ix_pm_connection_workspace_status", "workspace_id", "status"),
     )
 
-    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider), nullable=False)
+    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider, length=32), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("project.id", ondelete="CASCADE"), nullable=False
@@ -76,7 +76,7 @@ class PMConnection(WorkspaceScopedModel):
         enum_type(PMSyncDirection), default=PMSyncDirection.BIDIRECTIONAL, nullable=False
     )
     conflict_policy: Mapped[PMConflictPolicy] = mapped_column(
-        enum_type(PMConflictPolicy), default=PMConflictPolicy.NEWEST_WINS, nullable=False
+        enum_type(PMConflictPolicy), default=PMConflictPolicy.EXTERNAL_WINS, nullable=False
     )
     status_map: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     priority_map: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
@@ -119,7 +119,7 @@ class PMTaskLink(WorkspaceScopedModel):
     forge_task_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("task.id", ondelete="CASCADE"), nullable=False
     )
-    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider), nullable=False)
+    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider, length=32), nullable=False)
     external_id: Mapped[str] = mapped_column(String(255), nullable=False)
     external_key: Mapped[str] = mapped_column(String(255), nullable=False)
     external_url: Mapped[str] = mapped_column(String(1024), nullable=False)
@@ -147,7 +147,7 @@ class PMWebhookDelivery(ForgeModel):
         Index("ix_pm_webhook_delivery_conn_received", "connection_id", "received_at"),
     )
 
-    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider), nullable=False)
+    provider: Mapped[PMProvider] = mapped_column(enum_type(PMProvider, length=32), nullable=False)
     connection_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("pm_connection.id", ondelete="SET NULL"),

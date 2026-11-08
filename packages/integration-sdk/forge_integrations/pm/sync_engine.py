@@ -10,6 +10,7 @@ provider and can be wired to the real board service or to in-memory fakes.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Literal, Protocol
@@ -222,6 +223,33 @@ class InMemoryBoardWriter:
 
 ECHO_SOURCE = "pm_sync"
 
+#: Fields the connected tracker owns (spec M M2 / ADR-0019). Under
+#: ``external_wins`` an outbound sync must never write them; forge writes back
+#: only what it owns (a run-state comment carrying the PR link, and the one
+#: optional status transition the connection maps).
+TRACKER_OWNED_FIELDS: frozenset[str] = frozenset(
+    {"title", "description", "status", "assignee", "priority", "labels"}
+)
+
+_RUN_MARKER_RE = re.compile(r"<!--\s*forge:run:([0-9a-fA-F-]{36})\s*-->")
+
+
+def run_comment_marker(run_id: UUID | str) -> str:
+    """The hidden marker every forge-authored run-state comment carries."""
+    return f"<!-- forge:run:{run_id} -->"
+
+
+def extract_run_marker(text: str | None) -> str | None:
+    """The run id from a forge comment marker in ``text``, else ``None``.
+
+    A tracker webhook echoing a comment whose body carries the marker is an
+    echo of forge's own write-back and is skipped at intake (spec M M2).
+    """
+    if not isinstance(text, str) or not text:
+        return None
+    match = _RUN_MARKER_RE.search(text)
+    return match.group(1) if match else None
+
 
 class PMSyncEngine:
     def __init__(
@@ -266,6 +294,16 @@ class PMSyncEngine:
         forge_hash = forge_content_hash(forge_task)
 
         if link is None:
+            if self.conflict_policy == ConflictPolicy.external_wins:
+                # Spec M M2 (tracker wins): the tracker is the record, so an
+                # unlinked forge task is never pushed into it — creating the
+                # issue would write every tracker-owned field.
+                return SyncOutcome(
+                    direction=Direction.OUT,
+                    forge_task_id=forge_task.id,
+                    action="no_change",
+                    detail={"reason": "external_wins", "suppressed": "create"},
+                )
             external = await self._create_external(forge_task)
             new_link = LinkRecord(
                 connection_id=self.connection_id,
@@ -295,6 +333,21 @@ class PMSyncEngine:
 
         # Forge changed. Did external change too since the last sync?
         external_now = await self.adapter.fetch_external(link.external_id)
+        if self.conflict_policy == ConflictPolicy.external_wins:
+            # Spec M M2 (tracker wins): a forge-side edit of a tracker-owned
+            # field never reaches the tracker, conflict or not — the board is
+            # brought back to the tracker's value instead.
+            forge_applied = self._apply_inbound_update(link, external_now)
+            self._refresh(link, forge_applied, external_now)
+            self.links.upsert(link)
+            return SyncOutcome(
+                direction=Direction.IN,
+                forge_task_id=link.forge_task_id,
+                external_id=external_now.external_id,
+                action="updated",
+                winner="external",
+                detail={"reason": "external_wins"},
+            )
         external_changed = (
             external_content_hash(external_now) != link.last_inbound_hash
             if link.last_inbound_hash is not None
@@ -579,6 +632,8 @@ class PMSyncEngine:
 
 
 __all__ = [
+    "ECHO_SOURCE",
+    "TRACKER_OWNED_FIELDS",
     "AuditSink",
     "BoardWriter",
     "ForgeTaskPatch",
@@ -589,4 +644,6 @@ __all__ = [
     "LinkRepository",
     "PMSyncEngine",
     "ProviderError",
+    "extract_run_marker",
+    "run_comment_marker",
 ]

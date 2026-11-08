@@ -328,10 +328,11 @@ class ApprovalStatus(enum.StrEnum):
 
 
 class PMProvider(enum.StrEnum):
-    """Supported external project-management providers (F18)."""
+    """Supported external project-management providers (F18; spec M adds GitHub Issues)."""
 
     JIRA = "jira"
     LINEAR = "linear"
+    GITHUB_ISSUES = "github_issues"
 
 
 class PMAuthType(enum.StrEnum):

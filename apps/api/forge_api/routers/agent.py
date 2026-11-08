@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 import os
@@ -30,11 +31,21 @@ from forge_api.deps import Principal, get_current_principal
 from forge_api.observability.redaction import redact_text
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.fork import ForkRunRequest, ForkRunResponse
+from forge_api.schemas.pm import PMDispatchConfig
 from forge_api.schemas.replay import (
     ReplayCallDiffOut,
     ReplayDivergenceOut,
     ReplayRunRequest,
     ReplayRunResponse,
+)
+from forge_api.services.agent_dispatch import (
+    SERVER_OWNED_CONTEXT,  # noqa: F401  (re-export: historical import path)
+    AgentEnqueueFailed,
+    RepoNotConnected,
+    TrackerRefNotFound,
+    build_tracker_objective,
+    create_and_enqueue_run,
+    resolve_tracker_ref,
 )
 from forge_api.services.fork_service import (
     PromptOverrideModelClient,
@@ -42,9 +53,10 @@ from forge_api.services.fork_service import (
 )
 from forge_api.services.replay_service import replay_recording
 from forge_api.settings import get_settings
-from forge_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
-from forge_db.models import AgentRun, RepositoryConnection, RunRecording
+from forge_contracts import AgentObjective, AgentRunResult, ModelClient
+from forge_db.models import AgentRun, RunRecording
 from forge_db.models.enums import RunStatus as DbRunStatus
+from forge_integrations.pm.errors import ExternalNotFound
 from forge_policy import (
     SkillProfileNotAllowedError,
     enforce_skill_profile_allowed,
@@ -344,30 +356,80 @@ def _enforce_skill_profiles(objective: AgentObjective) -> None:
             ) from exc
 
 
-#: Run-context keys only the server sets; any caller-supplied value is dropped.
-SERVER_OWNED_CONTEXT = frozenset(
-    {
-        "agent_run_id",
-        "workspace_id",
-        "parent_agent_run_id",
-        "repo_path",
-        "repo_full_name",
-        "worktree_path",
-        "role",
-    }
-)
+class CreateRunRequest(AgentObjective):
+    """``POST /agent/runs`` body: an objective, or a tracker reference.
+
+    With ``tracker_ref`` (``provider:key``, e.g.
+    ``github_issues:acme/widgets#42``) the objective is built from the
+    re-fetched tracker item instead and the caller's ``objective`` text is not
+    required (spec M M3); without it, today's contract is unchanged.
+    """
+
+    objective: str = ""
+    tracker_ref: str | None = None
 
 
-def _repo_connected(session: Session, workspace_id: uuid.UUID, repo: str) -> bool:
-    """An active repository connection in this workspace names ``repo``."""
-    row = session.scalar(
-        select(RepositoryConnection.id).where(
-            RepositoryConnection.workspace_id == workspace_id,
-            RepositoryConnection.is_active.is_(True),
-            (RepositoryConnection.repo_id == repo) | (RepositoryConnection.name == repo),
+def get_tracker_adapter_factory() -> Callable[[Any], Any]:
+    """Resolve a PM adapter for a connection (lazy; override in tests).
+
+    Construction is deferred until a ``tracker_ref`` actually needs resolving,
+    so the plain run path never builds the PM service (vault/session wiring).
+    """
+
+    def _factory(connection: Any) -> Any:
+        from forge_api.routers.pm import get_pm_service
+
+        return get_pm_service().get_adapter_for_project(
+            connection.workspace_id, connection.project_id, connection.provider.value
         )
+
+    return _factory
+
+
+TrackerAdapterFactoryDep = Annotated[Callable[[Any], Any], Depends(get_tracker_adapter_factory)]
+
+
+def _objective_from_tracker_ref(
+    principal: Principal,
+    store: AgentRunStore,
+    tracker_adapters: Callable[[Any], Any],
+    body: CreateRunRequest,
+) -> tuple[AgentObjective, dict]:
+    assert body.tracker_ref is not None
+    try:
+        resolved = resolve_tracker_ref(store.session, principal.workspace_id, body.tracker_ref)
+    except TrackerRefNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="tracker ref not found"
+        ) from exc
+    adapter = tracker_adapters(resolved.connection)
+    try:
+        external = asyncio.run(adapter.fetch_external(resolved.external_id))
+    except ExternalNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="tracker ref not found"
+        ) from exc
+
+    dispatch_cfg = PMDispatchConfig()
+    raw_dispatch = (resolved.connection.config or {}).get("dispatch")
+    if raw_dispatch:
+        try:
+            dispatch_cfg = PMDispatchConfig.model_validate(raw_dispatch)
+        except ValidationError:
+            dispatch_cfg = PMDispatchConfig()
+    repository = dispatch_cfg.repository
+    if repository is None and body.primary_repo_target is not None:
+        repository = body.primary_repo_target.repo
+    if repository is None:
+        key = resolved.connection.external_project_key
+        repository = key if "/" in key else None
+    return build_tracker_objective(
+        external,
+        connection_id=resolved.connection.id,
+        repository=repository,
+        actor=f"user:{principal.user_id}",
+        task_id=resolved.task_id,
     )
-    return row is not None
 
 
 @router.post("/runs", response_model=AgentRunResult, status_code=status.HTTP_202_ACCEPTED)
@@ -376,50 +438,41 @@ def run(
     runner: RunnerDep,
     store: StoreDep,
     enqueue: EnqueueDep,
-    objective: AgentObjective,
+    tracker_adapters: TrackerAdapterFactoryDep,
+    body: CreateRunRequest,
 ) -> AgentRunResult:
     """Admit a run only when a provider is available, then dispatch to the worker."""
-    _enforce_skill_profiles(objective)
-    run_id = uuid.uuid4()
-    # Trust boundary: paths, identities and roles in the run context are the server's to
-    # set. A caller-supplied repo_path or worktree_path would let a run act on another
-    # tenant's mirror or anywhere on the worker host.
-    context = {k: v for k, v in objective.context.items() if k not in SERVER_OWNED_CONTEXT}
-    context |= {"agent_run_id": str(run_id), "workspace_id": str(principal.workspace_id)}
-    for target in objective.repo_targets:
-        if not _repo_connected(store.session, principal.workspace_id, target.repo):
+    server_context: dict | None = None
+    if body.tracker_ref:
+        objective, server_context = _objective_from_tracker_ref(
+            principal, store, tracker_adapters, body
+        )
+    else:
+        if not body.objective:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"repository {target.repo!r} is not connected to this workspace",
+                detail="objective is required when tracker_ref is not given",
             )
-    if objective.primary_repo_target is not None:
-        context["repo_full_name"] = objective.primary_repo_target.repo
-    if objective.execution_mode == ExecutionMode.SUPERVISED_MULTI_AGENT:
-        context["parent_agent_run_id"] = str(run_id)
-    objective = objective.model_copy(update={"context": context})
-    row = AgentRun(
-        id=run_id,
-        workspace_id=principal.workspace_id,
-        inputs=objective.model_dump(mode="json"),
-        skill_profile=objective.skill_profile.name if objective.skill_profile else None,
-        is_supervisor=objective.execution_mode == ExecutionMode.SUPERVISED_MULTI_AGENT,
-        status=DbRunStatus.PENDING,
-    )
-    store.session.add(row)
-    # A fast worker must see the row before it consumes the message.
-    store.session.commit()
+        objective = AgentObjective.model_validate(body.model_dump(exclude={"tracker_ref"}))
+        _enforce_skill_profiles(objective)
     try:
-        enqueue(objective)
-    except Exception as exc:
-        row.status = DbRunStatus.FAILED
-        row.output = {"error": "enqueue_failed"}
-        store.session.commit()
-        logger.exception("failed to enqueue agent run %s", run_id)
+        return create_and_enqueue_run(
+            store.session,
+            workspace_id=principal.workspace_id,
+            objective=objective,
+            enqueue=enqueue,
+            server_context=server_context,
+        )
+    except RepoNotConnected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"repository {exc.args[0]!r} is not connected to this workspace",
+        ) from exc
+    except AgentEnqueueFailed as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="agent run could not be enqueued",
         ) from exc
-    return AgentRunResult(run_id=run_id, task_id=objective.task_id)
 
 
 @router.get("/runs/{run_id}", response_model=AgentRunResult)

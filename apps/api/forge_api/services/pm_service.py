@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.auth.vault import SecretNotFoundError, SecretVault
 from forge_api.observability.audit import AuditCategory, AuditLog
+from forge_api.schemas.pm import PMDispatchConfig
 from forge_contracts.enums import APIKeyKind
 from forge_contracts.pm import (
     AdapterContext,
@@ -58,6 +59,7 @@ from forge_db.models.enums import (
 )
 from forge_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
 from forge_integrations.pm import PMError, build_adapter
+from forge_integrations.pm.github_issues import mapping as github_issues_mapping
 from forge_integrations.pm.jira import auth as jira_auth
 from forge_integrations.pm.jira import mapping as jira_mapping
 from forge_integrations.pm.linear import auth as linear_auth
@@ -85,10 +87,19 @@ def _celery_app() -> object:  # pragma: no cover - prod seam
     return Celery("forge-api-enqueue", broker=url, backend=url)
 
 
-def enqueue_process_webhook(delivery_row_id: uuid.UUID) -> None:  # pragma: no cover - prod seam
-    """Enqueue the worker board-write task for one persisted delivery."""
+def enqueue_process_webhook(
+    delivery_row_id: uuid.UUID, payload: dict | None = None
+) -> None:  # pragma: no cover - prod seam
+    """Enqueue the worker board-write task for one persisted delivery.
+
+    ``payload`` is the adapter's parsed, secret-free webhook hint subset (spec
+    M M3 needs the label / sender / repository / echo-marker hints, which are
+    not columns on the delivery row). Omitted for providers that do not need
+    it, so already-queued messages without the kwarg stay consumable.
+    """
+    kwargs = {"payload": payload} if payload is not None else {}
     _celery_app().send_task(  # type: ignore[attr-defined]
-        PROCESS_WEBHOOK_TASK, args=[str(delivery_row_id)]
+        PROCESS_WEBHOOK_TASK, args=[str(delivery_row_id)], kwargs=kwargs
     )
 
 
@@ -123,7 +134,9 @@ class PMConnectionService:
         vault: SecretVault,
         audit: AuditLog,
         transport_factory: Callable[[PMConnection], PMTransport] = _default_transport_factory,
-        process_webhook_enqueue: Callable[[uuid.UUID], None] = enqueue_process_webhook,
+        process_webhook_enqueue: Callable[[uuid.UUID, dict | None], None] = (
+            enqueue_process_webhook
+        ),
     ) -> None:
         self._sf = session_factory
         self._vault = vault
@@ -176,6 +189,11 @@ class PMConnectionService:
             if cfg.api_token_email:
                 config["api_token_email"] = cfg.api_token_email
             config["on_external_delete"] = cfg.on_external_delete
+            # Spec M M3: validated by the API schema model; a bad dispatch dict
+            # raises ValidationError here (the router maps it to 422).
+            config["dispatch"] = PMDispatchConfig.model_validate(cfg.dispatch or {}).model_dump(
+                mode="json"
+            )
 
             connection = PMConnection(
                 workspace_id=workspace_id,
@@ -265,6 +283,7 @@ class PMConnectionService:
         field_map: dict | None = None,
         sync_direction: PMSyncDirection | None = None,
         conflict_policy: PMConflictPolicy | None = None,
+        dispatch: PMDispatchConfig | None = None,
         enabled: bool | None = None,
     ) -> PMConnection:
         with self._sf() as session:
@@ -281,6 +300,8 @@ class PMConnectionService:
                 conn.sync_direction = sync_direction
             if conflict_policy is not None:
                 conn.conflict_policy = conflict_policy
+            if dispatch is not None:
+                conn.config = {**(conn.config or {}), "dispatch": dispatch.model_dump(mode="json")}
             if enabled is not None:
                 conn.status = (
                     PMConnectionStatus.CONNECTED if enabled else PMConnectionStatus.DISABLED
@@ -374,6 +395,11 @@ class PMConnectionService:
         status = PMDeliveryStatus.RECEIVED
         if disabled or outbound_only:
             status = PMDeliveryStatus.SKIPPED
+        elif event.payload.get("forge_run_marker"):
+            # Spec M M2: forge's own run-state comment echoed back by the
+            # tracker (hidden ``<!-- forge:run:<id> -->`` marker) — never a
+            # board write, never a dispatch.
+            status = PMDeliveryStatus.ECHO_SUPPRESSED
 
         payload_hash = hashlib.sha256(body).hexdigest()
         with self._sf() as session:
@@ -407,7 +433,11 @@ class PMConnectionService:
         )
         if status == PMDeliveryStatus.RECEIVED:
             try:
-                self._enqueue_process_webhook(delivery_row_id)
+                # Only GitHub Issues (spec M M3) needs the parsed hint subset
+                # downstream (label/sender/repository for dispatch); other
+                # providers' worker path re-derives everything from the row.
+                payload = event.payload if connection.provider == PMProvider.GITHUB_ISSUES else None
+                self._enqueue_process_webhook(delivery_row_id, payload)
             except Exception:
                 logger.warning(
                     "pm webhook accepted but worker enqueue failed "
@@ -490,6 +520,8 @@ class PMConnectionService:
                 email = (connection.config or {}).get("api_token_email") or ""
                 return jira_auth.basic_auth_header(email, secret)
             return jira_auth.bearer_header(secret)
+        if connection.provider == PMProvider.GITHUB_ISSUES:
+            return linear_auth.bearer_header(secret)
         if connection.auth_type == PMAuthType.API_TOKEN:
             return linear_auth.api_key_header(secret)
         return linear_auth.bearer_header(secret)
@@ -506,18 +538,22 @@ class PMConnectionService:
 
     @staticmethod
     def _default_status_map(provider: PMProvider) -> dict:
-        table = (
-            jira_mapping.STATUS_OUT if provider == PMProvider.JIRA else linear_mapping.STATUS_OUT
-        )
+        if provider == PMProvider.JIRA:
+            table = jira_mapping.STATUS_OUT
+        elif provider == PMProvider.GITHUB_ISSUES:
+            table = github_issues_mapping.STATUS_OUT
+        else:
+            table = linear_mapping.STATUS_OUT
         return dict(table)
 
     @staticmethod
     def _default_priority_map(provider: PMProvider) -> dict:
-        table = (
-            jira_mapping.PRIORITY_OUT
-            if provider == PMProvider.JIRA
-            else linear_mapping.PRIORITY_OUT
-        )
+        if provider == PMProvider.JIRA:
+            table = jira_mapping.PRIORITY_OUT
+        elif provider == PMProvider.GITHUB_ISSUES:
+            table = github_issues_mapping.PRIORITY_OUT
+        else:
+            table = linear_mapping.PRIORITY_OUT
         return dict(table)
 
 

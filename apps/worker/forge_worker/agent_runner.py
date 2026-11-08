@@ -395,6 +395,7 @@ def run_agent_task(
         )
         if persisted_row:
             _record_run_outcome(run_id, workspace_id, refused)
+            _maybe_tracker_writeback(parsed, run_id, workspace_id, refused)
         return refused.model_dump(mode="json")
     with prepared_workspace(parsed, run_id=run_id, workspace_id=workspace_id) as workspace:
         runner = build_agent_runner(
@@ -421,6 +422,7 @@ def run_agent_task(
         _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
     if persisted_row:
         _record_run_outcome(run_id, workspace_id, result)
+        _maybe_tracker_writeback(parsed, run_id, workspace_id, result)
     _maybe_persist_recording(runner, objective)
     return result.model_dump(mode="json")
 
@@ -451,6 +453,48 @@ def _record_run_outcome(
             session.commit()
     except Exception:
         logger.exception("failed to record the outcome of agent run %s", run_id)
+
+
+def _maybe_tracker_writeback(
+    objective: AgentObjective,
+    run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    result: AgentRunResult,
+    *,
+    session_factory: Any = None,
+    connections: Any = None,
+) -> None:
+    """Spec M M2: one run-state comment to the originating tracker issue.
+
+    Runs after :func:`_record_run_outcome` for every terminal state. Only a
+    forge-set ``context["tracker"]`` block (stripped from callers at run
+    creation) triggers it. Best-effort by construction —
+    :func:`forge_worker.tasks.pm_dispatch.post_run_writeback` never raises,
+    and this wrapper swallows even seam failures so a tracker outage can
+    never change a run's recorded outcome.
+    """
+    tracker = objective.context.get("tracker")
+    if not isinstance(tracker, dict) or not tracker.get("connection_id"):
+        return
+    try:
+        from forge_worker.tasks.pm_dispatch import post_run_writeback
+
+        factory = session_factory or create_session_factory()
+        service = connections
+        if service is None:  # pragma: no cover - prod seam
+            from forge_worker.tasks.pm_dispatch import _connection_service
+
+            service = _connection_service(factory)
+        post_run_writeback(
+            factory,
+            run_id=run_id,
+            workspace_id=workspace_id,
+            result=result,
+            tracker=tracker,
+            connections=service,
+        )
+    except Exception:
+        logger.exception("tracker write-back seam failed for run %s (non-fatal)", run_id)
 
 
 def _commits_ahead(repo_path: Path, base: str, branch: str) -> int:

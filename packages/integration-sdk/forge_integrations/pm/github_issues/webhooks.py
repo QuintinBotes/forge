@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from forge_contracts.pm import PMProvider, WebhookEvent
 from forge_integrations.pm.errors import ProviderError
+from forge_integrations.pm.sync_engine import extract_run_marker
 from forge_integrations.webhooks import verify_github_signature
 
 
@@ -29,7 +30,9 @@ def parse_github_issues(body: bytes, headers: dict[str, str], *, repo: str) -> W
     issue = data.get("issue") or {}
     repository = data.get("repository") or {}
     label = data.get("label") or {}
-    if not all(isinstance(value, dict) for value in (issue, repository, label)):
+    comment = data.get("comment") or {}
+    sender = data.get("sender") or {}
+    if not all(isinstance(value, dict) for value in (issue, repository, label, comment, sender)):
         raise ProviderError("invalid github issues webhook fields")
     supported = (
         kind == "issues"
@@ -46,6 +49,7 @@ def parse_github_issues(body: bytes, headers: dict[str, str], *, repo: str) -> W
         and not isinstance(number, bool)
         and number > 0
     )
+    sender_login = sender.get("login")
     return WebhookEvent(
         provider=PMProvider.github_issues,
         delivery_id=lowered.get("x-github-delivery") or hashlib.sha256(body).hexdigest(),
@@ -54,5 +58,20 @@ def parse_github_issues(body: bytes, headers: dict[str, str], *, repo: str) -> W
         external_key=f"{repo}#{number}" if actionable else None,
         signature_valid=True,
         received_at=datetime.now(UTC),
-        payload={"action": action, "event": kind, "label": label.get("name")},
+        payload={
+            "action": action,
+            "event": kind,
+            "label": label.get("name"),
+            # Spec M M3 dispatch hints: who labelled, on which repository, and
+            # whether the "issue" is really a pull request. The objective is
+            # never built from these — state is re-fetched through the adapter.
+            "sender_login": sender_login if isinstance(sender_login, str) else None,
+            "repository_full_name": repository_name if isinstance(repository_name, str) else None,
+            "is_pull_request": "pull_request" in issue,
+            # Spec M M2: forge's own run-state comments carry a hidden marker;
+            # only the marker's run id is surfaced, never the comment text.
+            "forge_run_marker": extract_run_marker(comment.get("body"))
+            if kind == "issue_comment"
+            else None,
+        },
     )

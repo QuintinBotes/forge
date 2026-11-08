@@ -211,7 +211,42 @@ def test_issue_webhooks_and_label_hint(action, github_issues_adapter):
     assert event.external_key == "acme/widgets#42"
     assert event.delivery_id == "delivery-42"
     assert event.signature_valid
-    assert event.payload == {"action": action, "event": "issues", "label": "forge:run"}
+    assert event.payload == {
+        "action": action,
+        "event": "issues",
+        "label": "forge:run",
+        "sender_login": "octocat",
+        "repository_full_name": "acme/widgets",
+        "is_pull_request": False,
+        "forge_run_marker": None,
+    }
+
+
+def test_forge_marker_comment_surfaces_run_id_without_body(github_issues_adapter):
+    """Spec M M2: the echo of forge's own run-state comment is recognisable."""
+    payload = load_json("github_issues/issue_comment.json")
+    run_id = "12345678-1234-1234-1234-1234567890ab"
+    payload["comment"]["body"] = f"Forge run finished.\n\n<!-- forge:run:{run_id} -->"
+    raw = json.dumps(payload).encode()
+    event = github_issues_adapter.parse_webhook(raw, {"x-github-event": "issue_comment"})
+    assert event.payload["forge_run_marker"] == run_id
+    assert "body" not in json.dumps(event.payload)
+
+
+async def test_transition_external_writes_only_status(
+    github_issues_adapter, github_issues_requests
+):
+    """Spec M M2: the one mapped transition never rewrites tracker-owned fields."""
+    external = await github_issues_adapter.transition_external("42", StatusCategory.completed)
+    assert external.status_category == StatusCategory.completed
+    patch = [r for r in github_issues_requests if r.method == "PATCH"]
+    assert len(patch) == 1
+    payload = json.loads(patch[0].content)
+    assert set(payload) == {"labels", "state"}  # no title/body/assignee rewrite
+    assert payload["state"] == "closed"
+    assert "status:in-progress" not in payload["labels"]
+    assert "bug" in payload["labels"]
+    assert "priority:high" in payload["labels"]
 
 
 @pytest.mark.parametrize("action", ["created", "edited", "deleted"])
