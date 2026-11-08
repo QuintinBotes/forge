@@ -40,7 +40,7 @@ Make forge the one software factory by absorbing three neighbouring systems:
 | **H** | World model (utopia++) | — | Built (H1, with web view and MCP tools); H2–H4 at interface depth | `packages/world-model` (`forge_world`), migration, `/world` API |
 | **I** | Forge MCP server | H1 | Built (world, factory and context tools) | `POST {api_prefix}/mcp` Streamable-HTTP JSON-RPC server, read-only by default |
 | **J** | Context and memory (lore++ part 1) | H1, I | Built (§2.1, §2.2, §2.5); wider index (§2.3) and 60-question benchmark next | `assemble_context`, memory lifecycle, wider index, eval gate |
-| **K** | Automation lines (lore++ part 2) | G, J | P0 built (gates through approvals, runs in Postgres, verified and signed packages; gaps in K §4.8); P1–P3 next (ADR-0020) | Ticket → PR loop, review, triage, merge bookkeeping, digests, on `workflow-engine` |
+| **K** | Automation lines (lore++ part 2) | G, J | P0–P1 built (gates through approvals, runs in Postgres, signed packages; line contracts, validator, editor, start with a definition, `workflow_template` installer); P2 in progress (K §4.11), P3 next (ADR-0020) | Ticket → PR loop, review, triage, merge bookkeeping, digests, on `workflow-engine` |
 | **L** | Tervin bridge | I, G | Seams 1–3 built (MCP reads, `forge-cli --json`, SSE run events); seams 4–6 at interface depth | Run event SSE stream, `forge --json`, ACP stdio shim, token-by-env-var auth |
 | **M** | Bring your own tracker | G | Built (M1–M3: GitHub Issues adapter, tracker wins, issue-driven dispatch) | Tracker owns work items (ADR-0019); GitHub Issues adapter; tracker-wins write-back; issue-driven dispatch |
 

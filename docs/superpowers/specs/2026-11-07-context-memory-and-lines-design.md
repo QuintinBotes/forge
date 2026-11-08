@@ -576,6 +576,55 @@ Found by the P0 verification; none is a regression, and each has an owner phase.
 - **Audit names.** Publishing and archiving an installed line reuse the editor's
   `workflow_definition.published` and `workflow_definition.archived` events, so one query finds
   every publish and archive.
+- **Parsing.** A line's YAML is loaded with duplicate keys refused (YAML keeps the last value,
+  so a scan never sees the first) and nesting deep enough to exhaust the parser refused; aliased
+  values are scanned once. Package versions are at most 64 characters, without control characters.
+- **Refusals are always recorded.** Audit values are fitted to their columns and stripped of NUL
+  and lone surrogates, so the denied row of a refusal cannot itself fail. The update-flag refresh
+  and pinning take the installation row lock too, and a refresh clears a flag the installed
+  version already satisfies.
+
+### 4.11 P2 decisions (2026-11-08)
+
+The §4.8 gaps:
+- **A rejected plan or pr gate ends the run.** `rejected` or `changes_requested` on a feature
+  run's `plan` or `pr` request cancels the run, with the decider as actor and the reason
+  recorded; `gates/{gate}/sync` applies the same rule. Rework is a new run (or, on a line, the
+  line's own edges). The spec gate keeps its `spec_changes_requested` edge.
+- **PR gates carry the repo's review rules,** read from `.forge/policy.yaml` at the default
+  branch's HEAD of the workspace mirror, never the run's branch, so an agent cannot loosen its own
+  gate. Repo rules only add requirements. Unreadable policy stamps a default marker. V1 is not
+  stamped (it cannot merge).
+- **Temporal start commits the run row first,** then starts the workflow; a failed start marks
+  the row failed.
+- **A resolution-hook error never turns a recorded decision into a 500.** The service catches it,
+  still audits and emits, and reports the outcome as incomplete. A failed `pr` attestation blocks
+  the gate: the run does not advance, and `sync` refuses it (409 `gate_blocked`).
+
+Execution details §4.2 left open:
+- An outcome that neither the park list nor the fail list covers, and no edge routes, fails the
+  run (fail closed).
+- Resuming a station parked on `visit_limit` grants that station one more visit, recorded in the
+  transition.
+- An agent station ends its output with `DECISION: <outcome>` from the station's closed outcome
+  set; a missing or unknown decision is `low_confidence`, which parks.
+- `resume_agent` is a fresh agent run whose objective carries the person's input as labelled
+  user input (ADR-0014).
+- `persist_station` mirrors outputs, spend and `parked` into the run's context;
+  `persist_transition` writes state and status. A parked run's status is `escalated`.
+- A station run is marked by `context.dsl_version = "2"` at start.
+- `max_active_runs` is checked under a row lock on the definition.
+- An explicit station `model` is refused (409 `model_not_allowed`) until a workspace model
+  allowlist exists.
+- The worker's agent activities serve station inputs; feature-run inputs keep refusing until G
+  binds them.
+- Cancel cancels the in-flight activity, expires an open gate (`run_cancelled`), and treats a
+  cleanup failure as recorded, not fatal. The worker binds an idempotent `cleanup_worktree`.
+- An unknown `dsl_version` or a revision that no longer parses fails the run without retry.
+- The worker assembles a station's context with `assemble_context` best-effort: on failure the
+  agent runs with an empty bundle, and the failure is recorded on the visit.
+- Agent activities run their body off the event loop and heartbeat, so a long agent outlives the
+  heartbeat timeout and a cancel reaches it.
 
 ## 5. Out of scope
 
