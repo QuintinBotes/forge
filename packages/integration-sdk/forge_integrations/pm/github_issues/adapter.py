@@ -209,7 +209,10 @@ class GitHubIssuesAdapter(BaseAdapter):
             await self._request("POST", f"{issue_path}/labels", json={"labels": [target_label]})
         for label in current.labels:
             if label.lower() in managed_status and label.lower() != (target_label or "").lower():
-                await self._request("DELETE", f"{issue_path}/labels/{quote(label, safe='')}")
+                try:
+                    await self._request("DELETE", f"{issue_path}/labels/{quote(label, safe='')}")
+                except ExternalNotFound:
+                    continue  # already removed (e.g. by a person meanwhile)
         return await self.fetch_external(external_id)
 
     async def list_external(

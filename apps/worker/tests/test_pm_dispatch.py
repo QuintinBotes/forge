@@ -816,7 +816,8 @@ def test_stale_pending_run_no_longer_blocks_issue_or_cap(
     with factory() as session:
         run = session.get(AgentRun, uuid.UUID(first["run_id"]))
         assert run is not None
-        run.created_at = datetime.now(UTC) - timedelta(hours=2)  # worker died
+        run.created_at = datetime.now(UTC) - timedelta(hours=3)
+        run.started_at = datetime.now(UTC) - timedelta(hours=2)  # worker started, then died
         session.commit()
 
     second = _dispatch_delivery(
@@ -824,6 +825,34 @@ def test_stale_pending_run_no_longer_blocks_issue_or_cap(
     )
     assert second["dispatch_action"] == "dispatched"
     assert len(enqueued) == 2
+
+
+def test_a_run_still_queued_keeps_blocking_its_issue(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+) -> None:
+    """No worker has started it yet: it counts as active for a day, not the hard limit."""
+    connection_id = _seed_connection(
+        factory, project_id, dispatch=_dispatch_config(max_active_runs=1)
+    )
+    enqueued: list[AgentObjective] = []
+    first = _dispatch_delivery(
+        factory, connections, connection_id, delivery_id="gh-1", external_id="42", enqueued=enqueued
+    )
+    with factory() as session:
+        run = session.get(AgentRun, uuid.UUID(first["run_id"]))
+        assert run is not None and run.started_at is None
+        run.created_at = datetime.now(UTC) - timedelta(hours=2)  # long broker backlog
+        session.commit()
+
+    second = _dispatch_delivery(
+        factory, connections, connection_id, delivery_id="gh-2", external_id="42", enqueued=enqueued
+    )
+    assert second["dispatch_action"] == "skipped"
+    assert second["dispatch_reason"] == "issue_run_active"
+    assert len(enqueued) == 1
 
 
 def test_failed_broker_enqueue_writes_back_failed(

@@ -33,7 +33,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import lru_cache
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.auth.vault import SecretNotFoundError, SecretVault
@@ -406,19 +406,24 @@ class PMConnectionService:
             # Dedupe on what is signed: the HMAC covers only the body, so the
             # unsigned delivery-id header alone cannot be the key — a replayed
             # signed body under a fresh delivery id is still a duplicate.
-            dupe = session.execute(
-                select(PMWebhookDelivery.id)
-                .where(
-                    or_(
-                        PMWebhookDelivery.delivery_id == event.delivery_id,
-                        and_(
-                            PMWebhookDelivery.connection_id == connection.id,
-                            PMWebhookDelivery.payload_hash == payload_hash,
-                        ),
+            # Two point queries, not an OR: the OR defeats the delivery-id
+            # unique index and scans the table; the second query walks only
+            # this connection's rows through its (connection, received) index.
+            dupe = (
+                session.execute(
+                    select(PMWebhookDelivery.id)
+                    .where(PMWebhookDelivery.delivery_id == event.delivery_id)
+                    .limit(1)
+                ).first()
+                or session.execute(
+                    select(PMWebhookDelivery.id)
+                    .where(
+                        PMWebhookDelivery.connection_id == connection.id,
+                        PMWebhookDelivery.payload_hash == payload_hash,
                     )
-                )
-                .limit(1)
-            ).first()
+                    .limit(1)
+                ).first()
+            )
             if dupe is not None:
                 return 202, event
             delivery = PMWebhookDelivery(

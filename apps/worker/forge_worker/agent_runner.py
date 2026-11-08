@@ -402,6 +402,8 @@ def run_agent_task(
     persisted_row = context.get("agent_run_id") is not None
     run_id = _opt_uuid(context.get("agent_run_id")) or uuid.uuid4()
     workspace_id = _opt_uuid(context.get("workspace_id")) or uuid.UUID(int=0)
+    if persisted_row:
+        _mark_started(run_id, workspace_id)
     events = _event_sink(run_id, workspace_id) if persisted_row else None
     try:
         try:
@@ -501,6 +503,18 @@ def _record_terminal(
         _maybe_tracker_writeback(objective, run_id, workspace_id, result)
 
 
+def _mark_started(run_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
+    """Stamp ``started_at`` when a worker picks the run up (best effort)."""
+    try:
+        with create_session_factory()() as session:
+            row = session.get(AgentRun, run_id)
+            if row is not None and row.workspace_id == workspace_id and row.started_at is None:
+                row.started_at = datetime.now(UTC)
+                session.commit()
+    except Exception:
+        logger.exception("could not mark agent run %s started", run_id)
+
+
 def _event_sink(run_id: uuid.UUID, workspace_id: uuid.UUID) -> RunEventSink:
     return RunEventSink(
         run_id,
@@ -532,7 +546,7 @@ def _record_run_outcome(
     try:
         factory = session_factory or create_session_factory()
         with factory() as session:
-            row = session.get(AgentRun, run_id)
+            row = session.get(AgentRun, run_id, with_for_update=True)
             if row is None or row.workspace_id != workspace_id:
                 return
             row.status = DbRunStatus(result.status.value)

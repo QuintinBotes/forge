@@ -469,3 +469,24 @@ def test_unknown_mappings_fail(github_issues_adapter):
             github_issues_adapter.map_status("unknown", direction)
         with pytest.raises(MappingError):
             github_issues_adapter.map_priority("unknown", direction)
+
+
+async def test_transition_tolerates_a_status_label_already_removed(
+    github_issues_adapter, github_issues_requests, monkeypatch
+):
+    from forge_integrations.pm.errors import ExternalNotFound
+
+    original = github_issues_adapter._request
+
+    async def flaky(method, path, **kwargs):
+        if method == "DELETE":
+            raise ExternalNotFound("label already gone")
+        return await original(method, path, **kwargs)
+
+    monkeypatch.setattr(github_issues_adapter, "_request", flaky)
+    # Completes instead of raising, and still applies the target label.
+    await github_issues_adapter.transition_external("42", StatusCategory.backlog)
+    adds = [
+        r for r in github_issues_requests if r.method == "POST" and str(r.url).endswith("/labels")
+    ]
+    assert [json.loads(r.content) for r in adds] == [{"labels": ["status:backlog"]}]

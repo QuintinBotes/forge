@@ -296,3 +296,35 @@ def test_concurrent_dispatch_same_delivery_and_issue_and_cap(
         (run.inputs or {}).get("context", {}).get("tracker") is not None
         for run in _active_runs(factory)
     )
+
+
+def test_concurrent_writeback_claims_admit_exactly_one(factory: sessionmaker[Session]) -> None:
+    """The claim locks the run row, so two finishing executions cannot both post."""
+    from forge_worker.tasks.pm_dispatch import _claim_writeback
+
+    _seed(factory)
+    with factory() as session:
+        run = AgentRun(workspace_id=WS_ID, status=DbRunStatus.SUCCEEDED, output={})
+        session.add(run)
+        session.commit()
+        run_id = run.id
+
+    for _ in range(20):
+        with factory() as session:
+            row = session.get(AgentRun, run_id)
+            assert row is not None
+            row.output = {}
+            session.commit()
+        barrier = threading.Barrier(2)
+        won: list[bool] = []
+
+        def claim(barrier: threading.Barrier = barrier, won: list[bool] = won) -> None:
+            barrier.wait()
+            won.append(_claim_writeback(factory, run_id))
+
+        threads = [threading.Thread(target=claim) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        assert sorted(won) == [False, True]

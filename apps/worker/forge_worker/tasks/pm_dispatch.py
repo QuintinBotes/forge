@@ -131,15 +131,18 @@ def _dispatch_guard(
     read through JSON paths), restricted to rows that are active or created
     in the last 7 days — ``steps``/``output`` are never loaded.
 
-    A PENDING/RUNNING row counts as active only when created within the
-    hard task time limit plus 10 minutes, so a run whose worker died without
-    recording an outcome cannot block its issue and cap slot forever.
+    A PENDING/RUNNING row counts as active while it is queued (no
+    ``started_at``, created within the last day) or within the hard task time
+    limit plus 10 minutes of the worker starting it, so a run whose worker
+    died without recording an outcome cannot block its issue and cap slot
+    forever, and a run still waiting in the broker keeps counting.
     """
     now = _aware(now) if now is not None else datetime.now(UTC)
     recent_cutoff = now - timedelta(days=7)
     # shortcut: this age bound stands in for a stale-run reaper that should
     # terminally close dead PENDING/RUNNING runs; replace the bound with it.
-    active_cutoff = now - timedelta(seconds=_hard_time_limit_s() + 600)
+    started_cutoff = now - timedelta(seconds=_hard_time_limit_s() + 600)
+    queued_cutoff = now - timedelta(days=1)
     tracker_connection = AgentRun.inputs[("context", "tracker", "connection_id")].as_string()
     tracker_external = AgentRun.inputs[("context", "tracker", "external_id")].as_string()
     tracker_delivery = AgentRun.inputs[("context", "tracker", "delivery_id")].as_string()
@@ -148,6 +151,7 @@ def _dispatch_guard(
         select(
             AgentRun.status,
             AgentRun.created_at,
+            AgentRun.started_at,
             tracker_external,
             tracker_delivery,
             tracker_hash,
@@ -161,10 +165,15 @@ def _dispatch_guard(
         )
     ).all()
     active_for_connection = 0
-    for status, created_at, run_external, run_delivery, run_hash in rows:
+    for status, created_at, started_at, run_external, run_delivery, run_hash in rows:
         if run_delivery == delivery_id or (payload_hash and run_hash == payload_hash):
             return "already_dispatched"
-        if status in _ACTIVE_RUN_STATUSES and _aware(created_at) > active_cutoff:
+        alive = (
+            _aware(started_at) > started_cutoff
+            if started_at is not None
+            else _aware(created_at) > queued_cutoff
+        )
+        if status in _ACTIVE_RUN_STATUSES and alive:
             if run_external == external_id:
                 return "issue_run_active"
             active_for_connection += 1
@@ -357,7 +366,7 @@ def _claim_writeback(session_factory: sessionmaker[Session], run_id: uuid.UUID) 
     (legacy best-effort) rather than suppress the comment.
     """
     with session_factory() as session:
-        row = session.get(AgentRun, run_id)
+        row = session.get(AgentRun, run_id, with_for_update=True)
         if row is None:  # pragma: no cover - row deleted mid-flight
             return True
         if (row.output or {}).get("tracker_writeback"):
