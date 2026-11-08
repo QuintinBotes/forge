@@ -543,6 +543,22 @@ Found by the P0 verification; none is a regression, and each has an owner phase.
 - **A raising `pr` attestation hook returns 500 after the decision is recorded.** Already listed
   under "To verify in P2".
 
+### 4.9 Carried forward from P1 (2026-11-08)
+
+- **There was no CHECK to drop.** At 0044, `workflow_run.current_state` and
+  `workflow_definition.source` were plain `VARCHAR` with no database CHECK (`enum_type` emits
+  none). 0045 therefore drops and restores nothing; the downgrade refuses rows the older code
+  cannot load instead. Real enum CHECKs across the schema would be a separate change.
+- **`workflow_station_visit` nullability** (§4.3 is silent): identity columns, `kind`, `status`
+  and `started_at` are NOT NULL; `outputs` defaults to `{}`, `tokens_used` to 0, `priced` to
+  false; result, link, cost and `finished_at` columns are nullable.
+- **For P1c.** Installation lookups by `(workspace_id, registry_slug, listing_slug)` must add
+  `kind` now that two kinds may share a slug. The editor's `DefinitionOrigin` must accept
+  `marketplace`. The editor writes a revision's `dsl_version` from the workflow's own `version`;
+  v2 revisions must store `"2"`.
+- **For P2.** `TemporalWorkflowEngine.atransition` returns `str` for station runs (§4.3), and
+  `/transition` refuses everything but `resume` and `cancel` on them (§4.2).
+
 ## 5. Out of scope
 
 Running lore, its `floor` engine or its planning-editor packages (unlicensed; ADR-0010). Kubernetes `Agent` CRDs.
