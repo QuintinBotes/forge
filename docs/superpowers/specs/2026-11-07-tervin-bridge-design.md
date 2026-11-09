@@ -1,7 +1,7 @@
 # L — Tervin bridge
 
 **Date:** 2026-11-07
-**Status:** Seams 1–3 implementation-ready (seam 2 built); seams 4–6 DRAFT, scope and interfaces only
+**Status:** Seams 1–4 built; seams 5–6 implementation-ready (§6b, §6c), not built
 **Depends on:** I (forge MCP server), G (real runs and their events)
 **Blocks:** nothing in forge
 **Decisions:** ADR-0002 (forge is the system of record, tervin its desktop face), ADR-0013 (one
@@ -137,6 +137,81 @@ carried no workspace, so the audit query never returned them.
   re-fetches on `approval.updated`, and treats a 409 on its decision as decided elsewhere.
 - **Tervin's side.** Risk words are sent as forge's own; tervin maps them and labels non-enforceable
   gates as recorded only. A WebSocket client is a new dependency and a new outbound entry for tervin.
+
+## 6b. Seam 5 decisions (2026-11-09)
+
+A runner is a process on a person's machine (tervin first) that executes an agent run behind its
+own permission rules and reports back. Forge cannot observe that machine. So everything a runner
+sends is recorded as reported, and nothing forge enforces depends on a runner's claim.
+
+- **Credential.** A personal token (§6a) with a new scope, `runs:execute`. The allowed scope sets
+  become `read`, `read + approvals:decide` and `read + runs:execute`. The last two never share a
+  token, so a credential a local agent could reach cannot decide a gate. A session or a
+  person-bound unscoped key may also use the runner routes. Unbound keys and agent-runner keys are
+  refused: a runner run needs an accountable person. At every call the owner's current role must
+  grant `RUN_AGENT`, so demoting or deactivating someone stops their runner at its next call.
+- **Registration.** `POST /runners {name, capabilities}` creates or returns the caller's runner
+  (unique per owner and name; the surface comes from the credential). `GET /runners` lists them.
+  `DELETE /runners/{id}`, by the owner or an admin, revokes one.
+- **Starting a run.** The runner starts it: `POST /runners/{id}/runs {task_id}` validates the task
+  as `POST /agent/runs` does (same handler, same one-active-run rule), creates the run with
+  `executor = runner`, never enqueues it, and leases it to the caller in the same transaction. The
+  answer carries the run id, the task snapshot, the repo target with the run branch
+  `forge/run-<hex>`, the assembled context bundle (J §2.1) and the token budget. The budget is
+  advisory: forge cannot stop a model call on another machine. Assigning a run to someone else's
+  runner is not possible; assigning to one's own from the web is a follow-up.
+- **Lease.** A lease lasts 120 seconds. `POST /runners/{id}/runs/{run}/heartbeat`, and every
+  events or result call, extends it. A sweep fails a run whose lease expired (`lease_expired`) and
+  emits its terminal event, so a sleeping laptop ends its run. A call after expiry is 409
+  `lease_expired`.
+- **Events.** `POST /runners/{id}/runs/{run}/events` appends at most 100 events per call. A runner
+  may send only the step-level types: `agent.message`, `tool.requested`, `permission.requested`,
+  `permission.granted`, `permission.denied`, `tool.completed`, `git.changed`, `cost.updated`.
+  Forge emits `thread.started` (at lease), `artifact.created` and the terminal event itself. Forge
+  assigns `seq` and `recorded_at`, and redacts and truncates as for its own events. Each event
+  carries a client `event_id`, so a retried batch never duplicates.
+- **Who gated.** Every event gains `gated_by`: `forge` or `runner`. A runner states `enforcement`
+  per event. Forge accepts `gated` only for the types ADR-0013 marks gated, and any event may be
+  lowered to `observed` (tervin watching a provider's own approval). `observed_by` names the
+  runner's surface. `enforceable` is true only when forge gated the action. A client therefore
+  reads a runner event as "gated by tervin, reported to forge", never as enforced by forge.
+- **Result.** `POST /runners/{id}/runs/{run}/result` is terminal and idempotent (the same body
+  again is accepted; a different one is 409). It carries the status, a summary, the model and token
+  usage, the branch and head sha, and the runner's `rules_digest`. Usage is recorded as unpriced
+  and self-reported: metered, never free, and never trusted as a price.
+- **Storage.** A `runner` table. `agent_run` gains `executor`, `runner_id` and `lease_expires_at`.
+  `agent_run_event` gains `gated_by`, `observed_by` and `client_event_id`. The event writer moves
+  out of the worker into a package the API can import, and takes a per-run lock instead of
+  dropping an event on a sequence conflict, because a run now has more than one writer.
+
+Decided now, built in the next wave (5b):
+- **Delivery.** The runner's owner pushes `forge/run-<hex>` with their own repository access.
+  Forge then checks, through its App token, that the branch head is the reported sha, and opens the
+  draft pull request itself. This amends ADR-0008 for runner runs: the push is the owner's, the
+  pull request is forge's.
+- **Attestation.** Forge alone signs. A runner never holds a key. The attestation uses a v2
+  predicate that names the runner, its `rules_digest` and `self_reported: true`.
+- **Open, for the owner to rule on:** whether the person whose runner executed a run may decide
+  that run's `pr` gate. Forbidding it is the stricter reading of ADR-0005, and it makes a
+  one-person workspace unable to merge runner work.
+
+## 6c. Seam 6 decisions (2026-11-09)
+
+- **Shape.** `forge-cli acp` runs forge's native agent loop in-process on the person's machine and
+  speaks the Agent Client Protocol on stdio (newline-delimited JSON-RPC 2.0), so tervin can drive
+  forge as one more ACP agent. The ACP version is pinned under ADR-0016.
+- **Methods.** `initialize`, `session/new`, `session/prompt` and `session/cancel` in; `session/update`
+  out; and `session/request_permission` before every tool call.
+- **Two gates, forge's first.** Forge's policy gate evaluates each call. A forge denial is final
+  and is never offered to the client. An allowed call is then put to the client; a rejection, a
+  cancelled request, a malformed answer or a closed pipe denies it. Nothing runs unasked.
+- **Tools.** The role's tool belt over the session's working directory. No worktree is created,
+  and there is no push or pull-request tool, as on every other path (ADR-0014).
+- **Recording.** With `FORGE_URL`, a `runs:execute` token named by `--token-env` and `--task`, the
+  shim registers as a runner and records the run through seam 5, with `gated_by: runner` on what
+  the client decided and `gated_by: forge` never claimed. Without them the run is local and
+  unrecorded, and the shim says so on stderr.
+- **Packaging.** The shim builds its runner from `forge_agent`; the CLI never imports the worker.
 
 ## 7. Acceptance criteria (when promoted to implementation-ready)
 
