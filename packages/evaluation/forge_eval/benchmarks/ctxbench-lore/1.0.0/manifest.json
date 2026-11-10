@@ -1,0 +1,23 @@
+{
+  "suite": "ctxbench-lore",
+  "version": "1.0.0",
+  "title": "lore's context-store agent questions (the public half)",
+  "subject_repo": "lore",
+  "snapshot": {
+    "sha": "195034dadd9a922f47f2c5b901021606505fb789",
+    "cutoff": "2026-10-27T00:00:00Z"
+  },
+  "mix": {
+    "decision": 5,
+    "requirement": 5,
+    "code-location": 4,
+    "history": 4,
+    "tracker": 4,
+    "learned": 3,
+    "temporal": 3,
+    "unanswerable": 2
+  },
+  "asks_per_question": 3,
+  "files": ["questions.json", "prompts/agent.md", "prompts/judge.md"],
+  "content_hash": "sha256:40fc928f1f0c5add92ed06886748e3318949f42df293f373b3931a597a88f347"
+}
