@@ -82,6 +82,15 @@ x-python-env: &python-env
   FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  # Spec J production embedder (ADR-0018), in the shared anchor so api and
+  # worker always agree (mismatched models = stored and query vectors from
+  # different models). Empty/unset -> honest BM25-only search; an empty
+  # DIMENSION parses to None, which openai-compatible refuses at startup.
+  FORGE_EMBEDDING_PROVIDER: ${FORGE_EMBEDDING_PROVIDER:-}
+  FORGE_EMBEDDING_MODEL: ${FORGE_EMBEDDING_MODEL:-}
+  FORGE_EMBEDDING_BASE_URL: ${FORGE_EMBEDDING_BASE_URL:-}
+  FORGE_EMBEDDING_DIMENSION: ${FORGE_EMBEDDING_DIMENSION:-}
+  FORGE_EMBEDDING_API_KEY: ${FORGE_EMBEDDING_API_KEY:-}
   FORGE_ALLOW_SCRIPTED_AGENT: ${FORGE_ALLOW_SCRIPTED_AGENT:-false}
   # Local agent CLI provider (dev/self-host convenience; see
   # docs/self-hosting/local-cli-provider.md). Auto-detection

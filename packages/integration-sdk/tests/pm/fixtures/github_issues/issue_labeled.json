@@ -1,0 +1,14 @@
+{
+  "action": "labeled",
+  "issue": {
+    "id": 123456789,
+    "number": 42,
+    "title": "Make widgets accessible",
+    "state": "open",
+    "labels": [{"id": 4, "name": "forge:run", "color": "0052cc"}]
+  },
+  "label": {"id": 4, "name": "forge:run", "color": "0052cc"},
+  "repository": {"id": 10, "full_name": "acme/widgets", "private": true},
+  "installation": {"id": 987654},
+  "sender": {"login": "octocat", "id": 1}
+}

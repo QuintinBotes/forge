@@ -20,6 +20,7 @@ from forge_integrations.pm.clickup.adapter import ClickUpAdapter
 from forge_integrations.pm.clickup.client import ClickUpClient
 from forge_integrations.pm.errors import ProviderError
 from forge_integrations.pm.generic.adapter import GenericAdapter
+from forge_integrations.pm.github_issues.adapter import GitHubIssuesAdapter
 from forge_integrations.pm.github_projects.adapter import GitHubProjectsAdapter
 from forge_integrations.pm.github_projects.client import GitHubProjectsClient
 from forge_integrations.pm.gitlab.adapter import GitLabAdapter
@@ -60,6 +61,8 @@ def build_adapter(
     if provider is PMProvider.github_projects:
         gh_client = GitHubProjectsClient(transport, auth_header=auth_header)
         return GitHubProjectsAdapter(gh_client, ctx)
+    if provider is PMProvider.github_issues:
+        return GitHubIssuesAdapter(transport, ctx, auth_header=auth_header)
     if provider is PMProvider.clickup:
         clickup_client = ClickUpClient(transport, auth_header=auth_header)
         return ClickUpAdapter(clickup_client, ctx)

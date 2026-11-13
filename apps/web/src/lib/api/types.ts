@@ -151,6 +151,16 @@ export interface KnowledgeSearchRequest {
   k?: number;
 }
 
+/** `POST /knowledge/search` (spec J §2.5): the hits plus which legs ran. */
+export interface KnowledgeSearchResponse {
+  results: RetrievedChunk[];
+  legs: string[];
+  /** "configured" | "unconfigured" (ADR-0018: never a faked vector leg). */
+  vector_leg: string;
+  /** "off", the provider name, or "fallback" when this call fell back to RRF. */
+  rerank: string;
+}
+
 // --- Service / stub envelopes (apps/api) ----------------------------------- //
 
 export interface ServiceInfo {

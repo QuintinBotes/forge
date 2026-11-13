@@ -56,6 +56,7 @@ EXPECTED_MODELS = [
     "Milestone",
     "WorkflowRun",
     "AgentRun",
+    "AgentRunEvent",
     "ApprovalRequest",
     "SubAgentRun",
     # F17 incident-workflow tables.
@@ -182,6 +183,10 @@ EXPECTED_MODELS = [
     # red-team-gate: append-only adversarial-review verdict (blocked|survived)
     # recorded before the human implementation gate, feeding the attestation.
     "RedTeamRecord",
+    # J retrieval (ADR-0017): incrementally maintained BM25 corpus statistics —
+    # per-workspace document frequencies + per-workspace corpus totals.
+    "RetrievalTermStat",
+    "RetrievalWorkspaceStat",
     # world-model (H1): the bitemporal fact ledger — ontology, identity,
     # append-only facts/evidence/drops/proofs, proposals, decisions.
     "WorldClass",

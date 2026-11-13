@@ -37,6 +37,7 @@ from forge_contracts.dtos import KnowledgeScope, Ranked, RetrievedChunk
 from forge_contracts.protocols import RerankerClient
 from forge_knowledge.fusion import fuse
 from forge_knowledge.reranker import RerankerUnavailableError, RerankTelemetry
+from forge_knowledge.stores import VectorLegUnconfiguredError
 
 __all__ = ["HybridRetriever", "RerankDebug"]
 
@@ -85,9 +86,9 @@ class HybridRetriever:
 
     def __init__(
         self,
-        semantic_store: _SearchableStore,
+        semantic_store: _SearchableStore | None,
         keyword_store: _SearchableStore,
-        reranker: RerankerClient,
+        reranker: RerankerClient | None,
         *,
         rerank_enabled: bool = True,
     ) -> None:
@@ -102,7 +103,24 @@ class HybridRetriever:
         """Telemetry for the most recent :meth:`rerank` (redacted; debug payload)."""
         return self._last_rerank
 
+    @property
+    def vector_configured(self) -> bool:
+        """Whether a semantic (vector) leg exists at all (ADR-0018)."""
+        return self._semantic_store is not None
+
+    @property
+    def rerank_status(self) -> str:
+        """Configured rerank state for search responses: ``"off"`` or provider."""
+        if self._reranker is None or not self._rerank_enabled:
+            return "off"
+        return str(getattr(self._reranker, "provider", "on"))
+
     def semantic(self, query: str, scope: KnowledgeScope, k: int) -> list[Ranked]:
+        if self._semantic_store is None:
+            raise VectorLegUnconfiguredError(
+                "vector search requires a configured embedder "
+                "(set FORGE_EMBEDDING_PROVIDER); the BM25 leg remains available"
+            )
         return _to_ranked(self._semantic_store.search(query, scope, k))
 
     def keyword(self, query: str, scope: KnowledgeScope, k: int) -> list[Ranked]:
@@ -198,10 +216,11 @@ class HybridRetriever:
             chunk.score = candidate.score * (chunk.weight or 1.0)
             out.append(chunk)
 
+        fallback_provider = "none" if self._reranker is None else "unknown"
         provider = (
             telemetry.provider
             if telemetry is not None
-            else getattr(self._reranker, "provider", "unknown")
+            else getattr(self._reranker, "provider", fallback_provider)
         )
         model = telemetry.model if telemetry is not None else getattr(self._reranker, "model", None)
         latency_ms = telemetry.latency_ms if telemetry is not None else 0.0

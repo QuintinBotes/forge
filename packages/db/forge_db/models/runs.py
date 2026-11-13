@@ -333,3 +333,24 @@ class SubAgentRun(WorkspaceScopedModel):
     parent_agent_run: Mapped[AgentRun] = relationship(
         back_populates="sub_agent_runs", foreign_keys=[parent_agent_run_id]
     )
+
+
+class AgentRunEvent(WorkspaceScopedModel):
+    """One event of an agent run, append-only (ADR-0013, spec L seam 3).
+
+    ``seq`` increases by one per event within a run; ``enforcement`` is the
+    ADR-0013 flag (``gated`` / ``observed``) fixed by the event ``type``.
+    """
+
+    __tablename__ = "agent_run_event"
+    __table_args__ = (Index("uq_agent_run_event_seq", "run_id", "seq", unique=True),)
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("agent_run.id", ondelete="CASCADE"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    enforcement: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    payload: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -146,6 +146,11 @@ def test_switch_away_purges_index(
                 content="indexed",
                 path=f"mcp://{slug}/confluence://engineering/p",
                 content_hash="h1",
+                # Every writer sets tsv (the PG BM25 leg queries it directly;
+                # on this SQLite test backend the column degrades to TEXT,
+                # holding the token-joined text the 'simple' vector is built
+                # from).
+                tsv="indexed",
             )
         )
         session.add(
