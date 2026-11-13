@@ -305,15 +305,20 @@ class AuditLog:
         run_id: uuid.UUID | None = None,
         request_id: uuid.UUID | None = None,
         detail: str | None = None,
+        workspace_id: uuid.UUID | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> AuditEntry:
+        # The workspace makes the row visible to its tenant's audit query.
+        ids = {"request_id": str(request_id)} if request_id else {}
         return self.record(
             category=AuditCategory.APPROVAL,
             action=gate,
             actor=actor,
+            workspace_id=workspace_id,
             run_id=run_id,
             status=status,
             detail=detail,
-            metadata={"request_id": str(request_id)} if request_id else None,
+            metadata={**ids, **(metadata or {})},
         )
 
     def query(

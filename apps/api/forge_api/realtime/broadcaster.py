@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -38,6 +39,8 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from forge_api.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 #: Redis pub/sub channel prefix. The topic (a workspace id) is appended so a
 #: pattern subscribe (``forge:rt:*``) sees every workspace's stream on a worker.
@@ -98,9 +101,18 @@ class RedisBroadcaster:
     there is a single, uniform delivery path (no local/remote de-duplication).
     """
 
-    def __init__(self, client: Any, manager: ConnectionManager) -> None:
+    def __init__(
+        self,
+        client: Any,
+        manager: ConnectionManager,
+        *,
+        reconnect_delay: float = 0.5,
+        max_reconnect_delay: float = 30.0,
+    ) -> None:
         self._redis = client
         self._manager = manager
+        self._reconnect_delay = reconnect_delay
+        self._max_reconnect_delay = max_reconnect_delay
 
     async def publish(self, topic: str, event: RealtimeEvent) -> None:
         await self._redis.publish(f"{_CHANNEL_PREFIX}{topic}", event.model_dump_json())
@@ -122,19 +134,36 @@ class RedisBroadcaster:
 
         Runs for the lifetime of the process (cancelled on shutdown). Delivery is
         keyed on the decoded ``event.workspace_id``, so isolation holds regardless
-        of which channel carried the message.
+        of which channel carried the message. A message this worker cannot read
+        (an event type from a newer deploy) is logged and skipped, and a lost
+        Redis connection is re-subscribed with capped backoff, so one bad message
+        or a Redis restart never ends delivery.
         """
-        pubsub = self._redis.pubsub()
-        await pubsub.psubscribe(f"{_CHANNEL_PREFIX}*")
+        delay = self._reconnect_delay
+        while True:
+            pubsub = self._redis.pubsub()
+            try:
+                await pubsub.psubscribe(f"{_CHANNEL_PREFIX}*")
+                delay = self._reconnect_delay
+                async for message in pubsub.listen():
+                    if message.get("type") == "pmessage":
+                        await self._deliver(message)
+            except Exception:
+                logger.warning(
+                    "realtime relay lost Redis; resubscribing in %.1fs", delay, exc_info=True
+                )
+            finally:
+                with contextlib.suppress(Exception):
+                    await pubsub.aclose()
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, self._max_reconnect_delay)
+
+    async def _deliver(self, message: dict[str, Any]) -> None:
         try:
-            async for message in pubsub.listen():
-                if message.get("type") != "pmessage":
-                    continue
-                event = RealtimeEvent.model_validate_json(message["data"])
-                await self._manager.broadcast(event.workspace_id, _envelope(event))
-        finally:
-            with contextlib.suppress(Exception):
-                await pubsub.aclose()
+            event = RealtimeEvent.model_validate_json(message["data"])
+            await self._manager.broadcast(event.workspace_id, _envelope(event))
+        except Exception:
+            logger.warning("realtime relay skipped a message it could not deliver", exc_info=True)
 
 
 async def emit_event(broadcaster: Broadcaster, event: RealtimeEvent) -> None:
