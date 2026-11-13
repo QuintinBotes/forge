@@ -871,3 +871,12 @@ def test_a_caller_made_request_cannot_take_over_a_runs_gate(
     _decide(decider, _the_pending(h, run_id, "spec").id, "approve")
 
     assert _run(member, run_id)["current_state"] == "spec_approved"
+
+
+def test_only_the_boolean_true_counts_as_a_merge_signal() -> None:
+    from forge_api.services.workflow_gate_hook import _merge_signals
+
+    request = ApprovalRequest.model_construct(
+        gate_payload={"ci_status_green": "false", "spec_validated": True, "other": True}
+    )
+    assert _merge_signals(request) == {"ci_status_green": False, "spec_validated": True}
