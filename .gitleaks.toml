@@ -62,4 +62,8 @@ paths = [
   '''apps/web/src/components/sso/sso-settings-view\.test\.tsx''',
   # Fake `sk-…` fixture whose test asserts the Postgres audit store REDACTS it.
   '''apps/api/tests/test_audit_store_db\.py''',
+  # Fake AKIA/ghp_/sk- tokens whose tests assert workflow-template installs redact them.
+  '''packages/marketplace-sdk/tests/test_workflow_template_installer\.py''',
+  # Fake registry key (base64 "secret-key") whose test asserts it is audited, never echoed.
+  '''apps/api/tests/marketplace/test_workflow_template_install\.py''',
 ]
