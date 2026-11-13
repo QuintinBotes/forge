@@ -99,8 +99,9 @@ def event_for_resolution(gate_type: GateType, status: GateStatus) -> str | None:
 
 
 def _merge_signals(request: ApprovalRequest) -> dict[str, bool]:
+    # Only the boolean true counts: bool() would read the string "false" as true.
     return {
-        key: bool(request.gate_payload[key])
+        key: request.gate_payload[key] is True
         for key in _MERGE_SIGNALS
         if key in request.gate_payload
     }
