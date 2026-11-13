@@ -36,6 +36,8 @@ class WorkflowDefinitionSource(enum.StrEnum):
 
     BUNDLED_FORK = "bundled_fork"
     CUSTOM = "custom"
+    #: Installed from a verified ``workflow_template`` package (spec K §4.4).
+    MARKETPLACE = "marketplace"
 
 
 class RevisionStatus(enum.StrEnum):

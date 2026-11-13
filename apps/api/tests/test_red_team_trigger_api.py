@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 import pytest
 from fastapi import FastAPI
@@ -25,15 +26,18 @@ from sqlalchemy.orm import Session, sessionmaker
 from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
 from forge_api.main import create_app
-from forge_api.routers.workflow import (
-    WorkflowOwnership,
-    get_workflow_engine,
-    get_workflow_ownership,
+from forge_api.observability.redaction import redact_mapping
+from forge_api.services.approval_service import build_gate_registry, get_approval_service
+from forge_api.services.workflow_engine import select_workflow_engine
+from forge_approval import (
+    ApprovalAuthorizer,
+    ApprovalService,
+    InMemoryApprovalRepository,
 )
+from forge_approval.providers import InMemoryGrantStore
 from forge_contracts import UserRole
 from forge_db.base import Base
-from forge_db.models import Workspace
-from forge_workflow import WorkflowEngineImpl
+from forge_db.models import Project, Task, Workspace
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000e1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000e2")
@@ -70,30 +74,61 @@ def _principal(workspace_id: uuid.UUID = WS, role: UserRole = UserRole.MEMBER) -
     )
 
 
+def _seed_task(factory: sessionmaker[Session], workspace_id: uuid.UUID) -> uuid.UUID:
+    with factory() as s:
+        project = Project(workspace_id=workspace_id, name="Core", key=f"C{uuid.uuid4().hex[:4]}")
+        s.add(project)
+        s.flush()
+        task = Task(
+            workspace_id=workspace_id,
+            project_id=project.id,
+            key=f"TASK-{uuid.uuid4().hex[:6]}",
+            title="red-team task",
+        )
+        s.add(task)
+        s.commit()
+        return task.id
+
+
 @pytest.fixture
 def harness(factory: sessionmaker[Session]):
-    """(app, make_client) with a fresh V1 engine + ownership per test."""
+    """(app, make_client): the real engines over this test's database."""
     app: FastAPI = create_app()
-    engine = WorkflowEngineImpl()
-    ownership = WorkflowOwnership()
 
     def _get_db() -> Iterator[Session]:
         with factory() as session:
             yield session
 
+    @contextmanager
+    def _engine_for(workspace_id: uuid.UUID) -> Iterator[object]:
+        with factory() as session:
+            yield select_workflow_engine(session=session, workspace_id=workspace_id)
+            session.commit()
+
+    # Spec K P0: gate events come from approvals — wire the real approval
+    # service (gate hook -> this test's database) so tests decide gates
+    # through the approvals API instead of posting gate events.
+    approvals = ApprovalService(
+        InMemoryApprovalRepository(),
+        build_gate_registry(InMemoryGrantStore(), engine_factory=_engine_for),
+        ApprovalAuthorizer(),
+        redactor=redact_mapping,
+    )
     app.dependency_overrides[get_db] = _get_db
-    app.dependency_overrides[get_workflow_engine] = lambda: engine
-    app.dependency_overrides[get_workflow_ownership] = lambda: ownership
+    app.dependency_overrides[get_approval_service] = lambda: approvals
 
     def make_client(principal: Principal) -> TestClient:
         app.dependency_overrides[get_current_principal] = lambda: principal
-        return TestClient(app)
+        client = TestClient(app)
+        client.seed_task = lambda: _seed_task(factory, principal.workspace_id)  # type: ignore[attr-defined]
+        return client
 
     return app, make_client
 
 
 def _start(client: TestClient) -> str:
-    resp = client.post("/workflow/runs", json={"task_id": str(uuid.uuid4())})
+    task_id = client.seed_task()  # type: ignore[attr-defined]
+    resp = client.post("/workflow/runs", json={"task_id": str(task_id)})
     assert resp.status_code == 201, resp.text
     return resp.json()["id"]
 
@@ -102,6 +137,25 @@ def _drive(client: TestClient, run_id: str, *events: str) -> None:
     for event in events:
         resp = client.post(f"/workflow/runs/{run_id}/transition", json={"event": event})
         assert resp.status_code == 200, f"{event}: {resp.text}"
+
+
+def _request_changes(client: TestClient, run_id: str) -> None:
+    """Decide the run's pending spec gate as ``request_changes`` via the
+    approvals API (the only way a gate event may reach the run now)."""
+    listing = client.get("/approvals", params={"status": "pending"})
+    assert listing.status_code == 200, listing.text
+    approval_id = None
+    for summary in listing.json():
+        detail = client.get(f"/approvals/{summary['id']}")
+        assert detail.status_code == 200, detail.text
+        if detail.json()["workflow_run_id"] == run_id:
+            approval_id = summary["id"]
+            break
+    assert approval_id is not None, "no pending approval for the run"
+    resp = client.post(f"/approvals/{approval_id}/decision", json={"decision": "request_changes"})
+    assert resp.status_code == 200, resp.text
+    run = client.get(f"/workflow/runs/{run_id}")
+    assert run.json()["current_state"] == "clarification", run.text
 
 
 def _records(client: TestClient, run_id: str) -> dict:
@@ -140,7 +194,8 @@ def test_v1_gate_mint_is_once_per_run(harness) -> None:
     client = make_client(_principal())
     run_id = _start(client)
     _drive(client, run_id, *_TO_SPEC_REVIEW)
-    _drive(client, run_id, "spec_changes_requested", "submit_spec_for_review")
+    _request_changes(client, run_id)  # spec_review -> clarification, via approval
+    _drive(client, run_id, "submit_spec_for_review")
 
     body = _records(client, run_id)
     assert len(body["records"]) == 1

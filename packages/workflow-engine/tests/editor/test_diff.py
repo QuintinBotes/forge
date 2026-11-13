@@ -3,6 +3,41 @@
 from __future__ import annotations
 
 from forge_workflow.editor.diff import definition_diff
+from forge_workflow.editor.graph import yaml_to_graph
+
+from .conftest import REVIEW_LINE
+
+
+def test_v1_diff_has_no_line_fields(bundled_default_graph) -> None:
+    diff = definition_diff(
+        bundled_default_graph, bundled_default_graph, from_revision=1, to_revision=2
+    )
+    assert not {"stations_changed", "header_changed"} & diff.model_dump().keys()
+
+
+def test_v2_diff_reports_station_and_header_changes() -> None:
+    before = yaml_to_graph(REVIEW_LINE)
+    same = definition_diff(before, before, from_revision=1, to_revision=2)
+    assert (same.stations_changed, same.header_changed) == ([], False)
+
+    after = before.model_copy(deep=True)
+    checks = next(n for n in after.nodes if n.id == "checks")
+    checks.station = {**checks.station, "timeout_seconds": 900}
+    diff = definition_diff(before, after, from_revision=1, to_revision=2)
+    assert (diff.stations_changed, diff.header_changed, diff.transition_diffs) == (
+        ["checks"],
+        False,
+        [],
+    )
+
+    for key, value in [
+        ("initial", "checks"),
+        ("terminals", {"shipped": "succeeded", "parked": "failed"}),
+        ("budget", {"max_tokens": 5}),
+        ("concurrency", {"max_active_runs": 9}),
+    ]:
+        changed = before.model_copy(update={key: value})
+        assert definition_diff(before, changed, from_revision=1, to_revision=2).header_changed, key
 
 
 def _edge(graph, frm, to):

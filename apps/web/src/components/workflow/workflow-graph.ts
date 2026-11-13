@@ -182,6 +182,27 @@ const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     accent: "text-foreground",
     dot: "bg-primary",
   },
+  agent: {
+    label: "Agent",
+    stroke: "stroke-primary",
+    fill: "fill-primary",
+    accent: "text-primary",
+    dot: "bg-primary",
+  },
+  service: {
+    label: "Service",
+    stroke: "stroke-border",
+    fill: "fill-muted-foreground",
+    accent: "text-foreground",
+    dot: "bg-muted-foreground",
+  },
+  human: {
+    label: "Human gate",
+    stroke: "stroke-warning",
+    fill: "fill-warning",
+    accent: "text-warning",
+    dot: "bg-warning",
+  },
 };
 
 export function nodeKindMeta(kind: WorkflowNodeKind): NodeKindMeta {

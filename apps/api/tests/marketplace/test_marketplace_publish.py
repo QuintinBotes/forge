@@ -65,6 +65,8 @@ def test_publish_creates_new_listing_and_version(
             .all()
         )
         assert len(versions) == 1
+        # In-app publish never signs, so it can never produce an installable line.
+        assert versions[0].signature is None
         audit = (
             s.execute(
                 select(MarketplaceAuditLog).where(

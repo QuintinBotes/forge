@@ -36,7 +36,10 @@ from forge_marketplace.installer import (
     McpConnectorInstaller,
     SkillProfileInstaller,
     ValidatedArtifact,
+    WorkflowTemplateArtifact,
+    WorkflowTemplateInstaller,
     build_install_plan,
+    default_secret_like,
     get_installer,
 )
 from forge_marketplace.manifest import (
@@ -64,13 +67,15 @@ from forge_marketplace.models import (
     VerificationStatus,
 )
 from forge_marketplace.packaging import build_package
+from forge_marketplace.policy import kind_policy_violation
 from forge_marketplace.protocols import ArtifactInstaller, RegistryClient, SignatureVerifier
 from forge_marketplace.registry_client import (
     GitRegistryClient,
     HttpIndexRegistryClient,
     guard_url,
 )
-from forge_marketplace.verifier import Ed25519SignatureVerifier, verify_version
+from forge_marketplace.signing import SigningKeyError, load_private_key, sign_manifest_hash
+from forge_marketplace.verifier import Ed25519SignatureVerifier, verify_package, verify_version
 
 __version__ = "0.1.0"
 
@@ -102,6 +107,7 @@ __all__ = [
     "SignatureInvalid",
     "SignatureRequired",
     "SignatureVerifier",
+    "SigningKeyError",
     "SkillProfileInstaller",
     "SsrfBlocked",
     "SyncReport",
@@ -111,6 +117,8 @@ __all__ = [
     "ValidatedArtifact",
     "VerificationResult",
     "VerificationStatus",
+    "WorkflowTemplateArtifact",
+    "WorkflowTemplateInstaller",
     "YankedVersion",
     "__version__",
     "build_install_plan",
@@ -119,14 +127,19 @@ __all__ = [
     "compare_semver",
     "compute_content_hash",
     "compute_manifest_hash",
+    "default_secret_like",
     "dump_manifest",
     "get_installer",
     "guard_url",
     "has_newer_compatible",
     "is_compatible",
+    "kind_policy_violation",
     "latest_compatible",
     "load_manifest",
+    "load_private_key",
     "parse_index",
     "parse_semver",
+    "sign_manifest_hash",
+    "verify_package",
     "verify_version",
 ]

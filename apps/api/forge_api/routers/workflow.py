@@ -33,14 +33,15 @@ owning its own scan inside ``FeatureWorkflow.run`` (the mint is V1-engine-only).
 
 from __future__ import annotations
 
+import asyncio
+import re
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from functools import lru_cache
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from forge_api.auth.rbac import Permission
@@ -48,7 +49,20 @@ from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.red_team import RedTeamGateOut, RedTeamRecordOut, RedTeamTriggerOut
-from forge_contracts import WorkflowRun, WorkflowState
+from forge_api.services.approval_service import get_approval_service
+from forge_api.services.workflow_gate_hook import (
+    GATE_BY_STATE,
+    GATE_EVENTS,
+    WAITING_STATE_BY_GATE,
+    WORKFLOW_RUN_SUBJECT,
+    agent_actor_for_run,
+    event_for_resolution,
+    submit_gate_event,
+)
+from forge_approval import ApprovalService
+from forge_approval.models import GateStatus, GateType
+from forge_contracts import LineDefinition, WorkflowRun, WorkflowState
+from forge_db.models import Task
 from forge_db.redteam import RedTeamRepository
 from forge_workflow import (
     AmbiguousTransitionError,
@@ -56,14 +70,21 @@ from forge_workflow import (
     GuardFailedError,
     InvalidTransitionError,
     PreconditionError,
+    WorkflowDefinitionError,
     WorkflowEngineImpl,
     WorkflowRunNotFoundError,
 )
+from forge_workflow.default_workflow import DEFAULT_WORKFLOW_NAME
+from forge_workflow.editor.errors import UnknownDefinitionError
+from forge_workflow.engine import DEFINITION_REVISION_KEY
 from forge_workflow.red_team_gate import (
     RedTeamFn,
     ensure_red_team_verdict,
     run_and_record_red_team,
 )
+
+if TYPE_CHECKING:
+    from forge_workflow.temporal.engine import TemporalWorkflowEngine
 
 router = APIRouter(
     prefix="/workflow",
@@ -76,75 +97,26 @@ router = APIRouter(
 WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
 SessionDep = Annotated[Session, Depends(get_db)]
+PrincipalDep = Annotated[Principal, Depends(get_current_principal)]
 
 
 # --------------------------------------------------------------------------- #
-# Run ownership (per-workspace tenant isolation)                               #
+# Engine dependency                                                            #
 # --------------------------------------------------------------------------- #
 
 
-class WorkflowOwnership:
-    """Maps a workflow run id to the workspace that started it.
-
-    The process-wide :class:`WorkflowEngineImpl` is shared across tenants and
-    ``WorkflowRun`` (a frozen contract) carries no ``workspace_id``; this registry
-    scopes every fetch/transition so one tenant cannot read or drive another
-    tenant's run. Unknown *or* foreign ids are reported as 404 (no existence leak).
-    """
-
-    def __init__(self) -> None:
-        self._owner: dict[uuid.UUID, uuid.UUID] = {}
-
-    def record(self, run_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
-        self._owner[run_id] = workspace_id
-
-    def owns(self, run_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
-        return self._owner.get(run_id) == workspace_id
-
-
-# --------------------------------------------------------------------------- #
-# Engine dependency (overridable for tests / Phase-2 DB swap)                  #
-# --------------------------------------------------------------------------- #
-
-
-@lru_cache(maxsize=1)
-def _workflow_engine_singleton() -> WorkflowEngineImpl:
-    return WorkflowEngineImpl()
-
-
-@lru_cache(maxsize=1)
-def _workflow_ownership_singleton() -> WorkflowOwnership:
-    return WorkflowOwnership()
-
-
-@lru_cache(maxsize=1)
-def _temporal_engine_singleton() -> object:
-    # F25 — the V2 durable engine, selected by WORKFLOW_ENGINE_BACKEND=temporal.
-    # Connects lazily (client_factory); the projection store is in-process here.
-    # NOTE: a DB-backed, per-request engine sharing the worker's Postgres
-    # projection is the production wiring (parked — see slice notes).
-    from forge_api.services.workflow_engine import select_workflow_engine
-
-    return select_workflow_engine()
-
-
-def get_workflow_engine() -> object:
-    """Return the configured workflow engine (override in tests via DI).
+def get_workflow_engine(session: SessionDep, principal: PrincipalDep) -> object:
+    """The configured engine over the caller's workspace (override in tests).
 
     ``WORKFLOW_ENGINE_BACKEND=temporal`` selects the durable Temporal engine;
-    otherwise the V1 in-process FSM. Both satisfy the frozen ``WorkflowEngine``
-    protocol so the handlers below are engine-agnostic.
+    otherwise the V1 FSM. Both read and write runs through the caller's
+    workspace-scoped Postgres store, so a run in another workspace, or none,
+    is a 404 (no existence leak) and nothing is lost on restart. Handlers
+    commit after a mutation.
     """
-    from forge_api.services.workflow_engine import resolve_backend
+    from forge_api.services.workflow_engine import select_workflow_engine
 
-    if resolve_backend() == "temporal":
-        return _temporal_engine_singleton()
-    return _workflow_engine_singleton()
-
-
-def get_workflow_ownership() -> WorkflowOwnership:
-    """Return the process-wide run-ownership registry (override in tests via DI)."""
-    return _workflow_ownership_singleton()
+    return select_workflow_engine(session=session, workspace_id=principal.workspace_id)
 
 
 def get_red_team_fn() -> RedTeamFn | None:
@@ -161,8 +133,8 @@ def get_red_team_fn() -> RedTeamFn | None:
 
 
 EngineDep = Annotated[WorkflowEngineImpl, Depends(get_workflow_engine)]
-OwnershipDep = Annotated[WorkflowOwnership, Depends(get_workflow_ownership)]
 RedTeamFnDep = Annotated[RedTeamFn | None, Depends(get_red_team_fn)]
+ApprovalDep = Annotated[ApprovalService, Depends(get_approval_service)]
 
 #: Run states at which a red-team scan may be triggered, mapped to the gate
 #: phase the scan runs before (mirrors ``RedTeamInput.phase``: spec | pr).
@@ -195,10 +167,26 @@ def _workflow_errors() -> Iterator[None]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
+class StartTrigger(BaseModel):
+    """What started a run (spec K §4.2), kept in the run's context under ``trigger``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # No control characters: Postgres JSON refuses NUL, and that must fail here,
+    # before the Temporal engine has started a workflow.
+    external_ref: str | None = Field(default=None, max_length=512, pattern=r"^[^\x00-\x1f\x7f]*$")
+
+
 class StartRunRequest(BaseModel):
-    """Body for ``POST /workflow/runs``."""
+    """Body for ``POST /workflow/runs``.
+
+    ``definition`` names the workflow to run; omitted, the run is ``default_feature``
+    exactly as before definitions could be named.
+    """
 
     task_id: uuid.UUID
+    definition: str | None = None
+    trigger: StartTrigger | None = None
 
 
 class TransitionRequest(BaseModel):
@@ -210,16 +198,6 @@ class TransitionRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 # Routes                                                                      #
 # --------------------------------------------------------------------------- #
-
-
-def _require_owned(
-    ownership: WorkflowOwnership, run_id: uuid.UUID, workspace_id: uuid.UUID
-) -> None:
-    """Reject access to a run outside the caller's workspace (404, no leak)."""
-    if not ownership.owns(run_id, workspace_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"no workflow run {run_id}"
-        )
 
 
 def _run_task_id(run: WorkflowRun) -> uuid.UUID:
@@ -252,26 +230,208 @@ def _run_id(run: WorkflowRun) -> uuid.UUID:
     return run.id
 
 
+def _task_title(session: Session, task_id: uuid.UUID) -> str | None:
+    """The run's task title for the gate inbox (best-effort: a title lookup
+    must never be the reason a gate fails to open)."""
+    try:
+        task = session.get(Task, task_id)
+    except Exception:
+        session.rollback()
+        return None
+    return task.title if task is not None else None
+
+
+def _open_gate_approval(
+    service: ApprovalService,
+    session: Session,
+    *,
+    workspace_id: uuid.UUID,
+    run: WorkflowRun,
+) -> None:
+    """Open the approval request for the gate ``run`` just entered (A2).
+
+    The same request the Temporal ``forge.create_approval`` activity opens
+    (one pending per ``(run, gate)`` — :meth:`ApprovalService.create` is
+    idempotent while pending), requested by the run's agent identity so the
+    approval authorizer's rules decide who may resolve it.
+    """
+    gate = GATE_BY_STATE[run.current_state]
+    run_id = _run_id(run)
+    task_id = _run_task_id(run)
+    title = _task_title(session, task_id) or f"{gate.value} approval for run {run_id}"
+    asyncio.run(
+        service.create(
+            workspace_id=workspace_id,
+            gate_type=gate,
+            subject_type=WORKFLOW_RUN_SUBJECT,
+            subject_id=run_id,
+            workflow_run_id=run_id,
+            task_id=task_id,
+            title=title,
+            requested_actor=agent_actor_for_run(run_id),
+        )
+    )
+
+
+def _durable_engine_required() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="durable_engine_required"
+    )
+
+
+def _unparseable_definition(
+    session: Session, *, workspace_id: uuid.UUID, name: str
+) -> HTTPException:
+    """The refusal for a published revision this release cannot parse.
+
+    A line (raw ``dsl_version: "2"``) waits for the durable engine like any other
+    line; anything else is a broken definition.
+    """
+    from forge_api.services.workflow_engine import published_revision_is_line
+
+    if published_revision_is_line(session, workspace_id=workspace_id, name=name):
+        return _durable_engine_required()
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="definition_invalid")
+
+
+#: The editor's definition-name rule (bundled names follow it too).
+_DEFINITION_NAME = re.compile(r"[a-z][a-z0-9_]{1,62}")
+
+
+def _unknown_definition(name: str) -> HTTPException:
+    # The name is not echoed: it is caller input and may not be printable.
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown_definition")
+
+
+def _admit_definition(
+    engine: object, session: Session, *, workspace_id: uuid.UUID, name: str
+) -> uuid.UUID | None:
+    """Refuse, before anything is created or started, a definition this deployment cannot run.
+
+    The name resolves as the engine will resolve it (the workspace's published
+    revision over the bundled file); an unknown name never falls back to
+    ``default_feature``. Lines need ``forge.StationWorkflow``, which does not exist
+    yet (spec K §4.6, ADR-0007). The V1 FSM's gates and status mapping speak only
+    :class:`WorkflowState`, so a definition with other states (``incident``) is
+    409. ``FeatureWorkflow`` runs only the bundled ``default_feature``, so anything
+    else on the Temporal engine, a published fork of it included, would start a
+    workflow that can never make progress.
+
+    Returns the admitted revision id (``None`` for a bundled definition).
+    """
+    from forge_api.services.workflow_engine import build_definition_provider
+
+    if not _DEFINITION_NAME.fullmatch(name):
+        # Not a name the editor or a bundle can hold; never sent to the database.
+        raise _unknown_definition(name)
+    try:
+        definition, revision_id, _ = build_definition_provider(session).resolve(
+            name, workspace_id=workspace_id
+        )
+    except UnknownDefinitionError as exc:
+        raise _unknown_definition(name) from exc
+    except WorkflowDefinitionError as exc:
+        raise _unparseable_definition(session, workspace_id=workspace_id, name=name) from exc
+    if isinstance(definition, LineDefinition):
+        raise _durable_engine_required()
+    if isinstance(engine, WorkflowEngineImpl):
+        if not all(
+            t.from_state in WorkflowState and t.to_state in WorkflowState
+            for t in definition.transitions
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="definition_unsupported_by_engine"
+            )
+    elif revision_id is not None or name != DEFAULT_WORKFLOW_NAME:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="definition_unsupported_by_engine",
+        )
+    return revision_id
+
+
+def _started_as_admitted(session: Session, run: WorkflowRun, admitted: uuid.UUID | None) -> bool:
+    """True when the V1 start pinned the revision admission resolved, and it is not a line.
+
+    ``engine.start`` resolves the name again, so a revision published after
+    admission would otherwise start unchecked.
+    """
+    from forge_api.services.workflow_engine import build_definition_provider
+
+    pinned = run.context.get(DEFINITION_REVISION_KEY)
+    pinned_id = uuid.UUID(str(pinned)) if pinned else None
+    if pinned_id != admitted:
+        return False
+    return pinned_id is None or not isinstance(
+        build_definition_provider(session).load_pinned(pinned_id), LineDefinition
+    )
+
+
+def _record_trigger(
+    engine: WorkflowEngineImpl | TemporalWorkflowEngine,
+    run: WorkflowRun,
+    trigger: dict[str, object],
+) -> WorkflowRun:
+    """Keep the start trigger in the run's context (same transaction as the run row)."""
+    if isinstance(engine, WorkflowEngineImpl):
+        return engine.update_context(_run_id(run), {"trigger": trigger})
+    run.context["trigger"] = trigger
+    return engine.store.update(run)
+
+
 @router.post("/runs", response_model=WorkflowRun, status_code=status.HTTP_201_CREATED)
 def start_run(
     engine: EngineDep,
-    ownership: OwnershipDep,
+    session: SessionDep,
     principal: WriterDep,
     request: StartRunRequest,
 ) -> WorkflowRun:
-    """Start a workflow run for a task in the default workflow's initial state."""
+    """Start a workflow run for a task in its workflow's initial state.
+
+    The task must be in the caller's workspace (404 otherwise): the run, its
+    gate titles and its attestation all read through it. Without ``definition``
+    the run is ``default_feature``, as before. With one, the name must resolve in
+    the caller's workspace (404 ``unknown_definition``) to a definition this
+    engine can run (409 or 503, see :func:`_admit_definition`); the V1 engine pins
+    the resolved revision on the run.
+    """
+    task = session.get(Task, request.task_id)
+    if task is None or task.workspace_id != principal.workspace_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"no task {request.task_id}"
+        )
+    admitted: uuid.UUID | None = None
+    if request.definition is not None:
+        admitted = _admit_definition(
+            engine, session, workspace_id=principal.workspace_id, name=request.definition
+        )
     with _workflow_errors():
-        run = engine.start(request.task_id)
-    if run.id is not None:
-        ownership.record(run.id, principal.workspace_id)
+        if request.definition is not None and isinstance(engine, WorkflowEngineImpl):
+            try:
+                run = engine.start(
+                    request.task_id, request.definition, workspace_id=principal.workspace_id
+                )
+            except UnknownDefinitionError as exc:  # archived since admission
+                raise _unknown_definition(request.definition) from exc
+            except WorkflowDefinitionError as exc:  # republished unparseable since admission
+                raise _unparseable_definition(
+                    session, workspace_id=principal.workspace_id, name=request.definition
+                ) from exc
+            if not _started_as_admitted(session, run, admitted):
+                session.rollback()
+                raise _durable_engine_required()
+        else:
+            # Omitted, or default_feature on the Temporal engine (the only name it
+            # admits): today's start, unchanged.
+            run = engine.start(request.task_id)
+        if request.trigger is not None:
+            run = _record_trigger(engine, run, request.trigger.model_dump(exclude_none=True))
+    session.commit()
     return run
 
 
 @router.get("/runs/{run_id}", response_model=WorkflowRun)
-def get_run(
-    engine: EngineDep, ownership: OwnershipDep, principal: ReaderDep, run_id: uuid.UUID
-) -> WorkflowRun:
-    _require_owned(ownership, run_id, principal.workspace_id)
+def get_run(engine: EngineDep, principal: ReaderDep, run_id: uuid.UUID) -> WorkflowRun:
     with _workflow_errors():
         return engine.get_run(run_id)
 
@@ -279,10 +439,10 @@ def get_run(
 @router.post("/runs/{run_id}/transition", response_model=WorkflowRun)
 def transition(
     engine: EngineDep,
-    ownership: OwnershipDep,
     session: SessionDep,
     principal: WriterDep,
     red_team_fn: RedTeamFnDep,
+    approvals: ApprovalDep,
     run_id: uuid.UUID,
     request: TransitionRequest,
 ) -> WorkflowRun:
@@ -300,11 +460,25 @@ def transition(
     the mint (``ensure_red_team_verdict`` is idempotent on "no existing
     record"); alternatively, ``POST /workflow/runs/{run_id}/red-team`` records
     the verdict directly as a manual recovery path.
+
+    Gates (spec K §4.7): the four gate events
+    (``spec_approved_by_human`` / ``plan_approved_by_human`` /
+    ``review_approved_by_human`` / ``spec_changes_requested``) are refused
+    here — they may only arrive from an approval resolution (the gate hook
+    submits them engine-direct). And when a V1 transition lands the run in a
+    review state, the matching approval request is opened next to the
+    red-team mint, exactly where the Temporal spine calls
+    ``forge.create_approval``.
     """
-    _require_owned(ownership, run_id, principal.workspace_id)
+    if request.event in GATE_EVENTS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="gate_events_come_from_approvals",
+        )
     with _workflow_errors():
         engine.transition(run_id, request.event)
         run = engine.get_run(run_id)
+    session.commit()
     if (
         isinstance(engine, WorkflowEngineImpl)
         and run.current_state == WorkflowState.SPEC_REVIEW.value
@@ -318,7 +492,61 @@ def transition(
             red_team_fn=red_team_fn,
         )
         session.commit()
+    if isinstance(engine, WorkflowEngineImpl) and run.current_state in GATE_BY_STATE:
+        _open_gate_approval(approvals, session, workspace_id=principal.workspace_id, run=run)
     return run
+
+
+@router.post("/runs/{run_id}/gates/{gate}/sync", response_model=WorkflowRun)
+def sync_gate(
+    engine: EngineDep,
+    session: SessionDep,
+    principal: WriterDep,
+    approvals: ApprovalDep,
+    run_id: uuid.UUID,
+    gate: GateType,
+) -> WorkflowRun:
+    """Re-submit a resolved gate's event if the run is still waiting (A4).
+
+    The recovery path for a gate hook whose engine submit failed after the
+    decision was recorded: re-reads the run's latest request for ``gate`` and,
+    when it is resolved and the run still sits at that gate, submits the
+    event engine-direct with the deciding user as actor. Idempotent: a run
+    that already advanced (or a gate still pending) is returned unchanged.
+    Unknown or foreign runs read as ``404`` (no existence leak).
+    """
+    if gate not in WAITING_STATE_BY_GATE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"gate '{gate.value}' is not a workflow-run gate",
+        )
+    with _workflow_errors():
+        run = engine.get_run(run_id)
+    request = asyncio.run(
+        approvals.latest_for_gate(
+            workspace_id=principal.workspace_id,
+            subject_type=WORKFLOW_RUN_SUBJECT,
+            subject_id=run_id,
+            gate_type=gate,
+        )
+    )
+    if (
+        request is not None
+        and request.workflow_run_id == run_id
+        and request.status is not GateStatus.PENDING
+        and run.current_state == WAITING_STATE_BY_GATE[gate]
+        and event_for_resolution(gate, request.status) is not None
+    ):
+        actor_ref = (
+            f"user:{request.resolver_user_id}"
+            if request.resolver_user_id is not None
+            else f"user:{principal.user_id}"
+        )
+        with _workflow_errors():
+            asyncio.run(submit_gate_event(engine, request=request, actor_ref=actor_ref))
+        session.commit()
+    with _workflow_errors():
+        return engine.get_run(run_id)
 
 
 @router.get("/runs/{run_id}/red-team", response_model=RedTeamGateOut)
@@ -349,7 +577,6 @@ def get_run_red_team(
 )
 def trigger_run_red_team(
     engine: EngineDep,
-    ownership: OwnershipDep,
     session: SessionDep,
     principal: WriterDep,
     red_team_fn: RedTeamFnDep,
@@ -366,7 +593,6 @@ def trigger_run_red_team(
     (``spec_review`` for the spec phase; ``pr_opened``/``awaiting_review`` for
     the pr phase); unknown or foreign runs read as ``404`` (no existence leak).
     """
-    _require_owned(ownership, run_id, principal.workspace_id)
     with _workflow_errors():
         run = engine.get_run(run_id)
     phase = _GATEABLE_STATES.get(run.current_state)
@@ -399,10 +625,9 @@ def trigger_run_red_team(
 
 __all__ = [
     "StartRunRequest",
+    "StartTrigger",
     "TransitionRequest",
-    "WorkflowOwnership",
     "get_red_team_fn",
     "get_workflow_engine",
-    "get_workflow_ownership",
     "router",
 ]

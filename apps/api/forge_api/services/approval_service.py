@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from forge_api.deps import Principal
 from forge_api.observability.redaction import redact_mapping
 from forge_api.observability.service import get_observability_service
+from forge_api.services.workflow_gate_hook import EngineFactory
 from forge_approval import (
     ApprovalAuthorizer,
     ApprovalRepository,
@@ -49,20 +50,37 @@ from forge_approval.providers import (
 from forge_contracts import UserRole
 
 
-def build_gate_registry(grants: GrantStore) -> GateRegistry:
+def build_gate_registry(
+    grants: GrantStore, *, engine_factory: EngineFactory | None = None
+) -> GateRegistry:
     """Register every available provider/hook (the F36 composition root)."""
     from forge_api.services.attestation_service import PrAttestationResolutionHook
+    from forge_api.services.workflow_gate_hook import (
+        PlanWorkflowGateHook,
+        PrWorkflowGateHook,
+        SpecWorkflowGateHook,
+    )
 
     registry = GateRegistry()
     registry.register_provider(DeployGateProvider())
     registry.register_hook(DeployResolutionHook())
     registry.register_provider(PolicyOverrideGateProvider())
     registry.register_hook(PolicyOverrideResolutionHook(grants))
-    # Attested Changesets: approving a ``pr`` gate that carries a workflow_run_id
-    # signs + records a provenance attestation. A gate without one (the unit
-    # approval tests' pr gates) resolves untouched. The hook opens its own DB
-    # session (the HTTP approval path threads none) via the shared factory.
-    registry.register_hook(PrAttestationResolutionHook(_attestation_session))
+    # Spec K P0 (A3): feature-run gates (spec/plan/pr) advance their run when
+    # the approval resolves. Each workflow gate hook wraps the gate's existing
+    # hook — for ``pr`` the Attested Changesets hook still runs first,
+    # unchanged (approving a ``pr`` gate that carries a workflow_run_id signs +
+    # records a provenance attestation; it opens its own DB session via the
+    # shared factory). ``engine_factory`` defaults to the process-wide engine;
+    # tests inject the instance their runs live in.
+    registry.register_hook(
+        PrWorkflowGateHook(
+            wrapped=PrAttestationResolutionHook(_attestation_session),
+            engine_factory=engine_factory,
+        )
+    )
+    registry.register_hook(SpecWorkflowGateHook(engine_factory=engine_factory))
+    registry.register_hook(PlanWorkflowGateHook(engine_factory=engine_factory))
     return registry
 
 

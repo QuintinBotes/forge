@@ -1,0 +1,76 @@
+escalation_policy:
+  confidence_threshold: 0.72
+  on_low_confidence: pause_and_notify
+  on_policy_conflict: escalate_to_admin
+modes:
+  default: single_agent
+retry_policy:
+  backoff: exponential
+  initial_delay_seconds: 60
+  max_retries: 2
+transitions:
+- action: alert_ingested
+  from: alert_received
+  to: incident_created
+- action: incident_acknowledged
+  from: incident_created
+  skill: incident-response
+  to: context_gathering
+- action: context_gathered
+  from: context_gathering
+  skill: incident-response
+  to: impact_assessed
+- action: impact_assessed
+  from: impact_assessed
+  skill: incident-response
+  to: remediation_proposed
+- action: remediation_proposed
+  condition: remediation_within_blast_radius
+  from: remediation_proposed
+  to: awaiting_approval
+- action: remediation_blast_radius_exceeded
+  condition: remediation_exceeds_blast_radius
+  from: remediation_proposed
+  to: needs_human_input
+- action: remediation_approved
+  condition: approval_granted
+  from: awaiting_approval
+  record: approval_event
+  to: executing_runbook
+- action: remediation_rejected
+  from: awaiting_approval
+  record: approval_event
+  to: needs_human_input
+- action: runbook_completed
+  from: executing_runbook
+  to: monitoring
+- condition: retry_budget_remaining
+  from: executing_runbook
+  skill: incident-response
+  to: remediation_proposed
+  when: runbook_step_failed
+- condition: retry_budget_exhausted
+  from: executing_runbook
+  to: needs_human_input
+  when: runbook_step_failed
+- action: recovery_confirmed
+  from: monitoring
+  to: resolved
+- condition: retry_budget_remaining
+  from: monitoring
+  skill: incident-response
+  to: remediation_proposed
+  when: recovery_failed
+- condition: retry_budget_exhausted
+  from: monitoring
+  to: needs_human_input
+  when: recovery_failed
+- action: postmortem_requested
+  from: resolved
+  to: postmortem_created
+- action: close
+  condition: postmortem_persisted
+  from: postmortem_created
+  to: closed
+version: '1'
+workflow: incident

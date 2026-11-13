@@ -1,0 +1,88 @@
+escalation_policy:
+  confidence_threshold: 0.72
+  on_low_confidence: pause_and_notify
+  on_policy_conflict: escalate_to_admin
+modes:
+  default: single_agent
+  optional:
+  - supervised_multi_agent
+retry_policy:
+  backoff: exponential
+  initial_delay_seconds: 30
+  max_retries: 3
+transitions:
+- action: generate_spec_draft
+  from: created
+  skill: spec-analyst
+  to: spec_drafting
+- action: gather_clarifications
+  from: spec_drafting
+  to: clarification
+- action: submit_spec_for_review
+  from: clarification
+  to: spec_review
+- from: spec_review
+  record: approval_event
+  to: spec_approved
+  when: spec_approved_by_human
+- from: spec_review
+  to: clarification
+  when: spec_changes_requested
+- action: generate_plan
+  from: spec_approved
+  to: plan_drafting
+- action: submit_plan_for_review
+  from: plan_drafting
+  to: plan_review
+- from: plan_review
+  record: approval_event
+  to: task_generation
+  when: plan_approved_by_human
+- action: generate_tasks
+  from: task_generation
+  to: task_ready
+- action: start_agent_run
+  from: task_ready
+  preconditions:
+  - repo_target_set
+  - policy_loaded
+  - skill_profile_set
+  - knowledge_synced
+  to: executing
+- action: run_checks
+  checks:
+  - lint
+  - type_check
+  - tests
+  - coverage
+  from: executing
+  to: verifying
+- from: executing
+  to: needs_human_input
+  when: low_confidence
+- action: open_pr_with_spec_traceability
+  from: verifying
+  to: pr_opened
+  when: all_checks_passed
+- condition: retry_budget_remaining
+  from: verifying
+  to: executing
+  when: checks_failed
+- condition: retry_budget_exhausted
+  from: verifying
+  to: needs_human_input
+  when: checks_failed
+- action: request_reviews
+  from: pr_opened
+  to: awaiting_review
+- from: awaiting_review
+  to: merged
+  when:
+  - review_approved_by_human
+  - ci_status_green
+  - spec_validated
+- action: close_task
+  from: merged
+  to: closed
+version: '1'
+workflow: default_feature

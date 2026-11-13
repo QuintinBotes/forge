@@ -114,8 +114,13 @@ class WorkflowEngineImpl:
         )
         return self._store.create(run)
 
-    def transition(self, run_id: uuid.UUID, event: str) -> WorkflowState:
-        """Apply ``event`` to the run and return its new state."""
+    def transition(self, run_id: uuid.UUID, event: str, *, actor: str = "system") -> WorkflowState:
+        """Apply ``event`` to the run and return its new state.
+
+        ``actor`` records who drove the transition (``run.context``'s
+        ``last_actor``) — the approval gate hook passes the deciding user so a
+        gate transition is attributable to the human who approved it.
+        """
         run = self._store.get(run_id)
         graph = self._graph_for_run(run)
         max_retries = graph.definition.retry_policy.max_retries
@@ -135,6 +140,7 @@ class WorkflowEngineImpl:
 
         run.current_state = chosen.to_state
         run.context["last_event"] = event
+        run.context["last_actor"] = actor
         self._apply_status(run, chosen.to_state)
         self._store.update(run)
         return WorkflowState(chosen.to_state)
