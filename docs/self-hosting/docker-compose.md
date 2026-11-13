@@ -19,7 +19,7 @@ the hardening applied, and how to operate it. To get running quickly first, see
 |---|---|---|
 | `db` | `pgvector/pgvector:pg16` | Postgres with the pgvector extension |
 | `redis` | `redis:7.4-alpine` | Queue, cache, and session store |
-| `minio` | `quay.io/minio/minio` | S3-compatible object storage for artifacts (quay.io is MinIO's public registry — the Docker Hub repo is no longer anonymously pullable) |
+| `minio` | `cgr.dev/chainguard/minio` | S3-compatible object storage for artifacts. MinIO's own images on Docker Hub and quay.io are no longer anonymously pullable, so this is Chainguard's public MinIO build (the `-dev` variant, which has the `sh`, `wget` and `mc` that the healthcheck and backup script use). It runs as root, as the previous image did, so existing `minio-data` volumes keep working |
 | `api` | built from `deploy/docker/api.Dockerfile` | FastAPI application |
 | `worker` | built from `deploy/docker/worker.Dockerfile` | Celery worker (indexer, syncer, agent runner) |
 | `mcp-gateway` | built from `deploy/docker/mcp-gateway.Dockerfile` | MCP client manager |

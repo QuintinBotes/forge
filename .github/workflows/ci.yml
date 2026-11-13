@@ -336,14 +336,20 @@ jobs:
         continue-on-error: true
       - name: Bandit gate (high/critical)
         run: uv run bandit -c pyproject.toml -r packages apps --severity-level high -q
+      # An isolated tool, not a workspace dependency: its exact mcp and
+      # opentelemetry pins would otherwise hold the lockfile back. On PATH, so
+      # the enforcement matrix's semgrep rule test runs it too.
+      - name: Install semgrep (isolated tool)
+        run: |
+          uv tool install semgrep==1.180.0
+          uv tool dir --bin >> "$GITHUB_PATH"
       - name: Semgrep (custom Forge rules, SARIF)
         run: >-
-          uv run semgrep --config .semgrep/forge.yml --config p/python
+          semgrep --config .semgrep/forge.yml --config p/python
           --error --metrics=off --sarif -o semgrep.sarif .
 
       # --- Dependency audit --- #
-      # No ignores: semgrep has lifted its click<8.2 cap, so click resolves to
-      # 8.4.2 and PYSEC-2026-2132 no longer applies.
+      # No ignores.
       - name: pip-audit
         run: >-
           uv export --frozen --format requirements-txt --no-emit-workspace

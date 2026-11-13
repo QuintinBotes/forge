@@ -79,8 +79,7 @@ jobs:
         run: uv run bandit -c pyproject.toml -r packages apps --severity-level high -q
 
       # Dependency audit against the fully-resolved, frozen requirements set.
-      # No ignores: semgrep has lifted its click<8.2 cap, so click resolves to
-      # 8.4.2 and PYSEC-2026-2132 no longer applies.
+      # No ignores.
       - name: pip-audit
         run: >-
           uv export --frozen --format requirements-txt --no-emit-workspace

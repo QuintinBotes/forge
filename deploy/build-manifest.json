@@ -6,6 +6,10 @@
       "digest": "sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17",
       "kind": "pulled"
     },
+    "cgr.dev/chainguard/minio:latest-dev": {
+      "digest": "sha256:a528be9d4779833156f611086b00ce3e6c3663983e6ee4b53038cd50b0346fbb",
+      "kind": "pulled"
+    },
     "forge/api:0.1.0": {
       "digest": "sha256:ebfd594e3e34e44153591cf73e81235f1329fe588e42ef0a63ca85fdac96f9ac",
       "kind": "built",
@@ -60,10 +64,6 @@
     },
     "prom/prometheus:v3.1.0": {
       "digest": "sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218",
-      "kind": "pulled"
-    },
-    "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z": {
-      "digest": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
       "kind": "pulled"
     },
     "redis:7.4-alpine": {

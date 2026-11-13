@@ -105,7 +105,13 @@ services:
         max-file: "5"
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # Chainguard's MinIO build (RELEASE.2026-11-09T00-10-40Z): MinIO's own images
+    # are no longer anonymously pullable. The -dev variant carries the sh, wget and
+    # mc that the healthcheck and deploy/scripts/backup.sh use.
+    image: cgr.dev/chainguard/minio:latest-dev@sha256:a528be9d4779833156f611086b00ce3e6c3663983e6ee4b53038cd50b0346fbb
+    # Root, as the previous image ran: existing minio-data volumes are root-owned
+    # and the image's default nonroot user cannot write to them.
+    user: "0:0"
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -116,7 +122,7 @@ services:
     networks:
       - data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/minio/health/live || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

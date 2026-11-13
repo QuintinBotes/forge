@@ -43,10 +43,13 @@ dev = [
     # Validates the Helm chart values files against deploy/helm/forge/values.schema.json (F24).
     "jsonschema>=4.0",
     "pyyaml>=6.0",
-    "bandit>=1.9.4",
+    # The `sarif` extra backs the CI step `bandit -f sarif` (no longer bundled).
+    "bandit[sarif]>=1.9.4",
     "pip-audit>=2.10.1",
     "cyclonedx-bom>=7.3.0",
-    "semgrep>=1.169.0",
+    # semgrep is not here: it pins mcp and opentelemetry exactly, which held
+    # forge-obs's runtime OpenTelemetry on vulnerable versions. CI installs it
+    # as an isolated tool (`uv tool install semgrep==…`); do the same locally.
     # HARD-12: single-source-of-truth versioning + conventional-commit lint +
     # SemVer bump + CHANGELOG generation. `uv run cz …` works with no global
     # install. Drives `make bump` / `make changelog` / the CI commit-lint step.

@@ -115,7 +115,9 @@ services:
       retries: 20
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # Same image and user as the production file; see the comments there.
+    image: cgr.dev/chainguard/minio:latest-dev@sha256:a528be9d4779833156f611086b00ce3e6c3663983e6ee4b53038cd50b0346fbb
+    user: "0:0"
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-forge}
@@ -123,7 +125,7 @@ services:
     volumes:
       - dev-minio-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/minio/health/live || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
