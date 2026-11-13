@@ -41,7 +41,12 @@ def _config_for(provider: ProviderName) -> ModelClientConfig | None:
     config = ModelClientConfig.from_env(env)
     if config is None:
         return None
-    if importlib.util.find_spec(_SDK_FOR[provider]) is None:
+    sdk_module = _SDK_FOR.get(provider)
+    if sdk_module is None:
+        # No SDK-backed adapter for this provider yet (e.g. local_cli drives a
+        # local process, not a BYOK SDK) — nothing to live-swap against.
+        return None
+    if importlib.util.find_spec(sdk_module) is None:
         return None
     return config
 

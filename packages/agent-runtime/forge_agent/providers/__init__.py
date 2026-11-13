@@ -15,7 +15,10 @@ from forge_agent.providers.base import (
     ModelClientUnavailable,
     build_model_client,
 )
+from forge_agent.providers.bridge_client import LocalCliBridgeClient
 from forge_agent.providers.config import ModelClientConfig, ProviderName
+from forge_agent.providers.local_cli.client import LocalCliModelClient
+from forge_agent.providers.local_cli.detect import CliName, detect_clis
 from forge_agent.providers.openai_client import OpenAIModelClient
 from forge_agent.providers.pricing import MODEL_PRICING, cost_usd
 from forge_agent.providers.router import (
@@ -31,6 +34,9 @@ __all__ = [
     "DEFAULT_TIER_MODELS",
     "MODEL_PRICING",
     "AnthropicModelClient",
+    "CliName",
+    "LocalCliBridgeClient",
+    "LocalCliModelClient",
     "ModelClientConfig",
     "ModelClientError",
     "ModelClientUnavailable",
@@ -42,5 +48,6 @@ __all__ = [
     "build_model_client",
     "classify_tier",
     "cost_usd",
+    "detect_clis",
     "route",
 ]

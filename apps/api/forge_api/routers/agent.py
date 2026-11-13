@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from forge_agent import AgentRunner
 from forge_agent.providers import (
     ModelClientConfig,
+    ModelClientError,
     ModelClientUnavailable,
     build_model_client,
 )
@@ -182,6 +183,20 @@ def _default_runner() -> AgentRunner:
                     f"not installed: {exc}"
                 ),
             ) from exc
+        except ModelClientError as exc:
+            # Same class of deployment error, different cause: the provider is
+            # configured but the client cannot be built from that config at all
+            # — e.g. a local-CLI bridge URL with a blank
+            # `FORGE_CLI_BRIDGE_TOKEN`. Without this branch that misconfigured
+            # env var surfaced as an unhandled 500 instead of the documented,
+            # actionable 503 (final review, I1).
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"model provider {config.provider!r} is configured but a client "
+                    f"could not be built from it: {exc}"
+                ),
+            ) from exc
 
     if get_settings().allow_scripted_agent:
         logger.warning(
@@ -244,7 +259,11 @@ def _default_fork_model_factory(model: str) -> ModelClient:
             return build_model_client(
                 dataclasses.replace(config, model=model), redactor=redact_text
             )
-        except ModelClientUnavailable:
+        except ModelClientError:
+            # The parent class: the SDK extra may be missing
+            # (`ModelClientUnavailable`) or the configured provider may be
+            # unbuildable (e.g. a blank bridge token). A fork is a
+            # counterfactual and stays available offline either way.
             pass
     # Same rule as a live run: never assert confidence in a canned answer. A
     # fork is a counterfactual, so it stays available offline — but it says so.

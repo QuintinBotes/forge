@@ -82,7 +82,7 @@ def _model_client_for(_config: Any) -> Any | None:  # pragma: no cover - needs B
     """Resolve a BYOK model client from the environment, or ``None`` (offline)."""
     from forge_agent.providers import (
         ModelClientConfig,
-        ModelClientUnavailable,
+        ModelClientError,
         build_model_client,
     )
 
@@ -91,7 +91,11 @@ def _model_client_for(_config: Any) -> Any | None:  # pragma: no cover - needs B
         return None
     try:
         return build_model_client(cfg)
-    except ModelClientUnavailable:
+    except ModelClientError:
+        # The parent of ``ModelClientUnavailable``: also covers a provider that
+        # is configured but unbuildable (e.g. a local-CLI bridge URL with a
+        # blank token), which must degrade to "offline" here like a missing
+        # SDK extra does, not raise out of the eval task.
         return None
 
 

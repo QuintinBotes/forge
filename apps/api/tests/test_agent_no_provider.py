@@ -89,3 +89,28 @@ def test_the_offline_stub_is_reachable_only_by_explicit_opt_in(
     assert "no model was called" in payload["output"]
     # ...and claims no confidence in it.
     assert all(step.get("confidence") is None for step in payload["steps"])
+
+
+def test_a_blank_bridge_token_is_a_503_not_a_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Final review, I1: a configured-but-unbuildable provider must still be a 503.
+
+    The self-hosting guide's three-variable local-CLI setup with
+    ``FORGE_CLI_BRIDGE_TOKEN`` forgotten builds a valid ``ModelClientConfig``
+    whose client constructor then raises ``ModelClientError`` — the parent of
+    ``ModelClientUnavailable``, which was the only class this path caught, so
+    the misconfiguration surfaced as an unhandled 500. Calls ``_default_runner``
+    directly because the router's runner is an ``lru_cache`` singleton.
+    """
+    from fastapi import HTTPException
+
+    from forge_api.routers.agent import _default_runner
+
+    monkeypatch.setenv("FORGE_MODEL_PROVIDER", "local_cli")
+    monkeypatch.setenv("FORGE_CLI_BRIDGE_URL", "http://host.docker.internal:8099")
+    monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "   ")
+
+    with pytest.raises(HTTPException) as excinfo:
+        _default_runner()
+
+    assert excinfo.value.status_code == 503
+    assert "local_cli" in str(excinfo.value.detail)

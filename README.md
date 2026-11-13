@@ -217,6 +217,9 @@ Full docs index: **[`docs/`](./docs/README.md)**.
   GitLab sync.
 - [Self-hosting](./docs/self-hosting/quickstart.md) — quickstart, Docker Compose,
   Kubernetes/Helm, backup, restore, upgrade, security, troubleshooting.
+- [Local agent CLI provider](./docs/self-hosting/local-cli-provider.md) — drive
+  a locally installed `claude`/`codex` CLI instead of a BYOK API key
+  (dev/self-host convenience only).
 - [Infrastructure as Code](./docs/self-hosting/iac.md) — OpenTofu apply runbook
   for Hetzner + Cloudflare + Fly.io (dev/staging/prod).
 - [Platform specification](./docs/FORGE_SPEC.md) — the full Forge spec.

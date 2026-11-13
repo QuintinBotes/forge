@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from forge_agent import AgentRunner
 from forge_agent.providers import (
     ModelClientConfig,
-    ModelClientUnavailable,
+    ModelClientError,
     build_model_client,
 )
 from forge_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
@@ -123,9 +123,17 @@ def _resolve_model_client(model_client: ModelClient | None) -> ModelClient:
     if config is not None:
         try:
             return build_model_client(config, redactor=_default_redactor())
-        except ModelClientUnavailable:
-            # Provider SDK/extra absent — never silently fake on a configured
-            # lane failure; degrade to the offline client and keep running.
+        except ModelClientError:
+            # Provider SDK/extra absent (``ModelClientUnavailable``), or the
+            # provider is configured but unusable — e.g. a local-CLI bridge
+            # URL with a blank ``FORGE_CLI_BRIDGE_TOKEN``, which is the
+            # operator guide's three-variable setup with one line forgotten
+            # and which ``LocalCliBridgeClient.__init__`` rejects with the
+            # parent ``ModelClientError``. Catching the parent covers both;
+            # catching only the subclass turned that typo into an unhandled
+            # exception in the worker instead of the documented degrade.
+            # Never silently fake on a configured lane failure; degrade to the
+            # offline client and keep running.
             pass
     # Reached once per run when no live provider resolved: make the degrade loud
     # so a self-hoster does not mistake canned scripted output for a real run.

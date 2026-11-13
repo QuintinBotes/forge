@@ -83,6 +83,17 @@ x-python-env: &python-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   FORGE_ALLOW_SCRIPTED_AGENT: ${FORGE_ALLOW_SCRIPTED_AGENT:-false}
+  # Local agent CLI provider (dev/self-host convenience; see
+  # docs/self-hosting/local-cli-provider.md). Auto-detection
+  # (FORGE_LOCAL_CLI_ENABLED) only applies when FORGE_MODEL_PROVIDER above is
+  # unset. The worker container cannot exec host CLI binaries directly, so this
+  # always goes through the host-side bridge at FORGE_CLI_BRIDGE_URL
+  # (host.docker.internal reaches the Docker host from inside a container).
+  FORGE_LOCAL_CLI_ENABLED: ${FORGE_LOCAL_CLI_ENABLED:-}
+  FORGE_LOCAL_CLI_PREFERENCE: ${FORGE_LOCAL_CLI_PREFERENCE:-}
+  FORGE_CLI_BRIDGE_URL: ${FORGE_CLI_BRIDGE_URL:-}
+  FORGE_CLI_BRIDGE_TOKEN: ${FORGE_CLI_BRIDGE_TOKEN:-}
+  FORGE_LOCAL_CLI_TIMEOUT_S: ${FORGE_LOCAL_CLI_TIMEOUT_S:-}
 
 services:
   # --------------------------------------------------------------------- #

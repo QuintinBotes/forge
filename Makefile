@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test lint fmt typecheck migrate seed build clean \
 	compose-build build-images pin-digests sbom smoke security load-smoke perf soak \
-	infra-validate \
+	infra-validate cli-bridge \
 	bump changelog hooks release-readiness source-sbom
 
 # Every typed first-party package/app, one mypy module each. mypy runs in
@@ -15,7 +15,7 @@ MYPY_PACKAGES := \
 	forge_spec forge_board forge_knowledge forge_integrations forge_mcp \
 	forge_policy forge_authz forge_skill forge_eval forge_approval forge_api \
 	forge_worker forge_mcp_gateway forge_orchestration_policy \
-	forge_deploy forge_auth forge_marketplace forge_obs
+	forge_deploy forge_auth forge_marketplace forge_obs forge_cli_bridge
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -41,6 +41,10 @@ dev-logs: ## Follow logs for the dev stack (make dev-logs svc=api -> one service
 
 dev-seed: ## Re-run the idempotent demo-workspace seed against the dev stack
 	scripts/dev.sh seed
+
+cli-bridge: ## Run the host-side local-CLI bridge (dev/self-host only; see docs/self-hosting/local-cli-provider.md)
+	FORGE_CLI_BRIDGE_TOKEN=$${FORGE_CLI_BRIDGE_TOKEN:?set FORGE_CLI_BRIDGE_TOKEN} \
+	uv run python -m forge_cli_bridge.main
 
 test: ## Run the python test suite
 	uv run pytest

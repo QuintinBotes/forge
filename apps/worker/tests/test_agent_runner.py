@@ -100,6 +100,59 @@ def test_build_agent_runner_falls_back_when_sdk_missing(
     assert isinstance(runner._model, ScriptedModelClient)
 
 
+def test_build_agent_runner_degrades_on_a_blank_bridge_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Final review, I1: a blank ``FORGE_CLI_BRIDGE_TOKEN`` must degrade, not crash.
+
+    This is the self-hosting guide's three-variable setup with one line
+    forgotten. ``LocalCliBridgeClient.__init__`` rejects it with
+    ``ModelClientError`` — the *parent* of ``ModelClientUnavailable``, which
+    was the only class the worker caught, so the resolve raised out of
+    ``build_agent_runner`` and took the task with it instead of falling back
+    to the offline client (and, in the API, the documented 503).
+    """
+    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "FORGE_MODEL_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("FORGE_MODEL_PROVIDER", "local_cli")
+    monkeypatch.setenv("FORGE_CLI_BRIDGE_URL", "http://host.docker.internal:8099")
+    monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "   ")
+
+    runner = build_agent_runner()
+
+    assert isinstance(runner._model, ScriptedModelClient)
+    # And the degraded runner is still usable end to end.
+    result = run_objective(runner, AgentObjective(objective="Do the thing"))
+    assert result.status in {RunStatus.SUCCEEDED, RunStatus.ESCALATED}
+
+
+def test_build_agent_runner_blank_bridge_token_really_raises_from_the_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pins the premise of the test above: the factory raises ``ModelClientError``
+    (not ``ModelClientUnavailable``) for this config, so catching only the
+    subclass would leave it unhandled.
+    """
+    from forge_agent.providers import (
+        ModelClientConfig,
+        ModelClientError,
+        ModelClientUnavailable,
+        build_model_client,
+    )
+
+    config = ModelClientConfig.from_env(
+        {
+            "FORGE_MODEL_PROVIDER": "local_cli",
+            "FORGE_CLI_BRIDGE_URL": "http://host.docker.internal:8099",
+            "FORGE_CLI_BRIDGE_TOKEN": "   ",
+        }
+    )
+    assert config is not None
+    with pytest.raises(ModelClientError) as excinfo:
+        build_model_client(config)
+    assert not isinstance(excinfo.value, ModelClientUnavailable)
+
+
 def test_celery_task_is_registered() -> None:
     from forge_worker.celery_app import celery_app
 
