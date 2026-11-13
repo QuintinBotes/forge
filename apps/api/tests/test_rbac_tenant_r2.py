@@ -33,6 +33,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from forge_agent import AgentRunner
 from forge_agent.testing import ScriptedModelClient, finish_response
@@ -74,10 +75,11 @@ def _as(app: FastAPI, principal: Principal) -> None:
 
 
 @pytest.fixture
-def app_with_agent() -> Iterator[FastAPI]:
+def app_with_agent(agent_session: Session) -> Iterator[FastAPI]:
     """App with an offline agent runner + fresh store wired (for run tests)."""
     from forge_api.routers.agent import (
         AgentRunStore,
+        get_agent_enqueue,
         get_agent_runner,
         get_agent_store,
     )
@@ -89,9 +91,10 @@ def app_with_agent() -> Iterator[FastAPI]:
             default=finish_response("done", confidence=0.95),
         )
     )
-    store = AgentRunStore()
+    store = AgentRunStore(agent_session)
     app.dependency_overrides[get_agent_runner] = lambda: runner
     app.dependency_overrides[get_agent_store] = lambda: store
+    app.dependency_overrides[get_agent_enqueue] = lambda: lambda objective: None
     yield app
 
 
@@ -106,7 +109,7 @@ def test_agent_runner_can_run_agent(app_with_agent: FastAPI) -> None:
     _as(app_with_agent, make_test_principal(role=UserRole.AGENT_RUNNER))
     with TestClient(app_with_agent) as client:
         resp = client.post("/agent/runs", json={"objective": "do it"})
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 202, resp.text
 
 
 def test_viewer_cannot_write_or_run_across_routers() -> None:
@@ -141,9 +144,10 @@ def test_viewer_cannot_write_or_run_across_routers() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_agent_run_is_workspace_scoped() -> None:
+def test_agent_run_is_workspace_scoped(agent_session: Session) -> None:
     from forge_api.routers.agent import (
         AgentRunStore,
+        get_agent_enqueue,
         get_agent_runner,
         get_agent_store,
     )
@@ -155,9 +159,10 @@ def test_agent_run_is_workspace_scoped() -> None:
             default=finish_response("done", confidence=0.95),
         )
     )
-    store = AgentRunStore()
+    store = AgentRunStore(agent_session)
     app.dependency_overrides[get_agent_runner] = lambda: runner
     app.dependency_overrides[get_agent_store] = lambda: store
+    app.dependency_overrides[get_agent_enqueue] = lambda: lambda objective: None
 
     _as(app, make_test_principal(role=UserRole.MEMBER, workspace_id=TEST_WORKSPACE_ID))
     with TestClient(app) as client:

@@ -41,6 +41,8 @@ SPEC_STOP_REASONS = {
     "parse_error",
     "auth_error",
     "input_too_large",
+    # Spec G / ADR-0008: a run that spends its token budget fails the same way.
+    "budget_exhausted",
 }
 
 

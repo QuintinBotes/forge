@@ -266,6 +266,12 @@ class Settings(BaseSettings):
     cors_origins: list[str] = []
     cors_allow_credentials: bool = True
 
+    # Forge's own MCP server (spec I): browser Origins allowed to call
+    # ``POST /mcp`` (JSON-encoded list). Empty by default — non-browser MCP
+    # clients send no Origin; any present Origin not listed is refused (DNS
+    # rebinding defence).
+    mcp_allowed_origins: list[str] = []
+
     # OpenAPI docs (/docs, /redoc, /openapi.json). In production the pages are
     # forced OFF unless FORGE_DOCS_ENABLED is *explicitly* set (info-disclosure
     # reduction, HARD-09); see ``docs_effectively_enabled``.

@@ -18,6 +18,7 @@ import sys
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from forge_api import cli_remote
 from forge_workflow.temporal.config import TemporalSettings
 
 if TYPE_CHECKING:
@@ -245,6 +246,8 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--now", default=None, help="UTC ISO-8601 eval clock")
     test = psub.add_parser("test", help="run .forge/policy.tests.yaml (exit 0/1)")
     test.add_argument("path", help="repo directory or a policy .yaml file path")
+
+    cli_remote.add_parsers(sub)
     return parser
 
 
@@ -266,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
             return _policy_simulate(args)
         if args.command == "test":
             return _policy_test(args.path)
+    if args.group in cli_remote.REMOTE_GROUPS:
+        return cli_remote.run(args)
     return 2  # pragma: no cover
 
 

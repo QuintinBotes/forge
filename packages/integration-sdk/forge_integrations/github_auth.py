@@ -125,8 +125,18 @@ class InstallationTokenProvider:
         transport: httpx.BaseTransport | None = None,
         clock: Callable[[], float] = time.time,
         timeout: float = 10.0,
+        repositories: list[str] | None = None,
+        permissions: dict[str, str] | None = None,
     ) -> None:
         self._app_id = app_id
+        # Optional narrowing (ADR-0008): a token for these repositories (names,
+        # not owner/name) with only these permissions. ``None`` keeps the
+        # installation's full grant.
+        self._scope: dict[str, object] = {}
+        if repositories is not None:
+            self._scope["repositories"] = list(repositories)
+        if permissions is not None:
+            self._scope["permissions"] = dict(permissions)
         # Stored under a name-mangled attribute and deliberately excluded from
         # __repr__ so the key value cannot leak through reprs/tracebacks (AC7).
         self.__private_key_pem = private_key_pem
@@ -167,6 +177,7 @@ class InstallationTokenProvider:
             resp = self._client.post(
                 f"/app/installations/{self._installation_id}/access_tokens",
                 headers={"Authorization": f"Bearer {app_jwt}"},
+                json=self._scope or None,
             )
         except httpx.HTTPError as exc:
             raise GitHubError(f"installation token request failed: {exc}") from exc

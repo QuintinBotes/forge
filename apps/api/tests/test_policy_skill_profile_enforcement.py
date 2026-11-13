@@ -8,14 +8,23 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
+from forge_api.db import get_db
 from forge_api.main import create_app
+from forge_api.routers.agent import _scripted_fallback_runner, get_agent_enqueue, get_agent_runner
 
 
 @pytest.fixture
-def client(authenticate_app: Callable[..., FastAPI]) -> Iterator[TestClient]:
+def client(
+    authenticate_app: Callable[..., FastAPI],
+    agent_session: Session,
+) -> Iterator[TestClient]:
     app = create_app()
     authenticate_app(app)
+    app.dependency_overrides[get_db] = lambda: agent_session
+    app.dependency_overrides[get_agent_runner] = _scripted_fallback_runner
+    app.dependency_overrides[get_agent_enqueue] = lambda: lambda objective: None
     with TestClient(app) as c:
         yield c
 
@@ -48,15 +57,15 @@ def test_disallowed_profile_is_rejected_422(client: TestClient, tmp_path: Path) 
 def test_allowed_profile_is_admitted(client: TestClient, tmp_path: Path) -> None:
     _write_policy(tmp_path)
     resp = client.post("/agent/runs", json=_objective(tmp_path, "security-review"))
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 202, resp.text
 
 
 def test_no_repo_root_skips_enforcement(client: TestClient) -> None:
     resp = client.post("/agent/runs", json={"objective": "no policy context"})
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 202, resp.text
 
 
 def test_default_profile_admitted_when_unspecified(client: TestClient, tmp_path: Path) -> None:
     _write_policy(tmp_path)
     resp = client.post("/agent/runs", json=_objective(tmp_path, None))
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 202, resp.text
