@@ -204,6 +204,50 @@ def test_run_cli_never_raises_on_unexpected_runner_exception():
 @pytest.mark.parametrize("name", list(CliName))
 def test_every_backend_suppresses_tools(name):
     """Global constraint: no backend may ever omit tool suppression."""
-    argv = backend_for(name).argv(system="S", user="U", schema_path="/tmp/s.json")
+    argv = backend_for(name).argv(
+        system="S", user="U", schema_path="/tmp/s.json", prompt_path="/tmp/d/prompt.txt"
+    )
     joined = " ".join(argv)
-    assert ("--disallowedTools" in joined) or ("--sandbox read-only" in joined.replace("  ", " "))
+    assert (
+        ("--disallowedTools" in joined)
+        or ("--sandbox read-only" in joined.replace("  ", " "))
+        or {"--disable-shell", "--disable-write", "--disable-web-tools"} <= set(argv)
+    )
+
+
+def test_muse_prompt_is_a_file_never_an_argv_token():
+    argv = backend_for(CliName.muse).argv(
+        system="S",
+        user=_DANGEROUS_PROMPT,
+        schema_path="/tmp/s.json",
+        model="muse-wonder-full-1.0",
+        prompt_path="/tmp/d/prompt.txt",
+    )
+    assert _DANGEROUS_PROMPT not in argv
+    assert argv[-2:] == ["--prompt-file", "/tmp/d/prompt.txt"]
+    assert argv[argv.index("--workspace") + 1] == "/tmp/d"
+    assert argv[argv.index("--preset") + 1] == "empty"
+    assert argv[argv.index("--model") + 1] == "muse-wonder-full-1.0"
+    assert argv[argv.index("--output-schema") + 1] == "/tmp/s.json"
+    assert backend_for(CliName.muse).stdin_payload(system="S", user="U") is None
+    assert backend_for(CliName.muse).needs_prompt_file is True
+
+
+def test_muse_final_text_is_the_terminal_event_text():
+    stdout = "\n".join(
+        [
+            "not json",
+            '{"payload_type":"run.output.delta","payload":{"text":"partial"}}',
+            '{"payload_type":"run.terminal.completed","payload":{"text":"final"}}',
+        ]
+    )
+    assert backend_for(CliName.muse).final_text(stdout) == "final"
+    assert backend_for(CliName.muse).final_text('{"payload_type":"run.usage"}') == ""
+
+
+def test_model_flag_reaches_claude_and_codex_argv():
+    claude = backend_for(CliName.claude).argv(system="S", user="U", schema_path=None, model="m1")
+    codex = backend_for(CliName.codex).argv(system="S", user="U", schema_path=None, model="m2")
+    assert claude[claude.index("--model") + 1] == "m1"
+    assert codex[codex.index("-m") + 1] == "m2"
+    assert "--model" not in backend_for(CliName.claude).argv(system="S", user="U", schema_path=None)

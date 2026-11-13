@@ -95,12 +95,17 @@ def test_openai_reasoning_effort_accepts_effort_enum_and_falls_back() -> None:
     assert effort_map.openai_reasoning_effort("turbo") == "high"
 
 
-@pytest.mark.parametrize("model", ["o3", "o1-mini", "o4-mini", "gpt-5", "gpt-5-mini"])
+@pytest.mark.parametrize(
+    "model",
+    ["o3", "o1-mini", "o4-mini", "gpt-5", "gpt-5-mini", "gpt-5.6-sol", "gpt-6-luna", "gpt-6.1-sol"],
+)
 def test_openai_reasoning_models_support_reasoning_effort(model: str) -> None:
     assert effort_map.openai_supports_reasoning_effort(model) is True
 
 
-@pytest.mark.parametrize("model", ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", ""])
+@pytest.mark.parametrize(
+    "model", ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-oss:20b", "gpt-50", "qwen3-coder", ""]
+)
 def test_openai_non_reasoning_models_do_not_support_reasoning_effort(model: str) -> None:
     assert effort_map.openai_supports_reasoning_effort(model) is False
 
@@ -139,6 +144,14 @@ def test_openai_create_kwargs_sets_reasoning_effort_on_reasoning_model(
 def test_openai_create_kwargs_omits_reasoning_effort_on_non_reasoning_model() -> None:
     kwargs = translate.openai_create_kwargs(_REQUEST, model="gpt-4o", max_tokens=8000, effort="max")
     assert "reasoning_effort" not in kwargs
+    assert kwargs["max_tokens"] == 8000
+    assert "max_completion_tokens" not in kwargs
+
+
+def test_reasoning_models_get_max_completion_tokens_not_max_tokens() -> None:
+    kwargs = translate.openai_create_kwargs(_REQUEST, model="gpt-6.1-sol", max_tokens=8000)
+    assert kwargs["max_completion_tokens"] == 8000
+    assert "max_tokens" not in kwargs
 
 
 # --------------------------------------------------------------------------- #

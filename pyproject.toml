@@ -25,6 +25,7 @@ dependencies = [
     "forge-eval",
     "forge-marketplace",
     "forge-approval",
+    "forge-world",
     "forge-obs",
     "forge-api",
     "forge-worker",
@@ -85,6 +86,7 @@ forge-skill = { workspace = true }
 forge-eval = { workspace = true }
 forge-marketplace = { workspace = true }
 forge-approval = { workspace = true }
+forge-world = { workspace = true }
 forge-obs = { workspace = true }
 forge-api = { workspace = true }
 forge-worker = { workspace = true }
@@ -176,6 +178,7 @@ version_files = [
     "packages/skill-sdk/pyproject.toml:^version",
     "packages/spec-engine/pyproject.toml:^version",
     "packages/workflow-engine/pyproject.toml:^version",
+    "packages/world-model/pyproject.toml:^version",
     "apps/api/pyproject.toml:^version",
     "apps/worker/pyproject.toml:^version",
     "apps/mcp-gateway/pyproject.toml:^version",
@@ -200,6 +203,7 @@ version_files = [
     "packages/skill-sdk/forge_skill/__init__.py:__version__",
     "packages/spec-engine/forge_spec/__init__.py:__version__",
     "packages/workflow-engine/forge_workflow/__init__.py:__version__",
+    "packages/world-model/forge_world/__init__.py:__version__",
     "apps/api/forge_api/__init__.py:__version__",
     "apps/worker/forge_worker/__init__.py:__version__",
     "apps/mcp-gateway/forge_mcp_gateway/__init__.py:__version__",

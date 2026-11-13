@@ -19,6 +19,8 @@ default hermetic suite. Not yet written; see
 from __future__ import annotations
 
 import errno
+import json
+import os
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -31,6 +33,7 @@ __all__ = [
     "CliBackend",
     "CliResult",
     "CodexCliBackend",
+    "MuseCliBackend",
     "backend_for",
     "run_cli",
 ]
@@ -58,8 +61,23 @@ class CliResult:
 
 class CliBackend(Protocol):
     needs_schema_file: bool
+    #: The CLI cannot read its prompt from stdin, so the client writes it to a
+    #: private temp file and passes ``prompt_path`` (the prompt stays out of argv).
+    needs_prompt_file: bool
 
-    def argv(self, *, system: str, user: str, schema_path: str | None) -> list[str]: ...
+    def argv(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema_path: str | None,
+        model: str | None = None,
+        prompt_path: str | None = None,
+    ) -> list[str]: ...
+
+    def final_text(self, stdout: str) -> str:
+        """The CLI's final answer extracted from its raw stdout."""
+        ...
 
     def stdin_payload(self, *, system: str, user: str) -> str | None:
         """The text to send on stdin (then EOF), or ``None`` for none.
@@ -137,11 +155,21 @@ class ClaudeCliBackend:
     """
 
     needs_schema_file = False
+    needs_prompt_file = False
 
-    def argv(self, *, system: str, user: str, schema_path: str | None) -> list[str]:
+    def argv(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema_path: str | None,
+        model: str | None = None,
+        prompt_path: str | None = None,
+    ) -> list[str]:
         return [
             "claude",
             "--print",
+            *(["--model", model] if model else []),
             "--output-format",
             "json",
             "--allowedTools",
@@ -158,6 +186,9 @@ class ClaudeCliBackend:
 
     def stdin_payload(self, *, system: str, user: str) -> str | None:
         return user
+
+    def final_text(self, stdout: str) -> str:
+        return stdout
 
 
 class CodexCliBackend:
@@ -179,9 +210,20 @@ class CodexCliBackend:
     """
 
     needs_schema_file = True
+    needs_prompt_file = False
 
-    def argv(self, *, system: str, user: str, schema_path: str | None) -> list[str]:
+    def argv(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema_path: str | None,
+        model: str | None = None,
+        prompt_path: str | None = None,
+    ) -> list[str]:
         argv = ["codex", "exec", "--json", "--sandbox", "read-only"]
+        if model:
+            argv += ["-m", model]
         if schema_path:
             argv += ["--output-schema", schema_path]
         return argv
@@ -189,10 +231,82 @@ class CodexCliBackend:
     def stdin_payload(self, *, system: str, user: str) -> str | None:
         return f"{system}\n\n{user}"
 
+    def final_text(self, stdout: str) -> str:
+        return stdout
+
+
+class MuseCliBackend:
+    """`muse exec` as a text oracle: no tools, no shell, no writes, no web.
+
+    ``muse exec`` does not read its prompt from stdin (a ``-`` positional is
+    taken literally), so the prompt goes in a private temp file passed with
+    ``--prompt-file``; like the other backends, the prompt is never an argv
+    token. ``--workspace`` is that file's own fresh directory, so the run is
+    rooted nowhere near the host's repositories. Verified offline against the
+    ``echo`` provider (muse 2026-11): this argv is accepted and the final answer
+    arrives as the ``text`` of the ``run.terminal.completed`` JSONL event.
+    Enforcement of the tool flags against the live ``meta`` provider is
+    unverified (see the module-level TODO).
+    """
+
+    needs_schema_file = True
+    needs_prompt_file = True
+
+    def argv(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema_path: str | None,
+        model: str | None = None,
+        prompt_path: str | None = None,
+    ) -> list[str]:
+        if not prompt_path:
+            raise ValueError("muse needs a prompt file")
+        argv = [
+            "muse",
+            "exec",
+            "--json",
+            "--no-session-log",
+            "--preset",
+            "empty",
+            "--workspace",
+            os.path.dirname(prompt_path),
+            "--disable-write",
+            "--disable-shell",
+            "--disable-web-tools",
+            "--disable-request-user-input",
+            "--disable-reminders",
+            "--approval-mode",
+            "untrusted",
+        ]
+        if model:
+            argv += ["--model", model]
+        if schema_path:
+            argv += ["--output-schema", schema_path]
+        return [*argv, "--prompt-file", prompt_path]
+
+    def stdin_payload(self, *, system: str, user: str) -> str | None:
+        return None
+
+    def final_text(self, stdout: str) -> str:
+        """The ``text`` of the last ``run.terminal.completed`` event, or ``""``."""
+        final = ""
+        for line in stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and event.get("payload_type") == "run.terminal.completed":
+                text = (event.get("payload") or {}).get("text")
+                final = text if isinstance(text, str) else ""
+        return final
+
 
 _BACKENDS: dict[CliName, CliBackend] = {
     CliName.claude: ClaudeCliBackend(),
     CliName.codex: CodexCliBackend(),
+    CliName.muse: MuseCliBackend(),
 }
 
 

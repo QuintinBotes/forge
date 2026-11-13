@@ -33,6 +33,7 @@ members = [
     "forge-spec",
     "forge-worker",
     "forge-workflow",
+    "forge-world",
 ]
 
 [[package]]
@@ -888,6 +889,7 @@ dependencies = [
     { name = "forge-spec" },
     { name = "forge-worker" },
     { name = "forge-workflow" },
+    { name = "forge-world" },
 ]
 
 [package.dev-dependencies]
@@ -932,6 +934,7 @@ requires-dist = [
     { name = "forge-spec", editable = "packages/spec-engine" },
     { name = "forge-worker", editable = "apps/worker" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
+    { name = "forge-world", editable = "packages/world-model" },
 ]
 
 [package.metadata.requires-dev]
@@ -1005,6 +1008,7 @@ dependencies = [
     { name = "forge-policy" },
     { name = "forge-skill" },
     { name = "forge-workflow" },
+    { name = "forge-world" },
     { name = "httpx" },
     { name = "lxml" },
     { name = "pycrdt" },
@@ -1039,6 +1043,7 @@ requires-dist = [
     { name = "forge-policy", editable = "packages/policy-sdk" },
     { name = "forge-skill", editable = "packages/skill-sdk" },
     { name = "forge-workflow", editable = "packages/workflow-engine" },
+    { name = "forge-world", editable = "packages/world-model" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "lxml", specifier = ">=5.3" },
     { name = "pycrdt", specifier = ">=0.14.1" },
@@ -1500,6 +1505,27 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "temporalio", specifier = "==1.33.0" },
+]
+
+[[package]]
+name = "forge-world"
+version = "0.1.0"
+source = { editable = "packages/world-model" }
+dependencies = [
+    { name = "forge-contracts" },
+    { name = "forge-db" },
+    { name = "forge-knowledge" },
+    { name = "pydantic" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "forge-contracts", editable = "packages/contracts" },
+    { name = "forge-db", editable = "packages/db" },
+    { name = "forge-knowledge", editable = "packages/knowledge-core" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
 [[package]]

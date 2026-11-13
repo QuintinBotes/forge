@@ -17,6 +17,8 @@ dependencies = [
     "forge-marketplace",
     # F36 — Human Approval System SDK (unified gate service, authorizer, registry).
     "forge-approval",
+    # H1 — world model (bitemporal fact ledger: domain, repository, extraction).
+    "forge-world",
     # F38 — observability & cost metrics SDK (metrics facade, cost ledger seams,
     # usage meter, structured logging).
     "forge-obs",
@@ -78,3 +80,4 @@ packages = ["forge_api"]
 
 [tool.uv.sources]
 forge-integrations = { workspace = true }
+forge-world = { workspace = true }

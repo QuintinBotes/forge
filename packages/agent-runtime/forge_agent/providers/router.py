@@ -40,18 +40,19 @@ __all__ = [
 #: Default ``tier -> model`` map **per provider**. Anthropic tracks the approved
 #: Adaptive Orchestration decision (junior=Haiku, medior=Sonnet, senior=Opus);
 #: OpenAI carries an equivalent cheap/mid/frontier ladder so the router never
-#: assumes a single provider. Operators override via ``ModelRouter(tier_models=…)``
+#: assumes a single provider (Luna: fast and cheap; 6.1 Sol: the coding
+#: workhorse; Astra: frontier). Operators override via ``ModelRouter(tier_models=…)``
 #: (a partial override merges onto these defaults).
 DEFAULT_TIER_MODELS: dict[ProviderName, dict[Tier, str]] = {
     ProviderName.anthropic: {
-        "junior": "claude-haiku-4-5",
-        "medior": "claude-sonnet-5",
-        "senior": "claude-opus-4-8",
+        "junior": "claude-haiku-5-5",
+        "medior": "claude-sonnet-5-5",
+        "senior": "claude-opus-5-5",
     },
     ProviderName.openai: {
-        "junior": "gpt-4.1-mini",
-        "medior": "gpt-4.1",
-        "senior": "o3",
+        "junior": "gpt-6-luna",
+        "medior": "gpt-6.1-sol",
+        "senior": "gpt-6-astra",
     },
 }
 
@@ -72,14 +73,19 @@ class ModelRouter:
 
     ``tier_models`` is merged onto :data:`DEFAULT_TIER_MODELS` for ``provider``,
     so a caller may override only the tiers it cares about and still resolve the
-    rest. Providers without a built-in default must supply a complete map.
+    rest. Providers without a built-in default (a local endpoint, a local CLI)
+    fill the tiers they were not given with ``default_model``, the one model
+    the operator configured; with neither, the map must be complete.
     """
 
     provider: ProviderName
     tier_models: Mapping[Tier, str] = field(default_factory=dict)
+    default_model: str | None = None
 
     def __post_init__(self) -> None:
         base = DEFAULT_TIER_MODELS.get(self.provider, {})
+        if not base and self.default_model:
+            base = dict.fromkeys(("junior", "medior", "senior"), self.default_model)
         merged: dict[Tier, str] = {**base, **dict(self.tier_models)}
         missing = [t for t in ("junior", "medior", "senior") if t not in merged]
         if missing:

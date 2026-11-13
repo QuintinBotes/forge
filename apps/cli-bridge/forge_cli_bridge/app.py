@@ -146,6 +146,7 @@ def create_app(settings: BridgeSettings) -> FastAPI:
             return ModelResponse(content="", model="local-cli", stop_reason="provider_unavailable")
         client = LocalCliModelClient(
             cli_name=CliName(detected[0].name),
+            model=settings.cli_model,
             timeout_s=settings.timeout_s,
             redactor=app.state.redactor,
             runner=app.state.runner,

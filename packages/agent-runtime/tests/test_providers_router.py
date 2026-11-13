@@ -76,15 +76,15 @@ def _sizing_with_score(score: int) -> ComplexitySizing:
 class TestResolution:
     def test_anthropic_default_ladder(self) -> None:
         router = ModelRouter(provider=ProviderName.anthropic)
-        assert router.resolve("junior") == "claude-haiku-4-5"
-        assert router.resolve("medior") == "claude-sonnet-5"
-        assert router.resolve("senior") == "claude-opus-4-8"
+        assert router.resolve("junior") == "claude-haiku-5-5"
+        assert router.resolve("medior") == "claude-sonnet-5-5"
+        assert router.resolve("senior") == "claude-opus-5-5"
 
     def test_openai_default_ladder_is_distinct_provider(self) -> None:
         router = ModelRouter(provider=ProviderName.openai)
-        assert router.resolve("junior") == "gpt-4.1-mini"
-        assert router.resolve("medior") == "gpt-4.1"
-        assert router.resolve("senior") == "o3"
+        assert router.resolve("junior") == "gpt-6-luna"
+        assert router.resolve("medior") == "gpt-6.1-sol"
+        assert router.resolve("senior") == "gpt-6-astra"
 
     def test_every_default_model_is_priced(self) -> None:
         # Router defaults must be models the cost path can account for.
@@ -97,7 +97,7 @@ class TestResolution:
             provider=ProviderName.anthropic, tier_models={"senior": "claude-opus-4-7"}
         )
         assert router.resolve("senior") == "claude-opus-4-7"  # overridden
-        assert router.resolve("junior") == "claude-haiku-4-5"  # inherited default
+        assert router.resolve("junior") == "claude-haiku-5-5"  # inherited default
 
     def test_classifier_model_is_the_junior_tier(self) -> None:
         router = ModelRouter(provider=ProviderName.anthropic)
@@ -117,7 +117,7 @@ class TestConfigHandoff:
         config = router.config_for("medior", api_key="sk-fake-not-a-real-key")
         assert isinstance(config, ModelClientConfig)
         assert config.provider is ProviderName.anthropic
-        assert config.model == "claude-sonnet-5"
+        assert config.model == "claude-sonnet-5-5"
 
     def test_config_overrides_flow_through(self) -> None:
         router = ModelRouter(provider=ProviderName.anthropic)
@@ -163,14 +163,14 @@ class TestRouteHeuristic:
         decision = route(sizing, provider=ProviderName.anthropic)
         assert isinstance(decision, RouteDecision)
         assert decision.tier == "junior"
-        assert decision.model == "claude-haiku-4-5"
+        assert decision.model == "claude-haiku-5-5"
         assert decision.used_classifier is False
 
     def test_clear_senior_routes_to_senior_model(self) -> None:
         sizing = _sizing_with_score(30)
         decision = route(sizing, provider=ProviderName.openai)
         assert decision.tier == "senior"
-        assert decision.model == "o3"
+        assert decision.model == "gpt-6-astra"
 
     def test_real_sizing_flows_through(self) -> None:
         sizing = score_complexity(SizingSignals(kind=TaskKind.DOC, priority=Priority.LOW))
@@ -206,7 +206,7 @@ class TestRouteClassifier:
         )
         assert decision.used_classifier is True
         assert decision.tier == "medior"
-        assert decision.model == "claude-sonnet-5"
+        assert decision.model == "claude-sonnet-5-5"
         assert len(client.calls) == 1
         assert any("broke tie" in r for r in decision.reasons)
 
@@ -223,7 +223,7 @@ class TestRouteClassifier:
         decision = route(sizing, provider=ProviderName.anthropic, classifier=RaisingClient())
         assert decision.used_classifier is True
         assert decision.tier == "medior"  # fell back to heuristic
-        assert decision.model == "claude-sonnet-5"
+        assert decision.model == "claude-sonnet-5-5"
 
     def test_classifier_ambiguous_answer_falls_back(self) -> None:
         # Reply naming BOTH candidates is unusable -> fallback to heuristic tier.
@@ -268,3 +268,26 @@ class TestClassifyTier:
         client = FakeClassifierClient("")
         result = classify_tier(client, candidates=["junior", "medior"], fallback="junior")
         assert result == "junior"
+
+
+class TestDefaultModelFill:
+    def test_provider_without_a_ladder_uses_the_configured_model(self) -> None:
+        router = ModelRouter(provider=ProviderName.openai_compatible, default_model="qwen3-coder")
+        assert {router.resolve(t) for t in ("junior", "medior", "senior")} == {"qwen3-coder"}
+
+    def test_overrides_beat_the_configured_model(self) -> None:
+        router = ModelRouter(
+            provider=ProviderName.openai_compatible,
+            default_model="qwen3-coder",
+            tier_models={"senior": "llama-4"},
+        )
+        assert router.resolve("senior") == "llama-4"
+        assert router.resolve("junior") == "qwen3-coder"
+
+    def test_default_model_never_replaces_a_built_in_ladder(self) -> None:
+        router = ModelRouter(provider=ProviderName.anthropic, default_model="claude-fable-5-1")
+        assert router.resolve("junior") == "claude-haiku-5-5"
+
+    def test_no_ladder_and_no_default_still_refuses(self) -> None:
+        with pytest.raises(ValueError, match="no model configured"):
+            ModelRouter(provider=ProviderName.openai_compatible)

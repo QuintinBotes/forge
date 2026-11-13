@@ -54,6 +54,7 @@ known-first-party = [
     "forge_eval",
     "forge_marketplace",
     "forge_approval",
+    "forge_world",
     "forge_obs",
     "forge_api",
     "forge_worker",
