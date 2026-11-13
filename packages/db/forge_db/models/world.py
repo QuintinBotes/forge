@@ -354,12 +354,42 @@ class WorldDecision(WorkspaceScopedModel):
     links: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
 
 
+class WorldFactFeedback(WorkspaceScopedModel):
+    """One run outcome against one referenced fact (append-only, spec J §2.5).
+
+    Written when the PR of the run that consumed the fact is closed:
+    ``reinforced`` when merged, ``weakened`` otherwise. At most one row per
+    ``(run_id, fact_id)`` — a replayed webhook writes nothing new. Feeds the
+    effective-confidence computation on read; never stored on the fact.
+    """
+
+    __tablename__ = "world_fact_feedback"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('reinforced','weakened')",
+            name="world_fact_feedback_outcome",
+        ),
+        UniqueConstraint("run_id", "fact_id", name="uq_world_fact_feedback_run_fact"),
+        Index("ix_world_fact_feedback_fact", "workspace_id", "fact_id"),
+    )
+
+    fact_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("world_fact.id", ondelete="CASCADE"), nullable=False
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("agent_run.id", ondelete="CASCADE"), nullable=False
+    )
+    #: ``reinforced`` | ``weakened``.
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+
+
 # Postgres: tombstone-only guard on world_fact; append-only elsewhere.
 _attach_tombstone_trigger(WorldFact.__table__)
 attach_immutability_trigger(WorldEvidence.__table__)
 attach_immutability_trigger(WorldExtractionDrop.__table__)
 attach_immutability_trigger(WorldDerivation.__table__)
 attach_immutability_trigger(WorldDecision.__table__)
+attach_immutability_trigger(WorldFactFeedback.__table__)
 
 
 __all__ = [
@@ -371,6 +401,7 @@ __all__ = [
     "WorldEvidence",
     "WorldExtractionDrop",
     "WorldFact",
+    "WorldFactFeedback",
     "WorldProposal",
     "WorldRelation",
 ]

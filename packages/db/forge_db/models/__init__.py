@@ -193,6 +193,7 @@ from forge_db.models.world import (
     WorldEvidence,
     WorldExtractionDrop,
     WorldFact,
+    WorldFactFeedback,
     WorldProposal,
     WorldRelation,
 )
@@ -373,6 +374,7 @@ __all__ = [
     "WorldEvidence",
     "WorldExtractionDrop",
     "WorldFact",
+    "WorldFactFeedback",
     "WorldProposal",
     "WorldRelation",
     "enums",

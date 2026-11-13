@@ -168,6 +168,10 @@ class SprintServiceAutoStarter:
         return str(started.id)
 
 
+class PmConnectionDisabledError(RuntimeError):
+    """``CREATE_EXTERNAL_ISSUE`` was refused: the PM connection is disabled."""
+
+
 class PmAdapterIssueCreator:
     """Wires ``CREATE_EXTERNAL_ISSUE`` to a connected PM adapter (F40-PM-ADAPTERS).
 
@@ -175,13 +179,29 @@ class PmAdapterIssueCreator:
     (the workspace/project -> connection lookup — e.g. via
     ``PMConnectionService`` — is the caller's job); this seam only bridges the
     executor's sync port to the adapter's ``async create_external``.
+
+    A person configuring the action opts in to creating tracker issues (spec
+    M §3), but a *disabled* connection refuses: ``disabled_check`` decides when
+    given, otherwise the adapter's forge-set ``ctx.config["connection_status"]``
+    (stamped by ``PMConnectionService`` when it builds the adapter) does.
     """
 
-    def __init__(self, resolver: Callable[[str], PMAdapter]) -> None:
+    def __init__(
+        self,
+        resolver: Callable[[str], PMAdapter],
+        *,
+        disabled_check: Callable[[str], bool] | None = None,
+    ) -> None:
         self._resolver = resolver
+        self._disabled_check = disabled_check
 
     def create_issue(self, provider: str, *, title: str, ctx: ActionContext) -> str:
         adapter = self._resolver(provider)
+        if self._connection_disabled(provider, adapter):
+            raise PmConnectionDisabledError(
+                f"PM connection for provider {provider!r} is disabled; "
+                "refusing to create an external issue"
+            )
         project_id = ctx.envelope.project_id or ctx.snapshot.entity_id
         forge_task = ForgeTask(
             id=ctx.snapshot.entity_id,
@@ -195,6 +215,12 @@ class PmAdapterIssueCreator:
         external = asyncio.run(adapter.create_external(forge_task))
         return external.external_id
 
+    def _connection_disabled(self, provider: str, adapter: PMAdapter) -> bool:
+        if self._disabled_check is not None:
+            return self._disabled_check(provider)
+        config = getattr(getattr(adapter, "ctx", None), "config", None) or {}
+        return isinstance(config, dict) and config.get("connection_status") == "disabled"
+
 
 __all__ = [
     "AutomationActionAuditSink",
@@ -203,5 +229,6 @@ __all__ = [
     "MockDeployDispatcher",
     "MockGitHubMergeDispatcher",
     "PmAdapterIssueCreator",
+    "PmConnectionDisabledError",
     "SprintServiceAutoStarter",
 ]

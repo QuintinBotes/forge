@@ -108,7 +108,14 @@ class AgentRunner:
             agents_md = load_agents_md(working_root) if working_root is not None else None
         artifacts["agents_md_loaded"] = agents_md is not None
         system = build_system_prompt(objective, agents_md=agents_md, context=objective.context)
-        user = objective.objective
+        source = objective.context.get("source")
+        # A tracker title is untrusted (ADR-0014): it stays inside the system
+        # prompt's labelled block instead of becoming the user turn.
+        user = (
+            "Carry out the tracker item described in the system prompt."
+            if isinstance(source, str) and source.strip()
+            else objective.objective
+        )
         if objective.instructions:
             user = f"{user}\n\n{objective.instructions}"
         return AgentState(

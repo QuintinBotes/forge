@@ -11,8 +11,9 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from forge_contracts.pm import StatusCategory
 from forge_db.models.enums import (
     PMAuthType,
     PMConflictPolicy,
@@ -21,6 +22,45 @@ from forge_db.models.enums import (
     PMSyncDirection,
     PMSyncState,
 )
+
+
+class PMDispatchConfig(BaseModel):
+    """Issue-driven dispatch config (spec M, M3).
+
+    Persisted at ``PMConnection.config["dispatch"]`` and validated here at the
+    API boundary (create + patch); the worker re-validates the stored copy and
+    fails closed on anything invalid (ADR-0007). ``enabled`` alone is not
+    enough to start a run: ``repository`` must be set and connected, and the
+    webhook sender must be listed in ``allowed_senders``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    label: str = Field(default="forge:run", min_length=1, max_length=100)
+    repository: str | None = None
+    allowed_senders: list[str] = Field(default_factory=list)
+    max_active_runs: int = Field(default=2, ge=1, le=10)
+    # Spec M (M2): the one tracker status forge may set on its own — the forge
+    # status *category* mapped through the connection's status map when a run
+    # opens a pull request; ``None`` means forge never transitions the issue.
+    status_on_pr_opened: StatusCategory | None = None
+
+    @field_validator("repository")
+    @classmethod
+    def _repository_is_owner_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        owner, sep, name = value.partition("/")
+        if not sep or not owner or not name or "/" in name:
+            raise ValueError("repository must be 'owner/name'")
+        return value
+
+    def sender_allowed(self, sender_login: str | None) -> bool:
+        """Case-insensitive allow-list check; an empty list allows nobody."""
+        if not sender_login:
+            return False
+        return sender_login.lower() in {s.lower() for s in self.allowed_senders}
 
 
 class PMConnectionResponse(BaseModel):
@@ -44,6 +84,7 @@ class PMConnectionResponse(BaseModel):
     priority_map: dict = {}
     field_map: dict = {}
     status: PMConnectionStatus
+    dispatch: PMDispatchConfig = Field(default_factory=PMDispatchConfig)
     last_health_at: datetime | None = None
     last_full_sync_at: datetime | None = None
     has_credential: bool = False
@@ -65,6 +106,7 @@ class PMConnectionPatch(BaseModel):
     field_map: dict | None = None
     sync_direction: PMSyncDirection | None = None
     conflict_policy: PMConflictPolicy | None = None
+    dispatch: PMDispatchConfig | None = None
     enabled: bool | None = None
 
 

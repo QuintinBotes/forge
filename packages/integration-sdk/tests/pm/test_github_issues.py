@@ -211,7 +211,66 @@ def test_issue_webhooks_and_label_hint(action, github_issues_adapter):
     assert event.external_key == "acme/widgets#42"
     assert event.delivery_id == "delivery-42"
     assert event.signature_valid
-    assert event.payload == {"action": action, "event": "issues", "label": "forge:run"}
+    assert event.payload == {
+        "action": action,
+        "event": "issues",
+        "label": "forge:run",
+        "sender_login": "octocat",
+        "repository_full_name": "acme/widgets",
+        "is_pull_request": False,
+        "forge_run_marker": None,
+    }
+
+
+def test_forge_marker_comment_surfaces_run_id_without_body(github_issues_adapter):
+    """Spec M M2: the echo of forge's own run-state comment is recognisable."""
+    payload = load_json("github_issues/issue_comment.json")
+    run_id = "12345678-1234-1234-1234-1234567890ab"
+    payload["comment"]["body"] = f"Forge run finished.\n\n<!-- forge:run:{run_id} -->"
+    raw = json.dumps(payload).encode()
+    event = github_issues_adapter.parse_webhook(raw, {"x-github-event": "issue_comment"})
+    assert event.payload["forge_run_marker"] == run_id
+    assert "body" not in json.dumps(event.payload)
+
+
+async def test_transition_external_writes_only_status(
+    github_issues_adapter, github_issues_requests
+):
+    """Spec M M2: the one mapped transition never rewrites tracker-owned fields.
+
+    PATCH carries ``state`` alone (never the whole label set); only the
+    forge-managed status labels are added/removed, so concurrent human
+    labels survive.
+    """
+    external = await github_issues_adapter.transition_external("42", StatusCategory.completed)
+    assert external.status_category == StatusCategory.completed
+    patch = [r for r in github_issues_requests if r.method == "PATCH"]
+    assert len(patch) == 1
+    assert json.loads(patch[0].content) == {"state": "closed"}
+    deletes = [r for r in github_issues_requests if r.method == "DELETE"]
+    assert len(deletes) == 1
+    assert "status%3Ain-progress" in str(deletes[0].url)
+    # No request ever carries the whole label set.
+    for request in github_issues_requests:
+        if request.method in ("PATCH", "PUT"):
+            assert "labels" not in json.loads(request.content)
+    assert "status:in-progress" not in external.labels
+    assert "bug" in external.labels
+    assert "priority:high" in external.labels
+
+
+async def test_transition_external_adds_target_status_label(
+    github_issues_adapter, github_issues_requests
+):
+    external = await github_issues_adapter.transition_external("42", StatusCategory.backlog)
+    assert external.status_category == StatusCategory.backlog
+    adds = [
+        r for r in github_issues_requests if r.method == "POST" and str(r.url).endswith("/labels")
+    ]
+    assert len(adds) == 1
+    assert json.loads(adds[0].content) == {"labels": ["status:backlog"]}
+    assert "status:backlog" in external.labels
+    assert "status:in-progress" not in external.labels
 
 
 @pytest.mark.parametrize("action", ["created", "edited", "deleted"])
@@ -410,3 +469,24 @@ def test_unknown_mappings_fail(github_issues_adapter):
             github_issues_adapter.map_status("unknown", direction)
         with pytest.raises(MappingError):
             github_issues_adapter.map_priority("unknown", direction)
+
+
+async def test_transition_tolerates_a_status_label_already_removed(
+    github_issues_adapter, github_issues_requests, monkeypatch
+):
+    from forge_integrations.pm.errors import ExternalNotFound
+
+    original = github_issues_adapter._request
+
+    async def flaky(method, path, **kwargs):
+        if method == "DELETE":
+            raise ExternalNotFound("label already gone")
+        return await original(method, path, **kwargs)
+
+    monkeypatch.setattr(github_issues_adapter, "_request", flaky)
+    # Completes instead of raising, and still applies the target label.
+    await github_issues_adapter.transition_external("42", StatusCategory.backlog)
+    adds = [
+        r for r in github_issues_requests if r.method == "POST" and str(r.url).endswith("/labels")
+    ]
+    assert [json.loads(r.content) for r in adds] == [{"labels": ["status:backlog"]}]

@@ -23,6 +23,7 @@ from forge_contracts import (
 from forge_db.base import Base
 from forge_db.models import AgentRun, AgentRunEvent, Workspace
 from forge_worker.agent_runner import run_agent_task
+from forge_worker.reliability import InMemoryDedupBackend, set_dedup_backend
 from forge_worker.run_events import MAX_TEXT, RunEventSink, terminal_drafts
 
 
@@ -33,6 +34,14 @@ def factory() -> sessionmaker[Session]:
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
+
+
+@pytest.fixture
+def fresh_dedup():
+    """Isolate the process-wide task dedup backend (mirrors test_reliability)."""
+    set_dedup_backend(InMemoryDedupBackend())
+    yield
+    set_dedup_backend(None)
 
 
 def _run(factory: sessionmaker[Session]) -> tuple[uuid.UUID, uuid.UUID]:
@@ -151,3 +160,62 @@ def test_a_real_run_streams_from_started_to_a_terminal_event(
     with factory() as session:
         run = session.get(AgentRun, run_id)
         assert run is not None and run.completed_at is not None
+
+
+def test_soft_time_limit_records_terminal_escalated(factory, monkeypatch, fresh_dedup) -> None:
+    """The soft-limit path closes the run out instead of leaving it PENDING."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    workspace_id, run_id = _run(factory)
+    monkeypatch.setattr(agent_runner_module, "create_session_factory", lambda: factory)
+
+    def _raise(*_args, **_kwargs):
+        raise SoftTimeLimitExceeded
+
+    monkeypatch.setattr(agent_runner_module, "run_objective", _raise)
+    out = run_agent_task(
+        {
+            "objective": "runaway",
+            "context": {"agent_run_id": str(run_id), "workspace_id": str(workspace_id)},
+        },
+        idempotency_key="soft-limit-run",
+    )
+    assert out["escalated"] is True
+    assert out["reason"] == "soft_time_limit_exceeded"
+    rows = _events(factory, run_id)
+    assert rows[-1].type == RunEventType.THREAD_FAILED.value
+    assert rows[-1].payload["status"] == "escalated"
+    with factory() as session:
+        run = session.get(AgentRun, run_id)
+        assert run is not None
+        assert run.status.value == "escalated"
+        assert run.output["error"] == "soft_time_limit_exceeded"
+        assert run.completed_at is not None
+
+
+def test_unhandled_exception_records_failed_then_reraises(
+    factory, monkeypatch, fresh_dedup
+) -> None:
+    workspace_id, run_id = _run(factory)
+    monkeypatch.setattr(agent_runner_module, "create_session_factory", lambda: factory)
+
+    def _raise(*_args, **_kwargs):
+        raise RuntimeError("upstream 503")
+
+    monkeypatch.setattr(agent_runner_module, "run_objective", _raise)
+    with pytest.raises(RuntimeError, match="upstream 503"):
+        run_agent_task(
+            {
+                "objective": "doomed",
+                "context": {"agent_run_id": str(run_id), "workspace_id": str(workspace_id)},
+            },
+            idempotency_key="unhandled-run",
+        )
+    rows = _events(factory, run_id)
+    assert rows[-1].type == RunEventType.THREAD_FAILED.value
+    with factory() as session:
+        run = session.get(AgentRun, run_id)
+        assert run is not None
+        assert run.status.value == "failed"
+        assert run.output["error"] == "RuntimeError"
+        assert run.completed_at is not None

@@ -39,7 +39,15 @@ from forge_spec import FileSpecEngine, spec_id_for_key
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS = uuid.UUID("00000000-0000-0000-0000-0000000000a2")
-FACTORY_TOOLS = {"spec_list", "spec_get", "board_items", "approvals_pending", "run_status"}
+FACTORY_TOOLS = {
+    "spec_list",
+    "spec_get",
+    "board_items",
+    "approvals_pending",
+    "run_status",
+    # Spec J: the context-assembly read tool (context_tools).
+    "assemble_context",
+}
 WORLD_TOOLS = {
     "world_search",
     "world_entity",

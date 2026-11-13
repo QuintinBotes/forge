@@ -199,6 +199,9 @@ EXPECTED_MODELS = [
     "WorldEntityMerge",
     "WorldDerivation",
     "WorldDecision",
+    # J outcome feedback (spec J §2.5): one append-only reinforced/weakened
+    # row per (run, fact) a closed PR produced.
+    "WorldFactFeedback",
 ]
 
 # Tables that are NOT the tenant root and therefore must carry a workspace FK.

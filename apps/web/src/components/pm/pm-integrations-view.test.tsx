@@ -406,9 +406,25 @@ describe("PmIntegrationsView — connect form", () => {
           auth_type: "api_token",
           api_token: "secret-token",
           api_token_email: "bot@acme.com",
+          // Spec M M2: the create form defaults to the tracker-wins policy.
+          conflict_policy: "external_wins",
         }),
       ),
     );
+  });
+
+  it("offers GitHub Issues as a provider", async () => {
+    renderView(makeClient({ listPmConnections: vi.fn(() => Promise.resolve([])) }));
+    fireEvent.click(await screen.findByTestId("pm-empty-connect"));
+    await screen.findByTestId("pm-form");
+
+    fireEvent.click(screen.getByTestId("pm-provider-github_issues"));
+
+    expect(screen.getByTestId("pm-provider-github_issues")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.queryByLabelText("Jira site URL")).not.toBeInTheDocument();
   });
 
   it("hides Jira-only fields when Linear is selected", async () => {

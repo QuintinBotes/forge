@@ -130,6 +130,12 @@ class AgentRun(WorkspaceScopedModel):
         json_type(), default=dict, server_default=text("'{}'"), nullable=False
     )
     inputs: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
+    #: Ids of the context items a bundle gave this run (spec J §2.5):
+    #: ``[{"kind": "fact"|"chunk"|"spec"|"memory", "id": str}]``, written by
+    #: ``assemble_context`` and copied into the result artifacts by the worker.
+    context_refs: Mapped[list[Any]] = mapped_column(
+        json_type(), default=list, server_default=text("'[]'"), nullable=False
+    )
     steps: Mapped[list[Any]] = mapped_column(json_type(), default=list, nullable=False)
     output: Mapped[dict[str, Any] | None] = mapped_column(json_type(), nullable=True)
     confidence: Mapped[float | None] = mapped_column(nullable=True)
