@@ -10,9 +10,10 @@ Two structural guarantees, both from the 2026-09-17 self-host evaluation:
   afternoon minting keys that never reached the database. The compose files are
   the composition root; these tests hold them to selecting ``db``.
 
-* **A pullable MinIO.** ``docker.io/minio/minio`` is no longer anonymously
-  pullable (the whole repository 401s, not just the pinned digest), so a stack
-  pinned there cannot start at all. quay.io is MinIO's public registry.
+* **A pullable MinIO.** MinIO no longer publishes anonymously pullable images:
+  ``docker.io/minio/minio`` 401s, and ``quay.io/minio/minio`` went private in
+  late 2026, so a stack pinned to either cannot start at all. Chainguard's
+  ``cgr.dev/chainguard/minio`` build is anonymously pullable.
 """
 
 from __future__ import annotations
@@ -95,9 +96,9 @@ def test_the_documented_defaults_match_the_compose_files() -> None:
 @pytest.mark.parametrize("path", [PROD, DEV], ids=["production", "dev"])
 def test_minio_is_pinned_to_the_public_registry(path: Path) -> None:
     image = _compose(path)["services"]["minio"]["image"]
-    assert image.startswith("quay.io/minio/minio:"), (
-        "docker.io/minio/minio is not anonymously pullable — the repository "
-        f"itself 401s, so this stack cannot start. Got: {image}"
+    assert image.startswith("cgr.dev/chainguard/minio:"), (
+        "docker.io/minio/minio and quay.io/minio/minio are not anonymously "
+        f"pullable, so this stack cannot start. Got: {image}"
     )
     assert "@sha256:" in image, "pulled images stay digest-pinned (HARD-07)"
 

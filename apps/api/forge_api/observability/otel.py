@@ -172,10 +172,11 @@ def traced(name: str | None = None, *, recorder: SpanRecorder | None = None) -> 
 # --------------------------------------------------------------------------- #
 
 try:  # pragma: no cover - exercised only when the SDK is installed
-    import opentelemetry.sdk.trace.export as _otel_export  # noqa: F401
+    from opentelemetry.sdk.trace import SpanProcessor as _SpanProcessorBase
 
     _OTEL_SDK_AVAILABLE = True
 except ImportError:  # pragma: no cover - default when SDK is absent
+    _SpanProcessorBase = object  # type: ignore[assignment,misc]
     _OTEL_SDK_AVAILABLE = False
 
 
@@ -194,8 +195,11 @@ def _redact_readable_span(span: Any) -> None:
                     event._attributes = redact_mapping(dict(ev_attrs))
 
 
-class RedactingSpanProcessor:
+class RedactingSpanProcessor(_SpanProcessorBase):
     """OTel ``SpanProcessor`` that redacts a span before exporting it.
+
+    A subclass, not a duck type: the SDK calls hooks it adds in later releases
+    (``_on_ending`` in 1.45) on every registered processor.
 
     Wraps a downstream :class:`SpanExporter`; on ``on_end`` it scrubs the span's
     attributes/events (the canonical :mod:`redaction` rules — one source of
