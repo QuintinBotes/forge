@@ -38,7 +38,7 @@ import re
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -56,11 +56,13 @@ from forge_api.services.workflow_gate_hook import (
     WAITING_STATE_BY_GATE,
     WORKFLOW_RUN_SUBJECT,
     agent_actor_for_run,
+    attested_or_blocked,
     event_for_resolution,
     submit_gate_event,
 )
 from forge_approval import ApprovalService
 from forge_approval.models import GateStatus, GateType
+from forge_approval.models import Principal as ApprovalPrincipal
 from forge_contracts import LineDefinition, WorkflowRun, WorkflowState
 from forge_db.models import Task
 from forge_db.redteam import RedTeamRepository
@@ -82,9 +84,6 @@ from forge_workflow.red_team_gate import (
     ensure_red_team_verdict,
     run_and_record_red_team,
 )
-
-if TYPE_CHECKING:
-    from forge_workflow.temporal.engine import TemporalWorkflowEngine
 
 router = APIRouter(
     prefix="/workflow",
@@ -368,15 +367,10 @@ def _started_as_admitted(session: Session, run: WorkflowRun, admitted: uuid.UUID
 
 
 def _record_trigger(
-    engine: WorkflowEngineImpl | TemporalWorkflowEngine,
-    run: WorkflowRun,
-    trigger: dict[str, object],
+    engine: WorkflowEngineImpl, run: WorkflowRun, trigger: dict[str, object]
 ) -> WorkflowRun:
-    """Keep the start trigger in the run's context (same transaction as the run row)."""
-    if isinstance(engine, WorkflowEngineImpl):
-        return engine.update_context(_run_id(run), {"trigger": trigger})
-    run.context["trigger"] = trigger
-    return engine.store.update(run)
+    """Keep the start trigger in a V1 run's context (same transaction as the run row)."""
+    return engine.update_context(_run_id(run), {"trigger": trigger})
 
 
 @router.post("/runs", response_model=WorkflowRun, status_code=status.HTTP_201_CREATED)
@@ -400,6 +394,7 @@ def start_run(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no task {request.task_id}"
         )
+    trigger = request.trigger.model_dump(exclude_none=True) if request.trigger else None
     admitted: uuid.UUID | None = None
     if request.definition is not None:
         admitted = _admit_definition(
@@ -420,12 +415,15 @@ def start_run(
             if not _started_as_admitted(session, run, admitted):
                 session.rollback()
                 raise _durable_engine_required()
-        else:
-            # Omitted, or default_feature on the Temporal engine (the only name it
-            # admits): today's start, unchanged.
+        elif isinstance(engine, WorkflowEngineImpl):
             run = engine.start(request.task_id)
-        if request.trigger is not None:
-            run = _record_trigger(engine, run, request.trigger.model_dump(exclude_none=True))
+        else:
+            # default_feature on the Temporal engine (the only name it admits). The
+            # engine commits the complete row, trigger included, before it starts
+            # the workflow (spec K §4.11).
+            run = engine.start(request.task_id, trigger=trigger, definition_revision_id=admitted)
+        if trigger is not None and isinstance(engine, WorkflowEngineImpl):
+            run = _record_trigger(engine, run, trigger)
     session.commit()
     return run
 
@@ -511,9 +509,14 @@ def sync_gate(
     The recovery path for a gate hook whose engine submit failed after the
     decision was recorded: re-reads the run's latest request for ``gate`` and,
     when it is resolved and the run still sits at that gate, submits the
-    event engine-direct with the deciding user as actor. Idempotent: a run
-    that already advanced (or a gate still pending) is returned unchanged.
-    Unknown or foreign runs read as ``404`` (no existence leak).
+    event engine-direct with the deciding user as actor. A rejected ``plan`` or
+    ``pr`` gate cancels the run, as the hook does (spec K §4.11). Idempotent: a
+    run that already advanced or was cancelled (or a gate still pending) is
+    returned unchanged. An approved ``pr`` gate merges only on proof of
+    attestation: an existing one, else the attestation runs now; when it fails
+    the gate is marked blocked and sync answers 409 ``gate_blocked`` (a blocked
+    gate is retried the same way). Unknown or foreign runs read as ``404`` (no
+    existence leak).
     """
     if gate not in WAITING_STATE_BY_GATE:
         raise HTTPException(
@@ -537,11 +540,12 @@ def sync_gate(
         and run.current_state == WAITING_STATE_BY_GATE[gate]
         and event_for_resolution(gate, request.status) is not None
     ):
-        actor_ref = (
-            f"user:{request.resolver_user_id}"
-            if request.resolver_user_id is not None
-            else f"user:{principal.user_id}"
-        )
+        resolver = request.resolver_user_id or principal.user_id
+        actor_ref = f"user:{resolver}"
+        if gate is GateType.PR and request.status is GateStatus.APPROVED:
+            decider = ApprovalPrincipal(kind="user", id=resolver, workspace_id=request.workspace_id)
+            if not asyncio.run(attested_or_blocked(approvals, session, request, decider)):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="gate_blocked")
         with _workflow_errors():
             asyncio.run(submit_gate_event(engine, request=request, actor_ref=actor_ref))
         session.commit()

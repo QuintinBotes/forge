@@ -17,21 +17,30 @@ stand-ins in :class:`WorkflowActivities`.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import time
 import uuid
+from collections.abc import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_contracts import WorkflowRun
 from forge_db import create_session_factory
+from forge_db.models import AgentRun
 from forge_db.models.runs import WorkflowRun as DbWorkflowRun
+from forge_worker.dispatch import workspace_mirrors
+from forge_worker.run_workspace import remove_run_worktrees
 from forge_workflow import WorkflowRunNotFoundError
 from forge_workflow.store import SqlAlchemyWorkflowStore
 from forge_workflow.temporal.activities import WorkflowActivities
 from forge_workflow.temporal.client import get_temporal_client
 from forge_workflow.temporal.config import TemporalSettings
+from forge_workflow.temporal.payloads import CleanupInput
 from forge_workflow.temporal.worker import build_temporal_worker
+
+logger = logging.getLogger(__name__)
 
 
 class SessionPerCallStore:
@@ -75,12 +84,49 @@ class SessionPerCallStore:
         raise NotImplementedError("task lookups need a workspace; the worker has none")
 
 
+#: Below the workflow's 60 s start-to-close for ``forge.cleanup_worktree``: a slow
+#: cleanup reports ``False`` instead of timing out the activity and failing the cancel.
+CLEANUP_BUDGET_SECONDS = 45.0
+
+
+def make_cleanup_fn(factory: sessionmaker[Session]) -> Callable[[CleanupInput], bool]:
+    """The ``forge.cleanup_worktree`` body: remove worktrees the run's agents left.
+
+    Idempotent (nothing left is a no-op). Any failure (database, git, disk) is
+    logged and reported as ``False``, never raised: a cleanup problem must not
+    turn a cancel into a failed run (spec K §4.11).
+    """
+
+    def _cleanup(inp: CleanupInput) -> bool:
+        deadline = time.monotonic() + CLEANUP_BUDGET_SECONDS
+        try:
+            with factory() as session:
+                agent_runs = session.scalars(
+                    select(AgentRun.id).where(
+                        AgentRun.workflow_run_id == inp.workflow_run_id,
+                        AgentRun.workspace_id == inp.workspace_id,
+                    )
+                ).all()
+            root = workspace_mirrors(inp.workspace_id)
+            mirrors = (
+                [p for p in root.glob("*/*") if (p / "HEAD").is_file()] if root.is_dir() else []
+            )
+            remove_run_worktrees(mirrors, agent_runs, deadline=deadline)
+        except Exception:
+            logger.exception("cleanup_worktree for run %s failed", inp.workflow_run_id)
+            return False
+        return True
+
+    return _cleanup
+
+
 def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowActivities:
     """Build the worker's Activities over a DB-backed projection store.
 
     ``forge.create_approval`` is wired to the real approval service (spec K
     P0): a Temporal feature run opens its spec/plan/pr gate requests in
-    Postgres instead of failing at the first gate.
+    Postgres instead of failing at the first gate. ``forge.cleanup_worktree``
+    is bound too, so cancelling a run reaches ``cancelled`` (spec K §4.11).
     """
     from forge_worker.approval_activity import make_create_approval_fn
 
@@ -88,6 +134,7 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
     return WorkflowActivities(
         store=SessionPerCallStore(session_factory),
         approval_fn=make_create_approval_fn(session_factory),
+        cleanup_fn=make_cleanup_fn(session_factory),
         allow_fakes=os.environ.get("FORGE_ALLOW_FAKE_ACTIVITIES") == "1",
     )
 

@@ -33,13 +33,14 @@ from forge_approval.models import (
     Role,
 )
 from forge_approval.providers import InMemoryGrantStore
-from forge_contracts import RunStatus, WorkflowRun
+from forge_contracts import RunStatus, WorkflowRun, WorkflowState
 from forge_db.base import Base
 from forge_db.models import Project, Task, Workspace
 from forge_worker.approval_activity import make_create_approval_fn
 from forge_workflow.store import InMemoryWorkflowStore, SqlAlchemyWorkflowStore, WorkflowStore
 from forge_workflow.temporal.activities import WorkflowActivities
 from forge_workflow.temporal.engine import TemporalWorkflowEngine
+from forge_workflow.temporal.payloads import GuardInputs, GuardInputsRequest
 from forge_workflow.temporal.worker import build_temporal_worker
 from forge_workflow.temporal.workflows import FeatureWorkflow
 
@@ -156,6 +157,100 @@ async def test_spec_gate_opens_a_request_and_its_approval_moves_the_run(
         [approved] = [t for t in engine.history(run.id) if t["event"] == "spec_approved_by_human"]
         assert (approved["from_state"], approved["to_state"]) == ("spec_review", "spec_approved")
         assert approved["actor"] == f"user:{decider.id}"
+
+
+def _plan_required(_: GuardInputsRequest) -> GuardInputs:
+    """The permissive stand-in guard inputs, but with the plan gate on."""
+    ready = ("repo_target_set", "policy_loaded", "skill_profile_set", "knowledge_synced")
+    return GuardInputs(
+        plan_required=True,
+        preconditions=dict.fromkeys(ready, True),
+        ci_status_green=True,
+        spec_validated=True,
+    )
+
+
+async def _pending(factory: sessionmaker[Session], gate: GateType) -> Any:
+    rows = await SqlAlchemyApprovalRepository(factory).list(workspace_id=WS)
+    [request] = [r for r in rows if r.gate_type is gate and r.status is GateStatus.PENDING]
+    return request
+
+
+@pytest.mark.parametrize(
+    ("action", "status"),
+    [
+        (ApprovalAction.REJECT, GateStatus.REJECTED),
+        (ApprovalAction.REQUEST_CHANGES, GateStatus.CHANGES_REQUESTED),
+    ],
+)
+@pytest.mark.parametrize(
+    ("gate", "awaiting"),
+    [(GateType.PLAN, "plan_approved_by_human"), (GateType.PR, "review_approved_by_human")],
+)
+async def test_rejecting_a_plan_or_pr_gate_cancels_the_durable_run(
+    time_skip_env: Any,
+    factory: sessionmaker[Session],
+    gate: GateType,
+    awaiting: str,
+    action: ApprovalAction,
+    status: GateStatus,
+) -> None:
+    """Spec K §4.11 on the Temporal engine: the hook cancels the run, the
+    cancel transition carries the decider and the reason."""
+    task_id = _seed_task(factory)
+    store = InMemoryWorkflowStore()
+    engine = _engine(time_skip_env, store)
+    activities = WorkflowActivities(
+        store=store,
+        approval_fn=make_create_approval_fn(factory),
+        guard_inputs_fn=_plan_required,
+        allow_fakes=True,
+    )
+
+    @contextmanager
+    def engine_for(workspace_id: uuid.UUID) -> Iterator[TemporalWorkflowEngine]:
+        yield engine
+
+    approvals = ApprovalService(
+        SqlAlchemyApprovalRepository(factory),
+        build_gate_registry(InMemoryGrantStore(), engine_factory=engine_for),
+        ApprovalAuthorizer(),
+    )
+    approver = Principal(kind="user", id=uuid.uuid4(), role=Role.MEMBER, workspace_id=WS)
+    decider = Principal(kind="user", id=uuid.uuid4(), role=Role.MEMBER, workspace_id=WS)
+    approve = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
+
+    async with build_temporal_worker(time_skip_env.client, activities, task_queue=TASK_QUEUE):
+        run = await engine.astart(task_id)
+        assert run.id is not None
+        await _wait_awaiting(engine, run, "spec_approved_by_human")
+        spec = await _pending(factory, GateType.SPEC)
+        await approvals.resolve(spec.id, approve, approver, workspace_id=WS)
+        if gate is GateType.PR:
+            await _wait_awaiting(engine, run, "plan_approved_by_human")
+            plan = await _pending(factory, GateType.PLAN)
+            await approvals.resolve(plan.id, approve, approver, workspace_id=WS)
+        await _wait_awaiting(engine, run, awaiting)
+        request = await _pending(factory, gate)
+
+        resolution = await approvals.resolve(
+            request.id, ApprovalDecisionRequest(decision=action), decider, workspace_id=WS
+        )
+        handle: Any = engine.workflow_handle(run.id)
+        result = await handle.result()
+
+    reason = f"gate_{gate.value}_{status.value}"
+    assert resolution.status is status
+    assert result.final_state is WorkflowState.CANCELLED
+    projected = engine.get_run(run.id)
+    assert (projected.current_state, projected.status) == ("cancelled", RunStatus.CANCELLED)
+    last = engine.history(run.id)[-1]
+    assert (last["event"], last["to_state"]) == ("cancel", "cancelled")
+    assert last["actor"] == f"user:{decider.id}"
+    assert last["payload"] == {"reason": reason}
+    stored = await approvals.get(request.id, workspace_id=WS)
+    assert stored.gate_payload["workflow_event"]["event"] == "cancel"
+    assert stored.gate_payload["workflow_event"]["reason"] == reason
 
 
 async def test_a_run_on_the_workers_activities_reaches_its_spec_gate(

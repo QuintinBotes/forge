@@ -159,6 +159,16 @@ class WorkflowEngineImpl:
         """Fetch a persisted run."""
         return self._store.get(run_id)
 
+    def cancel(self, run_id: uuid.UUID, *, actor: str, reason: str) -> WorkflowRun:
+        """End the run as ``cancelled`` (no DSL edge needed); a finished run is left as it is."""
+        run = self._store.get(run_id)
+        if run.status in (RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED):
+            return run
+        run.current_state = WorkflowState.CANCELLED.value
+        run.context.update(last_event="cancel", last_actor=actor, cancel_reason=reason)
+        self._apply_status(run, run.current_state)
+        return self._store.update(run)
+
     def update_context(self, run_id: uuid.UUID, values: dict[str, object]) -> WorkflowRun:
         """Merge external signals (e.g. ``ci_status_green``) into a run's context."""
         run = self._store.get(run_id)
