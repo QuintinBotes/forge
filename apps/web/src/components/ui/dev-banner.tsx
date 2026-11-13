@@ -72,11 +72,11 @@ export function DevBanner({ storageKey = DEV_BANNER_DISMISSED_KEY }: DevBannerPr
       role="note"
       aria-label="Development status notice"
       className={cn(
-        "flex items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-sm text-warning-foreground sm:px-6",
+        "flex items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-sm text-foreground sm:px-6",
         "motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200",
       )}
     >
-      <AlertTriangle aria-hidden className="h-4 w-4 shrink-0" />
+      <AlertTriangle aria-hidden className="h-4 w-4 shrink-0 text-warning" />
       <p className="min-w-0 flex-1">
         <strong className="font-semibold">Under active development</strong> — pre-1.0, not
         production-ready. See the{" "}
@@ -103,7 +103,7 @@ export function DevBanner({ storageKey = DEV_BANNER_DISMISSED_KEY }: DevBannerPr
         type="button"
         onClick={dismiss}
         aria-label="Dismiss development status notice"
-        className="shrink-0 rounded p-0.5 text-warning-foreground/70 hover:text-warning-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <X aria-hidden className="h-3.5 w-3.5" />
       </button>

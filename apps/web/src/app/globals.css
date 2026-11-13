@@ -23,6 +23,8 @@
 */
 @layer base {
   :root {
+    color-scheme: light;
+
     /* Type — self-hosted via @fontsource (no runtime CDN/network dependency).
        Display: Bricolage Grotesque, a distinctive OFL geometric grotesk, with
        geometric system fallbacks. Sans: clean + readable system body.
@@ -93,6 +95,8 @@
   }
 
   .dark {
+    color-scheme: dark;
+
     /* Surfaces + text (forge at night — deep graphite) */
     --background: 220 26% 8%;
     --foreground: 210 18% 90%;

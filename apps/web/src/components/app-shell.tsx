@@ -14,6 +14,7 @@ import {
   Layers,
   LayoutList,
   Menu,
+  Network,
   Rocket,
   Route,
   ScrollText,
@@ -30,6 +31,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { SessionMenu } from "@/components/auth/session-gate";
 import { useCommandPaletteOptional } from "@/components/command-palette";
 import { ForgeMark } from "@/components/forge-logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { DevBanner } from "@/components/ui/dev-banner";
 import { cn } from "@/lib/utils";
@@ -80,6 +82,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Incidents", href: "/incidents", icon: AlertTriangle },
       { label: "Leaderboard", href: "/leaderboard", icon: Trophy },
       { label: "Audit", href: "/audit", icon: ScrollText },
+      { label: "Knowledge graph", href: "/world", icon: Network },
     ],
   },
   {
@@ -309,6 +312,7 @@ export function AppShell({ children, actions }: AppShellProps): ReactNode {
             <div className="flex items-center gap-3">
               {actions}
               <CommandPaletteHint />
+              <ThemeToggle />
               <SessionMenu />
             </div>
           </header>
