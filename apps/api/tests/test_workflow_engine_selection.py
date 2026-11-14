@@ -31,15 +31,32 @@ def test_temporal_backend_selected_by_env(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_router_dependency_returns_selected_engine(monkeypatch: pytest.MonkeyPatch) -> None:
-    from forge_api.routers.workflow import _temporal_engine_singleton, get_workflow_engine
+    import uuid
 
-    _temporal_engine_singleton.cache_clear()
+    from sqlalchemy.orm import Session
+
+    from forge_api.deps import Principal
+    from forge_api.routers.workflow import get_workflow_engine
+    from forge_contracts import UserRole
+    from forge_workflow.store import SqlAlchemyWorkflowStore
+
+    # The Temporal engine is built per request over the request's session (#169).
+    session = Session()
+    principal = Principal(
+        user_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        role=UserRole.MEMBER,
+        email="member@acme.test",
+        auth_method="test",
+        scopes=["*"],
+    )
     monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "temporal")
-    assert isinstance(get_workflow_engine(), TemporalWorkflowEngine)
-    _temporal_engine_singleton.cache_clear()
+    engine = get_workflow_engine(session, principal)
+    assert isinstance(engine, TemporalWorkflowEngine)
+    assert isinstance(engine.store, SqlAlchemyWorkflowStore)
 
     monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "postgres_fsm")
-    assert isinstance(get_workflow_engine(), WorkflowEngineImpl)
+    assert isinstance(get_workflow_engine(session, principal), WorkflowEngineImpl)
 
 
 def test_readyz_fsm_backend_skips_temporal(
