@@ -57,10 +57,11 @@ logger = logging.getLogger(__name__)
 @functools.cache
 def get_mcp_tool_registry() -> ToolRegistry:
     """The tools this server exposes (spec I §5)."""
+    from forge_api.mcp_server.context_tools import CONTEXT_TOOLS
     from forge_api.mcp_server.factory_tools import FACTORY_TOOLS
     from forge_api.mcp_server.world_tools import WORLD_TOOLS
 
-    return ToolRegistry((*WORLD_TOOLS, *FACTORY_TOOLS))
+    return ToolRegistry((*WORLD_TOOLS, *FACTORY_TOOLS, *CONTEXT_TOOLS))
 
 
 @functools.cache

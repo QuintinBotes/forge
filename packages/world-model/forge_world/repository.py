@@ -33,6 +33,7 @@ from forge_db.models.world import (
     WorldEvidence,
     WorldExtractionDrop,
     WorldFact,
+    WorldFactFeedback,
     WorldProposal,
     WorldRelation,
 )
@@ -43,6 +44,8 @@ from forge_world.ledger import (
     EntityData,
     EvidenceData,
     FactData,
+    FeedbackData,
+    FeedbackOutcome,
     InvalidatedReason,
     Layer,
     MergeData,
@@ -543,6 +546,8 @@ class WorldRepository:
         as_of: datetime,
         predicate_key: str | None = None,
         layer: Layer | None = None,
+        subject_ids: Sequence[uuid.UUID] | None = None,
+        object_ids: Sequence[uuid.UUID] | None = None,
     ) -> list[FactData]:
         """Facts held at ``as_of`` across all world times.
 
@@ -555,6 +560,10 @@ class WorldRepository:
             WorldFact.workspace_id == workspace_id,
             _held_at_sql(as_of),
         )
+        if subject_ids is not None:
+            stmt = stmt.where(WorldFact.subject_id.in_(list(subject_ids)))
+        if object_ids is not None:
+            stmt = stmt.where(WorldFact.object_id.in_(list(object_ids)))
         if predicate_key is not None:
             stmt = stmt.where(WorldFact.predicate_key == predicate_key)
         if layer is not None:
@@ -1002,6 +1011,91 @@ class WorldRepository:
             links=dict(row.links),
             created_at=ensure_utc(row.created_at),
         )
+
+    # --- outcome feedback (append-only, spec J §2.5) -------------------- #
+
+    def insert_feedback(
+        self,
+        workspace_id: uuid.UUID,
+        *,
+        fact_id: uuid.UUID,
+        run_id: uuid.UUID,
+        outcome: FeedbackOutcome,
+        now: datetime,
+    ) -> bool:
+        """Append one feedback row; ``False`` when ``(run_id, fact_id)`` exists.
+
+        Idempotency is the unique constraint, not a read-then-write race:
+        the insert runs in a SAVEPOINT and a conflict resolves to ``False``
+        (a replayed webhook writes nothing new).
+        """
+        row = WorldFactFeedback(
+            workspace_id=workspace_id,
+            fact_id=fact_id,
+            run_id=run_id,
+            outcome=outcome.value,
+            created_at=now,
+            updated_at=now,
+        )
+        try:
+            with self._session.begin_nested():
+                self._session.add(row)
+                self._session.flush()
+        except IntegrityError:
+            return False
+        return True
+
+    def feedback_counts(
+        self, workspace_id: uuid.UUID, fact_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, tuple[int, int]]:
+        """``fact_id -> (reinforced, weakened)`` for the facts that have rows."""
+        if not fact_ids:
+            return {}
+        rows = self._session.execute(
+            select(
+                WorldFactFeedback.fact_id,
+                WorldFactFeedback.outcome,
+                func.count(),
+            )
+            .where(
+                WorldFactFeedback.workspace_id == workspace_id,
+                WorldFactFeedback.fact_id.in_(list(fact_ids)),
+            )
+            .group_by(WorldFactFeedback.fact_id, WorldFactFeedback.outcome)
+        ).all()
+        counts: dict[uuid.UUID, tuple[int, int]] = {}
+        for fact_id, outcome, total in rows:
+            reinforced, weakened = counts.get(fact_id, (0, 0))
+            if outcome == FeedbackOutcome.REINFORCED.value:
+                reinforced += int(total)
+            else:
+                weakened += int(total)
+            counts[fact_id] = (reinforced, weakened)
+        return counts
+
+    def list_feedback(
+        self,
+        workspace_id: uuid.UUID,
+        *,
+        fact_id: uuid.UUID | None = None,
+        run_id: uuid.UUID | None = None,
+    ) -> list[FeedbackData]:
+        stmt = select(WorldFactFeedback).where(WorldFactFeedback.workspace_id == workspace_id)
+        if fact_id is not None:
+            stmt = stmt.where(WorldFactFeedback.fact_id == fact_id)
+        if run_id is not None:
+            stmt = stmt.where(WorldFactFeedback.run_id == run_id)
+        stmt = stmt.order_by(WorldFactFeedback.created_at, WorldFactFeedback.id)
+        return [
+            FeedbackData(
+                id=row.id,
+                fact_id=row.fact_id,
+                run_id=row.run_id,
+                outcome=FeedbackOutcome(row.outcome),
+                created_at=ensure_utc(row.created_at),
+            )
+            for row in self._session.scalars(stmt).all()
+        ]
 
 
 __all__ = ["DerivationRecord", "WorldRepository"]

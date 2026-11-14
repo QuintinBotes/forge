@@ -79,6 +79,9 @@ def github_issues_transport(github_issues_requests):
     issue = load_json("github_issues/issue.json")
     pull = load_json("github_issues/pull_request.json")
 
+    def _label_dicts() -> list[dict]:
+        return list(issue["labels"])
+
     def handler(request: httpx.Request) -> httpx.Response:
         github_issues_requests.append(request)
         path = request.url.path
@@ -94,6 +97,21 @@ def github_issues_transport(github_issues_requests):
         if request.method == "POST" and path == "/repos/acme/widgets/issues/42/comments":
             comment = load_json("github_issues/issue_comment.json")["comment"]
             return httpx.Response(201, json={**comment, **json.loads(request.content)})
+        if request.method == "POST" and path == "/repos/acme/widgets/issues/42/labels":
+            names = json.loads(request.content)["labels"]
+            existing = {label["name"].lower() for label in issue["labels"]}
+            for name in names:
+                if name.lower() not in existing:
+                    issue["labels"].append({"name": name})
+            return httpx.Response(200, json=_label_dicts())
+        if request.method == "DELETE" and path.startswith("/repos/acme/widgets/issues/42/labels/"):
+            from urllib.parse import unquote
+
+            name = unquote(path.rsplit("/", 1)[1])
+            issue["labels"] = [
+                label for label in issue["labels"] if label["name"].lower() != name.lower()
+            ]
+            return httpx.Response(200, json=_label_dicts())
         if (request.method, path) in (
             ("POST", "/repos/acme/widgets/issues"),
             ("PATCH", "/repos/acme/widgets/issues/42"),

@@ -924,7 +924,7 @@ function emptyForm(): ConnectForm {
     apiToken: "",
     apiTokenEmail: "",
     syncDirection: "bidirectional",
-    conflictPolicy: "newest_wins",
+    conflictPolicy: "external_wins",
   };
 }
 

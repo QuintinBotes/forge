@@ -22,6 +22,7 @@ from forge_api.services.automation_actions import (
     MockDeployDispatcher,
     MockGitHubMergeDispatcher,
     PmAdapterIssueCreator,
+    PmConnectionDisabledError,
     SprintServiceAutoStarter,
 )
 from forge_api.services.incident_service import IncidentService
@@ -198,6 +199,29 @@ def test_pm_adapter_issue_creator_creates_via_the_resolved_adapter() -> None:
     assert external_id == "EXT-9"
     assert adapter.created is not None
     assert adapter.created.title == "Escalate this"
+
+
+def test_pm_adapter_issue_creator_refuses_disabled_connection() -> None:
+    """Spec M §3: CREATE_EXTERNAL_ISSUE is refused on a disabled connection."""
+    from types import SimpleNamespace
+
+    adapter = _FakePMAdapter()
+    adapter.ctx = SimpleNamespace(config={"connection_status": "disabled"})  # type: ignore[attr-defined]
+    creator = PmAdapterIssueCreator(lambda provider: adapter)  # type: ignore[arg-type]
+
+    with pytest.raises(PmConnectionDisabledError, match="disabled"):
+        creator.create_issue("asana", title="Escalate this", ctx=_ctx())
+    assert adapter.created is None
+
+    # An explicit probe decides the same way without adapter context.
+    plain = _FakePMAdapter()
+    probed = PmAdapterIssueCreator(
+        lambda provider: plain,  # type: ignore[arg-type]
+        disabled_check=lambda provider: True,
+    )
+    with pytest.raises(PmConnectionDisabledError, match="disabled"):
+        probed.create_issue("asana", title="Escalate this", ctx=_ctx())
+    assert plain.created is None
 
 
 # --------------------------------------------------------------------------- #

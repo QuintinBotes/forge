@@ -76,7 +76,7 @@ class PMConnection(WorkspaceScopedModel):
         enum_type(PMSyncDirection), default=PMSyncDirection.BIDIRECTIONAL, nullable=False
     )
     conflict_policy: Mapped[PMConflictPolicy] = mapped_column(
-        enum_type(PMConflictPolicy), default=PMConflictPolicy.NEWEST_WINS, nullable=False
+        enum_type(PMConflictPolicy), default=PMConflictPolicy.EXTERNAL_WINS, nullable=False
     )
     status_map: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     priority_map: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)

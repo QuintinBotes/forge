@@ -181,9 +181,18 @@ def _evidence_out(evidence: EvidenceData) -> EvidenceOut:
     )
 
 
+def _effective(
+    service: WorldModelService, workspace_id: uuid.UUID, facts: Sequence[FactData]
+) -> Mapping[uuid.UUID, float]:
+    """Effective confidences for a batch of facts (spec J §2.5)."""
+    return service.effective_confidences(workspace_id, facts)
+
+
 def _fact_out(
     fact: FactData,
     evidence: Mapping[uuid.UUID, Sequence[EvidenceData]] | None = None,
+    *,
+    effective_confidence: float,
 ) -> FactOut:
     return FactOut(
         id=fact.id,
@@ -196,6 +205,7 @@ def _fact_out(
         mood=fact.mood.value if fact.mood is not None else None,
         qualifiers=dict(fact.qualifiers),
         confidence=fact.confidence,
+        effective_confidence=effective_confidence,
         valid_from=fact.valid_from,
         valid_from_precision=fact.valid_from_precision.value,
         valid_to=fact.valid_to,
@@ -215,8 +225,17 @@ def _fact_out(
     )
 
 
-def _fact_write_out(fact: FactData, *, created: bool) -> FactWriteOut:
-    return FactWriteOut(**_fact_out(fact).model_dump(), created=created)
+def _fact_write_out(
+    service: WorldModelService,
+    workspace_id: uuid.UUID,
+    fact: FactData,
+    *,
+    created: bool,
+) -> FactWriteOut:
+    effective = _effective(service, workspace_id, [fact])[fact.id]
+    return FactWriteOut(
+        **_fact_out(fact, effective_confidence=effective).model_dump(), created=created
+    )
 
 
 def _entity_out(entity: EntityData) -> EntityOut:
@@ -353,12 +372,19 @@ def get_entity(
             principal.workspace_id,
             [fact.id for fact in (*profile.facts, *profile.object_of)],
         )
+    effective = _effective(service, principal.workspace_id, [*profile.facts, *profile.object_of])
     return EntityProfileOut(
         entity=_entity_out(profile.entity),
         resolved_id=profile.resolved_id,
         names=list(profile.names),
-        facts=[_fact_out(fact, evidence) for fact in profile.facts],
-        object_of=[_fact_out(fact, evidence) for fact in profile.object_of],
+        facts=[
+            _fact_out(fact, evidence, effective_confidence=effective[fact.id])
+            for fact in profile.facts
+        ],
+        object_of=[
+            _fact_out(fact, evidence, effective_confidence=effective[fact.id])
+            for fact in profile.object_of
+        ],
     )
 
 
@@ -413,7 +439,10 @@ def query_facts(
             offset=offset,
         )
         evidence = service.evidence_for(principal.workspace_id, [fact.id for fact in facts])
-    return FactListOut(items=[_fact_out(fact, evidence) for fact in facts])
+    effective = _effective(service, principal.workspace_id, facts)
+    return FactListOut(
+        items=[_fact_out(fact, evidence, effective_confidence=effective[fact.id]) for fact in facts]
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -449,7 +478,7 @@ def assert_fact(principal: WriterDep, service: ServiceDep, body: StatementIn) ->
         },
     )
     service.session.commit()
-    return _fact_write_out(result.fact, created=result.created)
+    return _fact_write_out(service, principal.workspace_id, result.fact, created=result.created)
 
 
 @router.post(
@@ -484,7 +513,7 @@ def supersede_fact(
         },
     )
     service.session.commit()
-    return _fact_write_out(result.fact, created=result.created)
+    return _fact_write_out(service, principal.workspace_id, result.fact, created=result.created)
 
 
 @router.post("/facts/{fact_id}/retract", response_model=FactOut)
@@ -501,7 +530,8 @@ def retract_fact(principal: WriterDep, service: ServiceDep, fact_id: uuid.UUID) 
         details={"phrase": _clip(fact.phrase)},
     )
     service.session.commit()
-    return _fact_out(fact)
+    effective = _effective(service, principal.workspace_id, [fact])
+    return _fact_out(fact, effective_confidence=effective[fact.id])
 
 
 @router.post("/ingest", response_model=IngestOut)
@@ -653,7 +683,16 @@ def decide_proposal(
     service.session.commit()
     return ProposalDecisionOut(
         proposal=_proposal_out(outcome.proposal),
-        fact=_fact_out(outcome.fact) if outcome.fact is not None else None,
+        fact=(
+            _fact_out(
+                outcome.fact,
+                effective_confidence=_effective(service, principal.workspace_id, [outcome.fact])[
+                    outcome.fact.id
+                ],
+            )
+            if outcome.fact is not None
+            else None
+        ),
     )
 
 
