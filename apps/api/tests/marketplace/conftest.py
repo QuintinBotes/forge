@@ -13,6 +13,7 @@ import base64
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -20,6 +21,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
 from forge_api.main import create_app
 from forge_api.routers.marketplace import get_marketplace_service
@@ -36,6 +38,7 @@ from forge_marketplace.models import (
     RegistryIndexVersion,
 )
 from forge_marketplace.packaging import build_package
+from forge_marketplace.signing import sign_manifest_hash
 
 WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000c3")
@@ -44,6 +47,14 @@ MEMBER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000b2")
 VIEWER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000b3")
 
 _ROLE_USER = {UserRole.ADMIN: ADMIN_ID, UserRole.MEMBER: MEMBER_ID, UserRole.VIEWER: VIEWER_ID}
+
+#: The spec K §4.5 ``implementation_loop`` line, read from the contracts fixture.
+LINE = (
+    Path(__file__).resolve().parents[4]
+    / "packages/contracts/tests/fixtures/implementation_loop.yaml"
+).read_text()
+LINE_NAME = "implementation_loop"
+LINE_SLUG = "implementation-loop"
 
 
 class Keypair:
@@ -137,6 +148,44 @@ def make_mcp_version(
         published_at=datetime(2026, 6, 20, tzinfo=UTC),
     )
     return manifest, v
+
+
+def make_line_version(
+    keypair: Keypair,
+    *,
+    version: str = "1.0.0",
+    slug: str = LINE_SLUG,
+    name: str = LINE_NAME,
+    dsl_yaml: str = LINE,
+    sign: bool = True,
+    yanked: bool = False,
+    title: str | None = None,
+):
+    """A ``workflow_template`` package signed with ``keypair`` (spec K §4.4 signing).
+
+    The default title names the version, so each version's ``content_hash`` differs.
+    """
+    title = f"Implementation loop {version}" if title is None else title
+    manifest = build_package(
+        kind=ArtifactKind.workflow_template,
+        artifact={"name": name, "title": title, "dsl_yaml": dsl_yaml},
+        slug=slug,
+        name=name,
+        version=version,
+        summary="implementation loop",
+        validate_artifact=False,
+    )
+    mh = compute_manifest_hash(manifest)
+    return manifest, RegistryIndexVersion(
+        version=version,
+        content_hash=manifest.content_hash,
+        manifest_hash=mh,
+        signature=sign_manifest_hash(mh, keypair.private) if sign else None,
+        manifest_uri=f"workflow_template/{slug}/{version}/forge-package.yaml",
+        published_at=datetime(2026, 6, 20, tzinfo=UTC),
+        yanked=yanked,
+        yanked_reason="withdrawn" if yanked else None,
+    )
 
 
 class FakeGateway:
@@ -243,9 +292,14 @@ def service(session_factory: sessionmaker[Session], gateway: FakeGateway) -> Mar
 
 @pytest.fixture
 def client_factory(
-    service: MarketplaceService,
+    service: MarketplaceService, session_factory: sessionmaker[Session]
 ) -> Iterator[Callable[..., TestClient]]:
     clients: list[TestClient] = []
+
+    def _db() -> Iterator[Session]:
+        # The editor and run routes read what the marketplace wrote.
+        with session_factory() as s:
+            yield s
 
     def _build(
         role: UserRole = UserRole.ADMIN,
@@ -255,6 +309,7 @@ def client_factory(
     ) -> TestClient:
         app = create_app()
         app.dependency_overrides[get_marketplace_service] = lambda: service
+        app.dependency_overrides[get_db] = _db
         if authenticated:
             principal = Principal(
                 user_id=_ROLE_USER.get(role, ADMIN_ID),
@@ -288,11 +343,15 @@ def count_rows(session_factory: sessionmaker[Session], model) -> int:
 
 __all__ = [
     "ADMIN_ID",
+    "LINE",
+    "LINE_NAME",
+    "LINE_SLUG",
     "OTHER_WS_ID",
     "WS_ID",
     "FakeGateway",
     "Keypair",
     "count_rows",
+    "make_line_version",
     "make_mcp_version",
     "make_skill_version",
     "seed_official_registry",

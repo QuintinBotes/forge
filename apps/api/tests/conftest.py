@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterator
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import StaticPool, create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 # HARD-13: the auth service fails closed without a master key (no silent
 # ephemeral fallback). Provide a stable, obviously-fake test key so the default
@@ -25,10 +25,11 @@ from sqlalchemy.orm import Session
 # missing-key / dev-insecure paths override this via ``monkeypatch``.
 os.environ.setdefault("FORGE_SECRET_KEY", "test-forge-master-secret-0123456789")
 
+from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
 from forge_contracts import UserRole
 from forge_db.base import Base
-from forge_db.models import Workspace
+from forge_db.models import Project, Task, Workspace
 
 #: Deterministic identities used by tests (the knowledge tests seed a workspace
 #: with this id so the principal-scoped search returns the seeded source).
@@ -81,4 +82,49 @@ def agent_session() -> Iterator[Session]:
         session.add(Workspace(id=TEST_WORKSPACE_ID, name="Agent tests", slug="agent-tests"))
         session.commit()
         yield session
+    engine.dispose()
+
+
+class WorkflowDb:
+    """A schema for routes whose engines keep runs in ``workflow_run``."""
+
+    def __init__(self, factory: sessionmaker[Session]) -> None:
+        self.factory = factory
+
+    def install(self, app: FastAPI) -> FastAPI:
+        def _get_db() -> Iterator[Session]:
+            with self.factory() as session:
+                yield session
+
+        app.dependency_overrides[get_db] = _get_db
+        return app
+
+    def seed_task(self, workspace_id: uuid.UUID = TEST_WORKSPACE_ID) -> uuid.UUID:
+        with self.factory() as session:
+            if session.get(Workspace, workspace_id) is None:
+                session.add(Workspace(id=workspace_id, name="WS", slug=f"ws-{workspace_id.hex}"))
+                session.flush()
+            project = Project(
+                workspace_id=workspace_id, name="Core", key=f"C{uuid.uuid4().hex[:4]}"
+            )
+            session.add(project)
+            session.flush()
+            task = Task(
+                workspace_id=workspace_id,
+                project_id=project.id,
+                key=f"TASK-{uuid.uuid4().hex[:6]}",
+                title="workflow task",
+            )
+            session.add(task)
+            session.commit()
+            return task.id
+
+
+@pytest.fixture
+def workflow_db() -> Iterator[WorkflowDb]:
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    yield WorkflowDb(sessionmaker(bind=engine, expire_on_commit=False, class_=Session))
     engine.dispose()

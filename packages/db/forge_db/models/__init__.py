@@ -151,6 +151,7 @@ from forge_db.models.runs import (
     ApprovalRequest,
     SubAgentRun,
     WorkflowRun,
+    WorkflowStationVisit,
 )
 from forge_db.models.sandbox import SandboxInstance
 from forge_db.models.secret import Secret
@@ -365,6 +366,7 @@ __all__ = [
     "WorkflowDefinitionSource",
     "WorkflowRun",
     "WorkflowState",
+    "WorkflowStationVisit",
     "Workspace",
     "WorldClass",
     "WorldDecision",

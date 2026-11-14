@@ -1,7 +1,7 @@
 {
   "$defs": {
     "ArtifactKind": {
-      "description": "The first-class distributable artifact kinds.\n\n``workflow_template`` / ``policy_template`` are *reserved*: the enum values\nexist so a registry can advertise them, but their installers are only\nregistered when F21 / F04 provide the loaders + targets (F32 \u00a712).",
+      "description": "The first-class distributable artifact kinds.\n\n``policy_template`` is *reserved*: the enum value exists so a registry can\nadvertise it, but its installer is only registered when F04 provides the\nloader + target (F32 \u00a712). ``workflow_template`` installs a DSL v2 line (spec K).",
       "enum": [
         "mcp_connector",
         "skill_profile",

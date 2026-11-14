@@ -61,6 +61,38 @@ named entities and decisions from them into `forge_world`. A code-symbol index m
 - A port of lore's 60-question agent benchmark runs in `forge_eval`. **Bar: ≥ 0.86** (utopia's
   score on lore's set), hallucination ≤ 7%, p50 ≤ 17.8k tokens. A regression fails CI.
 
+### 2.4.1 Benchmark port and wider index decisions (2026-11-08)
+
+The port (`ctxbench`) follows lore's published method; its harness, prompts and rubric are not
+public, so forge's are new and comparable in shape, not byte for byte.
+- **Bar.** Only lore's own 30 questions can be run (the other 30 target a private repository).
+  On those 30, utopia scored 0.92 with 5.6% hallucination, so 0.86 would not beat it. J is accepted
+  at **≥ 0.92, hallucination ≤ 5.6%, p50 ≤ 17.8k tokens, in two consecutive live runs**; 0.86 /
+  7% / 17.8k is the hard floor a CI run fails under.
+- **Asker and judge.** Each ask is a fresh Claude Code `--print` run (sonnet, medium effort, no
+  built-in tools, only forge's MCP server with a read-only key), three asks per question; an Opus
+  judge without tools grades correct / partial / wrong / don't-know with lore's scoring. A run whose
+  MCP server is unreachable or whose retrieval legs are missing or degraded is invalid, never scored.
+- **Corpus.** lore's tree and history at a pinned commit plus a GitHub dump of issues, PRs and
+  comments cut off at 2026-10-27T00:00Z, recorded once as a private bundle that never enters this
+  repository. The repository owner is a runtime variable, never source text.
+- **Bank.** JSON (lore lost eight gold answers to YAML comments), gold answers verbatim, frozen by
+  content hash, with attribution (Apache-2.0).
+- **CI.** A deterministic, model-free proxy (does `assemble_context` return the gold evidence?)
+  blocks every PR; the live run is weekly, on dispatch, and on labelled PRs.
+- **Scope.** Knowledge only in v1 (no extracted world facts). BM25 stays in-repo with a
+  deterministic tie-break; the embedder default stays ADR-0018's; a reranker becomes a default only
+  if it measurably helps within the token bar.
+- **Wider index (§2.3) shape.** Issues (`issues/<n>`), PRs with review threads (`pulls/<n>`) and
+  commits (`commits/<sha>`, with touched paths) are knowledge chunks under a URL-kind tracker
+  source, each piece repeating its header (number, state, dates, merge commit); tree-sitter symbols
+  are persisted and indexed as `path: symbol — signature` summaries. Idempotent by content hash.
+- **Retrieval fixes found by reading the code.** Markdown chunks become whole sections prefixed
+  with `path › headings (status: …)`; `assemble_context` keeps instruction-file search hits unless
+  the instruction section actually includes them; the BM25 candidate cut gets a tie-break; MCP gains
+  read-only `knowledge_search` (k ≤ 50) and `knowledge_document` tools, because one
+  `assemble_context` call per question leaves an agent no way to follow up.
+
 ### 2.5 Decisions (settled 2026-11-07)
 
 **Lexical leg — real BM25 on Postgres, no new dependency (ADR-0017).** Today `Bm25Store` ranks with
@@ -245,13 +277,14 @@ No merge-capable entry exists.
 - `DEAD_END_STATE`: a state has no outgoing edge and is not in `terminals`. A mistyped `to:` fails here instead of ending the run.
 - `UNROUTED_SUCCESS`: `succeeded`, a decision value or `approved` has no edge.
 - `FAIL_OPEN_ROUTE` (lore #2374):
-  - a failure-class outcome (`failed`, `timed_out`, `rejected`, `expired`, `visit_limit`, `no_checks`) routes to the target of the station's success edge, or to a `succeeded` terminal;
+  - after a failure-class outcome, a path reaches a `succeeded` terminal without running the failing station again, however many states it passes through. The failure-class outcomes are `failed`, `timed_out`, `rejected`, `expired`, `visit_limit`, `no_checks`, `changes_requested`, `low_confidence`, `awaiting_input`, and each catalog entry's own failure outcomes (`checks_failed` for `forge.run_checks` and `forge.await_ci`, `not_red` for `forge.confirm_red`). A failure may share a `failed` or `cancelled` ending, or a notify step, with a decision;
   - any edge exists on `not_configured` or `budget_exhausted`.
+- `VISIT_LIMIT_CYCLE`: `visit_limit` edges lead back to their own station. Past their limits, those stations would hand the run around forever without doing any work.
 - `UNKNOWN_SERVICE`, `STATION_PARAMS_INVALID`, `UNKNOWN_OUTCOME`, `UNKNOWN_REFERENCE`, `AGENT_STATION_UNBUDGETED`, `INVALID_HUMAN_GATE` and `RETRY_GUARD_IN_V2`, plus the existing reachability and nondeterminism checks.
 - `LINE_INVARIANTS`, always applied, whatever `base_bundled_name` is:
   - `no_merge`: no merge-capable service is reachable. If one is ever registered, every path to it must cross the `approved` edge of a `gate: pr` human station.
   - `agent_no_write_tools`: agent tools never include `open_pr`, `push`, `merge`, `approve` or `write_review_comment`.
-  - `trusted_inputs`: catalog inputs marked `trust: task` take only `task.*`, `trigger.*`, `run.*` or a service station's output, never an agent output. Untrusted issue text therefore cannot redirect where a finalizer writes (ADR-0014).
+  - `trusted_inputs`: catalog inputs marked `trust: task` take only `task.id`, `task.key`, `task.repo`, `trigger.external_ref`, `run.id`, or a service output the catalog labels `trust: task` (such as `pr_ref`). `task.title`, `task.description`, agent outputs and CI text such as `failure_summary` are `trust: any`. Untrusted issue text therefore cannot redirect where a finalizer writes (ADR-0014).
   - `agent_outputs_not_guards`.
 - `FEATURE_INVARIANTS` apply whenever the invariant's `from_state` appears in the graph. This applies on the v2 and marketplace paths only. The v1 editor path is unchanged.
 
@@ -523,6 +556,107 @@ Not in this spec:
   ADR-0005 lockstep for triage and onboarding hand-offs; `continue_as_new` for long human SLAs.
 - **To verify in P2:** an exception in an `ApprovalService.resolve` hook must not roll back the
   recorded decision (the wrapped `pr` attestation hook can raise).
+
+### 4.8 Known gaps after P0 (2026-11-08)
+
+Found by the P0 verification; none is a regression, and each has an owner phase.
+- **A rejected plan or pr gate leaves a `default_feature` run at its gate.** The definition has no
+  edge out of `plan_review` or `awaiting_review` other than approval, so after a rejection the run
+  can only be cancelled. P2 decides the route (an edge back to drafting, or reopening the gate),
+  alongside the station routing for lines.
+- **Feature-run gates need one approval.** Both engines open them with `required_approvals = 1` and
+  no `review_rules` in the payload, so repo policy cannot raise the quorum yet. P2 stamps the
+  repo's resolved review rules when the engines open a gate.
+- **The V1 engine cannot pass the pr merge guard.** Nothing in V1 produces `ci_status_green` or
+  `spec_validated`, so an approved pr gate records `workflow_event.status = failed` and the run
+  waits for sync. This predates P0. Feature runs that must merge use the Temporal engine.
+- **Temporal start launches the workflow before the API commits the run row.** If the commit fails
+  after `start_workflow`, the workflow retries `persist_transition` on a row that never landed.
+  P2 commits the row first and terminates the workflow when the commit fails.
+- **A raising `pr` attestation hook returns 500 after the decision is recorded.** Already listed
+  under "To verify in P2".
+
+### 4.9 Carried forward from P1 (2026-11-08)
+
+- **There was no CHECK to drop.** At 0044, `workflow_run.current_state` and
+  `workflow_definition.source` were plain `VARCHAR` with no database CHECK (`enum_type` emits
+  none). 0045 therefore drops and restores nothing; the downgrade refuses rows the older code
+  cannot load instead. Real enum CHECKs across the schema would be a separate change.
+- **`workflow_station_visit` nullability** (§4.3 is silent): identity columns, `kind`, `status`
+  and `started_at` are NOT NULL; `outputs` defaults to `{}`, `tokens_used` to 0, `priced` to
+  false; result, link, cost and `finished_at` columns are nullable.
+- **For P1c.** Installation lookups by `(workspace_id, registry_slug, listing_slug)` must add
+  `kind` now that two kinds may share a slug. The editor's `DefinitionOrigin` must accept
+  `marketplace`. The editor writes a revision's `dsl_version` from the workflow's own `version`;
+  v2 revisions must store `"2"`.
+- **For P2.** `TemporalWorkflowEngine.atransition` returns `str` for station runs (§4.3), and
+  `/transition` refuses everything but `resume` and `cancel` on them (§4.2).
+
+### 4.10 Installer decisions (2026-11-08)
+
+- **Secret scan.** The API and the offline signer use one detector, the marketplace SDK's
+  token-shape detector (private-key blocks, GitHub, AWS, Slack, `sk-` keys, JWTs), over the raw
+  `dsl_yaml`, every decoded string and key, and the title and description. The observability
+  redactor is not used: its header patterns refuse ordinary text such as "Write basic tests", and
+  a package must never sign cleanly and then fail every install.
+- **Names.** A line's definition name is its DSL `workflow` name and follows the editor rule
+  `^[a-z][a-z0-9_]{1,62}$`. `override_name` is refused for lines (422 `override_not_supported`).
+  A line renamed upstream is refused (422 `name_mismatch`); a registry publishes a renamed line
+  under a new slug. Bundled names are reserved.
+- **Concurrency.** Install, update and uninstall of one line installation run one at a time (row
+  lock). Uninstall clears the pin.
+- **Audit names.** Publishing and archiving an installed line reuse the editor's
+  `workflow_definition.published` and `workflow_definition.archived` events, so one query finds
+  every publish and archive.
+- **Parsing.** A line's YAML is loaded with duplicate keys refused (YAML keeps the last value,
+  so a scan never sees the first) and nesting deep enough to exhaust the parser refused; aliased
+  values are scanned once. Package versions are at most 64 characters, without control characters.
+- **Refusals are always recorded.** Audit values are fitted to their columns and stripped of NUL
+  and lone surrogates, so the denied row of a refusal cannot itself fail. The update-flag refresh
+  and pinning take the installation row lock too, and a refresh clears a flag the installed
+  version already satisfies.
+
+### 4.11 P2 decisions (2026-11-08)
+
+The §4.8 gaps:
+- **A rejected plan or pr gate ends the run.** `rejected` or `changes_requested` on a feature
+  run's `plan` or `pr` request cancels the run, with the decider as actor and the reason
+  recorded; `gates/{gate}/sync` applies the same rule. Rework is a new run (or, on a line, the
+  line's own edges). The spec gate keeps its `spec_changes_requested` edge.
+- **PR gates carry the repo's review rules,** read from `.forge/policy.yaml` at the default
+  branch's HEAD of the workspace mirror, never the run's branch, so an agent cannot loosen its own
+  gate. Repo rules only add requirements. Unreadable policy stamps a default marker. V1 is not
+  stamped (it cannot merge).
+- **Temporal start commits the run row first,** then starts the workflow; a failed start marks
+  the row failed.
+- **A resolution-hook error never turns a recorded decision into a 500.** The service catches it,
+  still audits and emits, and reports the outcome as incomplete. A failed `pr` attestation blocks
+  the gate: the run does not advance, and `sync` refuses it (409 `gate_blocked`).
+
+Execution details §4.2 left open:
+- An outcome that neither the park list nor the fail list covers, and no edge routes, fails the
+  run (fail closed).
+- Resuming a station parked on `visit_limit` grants that station one more visit, recorded in the
+  transition.
+- An agent station ends its output with `DECISION: <outcome>` from the station's closed outcome
+  set; a missing or unknown decision is `low_confidence`, which parks.
+- `resume_agent` is a fresh agent run whose objective carries the person's input as labelled
+  user input (ADR-0014).
+- `persist_station` mirrors outputs, spend and `parked` into the run's context;
+  `persist_transition` writes state and status. A parked run's status is `escalated`.
+- A station run is marked by `context.dsl_version = "2"` at start.
+- `max_active_runs` is checked under a row lock on the definition.
+- An explicit station `model` is refused (409 `model_not_allowed`) until a workspace model
+  allowlist exists.
+- The worker's agent activities serve station inputs; feature-run inputs keep refusing until G
+  binds them.
+- Cancel cancels the in-flight activity, expires an open gate (`run_cancelled`), and treats a
+  cleanup failure as recorded, not fatal. The worker binds an idempotent `cleanup_worktree`.
+- An unknown `dsl_version` or a revision that no longer parses fails the run without retry.
+- The worker assembles a station's context with `assemble_context` best-effort: on failure the
+  agent runs with an empty bundle, and the failure is recorded on the visit.
+- Agent activities run their body off the event loop and heartbeat, so a long agent outlives the
+  heartbeat timeout and a cancel reaches it.
 
 ## 5. Out of scope
 

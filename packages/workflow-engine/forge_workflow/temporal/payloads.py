@@ -89,8 +89,10 @@ class TransitionRecord:
 
     workflow_run_id: uuid.UUID
     workspace_id: uuid.UUID
-    from_state: WorkflowState
-    to_state: WorkflowState
+    # Open strings (spec K §4.3): feature runs pass ``WorkflowState`` members,
+    # which serialize to the same JSON strings, so older payloads still load.
+    from_state: str
+    to_state: str
     event: str
     idempotency_key: str
     guard_results: dict[str, bool] = field(default_factory=dict)
@@ -100,6 +102,8 @@ class TransitionRecord:
     skill: str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
     temporal_run_id: str | None = None
+    #: Station runs only (spec K §4.2): the run status their terminal sets.
+    run_status: str | None = None
 
 
 @dataclass

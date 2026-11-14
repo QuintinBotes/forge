@@ -1,0 +1,56 @@
+workflow: implementation_loop
+version: "1"
+dsl_version: "2"
+initial: prepare
+terminals: {done_proposed: succeeded, ready_for_review: succeeded}
+budget: {max_tokens: 3000000, max_usd: 60}
+concurrency: {max_active_runs: 3}
+stations:
+  prepare:       {kind: service, service: forge.prepare_worktree, inputs: {repo: task.repo}}
+  assess:
+    kind: agent
+    role: researcher
+    skill_profile: implementer
+    context_template: implementation
+    objective: "Decide whether {{task.title}} is already satisfied on main. Cite files and tests."
+    decisions: [already_done, needs_work]
+    confidence_threshold: 0.8
+    budget: {max_tokens: 150000}
+  propose_done:  {kind: service, service: forge.tracker_comment, inputs: {ticket: trigger.external_ref, body: outputs.assess.summary_ref}}
+  define_done:
+    kind: agent
+    role: tester
+    skill_profile: implementer
+    context_template: implementation
+    objective: "Write a brief and failing tests that define done for {{task.title}}. No production code."
+    budget: {max_tokens: 400000}
+  confirm_red:   {kind: service, service: forge.confirm_red}
+  open_draft_pr: {kind: service, service: forge.open_pr, inputs: {task: task.id}, params: {draft: true}}
+  implement:
+    kind: agent
+    role: implementer
+    skill_profile: implementer
+    context_template: implementation
+    objective: "Make the failing tests pass. Last failure: {{outputs.local_checks.failure_summary}} {{outputs.await_ci.failure_summary}}"
+    max_visits: 6
+    budget: {max_tokens: 600000}
+  local_checks:  {kind: service, service: forge.run_checks}
+  push:          {kind: service, service: forge.push_branch, inputs: {pr: outputs.open_draft_pr.pr_ref}, retry: {max_attempts: 3}}
+  await_ci:      {kind: service, service: forge.await_ci, inputs: {pr: outputs.open_draft_pr.pr_ref}, timeout_seconds: 3600}
+  mark_ready:    {kind: service, service: forge.mark_pr_ready, inputs: {pr: outputs.open_draft_pr.pr_ref}}
+transitions:
+  - {from: prepare,       to: assess,           when: succeeded}
+  - {from: assess,        to: propose_done,     when: already_done}
+  - {from: assess,        to: define_done,      when: needs_work}
+  - {from: propose_done,  to: done_proposed,    when: succeeded}
+  - {from: define_done,   to: confirm_red,      when: succeeded}
+  - {from: confirm_red,   to: open_draft_pr,    when: succeeded}
+  - {from: confirm_red,   to: define_done,      when: not_red}
+  - {from: open_draft_pr, to: implement,        when: succeeded}
+  - {from: implement,     to: local_checks,     when: succeeded}
+  - {from: local_checks,  to: push,             when: succeeded}
+  - {from: local_checks,  to: implement,        when: checks_failed}
+  - {from: push,          to: await_ci,         when: succeeded}
+  - {from: await_ci,      to: mark_ready,       when: succeeded}
+  - {from: await_ci,      to: implement,        when: checks_failed}
+  - {from: mark_ready,    to: ready_for_review, when: succeeded}

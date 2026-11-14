@@ -90,6 +90,39 @@ developer can run forge beside tervin on one machine. Programme E (paved road) o
 - Open decisions 6 (knowledge consent) and 7 (OIDC): resolved by forge-side consent and PAT auth.
 - Specs 012–014 (coordinator, merge queue, knowledge): deferred in connected mode.
 
+## 6a. Seam 4 decisions (2026-11-08)
+
+Found while mapping seam 4: an API key not bound to a person could decide approvals (it resolved
+to a "user" that does not exist, against ADR-0005), key scopes were not enforced anywhere, gates
+opened by the engines, the worker and the SLA sweep never reached `/ws`, and approval audit rows
+carried no workspace, so the audit query never returned them.
+- **Transport.** `/ws` (ADR-0015), not a new stream. Non-browser clients authenticate with
+  `Authorization: Bearer` (or `X-API-Key`); a socket opened with an API key closes after 30 minutes,
+  so a revoked key stops receiving, and the client reconnects.
+- **Events.** `approval.requested`, `approval.decided` (final statuses only) and a new
+  `approval.updated` (still pending: escalated, partially approved, routed). Payloads carry
+  identifiers, gate, title, risk, expiry and, on decisions, `decided_by` and `surface`; never
+  `gate_payload` (clients read `/approvals/{id}/context`). Every `/ws` event carries
+  `observed_by`, `recorded_at` and `enforceable` (true for gates whose resolution hook acts:
+  spec, plan, pr, deploy, policy_override). Every path that creates or changes a gate publishes:
+  the API, the V1 engine, the Temporal worker and the SLA sweep (through the Redis channel the API
+  relays, published after commit), and station gates.
+- **Who can decide.** Only a person: a session, or a personal token bound to its owner and minted
+  with `approvals:decide`. Unbound and unscoped keys are machine principals and are refused.
+- **Personal tokens.** Minted by the person themselves (`POST /auth/personal-tokens`, session
+  only), with their own role, a surface (`tervin` or `cli`), an optional `approvals:decide` scope,
+  and a 90-day default expiry. A token narrowed to reads (and decide) acts as a viewer everywhere
+  else.
+- **Surface.** Taken only from the credential (the token's surface, `web` for a session, `system`
+  for the sweep), never from a request header, and recorded with the key id in the decision's audit
+  metadata. It is honest about the credential, not the binary; the key id keeps it traceable and
+  revocable.
+- **Resume.** No sequence numbers: a client opens `/ws`, buffers, fetches
+  `GET /approvals?status=pending&mine=true`, applies buffered events by id (a final status wins),
+  re-fetches on `approval.updated`, and treats a 409 on its decision as decided elsewhere.
+- **Tervin's side.** Risk words are sent as forge's own; tervin maps them and labels non-enforceable
+  gates as recorded only. A WebSocket client is a new dependency and a new outbound entry for tervin.
+
 ## 7. Acceptance criteria (when promoted to implementation-ready)
 
 1. Tervin lists forge specs, approvals and world facts through MCP with no tervin code change.

@@ -19,6 +19,7 @@ delivery never double-writes a transition.
 
 from __future__ import annotations
 
+import inspect
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -66,7 +67,9 @@ RunChecksFn = Callable[[RunChecksInput], ChecksResult]
 OpenPrFn = Callable[[OpenPrInput], OpenPrResult]
 NotifyFn = Callable[[NotifyInput], bool]
 CleanupFn = Callable[[CleanupInput], bool]
-ApprovalFn = Callable[[ApprovalInput], uuid.UUID]
+#: The approval service is async; the injected callable may be sync or async
+#: (the activity awaits an awaitable result).
+ApprovalFn = Callable[[ApprovalInput], uuid.UUID | Awaitable[uuid.UUID]]
 RedTeamFn = Callable[[RedTeamInput], RedTeamResult]
 
 
@@ -233,8 +236,8 @@ class WorkflowActivities:
         transitions.append(
             {
                 "sequence": sequence,
-                "from_state": rec.from_state.value,
-                "to_state": rec.to_state.value,
+                "from_state": str(rec.from_state),
+                "to_state": str(rec.to_state),
                 "event": rec.event,
                 "guard_results": dict(rec.guard_results),
                 "effects_dispatched": list(rec.effects_dispatched),
@@ -247,11 +250,11 @@ class WorkflowActivities:
         )
         run.context["transitions"] = transitions
         run.context["retry_count"] = run.context.get("retry_count", 0)
-        run.current_state = rec.to_state.value
+        run.current_state = str(rec.to_state)
         run.context["last_event"] = rec.event
         if rec.temporal_run_id:
             run.context["temporal_run_id"] = rec.temporal_run_id
-        _apply_status(run, rec.to_state.value)
+        _apply_status(run, str(rec.to_state))
         self._store.update(run)
         return sequence
 
@@ -291,7 +294,10 @@ class WorkflowActivities:
 
     @activity.defn(name="forge.create_approval")
     async def create_approval(self, inp: ApprovalInput) -> str:
-        return str(self._approval_fn(inp))
+        result = self._approval_fn(inp)
+        if inspect.isawaitable(result):
+            result = await result
+        return str(result)
 
     # -- red-team gate (heterogeneous adversary, sandboxed) --------------- #
 
@@ -328,4 +334,4 @@ def _apply_status(run: WorkflowRun, new_state: str) -> None:
         run.status = RunStatus.RUNNING
 
 
-__all__ = ["DEFAULT_CHECKS", "WorkflowActivities"]
+__all__ = ["DEFAULT_CHECKS", "ApprovalFn", "WorkflowActivities"]
