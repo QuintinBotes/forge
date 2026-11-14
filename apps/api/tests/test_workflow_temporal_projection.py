@@ -203,3 +203,23 @@ def test_ownership_is_read_from_the_row_after_the_registry_is_emptied(
     moved = owner.post(f"/workflow/runs/{run_id}/transition", json={"event": "generate_spec_draft"})
     assert moved.status_code == 200, moved.text
     assert moved.json()["current_state"] == "spec_drafting"
+
+
+@pytest.mark.parametrize(
+    ("caller", "task_id"),
+    [(WS2, TASK), (WS, uuid.UUID("00000000-0000-0000-0000-0000000001bf"))],
+    ids=["another workspace's task", "unknown task"],
+)
+def test_start_run_rejects_a_task_outside_the_callers_workspace(
+    factory: sessionmaker[Session],
+    temporal: _FakeTemporalClient,
+    client_as: Callable[[uuid.UUID], TestClient],
+    caller: uuid.UUID,
+    task_id: uuid.UUID,
+) -> None:
+    resp = client_as(caller).post("/workflow/runs", json={"task_id": str(task_id)})
+
+    assert resp.status_code == 404, resp.text
+    assert temporal.started == {}
+    with factory() as session:
+        assert session.query(DbWorkflowRun).count() == 0

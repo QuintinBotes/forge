@@ -49,6 +49,7 @@ from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.red_team import RedTeamGateOut, RedTeamRecordOut, RedTeamTriggerOut
 from forge_contracts import WorkflowRun, WorkflowState
+from forge_db.models import Task
 from forge_db.models.runs import WorkflowRun as DbWorkflowRun
 from forge_db.redteam import RedTeamRepository
 from forge_workflow import (
@@ -268,6 +269,14 @@ def start_run(
     request: StartRunRequest,
 ) -> WorkflowRun:
     """Start a workflow run for a task in the default workflow's initial state."""
+    if not isinstance(engine, WorkflowEngineImpl):
+        # A Temporal run is a durable row stamped with the caller's workspace,
+        # so the task must be the caller's too. V1 runs have no task row.
+        task = session.get(Task, request.task_id)
+        if task is None or task.workspace_id != principal.workspace_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"no task {request.task_id}"
+            )
     with _workflow_errors():
         run = engine.start(request.task_id)
     # The Temporal engine wrote the run's row through this session; the worker
