@@ -1,82 +1,98 @@
-# Current task — EVALUATION-FINDINGS-2026-09-17 remediation
+# Current task: land the unified-factory stack
 
-**Baseline:** `main` @ `24832c7`. Branch: `fix/eval-findings-2026-09-17`.
-**Risk:** medium-high (auth surface, compose defaults, public API contract).
+**Baseline:** `main` @ `b178e7d` (#161). **Paused:** 2026-11-14.
+**Programme:** [`2026-11-07-unified-factory-programme.md`](../superpowers/specs/2026-11-07-unified-factory-programme.md).
 
 ## Goal
 
-Close F1–F7 from `EVALUATION-FINDINGS-2026-09-17.md` so a clean self-host can
-start, sign in, and drive work through the UI and the API.
+Land the ten stacked PRs (#156 to #165) on `main` in order. Each squash must
+put on `main` exactly the tree that CI tested on the PR's head.
 
-## Approved decisions
+## Where it stands
 
-| # | Decision |
-|---|----------|
-| F1 | Seed prints a dev admin API key; UI gains an API-key field. Token in `sessionStorage`, opt-in `localStorage` via "remember on this browser". |
-| F2 | Repin MinIO to `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493…` (arm64+amd64+ppc64le, verified). |
-| F3 | Forward **all nine** `FORGE_*_BACKEND` selectors, defaulted to `db`, in **both** the dev and the production compose. |
-| F4 | Docs + `scripts/dev.sh` lead with the Caddy port (8080); web calls the API through Caddy; Offline indicator names the URL it failed to reach. |
-| F5 | `/spec/specs/{id}` accepts **either** the uuid or the human key. No change to `SpecManifest`. |
-| F6 | `POST /spec/specs` accepts an optional client-supplied `key`; the key regex relaxes to `<PREFIX>-<n>` so auto-numbering stays per-prefix. |
-| F7 | Self-hosting guide documents the shared-origin `localStorage` caveat; token storage defaults to `sessionStorage`. |
+| PR | Content | State |
+|---|---|---|
+| #156 | Spec F, local agent CLIs, the host CLI bridge | Merged, `a4369a3` |
+| #157 | Spec G agents, Forge's MCP endpoint, forge-cli | Merged, `491e4c1` |
+| #158 | Bitemporal world model, world MCP tools, provider tiers | Merged, `2c36df9` |
+| #159 | Dark theme, knowledge graph view | Merged, `955ed3a` |
+| #160 | Spec J retrieval, M1 GitHub Issues, L seams 1 and 3 | Merged, `e6d8f22` |
+| #161 | Issue-driven dispatch (M2, M3), J context memory | Merged, `b178e7d` |
+| #162 | Spec K P0 and P1 | Open, base `main`. Sync merge `e8fbb5d` pushed; CI was running at the pause. |
+| #163 | Spec K P2 wave 1 | Open, base `stack/07-k-p0-p1`, head `e2d35f9` |
+| #164 | J wider index, L seam 4, the knowledge page | Open, base `stack/08-k-p2-wave1`, head `3c01107` |
+| #165 | ctxbench, the context benchmark | Open, base `stack/09-j-index-l4-knowledge-ui`, head `fca0694` |
 
-## Non-goals
+Every merged squash was checked after landing. `main`'s tree equals the tested
+head's tree for all six.
 
-- OIDC / real SSO sign-in (still landing; the API key is the bootstrap path).
-- An `external_ref` field on `SpecManifest`.
-- Changing the `memory` default in `Settings` (unit tests depend on it; the
-  compose files are the composition root that selects `db`).
+## Why each PR needs a sync merge
 
-## Acceptance criteria
+A squash merge creates a new commit on `main` that is not in the next branch's
+history. Git then sees the previous PR's edits twice, and the next PR often
+conflicts. `main`'s tree equals the previous stack branch's tree, and every
+later branch already contains that branch. So the correct resolution is always
+the branch's own tree.
 
-1. `deploy/scripts/pin-digests.sh --check` passes; no compose ref resolves 401.
-2. Both compose files set all nine `FORGE_*_BACKEND` vars on every Python service.
-3. `make seed` prints a usable admin API key when `FORGE_SEED_PRINT_API_KEY=1`,
-   and that key authenticates `GET /auth/me`; it survives a restart.
-4. Pasting the key into the UI authenticates every board screen.
-5. `GET /spec/specs/SPEC-1` and `GET /spec/specs/<uuid5>` both return the spec.
-6. `POST /spec/specs` with `key: "MOD-893"` creates a spec resolvable at that key.
-7. Docs name `http://localhost:8080` as the entry point.
+## Procedure for each remaining PR, in order
 
-## Commands
+1. Wait until GitHub retargets the PR to `main`. Delete-on-merge removes the
+   old base branch and triggers the retarget.
+2. Run `git fetch origin`, then `git merge-tree --write-tree origin/main <head>`.
+   If it is clean and the result equals `<head>^{tree}`, go to step 4.
+3. Create the sync merge and push it as a fast-forward. Never force-push.
 
-```
-uv run pytest apps/api/tests packages/spec-engine deploy/tests -q
-uv run ruff check . && uv run ruff format --check .
-uv run mypy -p forge_api -p forge_spec
-pnpm --filter web test
-deploy/scripts/pin-digests.sh --check
-```
+   ```sh
+   sync=$(git commit-tree "<head>^{tree}" -p <head> -p origin/main \
+     -m "Merge main into <branch> after the squash of the PR below")
+   git push origin "$sync:refs/heads/<branch>"
+   ```
 
----
+   The subject must start with `Merge`, or commitlint fails.
+4. Wait for CI on the new head. Every check must pass except `load-smoke`
+   (see below).
+5. Confirm the PR has no unresolved review threads. `main` requires
+   conversation resolution.
+6. Merge with `gh pr merge <n> --squash --match-head-commit <head>`, using the
+   account's GitHub no-reply address as `--author-email`.
+7. Run `git fetch origin main` and confirm `origin/main^{tree}` equals
+   `<head>^{tree}`. Stop if it does not.
 
-## Discovered while verifying (not in the evaluation)
+A fix needed on one stack branch must also be merged into every later stack
+branch. If it is not, a later sync merge reverts it.
 
-Driving the real UI to check F1 surfaced three further blockers. The first two
-are why every list "stayed a skeleton" and the New-task button was "inert" —
-the evaluation attributed those to the missing credential, but they are
-independent and would have persisted with a valid key.
+## Known CI conditions
 
-| # | Severity | Finding |
-|---|----------|---------|
-| F8 | blocker | The CSP declares no `script-src`, so `default-src 'self'` blocks Next's inline `self.__next_r` bootstrap and **hydration never runs**. Fixed with a per-request nonce (`src/middleware.ts`) rather than `'unsafe-inline'`. |
-| F9 | blocker | `ForgeApiClient` stored `globalThis.fetch` unbound and called it as a method, so a browser rejected **every** request with `Illegal invocation`. jsdom does not enforce the receiver, so the suite could not see it. |
-| F10 | high | `task.project_id` is a required FK but the create path allows no project, and the seed created no project at all — so with the board on `db` (F3) every task create was a 500. The service now resolves the workspace's default project; the seed creates one; a workspace with none gets a 422, not a 500. |
+- **`load-smoke` fails on every PR.** k6's apt repository now signs with key
+  `C780D0BDB1A69C86`, which the workflow does not import. The job is
+  `continue-on-error: true`, so it does not gate. The PR shows UNSTABLE
+  instead of CLEAN. Fix the key import on `main` after #165 lands.
+- **`build` can fail on an image pull.** One run hit `connection reset by
+  peer`. Rerun the failed job after the whole run finishes.
+- **CodeQL runs only on PRs into `main`.** A stacked PR first sees CodeQL after
+  its retarget. On #161 it found a polynomial ReDoS in the spec-mention
+  pattern of `context_service.py` (alert 136). The fix bounds the pattern and
+  adds a linear-time test. It is on stack branches 06 to 10 and merged with #161.
+- **40 Bandit code-scanning threads were resolved** on #156 to #165 so the
+  PRs could merge. The alerts remain open in the Security tab for the
+  maintainer to triage or dismiss.
+- **Dependabot** reports 5 moderate vulnerabilities on `main`, and the
+  Dependabot Updates runs fail. Neither has been investigated.
 
-Also documented: `make dev` does **not** read the root `.env` (it passes
-`--env-file deploy/.env.dev`), which is a reliable way to end up with a database
-volume whose password no longer matches. Added to getting-started and
-troubleshooting.
+## Next, after #165
 
-## Verification performed
+1. Fix the k6 key import in `.github/workflows/ci.yml` (`load-smoke`).
+2. Merge this handover branch. Merging it earlier changes `main`'s tree in the
+   middle of the stack, and a later sync merge would drop it.
+3. Further integration work is ready locally: Lines waves 2 and 3, P3 wave A
+   and seam 5 wave A. It goes up as later PRs once a maintainer-only
+   prerequisite clears. The private handover notes hold the details.
+4. Then P3 waves B and C, seam 5 wave B, seam 6 and tervin's client.
 
-- Full Python suite against the source tree: 4169 passed. The 10 failures are
-  **identical on `main`** (OTel SDK drift in the ad-hoc venv, plus SLA/sandbox
-  tests) — diffed, no regressions.
-- Web: 790 passed, `tsc --noEmit` clean, eslint at the 12-warning baseline.
-- `ruff check` clean; `ruff format` clean on every file touched; `mypy -p
-  forge_api -p forge_spec -p forge_board` clean.
-- A real stack (isolated compose project) brought up end to end: MinIO pulled
-  from quay.io, all eight services healthy, seed printed a key, that key
-  authenticated through Caddy, survived an API restart, and drove the UI
-  through connect → board → task list.
+## Waiting on the maintainer
+
+- The maintainer-only prerequisite above.
+- Brief rulings: `GET /runners` on the runner dependency, and enforcing the
+  §6b one-active-run rule.
+- The seam 5 `pr` gate ruling, the benchmark live run, dogfooding and the
+  multi-repo trial.
