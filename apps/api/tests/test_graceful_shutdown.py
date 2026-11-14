@@ -89,6 +89,31 @@ async def test_lifespan_disposes_engine_and_closes_redis(
     assert disposed == {"engine": True, "redis": True, "flushed": True}
 
 
+def test_lifespan_refuses_bad_embedder_config_at_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ADR-0018 (correction item 8): a mismatched embedding dimension must
+    # refuse the process at startup — previously /health stayed 200 while
+    # every /knowledge/* call 500'd. The lifespan warms the embedder before
+    # marking serving, so entering the TestClient raises.
+    from forge_api.routers import knowledge as knowledge_router
+    from forge_api.settings import get_settings
+
+    monkeypatch.setenv("FORGE_EMBEDDING_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("FORGE_EMBEDDING_MODEL", "text-embedding-3-small")
+    monkeypatch.setenv("FORGE_EMBEDDING_DIMENSION", "768")
+    get_settings.cache_clear()
+    knowledge_router.get_configured_embedder.cache_clear()
+    knowledge_router._knowledge_service_singleton.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="does not match"), TestClient(create_app()):
+            pass  # pragma: no cover - startup must refuse first
+    finally:
+        get_settings.cache_clear()
+        knowledge_router.get_configured_embedder.cache_clear()
+        knowledge_router._knowledge_service_singleton.cache_clear()
+
+
 def test_dispose_db_engine_noop_when_never_built(monkeypatch: pytest.MonkeyPatch) -> None:
     # If the engine cache is empty, dispose must not build one just to close it.
     from forge_api import db
@@ -112,3 +137,22 @@ def test_shutdown_close_redis_handles_none_and_client() -> None:
     r = _R()
     shutdown_mod.shutdown_close_redis(r)
     assert r.closed is True
+
+
+def test_lifespan_refuses_the_test_only_reranker_at_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A .env copied from an old template still selects the fixture reranker;
+    # the process must refuse to serve rather than fail every /knowledge call.
+    from forge_api.routers import knowledge as knowledge_router
+    from forge_api.settings import get_settings
+
+    monkeypatch.setenv("FORGE_RERANK_PROVIDER", "fixture")
+    get_settings.cache_clear()
+    knowledge_router.get_configured_embedder.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="test-only"), TestClient(create_app()):
+            pass  # pragma: no cover - startup must refuse first
+    finally:
+        get_settings.cache_clear()
+        knowledge_router.get_configured_embedder.cache_clear()

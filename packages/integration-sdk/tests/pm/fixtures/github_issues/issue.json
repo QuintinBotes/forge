@@ -1,0 +1,21 @@
+{
+  "id": 123456789,
+  "node_id": "I_kwDOFixture42",
+  "number": 42,
+  "url": "https://api.github.com/repos/acme/widgets/issues/42",
+  "html_url": "https://github.com/acme/widgets/issues/42",
+  "title": "Make widgets accessible",
+  "body": "## Acceptance criteria\nKeyboard navigation works.",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+    {"id": 1, "name": "bug", "color": "d73a4a", "default": true},
+    {"id": 2, "name": "status:in-progress", "color": "0052cc", "default": false},
+    {"id": 3, "name": "priority:high", "color": "b60205", "default": false}
+  ],
+  "assignee": {"login": "octocat", "id": 1},
+  "assignees": [{"login": "octocat", "id": 1}],
+  "created_at": "2026-11-06T09:00:00Z",
+  "updated_at": "2026-11-07T10:00:00Z",
+  "closed_at": null
+}

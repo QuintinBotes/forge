@@ -59,6 +59,7 @@ import type {
   InstallRequest,
   InstallResult,
   KnowledgeSearchRequest,
+  KnowledgeSearchResponse,
   Listing,
   ListingDetail,
   ListingPublishRequest,
@@ -436,8 +437,8 @@ export class ForgeApiClient {
 
   // --- Knowledge ---------------------------------------------------------- //
 
-  searchKnowledge(req: KnowledgeSearchRequest): Promise<RetrievedChunk[]> {
-    return this.request<RetrievedChunk[]>("/knowledge/search", {
+  searchKnowledge(req: KnowledgeSearchRequest): Promise<KnowledgeSearchResponse> {
+    return this.request<KnowledgeSearchResponse>("/knowledge/search", {
       method: "POST",
       body: req,
     });

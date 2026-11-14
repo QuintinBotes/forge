@@ -108,13 +108,15 @@ def _structured(result: dict) -> dict:
 def test_member_sees_all_seven_world_tools(factory, audit) -> None:
     with _mcp(_client(factory, audit, UserRole.MEMBER)) as mcp:
         names = {tool.name for tool in mcp.list_tools()}
-    assert names == WORLD_TOOLS
+    assert names >= WORLD_TOOLS
 
 
 def test_viewer_cannot_see_or_call_world_propose(factory, audit) -> None:
     client = _client(factory, audit, UserRole.VIEWER)
     with _mcp(client) as mcp:
-        assert {tool.name for tool in mcp.list_tools()} == WORLD_TOOLS - {"world_propose"}
+        names = {tool.name for tool in mcp.list_tools()}
+        assert names >= WORLD_TOOLS - {"world_propose"}
+        assert "world_propose" not in names
     reply = client.post(
         "/mcp",
         json={

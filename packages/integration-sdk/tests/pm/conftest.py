@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from forge_contracts.pm import (
@@ -24,12 +25,14 @@ from forge_contracts.pm import (
     HttpResponse,
     PMProvider,
 )
+from forge_integrations.github import GitHubClient
 from forge_integrations.pm import FixturePMTransport
 from forge_integrations.pm.asana.adapter import AsanaAdapter
 from forge_integrations.pm.asana.client import AsanaClient
 from forge_integrations.pm.clickup.adapter import ClickUpAdapter
 from forge_integrations.pm.clickup.client import ClickUpClient
 from forge_integrations.pm.generic.adapter import GenericAdapter
+from forge_integrations.pm.github_issues.adapter import GitHubIssuesAdapter
 from forge_integrations.pm.github_projects.adapter import GitHubProjectsAdapter
 from forge_integrations.pm.github_projects.client import GitHubProjectsClient
 from forge_integrations.pm.gitlab.adapter import GitLabAdapter
@@ -53,6 +56,63 @@ TRELLO_API = "/1"
 GITLAB_BASE = "https://gitlab.com/api/v4"
 GITLAB_API = "/api/v4"
 GENERIC_BASE = "https://byo.example"
+
+
+@pytest.fixture
+def github_issues_ctx() -> AdapterContext:
+    return AdapterContext(
+        connection_id=uuid4(),
+        workspace_id=uuid4(),
+        provider=PMProvider.github_issues,
+        external_project_key="acme/widgets",
+        external_project_id="10",
+    )
+
+
+@pytest.fixture
+def github_issues_requests() -> list[httpx.Request]:
+    return []
+
+
+@pytest.fixture
+def github_issues_transport(github_issues_requests):
+    issue = load_json("github_issues/issue.json")
+    pull = load_json("github_issues/pull_request.json")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        github_issues_requests.append(request)
+        path = request.url.path
+        if request.method == "GET":
+            if path == "/repos/acme/widgets/issues":
+                return httpx.Response(200, json=[issue, pull])
+            if path == "/repos/acme/widgets/issues/42":
+                return httpx.Response(200, json=issue)
+            if path == "/repos/acme/widgets/issues/43":
+                return httpx.Response(200, json=pull)
+            if path == "/repos/acme/widgets":
+                return httpx.Response(200, json={"id": 10, "full_name": "acme/widgets"})
+        if request.method == "POST" and path == "/repos/acme/widgets/issues/42/comments":
+            comment = load_json("github_issues/issue_comment.json")["comment"]
+            return httpx.Response(201, json={**comment, **json.loads(request.content)})
+        if (request.method, path) in (
+            ("POST", "/repos/acme/widgets/issues"),
+            ("PATCH", "/repos/acme/widgets/issues/42"),
+        ):
+            payload = json.loads(request.content)
+            if request.method == "POST":
+                assert "state" not in payload
+                issue["state"] = "open"
+            issue.update(payload)
+            return httpx.Response(201 if request.method == "POST" else 200, json=issue)
+        raise AssertionError(f"unexpected GitHub request: {request.method} {path}")
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.fixture
+def github_issues_adapter(github_issues_ctx, github_issues_transport):
+    with GitHubClient(token="ghs_fixture", transport=github_issues_transport) as client:
+        yield GitHubIssuesAdapter(client, github_issues_ctx)
 
 
 def load_json(rel: str) -> Any:

@@ -258,11 +258,16 @@ def test_graceful_enforces_latency_budget_without_hanging() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_build_reranker_fixture_and_disabled_make_no_client() -> None:
-    # AC2: fixture / disabled -> the offline fixture, no network client built.
-    assert isinstance(build_reranker("fixture"), FixtureRerankerClient)
-    assert isinstance(build_reranker(None), FixtureRerankerClient)
-    assert isinstance(build_reranker("jina", enabled=False), FixtureRerankerClient)
+def test_build_reranker_off_by_default_and_fixture_refused() -> None:
+    # ADR-0018: unset/none/disabled -> None (rerank "off"), never the fixture.
+    # "fixture" is refused outright — config must not select a fake reranker
+    # in a running process; tests construct FixtureRerankerClient() directly.
+    with pytest.raises(ValueError, match="fixture is test-only"):
+        build_reranker("fixture")
+    assert build_reranker(None) is None
+    assert build_reranker("none") is None
+    assert build_reranker("") is None
+    assert build_reranker("jina", enabled=False) is None
 
 
 def test_build_reranker_provider_defaults() -> None:
@@ -287,11 +292,20 @@ def test_build_reranker_rejects_unknown_provider() -> None:
         build_reranker("voyage")
 
 
-def test_build_reranker_from_settings_defaults_to_fixture() -> None:
+def test_build_reranker_from_settings_defaults_to_off() -> None:
     class _S:  # bare settings-like object, provider unset
         pass
 
-    assert isinstance(build_reranker_from_settings(_S()), FixtureRerankerClient)
+    # ADR-0018: an unset provider means no reranker, not the fixture.
+    assert build_reranker_from_settings(_S()) is None
+
+
+def test_build_reranker_from_settings_refuses_fixture() -> None:
+    class _S:
+        rerank_provider = "fixture"
+
+    with pytest.raises(ValueError, match="fixture is test-only"):
+        build_reranker_from_settings(_S())
 
 
 def test_build_reranker_from_settings_builds_configured_provider() -> None:
@@ -400,3 +414,20 @@ def test_api_key_never_appears_in_error_on_401(caplog: pytest.LogCaptureFixture)
     assert tel.reason is not None
     assert _FAKE_RERANK_KEY not in (tel.reason or "")
     assert _FAKE_RERANK_KEY not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"), [(None, "none"), ("", "none"), ("OFF", "none"), (" Jina ", "jina")]
+)
+def test_check_rerank_provider_normalises_names_forge_accepts(raw, expected) -> None:
+    from forge_knowledge.reranker import check_rerank_provider
+
+    assert check_rerank_provider(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["fixture", "FIXTURE", "jinna"])
+def test_check_rerank_provider_refuses_test_only_and_unknown_names(raw) -> None:
+    from forge_knowledge.reranker import check_rerank_provider
+
+    with pytest.raises(ValueError):
+        check_rerank_provider(raw)

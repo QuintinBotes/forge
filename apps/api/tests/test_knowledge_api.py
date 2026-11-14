@@ -140,7 +140,13 @@ def test_index_then_search_returns_attributed_chunks(
         },
     )
     assert resp.status_code == 200, resp.text
-    results = resp.json()
+    body = resp.json()
+    # ADR-0018 envelope: the injected deterministic embedder + fixture reranker
+    # are *configured* legs, and the response says so.
+    assert body["legs"] == ["bm25", "vector"]
+    assert body["vector_leg"] == "configured"
+    assert body["rerank"] == "fixture"
+    results = body["results"]
     assert results
     assert results[0]["path"] == "auth.py"
     assert results[0]["source_id"] == str(source_id)
@@ -155,16 +161,17 @@ def test_search_recovers_exact_identifier(client: TestClient, source_id: uuid.UU
         json={"query": "compute_rrf_score", "scope": {"workspace_id": WORKSPACE_ID}, "k": 3},
     )
     assert resp.status_code == 200, resp.text
-    assert any(c["path"] == "rank.py" for c in resp.json())
+    assert any(c["path"] == "rank.py" for c in resp.json()["results"])
 
 
-def test_search_empty_index_returns_empty_list(client: TestClient) -> None:
+def test_search_empty_index_returns_empty_results(client: TestClient) -> None:
     resp = client.post(
         "/knowledge/search",
         json={"query": "anything", "scope": {"workspace_id": WORKSPACE_ID}, "k": 5},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json() == []
+    assert resp.json()["results"] == []
+    assert resp.json()["legs"] == ["bm25", "vector"]
 
 
 def test_sync_full_indexes_inline_files(client: TestClient, source_id: uuid.UUID) -> None:
@@ -188,7 +195,7 @@ def test_sync_full_indexes_inline_files(client: TestClient, source_id: uuid.UUID
         "/knowledge/search",
         json={"query": "validate_jwt", "scope": {"workspace_id": WORKSPACE_ID}, "k": 3},
     )
-    assert any(c["path"] == "auth/jwt.py" for c in found.json())
+    assert any(c["path"] == "auth/jwt.py" for c in found.json()["results"])
 
 
 def test_sync_full_prunes_vanished_files(client: TestClient, source_id: uuid.UUID) -> None:
@@ -290,7 +297,7 @@ def test_search_cannot_read_another_workspace(
         },
     )
     assert spoof.status_code == 200
-    assert all(c["source_id"] != str(other_src_id) for c in spoof.json())
+    assert all(c["source_id"] != str(other_src_id) for c in spoof.json()["results"])
 
     # Default (empty) scope must also stay within the caller's workspace.
     default = client.post(
@@ -298,7 +305,7 @@ def test_search_cannot_read_another_workspace(
         json={"query": "validate an oauth jwt token", "k": 10},
     )
     assert default.status_code == 200
-    returned = default.json()
+    returned = default.json()["results"]
     assert returned  # caller's own workspace results are present
     assert all(c["source_id"] != str(other_src_id) for c in returned)
 
@@ -355,9 +362,89 @@ def test_search_survives_reranker_outage_with_weighted_rrf(
         )
 
     assert resp.status_code == 200, resp.text
-    results = resp.json()
+    results = resp.json()["results"]
     assert results, "a degraded reranker must still return weighted-RRF results"
     assert all(c["rerank_score"] is None for c in results)
-    # The server-side telemetry recorded the fallback.
+    # The envelope names what this call did: the configured provider's call
+    # degraded to weighted-RRF, so it reports "fallback", not "jina". The
+    # server-side fallback telemetry agrees.
+    assert resp.json()["rerank"] == "fallback"
     assert service.last_rerank is not None
     assert service.last_rerank.fallback_used is True
+
+
+# --------------------------------------------------------------------------- #
+# J retrieval: honest BM25-only search + strict-vector 503 (ADR-0018)          #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def bm25_only_client(
+    session_factory: sessionmaker[Session],
+    authenticate_app: Callable[..., FastAPI],
+) -> Iterator[TestClient]:
+    # The production default shape: no embedder, no reranker configured.
+    service = KnowledgeService.from_session_factory(session_factory, None, None)
+    app = create_app()
+    authenticate_app(app)
+    app.dependency_overrides[get_knowledge_service] = lambda: service
+    app.dependency_overrides[get_knowledge_session_factory] = lambda: session_factory
+    with TestClient(app) as c:
+        yield c
+
+
+def test_bm25_only_search_reports_unconfigured_vector_leg(
+    bm25_only_client: TestClient, source_id: uuid.UUID
+) -> None:
+    indexed = bm25_only_client.post("/knowledge/index", json=_index_payload(source_id))
+    assert indexed.status_code == 200, indexed.text
+    assert indexed.json()["indexed"] == 3
+
+    resp = bm25_only_client.post(
+        "/knowledge/search",
+        json={
+            "query": "validate an oauth jwt token",
+            "scope": {"workspace_id": WORKSPACE_ID},
+            "k": 3,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["legs"] == ["bm25"]
+    assert body["vector_leg"] == "unconfigured"
+    assert body["rerank"] == "off"
+    assert body["results"], "BM25-only mode must still answer keyword queries"
+    assert body["results"][0]["path"] == "auth.py"
+    assert all(c["rerank_score"] is None for c in body["results"])
+
+
+def test_require_vector_returns_503_when_unconfigured(
+    bm25_only_client: TestClient, source_id: uuid.UUID
+) -> None:
+    bm25_only_client.post("/knowledge/index", json=_index_payload(source_id))
+    resp = bm25_only_client.post(
+        "/knowledge/search",
+        json={
+            "query": "validate an oauth jwt token",
+            "scope": {"workspace_id": WORKSPACE_ID},
+            "k": 3,
+            "require_vector": True,
+        },
+    )
+    assert resp.status_code == 503, resp.text
+    assert "unconfigured" in resp.json()["detail"]
+
+
+def test_require_vector_succeeds_when_configured(client: TestClient, source_id: uuid.UUID) -> None:
+    client.post("/knowledge/index", json=_index_payload(source_id))
+    resp = client.post(
+        "/knowledge/search",
+        json={
+            "query": "validate an oauth jwt token",
+            "scope": {"workspace_id": WORKSPACE_ID},
+            "k": 3,
+            "require_vector": True,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["vector_leg"] == "configured"

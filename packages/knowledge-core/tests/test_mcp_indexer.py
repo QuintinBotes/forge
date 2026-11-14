@@ -255,3 +255,63 @@ def test_sync_run_closed_with_report(mode: SyncDirection) -> None:
     assert h.runs.reports[-1] is report
     assert report.finished_at is not None
     assert report.error is None
+
+
+class BacklogStore(FakeChunkStore):
+    def __init__(self, *, fail: bool = False) -> None:
+        super().__init__()
+        self.backlog_calls = 0
+        self.fail = fail
+
+    def embed_missing(self, source_id: str) -> tuple[int, list[str]]:
+        self.backlog_calls += 1
+        if self.fail:
+            raise RuntimeError("provider down")
+        return 4, []
+
+
+@pytest.mark.parametrize("mode", [SyncDirection.full, SyncDirection.incremental])
+def test_unchanged_resources_still_get_their_backlog_embedded(mode: SyncDirection) -> None:
+    fetcher = FakeMcpResourceFetcher(_resources())
+    first = _indexer(fetcher)
+    _sync(first, SyncDirection.full)
+    store = BacklogStore()
+    store.__dict__.update({k: v for k, v in first.store.__dict__.items() if k != "backlog_calls"})
+    indexer = McpSyncIndexer(
+        fetcher=fetcher,
+        chunker=McpResourceChunker(),
+        indexer=store,
+        ledger=first.ledger,
+        runs=first.runs,
+    )
+    report = indexer.sync(
+        source_id=SOURCE_ID,
+        workspace_id=WORKSPACE_ID,
+        connection_slug=SLUG,
+        allowed_namespaces=["engineering", "architecture"],
+        mode=mode,
+    )
+    assert report.resources_skipped == 3
+    assert store.backlog_calls == 1
+    assert report.chunks_embedded == 4
+    assert report.error is None
+
+
+def test_a_failing_backlog_does_not_fail_the_mcp_sync() -> None:
+    store = BacklogStore(fail=True)
+    indexer = McpSyncIndexer(
+        fetcher=FakeMcpResourceFetcher(_resources()),
+        chunker=McpResourceChunker(),
+        indexer=store,
+        ledger=FakeLedger(),
+        runs=FakeRunRecorder(),
+    )
+    report = indexer.sync(
+        source_id=SOURCE_ID,
+        workspace_id=WORKSPACE_ID,
+        connection_slug=SLUG,
+        allowed_namespaces=["engineering", "architecture"],
+        mode=SyncDirection.full,
+    )
+    assert report.error is None
+    assert report.resources_indexed == 3

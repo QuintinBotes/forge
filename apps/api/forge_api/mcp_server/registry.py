@@ -10,9 +10,9 @@ called anyway. Domain failures raise :class:`ToolError` and come back as
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from typing import Any
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
+from typing import Any, cast
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
@@ -38,6 +38,13 @@ class ToolError(Exception):
 class ToolContext:
     principal: Principal
     session: Session
+    #: The app's ``dependency_overrides``, so a tool that needs a zero-argument
+    #: provider (a cached service) gets the same instance a REST route would.
+    overrides: Mapping[Any, Callable[[], Any]] = field(default_factory=dict)
+
+    def provide[T](self, provider: Callable[[], T]) -> T:
+        """Call ``provider``, or the override the app registered for it."""
+        return cast("T", self.overrides.get(provider, provider)())
 
 
 @dataclass(frozen=True)

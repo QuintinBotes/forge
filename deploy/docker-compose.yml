@@ -184,6 +184,15 @@ services:
       FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Spec J production embedder (ADR-0018). Empty/unset -> honest BM25-only
+      # search. MUST match the worker's values, or stored vectors and query
+      # vectors come from different models. An empty DIMENSION parses to None,
+      # which openai-compatible refuses at startup — set it with the provider.
+      FORGE_EMBEDDING_PROVIDER: ${FORGE_EMBEDDING_PROVIDER:-}
+      FORGE_EMBEDDING_MODEL: ${FORGE_EMBEDDING_MODEL:-}
+      FORGE_EMBEDDING_BASE_URL: ${FORGE_EMBEDDING_BASE_URL:-}
+      FORGE_EMBEDDING_DIMENSION: ${FORGE_EMBEDDING_DIMENSION:-}
+      FORGE_EMBEDDING_API_KEY: ${FORGE_EMBEDDING_API_KEY:-}
       # Incident alert webhook signing secrets (F17); absent -> 501 fail-closed.
       FORGE_PAGERDUTY_WEBHOOK_SECRET: ${FORGE_PAGERDUTY_WEBHOOK_SECRET:-}
       FORGE_DATADOG_WEBHOOK_SECRET: ${FORGE_DATADOG_WEBHOOK_SECRET:-}
@@ -297,6 +306,16 @@ services:
       FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Spec J production embedder (ADR-0018). Empty/unset -> chunks indexed
+      # without vectors for honest BM25-only search. MUST match the api's
+      # values, or stored vectors and query vectors come from different
+      # models. An empty DIMENSION parses to None, which openai-compatible
+      # refuses at worker startup — set it with the provider.
+      FORGE_EMBEDDING_PROVIDER: ${FORGE_EMBEDDING_PROVIDER:-}
+      FORGE_EMBEDDING_MODEL: ${FORGE_EMBEDDING_MODEL:-}
+      FORGE_EMBEDDING_BASE_URL: ${FORGE_EMBEDDING_BASE_URL:-}
+      FORGE_EMBEDDING_DIMENSION: ${FORGE_EMBEDDING_DIMENSION:-}
+      FORGE_EMBEDDING_API_KEY: ${FORGE_EMBEDDING_API_KEY:-}
       # F27 multi-agent coordinator (supervised runs). Read by forge_coordinator's
       # CoordinatorSettings (MULTI_AGENT_ENABLED); "false"/unset keeps supervised
       # runs single-agent (escalate with reason `multi_agent_disabled`).
