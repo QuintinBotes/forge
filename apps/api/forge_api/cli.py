@@ -19,7 +19,7 @@ import sys
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from forge_api import cli_remote
+from forge_api import cli_ctxbench, cli_remote
 from forge_workflow.temporal.config import TemporalSettings
 
 if TYPE_CHECKING:
@@ -315,6 +315,7 @@ def build_parser() -> argparse.ArgumentParser:
     sign.add_argument("--manifest", required=True, help="forge-package manifest (YAML or JSON)")
 
     cli_remote.add_parsers(sub)
+    cli_ctxbench.add_parsers(sub)
     return parser
 
 
@@ -342,6 +343,8 @@ def main(argv: list[str] | None = None) -> int:
         return _marketplace_sign(args.key_file, args.manifest)
     if args.group in cli_remote.REMOTE_GROUPS:
         return cli_remote.run(args)
+    if args.group == cli_ctxbench.GROUP:
+        return cli_ctxbench.run(args)
     return 2  # pragma: no cover
 
 
