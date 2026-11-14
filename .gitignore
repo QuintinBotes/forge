@@ -68,3 +68,8 @@ deploy/helm/*/charts/*.tgz
 .forge/cache/
 worktrees/
 *.log
+
+# Local research and tooling state (not part of the product)
+research_notes/
+reports/
+.review-voice/

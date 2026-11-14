@@ -1,0 +1,483 @@
+# Orbit configuration (.orbit/config.yaml)
+#
+# This file is trusted input: it is the authority every Orbit run works under.
+# At run start Orbit validates it, applies defaults for anything you leave
+# out, and freezes the result into .orbit/runs/<run-id>/policy.json (read-only,
+# hashed). Editing this file never changes a run that has already started.
+#
+# Unknown keys, wrong types and contradictory settings are errors, all reported
+# at once. Validate with: orbit doctor
+#
+# Keep this file under review like code. Workers can never edit it: it is a
+# built-in protected path, along with .orbit/**, .git, env files and keys.
+
+version: 1
+
+# What Orbit may do without asking (spec section 5, Execution modes):
+#   supervised           ask for material decisions and unauthorized actions
+#   autonomous           do preauthorized work; resolve reversible, low-risk ambiguity
+#   autonomous-delivery  also commit, push a task branch, open a PR, observe and repair CI
+#   release              also merge and deploy, each only when its action below is true
+# The starter is "autonomous": Orbit works on a local orbit/<run-id> branch and
+# never pushes. To let it deliver, change this to autonomous-delivery; the four
+# delivery actions below then turn on by themselves (and need a GitHub
+# credential for the pull request, see "orbit doctor").
+# Delivery actions (commit, push, PR, CI repair) default to on only in the
+# delivery modes; setting one to true in supervised or autonomous mode is an
+# error, so leave them out unless you want to override the mode's default.
+mode: autonomous-delivery
+
+repository:
+  base_branch: "main"
+  # Task branches are <branch_prefix><run-id>. Orbit only ever pushes branches
+  # with this prefix, and the prefix may not match the base branch.
+  branch_prefix: orbit/
+  # Refuse to start when the working tree has uncommitted changes.
+  allow_dirty_start: false
+  remote: origin
+
+scope:
+  # Repository-relative globs a worker may change. Anything else is out of
+  # scope and fails the run's scope gate. A goal contract can narrow this
+  # further but never widen it. Narrow this to the folders your goal needs;
+  # "orbit init" proposes every source folder and leaves out folders that hold
+  # CI pipeline or build-system definitions (it adds those to protected_paths).
+  allowed_paths: ["apps/**", "packages/**", "tests/**", "docs/**", "specs/**", "benchmarks/**", "scripts/**", "examples/**", "deploy/**", "security/**", "README.md", "CHANGELOG.md", "RELEASE_READINESS.md", "SECURITY_FINDINGS.md", "docker-compose*.yml"]
+  # Paths no worker may change even when allowed_paths matches them.
+  # Protected always wins. Orbit also adds built-in protections you cannot
+  # remove: .orbit/**, .git, nested .git dirs, .claude/settings*.json,
+  # .mcp.json, **/.env*, **/*.pem, SSH keys, **/.npmrc and **/.netrc.
+  protected_paths: [".github/**", "infra/**", ".orbit/config.yaml", "**/.env*", "Makefile", "examples/automations/**"]
+  # Files workers may never read, in addition to the built-in credential
+  # patterns (.env files, keys, cloud and git credentials).
+  credential_paths: []
+
+actions:
+  edit: true
+  test: true
+  # commit, push_task_branch, open_pull_request, repair_ci and read_ci_logs follow the mode:
+  # on in autonomous-delivery and release, off otherwise. They are left out here
+  # on purpose, so "orbit run --mode <mode>" is valid in every mode. Set one
+  # to false to switch it off in a delivery mode (the first four are an error when true outside the delivery modes).
+  # commit: true
+  # push_task_branch: true
+  # open_pull_request: true
+  # repair_ci: true
+  # read_ci_logs: true
+  # Permission to rebase the task branch onto a base branch that moved on.
+  # Needs commit.
+  rebase_task_branch: false
+  # merge and deploy_production need mode release.
+  merge: false
+  deploy_production: false
+  # Reserved: workers never hold or change secrets, so this must stay false.
+  change_secrets: false
+  # When false, commands that change file modes, owners, ACLs or flags
+  # (chmod, chown, chgrp, chflags, chattr, setfacl) are denied.
+  change_permissions: false
+
+dependencies:
+  # Install exactly what the lockfile pins (npm ci, pnpm install --frozen-lockfile, ...).
+  install_existing_lockfile: true
+  # The command the controller uses to install dependencies before checks,
+  # as an argv list (never run through a shell). null lets Orbit detect it.
+  install_command: null
+  # Adding or upgrading packages; needs change_lockfile too.
+  add_packages: false
+  change_lockfile: false
+  # Package lifecycle scripts run arbitrary code at install time:
+  #   deny                     never run them (workers must pass --ignore-scripts)
+  #   deny-unless-allowlisted  only for packages listed below
+  #   allow                    run them
+  install_scripts: deny-unless-allowlisted
+  install_script_allowlist: []
+  # Vulnerability and license policy (npm lockfiles). When enabled, npm audit
+  # runs on the base revision and again on any candidate that changes
+  # package.json or the lockfile; the candidate is blocked when it adds a
+  # vulnerability at or above fail_on, or a package whose license is not on
+  # license_allowlist (null: no license policy). Findings the base already
+  # had are recorded, never blamed on the candidate. An exception names an
+  # advisory (GHSA-xxxx-xxxx-xxxx or npm:<id>) or license:<package>, with a
+  # reason and an optional expiry date.
+  audit:
+    enabled: false
+    fail_on: high
+    license_allowlist: null
+    exceptions: []
+
+network:
+  # Hosts workers and checks may reach. Exact names, IPv4 addresses, or
+  # "*.example.com" for any subdomain (not example.com itself). No ports,
+  # schemes or bare "*". Everything else is blocked by the sandbox.
+  allowed_hosts: [github.com, api.github.com, registry.npmjs.org]
+
+ambiguity:
+  # Make reversible, low-risk choices and record them instead of stopping.
+  resolve_reversible_choices: true
+  # A behaviour change needs evidence (a test or a check) before it is accepted.
+  require_evidence_for_behavior_changes: true
+  # Stop and ask (or block) on anything touching security or data semantics.
+  block_security_or_data_semantics: true
+
+scheduler:
+  # Hard caps are copied into the policy snapshot and never change during a run.
+  hard_limits:
+    implementation_attempts: 12
+    diagnostic_experiments: 16
+    review_rounds: 4
+    ci_repair_cycles: 3
+    worker_turns_per_session: 30
+    wall_minutes: 120
+    model_cost_usd: 30
+    parallel_workers: 4
+    changed_files: 40
+    changed_lines: 2000
+    infrastructure_retries: 5
+    recovery_attempts: 3
+  # Starting attempt allowance by task difficulty; each must fit under
+  # implementation_attempts.
+  initial_allowances:
+    simple_attempts: 2
+    medium_attempts: 4
+    complex_attempts: 6
+  # One more attempt is granted only with measurable progress and a new,
+  # evidence-backed hypothesis, and never from the final verification reserve.
+  extension:
+    attempts_per_extension: 1
+    require_measurable_progress: true
+    require_new_hypothesis: true
+    preserve_final_verification_reserve: true
+  # Equivalent failures in a row before Orbit stops and interrogates the plan.
+  repeated_failure_threshold: 2
+  # Share of the cost and wall-time budget held back for final verification,
+  # independent review and the report.
+  final_reserve_fraction: 0.2
+
+agents:
+  default_parallelism: 1
+  # Parallel writers always get disjoint work units, and writers always get
+  # their own worktree; these three cannot be turned off.
+  require_independent_work_units: true
+  isolate_writers: true
+  prohibit_shared_worktree_writes: true
+  cancel_obsolete_workers: true
+  # Plugins a worker session may load besides Claude Code's built-ins. A
+  # plugin can add hooks and tools to every worker, so none are allowed by
+  # default; `orbit doctor` lists the ones a worker would load.
+  # Exact name@marketplace ids, e.g. ["acme-guard@acme-it"]:
+  allowed_plugins: []
+  # Accept every organisation-managed plugin (scope managed):
+  allow_managed_plugins: false
+
+review:
+  # Independent reviewers (a provider other than the one that wrote the
+  # change), in preference order. The first that is installed, logged in,
+  # data_policy_eligible and has a qualified model reviews. Supported: codex.
+  providers: [codex]
+  # When none of them is usable:
+  #   claude  Claude reviews in a separate session at the safety-review
+  #           quality floor; every report says the review was not
+  #           independent and why.
+  #   ask     the run asks a person first and continues only on a yes.
+  #   block   the run blocks until an independent reviewer is usable.
+  when_unavailable: ask
+  block_unresolved_high_impact_findings: true
+
+# Secret-scan and SAST findings (static security gate). Findings at a listed
+# severity block; the others are reported as advisory. An exception waives
+# one rule (optionally under one path glob) until it expires, and its reason
+# is recorded with the evidence. SAST checks that write SARIF to
+# $ORBIT_ARTIFACTS_DIR are judged by finding severity, not only exit status.
+static_security:
+  block_severities: [critical, high]
+  exceptions: []
+  # Example:
+  #   - {rule_id: generic-api-key, path_glob: "tests/fixtures/**", reason: "revoked sample keys", expires: 2026-12-31}
+
+delivery:
+  # github (gh CLI, controller credentials only) or fake (tests and demos).
+  provider: github
+  # draft, ready, or none.
+  pull_request: ready
+  # May not exceed scheduler.hard_limits.ci_repair_cycles.
+  max_ci_repair_cycles: 3
+  ci_timeout_minutes: 60
+  # When true, a delivery with no CI checks observed before the timeout cannot
+  # succeed. When false, "no CI observed" is reported as unverified.
+  require_ci: true
+
+# Checks are the only commands Orbit runs as evidence. A goal contract may
+# only name check ids defined here; a command written by a model is never
+# executed as a check.
+#
+# Each check:
+#   command          argv list, run WITHOUT a shell. A single string is an
+#                    error unless "shell: true" is set explicitly, in which
+#                    case the string is run with /bin/sh -c.
+#   cwd              relative to the worktree root (default ".")
+#   timeout_seconds  default 600
+#   network_hosts    hosts this check may reach; must be covered by
+#                    network.allowed_hosts (default: none)
+#   local_binding    whether the check may listen on 127.0.0.1, as a test
+#                    suite that starts an HTTP server does (default: true).
+#                    It opens no outbound route: reach stays network_hosts.
+#                    Set false for a check that never needs to serve.
+#   env              extra environment; delivery credentials such as
+#                    GH_TOKEN are refused
+#   mandatory        default true; a run cannot succeed while it fails
+#   flaky_reruns     reruns used only to classify flakiness (0 to 5); a
+#                    flaky pass is reported as flaky, never as clean
+#   kind             command (default) or playwright
+#   category         what the check evidences: test (default), lint,
+#                    typecheck, build, sast, ui or other. A playwright check
+#                    is "ui" unless it says otherwise. Checks in the "sast"
+#                    category feed the static security gate.
+#
+# Define your checks before the first run. Examples (uncomment and adapt):
+checks:
+  python-lint:
+    command: [uv, run, ruff, check, .]
+    category: lint
+    timeout_seconds: 300
+  python-format:
+    command: [uv, run, ruff, format, --check, .]
+    category: lint
+    timeout_seconds: 300
+  python-typecheck:
+    command: [make, typecheck]
+    category: typecheck
+    timeout_seconds: 900
+  # Needs the loopback test services: docker start forge-test-pg forge-test-redis
+  python-unit-tests:
+    command: [uv, run, pytest]
+    category: test
+    timeout_seconds: 1800
+    flaky_reruns: 1
+  web-lint:
+    command: [pnpm, -r, lint]
+    category: lint
+    timeout_seconds: 600
+  web-test:
+    command: [pnpm, -r, test]
+    category: test
+    timeout_seconds: 900
+# example-checks:start
+#   lint:
+#     command: [npm, run, lint]
+#     category: lint
+#     timeout_seconds: 300
+#   typecheck:
+#     command: [npx, tsc, --noEmit]
+#     category: typecheck
+#   unit-tests:
+#     command: [npm, test]
+#     category: test
+#     flaky_reruns: 1
+#   build:
+#     command: "npm run build && test -f dist/index.js"
+#     shell: true
+#     category: build
+#   sast:
+#     command: [semgrep, scan, --error, --quiet]
+#     category: sast
+#   ui-journeys:
+#     command: [npx, playwright, test, --reporter=json, --update-snapshots=none]
+#     kind: playwright
+#     category: ui
+#     timeout_seconds: 1200
+# example-checks:end
+
+# UI verification (spec section 13). null turns it off. Example:
+ui: null
+# example-ui:start
+# ui:
+#   required_when_ui_changes: true
+#   ui_paths: ["apps/web/**/*.tsx", "apps/web/**/*.css"]
+#   browsers: [chromium]
+#   viewports:
+#     - {width: 1440, height: 900}
+#     - {width: 390, height: 844}
+#   environment:
+#     base_url: http://127.0.0.1:3000
+#     start_command: [npm, run, dev]
+#     ready_timeout_seconds: 120
+#     isolated_test_data: true
+#     production_accounts: false
+#   journey_check_ids: [ui-journeys]
+#   accessibility:
+#     enabled: true
+#     fail_on_new_serious_or_critical: true
+#   visual:
+#     enabled: true
+#     baseline_changes_require_review: true
+#     baseline_globs: ["**/*-snapshots/**"]
+#   visual_baseline_auto_accept: false
+#   exploration:
+#     enabled: false
+#     max_minutes: 15
+#     budget_usd: 2
+# example-ui:end
+
+isolation:
+  # sandbox-runtime  OS sandbox: filesystem write allowlist and egress allowlist
+  # container        Docker: adds CPU, memory and process limits
+  # none             refused in autonomous modes unless allow_unisolated is true
+  provider: sandbox-runtime
+  allow_unisolated: false
+  # Required when provider is container, for example:
+  #   container: {image: "node:22-bookworm", memory_mb: 4096, cpus: 2, pids: 512}
+  container: null
+  # Hard per-process limits for workers and checks, on by default. null turns
+  # a limit off. cpu_seconds, max_processes and max_file_mb are applied with
+  # ulimit (sandbox-runtime, none) or docker --ulimit (container).
+  # max_processes counts every process of your user id, not only the
+  # command's, so raise it if your account already runs many processes.
+  # memory_mb is enforced under sandbox-runtime by a watchdog that samples the
+  # resident memory of the command's processes and kills them past the limit;
+  # the container provider uses container.memory_mb instead, and none does not
+  # enforce memory.
+  limits:
+    cpu_seconds: 3600
+    max_processes: 2048
+    max_file_mb: 2048
+    memory_mb: 4096
+  # When true, a run is refused if the provider cannot enforce every limit
+  # above that is not null, instead of running with the gap noted in the
+  # evidence. sandbox-runtime has no hard memory cap (its watchdog samples),
+  # none enforces no memory limit, and container enforces
+  # container.memory_mb, which then may not exceed limits.memory_mb. Set
+  # memory_mb to null, or use the container provider, to satisfy it.
+  require_resource_limits: false
+
+providers:
+  claude:
+    command: claude
+    # Running Orbit at all sends code to Claude.
+    data_policy_eligible: true
+    model: null
+    reasoning_effort: null
+    extra_args: []
+  codex:
+    command: codex
+    # Set to true only if sending sanitized code and diffs to this provider is
+    # permitted for this repository. While false, independent review cannot
+    # run and runs that require it stop as blocked instead of reviewing.
+    data_policy_eligible: false
+    model: null
+    reasoning_effort: null
+    extra_args: []
+    # Isolation tier of the Codex reviewer. auto: os-sandbox (Codex inside srt,
+    # srt the only sandbox) only when CODEX_API_KEY or OPENAI_API_KEY is in the
+    # environment and srt starts here; otherwise codex-sandbox (Codex under its
+    # own read-only sandbox, no srt, reads unrestricted). A ChatGPT login cannot
+    # run under srt. os-sandbox fails closed without srt; codex-sandbox never
+    # uses it. orbit doctor reports the tier and why. Codex providers only: a
+    # Claude provider rejects this key.
+    tier: auto
+
+routing:
+  # Model families (or exact ids) Orbit may route work to. Fable is left out
+  # on purpose: headless Claude Code bills Fable usage credits without asking,
+  # so add "fable" here only if you accept that cost.
+  allowed_models: [opus, sonnet, haiku]
+  # Work kind -> model family or exact id, overriding the default routing table.
+  # Every value must be permitted by allowed_models.
+  overrides: {}
+  # Output token budget per role, stated in each worker's prompt.
+  output_budgets:
+    planner: 16000
+    implementer: 24000
+    verifier: 8000
+    reviewer: 12000
+    inquisitor: 6000
+    curator: 8000
+    explorer: 6000
+
+retention:
+  keep_runs_days: 30
+  # Extra regular expressions redacted from logs and artifacts before they
+  # are stored or sent to a provider.
+  redact_patterns: []
+
+# Release mode only: how to merge, and where and how to deploy. Required (not
+# null) in mode release, together with actions.merge or
+# actions.deploy_production. Example:
+release: null
+# example-release:start
+# release:
+#   merge:
+#     method: squash            # squash, merge or rebase
+#     require_checks: [build]   # CI checks that must be green before merging
+#     delete_branch: true
+#     mark_ready: true          # mark a draft pull request ready before merging
+#   environments:
+#     production:
+#       deploy_command: [npm, run, deploy]   # argv, never run through a shell
+#       verify_command: null                 # argv that exits 0 when the deploy took effect
+#       allowed_branches: [main]
+#       require_ci_green: true
+#       network_hosts: []                    # must be covered by network.allowed_hosts
+#       timeout_seconds: 1800
+# example-release:end
+
+# Learning layer (docs/decisions/0002-learning-layer.md). Lessons are advisory:
+# nothing learned can change this file, checks, tests or protected paths.
+knowledge:
+  enabled: true
+  # Leave false for client or private work. When true, validated lessons that
+  # contain no code, paths or private terms may be copied to ~/.orbit and
+  # used in other repositories.
+  share_globally: false
+  # Hard cap on the advisory block added to a worker prompt.
+  max_advisory_tokens: 800
+  # Spend ceiling for end-of-run curation (skipped when the run's reserve needs it).
+  curator_budget_usd: 0.25
+  # Spend ceiling for one replay evaluation of a candidate prompt overlay.
+  # 0 disables evaluations, and with them automatic overlay adoption.
+  eval_budget_usd: 0
+  # Adopt an overlay automatically when replay evals improve with no regression.
+  auto_adopt_overlays: true
+
+# Publication guard: private terms that must never leave this repository
+# through Orbit (global knowledge, overlays, reports written elsewhere).
+guard:
+  # null means ~/.config/publish-guard/terms.txt (shared with publish-guard).
+  terms_file: null
+  allowed_emails: []
+
+# Notifications when a run ends or asks a question (docs/decisions/0008).
+# Payloads carry the run id, state, reason, next action and question ids only.
+notifications:
+  # Linux notify-send only; skipped on macOS (use the webhook there) and where notify-send is missing.
+  desktop: true
+  # POST to a webhook (Slack-compatible "text"). Name the environment variable
+  # that holds the URL, never the URL itself; its host must be in
+  # network.allowed_hosts. Example: { url_env: ORBIT_WEBHOOK_URL }
+  webhook: null
+  # Comment on the run's pull request (or the linked issue below).
+  github_comment: false
+  # Answer an open question with a "/orbit answer <question-id> <choice>"
+  # comment. Only people with write, maintain or admin permission count,
+  # checked with the GitHub API through GH_TOKEN when the comment is read.
+  remote_answers:
+    enabled: false
+    # An issue linked to every run started under this policy (or null).
+    issue: null
+    poll_seconds: 120
+
+# Verification policy.
+verification:
+  # A check that fails and then passes on a rerun is reported as flaky. When
+  # false, a flaky pass cannot make the evidence verdict PASS.
+  allow_flaky_pass: false
+  # Fail-before evidence (docs/decisions/0014-fail-before.md): do a
+  # candidate's new tests fail on the base revision? Orbit runs each test
+  # check a criterion cites on the base tree with the candidate's test files,
+  # once per candidate. off: not run. advisory: reported only. required: a
+  # criterion resting on new tests that pass on the base revision goes to
+  # repair, then to a person; one that cannot be probed blocks for a person.
+  # orbit run --fail-before can raise this for one run, never lower it.
+  fail_before: advisory
+  # The one wall-clock bound of a whole probe; skipped when the run has less
+  # wall time left.
+  fail_before_timeout_seconds: 900
