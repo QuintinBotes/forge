@@ -14,6 +14,7 @@ import contextlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Callable, Iterator
@@ -73,6 +74,15 @@ def _looks_like_auth_failure(stderr: str) -> bool:
     return "please run" in lowered and "login" in lowered
 
 
+def _write_prompt_file(directory: str, text: str) -> str:
+    """Write ``text`` to ``directory/prompt.txt``, readable by this user only."""
+    path = os.path.join(directory, "prompt.txt")
+    handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(handle, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return path
+
+
 def _write_schema_file() -> str:
     """Write the envelope JSON Schema to a fresh temp file; return its path.
 
@@ -109,11 +119,15 @@ class LocalCliModelClient:
         self,
         *,
         cli_name: CliName,
+        model: str | None = None,
         timeout_s: float = 600.0,
         redactor: Callable[[str], str] = _identity,
         runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     ) -> None:
         self._cli_name = cli_name
+        #: The CLI's own model choice (e.g. ``muse-wonder-full-1.0``), passed as
+        #: its ``--model`` flag; ``None`` keeps the CLI's configured default.
+        self._cli_model = model
         self._backend = backend_for(cli_name)
         self._timeout_s = timeout_s
         self._redactor = redactor
@@ -134,7 +148,7 @@ class LocalCliModelClient:
         if failure is not None:
             return failure
 
-        response = translate.parse_local_cli_response(self._unwrap(result.stdout))
+        response = translate.parse_local_cli_response(self._text(result.stdout))
         if response.stop_reason != "parse_error":
             return self._tagged(response)
 
@@ -143,7 +157,7 @@ class LocalCliModelClient:
         failure = self._failure_for(retry)
         if failure is not None:
             return failure
-        return self._tagged(translate.parse_local_cli_response(self._unwrap(retry.stdout)))
+        return self._tagged(translate.parse_local_cli_response(self._text(retry.stdout)))
 
     def stream(self, request: ModelRequest) -> Iterator[ModelStreamEvent]:
         response = self.complete(request)
@@ -161,10 +175,21 @@ class LocalCliModelClient:
         invocation that happens before ``run_cli`` is ever reached.
         """
         schema_path: str | None = None
+        prompt_dir: str | None = None
         try:
             if self._backend.needs_schema_file:
                 schema_path = _write_schema_file()
-            argv = self._backend.argv(system=system, user=user, schema_path=schema_path)
+            prompt_path: str | None = None
+            if self._backend.needs_prompt_file:
+                prompt_dir = tempfile.mkdtemp(prefix="forge-cli-")
+                prompt_path = _write_prompt_file(prompt_dir, f"{system}\n\n{user}")
+            argv = self._backend.argv(
+                system=system,
+                user=user,
+                schema_path=schema_path,
+                model=self._cli_model,
+                prompt_path=prompt_path,
+            )
             stdin_payload = self._backend.stdin_payload(system=system, user=user)
             return run_cli(
                 argv, timeout_s=self._timeout_s, runner=self._runner, input=stdin_payload
@@ -179,6 +204,8 @@ class LocalCliModelClient:
             if schema_path:
                 with contextlib.suppress(OSError):
                     os.unlink(schema_path)
+            if prompt_dir:
+                shutil.rmtree(prompt_dir, ignore_errors=True)
 
     def _tagged(self, response: ModelResponse) -> ModelResponse:
         """Stamp the namespaced ``local-cli:<cli>`` model id onto a response.
@@ -236,6 +263,9 @@ class LocalCliModelClient:
             return self._redactor(stderr)
         except Exception:
             return "[redaction failed]"
+
+    def _text(self, stdout: str) -> str:
+        return self._unwrap(self._backend.final_text(stdout))
 
     @staticmethod
     def _unwrap(stdout: str) -> str:

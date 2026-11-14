@@ -21,6 +21,7 @@ from forge_agent.providers.local_cli.detect import (
     CliName,
     DetectedCli,
     detect_clis,
+    parse_cli_model,
     parse_preference,
 )
 
@@ -32,6 +33,10 @@ class ProviderName(StrEnum):
 
     anthropic = "anthropic"
     openai = "openai"
+    #: Any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, llama.cpp, a
+    #: gateway): ``FORGE_MODEL_BASE_URL`` and ``FORGE_MODEL_NAME`` are required,
+    #: a key is optional.
+    openai_compatible = "openai_compatible"
     local_cli = "local_cli"
 
 
@@ -40,8 +45,9 @@ class ProviderName(StrEnum):
 #: ``None`` otherwise). ``local_cli`` is namespaced (``local-cli``/``local-cli:<cli>``)
 #: so it can never collide with a real API model's pricing row.
 _DEFAULT_MODEL: dict[ProviderName, str | None] = {
-    ProviderName.anthropic: "claude-opus-4-8",
+    ProviderName.anthropic: "claude-opus-5-5",
     ProviderName.openai: None,
+    ProviderName.openai_compatible: None,
     ProviderName.local_cli: "local-cli",
 }
 
@@ -51,6 +57,9 @@ _DEFAULT_MODEL: dict[ProviderName, str | None] = {
 _KEY_ENV: dict[ProviderName, str] = {
     ProviderName.anthropic: "ANTHROPIC_API_KEY",
     ProviderName.openai: "OPENAI_API_KEY",
+    # Never OPENAI_API_KEY: a real OpenAI key must not be sent to a local or
+    # third-party endpoint just because it speaks the same protocol.
+    ProviderName.openai_compatible: "FORGE_MODEL_API_KEY",
     ProviderName.local_cli: "FORGE_LOCAL_CLI_UNUSED",
 }
 
@@ -71,6 +80,7 @@ class ModelClientConfig:
     base_url: str | None = None
     prompt_cache: bool = True
     cli_name: CliName | None = None
+    cli_model: str | None = None
     bridge_url: str | None = None
     bridge_token: str = field(repr=False, default="")
 
@@ -105,7 +115,11 @@ class ModelClientConfig:
         api_key = (
             source.get(_KEY_ENV[provider]) or source.get("FORGE_MODEL_API_KEY") or ""
         ).strip()
-        if not api_key:
+        base_url = (source.get("FORGE_MODEL_BASE_URL") or "").strip() or None
+        if provider is ProviderName.openai_compatible:
+            if base_url is None:
+                return None
+        elif not api_key:
             return None
 
         model = (source.get("FORGE_MODEL_NAME") or "").strip() or _DEFAULT_MODEL[provider]
@@ -120,7 +134,7 @@ class ModelClientConfig:
             max_tokens=_int(source.get("FORGE_MODEL_MAX_TOKENS"), 16000),
             timeout_s=_float(source.get("FORGE_MODEL_TIMEOUT_S"), 600.0),
             max_retries=_int(source.get("FORGE_MODEL_MAX_RETRIES"), 2),
-            base_url=(source.get("FORGE_MODEL_BASE_URL") or "").strip() or None,
+            base_url=base_url,
             prompt_cache=_bool(source.get("FORGE_MODEL_PROMPT_CACHE"), default=True),
         )
 
@@ -159,6 +173,7 @@ class ModelClientConfig:
             model=f"local-cli:{cli_name}" if cli_name else "local-cli",
             api_key="",
             cli_name=cli_name,
+            cli_model=parse_cli_model(source.get("FORGE_LOCAL_CLI_MODEL")),
             bridge_url=bridge_url,
             bridge_token=(source.get("FORGE_CLI_BRIDGE_TOKEN") or "").strip(),
             timeout_s=_float(source.get("FORGE_LOCAL_CLI_TIMEOUT_S"), 600.0),

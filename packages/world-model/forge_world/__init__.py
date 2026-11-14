@@ -1,0 +1,161 @@
+"""Forge world model — an append-only bitemporal fact ledger.
+
+Pure domain logic (time, ledger rules, temporal closing, identity recall,
+extraction verification, the shadow governance gate, reasoning, conflicts
+and decision drift) over ``forge_db`` tables, orchestrated by
+:class:`WorldModelService`. The HTTP surface is the ``/world`` router in
+``forge-api``; this package never imports the agent runtime or the API app.
+"""
+
+from __future__ import annotations
+
+from forge_world.conflicts import Conflict, functional_conflicts
+from forge_world.decisions import DriftItem, DriftReport, drift
+from forge_world.extraction import (
+    DropReason,
+    ExtractionDrop,
+    RawStatement,
+    VerifiedStatement,
+    build_request,
+    parse_reply,
+    verify,
+)
+from forge_world.governance import GateDecision, Precedent, gate
+from forge_world.identity import (
+    classes_disjoint,
+    names_match,
+    normalise_name,
+    strip_suffixes,
+    types_compatible,
+)
+from forge_world.ledger import (
+    KNOWN_AS_KEY,
+    KNOWN_AS_RELATION,
+    ClassDef,
+    ConflictError,
+    DecisionData,
+    EntityData,
+    EvidenceData,
+    FactData,
+    ForbiddenError,
+    InvalidatedReason,
+    Layer,
+    MergeData,
+    ModelNotConfiguredError,
+    Mood,
+    NotFoundError,
+    ProposalData,
+    ProposalStatus,
+    RelationDef,
+    RelationKind,
+    SourceKind,
+    Statement,
+    WorldModelError,
+    WorldValidationError,
+    dedup_key,
+    normalise_phrase,
+    normalise_value,
+    validate_key,
+)
+from forge_world.reasoning import Axioms, DerivedFact, Violation, derive
+from forge_world.repository import DerivationRecord, WorldRepository
+from forge_world.service import (
+    AssertResult,
+    ChangeEvent,
+    DeriveResult,
+    EntityProfile,
+    IngestResult,
+    ProposalDecisionOutcome,
+    StatementInput,
+    WorldModelService,
+)
+from forge_world.temporal import Closure, compute_ends
+from forge_world.time import (
+    Precision,
+    WorldBound,
+    bucket_end,
+    bucket_start,
+    ensure_utc,
+    held_at,
+    holds_at,
+    parse_bound,
+    period_end,
+)
+
+__version__ = "0.1.0"
+
+__all__ = [
+    "KNOWN_AS_KEY",
+    "KNOWN_AS_RELATION",
+    "AssertResult",
+    "Axioms",
+    "ChangeEvent",
+    "ClassDef",
+    "Closure",
+    "Conflict",
+    "ConflictError",
+    "DecisionData",
+    "DerivationRecord",
+    "DeriveResult",
+    "DerivedFact",
+    "DriftItem",
+    "DriftReport",
+    "DropReason",
+    "EntityData",
+    "EntityProfile",
+    "EvidenceData",
+    "ExtractionDrop",
+    "FactData",
+    "ForbiddenError",
+    "GateDecision",
+    "IngestResult",
+    "InvalidatedReason",
+    "Layer",
+    "MergeData",
+    "ModelNotConfiguredError",
+    "Mood",
+    "NotFoundError",
+    "Precedent",
+    "Precision",
+    "ProposalData",
+    "ProposalDecisionOutcome",
+    "ProposalStatus",
+    "RawStatement",
+    "RelationDef",
+    "RelationKind",
+    "SourceKind",
+    "Statement",
+    "StatementInput",
+    "VerifiedStatement",
+    "Violation",
+    "WorldBound",
+    "WorldModelError",
+    "WorldModelService",
+    "WorldRepository",
+    "WorldValidationError",
+    "__version__",
+    "bucket_end",
+    "bucket_start",
+    "build_request",
+    "classes_disjoint",
+    "compute_ends",
+    "dedup_key",
+    "derive",
+    "drift",
+    "ensure_utc",
+    "functional_conflicts",
+    "gate",
+    "held_at",
+    "holds_at",
+    "names_match",
+    "normalise_name",
+    "normalise_phrase",
+    "normalise_value",
+    "parse_bound",
+    "parse_reply",
+    "period_end",
+    "strip_suffixes",
+    "types_compatible",
+    "validate_key",
+    "verify",
+]
