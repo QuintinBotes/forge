@@ -104,7 +104,7 @@ class Harness:
 def harness(time_skip_env: Any) -> Callable[..., Harness]:
     def _build(**activity_fns: Any) -> Harness:
         store = InMemoryWorkflowStore()
-        activities = WorkflowActivities(store=store, **activity_fns)
+        activities = WorkflowActivities(store=store, allow_fakes=True, **activity_fns)
         workspace_id = uuid.uuid4()
         engine = TemporalWorkflowEngine(
             workspace_id=workspace_id,

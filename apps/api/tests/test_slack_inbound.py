@@ -22,6 +22,7 @@ from urllib.parse import urlencode
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from forge_api.deps import Principal
 from forge_api.main import create_app
@@ -354,7 +355,11 @@ def test_interaction_unrecognised_action_is_ignored_200(
 
 
 def _seeded_run_store(
-    *, status: object | None = None, n_steps: int = 2, workspace_id: uuid.UUID = WS_ID
+    session: Session,
+    *,
+    status: object | None = None,
+    n_steps: int = 2,
+    workspace_id: uuid.UUID = WS_ID,
 ) -> tuple[object, object]:
     """A run store seeded with one ``workspace_id``-owned run (defaults to
     WS_ID; mirrors test_agent_router)."""
@@ -362,7 +367,7 @@ def _seeded_run_store(
     from forge_contracts import AgentRunResult, Step
     from forge_contracts.enums import RunStatus
 
-    store = AgentRunStore()
+    store = AgentRunStore(session)
     result = AgentRunResult(
         run_id=uuid.uuid4(),
         status=status if status is not None else RunStatus.SUCCEEDED,
@@ -378,10 +383,11 @@ def _status_command(text: str) -> bytes:
 
 def test_status_command_returns_live_run_status(
     authenticate_app: Callable[..., FastAPI],
+    agent_session: Session,
 ) -> None:
     from forge_api.routers.agent import get_agent_store
 
-    store, result = _seeded_run_store(n_steps=2)
+    store, result = _seeded_run_store(agent_session, n_steps=2)
     app = _build_app(authenticate_app)
     app.dependency_overrides[get_agent_store] = lambda: store
     body = _status_command(f"status {result.run_id}")  # type: ignore[attr-defined]
@@ -399,10 +405,13 @@ def test_status_command_returns_live_run_status(
 
 def test_status_command_unknown_run_returns_not_found(
     authenticate_app: Callable[..., FastAPI],
+    agent_session: Session,
 ) -> None:
     from forge_api.routers.agent import get_agent_store
 
-    store, _ = _seeded_run_store()
+    store, _ = _seeded_run_store(
+        agent_session,
+    )
     app = _build_app(authenticate_app)
     app.dependency_overrides[get_agent_store] = lambda: store
     unknown = uuid.uuid4()
@@ -419,6 +428,7 @@ def test_status_command_unknown_run_returns_not_found(
 
 def test_status_command_run_without_steps_omits_step_detail(
     authenticate_app: Callable[..., FastAPI],
+    agent_session: Session,
 ) -> None:
     """A run with zero recorded steps renders its status with no step-count
     suffix: ``_run_status_body`` only appends ``(N steps)`` when the run
@@ -429,7 +439,7 @@ def test_status_command_run_without_steps_omits_step_detail(
     genuine cross-tenant case.)"""
     from forge_api.routers.agent import get_agent_store
 
-    store, result = _seeded_run_store(n_steps=0)
+    store, result = _seeded_run_store(agent_session, n_steps=0)
     app = _build_app(authenticate_app)
     app.dependency_overrides[get_agent_store] = lambda: store
     body = _status_command(f"status {result.run_id}")  # type: ignore[attr-defined]
@@ -445,6 +455,7 @@ def test_status_command_run_without_steps_omits_step_detail(
 
 def test_status_command_cross_tenant_run_is_found_by_uuid(
     authenticate_app: Callable[..., FastAPI],
+    agent_session: Session,
 ) -> None:
     """The slash command carries no Forge tenant principal, so a run seeded
     under a different workspace (WS_ID_OTHER — never the authenticated test
@@ -457,7 +468,7 @@ def test_status_command_cross_tenant_run_is_found_by_uuid(
     cross-tenant secrecy control on this surface."""
     from forge_api.routers.agent import get_agent_store
 
-    store, result = _seeded_run_store(n_steps=1, workspace_id=WS_ID_OTHER)
+    store, result = _seeded_run_store(agent_session, n_steps=1, workspace_id=WS_ID_OTHER)
     app = _build_app(authenticate_app)
     app.dependency_overrides[get_agent_store] = lambda: store
     body = _status_command(f"status {result.run_id}")  # type: ignore[attr-defined]
@@ -473,10 +484,13 @@ def test_status_command_cross_tenant_run_is_found_by_uuid(
 
 def test_status_command_malformed_id_returns_not_found(
     authenticate_app: Callable[..., FastAPI],
+    agent_session: Session,
 ) -> None:
     from forge_api.routers.agent import get_agent_store
 
-    store, _ = _seeded_run_store()
+    store, _ = _seeded_run_store(
+        agent_session,
+    )
     app = _build_app(authenticate_app)
     app.dependency_overrides[get_agent_store] = lambda: store
     body = _status_command("status not-a-uuid")

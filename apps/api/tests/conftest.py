@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi import FastAPI
+from sqlalchemy import StaticPool, create_engine
+from sqlalchemy.orm import Session
 
 # HARD-13: the auth service fails closed without a master key (no silent
 # ephemeral fallback). Provide a stable, obviously-fake test key so the default
@@ -25,6 +27,8 @@ os.environ.setdefault("FORGE_SECRET_KEY", "test-forge-master-secret-0123456789")
 
 from forge_api.deps import Principal, get_current_principal
 from forge_contracts import UserRole
+from forge_db.base import Base
+from forge_db.models import Workspace
 
 #: Deterministic identities used by tests (the knowledge tests seed a workspace
 #: with this id so the principal-scoped search returns the seeded source).
@@ -64,3 +68,17 @@ def authenticate_app() -> Callable[..., FastAPI]:
         return app
 
     return _apply
+
+
+@pytest.fixture
+def agent_session() -> Iterator[Session]:
+    """Real run persistence without a broker or external database."""
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine, expire_on_commit=False) as session:
+        session.add(Workspace(id=TEST_WORKSPACE_ID, name="Agent tests", slug="agent-tests"))
+        session.commit()
+        yield session
+    engine.dispose()

@@ -9,14 +9,15 @@ serves FSM-backed runs and non-workflow jobs — §12).
 The ``persist_transition`` Activity writes the Postgres ``workflow_run`` projection
 through a session-per-call store, keeping it byte-faithful for the board timeline,
 run-trace viewer, and audit log. The agent / checks / PR / notify Activity bodies
-delegate to the existing slice services where wired; until then the safe defaults
-in :class:`WorkflowActivities` keep the durable spine runnable (SOFT deps park,
-mirroring the FSM engine).
+delegate to the existing slice services where wired; an unwired Activity refuses
+(ADR-0007). ``FORGE_ALLOW_FAKE_ACTIVITIES=1`` opts a dev worker into the
+stand-ins in :class:`WorkflowActivities`.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -77,7 +78,10 @@ class SessionPerCallStore:
 
 def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowActivities:
     """Build the worker's Activities over a DB-backed projection store."""
-    return WorkflowActivities(store=SessionPerCallStore(factory or create_session_factory()))
+    return WorkflowActivities(
+        store=SessionPerCallStore(factory or create_session_factory()),
+        allow_fakes=os.environ.get("FORGE_ALLOW_FAKE_ACTIVITIES") == "1",
+    )
 
 
 async def run(settings: TemporalSettings | None = None) -> None:

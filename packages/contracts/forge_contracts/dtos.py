@@ -1239,6 +1239,8 @@ class ModelRequest(_Model):
 #: to add one, which is what keeps the two sides from drifting apart.
 ProviderFailureStopReason = Literal[
     "auth_error",
+    # The run spent its token budget (forge_agent.budget, ADR-0008).
+    "budget_exhausted",
     "input_too_large",
     "parse_error",
     "provider_error",
