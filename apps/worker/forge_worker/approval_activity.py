@@ -7,6 +7,10 @@ the real body: open the gate's approval request through the approval service
 on the database repository — one pending request per ``(run, gate)``
 (``ApprovalService.create`` is idempotent while pending, honouring
 ``uq_pending_gate``, so an activity retry returns the existing request).
+
+A ``pr`` gate carries the repository's review rules from the default branch
+(:mod:`forge_worker.review_rules`, spec K §4.11), so repo policy can raise its
+quorum.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from forge_api.services.workflow_gate_hook import WORKFLOW_RUN_SUBJECT, agent_ac
 from forge_approval import ApprovalAuthorizer, ApprovalService, GateRegistry
 from forge_approval.models import GateType
 from forge_db.models import Task
+from forge_worker.review_rules import review_rules_stamp
 from forge_workflow.temporal.payloads import ApprovalInput
 
 
@@ -55,6 +60,11 @@ def make_create_approval_fn(
             or inp.summary
             or (f"{inp.gate} approval for run {inp.workflow_run_id}")
         )
+        payload: dict[str, object] = {"summary": inp.summary} if inp.summary else {}
+        if inp.gate == GateType.PR.value:
+            payload |= review_rules_stamp(
+                factory, workspace_id=inp.workspace_id, task_id=inp.task_id
+            )
         request = await build_approval_service(factory).create(
             workspace_id=inp.workspace_id,
             gate_type=GateType(inp.gate),
@@ -64,7 +74,7 @@ def make_create_approval_fn(
             task_id=inp.task_id,
             title=title,
             requested_actor=agent_actor_for_run(inp.workflow_run_id),
-            gate_payload={"summary": inp.summary} if inp.summary else {},
+            gate_payload=payload,
         )
         return request.id
 

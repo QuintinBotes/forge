@@ -157,3 +157,25 @@ def test_celery_task_runs_in_a_workspace_and_reports_the_branch(
     assert result["status"] == RunStatus.SUCCEEDED.value
     assert result["artifacts"]["branch"] == f"forge/run-{run_id.hex[:12]}"
     assert _git(repo, "show", f"{result['artifacts']['branch']}:done.txt") == "yes"
+
+
+def test_remove_run_worktrees_removes_only_that_runs_worktree_once(repo: Path) -> None:
+    """``forge.cleanup_worktree`` (spec K §4.11): a worktree a cancelled run
+    left behind is removed, its branch kept; a second call is a no-op."""
+    from forge_agent.sandbox import WorktreeSandbox
+    from forge_worker.run_workspace import remove_run_worktrees, run_branch
+
+    gone, kept = uuid.uuid4(), uuid.uuid4()
+    leftover = WorktreeSandbox(repo).create(branch=run_branch("forge", gone))
+    other = WorktreeSandbox(repo).create(branch=run_branch("forge", kept))
+
+    removed = remove_run_worktrees([repo], [gone])
+    assert [p.resolve() for p in removed] == [leftover.resolve()]  # git reports real paths
+    assert not leftover.exists()
+    assert other.exists()
+    assert run_branch("forge", gone) in _git(repo, "branch", "--list", "forge/*")
+
+    assert remove_run_worktrees([repo], [gone]) == []
+    assert remove_run_worktrees([repo], []) == []
+    remove_run_worktrees([repo], [kept])
+    assert not other.parent.exists()  # the temp holder goes with the worktree

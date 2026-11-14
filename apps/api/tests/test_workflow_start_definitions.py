@@ -365,6 +365,36 @@ def test_trigger_is_kept_in_the_run_context(client, workflow_db) -> None:
     assert fetched["context"]["trigger"] == {"external_ref": "LIN-42"}
 
 
+@pytest.mark.usefixtures("temporal")
+def test_temporal_start_carries_the_trigger_on_the_row_it_starts_from(
+    client, workflow_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The engine commits the row before ``start_workflow`` (spec K §4.11), so
+    the trigger must already be on it, not recorded after the start."""
+    seen: dict[str, object] = {}
+
+    class _Handle:
+        result_run_id = "temporal-run-1"
+
+    class _Client:
+        async def start_workflow(self, _fn: object, params, **_kw: object) -> _Handle:
+            with workflow_db.factory() as other:
+                row = other.get(DbWorkflowRun, params.workflow_run_id)
+                assert row is not None
+                seen.update(row.context)
+            return _Handle()
+
+    async def _connect(settings: object) -> _Client:
+        return _Client()
+
+    monkeypatch.setattr(workflow_engine, "get_temporal_client", _connect)
+    resp = _start(client, workflow_db.seed_task(), trigger={"external_ref": "LIN-42"})
+
+    assert resp.status_code == 201, resp.text
+    assert seen["trigger"] == {"external_ref": "LIN-42"}
+    assert resp.json()["context"]["trigger"] == {"external_ref": "LIN-42"}
+
+
 @pytest.mark.parametrize(
     "trigger",
     [

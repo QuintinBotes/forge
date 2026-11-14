@@ -76,7 +76,8 @@ def select_workflow_engine(
     The V1 engine also gets the definition provider, so a run started with an
     explicit definition pins its revision and transitions on it (spec K §4.2).
     The Temporal engine takes no provider: ``FeatureWorkflow`` runs only
-    ``default_feature``.
+    ``default_feature``. It does take ``session.commit``: it commits the run row
+    before starting the workflow (spec K §4.11).
     """
     from forge_workflow.store import SqlAlchemyWorkflowStore
 
@@ -91,6 +92,7 @@ def select_workflow_engine(
         store=store,
         client_factory=lambda: get_temporal_client(settings),
         task_queue=settings.temporal_task_queue,
+        commit=session.commit,
     )
 
 

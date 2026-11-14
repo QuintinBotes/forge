@@ -19,7 +19,9 @@ delivery never double-writes a transition.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -49,8 +51,13 @@ from forge_workflow.temporal.payloads import (
     TransitionRecord,
 )
 
+logger = logging.getLogger(__name__)
+
 #: Default verification check set (spec: default_feature ``checks``).
 DEFAULT_CHECKS = ("lint", "type_check", "tests", "coverage")
+
+#: Seconds between agent-activity heartbeats (the workflow's heartbeat timeout is 120 s).
+AGENT_HEARTBEAT_EVERY = 30.0
 
 _SUCCESS_STATES = {WorkflowState.MERGED.value, WorkflowState.CLOSED.value}
 _STATUS_BY_STATE = {
@@ -225,6 +232,15 @@ class WorkflowActivities:
     @activity.defn(name="forge.persist_transition")
     async def persist_transition(self, rec: TransitionRecord) -> int:
         run = self._store.get(rec.workflow_run_id)
+        if run.status is RunStatus.FAILED and run.context.get("start_error"):
+            # The engine gave up on this start; an orphaned workflow must not revive the row.
+            logger.warning(
+                "run %s failed to start; not recording %s -> %s",
+                rec.workflow_run_id,
+                rec.from_state,
+                rec.to_state,
+            )
+            return 0
         transitions: list[dict[str, object]] = list(run.context.get("transitions", []))
         for existing in transitions:
             if existing.get("idempotency_key") == rec.idempotency_key:
@@ -254,7 +270,7 @@ class WorkflowActivities:
         run.context["last_event"] = rec.event
         if rec.temporal_run_id:
             run.context["temporal_run_id"] = rec.temporal_run_id
-        _apply_status(run, str(rec.to_state))
+        _apply_status(run, str(rec.to_state), rec.run_status)
         self._store.update(run)
         return sequence
 
@@ -268,13 +284,15 @@ class WorkflowActivities:
 
     @activity.defn(name="forge.run_agent")
     async def run_agent(self, inp: RunAgentInput) -> AgentRunResultDTO:
-        activity.heartbeat({"phase": "executing", "attempt": inp.attempt})
-        return self._run_agent_fn(inp)
+        return await _heartbeating(
+            self._run_agent_fn, inp, {"phase": "executing", "attempt": inp.attempt}
+        )
 
     @activity.defn(name="forge.resume_agent")
     async def resume_agent(self, inp: ResumeAgentInput) -> AgentRunResultDTO:
-        activity.heartbeat({"phase": "resuming", "attempt": inp.attempt})
-        return self._resume_agent_fn(inp)
+        return await _heartbeating(
+            self._resume_agent_fn, inp, {"phase": "resuming", "attempt": inp.attempt}
+        )
 
     # -- verification (F08), PR (F03/F08) --------------------------------- #
 
@@ -319,11 +337,33 @@ class WorkflowActivities:
 
     @activity.defn(name="forge.cleanup_worktree")
     async def cleanup_worktree(self, inp: CleanupInput) -> bool:
-        return self._cleanup_fn(inp)
+        return await asyncio.to_thread(self._cleanup_fn, inp)  # git + DB work blocks
 
 
-def _apply_status(run: WorkflowRun, new_state: str) -> None:
-    if new_state in _SUCCESS_STATES:
+async def _heartbeating[I](
+    fn: Callable[[I], AgentRunResultDTO], inp: I, details: dict[str, object]
+) -> AgentRunResultDTO:
+    """Run an agent body off the event loop, heartbeating until it returns.
+
+    A long agent outlives the heartbeat timeout, and an activity cancel (delivered
+    through the heartbeat) cancels this coroutine instead of waiting for the body.
+    """
+    # shortcut: a cancelled agent thread runs to completion, until the body takes a cancel token
+    work = asyncio.ensure_future(asyncio.to_thread(fn, inp))
+    while True:
+        activity.heartbeat(details)
+        done, _ = await asyncio.wait({work}, timeout=AGENT_HEARTBEAT_EVERY)
+        if done:
+            return work.result()
+
+
+def _apply_status(run: WorkflowRun, new_state: str, run_status: str | None = None) -> None:
+    if run_status is not None:
+        # Station runs (spec K §4.2): the line's terminals set the status.
+        run.status = RunStatus(run_status)
+        if run.status in (RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED):
+            run.completed_at = _now()
+    elif new_state in _SUCCESS_STATES:
         run.status = RunStatus.SUCCEEDED
         run.completed_at = _now()
     elif new_state in _STATUS_BY_STATE:
@@ -334,4 +374,9 @@ def _apply_status(run: WorkflowRun, new_state: str) -> None:
         run.status = RunStatus.RUNNING
 
 
-__all__ = ["DEFAULT_CHECKS", "ApprovalFn", "WorkflowActivities"]
+__all__ = [
+    "AGENT_HEARTBEAT_EVERY",
+    "DEFAULT_CHECKS",
+    "ApprovalFn",
+    "WorkflowActivities",
+]

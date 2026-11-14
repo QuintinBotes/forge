@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import StaticPool, create_engine, select
+from sqlalchemy import StaticPool, create_engine, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_approval.delegation import DelegationDirectory, DelegationEntry
@@ -24,6 +24,7 @@ from forge_db.models import (
     AuditLog,
     Workspace,
 )
+from forge_worker.tasks import approvals as approvals_tasks
 from forge_worker.tasks.approvals import run_sla_sweep
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
@@ -134,3 +135,39 @@ def test_gate_without_sla_is_skipped(session: Session) -> None:
     session.add(gate)
     session.commit()
     assert run_sla_sweep(session, now=NOW).total == 0
+
+
+def test_expiry_never_overwrites_a_gate_decided_after_the_sweep_read_it(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sweep reads pending gates, then a person decides one before the
+    sweep writes: the decision stands, and nothing is expired or audited."""
+    gate = _gate(session, created_ago=120, expires_in=-20)
+    real_expire = approvals_tasks._expire_gate
+
+    def decided_concurrently(s: Session, request: ApprovalRequest, now: datetime) -> bool:
+        # Another transaction approves the row; this session's object still says pending.
+        s.execute(
+            update(ApprovalRequest)
+            .where(ApprovalRequest.id == request.id)
+            .values(status=ApprovalStatus.APPROVED)
+            .execution_options(synchronize_session=False)
+        )
+        return real_expire(s, request, now)
+
+    monkeypatch.setattr(approvals_tasks, "_expire_gate", decided_concurrently)
+
+    result = run_sla_sweep(session, now=NOW)
+
+    assert result.expired == 0
+    session.expire_all()
+    assert session.get(ApprovalRequest, gate.id).status is ApprovalStatus.APPROVED
+    assert _actions(session, "approval.expired") == []
+
+
+def test_expire_gate_reports_whether_it_expired(session: Session) -> None:
+    gate = _gate(session, created_ago=120, expires_in=-20)
+    assert approvals_tasks._expire_gate(session, gate, NOW) is True
+    assert approvals_tasks._expire_gate(session, gate, NOW) is False  # no longer pending
+    session.commit()
+    assert len(_actions(session, "approval.expired")) == 1

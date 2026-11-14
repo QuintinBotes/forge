@@ -10,7 +10,10 @@ time-skipping ``WorkflowEnvironment``) can drive the engine without a nested loo
 
 * ``start`` writes the ``workflow_run`` projection (``engine_backend=temporal``,
   ``temporal_workflow_id=wf-<id>``), rejects a duplicate active run for the task,
-  then starts ``forge.FeatureWorkflow`` with ``REJECT_DUPLICATE``.
+  **commits it**, then starts ``forge.FeatureWorkflow`` with ``REJECT_DUPLICATE``
+  (the worker's ``persist_transition`` must find the row; spec K §4.11). A start
+  that fails marks the committed row ``failed`` and terminates ``wf-<id>`` in case
+  the server started it anyway (the projection then refuses to move that row).
 * ``transition`` is a synchronous Workflow **Update** (cancel is a **Signal**); an
   invalid event / failed guard surfaces as ``InvalidTransitionError`` /
   ``GuardFailedError`` (→ HTTP 409), identical to the FSM.
@@ -23,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -30,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from forge_contracts import RunStatus, WorkflowDefinition, WorkflowRun, WorkflowState
 from forge_workflow.default_workflow import default_feature_definition
 from forge_workflow.dsl import load_definition as _load_definition
+from forge_workflow.engine import DEFINITION_REVISION_KEY
 from forge_workflow.exceptions import (
     DuplicateRunError,
     GuardFailedError,
@@ -79,9 +84,12 @@ class TemporalWorkflowEngine:
         task_queue: str = DEFAULT_TASK_QUEUE,
         definitions: list[WorkflowDefinition] | None = None,
         runner: Callable[[Awaitable[Any]], Any] | None = None,
+        commit: Callable[[], None] | None = None,
     ) -> None:
         self._workspace_id = workspace_id
         self._store: WorkflowStore = store or InMemoryWorkflowStore()
+        #: Commits the store's transaction (the API passes ``session.commit``).
+        self._commit = commit or (lambda: None)
         self._client = client
         self._client_factory = client_factory
         self._task_queue = task_queue
@@ -117,16 +125,33 @@ class TemporalWorkflowEngine:
     # Async core                                                          #
     # ------------------------------------------------------------------ #
     async def astart(
-        self, task_id: uuid.UUID, definition_name: str = "default_feature"
+        self,
+        task_id: uuid.UUID,
+        definition_name: str = "default_feature",
+        *,
+        trigger: dict[str, object] | None = None,
+        definition_revision_id: uuid.UUID | None = None,
     ) -> WorkflowRun:
         from temporalio.common import WorkflowIDReusePolicy
         from temporalio.exceptions import WorkflowAlreadyStartedError
+        from temporalio.service import RPCError
 
         if self._store.find_active_by_task(task_id) is not None:
             raise DuplicateRunError(task_id)
+        client = await self._get_client()
 
         run_id = uuid.uuid4()
         wf_id = workflow_id(run_id)
+        context: dict[str, Any] = {
+            "engine_backend": "temporal",
+            "temporal_workflow_id": wf_id,
+            "retry_count": 0,
+            "transitions": [],
+        }
+        if trigger is not None:
+            context["trigger"] = trigger
+        if definition_revision_id is not None:
+            context[DEFINITION_REVISION_KEY] = str(definition_revision_id)
         run = WorkflowRun(
             id=run_id,
             task_id=task_id,
@@ -134,16 +159,10 @@ class TemporalWorkflowEngine:
             current_state=WorkflowState.CREATED.value,
             status=RunStatus.RUNNING,
             started_at=_now(),
-            context={
-                "engine_backend": "temporal",
-                "temporal_workflow_id": wf_id,
-                "retry_count": 0,
-                "transitions": [],
-            },
+            context=context,
         )
-        # shortcut: the caller commits this row after start_workflow; a commit failure
-        # leaves an orphaned workflow (spec K §4.8). Commit first in P2.
         self._store.create(run)
+        self._commit()  # the workflow's first persist_transition must find this row
 
         params = WorkflowParams(
             workflow_run_id=run_id,
@@ -153,7 +172,6 @@ class TemporalWorkflowEngine:
             retry_policy=self._retry_policy(definition_name),
             escalation_policy=self._escalation_policy(definition_name),
         )
-        client = await self._get_client()
         try:
             handle = await client.start_workflow(
                 FeatureWorkflow.run,
@@ -162,13 +180,21 @@ class TemporalWorkflowEngine:
                 task_queue=self._task_queue,
                 id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
             )
-        except WorkflowAlreadyStartedError as exc:
-            raise DuplicateRunError(task_id) from exc
+        except Exception as exc:
+            failed = self._store.get(run_id)
+            failed.status = RunStatus.FAILED
+            failed.completed_at = _now()
+            failed.context["start_error"] = f"{type(exc).__name__}: {exc}"
+            self._store.update(failed)
+            self._commit()
+            if isinstance(exc, WorkflowAlreadyStartedError):
+                raise DuplicateRunError(task_id) from exc
+            # The server may have started it although the call failed: stop that orphan.
+            with suppress(RPCError):  # includes not-found: nothing was started
+                await client.get_workflow_handle(wf_id).terminate(reason="start_failed")
+            raise
 
         self._handles[run_id] = handle
-        stored = self._store.get(run_id)
-        stored.context["temporal_run_id"] = handle.result_run_id
-        self._store.update(stored)
         return self._store.get(run_id)
 
     async def atransition(
@@ -180,7 +206,8 @@ class TemporalWorkflowEngine:
         handle = client.get_workflow_handle(wf_id)
 
         if event == EVENT_CANCEL:
-            await handle.signal(FeatureWorkflow.cancel_run, payload.get("reason", "cancelled"))
+            reason = payload.get("reason", "cancelled")
+            await handle.signal(FeatureWorkflow.cancel_run, args=[reason, actor])
             return WorkflowState(self._store.get(run_id).current_state)
 
         try:
@@ -198,8 +225,22 @@ class TemporalWorkflowEngine:
     # ------------------------------------------------------------------ #
     # Sync protocol surface (bridges to the async core)                   #
     # ------------------------------------------------------------------ #
-    def start(self, task_id: uuid.UUID, definition_name: str = "default_feature") -> WorkflowRun:
-        return self._runner(self.astart(task_id, definition_name))
+    def start(
+        self,
+        task_id: uuid.UUID,
+        definition_name: str = "default_feature",
+        *,
+        trigger: dict[str, object] | None = None,
+        definition_revision_id: uuid.UUID | None = None,
+    ) -> WorkflowRun:
+        return self._runner(
+            self.astart(
+                task_id,
+                definition_name,
+                trigger=trigger,
+                definition_revision_id=definition_revision_id,
+            )
+        )
 
     def transition(
         self, run_id: uuid.UUID, event: str, *, actor: str = "system", **payload: Any
