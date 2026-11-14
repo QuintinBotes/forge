@@ -79,9 +79,10 @@ ENTITY_SCAN_LIMIT = 200
 #: Distinct spec keys mentioned in prose that one request will look up.
 MAX_SPEC_MENTIONS = 20
 
-# The lookbehind starts a match only at the head of an alphanumeric run: without it a
-# long hyphen-free run is rescanned from every position (quadratic in the task length).
-_SPEC_MENTION_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9]*-[0-9]+")
+# Unbounded, a long hyphen-free run is rescanned from every position (quadratic in the
+# task length). The lookbehind starts a match only at the head of a run and the bound
+# caps each attempt; CodeQL's ReDoS check sees only the bound.
+_SPEC_MENTION_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9]{0,63}-[0-9]+")
 
 #: `<prefix>/run-<run_id.hex[:12]>` (the worker's run-branch naming).
 _RUN_BRANCH_RE = re.compile(r"/run-([0-9a-f]{12})$")
