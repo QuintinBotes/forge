@@ -101,6 +101,27 @@ the issue belongs to.
 | R18 | Test and close the three critical pentest surfaces (PT-01, PT-13, PT-02) | None |
 | R19 | Impact gate that holds irreversible actions for a person, and approvals that record a rationale | R12 |
 
+### M3 additions. Container and Kubernetes execution (spec 011)
+
+Added after the first issues were created. They sit in the M3 milestone and are listed by
+issue number. #184 now depends on #237.
+
+| Issue | Title | Depends on |
+|---|---|---|
+| #233 | Kubernetes pod sandbox backend for agent runs | #184 |
+| #234 | Helm RBAC, network policy and a kind test for pod sandboxes | #233 |
+| #236 | Script the local Postgres and Redis test services and skip Redis tests cleanly | None |
+| #237 | Keep run checkouts and mirrors on the worktree volume and mount one run's subpath | None |
+| #238 | Split an agent run into phases and add a one-run process entry point | None |
+| #239 | Run executor setting with launch, close-out and reconciliation | #238 |
+| #240 | Run each agent run in its own container on a Docker host | #237, #239, #184 |
+| #241 | Run each agent run as its own Kubernetes Job | #239, #233 |
+| #242 | Helm RBAC, storage, network policy and a kind test for per-run Jobs | #241, #234 |
+| #243 | Extend the escape suite and the published isolation levels to the pod backend | #185, #233, #234 |
+
+Also added: #235 (M1), which makes a Temporal run start safe under concurrency and failure.
+It came out of the review of #169.
+
 ### M4. Risk and merge (spec 004, lettered spec A)
 
 | ID | Issue | Depends on |
