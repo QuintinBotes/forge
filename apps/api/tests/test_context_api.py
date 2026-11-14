@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -34,6 +35,7 @@ from forge_api.routers.integration import (
 from forge_api.routers.knowledge import get_knowledge_service
 from forge_api.routers.mcp_server import get_mcp_server_audit_log
 from forge_api.routers.spec import get_spec_engine
+from forge_api.services.context_service import _spec_candidates
 from forge_api.services.world_service import get_world_service, make_world_service
 from forge_contracts import Chunk, Requirement, SpecManifest, UserRole
 from forge_contracts.enums import SpecStatus
@@ -294,6 +296,14 @@ def test_bundle_has_all_sections_and_honest_envelope(client, knowledge, engine) 
     assert any(kind == "fact" for kind, _ in ref_kinds)
     assert any(kind == "memory" for kind, _ in ref_kinds)
     assert any(kind == "chunk" for kind, _ in ref_kinds)
+
+
+def test_a_long_run_of_letters_in_the_task_is_scanned_in_linear_time(engine) -> None:
+    _spec(engine, Requirement(id="R1", text="Payments must validate oauth tokens."))
+    started = time.perf_counter()
+    candidates, _ = _spec_candidates(engine, task="A" * 100_000 + "- per SPEC-1", spec_ids=None)
+    assert time.perf_counter() - started < 1.0  # the quadratic pattern took about 8 s
+    assert [candidate.id for candidate in candidates] == ["SPEC-1:R1"]
 
 
 def test_budget_never_exceeded_and_dropped_have_reasons(client, knowledge, engine) -> None:
