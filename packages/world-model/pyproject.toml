@@ -11,7 +11,7 @@ dependencies = [
     "forge-db",
     "forge-knowledge",
     "sqlalchemy>=2.0",
-    "pydantic>=2.7",
+    "pydantic>=2.14.3",
 ]
 
 [tool.uv.sources]
