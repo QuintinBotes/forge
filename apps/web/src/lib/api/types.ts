@@ -2421,3 +2421,176 @@ export interface PublicLeaderboard {
   generated_at: string;
   entries: PublicLeaderboardEntry[];
 }
+
+// --- World model (bitemporal knowledge graph, /world router) ------------- //
+// Mirrors `forge_api.schemas.world` exactly. Every id is a UUID string and
+// every datetime an ISO-8601 string. Reads take two clocks: `at` (world
+// time — when something was true) and `as_of` (system time — what forge had
+// recorded by then); omitting both means "now".
+
+/** One entity in the knowledge graph (GET /world/entities). */
+export interface EntityOut {
+  id: string;
+  label: string;
+  type_key: string | null;
+  type_source: string | null;
+  described: boolean;
+  described_in: string | null;
+  created_at: string;
+}
+
+/** A source quote backing a fact, with its document and offsets. */
+export interface EvidenceOut {
+  id: string;
+  source_ref: string;
+  chunk_index: number;
+  quote: string;
+  start_offset: number;
+  end_offset: number;
+  doc_time: string | null;
+}
+
+/** How precisely a valid-time bound is known (the precision ladder). */
+export type WorldPrecision =
+  "year" | "month" | "day" | "hour" | "minute" | "second" | "unknown";
+
+/** One statement in the graph, with its evidence and both clocks. */
+export interface FactOut {
+  id: string;
+  subject_id: string;
+  phrase: string;
+  predicate_key: string | null;
+  object_id: string | null;
+  value: string | null;
+  layer: string;
+  mood: string | null;
+  qualifiers: Record<string, unknown>;
+  confidence: number;
+  valid_from: string | null;
+  valid_from_precision: WorldPrecision;
+  valid_to: string | null;
+  valid_to_precision: WorldPrecision;
+  end_derived: boolean;
+  end_after_period: boolean;
+  source_kind: string;
+  actor: string;
+  proposal_id: string | null;
+  supersedes_id: string | null;
+  recorded_at: string;
+  invalidated_at: string | null;
+  invalidated_reason: string | null;
+  evidence: EvidenceOut[];
+}
+
+/** A proposed fact awaiting a person's decision (machines propose). */
+export interface ProposalOut {
+  id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  status: string;
+  proposer_kind: string;
+  proposer: string;
+  rationale: string;
+  gate: Record<string, unknown>;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_reason: string | null;
+  fact_id: string | null;
+  created_at: string;
+}
+
+/** One page of entity search results (GET /world/entities). */
+export interface EntityListOut {
+  items: EntityOut[];
+  limit: number;
+  offset: number;
+}
+
+/**
+ * One entity's profile (GET /world/entities/{id}): its names, the facts that
+ * have it as subject (`facts`) and the facts that have it as object
+ * (`object_of`), all on the requested clocks.
+ */
+export interface EntityProfileOut {
+  entity: EntityOut;
+  resolved_id: string;
+  names: string[];
+  facts: FactOut[];
+  object_of: FactOut[];
+}
+
+/** One record-axis event for an entity (asserted / invalidated). */
+export interface ChangeOut {
+  kind: string;
+  fact_id: string;
+  occurred_at: string;
+  reason: string | null;
+}
+
+/** An entity's change timeline (GET /world/entities/{id}/changes). */
+export interface ChangesOut {
+  items: ChangeOut[];
+}
+
+/** One functional conflict / unordered succession / reasoning violation. */
+export interface ConflictOut {
+  kind: string;
+  predicate_key: string | null;
+  subject_id: string | null;
+  object_id: string | null;
+  fact_ids: string[];
+  detail: string;
+}
+
+/** The workspace's conflicts at a world time (GET /world/conflicts). */
+export interface ConflictsOut {
+  items: ConflictOut[];
+}
+
+/** The proposal review queue (GET /world/proposals), newest first. */
+export interface ProposalListOut {
+  items: ProposalOut[];
+}
+
+/** Body for POST /world/proposals/{id}/decision. */
+export interface ProposalDecisionIn {
+  accept: boolean;
+  reason?: string;
+}
+
+/** The decided proposal plus the fact it wrote (`null` when rejected). */
+export interface ProposalDecisionOut {
+  proposal: ProposalOut;
+  fact: FactOut | null;
+}
+
+/** The two time-travel clocks shared by the world reads (ISO strings). */
+export interface WorldTimeQuery {
+  /** World time: when the statement was true. */
+  at?: string;
+  /** System time: what forge had recorded by then. */
+  as_of?: string;
+}
+
+/** Query parameters accepted by GET /world/entities (all optional). */
+export interface WorldEntityQuery extends WorldTimeQuery {
+  /** Free-text search across entity names and labels. */
+  q?: string;
+  /** Restrict to one entity type (`type_key`). */
+  type?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** Query parameters accepted by GET /world/entities/{id}/changes. */
+export interface WorldChangeQuery {
+  since?: string;
+  until?: string;
+}
+
+/** Query parameters accepted by GET /world/proposals (all optional). */
+export interface WorldProposalQuery {
+  status?: "proposed" | "accepted" | "rejected";
+  limit?: number;
+  offset?: number;
+}
