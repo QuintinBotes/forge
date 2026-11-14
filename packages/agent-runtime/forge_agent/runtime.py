@@ -21,6 +21,7 @@ from forge_agent.sandbox import SandboxError, WorktreeSandbox, load_agents_md
 from forge_agent.state import AgentState
 from forge_agent.tools import FINISH_TOOL, ToolRegistry
 from forge_contracts import (
+    PROVIDER_FAILURE_STOP_REASONS,
     AgentObjective,
     AgentRunResult,
     DecisionEffect,
@@ -158,6 +159,15 @@ class AgentRunner:
         if _is_refusal(response.stop_reason):
             self._apply_refusal(state, response.stop_reason)
             return state
+        # A provider that cannot raise (the local-CLI clients: ``complete()``
+        # never raises there) reports a failed turn as a diagnostic
+        # ``stop_reason`` instead. Such a response carries no content and no
+        # tool calls, so without this branch the "model finished with no tool
+        # use" path below would end the run as an empty SUCCEEDED — the silent
+        # no-op spec F §3 / AC6 forbid.
+        if _is_provider_failure(response.stop_reason):
+            self._apply_provider_failure(state, response.stop_reason)
+            return state
         state.last_content = response.content or ""
         state.messages.append(ModelMessage(role="assistant", content=response.content or ""))
         # Always record the planning turn; for observe turns, only when the model
@@ -294,6 +304,25 @@ class AgentRunner:
         state.risks.append(risk)
         state.add_step(Step(kind=StepKind.OBSERVATION, observation=risk))
 
+    def _apply_provider_failure(self, state: AgentState, stop_reason: str | None) -> None:
+        """Handle a provider failure reported as a ``stop_reason``: fail the run.
+
+        Shaped like :meth:`_apply_refusal` (stop the loop, drop pending calls,
+        record the reason as a risk and an observation) with one deliberate
+        difference: this sets ``state.error`` rather than ``needs_human``, so
+        the run reports :class:`RunStatus.FAILED`. The turn did not happen at
+        all — there is nothing for a human to adjudicate, and reporting a
+        transport/parse failure as an escalation would hide a broken provider
+        behind a queue of review requests.
+        """
+        reason = str(stop_reason) if stop_reason else "unknown"
+        risk = f"model provider failure: {reason}"
+        state.finished = True
+        state.pending = []
+        state.error = risk
+        state.risks.append(risk)
+        state.add_step(Step(kind=StepKind.OBSERVATION, observation=risk))
+
     def _apply_finish(self, state: AgentState, arguments: dict[str, Any]) -> None:
         output = arguments.get("output") or arguments.get("summary")
         if output is not None:
@@ -352,6 +381,18 @@ def _opt_str(value: object) -> str | None:
 def _is_refusal(stop_reason: str | None) -> bool:
     """True for a provider safety stop (``"refusal"`` or ``"refusal:<category>"``)."""
     return bool(stop_reason) and str(stop_reason).split(":", 1)[0] == "refusal"
+
+
+def _is_provider_failure(stop_reason: str | None) -> bool:
+    """True for a diagnostic ``stop_reason`` meaning the turn never happened.
+
+    The membership set is ``forge_contracts.PROVIDER_FAILURE_STOP_REASONS`` —
+    the single definition the local-CLI providers emit from and this runtime
+    matches against, so the vocabulary cannot drift between the two. Providers
+    that signal failure by raising (anthropic / openai) never produce these
+    values and are therefore unaffected.
+    """
+    return bool(stop_reason) and str(stop_reason) in PROVIDER_FAILURE_STOP_REASONS
 
 
 def _wants_worktree(objective: AgentObjective) -> bool:

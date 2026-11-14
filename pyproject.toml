@@ -30,6 +30,7 @@ dependencies = [
     "forge-worker",
     "forge-mcp-gateway",
     "forge-orchestration-policy",
+    "forge-cli-bridge",
 ]
 
 [dependency-groups]
@@ -89,6 +90,7 @@ forge-api = { workspace = true }
 forge-worker = { workspace = true }
 forge-mcp-gateway = { workspace = true }
 forge-orchestration-policy = { workspace = true }
+forge-cli-bridge = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages", "apps", "deploy"]
@@ -177,6 +179,7 @@ version_files = [
     "apps/api/pyproject.toml:^version",
     "apps/worker/pyproject.toml:^version",
     "apps/mcp-gateway/pyproject.toml:^version",
+    "apps/cli-bridge/pyproject.toml:^version",
     "packages/agent-runtime/forge_agent/__init__.py:__version__",
     "packages/approval-sdk/forge_approval/__init__.py:__version__",
     "packages/auth-sdk/forge_auth/__init__.py:__version__",
@@ -200,6 +203,7 @@ version_files = [
     "apps/api/forge_api/__init__.py:__version__",
     "apps/worker/forge_worker/__init__.py:__version__",
     "apps/mcp-gateway/forge_mcp_gateway/__init__.py:__version__",
+    "apps/cli-bridge/forge_cli_bridge/__init__.py:__version__",
     "package.json:version",
     "apps/web/package.json:version",
     "deploy/docker-compose.yml:FORGE_VERSION",
