@@ -23,7 +23,7 @@ dependencies = [
     "forge-workflow",
     # F31 — deployment gates: drive promotions/health/rollback on the worker.
     "forge-deploy",
-    "celery>=5.3",
+    "celery>=5.7.0",
     "redis>=5.0",
     "forge-approval",
     # F41 — Self-Eval Gate: mint hidden regression cases into private suites and
