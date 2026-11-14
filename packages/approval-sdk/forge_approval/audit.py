@@ -2,7 +2,8 @@
 injected sink (the foundation's immutable, hash-chained audit log; F39).
 
 The protocol is shaped to the foundation's ``AuditLog.record_approval`` so the
-composition root can pass that method's owner directly.
+composition root can pass that method's owner directly. ``workspace_id`` scopes
+the row to its tenant; ``metadata`` carries a decision's surface and key id.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ class ApprovalAuditSink(Protocol):
         run_id: uuid.UUID | None = None,
         request_id: uuid.UUID | None = None,
         detail: str | None = None,
+        workspace_id: uuid.UUID | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Any: ...
 
 
@@ -39,6 +42,8 @@ class NullAuditSink:
         run_id: uuid.UUID | None = None,
         request_id: uuid.UUID | None = None,
         detail: str | None = None,
+        workspace_id: uuid.UUID | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         return None
 
@@ -58,6 +63,8 @@ class RecordingAuditSink:
         run_id: uuid.UUID | None = None,
         request_id: uuid.UUID | None = None,
         detail: str | None = None,
+        workspace_id: uuid.UUID | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         record = {
             "gate": gate,
@@ -66,6 +73,8 @@ class RecordingAuditSink:
             "run_id": run_id,
             "request_id": request_id,
             "detail": detail,
+            "workspace_id": workspace_id,
+            "metadata": metadata,
         }
         self.records.append(record)
         return record

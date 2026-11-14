@@ -15,7 +15,8 @@ from __future__ import annotations
 import enum
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any, Protocol, runtime_checkable
+from datetime import UTC, datetime
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,7 +59,10 @@ class RealtimeEventType(enum.StrEnum):
     RUN_FAILED = "run.failed"
 
     APPROVAL_REQUESTED = "approval.requested"
+    #: Final statuses only (approved, rejected, changes requested, expired).
     APPROVAL_DECIDED = "approval.decided"
+    #: Still pending but changed: escalated, partially approved, routed (spec L §6a).
+    APPROVAL_UPDATED = "approval.updated"
 
 
 class RealtimeEvent(_Model):
@@ -66,7 +70,8 @@ class RealtimeEvent(_Model):
 
     ``payload`` carries the event-specific body; the identifier fields are
     optional cross-references so a subscriber can filter/route without
-    parsing ``payload``.
+    parsing ``payload``. Every event carries the ADR-0015 provenance:
+    ``enforceable`` is true only where forge acts on what the event reports.
     """
 
     type: RealtimeEventType
@@ -77,6 +82,9 @@ class RealtimeEvent(_Model):
     run_id: uuid.UUID | None = None
     approval_id: uuid.UUID | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
+    observed_by: Literal["forge"] = "forge"
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    enforceable: bool = False
 
 
 # --------------------------------------------------------------------------- #

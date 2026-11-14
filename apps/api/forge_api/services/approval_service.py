@@ -23,11 +23,13 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from forge_api.deps import Principal
 from forge_api.observability.redaction import redact_mapping
 from forge_api.observability.service import get_observability_service
+from forge_api.services.authz_service import AuthzService
 from forge_api.services.workflow_gate_hook import EngineFactory
 from forge_approval import (
     ApprovalAuthorizer,
@@ -47,7 +49,13 @@ from forge_approval.providers import (
     PolicyOverrideGateProvider,
     PolicyOverrideResolutionHook,
 )
+from forge_authz import ROLE_RANK, max_role_at_scope
 from forge_contracts import UserRole
+from forge_contracts.authz import ScopeType
+from forge_db.models import User
+from forge_db.models.enums import PrincipalType as DbPrincipalType
+from forge_db.models.enums import ScopeType as DbScopeType
+from forge_db.models.role_grant import RoleGrant
 
 
 def build_gate_registry(
@@ -159,16 +167,76 @@ def to_approval_principal(principal: Principal) -> ApprovalPrincipal:
     to ``kind="agent"`` so the single authorizer structurally refuses it on
     every gate (Build-Prompt constraint #2), regardless of any router-level
     permission checks.
+
+    Only a person decides (ADR-0005, spec L §6a): an API key that is not one
+    (``decides`` unset: unbound, or narrowed without ``approvals:decide``) maps
+    to ``kind="system"``, which the authorizer refuses. :func:`to_decider` adds
+    the owner's live role. Session principals are unchanged.
     """
-    kind: Literal["user", "agent", "system"] = (
-        "agent" if principal.role is UserRole.AGENT_RUNNER else "user"
-    )
+    kind: Literal["user", "agent", "system"] = "user"
+    if principal.role is UserRole.AGENT_RUNNER:
+        kind = "agent"
+    elif principal.auth_method == "api_key" and not principal.decides:
+        kind = "system"
     return ApprovalPrincipal(
         kind=kind,
         id=principal.user_id,
         role=ApprovalRole(principal.role.value),
         workspace_id=principal.workspace_id,
+        surface=principal.surface,
+        credential_id=principal.credential_id,
     )
+
+
+def _lower(a: UserRole, b: UserRole) -> UserRole:
+    return min(a, b, key=ROLE_RANK.__getitem__)
+
+
+def owner_role(session: Session, principal: Principal) -> UserRole | None:
+    """The current role of the person an API key acts for; ``None`` if they have none.
+
+    ``User.role``, lowered by the owner's live workspace grants (read as the F30
+    authorizer reads them). An owner whose workspace grants have all expired has
+    lost access (``None``). An owner never granted one (seed, SSO and SCIM
+    provisioning write none) is governed by ``User.role``; removing a person is
+    deactivation, which also revokes their keys.
+    """
+    user = session.get(User, principal.user_id)
+    if user is None or not user.is_active or user.workspace_id != principal.workspace_id:
+        return None
+    role = UserRole(user.role.value)
+    ctx = AuthzService(session).load_principal_context(principal.workspace_id, principal.user_id)
+    granted = max_role_at_scope(ctx.grants, ScopeType.WORKSPACE, principal.workspace_id)
+    if granted is not None:
+        return _lower(role, granted)
+    ever_granted = session.scalar(
+        select(RoleGrant.id)
+        .where(
+            RoleGrant.workspace_id == principal.workspace_id,
+            RoleGrant.principal_type == DbPrincipalType.USER,
+            RoleGrant.principal_id == principal.user_id,
+            RoleGrant.scope_type == DbScopeType.WORKSPACE,
+        )
+        .limit(1)
+    )
+    return None if ever_granted is not None else role
+
+
+def to_decider(principal: Principal, session: Session) -> ApprovalPrincipal:
+    """:func:`to_approval_principal` plus an API key's live role check (spec L §6a).
+
+    A key decides with the lower of its own role and its owner's current role
+    (a narrowed key carries none, so its owner's governs): demoting or
+    deactivating the owner takes effect on the key's next decision.
+    """
+    actor = to_approval_principal(principal)
+    if principal.auth_method != "api_key" or actor.kind != "user":
+        return actor
+    current = owner_role(session, principal)
+    if current is None:
+        return actor.model_copy(update={"kind": "system"})
+    role = current if principal.narrowed else _lower(principal.role, current)
+    return actor.model_copy(update={"role": ApprovalRole(role.value)})
 
 
 __all__ = [
@@ -177,5 +245,7 @@ __all__ = [
     "get_approval_service",
     "get_gate_registry",
     "get_override_grant_store",
+    "owner_role",
     "to_approval_principal",
+    "to_decider",
 ]

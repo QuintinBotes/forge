@@ -155,6 +155,7 @@ class ApprovalService:
             actor=stored.requested_actor,
             run_id=stored.workflow_run_id or stored.agent_run_id,
             request_id=stored.id,
+            workspace_id=stored.workspace_id,
             detail=stored.title,
         )
         self._events.publish(
@@ -379,7 +380,9 @@ class ApprovalService:
             actor=actor.actor_ref,
             run_id=request.workflow_run_id or request.agent_run_id,
             request_id=request.id,
+            workspace_id=request.workspace_id,
             detail=decision.note,
+            metadata=_decision_metadata(actor),
         )
         self._events.publish(
             APPROVAL_RESOLVED_TOPIC,
@@ -424,6 +427,7 @@ class ApprovalService:
                 actor="system",
                 run_id=request.workflow_run_id or request.agent_run_id,
                 request_id=request.id,
+                workspace_id=request.workspace_id,
             )
             self._events.publish(
                 APPROVAL_RESOLVED_TOPIC,
@@ -495,6 +499,7 @@ class ApprovalService:
             actor="system",
             run_id=request.workflow_run_id or request.agent_run_id,
             request_id=request.id,
+            workspace_id=request.workspace_id,
         )
         self._events.publish(
             APPROVAL_RESOLVED_TOPIC,
@@ -521,6 +526,7 @@ class ApprovalService:
             actor="system",
             run_id=request.workflow_run_id or request.agent_run_id,
             request_id=request.id,
+            workspace_id=request.workspace_id,
             detail=decision.reason,
         )
 
@@ -536,6 +542,7 @@ class ApprovalService:
             actor="system",
             run_id=request.workflow_run_id or request.agent_run_id,
             request_id=request.id,
+            workspace_id=request.workspace_id,
             detail=decision.reason,
         )
 
@@ -601,7 +608,9 @@ class ApprovalService:
             actor=actor.actor_ref,
             run_id=request.workflow_run_id or request.agent_run_id,
             request_id=request.id,
+            workspace_id=request.workspace_id,
             detail=decision.note,
+            metadata=_decision_metadata(actor),
         )
         return ApprovalResolution(
             approval_id=request.id,
@@ -632,7 +641,9 @@ class ApprovalService:
             actor=actor.actor_ref,
             run_id=request.workflow_run_id or request.agent_run_id,
             request_id=request.id,
+            workspace_id=request.workspace_id,
             detail=decision.note,
+            metadata=_decision_metadata(actor),
         )
         return ApprovalResolution(
             approval_id=request.id,
@@ -650,6 +661,12 @@ class ApprovalService:
         if items is None:  # pragma: no cover — DB-backed repos sweep in the worker
             return []
         return [i.model_copy(deep=True) for i in items.values() if i.status is GateStatus.PENDING]
+
+
+def _decision_metadata(actor: Principal) -> dict[str, Any]:
+    """What a decision's audit row records about the credential (spec L §6a)."""
+    key_id = str(actor.credential_id) if actor.credential_id else None
+    return {"surface": actor.surface, "key_id": key_id}
 
 
 def _payload_assignee(request: ApprovalRequest) -> uuid.UUID | None:

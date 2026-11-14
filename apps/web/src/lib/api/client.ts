@@ -58,8 +58,10 @@ import type {
   InstallPlan,
   InstallRequest,
   InstallResult,
+  KnowledgeDocumentResponse,
   KnowledgeSearchRequest,
   KnowledgeSearchResponse,
+  KnowledgeSourceSummary,
   Listing,
   ListingDetail,
   ListingPublishRequest,
@@ -442,6 +444,29 @@ export class ForgeApiClient {
     return this.request<KnowledgeSearchResponse>("/knowledge/search", {
       method: "POST",
       body: req,
+    });
+  }
+
+  /** The workspace's sources with chunk counts, embedding coverage and freshness. */
+  listKnowledgeSources(): Promise<KnowledgeSourceSummary[]> {
+    return this.request<KnowledgeSourceSummary[]>("/knowledge/sources");
+  }
+
+  /** Sync one source now (a tracker source is enqueued for the worker). */
+  syncKnowledgeSource(sourceId: string): Promise<unknown> {
+    return this.request<unknown>("/knowledge/sync", {
+      method: "POST",
+      body: { source_id: sourceId },
+    });
+  }
+
+  /** One document's chunks in order (`source` is a source id, uri or `kind:uri`). */
+  getKnowledgeDocument(
+    source: string,
+    path: string,
+  ): Promise<KnowledgeDocumentResponse> {
+    return this.request<KnowledgeDocumentResponse>("/knowledge/document", {
+      query: { source, path },
     });
   }
 

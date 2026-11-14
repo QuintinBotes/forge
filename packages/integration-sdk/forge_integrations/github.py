@@ -31,7 +31,7 @@ import json
 import random
 import re
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import TracebackType
@@ -107,6 +107,9 @@ class Review:
     body: str | None = None
     user: str | None = None
 
+
+#: Default page bound for :meth:`GitHubClient.iter_pages` (100,000 items at 100 a page).
+MAX_PAGES = 1000
 
 _LINK_NEXT_RE = re.compile(r'<([^>]+)>\s*;\s*rel="next"')
 
@@ -427,16 +430,23 @@ class GitHubClient:
         items_key: str | None = None,
         action: str | None = None,
         repo: str | None = None,
+        max_pages: int | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Yield items across every page, following ``Link: rel="next"``.
 
         A single-page response makes exactly one request. ``items_key`` extracts
         a list from an envelope object; when ``None`` the response body is
-        assumed to already be a JSON array.
+        assumed to already be a JSON array. Past ``max_pages`` pages it raises
+        :class:`GitHubError` instead of returning a truncated listing, and so
+        does a next link to another scheme or host than the client's base URL.
         """
         next_url: str | None = path
         next_params = params
+        pages = 0
         while next_url is not None:
+            if max_pages is not None and pages >= max_pages:
+                raise GitHubError(f"{path}: more than {max_pages} pages")
+            pages += 1
             resp = self._request(method, next_url, params=next_params, action=action, repo=repo)
             self._raise_for_status(resp)
             data = resp.json()
@@ -451,6 +461,11 @@ class GitHubClient:
             # The next URL already encodes its own query string.
             next_url = _parse_next_link(resp.headers.get("link"))
             next_params = None
+            if next_url is not None:
+                # Never send the token to a host the client was not built for.
+                target, base = httpx.URL(next_url), self._client.base_url
+                if (target.scheme, target.host) != (base.scheme, base.host):
+                    raise GitHubError(f"{path}: Link next leaves {base.host}")
 
     @staticmethod
     def _raise_for_status(resp: httpx.Response) -> None:
@@ -704,6 +719,29 @@ class GitHubClient:
                 repo=r,
             )
         ]
+
+    def iter_pages(
+        self,
+        repo: str,
+        path: str,
+        params: Mapping[str, str] | None = None,
+        *,
+        max_pages: int = MAX_PAGES,
+    ) -> Iterator[dict[str, Any]]:
+        """Items of ``GET /repos/{repo}/{path}`` across pages (``Link: rel="next"``).
+
+        Bounded: a listing longer than ``max_pages`` pages raises
+        :class:`GitHubError` after the last allowed page, never a silent cut.
+        """
+        r = self.owner_repo(repo)
+        return self._paginate(
+            "GET",
+            f"/repos/{r}/{path.lstrip('/')}",
+            params=dict(params or {}),
+            action="iter_pages",
+            repo=r,
+            max_pages=max_pages,
+        )
 
     def list_pr_files(self, repo: str, number: int) -> list[dict[str, Any]]:
         """Paginated read of ``GET /repos/{r}/pulls/{n}/files`` (raw file objects).

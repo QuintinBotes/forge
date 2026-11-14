@@ -69,10 +69,12 @@ from forge_knowledge.sync import (
     ChangeSet,
     full_sync,
     git_changed_files,
+    git_log,
     incremental_sync,
     iter_source_files,
     read_repo_files,
     sync_source,
+    sync_tracker,
 )
 from forge_knowledge.text import ENGLISH_STOPWORDS, query_terms, tokenize
 
@@ -125,6 +127,7 @@ __all__ = [
     "full_sync",
     "fuse",
     "git_changed_files",
+    "git_log",
     "incremental_sync",
     "index_status_counts",
     "iter_source_files",
@@ -137,6 +140,7 @@ __all__ = [
     "redact_secrets",
     "retrieve_with_mcp",
     "sync_source",
+    "sync_tracker",
     "tokenize",
     "treesitter_available",
     "weight_for",

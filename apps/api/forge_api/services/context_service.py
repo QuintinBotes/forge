@@ -43,6 +43,7 @@ from forge_db.models import (
     RunStatus,
 )
 from forge_knowledge import KnowledgeService
+from forge_knowledge.text import strip_uri_credentials
 from forge_spec import FileSpecEngine, SpecNotFoundError, is_spec_key, spec_id_for_key
 from forge_world import (
     KNOWN_AS_KEY,
@@ -333,8 +334,19 @@ def _fact_candidates(
     return fact_items, [candidate for _, candidate in memory_items]
 
 
-def _chunk_source(chunk: RetrievedChunk) -> str:
-    return chunk.source_uri or chunk.path or f"knowledge_source:{chunk.source_id}"
+def source_label(kind: str | None, uri: str | None, path: str | None) -> str:
+    """A knowledge passage's label (ADR-0014): ``"{source kind}:{source uri}:{path}"``.
+
+    The kind keeps a tracker issue, a commit and a file of one repository
+    (one uri) apart. The uri never carries credentials.
+    """
+    return f"{kind or 'unknown'}:{strip_uri_credentials(uri or '')}:{path or ''}"
+
+
+def chunk_label(chunk: RetrievedChunk) -> str:
+    """:func:`source_label` of a retrieved chunk (the store sets ``source_kind``)."""
+    uri = chunk.source_uri or f"knowledge_source:{chunk.source_id}"
+    return source_label(chunk.metadata.get("source_kind"), uri, chunk.path)
 
 
 def _chunk_id(chunk: RetrievedChunk) -> str:
@@ -382,7 +394,7 @@ def _instruction_candidates(
             _Candidate(
                 kind="instruction",
                 id=str(row.id),
-                source=f"{source_row.uri}:{row.path}",
+                source=f"{strip_uri_credentials(source_row.uri)}:{row.path}",
                 text=row.content,
                 section="instructions",
                 ref_kind="chunk",
@@ -608,43 +620,58 @@ def assemble_context(
 
     # Instructions come only from repo sources (found by path, labelled
     # with their origin). A search hit is an instruction only when its id
-    # is in that set — and then the path-found item already carries it, so
-    # the hit is skipped; anything else with an instruction-like path
-    # stays a plain chunk in the knowledge section.
-    deduped_instructions = _instruction_candidates(session, workspace_id, seen_ids=set())
-    instruction_ids = {candidate.id for candidate in deduped_instructions}
+    # is in that set; anything else with an instruction-like path stays a
+    # plain chunk in the knowledge section.
+    instructions = _instruction_candidates(session, workspace_id, seen_ids=set())
+    instruction_by_id = {candidate.id: candidate for candidate in instructions}
     scope = KnowledgeScope(workspace_id=workspace_id)
     retrieved = knowledge.search(task[:MAX_QUERY_CHARS], scope, k=KNOWLEDGE_K)
-    knowledge_items: list[_Candidate] = []
-    for chunk in retrieved:
-        chunk_id = _chunk_id(chunk)
-        if chunk_id in instruction_ids:
-            continue
-        knowledge_items.append(
+    hits = [(chunk, _chunk_id(chunk)) for chunk in retrieved]
+    hit_ids = list(dict.fromkeys(cid for _, cid in hits if cid in instruction_by_id))
+    hit_set = set(hit_ids)
+    # Instruction candidates: search hits first (in rank order), then by path.
+    ordered_instructions = [instruction_by_id[cid] for cid in hit_ids] + [
+        candidate for candidate in instructions if candidate.id not in hit_set
+    ]
+
+    spec_items, spec_dropped = _spec_candidates(spec_engine, task=task, spec_ids=spec_ids)
+
+    # D-b (spec J §2.4.1): an instruction hit leaves the knowledge section only
+    # if the instruction section actually includes it after budgeting (never
+    # under a 0% share). Budgeting repeats until that holds; ``moved`` only
+    # shrinks, so this ends within len(hit_ids) + 1 passes.
+    moved = set(hit_set)
+    while True:
+        knowledge_items = [
             _Candidate(
                 kind="chunk",
                 id=chunk_id,
-                source=_chunk_source(chunk),
+                source=chunk_label(chunk),
                 text=chunk.content,
                 section="knowledge",
                 ref_kind="chunk",
                 ref_id=chunk_id,
             )
+            for chunk, chunk_id in hits
+            if chunk_id not in moved
+        ]
+        included, dropped, total = _apply_budget(
+            {
+                "facts": fact_items,
+                "knowledge": knowledge_items,
+                "specs": spec_items,
+                "memories": memory_items,
+                "instructions": [
+                    c for c in ordered_instructions if c.id in moved or c.id not in hit_set
+                ],
+            },
+            budget_tokens=budget_tokens,
+            template=template,
         )
-
-    spec_items, spec_dropped = _spec_candidates(spec_engine, task=task, spec_ids=spec_ids)
-
-    included, dropped, total = _apply_budget(
-        {
-            "facts": fact_items,
-            "knowledge": knowledge_items,
-            "specs": spec_items,
-            "memories": memory_items,
-            "instructions": deduped_instructions,
-        },
-        budget_tokens=budget_tokens,
-        template=template,
-    )
+        kept = moved & {c.id for c in included if c.section == "instructions"}
+        if kept == moved:
+            break
+        moved = kept
     dropped = [*spec_dropped, *dropped]
 
     refs: list[ContextRefOut] = []
@@ -835,8 +862,10 @@ __all__ = [
     "AgentRunNotFoundError",
     "RunFinishedError",
     "assemble_context",
+    "chunk_label",
     "count_tokens",
     "is_instruction_path",
     "record_pull_request_outcome",
     "resolve_run_for_pull_request",
+    "source_label",
 ]

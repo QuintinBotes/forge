@@ -223,6 +223,21 @@ def test_vector_search_scopes_by_workspace(
     assert results == []
 
 
+def test_retrieved_chunks_never_carry_source_uri_credentials(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    source_id = _make_source(
+        session_factory, workspace_id, uri="oauth2:glpat-secret@gitlab.test/o/r?private_token=t"
+    )
+    vector = PgVectorStore(session_factory, DeterministicEmbeddingClient(dimension=64))
+    vector.index(source_id=str(source_id), chunks=[_chunk("alpha beta gamma", "a.py")])
+    scope = KnowledgeScope(workspace_id=workspace_id)
+
+    hits = [*vector.search("alpha", scope, k=1), *Bm25Store(session_factory).search("alpha", scope)]
+
+    assert [hit.source_uri for hit in hits] == ["gitlab.test/o/r", "gitlab.test/o/r"]
+
+
 # --------------------------------------------------------------------------- #
 # Bm25Store + the hybrid value proposition (keyword beats vector)             #
 # --------------------------------------------------------------------------- #
@@ -779,7 +794,9 @@ def test_a_backlog_failure_never_undoes_new_chunks_and_skips_only_bad_rows(
     result = full_sync(PgVectorStore(session_factory, spy), source_id, {**old, "d.py": "new"})
 
     assert result.indexed == 1
-    assert result.updated == 2  # a.py and c.py; b.py is reported, not retried forever
+    # a.py and c.py, each a code chunk plus its symbol summary (D-c); b.py is
+    # reported, not retried forever.
+    assert result.updated == 4
     assert len(result.errors) == 1
     with session_factory() as session:
         by_path = {row.path: row.embedding for row in session.scalars(select(RetrievalChunk))}
@@ -805,4 +822,5 @@ def test_full_sync_never_sends_a_vanished_files_text_to_the_embedder(
     )
     sent = [text for call in spy.calls for text in call]
     assert not any("vanished_secret_file" in text for text in sent)
-    assert (result.deleted, result.updated) == (1, 1)
+    # One code chunk plus one symbol summary (D-c) per file.
+    assert (result.deleted, result.updated) == (2, 2)
