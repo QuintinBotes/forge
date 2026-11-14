@@ -135,7 +135,8 @@ config, and Helm chart.
 forge/
 ├── apps/
 │   ├── api/                     # FastAPI backend + CLI (forge_api)
-│   ├── worker/                  # Celery workers (forge_worker)
+│   ├── worker/                  # Celery and Temporal workers (forge_worker)
+│   ├── cli-bridge/              # Host-side local-CLI model bridge (forge_cli_bridge)
 │   ├── mcp-gateway/             # MCP client manager service (forge_mcp_gateway)
 │   └── web/                     # Next.js 16 frontend (@forge/web)
 ├── packages/
@@ -158,6 +159,7 @@ forge/
 │   ├── approval-sdk/            # forge_approval
 │   ├── marketplace-sdk/         # forge_marketplace
 │   ├── observability/           # forge_obs
+│   ├── world-model/             # forge_world
 │   └── deploy-core/             # forge_deploy
 ├── deploy/                      # docker-compose, Caddy, Helm, scripts, SBOMs
 ├── examples/                    # policies, skills, workflows, mcp-connectors, specs (tested fixtures)
