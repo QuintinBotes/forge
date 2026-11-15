@@ -21,6 +21,7 @@ SQLite; the Celery entrypoints open a session from the default factory.
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -48,6 +49,8 @@ __all__ = [
     "run_expire_sweep",
     "run_sla_sweep",
 ]
+
+logger = logging.getLogger(__name__)
 
 EXPIRE_APPROVALS_TASK = "approvals.expire_pending"
 CONSUME_OVERRIDE_GRANT_TASK = "approvals.consume_override_grant"
@@ -175,8 +178,10 @@ def run_sla_sweep(
             dto, now=now, sla=sla, delegation=delegation, assignee=_assignee_of(request)
         )
         if decision.outcome is EscalationOutcome.EXPIRE:
-            _expire_gate(session, request, now)
-            result.expired += 1
+            if _expire_gate(session, request, now):
+                result.expired += 1
+            else:
+                logger.info("approval %s was decided during the SLA sweep; not expired", request.id)
         elif decision.outcome is EscalationOutcome.ESCALATE_TO_ADMIN:
             if not request.escalated:
                 _escalate_gate(session, request, now, decision.reason)
@@ -188,9 +193,25 @@ def run_sla_sweep(
     return result
 
 
-def _expire_gate(session: Session, request: ApprovalRequest, now: datetime) -> None:
-    request.status = ApprovalStatus.EXPIRED
-    request.decided_at = now
+def _expire_gate(session: Session, request: ApprovalRequest, now: datetime) -> bool:
+    """Expire ``request`` only if it is still pending; True when this call expired it.
+
+    A conditional update, so a decision recorded between the sweep's read and
+    this write is never overwritten (spec K §4.2).
+    """
+    result = cast(
+        "CursorResult[Any]",
+        session.execute(
+            update(ApprovalRequest)
+            .where(
+                ApprovalRequest.id == request.id, ApprovalRequest.status == ApprovalStatus.PENDING
+            )
+            .values(status=ApprovalStatus.EXPIRED, decided_at=now)
+            .execution_options(synchronize_session="fetch")
+        ),
+    )
+    if not result.rowcount:
+        return False
     session.add(
         AuditLog(
             workspace_id=request.workspace_id,
@@ -205,6 +226,7 @@ def _expire_gate(session: Session, request: ApprovalRequest, now: datetime) -> N
             },
         )
     )
+    return True
 
 
 def _escalate_gate(session: Session, request: ApprovalRequest, now: datetime, reason: str) -> None:

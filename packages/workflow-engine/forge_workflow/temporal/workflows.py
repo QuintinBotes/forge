@@ -327,9 +327,12 @@ class FeatureWorkflow:
             )
 
     @workflow.signal
-    async def cancel_run(self, reason: str = "cancelled") -> None:
+    async def cancel_run(self, reason: str = "cancelled", actor: str | None = None) -> None:
+        # ``actor`` is optional so one-argument senders and recorded histories stay valid.
         self._cancel_requested = True
         self._cancel_reason = reason or "cancelled"
+        if actor:
+            self._cancel_actor = actor
 
     @workflow.query
     def current_state(self) -> str:

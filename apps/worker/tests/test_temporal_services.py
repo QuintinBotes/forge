@@ -33,7 +33,6 @@ from forge_worker.temporal_main import build_activities
 from forge_workflow.temporal.activities import WorkflowActivities
 from forge_workflow.temporal.payloads import (
     ApprovalInput,
-    CleanupInput,
     GuardInputsRequest,
     NotifyInput,
     OpenPrInput,
@@ -239,7 +238,6 @@ RUN, WS, TASK = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         ("run_checks", RunChecksInput(RUN, WS, attempt=0, idempotency_key="k")),
         ("open_pr_with_spec_traceability", OpenPrInput(RUN, WS, "b", idempotency_key="k")),
         ("pause_and_notify", NotifyInput(RUN, WS, reason="r")),
-        ("cleanup_worktree", CleanupInput(RUN, WS)),
     ],
 )
 async def test_activities_this_slice_does_not_bind_still_refuse(

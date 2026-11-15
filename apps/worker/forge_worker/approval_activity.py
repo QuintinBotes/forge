@@ -10,6 +10,10 @@ on the database repository — one pending request per ``(run, gate)``
 retry that lands after the gate was decided returns the decided request, found
 by the activity's idempotency key, and the request's audit entry goes on the
 database audit chain (issue #170).
+
+A ``pr`` gate carries the repository's review rules from the default branch
+(:mod:`forge_worker.review_rules`, spec K §4.11), so repo policy can raise its
+quorum.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from forge_api.services.workflow_gate_hook import WORKFLOW_RUN_SUBJECT, agent_ac
 from forge_approval import ApprovalAuthorizer, ApprovalService, GateRegistry
 from forge_approval.models import GateType
 from forge_db.models import ApprovalRequest, Task
+from forge_worker.review_rules import review_rules_stamp
 from forge_workflow.temporal.payloads import ApprovalInput
 
 
@@ -83,6 +88,12 @@ def make_create_approval_fn(
             or inp.summary
             or (f"{inp.gate} approval for run {inp.workflow_run_id}")
         )
+        payload: dict[str, object] = {"summary": inp.summary} if inp.summary else {}
+        payload["idempotency_key"] = inp.idempotency_key
+        if inp.gate == GateType.PR.value:
+            payload |= review_rules_stamp(
+                factory, workspace_id=inp.workspace_id, task_id=inp.task_id
+            )
         request = await build_approval_service(factory).create(
             workspace_id=inp.workspace_id,
             gate_type=GateType(inp.gate),
@@ -93,10 +104,7 @@ def make_create_approval_fn(
             project_id=task.project_id if task is not None else None,
             title=title,
             requested_actor=agent_actor_for_run(inp.workflow_run_id),
-            gate_payload={
-                **({"summary": inp.summary} if inp.summary else {}),
-                "idempotency_key": inp.idempotency_key,
-            },
+            gate_payload=payload,
         )
         return request.id
 

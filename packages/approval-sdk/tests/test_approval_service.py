@@ -242,6 +242,65 @@ async def test_approve_but_blocked_keeps_reasons(
     assert resolution.outcome.follow_up_state is None  # no review_approved advance
 
 
+class _RaisingHook:
+    """A resolution hook that fails after recording on the request (spec K §4.11)."""
+
+    gate_type = GateType.PR
+
+    async def on_resolved(self, request, decision, actor, *, session=None) -> ResolutionOutcome:
+        request.gate_payload = {**request.gate_payload, "workflow_event": {"status": "blocked"}}
+        raise RuntimeError("attestation signer unavailable")
+
+
+async def test_a_raising_hook_keeps_the_decision_audit_and_event(
+    repo: InMemoryApprovalRepository,
+    fake_bus: InMemoryActivityBus,
+    fake_audit: RecordingAuditSink,
+) -> None:
+    registry = GateRegistry()
+    registry.register_hook(_RaisingHook())
+    service = ApprovalService(
+        repo, registry, ApprovalAuthorizer(), events=fake_bus, audit=fake_audit
+    )
+    created = await _create(service)
+
+    resolution = await service.resolve(
+        created.id,
+        APPROVE,
+        make_principal(role=Role.ADMIN, principal_id=ADMIN_ID),
+        workspace_id=WS,
+    )
+
+    assert resolution.status is GateStatus.APPROVED
+    assert resolution.outcome.completed is False
+    assert resolution.outcome.details == {
+        "error_code": "resolution_hook_failed",
+        "error_type": "RuntimeError",
+    }
+    stored = await service.get(created.id, workspace_id=WS)
+    assert stored.status is GateStatus.APPROVED
+    assert stored.gate_payload["workflow_event"] == {"status": "blocked"}  # hook's record kept
+    assert len(await service.decisions(created.id, workspace_id=WS)) == 1
+    assert fake_audit.records[-1]["status"] == "approved"
+    [event] = fake_bus.by_topic(APPROVAL_RESOLVED_TOPIC)
+    assert isinstance(event, ApprovalResolvedEvent)
+    assert event.outcome.completed is False
+
+
+async def test_save_gate_payload_writes_the_payload_and_never_the_decision(
+    service: ApprovalService,
+) -> None:
+    created = await _create(service)
+    created.gate_payload = {**created.gate_payload, "workflow_event": {"status": "blocked"}}
+    created.status = GateStatus.APPROVED  # a caller-side change that must not persist
+
+    await service.save_gate_payload(created)
+
+    stored = await service.get(created.id, workspace_id=WS)
+    assert stored.gate_payload["workflow_event"] == {"status": "blocked"}
+    assert stored.status is GateStatus.PENDING
+
+
 async def test_resolve_without_hook_returns_not_implemented(
     repo: InMemoryApprovalRepository,
 ) -> None:

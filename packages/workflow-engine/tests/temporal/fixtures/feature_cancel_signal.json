@@ -1,0 +1,2532 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2026-11-08T09:00:57.193Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "forge.FeatureWorkflow"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ0YXNrX2lkIjoiMTk0ZWU3M2YtMzAwYS00MDZmLWE5NjYtYTI2MDEzODU1MjAyIiwid29ya3NwYWNlX2lkIjoiN2E0MjE2YmUtOGY5ZS00OGE0LThkYzktYTExN2VlMjQxOWI3IiwiZGVmaW5pdGlvbl9uYW1lIjoiZGVmYXVsdF9mZWF0dXJlIiwiZGVmaW5pdGlvbl92ZXJzaW9uIjoiMSIsImV4ZWN1dGlvbl9tb2RlIjoic2luZ2xlX2FnZW50IiwicmV0cnlfcG9saWN5Ijp7Im1heF9yZXRyaWVzIjozLCJiYWNrb2ZmIjoiZXhwb25lbnRpYWwiLCJpbml0aWFsX2RlbGF5X3NlY29uZHMiOjMwfSwiZXNjYWxhdGlvbl9wb2xpY3kiOnsiY29uZmlkZW5jZV90aHJlc2hvbGQiOjAuNzIsIm9uX2xvd19jb25maWRlbmNlIjoicGF1c2VfYW5kX25vdGlmeSIsIm9uX3BvbGljeV9jb25mbGljdCI6ImVzY2FsYXRlX3RvX2FkbWluIn19"
+            }
+          ]
+        },
+        "workflowExecutionTimeout": "315360000s",
+        "workflowRunTimeout": "315360000s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "bb8fce6d-2932-4b56-a81a-fdfa8707d9bf",
+        "identity": "worker@forge-test",
+        "firstExecutionRunId": "bb8fce6d-2932-4b56-a81a-fdfa8707d9bf",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2026-11-08T09:00:57.193Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2026-11-08T09:00:57.195Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "743"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2026-11-08T09:00:57.226Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {
+          "coreUsedFlags": [
+            1,
+            2,
+            3
+          ],
+          "sdkName": "temporal-python",
+          "sdkVersion": "1.32.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2026-11-08T09:00:57.226Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "1",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoiY3JlYXRlZCIsInRvX3N0YXRlIjoic3BlY19kcmFmdGluZyIsImV2ZW50IjoiZ2VuZXJhdGVfc3BlY19kcmFmdCIsImlkZW1wb3RlbmN5X2tleSI6IjViMjI1M2ZkLTY1ZTAtNGM2Yy04ODc0LTY3OTliNDkxZDQzMjp0cmFuc2l0aW9uOjEiLCJndWFyZF9yZXN1bHRzIjp7fSwiZWZmZWN0c19kaXNwYXRjaGVkIjpbImdlbmVyYXRlX3NwZWNfZHJhZnQiXSwicmVjb3JkIjpudWxsLCJhY3RvciI6InN5c3RlbSIsInNraWxsIjoic3BlYy1hbmFseXN0IiwicGF5bG9hZCI6e30sInRlbXBvcmFsX3J1bl9pZCI6ImJiOGZjZTZkLTI5MzItNGI1Ni1hODFhLWZkZmE4NzA3ZDliZiIsInJ1bl9zdGF0dXMiOm51bGx9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "3",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2026-11-08T09:00:57.226Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 2
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2026-11-08T09:00:57.226Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "6",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "1582"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2026-11-08T09:00:57.231Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "6",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2026-11-08T09:00:57.227Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "5",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2026-11-08T09:00:57.231Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            }
+          ]
+        },
+        "scheduledEventId": "5",
+        "startedEventId": "8",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2026-11-08T09:00:57.231Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2026-11-08T09:00:57.231Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "11",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "1921"
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2026-11-08T09:00:57.234Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "11",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2026-11-08T09:00:57.234Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "2",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoic3BlY19kcmFmdGluZyIsInRvX3N0YXRlIjoiY2xhcmlmaWNhdGlvbiIsImV2ZW50IjoiZ2F0aGVyX2NsYXJpZmljYXRpb25zIiwiaWRlbXBvdGVuY3lfa2V5IjoiNWIyMjUzZmQtNjVlMC00YzZjLTg4NzQtNjc5OWI0OTFkNDMyOnRyYW5zaXRpb246MiIsImd1YXJkX3Jlc3VsdHMiOnt9LCJlZmZlY3RzX2Rpc3BhdGNoZWQiOlsiZ2F0aGVyX2NsYXJpZmljYXRpb25zIl0sInJlY29yZCI6bnVsbCwiYWN0b3IiOiJzeXN0ZW0iLCJza2lsbCI6bnVsbCwicGF5bG9hZCI6e30sInRlbXBvcmFsX3J1bl9pZCI6ImJiOGZjZTZkLTI5MzItNGI1Ni1hODFhLWZkZmE4NzA3ZDliZiIsInJ1bl9zdGF0dXMiOm51bGx9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "12",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2026-11-08T09:00:57.234Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "14",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "16",
+      "eventTime": "2026-11-08T09:00:57.235Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "Mg=="
+            }
+          ]
+        },
+        "scheduledEventId": "14",
+        "startedEventId": "15",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "17",
+      "eventTime": "2026-11-08T09:00:57.235Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "18",
+      "eventTime": "2026-11-08T09:00:57.235Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "17",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "2877"
+      }
+    },
+    {
+      "eventId": "19",
+      "eventTime": "2026-11-08T09:00:57.236Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "17",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "20",
+      "eventTime": "2026-11-08T09:00:57.236Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "3",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoiY2xhcmlmaWNhdGlvbiIsInRvX3N0YXRlIjoic3BlY19yZXZpZXciLCJldmVudCI6InN1Ym1pdF9zcGVjX2Zvcl9yZXZpZXciLCJpZGVtcG90ZW5jeV9rZXkiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzI6dHJhbnNpdGlvbjozIiwiZ3VhcmRfcmVzdWx0cyI6e30sImVmZmVjdHNfZGlzcGF0Y2hlZCI6WyJzdWJtaXRfc3BlY19mb3JfcmV2aWV3Il0sInJlY29yZCI6bnVsbCwiYWN0b3IiOiJzeXN0ZW0iLCJza2lsbCI6bnVsbCwicGF5bG9hZCI6e30sInRlbXBvcmFsX3J1bl9pZCI6ImJiOGZjZTZkLTI5MzItNGI1Ni1hODFhLWZkZmE4NzA3ZDliZiIsInJ1bl9zdGF0dXMiOm51bGx9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "18",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "21",
+      "eventTime": "2026-11-08T09:00:57.236Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "20",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "22",
+      "eventTime": "2026-11-08T09:00:57.237Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "Mw=="
+            }
+          ]
+        },
+        "scheduledEventId": "20",
+        "startedEventId": "21",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "23",
+      "eventTime": "2026-11-08T09:00:57.237Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "24",
+      "eventTime": "2026-11-08T09:00:57.237Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "23",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "3833"
+      }
+    },
+    {
+      "eventId": "25",
+      "eventTime": "2026-11-08T09:00:57.238Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "23",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "26",
+      "eventTime": "2026-11-08T09:00:57.238Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "4",
+        "activityType": {
+          "name": "forge.run_red_team_scan"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJ0YXNrX2lkIjoiMTk0ZWU3M2YtMzAwYS00MDZmLWE5NjYtYTI2MDEzODU1MjAyIiwicGhhc2UiOiJzcGVjIiwiY29kZXJfbW9kZWwiOm51bGwsImlkZW1wb3RlbmN5X2tleSI6IjViMjI1M2ZkLTY1ZTAtNGM2Yy04ODc0LTY3OTliNDkxZDQzMjpyZWRfdGVhbTpzcGVjIn0="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "900s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "24",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s",
+          "maximumAttempts": 1
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "27",
+      "eventTime": "2026-11-08T09:00:57.238Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "26",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "28",
+      "eventTime": "2026-11-08T09:00:57.240Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ2ZXJkaWN0Ijoic3Vydml2ZWQiLCJraW5kIjoicGFya2VkIiwiZXZpZGVuY2UiOnsicGFya2VkIjp0cnVlLCJyZWFzb24iOiJubyBhZHZlcnNhcnkgbW9kZWwvc2FuZGJveCB3aXJlZCJ9LCJhZHZlcnNhcnlfbW9kZWwiOm51bGwsImNvZGVyX21vZGVsIjpudWxsfQ=="
+            }
+          ]
+        },
+        "scheduledEventId": "26",
+        "startedEventId": "27",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "29",
+      "eventTime": "2026-11-08T09:00:57.240Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "30",
+      "eventTime": "2026-11-08T09:00:57.240Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "29",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "4743"
+      }
+    },
+    {
+      "eventId": "31",
+      "eventTime": "2026-11-08T09:00:57.242Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "29",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "32",
+      "eventTime": "2026-11-08T09:00:57.242Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "5",
+        "activityType": {
+          "name": "forge.create_approval"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJ0YXNrX2lkIjoiMTk0ZWU3M2YtMzAwYS00MDZmLWE5NjYtYTI2MDEzODU1MjAyIiwiZ2F0ZSI6InNwZWMiLCJzdW1tYXJ5Ijoic3BlYyBhcHByb3ZhbCBmb3IgcnVuIDViMjI1M2ZkLTY1ZTAtNGM2Yy04ODc0LTY3OTliNDkxZDQzMiIsImlkZW1wb3RlbmN5X2tleSI6IjViMjI1M2ZkLTY1ZTAtNGM2Yy04ODc0LTY3OTliNDkxZDQzMjphcHByb3ZhbDpzcGVjOjMifQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "30",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "33",
+      "eventTime": "2026-11-08T09:00:57.242Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "32",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "34",
+      "eventTime": "2026-11-08T09:00:57.243Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IjQxNGFhZjdiLTg0M2QtNGI1NS05NGJmLTA2Zjc0NDAxZjNiYiI="
+            }
+          ]
+        },
+        "scheduledEventId": "32",
+        "startedEventId": "33",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "35",
+      "eventTime": "2026-11-08T09:00:57.243Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "36",
+      "eventTime": "2026-11-08T09:00:57.243Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "35",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "5584"
+      }
+    },
+    {
+      "eventId": "37",
+      "eventTime": "2026-11-08T09:00:57.244Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "35",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "38",
+      "eventTime": "2026-11-08T09:00:57.260Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "39",
+      "eventTime": "2026-11-08T09:00:57.260Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "38",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "5776"
+      }
+    },
+    {
+      "eventId": "40",
+      "eventTime": "2026-11-08T09:00:57.267Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "38",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "41",
+      "eventTime": "2026-11-08T09:00:57.267Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED",
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "8c1fd48f-e6ca-4b4c-a843-3171fd804a5b",
+        "acceptedRequestMessageId": "8c1fd48f-e6ca-4b4c-a843-3171fd804a5b/request",
+        "acceptedRequestSequencingEventId": "38",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "8c1fd48f-e6ca-4b4c-a843-3171fd804a5b",
+            "identity": "worker@forge-test"
+          },
+          "input": {
+            "name": "submit_event",
+            "args": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "eyJ0eXBlIjoic3BlY19hcHByb3ZlZF9ieV9odW1hbiIsInBheWxvYWQiOnt9LCJhY3RvciI6InN5c3RlbSIsImNvbmZpZGVuY2UiOm51bGwsImlkZW1wb3RlbmN5X2tleSI6bnVsbH0="
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "42",
+      "eventTime": "2026-11-08T09:00:57.267Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "6",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoic3BlY19yZXZpZXciLCJ0b19zdGF0ZSI6InNwZWNfYXBwcm92ZWQiLCJldmVudCI6InNwZWNfYXBwcm92ZWRfYnlfaHVtYW4iLCJpZGVtcG90ZW5jeV9rZXkiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzI6dHJhbnNpdGlvbjo0IiwiZ3VhcmRfcmVzdWx0cyI6e30sImVmZmVjdHNfZGlzcGF0Y2hlZCI6W10sInJlY29yZCI6ImFwcHJvdmFsX2V2ZW50IiwiYWN0b3IiOiJzeXN0ZW0iLCJza2lsbCI6bnVsbCwicGF5bG9hZCI6e30sInRlbXBvcmFsX3J1bl9pZCI6ImJiOGZjZTZkLTI5MzItNGI1Ni1hODFhLWZkZmE4NzA3ZDliZiIsInJ1bl9zdGF0dXMiOm51bGx9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "39",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "43",
+      "eventTime": "2026-11-08T09:00:57.267Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "42",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "44",
+      "eventTime": "2026-11-08T09:00:57.268Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "NA=="
+            }
+          ]
+        },
+        "scheduledEventId": "42",
+        "startedEventId": "43",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "45",
+      "eventTime": "2026-11-08T09:00:57.268Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "46",
+      "eventTime": "2026-11-08T09:00:57.268Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "45",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "7057"
+      }
+    },
+    {
+      "eventId": "47",
+      "eventTime": "2026-11-08T09:00:57.270Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "45",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "48",
+      "eventTime": "2026-11-08T09:00:57.270Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "7",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoic3BlY19hcHByb3ZlZCIsInRvX3N0YXRlIjoicGxhbl9kcmFmdGluZyIsImV2ZW50IjoiZ2VuZXJhdGVfcGxhbiIsImlkZW1wb3RlbmN5X2tleSI6IjViMjI1M2ZkLTY1ZTAtNGM2Yy04ODc0LTY3OTliNDkxZDQzMjp0cmFuc2l0aW9uOjUiLCJndWFyZF9yZXN1bHRzIjp7fSwiZWZmZWN0c19kaXNwYXRjaGVkIjpbImdlbmVyYXRlX3BsYW4iXSwicmVjb3JkIjpudWxsLCJhY3RvciI6InN5c3RlbSIsInNraWxsIjpudWxsLCJwYXlsb2FkIjp7fSwidGVtcG9yYWxfcnVuX2lkIjoiYmI4ZmNlNmQtMjkzMi00YjU2LWE4MWEtZmRmYTg3MDdkOWJmIiwicnVuX3N0YXR1cyI6bnVsbH0="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "46",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "49",
+      "eventTime": "2026-11-08T09:00:57.270Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED",
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "8c1fd48f-e6ca-4b4c-a843-3171fd804a5b",
+          "identity": "worker@forge-test"
+        },
+        "outcome": {
+          "success": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InNwZWNfYXBwcm92ZWQi"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "eventId": "50",
+      "eventTime": "2026-11-08T09:00:57.270Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "48",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "51",
+      "eventTime": "2026-11-08T09:00:57.271Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "NQ=="
+            }
+          ]
+        },
+        "scheduledEventId": "48",
+        "startedEventId": "50",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "52",
+      "eventTime": "2026-11-08T09:00:57.271Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "53",
+      "eventTime": "2026-11-08T09:00:57.271Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "52",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "8144"
+      }
+    },
+    {
+      "eventId": "54",
+      "eventTime": "2026-11-08T09:00:57.272Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "52",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "55",
+      "eventTime": "2026-11-08T09:00:57.272Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "8",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoicGxhbl9kcmFmdGluZyIsInRvX3N0YXRlIjoicGxhbl9yZXZpZXciLCJldmVudCI6InN1Ym1pdF9wbGFuX2Zvcl9yZXZpZXciLCJpZGVtcG90ZW5jeV9rZXkiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzI6dHJhbnNpdGlvbjo2IiwiZ3VhcmRfcmVzdWx0cyI6e30sImVmZmVjdHNfZGlzcGF0Y2hlZCI6WyJzdWJtaXRfcGxhbl9mb3JfcmV2aWV3Il0sInJlY29yZCI6bnVsbCwiYWN0b3IiOiJzeXN0ZW0iLCJza2lsbCI6bnVsbCwicGF5bG9hZCI6e30sInRlbXBvcmFsX3J1bl9pZCI6ImJiOGZjZTZkLTI5MzItNGI1Ni1hODFhLWZkZmE4NzA3ZDliZiIsInJ1bl9zdGF0dXMiOm51bGx9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "53",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "56",
+      "eventTime": "2026-11-08T09:00:57.272Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 2
+      }
+    },
+    {
+      "eventId": "57",
+      "eventTime": "2026-11-08T09:00:57.272Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "56",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "8957"
+      }
+    },
+    {
+      "eventId": "58",
+      "eventTime": "2026-11-08T09:00:57.274Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "56",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "59",
+      "eventTime": "2026-11-08T09:00:57.272Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "55",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "60",
+      "eventTime": "2026-11-08T09:00:57.274Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "Ng=="
+            }
+          ]
+        },
+        "scheduledEventId": "55",
+        "startedEventId": "58",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "61",
+      "eventTime": "2026-11-08T09:00:57.274Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "62",
+      "eventTime": "2026-11-08T09:00:57.274Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "61",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "9301"
+      }
+    },
+    {
+      "eventId": "63",
+      "eventTime": "2026-11-08T09:00:57.275Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "61",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "64",
+      "eventTime": "2026-11-08T09:00:57.275Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "9",
+        "activityType": {
+          "name": "forge.load_guard_inputs"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJwaGFzZSI6InBsYW4ifQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "62",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s",
+          "maximumAttempts": 3
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "65",
+      "eventTime": "2026-11-08T09:00:57.275Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "64",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "66",
+      "eventTime": "2026-11-08T09:00:57.276Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJwbGFuX3JlcXVpcmVkIjpmYWxzZSwicHJlY29uZGl0aW9ucyI6eyJyZXBvX3RhcmdldF9zZXQiOnRydWUsInBvbGljeV9sb2FkZWQiOnRydWUsInNraWxsX3Byb2ZpbGVfc2V0Ijp0cnVlLCJrbm93bGVkZ2Vfc3luY2VkIjp0cnVlfSwiY2lfc3RhdHVzX2dyZWVuIjp0cnVlLCJzcGVjX3ZhbGlkYXRlZCI6dHJ1ZX0="
+            }
+          ]
+        },
+        "scheduledEventId": "64",
+        "startedEventId": "65",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "67",
+      "eventTime": "2026-11-08T09:00:57.276Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "68",
+      "eventTime": "2026-11-08T09:00:57.276Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "67",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "10104"
+      }
+    },
+    {
+      "eventId": "69",
+      "eventTime": "2026-11-08T09:00:57.278Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "67",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "70",
+      "eventTime": "2026-11-08T09:00:57.278Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "10",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoicGxhbl9yZXZpZXciLCJ0b19zdGF0ZSI6InRhc2tfZ2VuZXJhdGlvbiIsImV2ZW50IjoicGxhbl9hcHByb3ZlZF9ieV9odW1hbiIsImlkZW1wb3RlbmN5X2tleSI6IjViMjI1M2ZkLTY1ZTAtNGM2Yy04ODc0LTY3OTliNDkxZDQzMjp0cmFuc2l0aW9uOjciLCJndWFyZF9yZXN1bHRzIjp7fSwiZWZmZWN0c19kaXNwYXRjaGVkIjpbXSwicmVjb3JkIjoiYXBwcm92YWxfZXZlbnQiLCJhY3RvciI6InN5c3RlbSIsInNraWxsIjpudWxsLCJwYXlsb2FkIjp7InBsYW5fbm90X3JlcXVpcmVkIjp0cnVlfSwidGVtcG9yYWxfcnVuX2lkIjoiYmI4ZmNlNmQtMjkzMi00YjU2LWE4MWEtZmRmYTg3MDdkOWJmIiwicnVuX3N0YXR1cyI6bnVsbH0="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "68",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "71",
+      "eventTime": "2026-11-08T09:00:57.278Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "70",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "72",
+      "eventTime": "2026-11-08T09:00:57.278Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "Nw=="
+            }
+          ]
+        },
+        "scheduledEventId": "70",
+        "startedEventId": "71",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "73",
+      "eventTime": "2026-11-08T09:00:57.278Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "74",
+      "eventTime": "2026-11-08T09:00:57.278Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "73",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "11081"
+      }
+    },
+    {
+      "eventId": "75",
+      "eventTime": "2026-11-08T09:00:57.279Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "73",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "76",
+      "eventTime": "2026-11-08T09:00:57.279Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "11",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoidGFza19nZW5lcmF0aW9uIiwidG9fc3RhdGUiOiJ0YXNrX3JlYWR5IiwiZXZlbnQiOiJnZW5lcmF0ZV90YXNrcyIsImlkZW1wb3RlbmN5X2tleSI6IjViMjI1M2ZkLTY1ZTAtNGM2Yy04ODc0LTY3OTliNDkxZDQzMjp0cmFuc2l0aW9uOjgiLCJndWFyZF9yZXN1bHRzIjp7fSwiZWZmZWN0c19kaXNwYXRjaGVkIjpbImdlbmVyYXRlX3Rhc2tzIl0sInJlY29yZCI6bnVsbCwiYWN0b3IiOiJzeXN0ZW0iLCJza2lsbCI6bnVsbCwicGF5bG9hZCI6e30sInRlbXBvcmFsX3J1bl9pZCI6ImJiOGZjZTZkLTI5MzItNGI1Ni1hODFhLWZkZmE4NzA3ZDliZiIsInJ1bl9zdGF0dXMiOm51bGx9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "74",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "77",
+      "eventTime": "2026-11-08T09:00:57.279Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "76",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "78",
+      "eventTime": "2026-11-08T09:00:57.280Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "OA=="
+            }
+          ]
+        },
+        "scheduledEventId": "76",
+        "startedEventId": "77",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "79",
+      "eventTime": "2026-11-08T09:00:57.280Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "80",
+      "eventTime": "2026-11-08T09:00:57.280Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "79",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "12029"
+      }
+    },
+    {
+      "eventId": "81",
+      "eventTime": "2026-11-08T09:00:57.281Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "79",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "82",
+      "eventTime": "2026-11-08T09:00:57.281Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "12",
+        "activityType": {
+          "name": "forge.load_guard_inputs"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJwaGFzZSI6ImV4ZWN1dGUifQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "80",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s",
+          "maximumAttempts": 3
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "83",
+      "eventTime": "2026-11-08T09:00:57.281Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "82",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "84",
+      "eventTime": "2026-11-08T09:00:57.282Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJwbGFuX3JlcXVpcmVkIjpmYWxzZSwicHJlY29uZGl0aW9ucyI6eyJyZXBvX3RhcmdldF9zZXQiOnRydWUsInBvbGljeV9sb2FkZWQiOnRydWUsInNraWxsX3Byb2ZpbGVfc2V0Ijp0cnVlLCJrbm93bGVkZ2Vfc3luY2VkIjp0cnVlfSwiY2lfc3RhdHVzX2dyZWVuIjp0cnVlLCJzcGVjX3ZhbGlkYXRlZCI6dHJ1ZX0="
+            }
+          ]
+        },
+        "scheduledEventId": "82",
+        "startedEventId": "83",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "85",
+      "eventTime": "2026-11-08T09:00:57.282Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "86",
+      "eventTime": "2026-11-08T09:00:57.282Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "85",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "12837"
+      }
+    },
+    {
+      "eventId": "87",
+      "eventTime": "2026-11-08T09:00:57.283Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "85",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "88",
+      "eventTime": "2026-11-08T09:00:57.283Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "13",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoidGFza19yZWFkeSIsInRvX3N0YXRlIjoiZXhlY3V0aW5nIiwiZXZlbnQiOiJzdGFydF9hZ2VudF9ydW4iLCJpZGVtcG90ZW5jeV9rZXkiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzI6dHJhbnNpdGlvbjo5IiwiZ3VhcmRfcmVzdWx0cyI6e30sImVmZmVjdHNfZGlzcGF0Y2hlZCI6WyJzdGFydF9hZ2VudF9ydW4iXSwicmVjb3JkIjpudWxsLCJhY3RvciI6InN5c3RlbSIsInNraWxsIjpudWxsLCJwYXlsb2FkIjp7fSwidGVtcG9yYWxfcnVuX2lkIjoiYmI4ZmNlNmQtMjkzMi00YjU2LWE4MWEtZmRmYTg3MDdkOWJmIiwicnVuX3N0YXR1cyI6bnVsbH0="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "86",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "89",
+      "eventTime": "2026-11-08T09:00:57.283Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "88",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "90",
+      "eventTime": "2026-11-08T09:00:57.283Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "OQ=="
+            }
+          ]
+        },
+        "scheduledEventId": "88",
+        "startedEventId": "89",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "91",
+      "eventTime": "2026-11-08T09:00:57.283Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "92",
+      "eventTime": "2026-11-08T09:00:57.283Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "91",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "13781"
+      }
+    },
+    {
+      "eventId": "93",
+      "eventTime": "2026-11-08T09:00:57.284Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "91",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "94",
+      "eventTime": "2026-11-08T09:00:57.284Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "14",
+        "activityType": {
+          "name": "forge.run_agent"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ0YXNrX2lkIjoiMTk0ZWU3M2YtMzAwYS00MDZmLWE5NjYtYTI2MDEzODU1MjAyIiwid29ya3NwYWNlX2lkIjoiN2E0MjE2YmUtOGY5ZS00OGE0LThkYzktYTExN2VlMjQxOWI3IiwiYXR0ZW1wdCI6MCwiaWRlbXBvdGVuY3lfa2V5IjoiNWIyMjUzZmQtNjVlMC00YzZjLTg4NzQtNjc5OWI0OTFkNDMyOnJ1bl9hZ2VudDowIiwic3RhdGlvbl92aXNpdF9pZCI6bnVsbCwicm9sZSI6bnVsbCwic2tpbGxfcHJvZmlsZSI6bnVsbCwib2JqZWN0aXZlIjpudWxsLCJjb250ZXh0X3RlbXBsYXRlIjpudWxsLCJtb2RlbCI6bnVsbCwibWF4X3Rva2VucyI6bnVsbH0="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "7200s",
+        "heartbeatTimeout": "120s",
+        "workflowTaskCompletedEventId": "92",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s",
+          "maximumAttempts": 1
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "95",
+      "eventTime": "2026-11-08T09:00:57.284Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "94",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "96",
+      "eventTime": "2026-11-08T09:00:57.286Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJhZ2VudF9ydW5faWQiOiI4ZWJjNmNhNi00MGZhLTQwMmEtOWE2YS04ZWM5NDdkYTFmOGIiLCJzdGF0dXMiOiJzdWNjZWVkZWQiLCJjb25maWRlbmNlIjoxLjAsIm5lZWRzX2h1bWFuX3JlYXNvbiI6bnVsbCwiY2hlY2tzIjp7ImxpbnQiOnRydWUsInR5cGVfY2hlY2siOnRydWUsInRlc3RzIjp0cnVlLCJjb3ZlcmFnZSI6dHJ1ZX0sImJyYW5jaF9uYW1lIjoiZm9yZ2UvYXV0byIsImhlYWRfY29tbWl0X3NoYSI6bnVsbCwidG9rZW5zX3VzZWQiOjAsImNvc3RfdXNkIjpudWxsLCJwcmljZWQiOmZhbHNlLCJkZWNpc2lvbiI6bnVsbH0="
+            }
+          ]
+        },
+        "scheduledEventId": "94",
+        "startedEventId": "95",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "97",
+      "eventTime": "2026-11-08T09:00:57.286Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "98",
+      "eventTime": "2026-11-08T09:00:57.286Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "97",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "14948"
+      }
+    },
+    {
+      "eventId": "99",
+      "eventTime": "2026-11-08T09:00:57.289Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "97",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "100",
+      "eventTime": "2026-11-08T09:00:57.289Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "15",
+        "activityType": {
+          "name": "forge.run_checks"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJhdHRlbXB0IjowLCJpZGVtcG90ZW5jeV9rZXkiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzI6cnVuX2NoZWNrczowIn0="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "120s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "98",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s",
+          "maximumAttempts": 3
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "101",
+      "eventTime": "2026-11-08T09:00:57.289Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "100",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "102",
+      "eventTime": "2026-11-08T09:00:57.290Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJyZXN1bHRzIjp7ImxpbnQiOnRydWUsInR5cGVfY2hlY2siOnRydWUsInRlc3RzIjp0cnVlLCJjb3ZlcmFnZSI6dHJ1ZX19"
+            }
+          ]
+        },
+        "scheduledEventId": "100",
+        "startedEventId": "101",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "103",
+      "eventTime": "2026-11-08T09:00:57.290Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "104",
+      "eventTime": "2026-11-08T09:00:57.290Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "103",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "15703"
+      }
+    },
+    {
+      "eventId": "105",
+      "eventTime": "2026-11-08T09:00:57.291Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "103",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "106",
+      "eventTime": "2026-11-08T09:00:57.291Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "16",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoiZXhlY3V0aW5nIiwidG9fc3RhdGUiOiJ2ZXJpZnlpbmciLCJldmVudCI6InJ1bl9jaGVja3MiLCJpZGVtcG90ZW5jeV9rZXkiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzI6dHJhbnNpdGlvbjoxMCIsImd1YXJkX3Jlc3VsdHMiOnt9LCJlZmZlY3RzX2Rpc3BhdGNoZWQiOlsicnVuX2NoZWNrcyJdLCJyZWNvcmQiOm51bGwsImFjdG9yIjoic3lzdGVtIiwic2tpbGwiOm51bGwsInBheWxvYWQiOnt9LCJ0ZW1wb3JhbF9ydW5faWQiOiJiYjhmY2U2ZC0yOTMyLTRiNTYtYTgxYS1mZGZhODcwN2Q5YmYiLCJydW5fc3RhdHVzIjpudWxsfQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "104",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "107",
+      "eventTime": "2026-11-08T09:00:57.291Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "106",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "108",
+      "eventTime": "2026-11-08T09:00:57.292Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MTA="
+            }
+          ]
+        },
+        "scheduledEventId": "106",
+        "startedEventId": "107",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "109",
+      "eventTime": "2026-11-08T09:00:57.292Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "110",
+      "eventTime": "2026-11-08T09:00:57.292Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "109",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "16638"
+      }
+    },
+    {
+      "eventId": "111",
+      "eventTime": "2026-11-08T09:00:57.294Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "109",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "112",
+      "eventTime": "2026-11-08T09:00:57.294Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "17",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoidmVyaWZ5aW5nIiwidG9fc3RhdGUiOiJwcl9vcGVuZWQiLCJldmVudCI6ImFsbF9jaGVja3NfcGFzc2VkIiwiaWRlbXBvdGVuY3lfa2V5IjoiNWIyMjUzZmQtNjVlMC00YzZjLTg4NzQtNjc5OWI0OTFkNDMyOnRyYW5zaXRpb246MTEiLCJndWFyZF9yZXN1bHRzIjp7fSwiZWZmZWN0c19kaXNwYXRjaGVkIjpbIm9wZW5fcHJfd2l0aF9zcGVjX3RyYWNlYWJpbGl0eSJdLCJyZWNvcmQiOm51bGwsImFjdG9yIjoic3lzdGVtIiwic2tpbGwiOm51bGwsInBheWxvYWQiOnt9LCJ0ZW1wb3JhbF9ydW5faWQiOiJiYjhmY2U2ZC0yOTMyLTRiNTYtYTgxYS1mZGZhODcwN2Q5YmYiLCJydW5fc3RhdHVzIjpudWxsfQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "110",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "113",
+      "eventTime": "2026-11-08T09:00:57.294Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "112",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "114",
+      "eventTime": "2026-11-08T09:00:57.295Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MTE="
+            }
+          ]
+        },
+        "scheduledEventId": "112",
+        "startedEventId": "113",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "115",
+      "eventTime": "2026-11-08T09:00:57.295Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "116",
+      "eventTime": "2026-11-08T09:00:57.295Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "115",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "17601"
+      }
+    },
+    {
+      "eventId": "117",
+      "eventTime": "2026-11-08T09:00:57.296Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "115",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "118",
+      "eventTime": "2026-11-08T09:00:57.296Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "18",
+        "activityType": {
+          "name": "forge.open_pr_with_spec_traceability"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJicmFuY2hfbmFtZSI6ImZvcmdlL2F1dG8iLCJpZGVtcG90ZW5jeV9rZXkiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzI6b3Blbl9wciJ9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "120s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "116",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s",
+          "maximumAttempts": 3
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "119",
+      "eventTime": "2026-11-08T09:00:57.296Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "118",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "120",
+      "eventTime": "2026-11-08T09:00:57.297Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJwcl9udW1iZXIiOm51bGwsInByX3VybCI6bnVsbH0="
+            }
+          ]
+        },
+        "scheduledEventId": "118",
+        "startedEventId": "119",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "121",
+      "eventTime": "2026-11-08T09:00:57.297Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "122",
+      "eventTime": "2026-11-08T09:00:57.297Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "121",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "18346"
+      }
+    },
+    {
+      "eventId": "123",
+      "eventTime": "2026-11-08T09:00:57.299Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "121",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "124",
+      "eventTime": "2026-11-08T09:00:57.299Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "19",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoicHJfb3BlbmVkIiwidG9fc3RhdGUiOiJhd2FpdGluZ19yZXZpZXciLCJldmVudCI6InJlcXVlc3RfcmV2aWV3cyIsImlkZW1wb3RlbmN5X2tleSI6IjViMjI1M2ZkLTY1ZTAtNGM2Yy04ODc0LTY3OTliNDkxZDQzMjp0cmFuc2l0aW9uOjEyIiwiZ3VhcmRfcmVzdWx0cyI6e30sImVmZmVjdHNfZGlzcGF0Y2hlZCI6WyJyZXF1ZXN0X3Jldmlld3MiXSwicmVjb3JkIjpudWxsLCJhY3RvciI6InN5c3RlbSIsInNraWxsIjpudWxsLCJwYXlsb2FkIjp7fSwidGVtcG9yYWxfcnVuX2lkIjoiYmI4ZmNlNmQtMjkzMi00YjU2LWE4MWEtZmRmYTg3MDdkOWJmIiwicnVuX3N0YXR1cyI6bnVsbH0="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "122",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "125",
+      "eventTime": "2026-11-08T09:00:57.299Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "124",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "126",
+      "eventTime": "2026-11-08T09:00:57.300Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MTI="
+            }
+          ]
+        },
+        "scheduledEventId": "124",
+        "startedEventId": "125",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "127",
+      "eventTime": "2026-11-08T09:00:57.300Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "128",
+      "eventTime": "2026-11-08T09:00:57.300Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "127",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "19298"
+      }
+    },
+    {
+      "eventId": "129",
+      "eventTime": "2026-11-08T09:00:57.301Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "127",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "130",
+      "eventTime": "2026-11-08T09:00:57.301Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "20",
+        "activityType": {
+          "name": "forge.create_approval"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJ0YXNrX2lkIjoiMTk0ZWU3M2YtMzAwYS00MDZmLWE5NjYtYTI2MDEzODU1MjAyIiwiZ2F0ZSI6InByIiwic3VtbWFyeSI6InByIGFwcHJvdmFsIGZvciBydW4gNWIyMjUzZmQtNjVlMC00YzZjLTg4NzQtNjc5OWI0OTFkNDMyIiwiaWRlbXBvdGVuY3lfa2V5IjoiNWIyMjUzZmQtNjVlMC00YzZjLTg4NzQtNjc5OWI0OTFkNDMyOmFwcHJvdmFsOnByOjEyIn0="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "128",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "131",
+      "eventTime": "2026-11-08T09:00:57.301Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "130",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "132",
+      "eventTime": "2026-11-08T09:00:57.302Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IjQ2ZGQzZmIxLTk2Y2EtNDNmMi1hNmVmLWZjNTk5NzdiMGYwYyI="
+            }
+          ]
+        },
+        "scheduledEventId": "130",
+        "startedEventId": "131",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "133",
+      "eventTime": "2026-11-08T09:00:57.302Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "134",
+      "eventTime": "2026-11-08T09:00:57.302Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "133",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "20152"
+      }
+    },
+    {
+      "eventId": "135",
+      "eventTime": "2026-11-08T09:00:57.303Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "133",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "136",
+      "eventTime": "2026-11-08T09:00:57.320Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED",
+      "workflowExecutionSignaledEventAttributes": {
+        "signalName": "cancel_run",
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "ImdhdGVfcHJfcmVqZWN0ZWQi"
+            }
+          ]
+        },
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "137",
+      "eventTime": "2026-11-08T09:00:57.320Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "138",
+      "eventTime": "2026-11-08T09:00:57.320Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "137",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "20469"
+      }
+    },
+    {
+      "eventId": "139",
+      "eventTime": "2026-11-08T09:00:57.322Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "137",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "140",
+      "eventTime": "2026-11-08T09:00:57.322Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "21",
+        "activityType": {
+          "name": "forge.cleanup_worktree"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJyZWFzb24iOiJnYXRlX3ByX3JlamVjdGVkIiwiaWRlbXBvdGVuY3lfa2V5IjoiNWIyMjUzZmQtNjVlMC00YzZjLTg4NzQtNjc5OWI0OTFkNDMyOmNsZWFudXAifQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "60s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "138",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s",
+          "maximumAttempts": 3
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "141",
+      "eventTime": "2026-11-08T09:00:57.322Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "140",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "142",
+      "eventTime": "2026-11-08T09:00:57.323Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "dHJ1ZQ=="
+            }
+          ]
+        },
+        "scheduledEventId": "140",
+        "startedEventId": "141",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "143",
+      "eventTime": "2026-11-08T09:00:57.323Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "144",
+      "eventTime": "2026-11-08T09:00:57.323Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "143",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "21185"
+      }
+    },
+    {
+      "eventId": "145",
+      "eventTime": "2026-11-08T09:00:57.325Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "143",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "146",
+      "eventTime": "2026-11-08T09:00:57.325Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "22",
+        "activityType": {
+          "name": "forge.persist_transition"
+        },
+        "taskQueue": {
+          "name": "rec-cancel-q",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJ3b3JrZmxvd19ydW5faWQiOiI1YjIyNTNmZC02NWUwLTRjNmMtODg3NC02Nzk5YjQ5MWQ0MzIiLCJ3b3Jrc3BhY2VfaWQiOiI3YTQyMTZiZS04ZjllLTQ4YTQtOGRjOS1hMTE3ZWUyNDE5YjciLCJmcm9tX3N0YXRlIjoiYXdhaXRpbmdfcmV2aWV3IiwidG9fc3RhdGUiOiJjYW5jZWxsZWQiLCJldmVudCI6ImNhbmNlbCIsImlkZW1wb3RlbmN5X2tleSI6IjViMjI1M2ZkLTY1ZTAtNGM2Yy04ODc0LTY3OTliNDkxZDQzMjp0cmFuc2l0aW9uOjEzIiwiZ3VhcmRfcmVzdWx0cyI6e30sImVmZmVjdHNfZGlzcGF0Y2hlZCI6WyJjbGVhbnVwX3dvcmt0cmVlIl0sInJlY29yZCI6bnVsbCwiYWN0b3IiOiJzeXN0ZW0iLCJza2lsbCI6bnVsbCwicGF5bG9hZCI6eyJyZWFzb24iOiJnYXRlX3ByX3JlamVjdGVkIn0sInRlbXBvcmFsX3J1bl9pZCI6ImJiOGZjZTZkLTI5MzItNGI1Ni1hODFhLWZkZmE4NzA3ZDliZiIsInJ1bl9zdGF0dXMiOm51bGx9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "144",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        },
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "147",
+      "eventTime": "2026-11-08T09:00:57.325Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "146",
+        "identity": "worker@forge-test",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "148",
+      "eventTime": "2026-11-08T09:00:57.325Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MTM="
+            }
+          ]
+        },
+        "scheduledEventId": "146",
+        "startedEventId": "147",
+        "identity": "worker@forge-test"
+      }
+    },
+    {
+      "eventId": "149",
+      "eventTime": "2026-11-08T09:00:57.325Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "rec-cancel-q"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "150",
+      "eventTime": "2026-11-08T09:00:57.325Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "149",
+        "identity": "worker@forge-test",
+        "historySizeBytes": "22168"
+      }
+    },
+    {
+      "eventId": "151",
+      "eventTime": "2026-11-08T09:00:57.327Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "149",
+        "identity": "worker@forge-test",
+        "binaryChecksum": "1b97509adc4f72f8e1d1b815ee868349",
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "152",
+      "eventTime": "2026-11-08T09:00:57.327Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJmaW5hbF9zdGF0ZSI6ImNhbmNlbGxlZCIsInRyYW5zaXRpb25fY291bnQiOjEzLCJmYWlsdXJlX3JlYXNvbiI6ImdhdGVfcHJfcmVqZWN0ZWQifQ=="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "150"
+      }
+    }
+  ]
+}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import WorkflowState
+from forge_contracts import WorkflowDefinition, WorkflowState
 from forge_workflow.default_workflow import default_feature_definition
 from forge_workflow.exceptions import (
     GuardFailedError,
@@ -147,3 +147,69 @@ def test_determinism_module_is_io_free() -> None:
     text = Path(source).read_text(encoding="utf-8")
     for forbidden in ("import random", "import os", "import time", "datetime", "sqlalchemy"):
         assert forbidden not in text, f"determinism core must not reference {forbidden!r}"
+
+
+# -- spec K P2: the evaluator seam for station runs ------------------------- #
+
+_LINE = WorkflowDefinition.model_validate(
+    {
+        "name": "triage_line",
+        "transitions": [
+            {"from": "triage", "to": "fix", "when": "succeeded", "condition": "triage.needs_fix"},
+            {"from": "triage", "to": "done", "when": "succeeded"},
+        ],
+    }
+)
+
+
+def test_state_cast_str_routes_a_line_state() -> None:
+    d = TransitionEvaluator(_LINE, state_cast=str).resolve(
+        "triage",
+        "succeeded",
+        pure_guard_ctx=PureGuardContext(station_flags={"triage.needs_fix": True}),
+    )
+    assert d.to_state == "fix"
+    assert type(d.to_state) is str
+    assert d.guard_results == {"triage.needs_fix": True}
+
+
+def test_station_flag_guard_falls_through_when_false() -> None:
+    evaluator = TransitionEvaluator(_LINE, state_cast=str)
+    off = PureGuardContext(station_flags={"triage.needs_fix": False})
+    assert evaluator.resolve("triage", "succeeded", pure_guard_ctx=off).to_state == "done"
+    # No flags at all: an unset station flag is false.
+    assert evaluator.resolve("triage", "succeeded").to_state == "done"
+
+
+def test_default_state_cast_is_unchanged() -> None:
+    with pytest.raises(ValueError):  # a line state is not a WorkflowState
+        TransitionEvaluator(_LINE).resolve("triage", "succeeded")
+    d = TransitionEvaluator(default_feature_definition()).resolve("created", "generate_spec_draft")
+    assert type(d.to_state) is WorkflowState
+    assert PureGuardContext().as_flags() == {
+        "all_checks_passed": False,
+        "checks_failed": False,
+        "low_confidence": False,
+    }
+
+
+@pytest.mark.parametrize("key", ["all_checks_passed", "ci_status_green", "triage.", ".needs_fix"])
+def test_a_station_flag_must_name_its_state(key: str) -> None:
+    """A bare key would overwrite a feature flag in ``as_flags`` (e.g. pass the merge guard)."""
+    with pytest.raises(ValueError, match=r"<state>\.<key>"):
+        PureGuardContext(
+            checks={"lint": False},
+            merge_signals={"ci_status_green": False},
+            station_flags={key: True},
+        )
+
+
+def test_a_station_flag_never_shadows_a_feature_flag() -> None:
+    flags = PureGuardContext(
+        checks={"lint": False},
+        merge_signals={"ci_status_green": False},
+        station_flags={"triage.all_checks_passed": True},
+    ).as_flags()
+
+    assert (flags["all_checks_passed"], flags["ci_status_green"]) == (False, False)
+    assert flags["triage.all_checks_passed"] is True

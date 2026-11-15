@@ -130,6 +130,14 @@ class RunAgentInput:
     workspace_id: uuid.UUID
     attempt: int
     idempotency_key: str
+    # Station runs only (spec K §4.2); feature runs leave them unset.
+    station_visit_id: uuid.UUID | None = None
+    role: str | None = None
+    skill_profile: str | None = None
+    objective: str | None = None
+    context_template: str | None = None
+    model: str | None = None
+    max_tokens: int | None = None
 
 
 @dataclass
@@ -140,6 +148,8 @@ class ResumeAgentInput:
     agent_run_id: uuid.UUID | None
     attempt: int
     idempotency_key: str
+    #: The person's input when a parked station resumes (spec K §4.2).
+    input: str | None = None
 
 
 @dataclass
@@ -153,6 +163,11 @@ class AgentRunResultDTO:
     checks: dict[str, bool] = field(default_factory=dict)
     branch_name: str | None = None
     head_commit_sha: str | None = None
+    # Station runs (spec K §4.2): spend, and the agent's closed-set decision.
+    tokens_used: int = 0
+    cost_usd: float | None = None
+    priced: bool = False
+    decision: str | None = None
 
 
 @dataclass
