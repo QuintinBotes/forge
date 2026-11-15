@@ -1,8 +1,8 @@
 """Integration tests for the workflow router (Phase 2 Task 2.1 wires ``/workflow/*``).
 
-Exercises the real handlers wired to a fresh :class:`~forge_workflow.WorkflowEngineImpl`
-per test: start a run, fetch it, apply an FSM transition, and map domain errors
-(unknown run -> 404).
+Exercises the real handlers and the real engine over the Postgres run store
+(SQLite here): start a run, fetch it, apply an FSM transition, and map domain
+errors (unknown run or task -> 404).
 """
 
 from __future__ import annotations
@@ -15,22 +15,20 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from forge_api.main import create_app
-from forge_api.routers.workflow import get_workflow_engine
-from forge_workflow import WorkflowEngineImpl
 
 
 @pytest.fixture
-def client(authenticate_app: Callable[..., FastAPI]) -> Iterator[TestClient]:
-    app = create_app()
+def client(authenticate_app: Callable[..., FastAPI], workflow_db) -> Iterator[TestClient]:
+    app = workflow_db.install(create_app())
     authenticate_app(app)
-    engine = WorkflowEngineImpl()
-    app.dependency_overrides[get_workflow_engine] = lambda: engine
     with TestClient(app) as c:
+        c.seed_task = workflow_db.seed_task  # type: ignore[attr-defined]
         yield c
 
 
 def _start(client: TestClient) -> dict:
-    resp = client.post("/workflow/runs", json={"task_id": str(uuid.uuid4())})
+    task_id = client.seed_task()  # type: ignore[attr-defined]
+    resp = client.post("/workflow/runs", json={"task_id": str(task_id)})
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -69,3 +67,18 @@ def test_transition_unknown_run_is_404(client: TestClient) -> None:
         f"/workflow/runs/{uuid.uuid4()}/transition", json={"event": "generate_spec_draft"}
     )
     assert resp.status_code == 404
+
+
+def test_start_with_an_unknown_or_foreign_task_is_404(client: TestClient) -> None:
+    foreign = client.seed_task(uuid.uuid4())  # type: ignore[attr-defined]
+    for task_id in (uuid.uuid4(), foreign):
+        resp = client.post("/workflow/runs", json={"task_id": str(task_id)})
+        assert resp.status_code == 404, resp.text
+
+
+def test_runs_persist_across_engine_instances(client: TestClient) -> None:
+    """Each request builds its own engine: the run lives in the store."""
+    run = _start(client)
+    client.post(f"/workflow/runs/{run['id']}/transition", json={"event": "generate_spec_draft"})
+    fetched = client.get(f"/workflow/runs/{run['id']}")
+    assert fetched.json()["current_state"] == "spec_drafting"

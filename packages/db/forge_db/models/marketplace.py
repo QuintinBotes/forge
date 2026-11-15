@@ -136,9 +136,11 @@ class MarketplaceInstallation(WorkspaceScopedModel):
 
     __tablename__ = "marketplace_installation"
     __table_args__ = (
+        # Mirrors marketplace_listing's (registry_id, kind, slug) (spec K §4.3).
         UniqueConstraint(
             "workspace_id",
             "registry_slug",
+            "kind",
             "listing_slug",
             name="uq_marketplace_installation_pkg",
         ),

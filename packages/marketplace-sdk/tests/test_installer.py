@@ -75,9 +75,7 @@ def test_mcp_installer_warns_empty_namespaces() -> None:
 
 
 def test_reserved_kinds_have_no_installer() -> None:
-    """§12: workflow/policy template kinds are reserved -> no installer registered."""
-    with pytest.raises(UnknownArtifactKind):
-        get_installer(ArtifactKind.workflow_template)
+    """§12: the policy template kind is reserved -> no installer registered."""
     with pytest.raises(UnknownArtifactKind):
         get_installer(ArtifactKind.policy_template)
 
@@ -142,3 +140,12 @@ def test_build_install_plan_override_name(make_skill_package: Callable[..., Pack
         override_name="renamed-profile",
     )
     assert plan.resolved_config["name"] == "renamed-profile"
+
+
+@pytest.mark.parametrize("version", ["1.0.0-" + "a" * 64, "1.0.0-a\x00b", "1.0.0-a b"])
+def test_a_manifest_version_must_fit_the_version_columns(version: str) -> None:
+    from forge_marketplace.models import SEMVER_RE
+
+    assert SEMVER_RE.match(version) is None
+    assert SEMVER_RE.match("1.0.0-" + "a" * 58) is not None
+    assert SEMVER_RE.match("1.2.3-rc.1+build.7") is not None

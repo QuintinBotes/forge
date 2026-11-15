@@ -195,7 +195,7 @@ def _open_gate(client: TestClient) -> dict[str, Any]:
         "/approvals",
         json={
             "gate_type": "pr",
-            "subject_type": "workflow_run",
+            "subject_type": "changeset",
             "subject_id": str(uuid.uuid4()),
             "requested_actor": f"agent:{uuid.uuid4()}",
             "title": "pr gate",

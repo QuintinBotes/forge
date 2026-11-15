@@ -117,11 +117,10 @@ class DbWorkflowDefinitionStore:
         )
         if revision is None:
             return None
-        return (
-            parse_definition(revision.dsl_yaml),
-            revision.id,
-            revision.dsl_version,
-        )
+        parsed = parse_definition(revision.dsl_yaml)
+        # The workflow's own version, as on the bundled path; the revision's
+        # dsl_version column is the DSL version ("1" or "2").
+        return (parsed, revision.id, parsed.version)
 
     def load_revision(self, revision_id: UUID) -> WorkflowDefinition | None:
         revision = self._repo.get_revision_by_id(revision_id)  # type: ignore[attr-defined]

@@ -172,23 +172,15 @@ def test_agent_run_is_workspace_scoped(agent_session: Session) -> None:
         assert client.get(f"/agent/runs/{run_id}").status_code == 404
 
 
-def test_workflow_run_is_workspace_scoped() -> None:
-    from forge_api.routers.workflow import (
-        WorkflowOwnership,
-        get_workflow_engine,
-        get_workflow_ownership,
-    )
-    from forge_workflow import WorkflowEngineImpl
-
-    app = create_app()
-    engine = WorkflowEngineImpl()
-    ownership = WorkflowOwnership()
-    app.dependency_overrides[get_workflow_engine] = lambda: engine
-    app.dependency_overrides[get_workflow_ownership] = lambda: ownership
+def test_workflow_run_is_workspace_scoped(workflow_db) -> None:
+    app = workflow_db.install(create_app())
+    task_id = workflow_db.seed_task(TEST_WORKSPACE_ID)
+    workflow_db.seed_task(OTHER_WORKSPACE_ID)
 
     _as(app, make_test_principal(role=UserRole.MEMBER, workspace_id=TEST_WORKSPACE_ID))
     with TestClient(app) as client:
-        created = client.post("/workflow/runs", json={"task_id": str(uuid.uuid4())})
+        created = client.post("/workflow/runs", json={"task_id": str(task_id)})
+        assert created.status_code == 201, created.text
         run_id = created.json()["id"]
         _as(app, make_test_principal(role=UserRole.MEMBER, workspace_id=OTHER_WORKSPACE_ID))
         assert client.get(f"/workflow/runs/{run_id}").status_code == 404
@@ -196,6 +188,7 @@ def test_workflow_run_is_workspace_scoped() -> None:
             f"/workflow/runs/{run_id}/transition", json={"event": "generate_spec_draft"}
         )
         assert transition.status_code == 404
+        assert client.post("/workflow/runs", json={"task_id": str(task_id)}).status_code == 404
 
 
 def test_spec_is_workspace_scoped(tmp_path) -> None:

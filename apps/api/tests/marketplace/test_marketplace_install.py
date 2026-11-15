@@ -144,13 +144,16 @@ def test_install_blocked_on_hash_mismatch(
 ) -> None:
     manifest, version = make_skill_version(keypair, slug="tampered", name="tampered")
     # Corrupt the declared content_hash so the fetched artifact won't match.
+    # Since spec K P0 (verify_package), an index content_hash that disagrees
+    # with the manifest is a manifest_mismatch hard block (was hash_mismatch
+    # when only the artifact bytes were compared).
     version.content_hash = "sha256:" + "b" * 64
     gateway.add(manifest, version)
     resp = admin_client.post(
         "/marketplace/install", json=_install_body(registry, "skill_profile", "tampered")
     )
     assert resp.status_code == 422
-    assert resp.json()["detail"]["error_code"] == "hash_mismatch"
+    assert resp.json()["detail"]["error_code"] == "manifest_mismatch"
     assert count_rows(session_factory, SkillProfile) == 0
     # a denied audit row was written
     with session_factory() as s:
@@ -161,7 +164,7 @@ def test_install_blocked_on_hash_mismatch(
             .scalars()
             .all()
         )
-        assert any(a.error_code == "hash_mismatch" for a in denied)
+        assert any(a.error_code == "manifest_mismatch" for a in denied)
 
 
 def test_install_blocked_on_bad_signature(

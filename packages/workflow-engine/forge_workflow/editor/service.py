@@ -22,6 +22,7 @@ from forge_workflow.editor.catalog import CatalogResponse, RegistryCatalog
 from forge_workflow.editor.diff import definition_diff
 from forge_workflow.editor.errors import (
     BundledReadOnlyError,
+    DefinitionManagedByMarketplaceError,
     DefinitionNameConflictError,
     DefinitionNotFoundError,
     PublishBlockedError,
@@ -31,6 +32,7 @@ from forge_workflow.editor.graph import (
     NodeLayout,
     StateNode,
     WorkflowGraph,
+    canonical_graph,
     definition_to_graph,
     graph_to_yaml,
     yaml_to_graph,
@@ -40,6 +42,7 @@ from forge_workflow.editor.schemas import (
     DefinitionDetail,
     DefinitionDiff,
     DefinitionSummary,
+    ForkRequest,
     ImportRequest,
     RevisionDetail,
     RevisionSummary,
@@ -52,6 +55,7 @@ from forge_workflow.editor.validation import (
     ProtectedInvariant,
     Severity,
     ValidationIssue,
+    collect_line_issues,
     collect_validation_issues,
     error_count,
     has_errors,
@@ -186,6 +190,41 @@ class WorkflowEditorService:
         self._repo.commit()
         return self._definition_detail(self._repo.get(workspace_id, bundled_name))
 
+    def fork_definition(
+        self, workspace_id: UUID, source_name: str, req: ForkRequest, *, actor: UUID | None
+    ) -> DefinitionDetail:
+        """Copy a workspace definition's latest content to a new, editable definition.
+
+        This is how a marketplace-managed line is customized (spec K §4.4): the copy is
+        ``custom`` (v2 when the source is v2, so ``validate_line`` guards its publish)
+        and keeps the source's ``base_bundled_name``, so v1 protected invariants still apply.
+        A bundled name is refused: only ``fork_bundled`` may create one.
+        """
+        if (
+            self._repo.get(workspace_id, req.name) is not None
+            or self._bundled_loader(req.name) is not None
+        ):
+            raise DefinitionNameConflictError(req.name)
+        source = self._repo.get(workspace_id, source_name)
+        if source is None:
+            raise DefinitionNotFoundError(source_name)
+        row = self._latest_content(source)
+        if row is None:
+            raise RevisionNotFoundError(source_name, "latest")
+        graph = self._graph_from_row(row).model_copy(update={"name": req.name, "title": req.title})
+        defn = self._repo.create_definition(
+            workspace_id=workspace_id,
+            name=req.name,
+            title=req.title,
+            description=source.description,
+            source=WorkflowDefinitionSource.CUSTOM,
+            base_bundled_name=source.base_bundled_name,
+            actor=actor,
+        )
+        self._create_draft(defn, graph, notes=f"Forked from {source_name}", actor=actor)
+        self._repo.commit()
+        return self._definition_detail(self._repo.get(workspace_id, req.name))
+
     def create_definition(
         self, workspace_id: UUID, body: CreateDefinition, *, actor: UUID | None
     ) -> DefinitionDetail:
@@ -214,7 +253,7 @@ class WorkflowEditorService:
         self, workspace_id: UUID, name: str, req: SaveDraftRequest, *, actor: UUID | None
     ) -> RevisionDetail:
         defn = self._require_editable(workspace_id, name)
-        graph = req.graph.model_copy(update={"name": name})
+        graph = canonical_graph(req.graph.model_copy(update={"name": name}))
         issues = self._validate(graph, defn)
         draft = self._repo.get_draft(defn.id)
         status = self._validation_status(issues)
@@ -226,7 +265,7 @@ class WorkflowEditorService:
                 defn,
                 dsl_yaml=dsl_yaml,
                 graph_json=graph_json,
-                dsl_version=graph.version,
+                dsl_version=_dsl_version(graph),
                 notes=req.notes,
                 validation_status=status,
                 validation_issues=issues_json,
@@ -237,7 +276,7 @@ class WorkflowEditorService:
                 draft,
                 dsl_yaml=dsl_yaml,
                 graph_json=graph_json,
-                dsl_version=graph.version,
+                dsl_version=_dsl_version(graph),
                 notes=req.notes,
                 validation_status=status,
                 validation_issues=issues_json,
@@ -442,6 +481,37 @@ class WorkflowEditorService:
     # -- internals ------------------------------------------------------------ #
 
     def _validate(self, graph: WorkflowGraph, defn: Any) -> list[ValidationIssue]:
+        if graph.dsl_version == "2":
+            issues = collect_line_issues(graph)
+            # Every write path validates here, so no line is ever published under a
+            # bundled name (it would skip the v1 protected invariants).
+            reserved = [n for n in (defn.name, graph.name) if self._bundled_loader(n) is not None]
+            if reserved:
+                issues.append(
+                    ValidationIssue(
+                        code=IssueCode.RESERVED_NAME,
+                        severity=Severity.ERROR,
+                        message=f"{reserved[0]!r} is a bundled definition name; "
+                        "a line cannot use it",
+                    )
+                )
+            return issues
+        line_only = [
+            field
+            for field in ("initial", "terminals", "budget", "concurrency")
+            if getattr(graph, field) is not None
+        ] + [f"station on {n.id!r}" for n in graph.nodes if n.station is not None]
+        if line_only:
+            # A v1 graph cannot carry line fields: graph_to_yaml would drop them,
+            # and graph_json would no longer match the dsl_yaml that runs.
+            return [
+                ValidationIssue(
+                    code=IssueCode.INVALID_DEFINITION,
+                    severity=Severity.ERROR,
+                    message=f"a v1 workflow cannot carry {', '.join(line_only)}; "
+                    "set dsl_version '2'",
+                )
+            ]
         return collect_validation_issues(
             graph,
             vocabulary=self._catalog.vocabulary,
@@ -461,12 +531,13 @@ class WorkflowEditorService:
     def _create_draft(
         self, defn: Any, graph: WorkflowGraph, *, notes: str | None, actor: UUID | None
     ) -> Any:
+        graph = canonical_graph(graph)
         issues = self._validate(graph, defn)
         return self._repo.create_draft(
             defn,
             dsl_yaml=graph_to_yaml(graph),
             graph_json=graph.model_dump(mode="json"),
-            dsl_version=graph.version,
+            dsl_version=_dsl_version(graph),
             notes=notes,
             validation_status=self._validation_status(issues),
             validation_issues=[i.model_dump(mode="json") for i in issues],
@@ -484,6 +555,8 @@ class WorkflowEditorService:
     def _require_editable(self, workspace_id: UUID, name: str) -> Any:
         defn = self._repo.get(workspace_id, name)
         if defn is not None:
+            if defn.source == WorkflowDefinitionSource.MARKETPLACE:
+                raise DefinitionManagedByMarketplaceError(name)
             return defn
         if self._bundled_loader(name) is not None:
             raise BundledReadOnlyError(name)
@@ -568,7 +641,7 @@ class WorkflowEditorService:
             draft = self._revision_detail(row) if row else None
         return DefinitionDetail(
             **summary.model_dump(),
-            editable=True,
+            editable=defn.source != WorkflowDefinitionSource.MARKETPLACE,
             current_published=published,
             draft=draft,
         )
@@ -636,6 +709,11 @@ class WorkflowEditorService:
             ],
             edges=[],
         )
+
+
+def _dsl_version(graph: WorkflowGraph) -> str:
+    """The revision's ``dsl_version`` column: the DSL version, "2" for a line, else "1"."""
+    return graph.dsl_version or "1"
 
 
 __all__ = [

@@ -21,7 +21,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
+from forge_marketplace.manifest import canonical_artifact_bytes, compute_manifest_hash
 from forge_marketplace.models import (
+    InstallRequest,
+    PackageManifest,
+    RegistryIndexEntry,
     RegistryIndexVersion,
     VerificationResult,
     VerificationStatus,
@@ -108,4 +112,70 @@ def verify_version(
     )
 
 
-__all__ = ["Ed25519SignatureVerifier", "verify_version"]
+def _manifest_mismatch(detail: str) -> VerificationResult:
+    return VerificationResult(
+        status=VerificationStatus.manifest_mismatch,
+        content_hash_ok=False,
+        signature_ok=None,
+        detail=detail,
+    )
+
+
+def verify_package(
+    manifest: PackageManifest,
+    entry: RegistryIndexEntry,
+    version: RegistryIndexVersion,
+    request: InstallRequest,
+    registry_key: str | None,
+    *,
+    verifier: Ed25519SignatureVerifier | None = None,
+) -> VerificationResult:
+    """Bind a fetched manifest to the signed index identity, then verify it.
+
+    Pure and total (never raises). Checks, in order (spec K §4.4):
+
+    1. ``manifest.kind == entry.kind == request.kind`` and the same for slug,
+       plus ``manifest.version == version.version``;
+    2. ``compute_manifest_hash(manifest) == version.manifest_hash`` — the hash
+       the signature actually covers, so a genuine signature cannot sit beside
+       swapped content;
+    3. ``manifest.content_hash == version.content_hash``;
+    4. the existing signature verification (:func:`verify_version`).
+
+    A failure in checks 1-3 is a hard block (``manifest_mismatch``), whatever
+    the registry trust level or the signature's validity.
+    """
+    if not (manifest.kind == entry.kind == request.kind):
+        return _manifest_mismatch(
+            "kind mismatch "
+            f"(manifest={manifest.kind.value}, entry={entry.kind.value}, "
+            f"request={request.kind.value})"
+        )
+    if not (manifest.slug == entry.slug == request.slug):
+        return _manifest_mismatch(
+            f"slug mismatch (manifest={manifest.slug}, entry={entry.slug}, request={request.slug})"
+        )
+    if manifest.version != version.version:
+        return _manifest_mismatch(
+            f"version mismatch (manifest={manifest.version}, index={version.version})"
+        )
+    computed_manifest_hash = compute_manifest_hash(manifest)
+    if computed_manifest_hash != version.manifest_hash:
+        return _manifest_mismatch(
+            "manifest hash mismatch "
+            f"(computed={computed_manifest_hash}, signed={version.manifest_hash})"
+        )
+    if manifest.content_hash != version.content_hash:
+        return _manifest_mismatch(
+            "content hash mismatch "
+            f"(manifest={manifest.content_hash}, index={version.content_hash})"
+        )
+    return verify_version(
+        artifact_bytes=canonical_artifact_bytes(manifest.artifact),
+        version=version,
+        registry_public_key=registry_key,
+        verifier=verifier,
+    )
+
+
+__all__ = ["Ed25519SignatureVerifier", "verify_package", "verify_version"]

@@ -382,6 +382,57 @@ describe("WorkflowEditor", () => {
     );
   });
 
+  it("asks for a new name before forking a marketplace line", async () => {
+    const marketplace: WorkflowDefinitionDetail = {
+      ...detailFor("default_feature"),
+      name: "implementation_loop",
+      title: "Implementation loop",
+      origin: "marketplace",
+      published_revision: 1,
+    };
+    const client = makeClient({
+      listWorkflowDefinitions: vi.fn(() =>
+        Promise.resolve([...summaries, { ...marketplace, has_draft: false }]),
+      ),
+      getWorkflowDefinition: vi.fn((name: string) =>
+        Promise.resolve(
+          name === "implementation_loop" ? marketplace : detailFor(name),
+        ),
+      ),
+      forkWorkflowDefinition: vi.fn(
+        (_source: string, body: { name: string; title: string }) =>
+          Promise.resolve({ ...detailFor("release_review"), ...body }),
+      ),
+    });
+    renderEditor(client);
+    await screen.findByTestId("workflow-canvas");
+
+    fireEvent.click(await screen.findByTestId("definition-implementation_loop"));
+    fireEvent.click(await screen.findByTestId("fork-button"));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: /fork workflow/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByLabelText("Name"), {
+      target: { value: "my_loop" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Title"), {
+      target: { value: "My loop" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /fork workflow/i }),
+    );
+
+    await waitFor(() =>
+      expect(client.forkWorkflowDefinition).toHaveBeenCalledWith(
+        "implementation_loop",
+        { name: "my_loop", title: "My loop" },
+      ),
+    );
+    expect(client.forkBundledWorkflow).not.toHaveBeenCalled();
+  });
+
   it("clears the selection with Escape", async () => {
     renderEditor(makeClient());
     const canvas = await screen.findByTestId("workflow-canvas");

@@ -120,7 +120,6 @@ class SqlAlchemyWorkflowStore:
         from forge_db.models.enums import EngineBackend as DbEngineBackend
         from forge_db.models.enums import ExecutionMode as DbExecutionMode
         from forge_db.models.enums import RunStatus as DbRunStatus
-        from forge_db.models.enums import WorkflowState as DbWorkflowState
         from forge_db.models.runs import WorkflowRun as DbWorkflowRun
 
         context, engine_backend, wf_id, run_id = self._split_engine_context(run.context)
@@ -128,7 +127,7 @@ class SqlAlchemyWorkflowStore:
             workspace_id=self._workspace_id,
             task_id=run.task_id,
             workflow_name=run.workflow_name,
-            current_state=DbWorkflowState(run.current_state),
+            current_state=run.current_state,
             execution_mode=DbExecutionMode(run.execution_mode.value),
             status=DbRunStatus(run.status.value),
             context=context,
@@ -138,6 +137,9 @@ class SqlAlchemyWorkflowStore:
             started_at=run.started_at,
             completed_at=run.completed_at,
         )
+        revision = context.get("definition_revision_id")
+        if revision is not None:
+            model.definition_revision_id = uuid.UUID(str(revision))
         if run.id is not None:
             model.id = run.id
         self._session.add(model)
@@ -168,7 +170,8 @@ class SqlAlchemyWorkflowStore:
         from forge_db.models.runs import WorkflowRun as DbWorkflowRun
 
         model = self._session.get(DbWorkflowRun, run_id)
-        if model is None:
+        # Ownership is the row's workspace: a foreign run reads as missing.
+        if model is None or model.workspace_id != self._workspace_id:
             raise WorkflowRunNotFoundError(run_id)
         return model
 
@@ -179,14 +182,13 @@ class SqlAlchemyWorkflowStore:
         from forge_db.models.enums import EngineBackend as DbEngineBackend
         from forge_db.models.enums import ExecutionMode as DbExecutionMode
         from forge_db.models.enums import RunStatus as DbRunStatus
-        from forge_db.models.enums import WorkflowState as DbWorkflowState
 
         if run.id is None:
             raise WorkflowRunNotFoundError(run.id)
         model = self._load(run.id)
         context, engine_backend, wf_id, run_id = self._split_engine_context(run.context)
         model.workflow_name = run.workflow_name
-        model.current_state = DbWorkflowState(run.current_state)
+        model.current_state = run.current_state
         model.execution_mode = DbExecutionMode(run.execution_mode.value)
         model.status = DbRunStatus(run.status.value)
         model.context = context

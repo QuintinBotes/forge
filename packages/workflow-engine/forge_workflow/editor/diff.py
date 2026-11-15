@@ -82,6 +82,17 @@ def definition_diff(
         or from_graph.escalation_policy != to_graph.escalation_policy
     )
 
+    stations_changed: list[str] | None = None
+    header_changed: bool | None = None
+    if "2" in (from_graph.dsl_version, to_graph.dsl_version):
+        before = {n.id: n.station for n in from_graph.nodes}
+        after = {n.id: n.station for n in to_graph.nodes}
+        stations_changed = sorted(s for s in before.keys() & after.keys() if before[s] != after[s])
+        header_changed = any(
+            getattr(from_graph, key) != getattr(to_graph, key)
+            for key in ("initial", "terminals", "budget", "concurrency")
+        )
+
     return DefinitionDiff(
         name=to_graph.name,
         from_revision=from_revision,
@@ -90,6 +101,8 @@ def definition_diff(
         states_added=sorted(to_states - from_states),
         states_removed=sorted(from_states - to_states),
         policy_changed=policy_changed,
+        stations_changed=stations_changed,
+        header_changed=header_changed,
     )
 
 

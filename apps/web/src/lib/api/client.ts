@@ -142,6 +142,7 @@ import type {
   SsoConfig,
   SsoConfigInput,
   CreateWorkflowDefinition,
+  ForkWorkflowRequest,
   SaveWorkflowDraftRequest,
   WorkflowCatalog,
   WorkflowDefinitionDetail,
@@ -1473,6 +1474,17 @@ export class ForgeApiClient {
     return this.request<WorkflowDefinitionDetail>(
       `/workflow/editor/definitions/${encodeURIComponent(name)}/fork`,
       { method: "POST" },
+    );
+  }
+
+  /** Copy a workspace definition (e.g. a marketplace line) to a new name (admin). */
+  forkWorkflowDefinition(
+    source: string,
+    body: ForkWorkflowRequest,
+  ): Promise<WorkflowDefinitionDetail> {
+    return this.request<WorkflowDefinitionDetail>(
+      `/workflow/editor/definitions/${encodeURIComponent(source)}/fork`,
+      { method: "POST", body },
     );
   }
 

@@ -25,15 +25,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{1,63}$")
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+([-+].+)?$")
+# At most 64 characters (the version columns) and no control characters.
+SEMVER_RE = re.compile(r"^(?=.{5,64}$)\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?$")
 
 
 class ArtifactKind(StrEnum):
     """The first-class distributable artifact kinds.
 
-    ``workflow_template`` / ``policy_template`` are *reserved*: the enum values
-    exist so a registry can advertise them, but their installers are only
-    registered when F21 / F04 provide the loaders + targets (F32 §12).
+    ``policy_template`` is *reserved*: the enum value exists so a registry can
+    advertise it, but its installer is only registered when F04 provides the
+    loader + target (F32 §12). ``workflow_template`` installs a DSL v2 line (spec K).
     """
 
     mcp_connector = "mcp_connector"
@@ -60,6 +61,7 @@ class VerificationStatus(StrEnum):
     untrusted_registry = "untrusted_registry"  # signature present but registry has no key
     signature_invalid = "signature_invalid"  # hard block
     hash_mismatch = "hash_mismatch"  # hard block
+    manifest_mismatch = "manifest_mismatch"  # hard block: manifest != signed identity
 
 
 class InstallStatus(StrEnum):
@@ -165,6 +167,7 @@ class VerificationResult(BaseModel):
         return self.status in (
             VerificationStatus.hash_mismatch,
             VerificationStatus.signature_invalid,
+            VerificationStatus.manifest_mismatch,
         )
 
     @property

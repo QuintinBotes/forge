@@ -127,6 +127,7 @@ export function WorkflowEditor({ client = apiClient }: WorkflowEditorProps) {
   const [savedDraftExists, setSavedDraftExists] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [forkOpen, setForkOpen] = useState(false);
 
   const definitions = useMemo(
     () => definitionsQuery.data ?? [],
@@ -340,11 +341,16 @@ export function WorkflowEditor({ client = apiClient }: WorkflowEditorProps) {
   const onFork = useCallback(() => {
     if (!selectedName || fork.isPending) return;
     setActionError(null);
+    // A marketplace line is copied to a new name; a bundled one forks in place.
+    if (detail?.origin === "marketplace") {
+      setForkOpen(true);
+      return;
+    }
     fork.mutate(selectedName, {
       onSuccess: () => toast.success("Forked to an editable copy."),
       onError: (err) => setActionError(actionMessage(err, "fork this workflow")),
     });
-  }, [selectedName, fork]);
+  }, [selectedName, fork, detail?.origin]);
 
   // --- keyboard ----------------------------------------------------------- //
   const onKeyDown = useCallback(
@@ -544,6 +550,16 @@ export function WorkflowEditor({ client = apiClient }: WorkflowEditorProps) {
         open={newOpen}
         onOpenChange={setNewOpen}
         onCreated={(definition) => {
+          setSelectedName(definition.name);
+        }}
+        client={client}
+      />
+      <NewWorkflowDialog
+        open={forkOpen}
+        onOpenChange={setForkOpen}
+        forkFrom={selectedName}
+        onCreated={(definition) => {
+          toast.success("Forked to an editable copy.");
           setSelectedName(definition.name);
         }}
         client={client}

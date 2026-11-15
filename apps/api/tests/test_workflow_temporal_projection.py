@@ -23,7 +23,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
 from forge_api.main import create_app
-from forge_api.routers.workflow import WorkflowOwnership, get_workflow_ownership
 from forge_api.services import workflow_engine
 from forge_contracts import UserRole, WorkflowState
 from forge_db.base import Base
@@ -131,8 +130,6 @@ def client_as(
             scopes=["*"],
         )
         app.dependency_overrides[get_current_principal] = lambda: principal
-        # A fresh registry on every switch stands in for an API restart.
-        app.dependency_overrides[get_workflow_ownership] = WorkflowOwnership
         return TestClient(app)
 
     return _client_as
@@ -180,7 +177,7 @@ def test_worker_persist_transition_updates_the_row_the_api_created(
     assert sequence == 1
     row = _row(factory, run_id)
     assert row is not None
-    assert row.current_state.value == "spec_drafting"
+    assert row.current_state == "spec_drafting"
     assert [t["event"] for t in row.context["transitions"]] == ["generate_spec_draft"]
 
 
@@ -189,7 +186,7 @@ def test_ownership_is_read_from_the_row_after_the_registry_is_emptied(
 ) -> None:
     run_id = _start(client_as(WS))
 
-    rival = client_as(WS2)  # also empties the in-process registry
+    rival = client_as(WS2)  # no in-process registry exists: ownership is the row's
     assert rival.get(f"/workflow/runs/{run_id}").status_code == 404
     foreign = rival.post(
         f"/workflow/runs/{run_id}/transition", json={"event": "generate_spec_draft"}

@@ -57,7 +57,10 @@ def _cmd_package(args: argparse.Namespace) -> int:
     print(f"wrote {out_file}")
     print(f"content_hash:  {manifest.content_hash}")
     print(f"manifest_hash: {compute_manifest_hash(manifest)}")
-    print("next: sign manifest_hash with your Ed25519 key and open a PR to a registry repo")
+    print(
+        "next: forge-cli marketplace sign --key-file <key> --manifest <manifest>, "
+        "then open a PR to a registry repo"
+    )
     return 0
 
 

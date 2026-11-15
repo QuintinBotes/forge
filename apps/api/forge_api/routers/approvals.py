@@ -37,6 +37,7 @@ from forge_api.services.approval_service import (
     get_approval_service,
     to_approval_principal,
 )
+from forge_api.services.workflow_gate_hook import APPROVED_EVENT_BY_GATE, WORKFLOW_RUN_SUBJECT
 from forge_approval import (
     AlreadyResolvedError,
     ApprovalNotFoundError,
@@ -88,7 +89,19 @@ async def create_approval(
     broadcaster: BroadcasterDep,
     body: CreateApprovalRequest,
 ) -> ApprovalRequest:
-    """Open a gate in the caller's workspace (idempotent while pending)."""
+    """Open a gate in the caller's workspace (idempotent while pending).
+
+    Workflow-run gates are opened only by the workflow engines: their
+    payload feeds the run's merge guard, so a caller-made one could assert
+    signals (e.g. ``ci_status_green``) forge never observed (spec K §4.7).
+    """
+    if body.subject_type == WORKFLOW_RUN_SUBJECT and body.gate_type in APPROVED_EVENT_BY_GATE:
+        # With or without workflow_run_id: the engine's idempotent open keys on
+        # (subject, gate), so a caller-made request would be reused for the run.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="workflow_run gates are opened by the workflow engine",
+        )
     request = await service.create(
         workspace_id=principal.workspace_id,
         gate_type=body.gate_type,

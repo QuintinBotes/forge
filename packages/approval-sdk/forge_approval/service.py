@@ -245,6 +245,25 @@ class ApprovalService:
         context.gate_payload = self._redact(context.gate_payload)
         return context
 
+    async def latest_for_gate(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        subject_type: str,
+        subject_id: uuid.UUID,
+        gate_type: GateType,
+    ) -> ApprovalRequest | None:
+        """The most recently opened request for one subject + gate, any status.
+
+        The gate-sync recovery path (spec K P0) re-reads the run's latest
+        request for a gate; ``find_pending`` cannot answer that once the gate
+        has resolved. Repository ``list`` order is insertion order, so the
+        last match is the latest.
+        """
+        rows = await self._repo.list(workspace_id=workspace_id, gate_type=gate_type)
+        matches = [r for r in rows if r.subject_type == subject_type and r.subject_id == subject_id]
+        return matches[-1] if matches else None
+
     async def decisions(
         self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID
     ) -> builtins.list[ApprovalDecisionRecord]:
@@ -313,6 +332,11 @@ class ApprovalService:
             )
         else:
             outcome = await hook.on_resolved(request, decision, actor, session=session)
+            # Persist anything the hook recorded on the request (e.g. a failed
+            # downstream hand-off stamped into ``gate_payload``). The decision
+            # itself was already committed by the update above, so a hook
+            # failure can never roll it back (spec K §4.7).
+            request = await self._repo.update(request)
 
         self._audit.record_approval(
             request.gate_type.value,

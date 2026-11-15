@@ -13,12 +13,18 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from forge_contracts import WorkflowDefinition
+from forge_contracts import WorkflowDefinition, parse_line
 from forge_workflow.exceptions import WorkflowDefinitionError
+
+_V2_ONLY_KEYS = frozenset({"stations", "terminals", "budget", "initial"})
 
 
 def parse_definition(text: str) -> WorkflowDefinition:
-    """Parse a YAML DSL string into a validated :class:`WorkflowDefinition`."""
+    """Parse a YAML DSL string into a validated :class:`WorkflowDefinition`.
+
+    A ``dsl_version: "2"`` document returns a :class:`~forge_contracts.LineDefinition`;
+    its graph rules are ``validate_line``'s job, not the parser's.
+    """
     try:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:  # pragma: no cover - defensive
@@ -27,6 +33,24 @@ def parse_definition(text: str) -> WorkflowDefinition:
     if not isinstance(raw, dict):
         raise WorkflowDefinitionError(
             f"workflow definition must be a mapping, got {type(raw).__name__}"
+        )
+
+    # Spec K §4.1: ``dsl_version`` picks the model; absent, null, "1" and 1 mean v1.
+    dsl_version = raw.get("dsl_version")
+    if dsl_version == "2":
+        try:
+            return parse_line(raw)
+        except ValidationError as exc:
+            raise WorkflowDefinitionError(f"invalid line definition: {exc}") from exc
+    # str() rather than == 1, so true and 1.0 stay refused.
+    if dsl_version is not None and str(dsl_version) != "1":
+        raise WorkflowDefinitionError(
+            f"unsupported dsl_version {dsl_version!r}; expected '1' or '2'"
+        )
+    v2_keys = sorted(raw.keys() & _V2_ONLY_KEYS)
+    if v2_keys:
+        raise WorkflowDefinitionError(
+            f"a dsl_version '1' workflow cannot carry {', '.join(v2_keys)}; set dsl_version: '2'"
         )
 
     data: dict[str, Any] = dict(raw)

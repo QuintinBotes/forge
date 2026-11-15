@@ -17,12 +17,14 @@ compatibility but the bundled guards are plain boolean flags.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import get_args
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from forge_contracts import WorkflowDefinition
-from forge_contracts.enums import ExecutionMode, IncidentState, WorkflowState
+from forge_contracts import SERVICE_CATALOG, AgentStation, WorkflowDefinition
+from forge_contracts.enums import ApprovalGate, ExecutionMode, IncidentState, WorkflowState
+from forge_contracts.lines import HUMAN_GATES
 from forge_workflow.fsm import RETRY_BUDGET_EXHAUSTED, RETRY_BUDGET_REMAINING
 
 
@@ -44,6 +46,27 @@ class EffectMeta(BaseModel):
     provided_by: str | None = None
 
 
+class ServiceOutputMeta(BaseModel):
+    type: str
+    trust: str
+
+
+class ServiceMeta(BaseModel):
+    """A DSL v2 service (``forge_contracts.SERVICE_CATALOG``) for the station palette."""
+
+    name: str
+    effect: str
+    idempotent: bool
+    max_timeout_seconds: int
+    max_attempts: int
+    #: input name -> trust.
+    inputs: dict[str, str] = Field(default_factory=dict)
+    outputs: dict[str, ServiceOutputMeta] = Field(default_factory=dict)
+    #: Outcomes beyond the common service outcomes.
+    outcomes: list[str] = Field(default_factory=list)
+    failure_outcomes: list[str] = Field(default_factory=list)
+
+
 class CatalogResponse(BaseModel):
     """The palette returned to the editor UI."""
 
@@ -54,6 +77,10 @@ class CatalogResponse(BaseModel):
     effects: list[EffectMeta] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     modes: list[str] = Field(default_factory=list)
+    # DSL v2 station palette (spec K §4.3).
+    services: list[ServiceMeta] = Field(default_factory=list)
+    gates: list[str] = Field(default_factory=list)
+    context_templates: list[str] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -248,6 +275,27 @@ class RegistryCatalog:
             effects=effects,
             skills=skills,
             modes=[m.value for m in ExecutionMode],
+            services=[
+                ServiceMeta(
+                    name=e.name,
+                    effect=e.effect,
+                    idempotent=e.idempotent,
+                    max_timeout_seconds=e.max_timeout_seconds,
+                    max_attempts=e.max_attempts,
+                    inputs=dict(e.inputs),
+                    outputs={
+                        k: ServiceOutputMeta(type=t.__name__, trust=trust)
+                        for k, (t, trust) in e.outputs.items()
+                    },
+                    outcomes=sorted(e.outcomes),
+                    failure_outcomes=sorted(e.failure_outcomes),
+                )
+                for e in SERVICE_CATALOG.values()
+            ],
+            gates=[g.value for g in ApprovalGate if g in HUMAN_GATES],
+            context_templates=list(
+                get_args(AgentStation.model_fields["context_template"].annotation)
+            ),
         )
 
 
@@ -259,6 +307,8 @@ __all__ = [
     "EffectMeta",
     "GuardMeta",
     "RegistryCatalog",
+    "ServiceMeta",
+    "ServiceOutputMeta",
     "Vocabulary",
     "scan_vocabulary",
 ]

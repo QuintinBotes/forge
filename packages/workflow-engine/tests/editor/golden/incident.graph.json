@@ -1,0 +1,323 @@
+{
+  "name": "incident",
+  "version": "1",
+  "title": "Incident",
+  "description": null,
+  "modes": {
+    "default": "single_agent"
+  },
+  "retry_policy": {
+    "max_retries": 2,
+    "backoff": "exponential",
+    "initial_delay_seconds": 60
+  },
+  "escalation_policy": {
+    "confidence_threshold": 0.72,
+    "on_low_confidence": "pause_and_notify",
+    "on_policy_conflict": "escalate_to_admin"
+  },
+  "nodes": [
+    {
+      "id": "alert_received",
+      "label": null,
+      "kind": "initial",
+      "layout": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "incident_created",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 240.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "context_gathering",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 480.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "impact_assessed",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 720.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "remediation_proposed",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 12480.0,
+        "y": 120.0
+      }
+    },
+    {
+      "id": "awaiting_approval",
+      "label": null,
+      "kind": "human_gate",
+      "layout": {
+        "x": 11760.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "needs_human_input",
+      "label": null,
+      "kind": "human_gate",
+      "layout": {
+        "x": 12480.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "executing_runbook",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 12000.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "monitoring",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 12240.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "resolved",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 12480.0,
+        "y": 240.0
+      }
+    },
+    {
+      "id": "postmortem_created",
+      "label": null,
+      "kind": "normal",
+      "layout": {
+        "x": 12720.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "closed",
+      "label": null,
+      "kind": "terminal",
+      "layout": {
+        "x": 12960.0,
+        "y": 0.0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from_state": "alert_received",
+      "to_state": "incident_created",
+      "action": "alert_ingested",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e1",
+      "from_state": "incident_created",
+      "to_state": "context_gathering",
+      "action": "incident_acknowledged",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": "incident-response"
+    },
+    {
+      "id": "e2",
+      "from_state": "context_gathering",
+      "to_state": "impact_assessed",
+      "action": "context_gathered",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": "incident-response"
+    },
+    {
+      "id": "e3",
+      "from_state": "impact_assessed",
+      "to_state": "remediation_proposed",
+      "action": "impact_assessed",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": "incident-response"
+    },
+    {
+      "id": "e4",
+      "from_state": "remediation_proposed",
+      "to_state": "awaiting_approval",
+      "action": "remediation_proposed",
+      "when": null,
+      "condition": "remediation_within_blast_radius",
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e5",
+      "from_state": "remediation_proposed",
+      "to_state": "needs_human_input",
+      "action": "remediation_blast_radius_exceeded",
+      "when": null,
+      "condition": "remediation_exceeds_blast_radius",
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e6",
+      "from_state": "awaiting_approval",
+      "to_state": "executing_runbook",
+      "action": "remediation_approved",
+      "when": null,
+      "condition": "approval_granted",
+      "preconditions": [],
+      "checks": [],
+      "record": "approval_event",
+      "skill": null
+    },
+    {
+      "id": "e7",
+      "from_state": "awaiting_approval",
+      "to_state": "needs_human_input",
+      "action": "remediation_rejected",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": "approval_event",
+      "skill": null
+    },
+    {
+      "id": "e8",
+      "from_state": "executing_runbook",
+      "to_state": "monitoring",
+      "action": "runbook_completed",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e9",
+      "from_state": "executing_runbook",
+      "to_state": "remediation_proposed",
+      "action": null,
+      "when": "runbook_step_failed",
+      "condition": "retry_budget_remaining",
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": "incident-response"
+    },
+    {
+      "id": "e10",
+      "from_state": "executing_runbook",
+      "to_state": "needs_human_input",
+      "action": null,
+      "when": "runbook_step_failed",
+      "condition": "retry_budget_exhausted",
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e11",
+      "from_state": "monitoring",
+      "to_state": "resolved",
+      "action": "recovery_confirmed",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e12",
+      "from_state": "monitoring",
+      "to_state": "remediation_proposed",
+      "action": null,
+      "when": "recovery_failed",
+      "condition": "retry_budget_remaining",
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": "incident-response"
+    },
+    {
+      "id": "e13",
+      "from_state": "monitoring",
+      "to_state": "needs_human_input",
+      "action": null,
+      "when": "recovery_failed",
+      "condition": "retry_budget_exhausted",
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e14",
+      "from_state": "resolved",
+      "to_state": "postmortem_created",
+      "action": "postmortem_requested",
+      "when": null,
+      "condition": null,
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    },
+    {
+      "id": "e15",
+      "from_state": "postmortem_created",
+      "to_state": "closed",
+      "action": "close",
+      "when": null,
+      "condition": "postmortem_persisted",
+      "preconditions": [],
+      "checks": [],
+      "record": null,
+      "skill": null
+    }
+  ]
+}

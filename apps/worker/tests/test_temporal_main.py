@@ -1,9 +1,7 @@
 """HARD-11: cover the Temporal worker entrypoint (F25) without a live Temporal.
 
-``temporal_main`` is a side-effecty process entrypoint; its ``SessionPerCallStore``
-delegates to the real ``SqlAlchemyWorkflowStore`` and its ``run``/``main`` wire a
-``temporalio`` worker. We exercise the delegation + wiring with fakes so the
-module's error/commit branches are covered hermetically.
+``temporal_main`` is a side-effecty process entrypoint. Its ``SessionPerCallStore``
+runs against a real SQLite schema here; ``run``/``main`` wiring uses fakes.
 """
 
 from __future__ import annotations
@@ -66,30 +64,59 @@ def patched_store(monkeypatch: pytest.MonkeyPatch) -> type[_FakeStore]:
     return _FakeStore
 
 
-def test_session_per_call_store_delegates_and_commits(
-    patched_store: type[_FakeStore],
-) -> None:
-    sessions: list[_FakeSession] = []
+def test_session_per_call_store_reads_and_updates_runs_in_their_workspace() -> None:
+    """A real schema, not a fake store: the worker must find a run the API
+    created in a workspace (the fake hid exactly this bug once)."""
+    from sqlalchemy import StaticPool, create_engine
+    from sqlalchemy.orm import Session, sessionmaker
 
-    def factory() -> _FakeSession:
-        s = _FakeSession()
-        sessions.append(s)
-        return s
+    from forge_contracts import RunStatus, WorkflowRun
+    from forge_db.base import Base
+    from forge_db.models import Project, Task, Workspace
+    from forge_workflow import WorkflowRunNotFoundError
+    from forge_workflow.store import SqlAlchemyWorkflowStore
 
-    store = tm.SessionPerCallStore(factory)  # type: ignore[arg-type]
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
+    ws = uuid.uuid4()
+    with factory() as s:
+        s.add(Workspace(id=ws, name="WS", slug="ws"))
+        s.flush()
+        project = Project(workspace_id=ws, name="Core", key="CORE")
+        s.add(project)
+        s.flush()
+        task = Task(workspace_id=ws, project_id=project.id, key="CORE-1", title="t")
+        s.add(task)
+        s.flush()
+        run = SqlAlchemyWorkflowStore(s, workspace_id=ws).create(
+            WorkflowRun(
+                task_id=task.id,
+                workflow_name="default_feature",
+                current_state="created",
+                status=RunStatus.RUNNING,
+            )
+        )
+        s.commit()
+    assert run.id is not None
 
-    run = object()
-    assert store.create(run) is run
-    assert store.update(run) is run
-    rid = uuid.uuid4()
-    assert store.get(rid) == f"run-{rid}"
-    tid = uuid.uuid4()
-    assert store.find_active_by_task(tid) is None
-    assert store.list_by_task(tid) == []
-
-    # create + update commit; get/find/list are read-only (no commit).
-    assert sum(s.committed for s in sessions) == 2
-    assert patched_store.last["create"] is run
+    store = tm.SessionPerCallStore(factory)
+    fetched = store.get(run.id)
+    fetched.context["transitions"] = [{"sequence": 1}]
+    store.update(fetched)
+    assert store.get(run.id).context["transitions"] == [{"sequence": 1}]
+    with pytest.raises(WorkflowRunNotFoundError):
+        store.get(uuid.uuid4())
+    for call in (
+        lambda: store.create(fetched),
+        lambda: store.find_active_by_task(task.id),
+        lambda: store.list_by_task(task.id),
+    ):
+        with pytest.raises(NotImplementedError):
+            call()
+    engine.dispose()
 
 
 def test_build_activities_uses_session_per_call_store(

@@ -55,6 +55,7 @@ EXPECTED_MODELS = [
     "Sprint",
     "Milestone",
     "WorkflowRun",
+    "WorkflowStationVisit",
     "AgentRun",
     "AgentRunEvent",
     "ApprovalRequest",

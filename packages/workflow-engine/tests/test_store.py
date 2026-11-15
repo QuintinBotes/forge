@@ -100,3 +100,35 @@ def test_sqlalchemy_get_missing_raises(sqlite_session: Session) -> None:
     store = SqlAlchemyWorkflowStore(sqlite_session, workspace_id=uuid.uuid4())
     with pytest.raises(WorkflowRunNotFoundError):
         store.get(uuid.uuid4())
+
+
+def test_sqlalchemy_store_reads_only_its_workspace(sqlite_session: Session) -> None:
+    """Ownership is the row's workspace: another workspace's run is missing."""
+    mine = SqlAlchemyWorkflowStore(sqlite_session, workspace_id=uuid.uuid4())
+    theirs = SqlAlchemyWorkflowStore(sqlite_session, workspace_id=uuid.uuid4())
+    created = mine.create(WorkflowRun(task_id=uuid.uuid4(), current_state="created"))
+    assert created.id is not None
+
+    with pytest.raises(WorkflowRunNotFoundError):
+        theirs.get(created.id)
+    with pytest.raises(WorkflowRunNotFoundError):
+        theirs.update(created)
+    assert theirs.list_by_task(created.task_id) == []  # type: ignore[arg-type]
+
+
+def test_sqlalchemy_store_writes_the_pinned_revision(sqlite_session: Session) -> None:
+    from forge_db.models.runs import WorkflowRun as DbWorkflowRun
+
+    store = SqlAlchemyWorkflowStore(sqlite_session, workspace_id=uuid.uuid4())
+    revision = uuid.uuid4()
+    pinned = store.create(
+        WorkflowRun(
+            task_id=uuid.uuid4(),
+            current_state="created",
+            context={"definition_revision_id": str(revision)},
+        )
+    )
+    unpinned = store.create(WorkflowRun(task_id=uuid.uuid4(), current_state="created"))
+
+    assert sqlite_session.get(DbWorkflowRun, pinned.id).definition_revision_id == revision  # type: ignore[union-attr]
+    assert sqlite_session.get(DbWorkflowRun, unpinned.id).definition_revision_id is None  # type: ignore[union-attr]

@@ -4,8 +4,32 @@ from __future__ import annotations
 
 import uuid
 
+from forge_contracts import SERVICE_CATALOG
 from forge_contracts.enums import ExecutionMode, WorkflowState
 from forge_workflow.editor.catalog import RegistryCatalog
+
+
+def test_catalog_line_palette(registry_catalog: RegistryCatalog) -> None:
+    """Spec K §4.3: the station palette (services, human gates, context templates)."""
+    catalog = registry_catalog.build()
+    assert catalog.gates == ["spec", "plan", "pr"]
+    assert catalog.context_templates == ["default", "review", "implementation", "research"]
+    assert [s.name for s in catalog.services] == list(SERVICE_CATALOG)
+    await_ci = next(s for s in catalog.services if s.name == "forge.await_ci")
+    assert await_ci.model_dump() == {
+        "name": "forge.await_ci",
+        "effect": "read",
+        "idempotent": True,
+        "max_timeout_seconds": 7200,
+        "max_attempts": 2,
+        "inputs": {"pr": "task"},
+        "outputs": {"failure_summary": {"type": "str", "trust": "any"}},
+        "outcomes": ["checks_failed", "no_checks"],
+        "failure_outcomes": ["checks_failed"],
+    }
+    open_pr = next(s for s in catalog.services if s.name == "forge.open_pr")
+    assert (open_pr.effect, open_pr.idempotent) == ("write_external", False)
+    assert open_pr.outputs["pr_ref"].trust == "task"
 
 
 def test_catalog_includes_all_workflow_states(registry_catalog: RegistryCatalog) -> None:

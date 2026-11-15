@@ -38,6 +38,20 @@ class BundledReadOnlyError(WorkflowError):
         super().__init__(f"bundled definition {name!r} is read-only; fork it to customize")
 
 
+class DefinitionManagedByMarketplaceError(WorkflowError):
+    """Raised when editing a marketplace-installed definition (-> 409).
+
+    Installed content must keep matching its package ``content_hash`` (spec K §4.4);
+    fork it to customize.
+    """
+
+    code = "definition_managed_by_marketplace"
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(f"definition {name!r} is managed by the marketplace; fork it to customize")
+
+
 class RevisionNotFoundError(WorkflowError):
     """Raised when a revision number/id does not exist for a definition (-> 404)."""
 
@@ -65,6 +79,7 @@ class UnknownDefinitionError(WorkflowError):
 
 __all__ = [
     "BundledReadOnlyError",
+    "DefinitionManagedByMarketplaceError",
     "DefinitionNameConflictError",
     "DefinitionNotFoundError",
     "PublishBlockedError",

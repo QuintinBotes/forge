@@ -14,6 +14,7 @@ record signed by a *different* key honestly reads ``verified: false``.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import uuid
 from collections.abc import Iterator
@@ -36,6 +37,7 @@ from forge_approval import (
     GateRegistry,
     InMemoryApprovalRepository,
 )
+from forge_approval.models import GateType
 from forge_contracts import UserRole
 from forge_db.base import Base
 from forge_db.models import AgentRun, Attestation, Project, Task, WorkflowRun, Workspace
@@ -309,27 +311,36 @@ def test_detail_foreign_workspace_id_404s(factory, signer) -> None:
 
 
 def _open_pr_gate(
-    client: TestClient, *, workflow_run_id: uuid.UUID | None, subject_id: uuid.UUID | None = None
+    service: ApprovalService,
+    *,
+    workflow_run_id: uuid.UUID | None,
+    workspace_id: uuid.UUID = WS,
 ) -> str:
-    resp = client.post(
-        "/approvals",
-        json={
-            "gate_type": "pr",
-            "subject_type": "workflow_run",
-            "subject_id": str(subject_id or workflow_run_id or uuid.uuid4()),
-            "workflow_run_id": str(workflow_run_id) if workflow_run_id else None,
-            "title": "PR gate",
-        },
+    """Open the run's PR gate the way the workflow engine does.
+
+    Callers can no longer open a workflow-run spec/plan/pr gate through
+    ``POST /approvals`` (spec K §4.7); a gate with no run still can.
+    """
+    request = asyncio.run(
+        service.create(
+            workspace_id=workspace_id,
+            gate_type=GateType.PR,
+            subject_type="workflow_run",
+            subject_id=workflow_run_id or uuid.uuid4(),
+            workflow_run_id=workflow_run_id,
+            title="PR gate",
+            requested_actor=f"agent:{workflow_run_id or uuid.uuid4()}",
+        )
     )
-    assert resp.status_code == 201, resp.text
-    return resp.json()["id"]
+    return str(request.id)
 
 
 def test_by_approval_returns_the_runs_attestation(factory, signer) -> None:
     run_id = _seed_run(factory)
     att_id = _mint(factory, signer, run_id)
-    client = _client(factory, _principal(), approval_service=_approval_service())
-    approval_id = _open_pr_gate(client, workflow_run_id=run_id)
+    service = _approval_service()
+    client = _client(factory, _principal(), approval_service=service)
+    approval_id = _open_pr_gate(service, workflow_run_id=run_id)
 
     resp = client.get(f"/approvals/{approval_id}/attestation")
     assert resp.status_code == 200, resp.text
@@ -340,8 +351,9 @@ def test_by_approval_returns_the_runs_attestation(factory, signer) -> None:
 
 
 def test_by_approval_404_when_gate_has_no_workflow_run(factory) -> None:
-    client = _client(factory, _principal(), approval_service=_approval_service())
-    approval_id = _open_pr_gate(client, workflow_run_id=None)
+    service = _approval_service()
+    client = _client(factory, _principal(), approval_service=service)
+    approval_id = _open_pr_gate(service, workflow_run_id=None)
 
     resp = client.get(f"/approvals/{approval_id}/attestation")
     assert resp.status_code == 404
@@ -349,8 +361,9 @@ def test_by_approval_404_when_gate_has_no_workflow_run(factory) -> None:
 
 def test_by_approval_404_when_run_is_unattested(factory) -> None:
     run_id = _seed_run(factory)
-    client = _client(factory, _principal(), approval_service=_approval_service())
-    approval_id = _open_pr_gate(client, workflow_run_id=run_id)
+    service = _approval_service()
+    client = _client(factory, _principal(), approval_service=service)
+    approval_id = _open_pr_gate(service, workflow_run_id=run_id)
 
     resp = client.get(f"/approvals/{approval_id}/attestation")
     assert resp.status_code == 404
@@ -368,8 +381,7 @@ def test_by_approval_cross_workspace_404s(factory, signer) -> None:
     run_id = _seed_run(factory, workspace_id=WS)
     _mint(factory, signer, run_id)
     service = _approval_service()
-    owner_client = _client(factory, _principal(workspace_id=WS), approval_service=service)
-    approval_id = _open_pr_gate(owner_client, workflow_run_id=run_id)
+    approval_id = _open_pr_gate(service, workflow_run_id=run_id, workspace_id=WS)
 
     foreign_client = _client(factory, _principal(workspace_id=WS2), approval_service=service)
     resp = foreign_client.get(f"/approvals/{approval_id}/attestation")
