@@ -209,6 +209,24 @@ async def test_a_run_outside_the_callers_workspace_is_refused(
         assert session.scalars(select(ApprovalRequest)).all() == []
 
 
+@pytest.mark.parametrize("method", ["run_red_team_scan", "create_approval"])
+async def test_a_run_that_does_not_exist_is_refused(
+    activities: WorkflowActivities, factory: sessionmaker[Session], method: str
+) -> None:
+    seeded = _seed(factory)
+    missing = Seeded(workspace_id=seeded.workspace_id, task_id=seeded.task_id, run_id=uuid.uuid4())
+    make = _red_team_input if method == "run_red_team_scan" else _approval_input
+
+    with pytest.raises(ApplicationError) as caught:
+        await ActivityEnvironment().run(getattr(activities, method), make(missing))
+
+    assert caught.value.type == "WorkflowRunNotFound"
+    assert caught.value.non_retryable is True
+    with factory() as session:
+        assert session.scalars(select(RedTeamRecord)).all() == []
+        assert session.scalars(select(ApprovalRequest)).all() == []
+
+
 RUN, WS, TASK = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
 
 
