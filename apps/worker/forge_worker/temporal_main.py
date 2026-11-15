@@ -8,10 +8,10 @@ serves FSM-backed runs and non-workflow jobs — §12).
 
 The ``persist_transition`` Activity writes the Postgres ``workflow_run`` projection
 through a session-per-call store, keeping it byte-faithful for the board timeline,
-run-trace viewer, and audit log. The agent / checks / PR / notify Activity bodies
-delegate to the existing slice services where wired; an unwired Activity refuses
-(ADR-0007). ``FORGE_ALLOW_FAKE_ACTIVITIES=1`` opts a dev worker into the
-stand-ins in :class:`WorkflowActivities`.
+run-trace viewer, and audit log. The approval and red-team Activities are bound
+to real services (``temporal_services``); every other Activity refuses until its
+service is bound (ADR-0007, issue #170). ``FORGE_ALLOW_FAKE_ACTIVITIES=1`` opts a
+dev worker into the stand-ins in :class:`WorkflowActivities` for the unbound ones.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from forge_db.models import AgentRun
 from forge_db.models.runs import WorkflowRun as DbWorkflowRun
 from forge_worker.dispatch import workspace_mirrors
 from forge_worker.run_workspace import remove_run_worktrees
+from forge_worker.temporal_services import approval_service, red_team_service
 from forge_workflow import WorkflowRunNotFoundError
 from forge_workflow.store import SqlAlchemyWorkflowStore
 from forge_workflow.temporal.activities import WorkflowActivities
@@ -125,16 +126,16 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
 
     ``forge.create_approval`` is wired to the real approval service (spec K
     P0): a Temporal feature run opens its spec/plan/pr gate requests in
-    Postgres instead of failing at the first gate. ``forge.cleanup_worktree``
-    is bound too, so cancelling a run reaches ``cancelled`` (spec K §4.11).
+    Postgres instead of failing at the first gate. ``forge.run_red_team_scan``
+    records the run's verdict (issue #170). ``forge.cleanup_worktree`` is bound
+    too, so cancelling a run reaches ``cancelled`` (spec K §4.11).
     """
-    from forge_worker.approval_activity import make_create_approval_fn
-
-    session_factory = factory or create_session_factory()
+    factory = factory or create_session_factory()
     return WorkflowActivities(
-        store=SessionPerCallStore(session_factory),
-        approval_fn=make_create_approval_fn(session_factory),
-        cleanup_fn=make_cleanup_fn(session_factory),
+        store=SessionPerCallStore(factory),
+        approval_fn=approval_service(factory),
+        red_team_fn=red_team_service(factory),
+        cleanup_fn=make_cleanup_fn(factory),
         allow_fakes=os.environ.get("FORGE_ALLOW_FAKE_ACTIVITIES") == "1",
     )
 

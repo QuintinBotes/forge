@@ -60,7 +60,9 @@ def test_router_dependency_returns_selected_engine(
     principal = make_test_principal(workspace_id=WS)
     with workflow_db.factory() as session:
         monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "temporal")
-        assert isinstance(get_workflow_engine(session, principal), TemporalWorkflowEngine)
+        engine = get_workflow_engine(session, principal)
+        assert isinstance(engine, TemporalWorkflowEngine)
+        assert isinstance(engine.store, SqlAlchemyWorkflowStore)
         monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "postgres_fsm")
         assert isinstance(get_workflow_engine(session, principal), WorkflowEngineImpl)
 
