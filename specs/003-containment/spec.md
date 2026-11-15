@@ -135,26 +135,28 @@ added without coverage.
 
 ---
 
-### User Story 6 - Irreversible automatic actions wait for a person, and approvals carry a reason (Priority: P2)
+### User Story 6 - Irreversible automatic actions wait for a person, and approvals can carry a reason (Priority: P2)
 
 An automation rule or an agent is about to take an action whose effects leave forge and cannot be
 undone. Forge holds the action and asks a person, however confident the system is and whatever the
-policy allows. When the person decides, they state why. Later, when a similar action is held,
-forge shows the earlier decisions and their stated reasons, and an agent's proposal can cite them.
+policy allows. When the person decides, they may state why. A reason is recorded when given and
+is never required. Later, when a similar action is held, forge shows the earlier decisions with
+any reasons given, and an agent's proposal can cite them.
 
 **Why this priority**: confidence is the wrong test for an action that cannot be taken back. A
 recorded reason turns one decision into guidance for the next. This is a native rebuild of two
 ideas noted in the world-model research (ADR-0003, ADR-0010); nothing is copied.
 
 **Independent Test**: enable an automation rule that triggers an irreversible external action.
-Observe that it is held as an approval request, that approving without a reason is refused, and
-that the next held action of the same kind shows the earlier reason.
+Observe that it is held as an approval request, that a decision without a reason is accepted, that
+a reason is recorded when one is given, and that the next held action of the same kind shows the
+earlier decision with its reason.
 
 **Acceptance Scenarios**:
 
 1. **Given** an automatic action classified as irreversible and external, **When** it is about to run, **Then** it is held, an approval request is created, and the action runs only after a person approves it.
-2. **Given** a held action, **When** a person decides without stating a reason, **Then** the decision is refused.
-3. **Given** earlier human decisions on the same kind of action in the same workspace, **When** a new action is held, **Then** the request shows those decisions with their reasons, decider and date.
+2. **Given** a held action, **When** a person decides without stating a reason, **Then** the decision is accepted and recorded with no reason. When they state one, it is recorded.
+3. **Given** earlier human decisions on the same kind of action in the same workspace, **When** a new action is held, **Then** the request shows those decisions with decider and date, and with the reason where one was given.
 4. **Given** an earlier approval of the same kind, **When** a new irreversible action is held, **Then** it is still held. Precedent informs the person and never approves on their behalf.
 5. **Given** an action classified as reversible or internal, **When** it runs, **Then** the impact gate does not hold it and existing policy gates apply unchanged.
 
@@ -220,8 +222,8 @@ that the next held action of the same kind shows the earlier reason.
 
 - **FR-026**: The system MUST classify every automatic action type as reversible or irreversible and as internal or external, and MUST treat an unclassified type as irreversible and external.
 - **FR-027**: The system MUST hold an irreversible external action as an approval request and run it only after a person approves, regardless of confidence, policy allowance or precedent.
-- **FR-028**: A decision on a held action MUST include a stated reason. A rejection of any approval MUST include a stated reason. Whether a reason is mandatory on every approval is [NEEDS CLARIFICATION: mandatory everywhere, or only for held actions and rejections as assumed here?].
-- **FR-029**: The system MUST return, for a given action kind and workspace, the earlier human decisions with their reasons, decider and time, to people in the approval view and to agents through forge's own tool surface.
+- **FR-028**: A reason on an approval decision is always optional. The system MUST record a reason when one is given and MUST NOT require one on any decision, including a decision on a held action and a rejection. Decided 2026-11-15.
+- **FR-029**: The system MUST return, for a given action kind and workspace, the earlier human decisions with decider and time, and with the reason where one was given, to people in the approval view and to agents through forge's own tool surface.
 - **FR-030**: Only decisions made by a person count as precedent. Precedent MUST NOT approve an action.
 - **FR-031**: A held action and its decision MUST be recorded in the audit chain.
 
@@ -234,7 +236,7 @@ that the next held action of the same kind shows the earlier reason.
 - **Supply-chain finding**: gate, file, line, rule, severity, and for dependencies the package, version and reason.
 - **Action impact class**: the reversibility and externality assigned to an automatic action type.
 - **Impact hold**: an approval request created for one irreversible action, with the action's parameters.
-- **Decision rationale**: the reason a person gave for a decision, quotable as precedent for later holds.
+- **Decision rationale**: the reason a person gave for a decision, when they gave one, quotable as precedent for later holds.
 
 ## Success Criteria *(mandatory)*
 
@@ -246,8 +248,8 @@ that the next held action of the same kind shows the earlier reason.
 - **SC-004**: Every issued credential in the test suite names exactly one repository and expires within one hour.
 - **SC-005**: Seeded diffs containing a secret, a nonexistent dependency, a too-new dependency and a static-analysis violation are each blocked, with zero secret values echoed.
 - **SC-006**: The PT-01 and PT-13 suites cover 100 percent of routes and workspace-scoped resource types, and fail when an uncovered one is added.
-- **SC-007**: Zero irreversible external actions run without a human approval that carries a reason.
-- **SC-008**: A second hold of the same action kind shows the first decision's reason.
+- **SC-007**: Zero irreversible external actions run without a human approval. A decision is never refused for lacking a reason.
+- **SC-008**: A second hold of the same action kind shows the first decision, with its reason when one was given.
 
 ## Assumptions
 

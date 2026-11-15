@@ -1,6 +1,7 @@
 # Forge industry-standard roadmap
 
-Status: Draft for owner review. Date: 2026-11-14. Audited at `main` @ `b178e7d`.
+Status: Draft for owner review. Date: 2026-11-14. Audited at `main` @ `b178e7d`. Owner decisions of
+2026-11-15 are recorded in section 3a.
 
 The research behind this plan is kept locally and is not committed. Many of its market and
 benchmark figures come from secondary search summaries. Treat them as leads until an issue
@@ -44,21 +45,60 @@ trust layer applies to nothing an agent ships.
 
 ## 3. Decisions the plan assumes
 
-Each is the default. The owner can change any of them before issues are created.
+D1, D2 and D6 were decided by the owner on 2026-11-15 and state the decision. D3, D4 and D5 are
+defaults that the owner can still change. Section 3a lists every decision of 2026-11-15.
 
-| # | Decision | Default | Why |
+| # | Decision | Default or decision | Why |
 |---|---|---|---|
-| D1 | What "run with tervin" means | Forge runs appear in tervin as ACP sessions and are approved there. Tervin as forge's local runner is a prototype only | Tervin accepts any ACP agent today with no code change. The runner shape needs new work in both repositories |
-| D2 | Which tervin | Published v2.2.0 | The v3 line is unreleased |
+| D1 | What "run with tervin" means | Decided 2026-11-15: both, in order. First, forge runs appear in tervin as ACP sessions that can be watched and approved there. Then tervin as forge's local runner is built as real roadmap work, not a prototype | Tervin accepts any ACP agent today with no code change, so that shape comes first. The runner shape needs new work in both repositories |
+| D2 | Which tervin | Decided 2026-11-15: the unreleased v3 line | Owner decision. The earlier default was the published v2.2.0 |
 | D3 | Spec format | Spec Kit for all new work under `specs/NNN-slug/`. Existing lettered specs stay where they are and are cited as design input | Migrating 14 approved design docs buys nothing. One benchmark found spec completeness matters more than the tool |
 | D4 | Which issues get a full spec | Features and cross-cutting work. Small fixes and docs get a plain issue | The same benchmark found no gain from specs on bug fixes, refactors and small tickets |
 | D5 | Implementation loop | Orbit, one issue at a time, driven by a small script. Switch to forge's own dispatch once milestone 1 lands | Orbit already has independent review and checks. Forge's acting path has neither yet. Parallel agent PRs conflict 20 to 42 percent of the time |
-| D6 | Name | Keep "forge" for now, decide in R41 | Two other factory projects already use the name |
+| D6 | Name | Decided 2026-11-15: rename, in one pass covering everything (repository, Python packages and imports, CLI, `FORGE_*` environment variables, images, Helm chart, docs), with compatibility aliases only where a self-hoster would otherwise break. The new name is not chosen yet; candidates are being researched for the owner to pick from. Timing: after #170 has landed and before any other roadmap issue (#248) | Two other factory projects already use the name |
+
+## 3a. Owner decisions, 2026-11-15
+
+The owner answered seventeen open questions on 2026-11-15. Each row is the decision as given. The
+Spec Kit specs and the issues named here were updated to match. Where a decision leaves a detail
+open, the spec says so and does not fill it in.
+
+| # | Topic | Decision | Issues affected |
+|---|---|---|---|
+| 1 | What "forge runs with tervin" means | Both, in order: first forge runs appear in tervin as ACP sessions that can be watched and approved there; then tervin as forge's local runner is built as real roadmap work, not a prototype | #202 (ADR), #203, #208 (runner) |
+| 2 | Which tervin to target | The unreleased v3 line | #202, #209 |
+| 3 | Agent run when Temporal is unavailable | Refuse in production. Ungoverned runs are allowed only in a development environment, and each is labelled ungoverned | #171 |
+| 4 | Does the `forge:run` label count as spec approval | No. The label only starts the run; the spec gate still creates an approval request and waits for a person | #171 |
+| 5 | Who writes held-out scenarios | A separate verifier agent on a different model family drafts them from the spec; a person approves them at the spec gate; the builder never has access | #176 |
+| 6 | Automatic integration of changes | Opting a repository in is a standing authorisation, recorded with who gave it. Changes classified `minimal` or `low` are integrated automatically; everything else waits for a person | #195 |
+| 7 | Reason on approval decisions | Always optional. A reason is recorded when given and never required | #191 |
+| 8 | Default executor for the agent loop | Per-run isolation everywhere: the Helm chart defaults to one Kubernetes Job per agent run, and Compose defaults to one container per run. `inline` stays available as an explicit setting | #239, #240, #241, #242 |
+| 9 | Kubernetes workspace storage for run pods | A shared read-write-many volume | #241, #242 |
+| 10 | How a per-run process reaches the run record | A short-lived token scoped to its own run, used against forge's API. The run process never holds the database credential | #238, #239, #240, #241; relates to #186 |
+| 11 | Project name | Rename, in one pass covering everything, with compatibility aliases only where a self-hoster would otherwise break. The new name is **scantling**, chosen 2026-11-15 from researched candidates. No trademark register or domain was checked, so a trademark search is still needed before the name is used for the specification or a foundation proposal. Timing: after #170 has landed and before any other roadmap issue | #248 (rename), #219 |
+| 12 | `load-smoke (k6)` CI job | Stays non-blocking; pull requests are not held by it. A roadmap issue investigates why it fails on every pull request | #247 |
+| 13 | First administrator sign-in with no identity provider | A CLI command on the server prints a single-use, short-lived sign-in link | #221 |
+| 14 | Context benchmark pass bar | Measure first. #199 writes forge's own questions and records a baseline; the bar is set from that measurement in a follow-up | #199, #249 |
+| 15 | Tervin cannot reach forge's HTTP MCP server (its MCP configuration is stdio-only) | Change tervin: add HTTP MCP support on tervin's v3 line. Forge corrects the claim in lettered spec L and ships no stdio proxy | #202; one issue in tervin's repository |
+| 16 | Queue for automatic integration | Both behind one interface: the host's native queue where it has one, forge's own queue otherwise | #195 |
+| 17 | Licence of the open Software Factory Specification | Specification text under CC BY 4.0, conformance suite under Apache-2.0. Forge's code licence is unchanged | #216, #217, #219 |
+
+Still open, not asked yet (the specs keep their stated defaults): the verdict observation window
+(spec 010), the reference machine for the ten-minute quickstart (spec 009), the minimum dependency
+age (spec 003), whether MCP OAuth metadata is in scope and which A2A operations are mandatory
+(spec 007), SBOM per change or per release (spec 007), the level set and whether metrics are
+required or informative (spec 008), whether the approval surface is taken from the credential or
+declared by the client (spec 006), and the wording of #183.
+
+Issues added on 2026-11-15: #247 (M0, why the `load-smoke` CI job fails), #248 (M0, the rename) and
+#249 (M5, the context benchmark pass bar). #247 and #248 carry the `owner-decision` label: #247
+needs an edit under `.github/`, and #248 waits for the owner to pick the name.
 
 ## 4. Milestones and issues
 
 Order of execution: M0, M1, M6 (R28 to R31), M3, M2, M4, M5, M7, M9, M8, M10. Tervin moves
-early because it is a stated requirement and its first steps are small. Each issue is sized
+early because it is a stated requirement and its first steps are small. The rename (#248) runs
+after #170 has landed and before any other roadmap issue. Each issue is sized
 for one Orbit run (default budget 40 files, 2000 lines). "Spec" names the Spec Kit feature
 the issue belongs to.
 
@@ -69,6 +109,8 @@ the issue belongs to.
 | R01 | Done with this plan. Adopt Spec Kit: `specify init`, a constitution drawn from `FORGE_SPEC.md` and the ADRs, and a note on how it coexists with the lettered specs | None |
 | R02 | Done with this plan. Add `.orbit/config.yaml`, check ids, and `scripts/roadmap-loop.sh` that feeds open `roadmap` issues to Orbit one at a time | R01 |
 | R03 | Refresh stale status: spec G table, README package list, regenerate `RELEASE_READINESS.md` | None |
+| #247 | Find out why the `load-smoke (k6, non-blocking)` CI job fails on every pull request and make it pass or remove it. Owner decision: the fix is an edit under `.github/` | None |
+| #248 | Rename the project everywhere in one scripted pass. The name is scantling | #170 |
 
 ### M1. One governed pipeline (spec 001)
 
@@ -136,7 +178,8 @@ It came out of the review of #169.
 |---|---|---|
 | R23 | Five factory metrics with written definitions: autonomous merge rate, cost per merged change, revert rate, human intervention rate, cycle time | R04 |
 | R24 | `forge-factory-bench`: an end-to-end benchmark with held-out tests and a published harness. Replaces the toy `forge-swe` | R09 |
-| R25 | Port the 60-question context benchmark with its 0.86 bar (spec J) | None |
+| R25 | Write forge's own 60-question context benchmark (spec J) and record a baseline. The 0.86 bar is not carried over | None |
+| #249 | Set the context benchmark's pass bar from the baseline R25 records | R25 |
 | R26 | Run the six skipped Beta gates with real credentials and tag a release. Needs owner credentials | R18 |
 | R27 | Dogfood: forge implements its own roadmap issues through `forge:run`. Move the loop from Orbit to forge | R08, R11 |
 
@@ -144,11 +187,11 @@ It came out of the review of #169.
 
 | ID | Issue | Depends on |
 |---|---|---|
-| R28 | ADR that reconciles forge ADR-0002, 0013, 0015 with tervin spec 023, and fixes the seam 1 claim in spec L (tervin's `mcp.json` is stdio-only, forge's server is HTTP). Owner decision | None |
+| R28 | ADR that records the owner decisions of 2026-11-15 on tervin (section 3a, decisions 1, 2 and 15), reconciles forge ADR-0002, 0013, 0015 with tervin spec 023, and fixes the seam 1 claim in spec L (tervin's `mcp.json` is stdio-only, forge's server is HTTP; tervin gains HTTP MCP support on its v3 line and forge ships no stdio proxy) | None |
 | R29 | `forge acp`: a stdio ACP shim in `forge-cli` that wraps run creation, the event stream and approval decisions (seam 6) | R28 |
 | R30 | Widen `RunEvent.observed_by` beyond `Literal["forge"]`. Verify approval push end to end and record the deciding surface in the audit chain (seam 4) | R29 |
 | R31 | Single-user compose profile, scoped personal access tokens, device-code auth | None |
-| R32 | Prototype only: tervin as forge's local runner (seam 5 runner protocol) | R30 |
+| R32 | Tervin as forge's local runner (seam 5 runner protocol), built as real roadmap work. #208 is the first forge-side part | R30 |
 | R33 | Paired end-to-end test: a forge run is visible and approvable in tervin on macOS | R30, R31 |
 
 ### M7. Standards conformance (spec 007)
@@ -167,7 +210,7 @@ It came out of the review of #169.
 |---|---|---|
 | R39 | Software Factory Specification v0.1: the "issue in, attested change out" contract, levels, and the evidence format | R08, R15, R23 |
 | R40 | Conformance suite for the specification. Forge passes it in CI | R39 |
-| R41 | Name, licence and governance decision, including a foundation sandbox proposal. Owner decision | R39 |
+| R41 | Licence (decided 2026-11-15: specification text under CC BY 4.0, conformance suite under Apache-2.0) and governance, including a foundation sandbox proposal. Owner decision for governance. The rename is #248 | R39 |
 
 ### M9. Product surface (spec 009)
 
@@ -283,8 +326,9 @@ What the code check changed:
 5. The owner starts the loop. `/stack:goal` forbids an agent from calling `orbit run`.
 6. From R27 on, the same queue is served by forge's own `forge:run` dispatch.
 
-Issues labelled `owner-decision` or `needs-credentials` (R26, R28, R41) are skipped by the
-loop and wait for the owner.
+Issues labelled `owner-decision` or `needs-credentials` (R26, R41, #247, #248) are skipped by the
+loop and wait for the owner. R28 (#202) no longer carries `owner-decision`: its decisions were made
+on 2026-11-15.
 
 Known limits of the loop:
 
@@ -302,9 +346,9 @@ Known limits of the loop:
 | Scope: 63 issues for a solo-maintained project | Strict order. M0, M1, M6 and M3 alone make forge defensible. Everything after is additive |
 | Orbit 0.3.1 can end with a verified change it did not deliver | The loop stops on any non-success exit. Expect manual rescues |
 | Research figures are second-hand | No issue cites a figure as fact. R34, R36 and R38 check versions against primary specs |
-| Tervin's direction contradicts forge's ADRs | R28 settles it before any tervin code is written |
+| Tervin's direction contradicts forge's ADRs | Decided 2026-11-15 (section 3a). R28 records it before any tervin code is written |
 | The scaffolding has a short half-life as models improve | Invest in verification and evidence, which outlast harness changes |
-| Other projects already use the name | R41 |
+| Other projects already use the name | The rename, #248 |
 
 ## 7. Not covered
 
