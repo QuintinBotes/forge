@@ -1139,6 +1139,25 @@ def test_single_active_run_migration_resolves_existing_duplicates(alembic_config
                 )
                 for name, (run_status, created_at) in runs.items()
             )
+            # Two active runs with one created_at: only the id breaks the tie.
+            tied = models.Task(workspace_id=ws.id, project_id=project.id, key="CORE-2", title="U")
+            session.add(tied)
+            session.flush()
+            same_time = datetime(2026, 1, 5, tzinfo=UTC)
+            session.add_all(
+                models.WorkflowRun(
+                    id=run_id,
+                    workspace_id=ws.id,
+                    task_id=tied.id,
+                    workflow_name=name,
+                    status="running",
+                    created_at=same_time,
+                )
+                for name, run_id in (
+                    ("tie-low", uuid.UUID(int=1)),
+                    ("tie-high", uuid.UUID(int=2)),
+                )
+            )
             session.commit()
 
         command.upgrade(alembic_config, "head")
@@ -1156,6 +1175,8 @@ def test_single_active_run_migration_resolves_existing_duplicates(alembic_config
             "newer": "cancelled",
             "newest": "cancelled",
             "done": "succeeded",
+            "tie-low": "running",
+            "tie-high": "cancelled",
         }
         assert cancelled_at is not None
 

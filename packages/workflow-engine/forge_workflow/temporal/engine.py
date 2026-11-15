@@ -180,15 +180,10 @@ class TemporalWorkflowEngine:
             # The workflow is live, so the row stays and gains its run id.
             self._record_temporal_run_id(run_id, exc.run_id)
             raise DuplicateRunError(task_id) from exc
-        except Exception:
-            failed = self._store.get(run_id)
-            # A run id means another start reused this row and its workflow is live.
-            if failed.context.get("temporal_run_id") is None:
-                failed.status = RunStatus.FAILED
-                failed.completed_at = _now()
-                self._store.update(failed)
-                self._store.commit()
-            raise
+        # Any other error leaves the row active with no run id: the workflow may
+        # have started anyway (a timeout after the server accepted it), so the row
+        # is not freed. The next start reuses it under the same workflow id, and
+        # Temporal refuses a second workflow if the first one exists.
 
         self._handles[run_id] = handle
         self._record_temporal_run_id(run_id, handle.result_run_id)

@@ -299,7 +299,7 @@ def test_the_row_is_committed_before_the_workflow_starts(
     assert seen and seen[0] is not None, "start_workflow ran before the row was committed"
 
 
-def test_a_failed_workflow_start_fails_the_row_and_frees_the_task(
+def test_a_failed_workflow_start_keeps_the_row_for_the_next_start_to_reuse(
     factory: sessionmaker[Session],
     temporal: _FakeTemporalClient,
     client_as: Callable[[uuid.UUID], TestClient],
@@ -312,16 +312,40 @@ def test_a_failed_workflow_start_fails_the_row_and_frees_the_task(
     with pytest.raises(RuntimeError, match="temporal unavailable"):
         client.post("/workflow/runs", json={"task_id": str(TASK)})
 
+    # The error does not prove the workflow never started, so the row is not freed.
     with factory() as session:
-        (failed,) = session.query(DbWorkflowRun).all()
-    assert failed.status.value == "failed"
-    assert failed.completed_at is not None
+        (kept,) = session.query(DbWorkflowRun).all()
+    assert kept.status.value == "running"
+    assert kept.temporal_run_id is None
     assert temporal.started == {}
 
     temporal.on_start = lambda _params: None
-    retried = _start(client)
-    assert retried != failed.id
-    assert [r.id for r in _active_rows(factory)] == [retried]
+    assert _start(client) == kept.id
+    assert [r.id for r in _active_rows(factory)] == [kept.id]
+    assert len(temporal.started) == 1
+
+
+def test_a_start_that_failed_after_the_workflow_started_does_not_open_a_second_run(
+    factory: sessionmaker[Session],
+    temporal: _FakeTemporalClient,
+    client_as: Callable[[uuid.UUID], TestClient],
+) -> None:
+    def _accepted_then_timed_out(params: WorkflowParams) -> None:
+        temporal.started[f"wf-{params.workflow_run_id}"] = params
+        raise TimeoutError("deadline exceeded after the server accepted the start")
+
+    temporal.on_start = _accepted_then_timed_out
+    client = client_as(WS)
+    with pytest.raises(TimeoutError):
+        client.post("/workflow/runs", json={"task_id": str(TASK)})
+    temporal.on_start = lambda _params: None
+
+    retry = client.post("/workflow/runs", json={"task_id": str(TASK)})
+
+    assert retry.status_code == 409, retry.text
+    assert len(temporal.started) == 1
+    (row,) = _active_rows(factory)
+    assert row.temporal_run_id == _FakeHandle.result_run_id
 
 
 def test_a_row_whose_workflow_never_started_is_reused_by_the_next_start(
