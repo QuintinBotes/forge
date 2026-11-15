@@ -8,9 +8,12 @@ is sync; Temporal is async, so each protocol method bridges via ``runner``
 public so callers already inside an event loop (and the test suite, on the
 time-skipping ``WorkflowEnvironment``) can drive the engine without a nested loop.
 
-* ``start`` writes the ``workflow_run`` projection (``engine_backend=temporal``,
-  ``temporal_workflow_id=wf-<id>``), rejects a duplicate active run for the task,
-  then starts ``forge.FeatureWorkflow`` with ``REJECT_DUPLICATE``.
+* ``start`` rejects a duplicate active run for the task, commits the
+  ``workflow_run`` projection (``engine_backend=temporal``,
+  ``temporal_workflow_id=wf-<id>``), then starts ``forge.FeatureWorkflow`` with
+  ``REJECT_DUPLICATE`` and records ``temporal_run_id``. A start that fails marks
+  the row failed. A temporal row without ``temporal_run_id`` is a start that
+  died before its workflow started; the next start for the task reuses it.
 * ``transition`` is a synchronous Workflow **Update** (cancel is a **Signal**); an
   invalid event / failed guard surfaces as ``InvalidTransitionError`` /
   ``GuardFailedError`` (→ HTTP 409), identical to the FSM.
@@ -122,52 +125,82 @@ class TemporalWorkflowEngine:
         from temporalio.common import WorkflowIDReusePolicy
         from temporalio.exceptions import WorkflowAlreadyStartedError
 
-        if self._store.find_active_by_task(task_id) is not None:
+        active = self._store.find_active_by_task(task_id)
+        if active is None:
+            run_id = uuid.uuid4()
+            run = self._store.create(
+                WorkflowRun(
+                    id=run_id,
+                    task_id=task_id,
+                    workflow_name=definition_name,
+                    current_state=WorkflowState.CREATED.value,
+                    status=RunStatus.RUNNING,
+                    started_at=_now(),
+                    context={
+                        "engine_backend": "temporal",
+                        "temporal_workflow_id": workflow_id(run_id),
+                        "retry_count": 0,
+                        "transitions": [],
+                    },
+                )
+            )
+        elif (
+            active.id is not None
+            and active.context.get("engine_backend") == "temporal"
+            and active.context.get("temporal_run_id") is None
+        ):
+            # No run id means an earlier start died between its commit and
+            # ``start_workflow``. Reuse the row under its own workflow id: if
+            # that workflow did start after all, Temporal refuses a second one.
+            run_id, run = active.id, active
+        else:
             raise DuplicateRunError(task_id)
-
-        run_id = uuid.uuid4()
-        wf_id = workflow_id(run_id)
-        run = WorkflowRun(
-            id=run_id,
-            task_id=task_id,
-            workflow_name=definition_name,
-            current_state=WorkflowState.CREATED.value,
-            status=RunStatus.RUNNING,
-            started_at=_now(),
-            context={
-                "engine_backend": "temporal",
-                "temporal_workflow_id": wf_id,
-                "retry_count": 0,
-                "transitions": [],
-            },
-        )
-        self._store.create(run)
+        # The worker reads the row on its own connection, so it must be
+        # committed before the workflow that reads it can exist.
+        self._store.commit()
 
         params = WorkflowParams(
             workflow_run_id=run_id,
             task_id=task_id,
             workspace_id=self._workspace_id,
-            definition_name=definition_name,
-            retry_policy=self._retry_policy(definition_name),
-            escalation_policy=self._escalation_policy(definition_name),
+            definition_name=run.workflow_name,
+            retry_policy=self._retry_policy(run.workflow_name),
+            escalation_policy=self._escalation_policy(run.workflow_name),
         )
-        client = await self._get_client()
         try:
+            client = await self._get_client()
             handle = await client.start_workflow(
                 FeatureWorkflow.run,
                 params,
-                id=wf_id,
+                id=run.context["temporal_workflow_id"],
                 task_queue=self._task_queue,
                 id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
             )
         except WorkflowAlreadyStartedError as exc:
+            # The workflow is live, so the row stays and gains its run id.
+            self._record_temporal_run_id(run_id, exc.run_id)
             raise DuplicateRunError(task_id) from exc
+        except Exception:
+            failed = self._store.get(run_id)
+            # A run id means another start reused this row and its workflow is live.
+            if failed.context.get("temporal_run_id") is None:
+                failed.status = RunStatus.FAILED
+                failed.completed_at = _now()
+                self._store.update(failed)
+                self._store.commit()
+            raise
 
         self._handles[run_id] = handle
-        stored = self._store.get(run_id)
-        stored.context["temporal_run_id"] = handle.result_run_id
-        self._store.update(stored)
+        self._record_temporal_run_id(run_id, handle.result_run_id)
         return self._store.get(run_id)
+
+    def _record_temporal_run_id(self, run_id: uuid.UUID, temporal_run_id: str | None) -> None:
+        if temporal_run_id is None:
+            return
+        stored = self._store.get(run_id)
+        stored.context["temporal_run_id"] = temporal_run_id
+        self._store.update(stored)
+        self._store.commit()
 
     async def atransition(
         self, run_id: uuid.UUID, event: str, *, actor: str = "system", **payload: Any

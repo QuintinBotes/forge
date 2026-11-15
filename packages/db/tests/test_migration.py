@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
 
 import forge_db.models as models
 from forge_db.migration_utils import (
@@ -1090,6 +1092,77 @@ def test_ao_config_role_model_config_migration_up_down(alembic_config: Config) -
         assert not (AO_CONFIG_TABLES & after_down), "downgrade left agent_role_config"
         assert after_down >= EXPECTED_TABLES
 
+        command.downgrade(alembic_config, "base")
+    finally:
+        engine.dispose()
+
+
+_ACTIVE_RUN_INDEX = "uq_workflow_run_active_task"
+
+
+def test_single_active_run_migration_resolves_existing_duplicates(alembic_config: Config) -> None:
+    """0045 adds the one-active-run-per-task index (#235) to a database that
+    already holds two active runs for one task: the oldest stays active, the
+    later ones are cancelled, terminal runs are untouched.
+
+    (The metadata-driven baseline provisions the index on a fresh chain, so the
+    test drops it to stand in for a database created before this revision.)"""
+    url = alembic_config.get_main_option("sqlalchemy.url")
+    assert url is not None
+    engine = create_engine(url)
+    runs = {
+        "oldest": ("running", datetime(2026, 1, 1, tzinfo=UTC)),
+        "newer": ("running", datetime(2026, 1, 2, tzinfo=UTC)),
+        "newest": ("escalated", datetime(2026, 1, 3, tzinfo=UTC)),
+        "done": ("succeeded", datetime(2026, 1, 4, tzinfo=UTC)),
+    }
+    try:
+        command.upgrade(alembic_config, "0044_agent_run_context_refs")
+        with Session(engine) as session:
+            session.execute(text(f"DROP INDEX {_ACTIVE_RUN_INDEX}"))
+            ws = models.Workspace(name="Acme", slug="acme")
+            session.add(ws)
+            session.flush()
+            project = models.Project(workspace_id=ws.id, name="Core", key="CORE")
+            session.add(project)
+            session.flush()
+            task = models.Task(workspace_id=ws.id, project_id=project.id, key="CORE-1", title="T")
+            session.add(task)
+            session.flush()
+            session.add_all(
+                models.WorkflowRun(
+                    workspace_id=ws.id,
+                    task_id=task.id,
+                    workflow_name=name,
+                    status=run_status,
+                    created_at=created_at,
+                )
+                for name, (run_status, created_at) in runs.items()
+            )
+            session.commit()
+
+        command.upgrade(alembic_config, "head")
+
+        unique = {i["name"] for i in inspect(engine).get_indexes("workflow_run") if i["unique"]}
+        assert _ACTIVE_RUN_INDEX in unique
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT workflow_name, status FROM workflow_run"))
+            after = dict(rows.tuples().all())
+            cancelled_at = conn.execute(
+                text("SELECT completed_at FROM workflow_run WHERE workflow_name = 'newer'")
+            ).scalar_one()
+        assert after == {
+            "oldest": "running",
+            "newer": "cancelled",
+            "newest": "cancelled",
+            "done": "succeeded",
+        }
+        assert cancelled_at is not None
+
+        command.downgrade(alembic_config, "0044_agent_run_context_refs")
+        assert _ACTIVE_RUN_INDEX not in {
+            i["name"] for i in inspect(engine).get_indexes("workflow_run")
+        }
         command.downgrade(alembic_config, "base")
     finally:
         engine.dispose()

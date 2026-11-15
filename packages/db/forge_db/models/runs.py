@@ -36,14 +36,23 @@ if TYPE_CHECKING:
     from forge_db.models.sandbox import SandboxInstance
 
 
+#: Predicate of ``uq_workflow_run_active_task``: the non-terminal statuses.
+_ACTIVE_RUN_WHERE = "status NOT IN ('succeeded', 'failed', 'cancelled')"
+
+
 class WorkflowRun(WorkspaceScopedModel):
     """A durable FSM run for a task (spec: Default Feature Workflow States).
 
     F25 adds three engine-attribution columns so a run can be driven either by
     the V1 Postgres FSM or the V2 Temporal durable workflow engine. The Temporal
     engine writes ``temporal_workflow_id = wf-<run_id>``; a partial-unique index
-    on it (where not null) gives the same single-active-run guarantee the FSM
-    enforces, complementing Temporal's ``WorkflowIdReusePolicy.REJECT_DUPLICATE``.
+    on it (where not null) keeps one row per Temporal workflow. Because that id
+    is fresh for every run, it does not limit how many runs a task has.
+
+    The single-active-run guarantee is ``uq_workflow_run_active_task``: a
+    partial-unique index on ``task_id`` over rows whose ``status`` is not
+    terminal (``succeeded``, ``failed``, ``cancelled``), so the database refuses
+    a second pending, running or escalated run for a task on either engine.
     """
 
     __tablename__ = "workflow_run"
@@ -55,6 +64,13 @@ class WorkflowRun(WorkspaceScopedModel):
             unique=True,
             postgresql_where=text("temporal_workflow_id IS NOT NULL"),
             sqlite_where=text("temporal_workflow_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_workflow_run_active_task",
+            "task_id",
+            unique=True,
+            postgresql_where=text(_ACTIVE_RUN_WHERE),
+            sqlite_where=text(_ACTIVE_RUN_WHERE),
         ),
     )
 

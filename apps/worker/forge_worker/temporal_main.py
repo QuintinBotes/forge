@@ -76,6 +76,9 @@ class SessionPerCallStore:
         with self._factory() as session:
             return self._store(session).list_by_task(task_id)
 
+    def commit(self) -> None:
+        pass  # every call above already committed its own session
+
 
 def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowActivities:
     """Build the worker's Activities over a DB-backed projection store."""

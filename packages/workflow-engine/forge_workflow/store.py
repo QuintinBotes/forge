@@ -15,7 +15,7 @@ import uuid
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from forge_contracts import ExecutionMode, RunStatus, WorkflowRun
-from forge_workflow.exceptions import WorkflowRunNotFoundError
+from forge_workflow.exceptions import DuplicateRunError, WorkflowRunNotFoundError
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -43,6 +43,10 @@ class WorkflowStore(Protocol):
 
     def list_by_task(self, task_id: uuid.UUID) -> list[WorkflowRun]:
         """Return all runs for ``task_id`` (F25; used by ``list_runs``)."""
+        ...
+
+    def commit(self) -> None:
+        """Make the writes so far durable and visible to other connections."""
         ...
 
 
@@ -79,6 +83,9 @@ class InMemoryWorkflowStore:
 
     def list_by_task(self, task_id: uuid.UUID) -> list[WorkflowRun]:
         return [run.model_copy(deep=True) for run in self._runs.values() if run.task_id == task_id]
+
+    def commit(self) -> None:
+        pass
 
 
 class SqlAlchemyWorkflowStore:
@@ -117,6 +124,8 @@ class SqlAlchemyWorkflowStore:
         )
 
     def create(self, run: WorkflowRun) -> WorkflowRun:
+        from sqlalchemy.exc import IntegrityError
+
         from forge_db.models.enums import EngineBackend as DbEngineBackend
         from forge_db.models.enums import ExecutionMode as DbExecutionMode
         from forge_db.models.enums import RunStatus as DbRunStatus
@@ -141,7 +150,14 @@ class SqlAlchemyWorkflowStore:
         if run.id is not None:
             model.id = run.id
         self._session.add(model)
-        self._session.flush()
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            self._session.rollback()
+            # ``uq_workflow_run_active_task``: a concurrent start won the task.
+            if run.task_id is not None and self.find_active_by_task(run.task_id) is not None:
+                raise DuplicateRunError(run.task_id) from exc
+            raise
         return self._to_dto(model)
 
     @staticmethod
@@ -228,6 +244,9 @@ class SqlAlchemyWorkflowStore:
             .order_by(DbWorkflowRun.started_at)
         )
         return [self._to_dto(m) for m in self._session.execute(stmt).scalars().all()]
+
+    def commit(self) -> None:
+        self._session.commit()
 
 
 __all__ = [

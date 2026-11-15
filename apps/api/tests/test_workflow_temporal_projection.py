@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from temporalio.exceptions import WorkflowAlreadyStartedError
 
 from forge_api.db import get_db
 from forge_api.deps import Principal, get_current_principal
@@ -30,6 +31,7 @@ from forge_db.base import Base
 from forge_db.models import Project, Task, Workspace
 from forge_db.models.runs import WorkflowRun as DbWorkflowRun
 from forge_worker.temporal_main import build_activities
+from forge_workflow.store import SqlAlchemyWorkflowStore
 from forge_workflow.temporal.payloads import TransitionRecord, WorkflowParams
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000001a1")
@@ -67,8 +69,14 @@ class _FakeTemporalClient:
     def __init__(self, factory: sessionmaker[Session]) -> None:
         self.activities = build_activities(factory)
         self.started: dict[str, WorkflowParams] = {}
+        self.on_start: Callable[[WorkflowParams], None] = lambda _params: None
 
     async def start_workflow(self, _workflow: Any, params: WorkflowParams, **kwargs: Any) -> Any:
+        if kwargs["id"] in self.started:
+            raise WorkflowAlreadyStartedError(
+                kwargs["id"], "FeatureWorkflow", run_id=_FakeHandle.result_run_id
+            )
+        self.on_start(params)
         self.started[kwargs["id"]] = params
         return _FakeHandle(self, kwargs["id"])
 
@@ -223,3 +231,132 @@ def test_start_run_rejects_a_task_outside_the_callers_workspace(
     assert temporal.started == {}
     with factory() as session:
         assert session.query(DbWorkflowRun).count() == 0
+
+
+def _active_rows(factory: sessionmaker[Session]) -> list[DbWorkflowRun]:
+    with factory() as session:
+        rows = session.query(DbWorkflowRun).filter(DbWorkflowRun.task_id == TASK).all()
+    return [r for r in rows if r.status.value not in {"succeeded", "failed", "cancelled"}]
+
+
+def _add_unstarted_row(factory: sessionmaker[Session]) -> uuid.UUID:
+    """The row a crash between the commit and ``start_workflow`` leaves behind."""
+    run_id = uuid.uuid4()
+    with factory() as session:
+        session.add(
+            DbWorkflowRun(
+                id=run_id,
+                workspace_id=WS,
+                task_id=TASK,
+                status="running",
+                engine_backend="temporal",
+                temporal_workflow_id=f"wf-{run_id}",
+            )
+        )
+        session.commit()
+    return run_id
+
+
+def test_concurrent_starts_for_one_task_give_one_run_and_one_workflow(
+    factory: sessionmaker[Session],
+    temporal: _FakeTemporalClient,
+    client_as: Callable[[uuid.UUID], TestClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = client_as(WS)
+    read = SqlAlchemyWorkflowStore.find_active_by_task
+    winner: list[uuid.UUID] = []
+    racing: list[bool] = []
+
+    def _read_then_lose_the_race(self: SqlAlchemyWorkflowStore, task_id: uuid.UUID) -> Any:
+        found = read(self, task_id)
+        if not racing:
+            racing.append(True)
+            # A second request starts and commits after this one's read.
+            winner.append(_start(client))
+        return found
+
+    monkeypatch.setattr(SqlAlchemyWorkflowStore, "find_active_by_task", _read_then_lose_the_race)
+
+    loser = client.post("/workflow/runs", json={"task_id": str(TASK)})
+
+    assert loser.status_code == 409, loser.text
+    assert [r.id for r in _active_rows(factory)] == winner
+    assert [p.workflow_run_id for p in temporal.started.values()] == winner
+
+
+def test_the_row_is_committed_before_the_workflow_starts(
+    factory: sessionmaker[Session],
+    temporal: _FakeTemporalClient,
+    client_as: Callable[[uuid.UUID], TestClient],
+) -> None:
+    seen: list[DbWorkflowRun | None] = []
+    # ``_row`` reads on its own connection, as the worker's first activity does.
+    temporal.on_start = lambda params: seen.append(_row(factory, params.workflow_run_id))
+
+    _start(client_as(WS))
+
+    assert seen and seen[0] is not None, "start_workflow ran before the row was committed"
+
+
+def test_a_failed_workflow_start_fails_the_row_and_frees_the_task(
+    factory: sessionmaker[Session],
+    temporal: _FakeTemporalClient,
+    client_as: Callable[[uuid.UUID], TestClient],
+) -> None:
+    def _unavailable(_params: WorkflowParams) -> None:
+        raise RuntimeError("temporal unavailable")
+
+    temporal.on_start = _unavailable
+    client = client_as(WS)
+    with pytest.raises(RuntimeError, match="temporal unavailable"):
+        client.post("/workflow/runs", json={"task_id": str(TASK)})
+
+    with factory() as session:
+        (failed,) = session.query(DbWorkflowRun).all()
+    assert failed.status.value == "failed"
+    assert failed.completed_at is not None
+    assert temporal.started == {}
+
+    temporal.on_start = lambda _params: None
+    retried = _start(client)
+    assert retried != failed.id
+    assert [r.id for r in _active_rows(factory)] == [retried]
+
+
+def test_a_row_whose_workflow_never_started_is_reused_by_the_next_start(
+    factory: sessionmaker[Session],
+    temporal: _FakeTemporalClient,
+    client_as: Callable[[uuid.UUID], TestClient],
+) -> None:
+    stale = _add_unstarted_row(factory)
+
+    assert _start(client_as(WS)) == stale
+
+    (params,) = temporal.started.values()
+    assert params.workflow_run_id == stale
+    row = _row(factory, stale)
+    assert row is not None
+    assert row.temporal_run_id == _FakeHandle.result_run_id
+    assert [r.id for r in _active_rows(factory)] == [stale]
+
+
+def test_reusing_a_row_whose_workflow_did_start_is_refused_and_keeps_the_row(
+    factory: sessionmaker[Session],
+    temporal: _FakeTemporalClient,
+    client_as: Callable[[uuid.UUID], TestClient],
+) -> None:
+    # The workflow started, but the request died before recording its run id.
+    stale = _add_unstarted_row(factory)
+    temporal.started[f"wf-{stale}"] = WorkflowParams(
+        workflow_run_id=stale, task_id=TASK, workspace_id=WS
+    )
+
+    resp = client_as(WS).post("/workflow/runs", json={"task_id": str(TASK)})
+
+    assert resp.status_code == 409, resp.text
+    assert len(temporal.started) == 1
+    row = _row(factory, stale)
+    assert row is not None
+    assert row.status.value == "running"
+    assert row.temporal_run_id == _FakeHandle.result_run_id

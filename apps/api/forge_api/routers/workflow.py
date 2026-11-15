@@ -279,9 +279,6 @@ def start_run(
             )
     with _workflow_errors():
         run = engine.start(request.task_id)
-    # The Temporal engine wrote the run's row through this session; the worker
-    # reads it on its own connection. The V1 engine wrote nothing here.
-    session.commit()
     if run.id is not None:
         ownership.record(run.id, principal.workspace_id)
     return run
