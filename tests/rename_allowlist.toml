@@ -119,7 +119,12 @@ reason = "The .forge/ directory in governed repositories: .forge/policy.yaml, .f
 [[spans]]
 pattern = 'https?://(marketplace\.)?forge\.dev\b|\bforge\.dev/'
 category = "compatibility"
-reason = "Signed and stored URIs: the attestation predicate type, statement field URIs, the node label key forge.dev/sandbox-runtime, the default marketplace registry URL."
+reason = "Stored URIs: statement field URIs in test fixtures, the node label key forge.dev/sandbox-runtime, the default marketplace registry URL."
+
+[[spans]]
+pattern = 'https://github\.com/QuintinBotes/forge/attestations/'
+category = "compatibility"
+reason = "The attestation predicate type: written into every signed in-toto statement, the attestation.predicate_type column and the audit chain, and matched by outside verifiers."
 
 [[spans]]
 pattern = '\bforge_[a-z0-9_]+_(total|seconds|ratio|delta|confidence|completeness)(_bucket|_sum|_count)?\b|\bforge_mcp_\*'
@@ -266,7 +271,7 @@ category = "third-party"
 reason = "Forge Code, another project: a cited blog post, and the agent name in the vendored Spec Kit script."
 
 [[spans]]
-pattern = 'forge a chain link|cannot forge\b|can forge a\b|cannot_forge_|\\x1f(FORGED|forged)|\\nForged\b'
+pattern = 'forge a chain link|cannot forge\b|can forge a\b|\bForge a record\b|cannot_forge_|\\x1f(FORGED|forged)|\\nForged\b'
 category = "third-party"
 reason = "The English verb."
 

@@ -77,7 +77,7 @@ INTOTO_STATEMENT_TYPE: Literal["https://in-toto.io/Statement/v1"] = (
 
 #: SCF's ``predicateType`` for a :class:`ChangesetProvenance` predicate.
 CHANGESET_PROVENANCE_PREDICATE_TYPE = (
-    "https://github.com/QuintinBotes/swarm-code-factory/attestations/changeset-provenance/v1"
+    "https://github.com/QuintinBotes/forge/attestations/changeset-provenance/v1"
 )
 
 

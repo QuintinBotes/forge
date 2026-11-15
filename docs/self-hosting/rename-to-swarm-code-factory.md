@@ -94,7 +94,8 @@ kept, and a later change will need a migration or a staged rollout.
 
 **Signed and hashed material**
 
-- The attestation predicate type (`https://forge.dev/attestations/changeset/v1`) and statement
+- The attestation predicate type
+  (`https://github.com/QuintinBotes/forge/attestations/changeset-provenance/v1`) and statement
   fields. An attestation signed before the rename verifies after it.
 - Audit-chain fields and run-event payload values. An exported audit chain still verifies.
 - The session JWT audience and issuer (`forge-api`, `forge-web`).

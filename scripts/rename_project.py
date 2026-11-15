@@ -95,7 +95,11 @@ PRESERVE: list[tuple[str | None, str]] = [
     (r"^deploy/observability/", r"name: forge_\w+"),  # Prometheus rule group names
     # The evaluation corpus: its text is what retrieval scores are measured on.
     (r"^packages/evaluation/\w+/(retrieval_eval\.py|data/|golden/)", r"Forge"),
-    (None, r"forge a chain link|cannot forge\b|can forge a\b"),  # the English verb
+    # The English verb.
+    (None, r"forge a chain link|cannot forge\b|can forge a\b|\bForge a record\b"),
+    # The attestation predicate type: written into every signed statement, the
+    # attestation table and the audit chain, and matched by outside verifiers.
+    (None, r"https://github\.com/QuintinBotes/forge/attestations/[\w./-]+"),
     # Framed ASCII diagrams: renamed by reframe(), which keeps the frame aligned.
     (None, r"(?m)^.*[│┌└├].*[│┐┘┤]\s*$"),
 ]

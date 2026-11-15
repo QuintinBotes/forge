@@ -125,7 +125,7 @@ def test_tampered_entry_breaks_chain_verification() -> None:
     for i in range(3):
         log.record(category=AuditCategory.AGENT_ACTION, action=f"a{i}")
     entries = log.store.all()
-    # SCF a record that changes content but keeps the original hash.
+    # Forge a record that changes content but keeps the original hash.
     tampered = entries[1].model_copy(update={"action": "MALICIOUS"})
     chain = [entries[0], tampered, entries[2]]
     assert verify_chain(chain) is False
