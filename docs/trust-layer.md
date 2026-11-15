@@ -250,15 +250,12 @@ through the shared `forge_workflow.red_team_gate` helper:
   spec is drafted and clarified but **before** the human spec-approval gate, the
   workflow runs a red-team scan. A `blocked` verdict routes the change back for
   changes (→ clarification → spec review) so a human must address the finding; a
-  `survived` verdict proceeds unchanged, and — **only if the wired `red_team_fn`
-  itself records** — a recorder writes the `RedTeamRecord` plus a
-  `redteam.survived` audit event. The `forge.run_red_team_scan` activity
+  `survived` verdict proceeds unchanged. The `forge.run_red_team_scan` activity
   (`packages/workflow-engine/forge_workflow/temporal/activities.py`) returns
-  exactly `self._red_team_fn(inp)` — the pure verdict that drives the
-  workflow's routing decision — and persists nothing itself; whether anything
-  lands in `red_team_record` depends entirely on what `red_team_fn` does. See
-  **Current limitations** for what the stock (no-adversary-wired) default
-  actually persists.
+  exactly `self._red_team_fn(inp)` and persists nothing itself; the worker's
+  bound `red_team_fn` (`apps/worker/forge_worker/temporal_services.py`) records
+  the `RedTeamRecord` and, on a survive, the `redteam.survived` audit event
+  through `ensure_red_team_verdict`, once per run.
 - **V1 (Postgres FSM)** — the FSM is a plain transition graph with no gate
   hooks, and its one production driver is the workflow router: when a
   transition lands a V1 run in `spec_review` (the human spec gate — the same
@@ -296,24 +293,17 @@ foreign runs (no existence leak).
   `survived`/`parked` record must not be read as "an adversary tried and failed
   to break this". A real deployment must inject a `red_team_fn` that runs the
   heterogeneous, sandboxed adversary (`run_red_team`).
-- **The default parked-pass is persisted on V1, NOT on Temporal — the two
-  spines are asymmetric here.** The V1 router transition handler always calls
-  `ensure_red_team_verdict`, which evaluates *and* appends to `red_team_record`
-  — so a V1 run reaching `spec_review` under the stock (no-adversary) default
-  always has a persisted `survived`/`parked` row, and `GET
-  /workflow/runs/{run_id}/red-team` shows it. The Temporal spine's
-  `run_red_team_scan` activity only returns the pure verdict from
-  `_default_red_team`; the worker's activity wiring
-  (`apps/worker/forge_worker/temporal_main.py`) passes no `red_team_fn`, so
-  nothing records it to `red_team_record`. The parked verdict still durably
-  drives the workflow's routing decision (it is real Temporal workflow
-  history), but an identical Temporal run's `GET
-  /workflow/runs/{run_id}/red-team` reads `latest=None` with an empty history —
-  not because no scan happened, but because the default scan was never told to
-  record. To put a Temporal run's verdict on record, either call `POST
-  /workflow/runs/{run_id}/red-team` (which always evaluates *and* appends via
-  `run_and_record_red_team`, on either engine) or construct
-  `WorkflowActivities` with a `red_team_fn` that records as well as evaluates.
+- **The parked-pass is persisted on both spines.** The V1 router transition
+  handler calls `ensure_red_team_verdict` when a run reaches `spec_review`. The
+  Temporal worker binds the same function to `forge.run_red_team_scan`
+  (`apps/worker/forge_worker/temporal_services.py`), so a Temporal run with no
+  adversary wired also has one `survived`/`parked` row and `GET
+  /workflow/runs/{run_id}/red-team` shows it. A retried scan records no second
+  row. A `WorkflowActivities` built without a `red_team_fn` and without
+  `allow_fakes` refuses the scan instead of passing it.
+- **No adversary runs on the Temporal worker yet.** The worker passes no
+  adversary to `ensure_red_team_verdict`, so every Temporal scan is the
+  parked-pass above until issue #174 wires one.
 
 ---
 
