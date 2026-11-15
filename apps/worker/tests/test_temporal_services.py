@@ -28,6 +28,7 @@ from forge_db.models import (
     WorkflowRun,
     Workspace,
 )
+from forge_db.models.observability_audit import ObservabilityAuditEntry
 from forge_worker.temporal_main import build_activities
 from forge_workflow.temporal.activities import WorkflowActivities
 from forge_workflow.temporal.payloads import (
@@ -141,6 +142,19 @@ async def test_create_approval_opens_one_gate_tied_to_the_workflow_run(
     assert (row.subject_type, row.subject_id) == ("workflow_run", seeded.run_id)
     assert row.task_id == seeded.task_id
     assert row.status is ApprovalStatus.PENDING
+
+
+async def test_create_approval_writes_one_requested_entry_to_the_audit_chain(
+    activities: WorkflowActivities, factory: sessionmaker[Session]
+) -> None:
+    seeded = _seed(factory)
+    await ActivityEnvironment().run(activities.create_approval, _approval_input(seeded))
+    await ActivityEnvironment().run(activities.create_approval, _approval_input(seeded))
+
+    with factory() as session:
+        (entry,) = session.scalars(select(ObservabilityAuditEntry)).all()
+    assert (entry.category, entry.action) == ("approval", "pr")
+    assert entry.run_id == seeded.run_id
 
 
 async def test_create_approval_retry_after_the_gate_was_decided_opens_no_second_gate(

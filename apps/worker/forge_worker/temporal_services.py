@@ -14,6 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 
+from forge_api.observability.audit import AuditLog
+from forge_api.observability.audit_db import DbAuditStore
 from forge_api.observability.redaction import redact_mapping
 from forge_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from forge_approval.authorizer import ApprovalAuthorizer
@@ -73,6 +75,9 @@ def approval_service(factory: sessionmaker[Session]) -> ApprovalFn:
         SqlAlchemyApprovalRepository(factory),
         GateRegistry(),
         ApprovalAuthorizer(),
+        # The request row is always in Postgres, so its audit entry is too,
+        # whatever FORGE_AUDIT_BACKEND selects for the API.
+        audit=AuditLog(DbAuditStore(factory)),
         redactor=redact_mapping,
     )
 
