@@ -118,7 +118,7 @@ to the board and to Temporal:
   `agent_run_id`. The Temporal `run_agent` activity and an automation action ("start agent run when
   a task's spec is approved") both call it and enqueue `forge.agent.run`.
 
-## 4b. Implementation status (2026-11-07, branch `feat/agents-act-g`)
+## 4b. Implementation status (refreshed 2026-11-14)
 
 | Item | State |
 |---|---|
@@ -128,10 +128,11 @@ to the board and to Temporal:
 | G1 §3.3 worker path: per-run worktree + sandbox from settings strengthened by repo policy + tool belt | done |
 | G1 §3.4 budgets: `BudgetedModelClient`, `budget_exhausted` fails the run, `FORGE_AGENT_RUN_TOKEN_BUDGET` | done |
 | G2 finalizer: one-repo `contents`+`pull_requests` token, push via env config, PR opened, outcome recorded; failure fails the run | done |
-| G1 §3.3 `POST /agent/runs` → 202 + enqueue + `agent_run` row | open |
-| G1 §3.3 multi-agent `_agent_factory` tool belts per role | open |
-| G1d mirrors + dispatcher; Temporal `build_activities` wired to them | open |
-| G2 CI read-back tools (`ci_failures`, `ci_job_log`, `pr_status`) | open |
+| G1 §3.3 `POST /agent/runs` → 202 + enqueue + `agent_run` row | done |
+| G1 §3.3 multi-agent `_agent_factory` tool belts per role | done |
+| G1d mirrors + dispatcher (`create_and_enqueue_run`, `build_tracker_objective`) | done |
+| G1d Temporal `build_activities` wired to the mirrors and dispatcher | open (#171) |
+| G2 CI read-back tools (`ci_failures`, `ci_job_log`, `pr_status`) | done |
 
 ## 5. G3 — Delegated executor (DRAFT, ADR-0012)
 

@@ -71,3 +71,21 @@ def test_root_tooling_files_exist() -> None:
         "pnpm-workspace.yaml",
     ):
         assert (REPO_ROOT / name).is_file(), f"missing root tooling file: {name}"
+
+
+def _readme_layout_block() -> str:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    section = readme.split("## Repository layout", 1)[1]
+    return section.split("```", 2)[1]
+
+
+@pytest.mark.parametrize("parent", ["apps", "packages"])
+def test_readme_layout_lists_every_workspace_directory(parent: str) -> None:
+    layout = _readme_layout_block()
+    on_disk = sorted(
+        p.name
+        for p in (REPO_ROOT / parent).iterdir()
+        if p.is_dir() and not p.name.startswith((".", "_"))
+    )
+    missing = [name for name in on_disk if f" {name}/" not in layout]
+    assert not missing, f"README 'Repository layout' omits {parent}/: {missing}"
