@@ -49,6 +49,8 @@ from forge_api.deps import Principal, get_current_principal
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.red_team import RedTeamGateOut, RedTeamRecordOut, RedTeamTriggerOut
 from forge_contracts import WorkflowRun, WorkflowState
+from forge_db.models import Task
+from forge_db.models.runs import WorkflowRun as DbWorkflowRun
 from forge_db.redteam import RedTeamRepository
 from forge_workflow import (
     AmbiguousTransitionError,
@@ -117,28 +119,21 @@ def _workflow_ownership_singleton() -> WorkflowOwnership:
     return WorkflowOwnership()
 
 
-@lru_cache(maxsize=1)
-def _temporal_engine_singleton() -> object:
-    # F25 — the V2 durable engine, selected by WORKFLOW_ENGINE_BACKEND=temporal.
-    # Connects lazily (client_factory); the projection store is in-process here.
-    # NOTE: a DB-backed, per-request engine sharing the worker's Postgres
-    # projection is the production wiring (parked — see slice notes).
-    from forge_api.services.workflow_engine import select_workflow_engine
-
-    return select_workflow_engine()
-
-
-def get_workflow_engine() -> object:
+def get_workflow_engine(
+    session: SessionDep, principal: Annotated[Principal, Depends(get_current_principal)]
+) -> object:
     """Return the configured workflow engine (override in tests via DI).
 
-    ``WORKFLOW_ENGINE_BACKEND=temporal`` selects the durable Temporal engine;
-    otherwise the V1 in-process FSM. Both satisfy the frozen ``WorkflowEngine``
-    protocol so the handlers below are engine-agnostic.
+    ``WORKFLOW_ENGINE_BACKEND=temporal`` selects the durable Temporal engine,
+    built per request over the caller's session and workspace so its runs are
+    ``workflow_run`` rows the Temporal worker can read and update; otherwise the
+    V1 in-process FSM. Both satisfy the frozen ``WorkflowEngine`` protocol so
+    the handlers below are engine-agnostic.
     """
-    from forge_api.services.workflow_engine import resolve_backend
+    from forge_api.services.workflow_engine import resolve_backend, select_workflow_engine
 
     if resolve_backend() == "temporal":
-        return _temporal_engine_singleton()
+        return select_workflow_engine(session=session, workspace_id=principal.workspace_id)
     return _workflow_engine_singleton()
 
 
@@ -213,10 +208,23 @@ class TransitionRequest(BaseModel):
 
 
 def _require_owned(
-    ownership: WorkflowOwnership, run_id: uuid.UUID, workspace_id: uuid.UUID
+    engine: object,
+    ownership: WorkflowOwnership,
+    session: Session,
+    run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
 ) -> None:
-    """Reject access to a run outside the caller's workspace (404, no leak)."""
-    if not ownership.owns(run_id, workspace_id):
+    """Reject access to a run outside the caller's workspace (404, no leak).
+
+    A V1 run exists only in this process, so its owner is in the registry. A
+    Temporal run is a ``workflow_run`` row, whose ``workspace_id`` is the owner.
+    """
+    if isinstance(engine, WorkflowEngineImpl):
+        owned = ownership.owns(run_id, workspace_id)
+    else:
+        row = session.get(DbWorkflowRun, run_id)
+        owned = row is not None and row.workspace_id == workspace_id
+    if not owned:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no workflow run {run_id}"
         )
@@ -256,12 +264,24 @@ def _run_id(run: WorkflowRun) -> uuid.UUID:
 def start_run(
     engine: EngineDep,
     ownership: OwnershipDep,
+    session: SessionDep,
     principal: WriterDep,
     request: StartRunRequest,
 ) -> WorkflowRun:
     """Start a workflow run for a task in the default workflow's initial state."""
+    if not isinstance(engine, WorkflowEngineImpl):
+        # A Temporal run is a durable row stamped with the caller's workspace,
+        # so the task must be the caller's too. V1 runs have no task row.
+        task = session.get(Task, request.task_id)
+        if task is None or task.workspace_id != principal.workspace_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"no task {request.task_id}"
+            )
     with _workflow_errors():
         run = engine.start(request.task_id)
+    # The Temporal engine wrote the run's row through this session; the worker
+    # reads it on its own connection. The V1 engine wrote nothing here.
+    session.commit()
     if run.id is not None:
         ownership.record(run.id, principal.workspace_id)
     return run
@@ -269,9 +289,13 @@ def start_run(
 
 @router.get("/runs/{run_id}", response_model=WorkflowRun)
 def get_run(
-    engine: EngineDep, ownership: OwnershipDep, principal: ReaderDep, run_id: uuid.UUID
+    engine: EngineDep,
+    ownership: OwnershipDep,
+    session: SessionDep,
+    principal: ReaderDep,
+    run_id: uuid.UUID,
 ) -> WorkflowRun:
-    _require_owned(ownership, run_id, principal.workspace_id)
+    _require_owned(engine, ownership, session, run_id, principal.workspace_id)
     with _workflow_errors():
         return engine.get_run(run_id)
 
@@ -301,7 +325,7 @@ def transition(
     record"); alternatively, ``POST /workflow/runs/{run_id}/red-team`` records
     the verdict directly as a manual recovery path.
     """
-    _require_owned(ownership, run_id, principal.workspace_id)
+    _require_owned(engine, ownership, session, run_id, principal.workspace_id)
     with _workflow_errors():
         engine.transition(run_id, request.event)
         run = engine.get_run(run_id)
@@ -366,7 +390,7 @@ def trigger_run_red_team(
     (``spec_review`` for the spec phase; ``pr_opened``/``awaiting_review`` for
     the pr phase); unknown or foreign runs read as ``404`` (no existence leak).
     """
-    _require_owned(ownership, run_id, principal.workspace_id)
+    _require_owned(engine, ownership, session, run_id, principal.workspace_id)
     with _workflow_errors():
         run = engine.get_run(run_id)
     phase = _GATEABLE_STATES.get(run.current_state)
