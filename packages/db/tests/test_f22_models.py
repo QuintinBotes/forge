@@ -16,8 +16,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import (
+from scf_db.base import Base
+from scf_db.models import (
     AgentRepoWorkspace,
     AgentRun,
     PRGroup,
@@ -26,7 +26,7 @@ from forge_db.models import (
     WorkflowRun,
     Workspace,
 )
-from forge_db.models.enums import PRGroupStatus, RepoRole
+from scf_db.models.enums import PRGroupStatus, RepoRole
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

@@ -13,14 +13,14 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
-from forge_marketplace.manifest import compute_manifest_hash
-from forge_marketplace.models import (
+from scf_marketplace.manifest import compute_manifest_hash
+from scf_marketplace.models import (
     InstallRequest,
     RegistryIndexEntry,
     VerificationStatus,
 )
-from forge_marketplace.signing import SigningKeyError, load_private_key, sign_manifest_hash
-from forge_marketplace.verifier import Ed25519SignatureVerifier, verify_package, verify_version
+from scf_marketplace.signing import SigningKeyError, load_private_key, sign_manifest_hash
+from scf_marketplace.verifier import Ed25519SignatureVerifier, verify_package, verify_version
 
 
 def _write_key(path: Path, data: bytes, mode: int = 0o600) -> Path:

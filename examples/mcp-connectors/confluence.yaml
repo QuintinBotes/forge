@@ -1,6 +1,6 @@
 # Example MCP connection — Engineering Confluence (HTTP transport, OAuth).
 #
-# Loaded by `forge_mcp.load_connection_file`. `allow_write` MUST stay false
+# Loaded by `scf_mcp.load_connection_file`. `allow_write` MUST stay false
 # (MCP security rule 1); namespace scoping limits which spaces are reachable.
 mcp_connection:
   id: confluence-engineering

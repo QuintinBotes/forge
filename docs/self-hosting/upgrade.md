@@ -1,6 +1,6 @@
 # Upgrades
 
-Forge upgrades are pull-build-migrate-verify, with a documented rollback at
+Swarm Code Factory upgrades are pull-build-migrate-verify, with a documented rollback at
 every step. The two things that make an upgrade safe are a **fresh backup taken
 immediately before** and a **pinned version you can roll back to**.
 
@@ -61,7 +61,7 @@ docker compose -f deploy/docker-compose.yml ps
 curl -fsS http://localhost:8000/health
 ```
 
-Forge migrations are written to be backward compatible (additive) so the running
+SCF migrations are written to be backward compatible (additive) so the running
 old containers tolerate the new schema during the brief window in step 3-4.
 Avoid destructive column drops in the same release that deploys the code which
 stops using them — split them across two releases.

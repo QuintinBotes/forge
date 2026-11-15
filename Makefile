@@ -5,17 +5,17 @@
 	bump changelog hooks release-readiness source-sbom
 
 # Every typed first-party package/app, one mypy module each. mypy runs in
-# *module mode* (``-p``) so each ``forge_*`` package resolves to its single
+# *module mode* (``-p``) so each ``scf_*`` package resolves to its single
 # installed location, avoiding the "Source file found twice under different
 # module names" ambiguity that ``mypy packages apps`` hits in this uv workspace
 # (every package dir is on ``sys.path`` via its editable install, so directory
-# mode maps the same file to both ``forge_x`` and ``packages.x.forge_x``).
+# mode maps the same file to both ``scf_x`` and ``packages.x.scf_x``).
 MYPY_PACKAGES := \
-	forge_contracts forge_db forge_workflow forge_agent forge_coordinator \
-	forge_spec forge_board forge_knowledge forge_integrations forge_mcp \
-	forge_policy forge_authz forge_skill forge_eval forge_approval forge_api \
-	forge_worker forge_mcp_gateway forge_orchestration_policy \
-	forge_deploy forge_auth forge_marketplace forge_obs forge_cli_bridge forge_world
+	scf_contracts scf_db scf_workflow scf_agent scf_coordinator \
+	scf_spec scf_board scf_knowledge scf_integrations scf_mcp \
+	scf_policy scf_authz scf_skill scf_eval scf_approval scf_api \
+	scf_worker scf_mcp_gateway scf_orchestration_policy \
+	scf_deploy scf_auth scf_marketplace scf_obs scf_cli_bridge scf_world
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -44,7 +44,7 @@ dev-seed: ## Re-run the idempotent demo-workspace seed against the dev stack
 
 cli-bridge: ## Run the host-side local-CLI bridge (dev/self-host only; see docs/self-hosting/local-cli-provider.md)
 	FORGE_CLI_BRIDGE_TOKEN=$${FORGE_CLI_BRIDGE_TOKEN:?set FORGE_CLI_BRIDGE_TOKEN} \
-	uv run python -m forge_cli_bridge.main
+	uv run python -m scf_cli_bridge.main
 
 test: ## Run the python test suite
 	uv run pytest
@@ -64,7 +64,7 @@ migrate: ## Apply database migrations (alembic upgrade head)
 	uv run alembic -c packages/db/alembic.ini upgrade head
 
 seed: ## Seed a demo workspace
-	uv run python -m forge_api.scripts.seed
+	uv run python -m scf_api.scripts.seed
 
 build: ## Build web assets and python wheels
 	pnpm -r build
@@ -133,7 +133,7 @@ hooks: ## Install the commit-msg hook that enforces Conventional Commits (cz che
 BAR ?= beta
 
 release-readiness: ## Run the automated RELEASE_READINESS gate at BAR (default: beta; override with BAR=production)
-	uv run forge-release-readiness --bar $(BAR)
+	uv run scf-release-readiness --bar $(BAR)
 
 source-sbom: ## Generate the source-tree CycloneDX SBOM (release/sbom/forge-source.cdx.json)
 	release/scripts/source-sbom.sh

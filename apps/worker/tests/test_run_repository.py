@@ -10,15 +10,15 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from forge_agent.testing import ScriptedModelClient, finish_response
-from forge_contracts import AgentObjective, AgentRunResult, RunStatus
-from forge_db.base import Base
-from forge_db.models import AgentRun, Workspace
-from forge_db.models.enums import RunStatus as DbRunStatus
-from forge_worker.agent_runner import _record_run_outcome
-from forge_worker.dispatch import RepositoryUnavailable, resolve_run_repository
-from forge_worker.finalizer import GitHubAppCredentials
-from forge_worker.multi_agent import _SubAgentRuntime
+from scf_agent.testing import ScriptedModelClient, finish_response
+from scf_contracts import AgentObjective, AgentRunResult, RunStatus
+from scf_db.base import Base
+from scf_db.models import AgentRun, Workspace
+from scf_db.models.enums import RunStatus as DbRunStatus
+from scf_worker.agent_runner import _record_run_outcome
+from scf_worker.dispatch import RepositoryUnavailable, resolve_run_repository
+from scf_worker.finalizer import GitHubAppCredentials
+from scf_worker.multi_agent import _SubAgentRuntime
 
 WS = uuid.UUID("00000000-0000-0000-0000-00000000aa01")
 

@@ -20,33 +20,33 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.attestation_service import (
+from scf_api.services.attestation_service import (
     ATTESTED_ACTION,
     AttestationService,
     PrAttestationResolutionHook,
     compute_policy_version_hash,
 )
-from forge_approval import (
+from scf_approval import (
     ApprovalAuthorizer,
     ApprovalService,
     GateRegistry,
     InMemoryApprovalRepository,
 )
-from forge_approval.models import (
+from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRequest,
     GateType,
     Principal,
     Role,
 )
-from forge_contracts.attestation import (
+from scf_contracts.attestation import (
     CHANGESET_PROVENANCE_PREDICATE_TYPE,
     DsseEnvelope,
     decode_statement,
 )
-from forge_db.audit.chain import verify_chain
-from forge_db.base import Base
-from forge_db.models import (
+from scf_db.audit.chain import verify_chain
+from scf_db.base import Base
+from scf_db.models import (
     AgentRun,
     Attestation,
     Project,
@@ -58,7 +58,7 @@ from forge_db.models import (
     WorkflowRun,
     Workspace,
 )
-from forge_obs.attest.signing import DsseSigner, DsseVerifier, EnvSigningKeyProvider
+from scf_obs.attest.signing import DsseSigner, DsseVerifier, EnvSigningKeyProvider
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 
@@ -250,7 +250,7 @@ def test_attest_changeset_inserts_signs_and_chains(
         assert result.ok is True
         assert result.entries_checked >= 1
 
-        from forge_db.models import AuditLog
+        from scf_db.models import AuditLog
 
         entry = session.scalars(
             select(AuditLog).where(

@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import { usePublishListing, useRegistries } from "@/lib/api/marketplace";
 import type { ArtifactKind, ListingPublishRequest } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -22,7 +22,7 @@ import { kindLabel } from "./marketplace-meta";
 export interface PublishDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 const PUBLISHABLE_KINDS: ArtifactKind[] = ["skill_profile", "mcp_connector"];
@@ -52,7 +52,7 @@ function errorMessageFrom(error: unknown): string {
 /**
  * The in-app publish flow (F32 marketplace-publish): author a package straight
  * into a registry the workspace owns, without leaving the app. Mirrors the
- * offline `forge marketplace package` CLI step — the artifact is validated
+ * offline `scf marketplace package` CLI step — the artifact is validated
  * server-side through the exact same installer schema, so a schema-invalid
  * submission is rejected (422) rather than silently cached.
  */

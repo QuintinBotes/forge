@@ -3,12 +3,12 @@ import time
 
 import pytest
 
-from forge_agent.providers.translate import (
+from scf_agent.providers.translate import (
     build_local_cli_prompt,
     local_cli_output_schema,
     parse_local_cli_response,
 )
-from forge_contracts import ModelMessage, ModelRequest
+from scf_contracts import ModelMessage, ModelRequest
 
 
 def _request() -> ModelRequest:

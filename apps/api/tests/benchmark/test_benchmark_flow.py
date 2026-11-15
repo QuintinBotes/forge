@@ -7,7 +7,7 @@ import uuid
 import pytest
 from conftest import OTHER_WS_ID, SLUG, VERSION, faithful_submission
 
-from forge_contracts import UserRole
+from scf_contracts import UserRole
 
 BASE = f"/benchmarks/{SLUG}/{VERSION}"
 

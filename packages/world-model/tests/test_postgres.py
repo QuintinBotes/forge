@@ -23,10 +23,10 @@ from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_db.models  # noqa: F401
-from forge_db.base import Base
-from forge_db.models import Workspace
-from forge_world import (
+import scf_db.models  # noqa: F401
+from scf_db.base import Base
+from scf_db.models import Workspace
+from scf_world import (
     InvalidatedReason,
     Layer,
     SourceKind,

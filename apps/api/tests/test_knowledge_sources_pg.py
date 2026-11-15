@@ -11,12 +11,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.main import create_app
-from forge_api.routers.knowledge import get_knowledge_session_factory
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, RetrievalChunk, Workspace
-from forge_db.models.enums import ChunkType
-from forge_db.models.knowledge import EMBEDDING_DIM
+from scf_api.main import create_app
+from scf_api.routers.knowledge import get_knowledge_session_factory
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, RetrievalChunk, Workspace
+from scf_db.models.enums import ChunkType
+from scf_db.models.knowledge import EMBEDDING_DIM
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from forge_eval.sweval import SelfEvalGate, SelfEvalRegressionError, SelfEvalScorecard
+from scf_eval.sweval import SelfEvalGate, SelfEvalRegressionError, SelfEvalScorecard
 
 WS = uuid4()
 

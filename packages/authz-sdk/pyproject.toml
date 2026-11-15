@@ -1,13 +1,13 @@
 [project]
-name = "forge-authz"
+name = "scf-authz"
 version = "0.1.0"
-description = "Pure, total permission resolver and RBAC permission tables for Forge (F30)."
+description = "Pure, total permission resolver and RBAC permission tables for Swarm Code Factory (F30)."
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
-authors = [{ name = "The Forge Authors" }]
+authors = [{ name = "The Swarm Code Factory Authors" }]
 dependencies = [
-    "forge-contracts",
+    "scf-contracts",
 ]
 
 [build-system]
@@ -15,4 +15,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["forge_authz"]
+packages = ["scf_authz"]

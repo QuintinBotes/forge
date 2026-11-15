@@ -14,17 +14,17 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal
-from forge_api.main import create_app
-from forge_api.routers.spec import get_spec_engine
-from forge_api.services.spec_import_service import (
+from scf_api.deps import Principal
+from scf_api.main import create_app
+from scf_api.routers.spec import get_spec_engine
+from scf_api.services.spec_import_service import (
     IMPORT_PLACEHOLDER_ID,
     detect_format,
     import_spec,
 )
-from forge_contracts import Requirement, SpecManifest
-from forge_contracts.enums import SpecStatus, UserRole
-from forge_spec import FileSpecEngine, render_spec_md, spec_id_for_key
+from scf_contracts import Requirement, SpecManifest
+from scf_contracts.enums import SpecStatus, UserRole
+from scf_spec import FileSpecEngine, render_spec_md, spec_id_for_key
 
 # --------------------------------------------------------------------------- #
 # Format detection                                                             #
@@ -49,7 +49,7 @@ def test_detect_format_falls_back_to_markdown_for_unparseable() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Tier 1: direct parse (already-canonical Forge documents)                    #
+# Tier 1: direct parse (already-canonical SCF documents)                    #
 # --------------------------------------------------------------------------- #
 
 
@@ -76,7 +76,7 @@ def test_import_spec_md_that_is_already_canonical_passes_through() -> None:
 
 
 def test_import_manifest_yaml_that_is_already_canonical_passes_through() -> None:
-    from forge_spec import dump_manifest
+    from scf_spec import dump_manifest
 
     manifest = SpecManifest(id="SPEC-7", name="Canonical yaml spec")
     yaml_text = dump_manifest(manifest)
@@ -129,7 +129,7 @@ def test_import_loose_markdown_normalizes_sections() -> None:
     assert manifest.open_questions[0].id == "Q1"
     # The normalized preview re-renders as valid, round-trippable spec.md.
     assert result.spec_md.startswith("---")
-    from forge_spec import parse_spec_md
+    from scf_spec import parse_spec_md
 
     assert parse_spec_md(result.spec_md).name == "Customer search"
 

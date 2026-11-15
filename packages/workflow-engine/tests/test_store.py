@@ -14,11 +14,11 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-import forge_db.models  # noqa: F401  (registers every table on Base.metadata)
-from forge_contracts import RunStatus, WorkflowRun
-from forge_db.base import Base
-from forge_workflow.exceptions import WorkflowRunNotFoundError
-from forge_workflow.store import (
+import scf_db.models  # noqa: F401  (registers every table on Base.metadata)
+from scf_contracts import RunStatus, WorkflowRun
+from scf_db.base import Base
+from scf_workflow.exceptions import WorkflowRunNotFoundError
+from scf_workflow.store import (
     InMemoryWorkflowStore,
     SqlAlchemyWorkflowStore,
     WorkflowStore,
@@ -117,7 +117,7 @@ def test_sqlalchemy_store_reads_only_its_workspace(sqlite_session: Session) -> N
 
 
 def test_sqlalchemy_store_writes_the_pinned_revision(sqlite_session: Session) -> None:
-    from forge_db.models.runs import WorkflowRun as DbWorkflowRun
+    from scf_db.models.runs import WorkflowRun as DbWorkflowRun
 
     store = SqlAlchemyWorkflowStore(sqlite_session, workspace_id=uuid.uuid4())
     revision = uuid.uuid4()

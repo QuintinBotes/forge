@@ -19,8 +19,8 @@ from conftest import (
 from lxml import etree
 from sqlalchemy import select
 
-from forge_api.auth.service import get_auth_service
-from forge_db.models import AuditLog, ExternalIdentity, User
+from scf_api.auth.service import get_auth_service
+from scf_db.models import AuditLog, ExternalIdentity, User
 
 
 def _sp_login(client, next_path: str = "/board"):
@@ -88,7 +88,7 @@ class TestSpInitiatedLogin:
             ).scalar_one()
             assert link.external_id == "dana@acme.com"
 
-        # The minted session cookie is a working Forge API credential.
+        # The minted session cookie is a working SCF API credential.
         cookie = response.headers["set-cookie"].split("forge_session=")[1].split(";")[0]
         principal = get_auth_service().authenticate(cookie)
         assert principal.workspace_id == WS_ID

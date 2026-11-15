@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from forge_contracts import AcceptanceCriterion, MergeResult
-from forge_coordinator import aggregate_confidence, validate_acceptance
+from scf_contracts import AcceptanceCriterion, MergeResult
+from scf_coordinator import aggregate_confidence, validate_acceptance
 
 
 def test_ac_unsatisfied_when_merged_tree_lacks_evidence() -> None:

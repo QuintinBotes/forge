@@ -1,19 +1,19 @@
 [project]
-name = "forge-obs"
+name = "scf-obs"
 version = "0.1.0"
 description = "Observability & cost metrics SDK (F38) — typed Key-Metric facade with bounded cardinality, idempotent UsageMeter cost emission over the durable cost ledger, structured redacted logging, and a no-op degraded mode."
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
-authors = [{ name = "The Forge Authors" }]
+authors = [{ name = "The Swarm Code Factory Authors" }]
 dependencies = [
-    "forge-contracts",
-    "forge-db",
-    "forge-auth",
+    "scf-contracts",
+    "scf-db",
+    "scf-auth",
     "pydantic>=2.7",
     "sqlalchemy>=2.0",
     # Attested Changesets (F41 slice `dsse-signer`): detached Ed25519 over the
-    # DSSE PAE encoding, same crypto dependency forge-auth/forge-marketplace use.
+    # DSSE PAE encoding, same crypto dependency scf-auth/scf-marketplace use.
     "cryptography>=43",
     # HARD-10: real OTLP export path (retires F38's in-memory-only asterisk).
     # Framework auto-instrumentors are optional (wired best-effort at runtime).
@@ -22,13 +22,13 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-forge-contracts = { workspace = true }
-forge-db = { workspace = true }
-forge-auth = { workspace = true }
+scf-contracts = { workspace = true }
+scf-db = { workspace = true }
+scf-auth = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["forge_obs"]
+packages = ["scf_obs"]

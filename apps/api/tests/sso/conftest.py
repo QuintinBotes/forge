@@ -28,16 +28,16 @@ from signxml import XMLSigner, methods
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.deps import Principal, get_current_principal, get_db
-from forge_api.main import create_app
-from forge_api.routers.saml import get_replay_guard
-from forge_api.sso.config_service import SsoConfigService
-from forge_api.sso.replay import InMemoryReplayGuard
-from forge_api.sso.saml_metadata import NS
-from forge_contracts import UserRole
-from forge_contracts.sso import OidcConfigIn, SamlIdpConfig, SsoConfigIn
-from forge_db.base import Base
-from forge_db.models import User, Workspace
+from scf_api.deps import Principal, get_current_principal, get_db
+from scf_api.main import create_app
+from scf_api.routers.saml import get_replay_guard
+from scf_api.sso.config_service import SsoConfigService
+from scf_api.sso.replay import InMemoryReplayGuard
+from scf_api.sso.saml_metadata import NS
+from scf_contracts import UserRole
+from scf_contracts.sso import OidcConfigIn, SamlIdpConfig, SsoConfigIn
+from scf_db.base import Base
+from scf_db.models import User, Workspace
 
 WS_ID = uuid.UUID("00000000-0000-0000-0000-00000000f0a1")
 OTHER_WS_ID = uuid.UUID("00000000-0000-0000-0000-00000000f0c3")
@@ -389,7 +389,7 @@ def install_config(
         session.commit()
         config_id = config.id
     with session_factory() as session:
-        from forge_db.models import SsoConfiguration
+        from scf_db.models import SsoConfiguration
 
         config = session.get(SsoConfiguration, config_id)
         session.expunge(config)

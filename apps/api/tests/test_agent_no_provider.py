@@ -15,10 +15,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from forge_api.db import get_db
-from forge_api.main import create_app
-from forge_api.routers.agent import _agent_runner_singleton, get_agent_enqueue
-from forge_api.settings import get_settings
+from scf_api.db import get_db
+from scf_api.main import create_app
+from scf_api.routers.agent import _agent_runner_singleton, get_agent_enqueue
+from scf_api.settings import get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -100,8 +100,8 @@ def test_the_offline_stub_is_reachable_only_by_explicit_opt_in(
     assert payload["output"] is None
     assert payload["steps"] == []
     # The opt-in still yields a clearly labelled, confidence-free offline runner.
-    from forge_api.routers.agent import _default_runner
-    from forge_contracts import AgentObjective
+    from scf_api.routers.agent import _default_runner
+    from scf_contracts import AgentObjective
 
     result = _default_runner().run(AgentObjective(objective="offline"))
     assert "no model was called" in result.output
@@ -120,7 +120,7 @@ def test_a_blank_bridge_token_is_a_503_not_a_500(monkeypatch: pytest.MonkeyPatch
     """
     from fastapi import HTTPException
 
-    from forge_api.routers.agent import _default_runner
+    from scf_api.routers.agent import _default_runner
 
     monkeypatch.setenv("FORGE_MODEL_PROVIDER", "local_cli")
     monkeypatch.setenv("FORGE_CLI_BRIDGE_URL", "http://host.docker.internal:8099")

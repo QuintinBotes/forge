@@ -21,18 +21,18 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.services.world_service import (
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.services.world_service import (
     get_world_service,
     make_world_service,
     resolve_world_model_client,
 )
-from forge_contracts import ModelRequest, ModelResponse, ModelStreamEvent, UserRole
-from forge_db.base import Base
-from forge_db.models import AuditLog, Workspace
-from forge_world import WorldModelService
+from scf_contracts import ModelRequest, ModelResponse, ModelStreamEvent, UserRole
+from scf_db.base import Base
+from scf_db.models import AuditLog, Workspace
+from scf_world import WorldModelService
 
 WS = uuid.UUID("00000000-0000-0000-0000-00000000bb01")
 WS2 = uuid.UUID("00000000-0000-0000-0000-00000000bb02")

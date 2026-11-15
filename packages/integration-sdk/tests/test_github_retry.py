@@ -10,8 +10,8 @@ import httpx
 import pytest
 from conftest import make_transport
 
-from forge_integrations import GitHubClient, GitHubError, RetryPolicy
-from forge_integrations.github import _NO_RETRY
+from scf_integrations import GitHubClient, GitHubError, RetryPolicy
+from scf_integrations.github import _NO_RETRY
 
 
 class _RecordingSleep:

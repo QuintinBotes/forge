@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_world import ClassDef, names_match, strip_suffixes, types_compatible
-from forge_world.identity import normalise_name
+from scf_world import ClassDef, names_match, strip_suffixes, types_compatible
+from scf_world.identity import normalise_name
 
 CLASSES = {
     "thing": ClassDef(key="thing", label="Thing"),

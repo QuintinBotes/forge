@@ -1,7 +1,7 @@
 # main.tf — dev environment composition.
 #
 # Minimal single-node dev tier: one small Hetzner box running the full
-# Forge compose stack, fronted by a Cloudflare Tunnel, with small
+# SCF compose stack, fronted by a Cloudflare Tunnel, with small
 # disposable data volumes and delete protection off so the environment
 # tears down cleanly. See infra/README.md for the shared conventions this
 # composition follows (naming, tagging, secrets).

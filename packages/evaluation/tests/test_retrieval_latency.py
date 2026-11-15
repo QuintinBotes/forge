@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from forge_eval.perf.retrieval_latency import (
+from scf_eval.perf.retrieval_latency import (
     LatencyReport,
     Percentiles,
     measure_retrieval_latency,
     percentiles,
     write_report,
 )
-from forge_eval.retrieval_eval import build_indexed_service
+from scf_eval.retrieval_eval import build_indexed_service
 
 _BUDGETS = Path(__file__).resolve().parents[3] / "deploy" / "load" / "budgets.toml"
 
@@ -65,7 +65,7 @@ def test_measure_retrieval_latency_reports_stages() -> None:
 
 
 def test_measure_retrieval_latency_with_embedder_stage() -> None:
-    from forge_knowledge import DeterministicEmbeddingClient
+    from scf_knowledge import DeterministicEmbeddingClient
 
     service, scope = build_indexed_service()
     report = measure_retrieval_latency(

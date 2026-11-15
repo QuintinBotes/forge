@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from conftest import RecordingProvider
 
-from forge_approval.models import ApprovalAction, GateType
-from forge_approval.registry import (
+from scf_approval.models import ApprovalAction, GateType
+from scf_approval.registry import (
     GateRegistry,
     MissingProviderError,
     default_actions,

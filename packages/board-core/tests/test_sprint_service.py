@@ -15,16 +15,16 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_board.exceptions import ActiveSprintExistsError
-from forge_board.sprint_service import SprintService
-from forge_contracts.automation import (
+from scf_board.exceptions import ActiveSprintExistsError
+from scf_board.sprint_service import SprintService
+from scf_contracts.automation import (
     AutomationEntityType,
     AutomationTriggerEnvelope,
     AutomationTriggerType,
 )
-from forge_contracts.enums import CarryoverTarget, SprintScopeEventType, SprintState, TaskStatus
-from forge_db.base import Base
-from forge_db.models import (
+from scf_contracts.enums import CarryoverTarget, SprintScopeEventType, SprintState, TaskStatus
+from scf_db.base import Base
+from scf_db.models import (
     Project,
     Sprint,
     SprintBurndownSnapshot,
@@ -286,7 +286,7 @@ def test_complete_with_carryover_to_backlog(sf: sessionmaker[Session]) -> None:
 
 
 def test_complete_next_sprint_requires_id(sf: sessionmaker[Session]) -> None:
-    from forge_board.sprint_service import InvalidSprintRequest
+    from scf_board.sprint_service import InvalidSprintRequest
 
     with sf() as session:
         sprint = _make_sprint(session)
@@ -444,7 +444,7 @@ def test_reconcile_byte_identical(sf: sessionmaker[Session]) -> None:
 
 
 class _RecordingDispatcher:
-    """Test double for :class:`forge_contracts.automation.AutomationDispatcher`."""
+    """Test double for :class:`scf_contracts.automation.AutomationDispatcher`."""
 
     def __init__(self) -> None:
         self.dispatched: list[AutomationTriggerEnvelope] = []

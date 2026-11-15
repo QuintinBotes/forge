@@ -3,21 +3,21 @@ import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { SpecManifest } from "@/lib/api/types";
 
 import { SpecStudioPage } from "./spec-studio-page";
 
 const manifest: SpecManifest = { id: "s1", name: "Passwordless auth", status: "draft" };
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     getSpecManifest: vi.fn(() => Promise.resolve(manifest)),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderPage(client: ForgeApiClient) {
+function renderPage(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

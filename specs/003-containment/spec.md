@@ -12,7 +12,7 @@
 
 ## Why this exists
 
-Forge runs code that an agent wrote, inside repositories it does not control. Today the default
+Swarm Code Factory runs code that an agent wrote, inside repositories it does not control. Today the default
 sandbox tier (`worktree`) runs those commands as host subprocesses of the worker, the stronger
 tiers are opt-in, the sandbox items on the pentest punch list have no adversarial tests, GitHub
 App credentials are one process-wide set read from the worker environment, nothing scans an agent
@@ -24,7 +24,7 @@ to show that a bad change, or a bad agent, stays contained.
 
 ### User Story 1 - Agent commands run inside a container by default (Priority: P1)
 
-An operator installs forge with the shipped defaults. Every command an agent runs executes inside
+An operator installs SCF with the shipped defaults. Every command an agent runs executes inside
 a locked-down container, not as a process of the worker. The host-process tier is still available
 for local development, but only when the operator asks for it by name and the deployment is a
 development environment.
@@ -47,7 +47,7 @@ environment and observe that the worker refuses to start.
 
 ### User Story 2 - Isolation is tested adversarially and published (Priority: P1)
 
-A security reviewer wants to know what each sandbox tier does and does not stop. Forge ships a test
+A security reviewer wants to know what each sandbox tier does and does not stop. SCF ships a test
 suite that attempts to leave the sandbox and to exhaust its resources, covering punch-list items
 PT-02 and PT-03, and a published table that states, per tier, which attempts are stopped and which
 are not.
@@ -91,7 +91,7 @@ step's permissions.
 
 ### User Story 4 - Agent diffs pass supply-chain gates (Priority: P2)
 
-A reviewer receives an agent change. Before it is offered for review, forge has scanned the diff
+A reviewer receives an agent change. Before it is offered for review, SCF has scanned the diff
 for secrets, checked that every newly added dependency exists in its registry and is older than a
 configured minimum age, and run static analysis on the changed files. A failing gate blocks the
 change and tells the agent and the reviewer why.
@@ -137,10 +137,10 @@ added without coverage.
 
 ### User Story 6 - Irreversible automatic actions wait for a person, and approvals can carry a reason (Priority: P2)
 
-An automation rule or an agent is about to take an action whose effects leave forge and cannot be
-undone. Forge holds the action and asks a person, however confident the system is and whatever the
+An automation rule or an agent is about to take an action whose effects leave SCF and cannot be
+undone. SCF holds the action and asks a person, however confident the system is and whatever the
 policy allows. When the person decides, they may state why. A reason is recorded when given and
-is never required. Later, when a similar action is held, forge shows the earlier decisions with
+is never required. Later, when a similar action is held, SCF shows the earlier decisions with
 any reasons given, and an agent's proposal can cite them.
 
 **Why this priority**: confidence is the wrong test for an action that cannot be taken back. A
@@ -223,7 +223,7 @@ earlier decision with its reason.
 - **FR-026**: The system MUST classify every automatic action type as reversible or irreversible and as internal or external, and MUST treat an unclassified type as irreversible and external.
 - **FR-027**: The system MUST hold an irreversible external action as an approval request and run it only after a person approves, regardless of confidence, policy allowance or precedent.
 - **FR-028**: A reason on an approval decision is always optional. The system MUST record a reason when one is given and MUST NOT require one on any decision, including a decision on a held action and a rejection. Decided 2026-11-15.
-- **FR-029**: The system MUST return, for a given action kind and workspace, the earlier human decisions with decider and time, and with the reason where one was given, to people in the approval view and to agents through forge's own tool surface.
+- **FR-029**: The system MUST return, for a given action kind and workspace, the earlier human decisions with decider and time, and with the reason where one was given, to people in the approval view and to agents through SCF's own tool surface.
 - **FR-030**: Only decisions made by a person count as precedent. Precedent MUST NOT approve an action.
 - **FR-031**: A held action and its decision MUST be recorded in the audit chain.
 
@@ -253,7 +253,7 @@ earlier decision with its reason.
 
 ## Assumptions
 
-- "Development environment" means the environment names forge already treats as development (`FORGE_ENVIRONMENT` unset or one of the names in `apps/api/forge_api/auth/service.py`).
+- "Development environment" means the environment names SCF already treats as development (`FORGE_ENVIRONMENT` unset or one of the names in `apps/api/scf_api/auth/service.py`).
 - The container tier's existing hardening (dropped capabilities, no network by default, non-root user, read-only root, resource limits) is the baseline. This feature tests it and makes it the default; it does not redesign it.
 - Tests that need a real container, gVisor or Firecracker runtime stay in the existing opt-in lanes. The default test lane proves the hermetic part and reports the rest as skipped.
 - A human penetration test is out of scope. R18 closes the items as far as automated regression evidence can.

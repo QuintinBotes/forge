@@ -2,7 +2,7 @@
  * Presentation metadata for the F31 deployment-gates surface (pure + testable).
  *
  * Maps the deployment domain vocabulary — FSM state, gate-check name + status,
- * health — onto Forge design-token classes, labels and icons, plus the small
+ * health — onto SCF design-token classes, labels and icons, plus the small
  * decision helpers the view leans on (which actions a state allows, the default
  * selection, the next promotion target). No JSX here so the maps stay trivially
  * unit-testable; icons are carried as component refs.

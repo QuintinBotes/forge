@@ -1,8 +1,8 @@
 """Tests for the tree-sitter multi-language chunking backend (Task H2).
 
-The tree-sitter backend (:mod:`forge_knowledge.treesitter_chunking`) is the
-primary code chunker behind the existing :func:`forge_knowledge.chunk_code` /
-:func:`forge_knowledge.chunk_file` interface; the stdlib ``ast`` chunker remains
+The tree-sitter backend (:mod:`scf_knowledge.treesitter_chunking`) is the
+primary code chunker behind the existing :func:`scf_knowledge.chunk_code` /
+:func:`scf_knowledge.chunk_file` interface; the stdlib ``ast`` chunker remains
 the Python fallback. These tests prove:
 
 * multi-language chunking for JavaScript, TypeScript, and Go (>=2 languages),
@@ -19,15 +19,15 @@ All hermetic: pure in-process parsing, no network, no external services.
 
 from __future__ import annotations
 
-import forge_knowledge.chunking as chunking
-from forge_contracts.enums import ChunkType
-from forge_knowledge import (
+import scf_knowledge.chunking as chunking
+from scf_contracts.enums import ChunkType
+from scf_knowledge import (
     TREE_SITTER_LANGUAGES,
     chunk_code,
     chunk_file,
     treesitter_available,
 )
-from forge_knowledge.treesitter_chunking import (
+from scf_knowledge.treesitter_chunking import (
     chunk_with_treesitter,
     language_for_path,
 )

@@ -1,7 +1,7 @@
-"""Alembic environment for forge-db.
+"""Alembic environment for scf-db.
 
 Resolves the database URL from ``FORGE_DATABASE_URL`` (or the Alembic config),
-targets ``forge_db.base.Base.metadata`` (with every model imported so the full
+targets ``scf_db.base.Base.metadata`` (with every model imported so the full
 schema is visible to autogenerate), and renders pgvector types correctly.
 """
 
@@ -13,8 +13,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-import forge_db.models  # noqa: F401  (registers all models on Base.metadata)
-from forge_db.base import Base
+import scf_db.models  # noqa: F401  (registers all models on Base.metadata)
+from scf_db.base import Base
 
 config = context.config
 

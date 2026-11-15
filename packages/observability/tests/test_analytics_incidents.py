@@ -10,10 +10,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import Incident, Project, Workspace
-from forge_db.models.incidents import RemediationPlan
-from forge_obs.analytics.incidents import (
+from scf_db.base import Base
+from scf_db.models import Incident, Project, Workspace
+from scf_db.models.incidents import RemediationPlan
+from scf_obs.analytics.incidents import (
     SqlIncidentReliabilityReader,
     compute_incident_reliability,
 )
@@ -78,7 +78,7 @@ def test_sql_reader_scopes_by_workspace_and_detected_window(factory) -> None:
         other_ws = Workspace(name="Rival", slug=f"rival-{uuid.uuid4().hex[:8]}")
         session.add_all([ws, other_ws])
         session.flush()
-        project = Project(workspace_id=ws.id, name="Forge", key=f"FRG{uuid.uuid4().hex[:4]}")
+        project = Project(workspace_id=ws.id, name="SCF", key=f"FRG{uuid.uuid4().hex[:4]}")
         session.add(project)
         session.flush()
 

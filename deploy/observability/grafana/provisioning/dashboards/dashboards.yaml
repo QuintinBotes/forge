@@ -1,13 +1,13 @@
-# Forge Grafana dashboard provider (HARD-10 §3.5). Loads the four dashboards-as-
+# SCF Grafana dashboard provider (HARD-10 §3.5). Loads the four dashboards-as-
 # code from /var/lib/grafana/dashboards at boot; operators cannot delete them
-# from the UI (foldersFromFilesStructure keeps them under one Forge folder).
+# from the UI (foldersFromFilesStructure keeps them under one SCF folder).
 
 apiVersion: 1
 
 providers:
   - name: forge
     orgId: 1
-    folder: Forge
+    folder: SCF
     type: file
     disableDeletion: true
     editable: false

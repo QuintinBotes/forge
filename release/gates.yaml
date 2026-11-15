@@ -1,6 +1,6 @@
 # --------------------------------------------------------------------------- #
 # release/gates.yaml — machine encoding of SPEC-PRODUCTION-HARDENING.md's
-# release-readiness model (HARD-12). Consumed by `forge-release-readiness`.
+# release-readiness model (HARD-12). Consumed by `scf-release-readiness`.
 #
 # Bars are cumulative: production ⊇ beta ⊇ alpha. A bar is MET iff every gate
 # at-or-below it resolves GREEN or MANUAL_ATTESTED. Everything else — RED,
@@ -219,13 +219,13 @@ gates:
     bar: production
     blocker: 4
     workstream: F41
-    title: Attested changesets — audit-chain export re-walks clean under forge-verify
+    title: Attested changesets — audit-chain export re-walks clean under scf-verify
     check:
       # Offline re-walk of an F39 audit-chain NDJSON export (AuditService.export_ndjson
       # output) via the shared compute_entry_hash/compute_payload_hash helpers; exit 0
       # ⇒ GREEN. Mirrors the G-CRYPTO command shape (pure command, no required creds).
       kind: command
-      run: "forge-verify --audit-export release/evidence/audit-export.ndjson"
+      run: "scf-verify --audit-export release/evidence/audit-export.ndjson"
 
   # ---------------------- Human-only honest asterisks --------------------- #
   - id: G-PENTEST

@@ -28,7 +28,7 @@ import {
   type RetrievalQuality,
 } from "@/components/observability/observability-metrics";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   CostSummary,
   CostSummaryQuery,
@@ -52,7 +52,7 @@ export const observabilityKeys = {
 /** A single run's step-level trace; disabled until a run id is supplied. */
 export function useRunTrace(
   runId: string | null | undefined,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<RunTrace> {
   return useQuery({
     queryKey: observabilityKeys.runTrace(runId ?? ""),
@@ -70,7 +70,7 @@ export function useRunTrace(
  */
 export function useReplayRun(
   runId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<ReplayRunResult, Error, ReplayObjectiveInput> {
   return useMutation({
     mutationFn: (objective: ReplayObjectiveInput) => client.replayRun(runId, objective),
@@ -80,7 +80,7 @@ export function useReplayRun(
 /** Grouped spend for the current scope (breakdown by phase/provider/model). */
 export function useCostSummary(
   query?: CostSummaryQuery,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<CostSummary> {
   return useQuery({
     queryKey: observabilityKeys.costSummary(query),
@@ -94,7 +94,7 @@ export function useCostSummary(
 /** Spend over time, one series per group key. */
 export function useCostTimeseries(
   query?: CostTimeseriesQuery,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<CostTimeseries> {
   return useQuery({
     queryKey: observabilityKeys.costTimeseries(query),
@@ -109,7 +109,7 @@ export function useCostTimeseries(
  * transient parse never improves on retry) and kept briefly fresh.
  */
 export function useObservabilityMetrics(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<RetrievalQuality> {
   return useQuery({
     queryKey: observabilityKeys.metrics(),

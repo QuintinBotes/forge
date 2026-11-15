@@ -14,12 +14,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, MCPIndexedResource, Workspace
-from forge_db.models.enums import RunStatus
-from forge_db.session import create_session_factory
-from forge_knowledge.mcp_indexer import LedgerRow, SyncDirection, SyncReport
-from forge_knowledge.mcp_ledger import (
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, MCPIndexedResource, Workspace
+from scf_db.models.enums import RunStatus
+from scf_db.session import create_session_factory
+from scf_knowledge.mcp_indexer import LedgerRow, SyncDirection, SyncReport
+from scf_knowledge.mcp_ledger import (
     SqlResourceLedger,
     SqlSyncRunRecorder,
     index_status_counts,

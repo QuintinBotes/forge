@@ -11,17 +11,17 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import AuditLog, KnowledgeSource, MCPConnection, Workspace
-from forge_db.models.cost import CostEvent
-from forge_db.models.cost import ModelPrice as ModelPriceRow
-from forge_db.models.enums import CostEventKind, KnowledgeSourceKind
-from forge_obs.cost.models import ModelUsage
-from forge_obs.cost.repository import SqlCostLedger
-from forge_obs.metrics import RecordingMetrics
-from forge_worker.beat import BEAT_SCHEDULE, OBS_FRESHNESS_TASK
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks.observability import (
+from scf_db.base import Base
+from scf_db.models import AuditLog, KnowledgeSource, MCPConnection, Workspace
+from scf_db.models.cost import CostEvent
+from scf_db.models.cost import ModelPrice as ModelPriceRow
+from scf_db.models.enums import CostEventKind, KnowledgeSourceKind
+from scf_obs.cost.models import ModelUsage
+from scf_obs.cost.repository import SqlCostLedger
+from scf_obs.metrics import RecordingMetrics
+from scf_worker.beat import BEAT_SCHEDULE, OBS_FRESHNESS_TASK
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks.observability import (
     FRESHNESS_TASK,
     REPRICE_TASK,
     run_refresh_freshness,

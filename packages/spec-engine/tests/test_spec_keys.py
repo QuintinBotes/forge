@@ -1,6 +1,6 @@
 """Spec-key identity: client-supplied keys and per-prefix numbering (F6).
 
-Forge used to own spec numbering outright — every key was ``SPEC-<n>`` and the
+SCF used to own spec numbering outright — every key was ``SPEC-<n>`` and the
 id regex accepted nothing else — so a team with an existing tracker could not
 use their own key as the spec id and had to bury it in ``name``, where nothing
 can look it up. These tests pin the widened contract.
@@ -12,8 +12,8 @@ import uuid
 
 import pytest
 
-from forge_contracts import Requirement
-from forge_spec import (
+from scf_contracts import Requirement
+from scf_spec import (
     FileSpecEngine,
     SpecKeyError,
     is_spec_key,
@@ -102,21 +102,21 @@ def test_auto_allocation_still_starts_at_spec_1(tmp_path) -> None:
     assert engine.spec_create(uuid.uuid4(), "Second").id == "SPEC-2"
 
 
-def test_an_imported_key_does_not_inflate_forge_numbering(tmp_path) -> None:
-    """Numbering is per-prefix: MOD-893 must not push Forge to SPEC-894."""
+def test_an_imported_key_does_not_inflate_scf_numbering(tmp_path) -> None:
+    """Numbering is per-prefix: MOD-893 must not push SCF to SPEC-894."""
     engine = _engine(tmp_path)
     engine.spec_create(uuid.uuid4(), "Imported", key="MOD-893")
 
-    assert engine.spec_create(uuid.uuid4(), "Forge-numbered").id == "SPEC-1"
+    assert engine.spec_create(uuid.uuid4(), "SCF-numbered").id == "SPEC-1"
 
 
 def test_specs_with_different_prefixes_coexist(tmp_path) -> None:
     engine = _engine(tmp_path)
     engine.spec_create(uuid.uuid4(), "Imported", key="MOD-893")
-    engine.spec_create(uuid.uuid4(), "Forge-numbered")
+    engine.spec_create(uuid.uuid4(), "SCF-numbered")
 
     assert engine.read_manifest(spec_id_for_key("MOD-893")).name == "Imported"
-    assert engine.read_manifest(spec_id_for_key("SPEC-1")).name == "Forge-numbered"
+    assert engine.read_manifest(spec_id_for_key("SPEC-1")).name == "SCF-numbered"
 
 
 # --- a create never silently becomes an update (issue #110) ---------------- #
@@ -168,7 +168,7 @@ def test_the_placeholder_adr_is_proposed_not_accepted(tmp_path) -> None:
 
 def test_a_legacy_bare_string_manifest_still_loads(tmp_path) -> None:
     """Every manifest written before constraints had ids is still on disk."""
-    from forge_spec.manifest import load_manifest
+    from scf_spec.manifest import load_manifest
 
     legacy = (
         "id: SPEC-1\n"
@@ -187,7 +187,7 @@ def test_a_legacy_bare_string_manifest_still_loads(tmp_path) -> None:
 
 def test_a_legacy_spec_md_still_parses(tmp_path) -> None:
     """`- <text>` is what every spec.md written before ids looks like."""
-    from forge_spec.markdown import parse_spec_md
+    from scf_spec.markdown import parse_spec_md
 
     legacy = (
         "---\nid: SPEC-1\nstatus: draft\n---\n\n"
@@ -201,8 +201,8 @@ def test_a_legacy_spec_md_still_parses(tmp_path) -> None:
 
 def test_constraints_round_trip_through_markdown(tmp_path) -> None:
     """An identified constraint survives render -> parse with its id intact."""
-    from forge_contracts import Constraint
-    from forge_spec.markdown import parse_spec_md, render_spec_md
+    from scf_contracts import Constraint
+    from scf_spec.markdown import parse_spec_md, render_spec_md
 
     engine = _engine(tmp_path)
     manifest = engine.spec_create(uuid.uuid4(), "Round trip", key="SPEC-1")

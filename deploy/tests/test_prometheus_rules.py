@@ -3,7 +3,7 @@
 Hermetic (no promtool/amtool required): the recording + alert rule files parse,
 every alert declares a runbook annotation, and every metric an expression
 references resolves to either the frozen §4 instrument catalog
-(``forge_obs.metrics.INSTRUMENT_CATALOG``, allowing the ``_bucket``/``_sum``/
+(``scf_obs.metrics.INSTRUMENT_CATALOG``, allowing the ``_bucket``/``_sum``/
 ``_count`` histogram suffixes) or a recording rule the same files define. The
 Alertmanager config parses and every routed receiver exists. When ``promtool`` /
 ``amtool`` happen to be on PATH the native validators run too (docker-gated).
@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from forge_obs.metrics import INSTRUMENT_CATALOG
+from scf_obs.metrics import INSTRUMENT_CATALOG
 
 yaml = pytest.importorskip("yaml")
 

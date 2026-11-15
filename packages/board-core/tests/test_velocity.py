@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from forge_board.velocity import (
+from scf_board.velocity import (
     SprintTaskSnapshot,
     SprintWindow,
     VelocityResult,

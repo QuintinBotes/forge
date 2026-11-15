@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Forge self-hosted REFERENCE MCP server (HARD-05 integration substrate).
+# SCF self-hosted REFERENCE MCP server (HARD-05 integration substrate).
 #
 # A tiny, dependency-free MCP server that speaks the real JSON-RPC 2.0 wire
 # protocol (MCP revision 2025-06-18) over Streamable-HTTP. It is the integration
@@ -20,8 +20,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY packages ./packages
 COPY apps ./apps
-# The reference server lives in the forge_mcp SDK (no extra deps); sync it only.
-RUN uv sync --frozen --no-dev --no-editable --package forge-mcp
+# The reference server lives in the scf_mcp SDK (no extra deps); sync it only.
+RUN uv sync --frozen --no-dev --no-editable --package scf-mcp
 
 RUN groupadd -g 1000 forge && useradd -u 1000 -g forge -m forge \
     && chown -R forge:forge /app
@@ -29,4 +29,4 @@ USER forge
 
 EXPOSE 8901
 # Bind all interfaces inside the container network; the compose overlay maps it.
-CMD ["python", "-m", "forge_mcp.reference_server", "--http", "--host", "0.0.0.0", "--port", "8901"]
+CMD ["python", "-m", "scf_mcp.reference_server", "--http", "--host", "0.0.0.0", "--port", "8901"]

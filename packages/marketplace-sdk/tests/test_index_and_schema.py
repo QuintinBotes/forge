@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from forge_marketplace.errors import RegistryFetchError
-from forge_marketplace.index import parse_index
-from forge_marketplace.models import PackageManifest
+from scf_marketplace.errors import RegistryFetchError
+from scf_marketplace.index import parse_index
+from scf_marketplace.models import PackageManifest
 
 _SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent / "forge_marketplace" / "package-manifest.schema.json"
+    Path(__file__).resolve().parent.parent / "scf_marketplace" / "package-manifest.schema.json"
 )
 
 

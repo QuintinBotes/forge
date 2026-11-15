@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from forge_world import Precedent, gate
+from scf_world import Precedent, gate
 
 HUMAN_AGREE = Precedent(human=True, decision="accept")
 HUMAN_CONTRA = Precedent(human=True, decision="reject")

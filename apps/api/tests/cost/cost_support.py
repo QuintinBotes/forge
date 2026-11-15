@@ -23,19 +23,19 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.cost import get_cost_service
-from forge_api.services.cost_service import (
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.cost import get_cost_service
+from scf_api.services.cost_service import (
     CostService,
     InMemoryPriceStore,
     InMemoryScopeResolver,
 )
-from forge_contracts import UserRole
-from forge_contracts.audit import AuditEvent
-from forge_obs.cost.models import ModelPrice, ModelUsage
-from forge_obs.cost.pricing import InMemoryPriceBook
-from forge_obs.cost.repository import InMemoryCostLedger
+from scf_contracts import UserRole
+from scf_contracts.audit import AuditEvent
+from scf_obs.cost.models import ModelPrice, ModelUsage
+from scf_obs.cost.pricing import InMemoryPriceBook
+from scf_obs.cost.repository import InMemoryCostLedger
 
 WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a2")

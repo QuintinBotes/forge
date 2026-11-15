@@ -23,15 +23,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.policy_audit_sink_db import DbPolicyAuditSink
-from forge_api.services.policy_service import (
+from scf_api.services.policy_audit_sink_db import DbPolicyAuditSink
+from scf_api.services.policy_service import (
     InMemoryPolicyAuditSink,
     PolicyAuditSink,
     PolicyDecisionEvent,
     PolicyService,
 )
-from forge_db.base import Base
-from forge_db.models import AgentRun, PolicyRuleEvaluation, Workspace
+from scf_db.base import Base
+from scf_db.models import AgentRun, PolicyRuleEvaluation, Workspace
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 

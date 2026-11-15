@@ -8,7 +8,7 @@ from collections.abc import Callable
 from conftest import configure_pipeline, pipeline_body
 from fastapi.testclient import TestClient
 
-from forge_contracts import UserRole
+from scf_contracts import UserRole
 
 
 def test_upsert_persists_ordered_and_restricted(

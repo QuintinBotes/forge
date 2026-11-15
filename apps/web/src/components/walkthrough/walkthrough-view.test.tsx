@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { OnboardingProgress } from "@/lib/api/types";
 
 import { WalkthroughView } from "./walkthrough-view";
@@ -34,9 +34,9 @@ function progressWith(
 }
 
 function makeClient(
-  getOnboardingProgress: ForgeApiClient["getOnboardingProgress"],
-): ForgeApiClient {
-  return { getOnboardingProgress } as unknown as ForgeApiClient;
+  getOnboardingProgress: ScfApiClient["getOnboardingProgress"],
+): ScfApiClient {
+  return { getOnboardingProgress } as unknown as ScfApiClient;
 }
 
 function renderView(props: Partial<Parameters<typeof WalkthroughView>[0]> = {}) {
@@ -72,7 +72,7 @@ describe("WalkthroughView", () => {
   it("renders the hero and the four loop stops", async () => {
     renderView();
     expect(
-      screen.getByRole("heading", { name: /get started with forge/i }),
+      screen.getByRole("heading", { name: /get started with scf/i }),
     ).toBeInTheDocument();
     for (const key of ["spec", "run", "review", "merge"]) {
       expect(screen.getByTestId(`stop-${key}`)).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe("WalkthroughView", () => {
     expect(await screen.findByTestId("tour-coachmark")).toBeInTheDocument();
     expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: /the forge loop/i }),
+      screen.getByRole("heading", { name: /the scf loop/i }),
     ).toBeInTheDocument();
   });
 
@@ -147,7 +147,7 @@ describe("WalkthroughView", () => {
 
     expect(await screen.findByTestId("tour-coachmark")).toBeInTheDocument();
     // Welcome spotlights the whole loop.
-    expect(screen.getByLabelText(/the forge build loop/i)).toHaveAttribute(
+    expect(screen.getByLabelText(/the scf build loop/i)).toHaveAttribute(
       "data-tour-active",
       "true",
     );
@@ -164,7 +164,7 @@ describe("WalkthroughView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
     expect(
-      await screen.findByRole("heading", { name: /the forge loop/i }),
+      await screen.findByRole("heading", { name: /the scf loop/i }),
     ).toBeInTheDocument();
   });
 
@@ -211,7 +211,7 @@ describe("WalkthroughView", () => {
     fireEvent.click(screen.getByTestId("help-menu-trigger"));
     fireEvent.click(await screen.findByTestId("help-restart"));
     expect(
-      await screen.findByRole("heading", { name: /the forge loop/i }),
+      await screen.findByRole("heading", { name: /the scf loop/i }),
     ).toBeInTheDocument();
   });
 

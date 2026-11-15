@@ -30,7 +30,7 @@ import {
 
 import { useRegisterCommands } from "@/components/command-palette";
 import { toast } from "@/components/ui/toast";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useCreatePmConnection,
   useDisconnectPmConnection,
@@ -106,7 +106,7 @@ function mutationMessage(error: unknown): string {
 }
 
 export interface PmIntegrationsViewProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 type ViewMode = "detail" | "new";
@@ -190,7 +190,7 @@ export function PmIntegrationsView({
               PM integrations
             </h1>
             <p className="text-sm text-muted-foreground">
-              Sync Forge tasks with external project management — Jira and Linear.
+              Sync SCF tasks with external project management — Jira and Linear.
             </p>
           </div>
         </div>
@@ -318,7 +318,7 @@ function ConnectionDetail({
   client,
 }: {
   connectionId: string;
-  client: ForgeApiClient;
+  client: ScfApiClient;
 }) {
   const detailQuery = usePmConnection(connectionId, client);
   const patch = usePatchPmConnection(client);
@@ -626,7 +626,7 @@ function ConnectionDetail({
       <Card
         icon={<SlidersHorizontal className="h-5 w-5" aria-hidden />}
         title="Status mapping"
-        description="Map the provider's workflow states onto Forge's board categories."
+        description="Map the provider's workflow states onto SCF's board categories."
       >
         <div data-testid="pm-statusmap" className="flex flex-col gap-2">
           {rows.length === 0 ? (
@@ -635,7 +635,7 @@ function ConnectionDetail({
               className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-4 text-sm text-muted-foreground"
             >
               No status mappings yet. Add a row to map a provider state (e.g.{" "}
-              <span className="font-mono text-xs">In Review</span>) onto a Forge
+              <span className="font-mono text-xs">In Review</span>) onto an SCF
               category.
             </p>
           ) : (
@@ -664,7 +664,7 @@ function ConnectionDetail({
                     aria-hidden
                   />
                   <select
-                    aria-label={`Forge category ${index + 1}`}
+                    aria-label={`SCF category ${index + 1}`}
                     value={row.category}
                     onChange={(e) =>
                       setRows((prev) =>
@@ -797,7 +797,7 @@ function ConflictInbox({
 }: {
   connectionId: string;
   conflictPolicy: PmConflictPolicy;
-  client: ForgeApiClient;
+  client: ScfApiClient;
 }) {
   const conflictsQuery = usePmLinks(connectionId, "conflict", client);
   const conflicts = conflictsQuery.data ?? [];
@@ -865,7 +865,7 @@ function ConflictInbox({
                     </span>
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    Forge task{" "}
+                    SCF task{" "}
                     <span className="font-mono">
                       {link.forge_task_id.slice(0, 8)}
                     </span>
@@ -933,7 +933,7 @@ function ConnectionForm({
   onCancel,
   onConnected,
 }: {
-  client: ForgeApiClient;
+  client: ScfApiClient;
   onCancel?: () => void;
   onConnected: (conn: PmConnection) => void;
 }) {
@@ -988,7 +988,7 @@ function ConnectionForm({
     <Card
       icon={<PlugZap className="h-5 w-5" aria-hidden />}
       title="Connect a PM tool"
-      description="Link a Jira or Linear project so its issues stay in sync with a Forge board."
+      description="Link a Jira or Linear project so its issues stay in sync with an SCF board."
     >
       <form
         data-testid="pm-form"
@@ -1028,12 +1028,12 @@ function ConnectionForm({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
-            label="Forge project"
+            label="SCF project"
             required
             hint="the board project to sync"
           >
             <input
-              aria-label="Forge project"
+              aria-label="SCF project"
               value={form.projectId}
               onChange={(e) => patch("projectId", e.target.value)}
               placeholder="project id"
@@ -1417,7 +1417,7 @@ function EmptyState({ onConnect }: { onConnect: () => void }) {
           No PM tools connected
         </p>
         <p className="max-w-md text-sm text-muted-foreground">
-          Connect Jira or Linear to keep issues in lockstep with your Forge
+          Connect Jira or Linear to keep issues in lockstep with your SCF
           board — two-way sync, status mapping and conflict resolution.
         </p>
       </div>

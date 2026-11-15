@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-CHART_DIR = Path(__file__).resolve().parents[1] / "forge"
+CHART_DIR = Path(__file__).resolve().parents[1] / "swarm-code-factory"
 VALUES_DEFAULT = CHART_DIR / "values.yaml"
 VALUES_EXAMPLE = CHART_DIR / "values.example.yaml"
 VALUES_PRODUCTION = CHART_DIR / "values-production.yaml"

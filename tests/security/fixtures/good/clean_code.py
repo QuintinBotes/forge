@@ -1,4 +1,4 @@
-# Negative fixtures — none of these may be flagged by .semgrep/forge.yml
+# Negative fixtures — none of these may be flagged by .semgrep/swarm-code-factory.yml
 # (the safe spelling of each construct the bad/ tree plants).
 import logging
 import subprocess

@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 from _helpers import ScriptingHub, _git
 
-from forge_contracts import SubagentRules
-from forge_coordinator import (
+from scf_contracts import SubagentRules
+from scf_coordinator import (
     CoordinatorDeps,
     CoordinatorSettings,
     InMemorySubAgentRunSink,
@@ -63,7 +63,7 @@ def tmp_git_repo(tmp_path: Path) -> Path:
         capture_output=True,
     )
     _git(repo, "config", "user.email", "test@forge.dev")
-    _git(repo, "config", "user.name", "Forge Test")
+    _git(repo, "config", "user.name", "SCF Test")
     _git(repo, "config", "commit.gpgsign", "false")
     (repo / "app").mkdir()
     (repo / "app" / "__init__.py").write_text("# base\n")

@@ -5,24 +5,24 @@
 **Programme:** `docs/superpowers/specs/2026-11-07-unified-factory-programme.md`
 **Decisions:** `docs/architecture/adr/`
 
-Forge is the software factory's **system of record and control plane**. Tervin is its **desktop
-face**. The capabilities of lore and utopia are **rebuilt inside forge**. Integration with tervin is
+Swarm Code Factory is the software factory's **system of record and control plane**. Tervin is its **desktop
+face**. The capabilities of lore and utopia are **rebuilt inside SCF**. Integration with tervin is
 by protocol only.
 
 ## 1. Context
 
 ```
                 ┌────────────────────────── people ──────────────────────────┐
-                │  browser (forge web)        desktop (tervin)     IDE agents│
+                │  browser (SCF web)          desktop (tervin)     IDE agents│
                 └───────┬───────────────────────────┬──────────────────┬─────┘
                         │ HTTPS + /ws               │ MCP, forge --json│ MCP
                         │                           │ SSE, /ws, runner │ (Claude Code,
                         ▼                           ▼                  ▼  Codex, Cursor)
-┌───────────────────────────────────────── forge (team server) ─────────────────────────────────┐
+┌───────────────────────────────────────── SCF (team server) ───────────────────────────────────┐
 │                                                                                                │
 │  apps/web ──► apps/api ─────────────────────────────────────────────────────────────────────┐  │
 │               │ REST routers (board, spec, agent, approvals, policy, world, ...)            │  │
-│               │ /mcp  (I: forge's own MCP server — read-only default, writes = proposals)   │  │
+│               │ /mcp  (I: SCF's own MCP server — read-only default, writes = proposals)     │  │
 │               │ /ws   (realtime: approvals, runs)                                           │  │
 │               └──────┬───────────────────────────────────────────────────────────────────┘  │
 │                      │ enqueue                                                               │
@@ -42,21 +42,21 @@ by protocol only.
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Trust directions are separate: `/mcp` on the API serves forge's own data **outward**;
+Trust directions are separate: `/mcp` on the API serves SCF's own data **outward**;
 `apps/mcp-gateway` brings other servers' data **inward** and treats it as untrusted.
 
 ## 2. Where each absorbed system lands
 
-| Source | Capability | Forge home | Sub-project |
+| Source | Capability | SCF home | Sub-project |
 |---|---|---|---|
-| utopia | Bitemporal evidence ledger, extraction, identity, ontology, reasoning, governance | `packages/world-model` (`forge_world`) + `/world` | H |
+| utopia | Bitemporal evidence ledger, extraction, identity, ontology, reasoning, governance | `packages/world-model` (`scf_world`) + `/world` | H |
 | utopia | MCP read tools + `remember` as proposal | `/mcp` world tools | I |
-| utopia++ | Decision ledger and drift; unique-constrained dedup; one store | `forge_world.decisions`, `world_fact` partial unique index | H1 |
-| lore | Context assembly, memory, hybrid search, wider index, context evals | `forge_world` + `forge_knowledge` + `forge_eval` | J |
+| utopia++ | Decision ledger and drift; unique-constrained dedup; one store | `scf_world.decisions`, `world_fact` partial unique index | H1 |
+| lore | Context assembly, memory, hybrid search, wider index, context evals | `scf_world` + `scf_knowledge` + `scf_eval` | J |
 | lore | Implementation loop, review, triage, auto-merge, upkeep, digests | `workflow-engine` templates on the G tool belt | K |
-| lore | Traceability statement → test → code | `forge_spec` (stable `R`/`A` ids) + coverage ingest | J/K |
-| tervin | Desktop surface, local gated runs, Touch ID approvals | stays in tervin; reaches forge via MCP, `--json`, SSE, `/ws`, runner protocol | L |
-| tervin | Rules engine (command risk), event vocabulary, hash-chained ledger ideas | `forge_risk` (programme A), `forge_contracts` events, existing audit chain | A, G3 |
+| lore | Traceability statement → test → code | `scf_spec` (stable `R`/`A` ids) + coverage ingest | J/K |
+| tervin | Desktop surface, local gated runs, Touch ID approvals | stays in tervin; reaches SCF via MCP, `--json`, SSE, `/ws`, runner protocol | L |
+| tervin | Rules engine (command risk), event vocabulary, hash-chained ledger ideas | `scf_risk` (programme A), `scf_contracts` events, existing audit chain | A, G3 |
 
 ## 3. The world model in one picture
 
@@ -73,7 +73,7 @@ decision(fact_ids, as_of) → drift = which of those facts are no longer live
 
 - Writes from machines are **proposals**; only people decide (ADR-0005).
 - `world_fact` is append-only with a one-way tombstone, enforced by a trigger (ADR-0004).
-- Extraction calls a model through forge's provider layer; the server, not the model, verifies quotes,
+- Extraction calls a model through SCF's provider layer; the server, not the model, verifies quotes,
   names, times and offsets (ADR-0011).
 
 ## 4. Run lifecycle after G

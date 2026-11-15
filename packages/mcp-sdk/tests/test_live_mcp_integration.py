@@ -29,7 +29,7 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     MCPAuth,
     MCPAuthType,
     MCPCapabilities,
@@ -37,14 +37,14 @@ from forge_contracts import (
     MCPTransport,
     MCPWriteForbiddenError,
 )
-from forge_mcp import (
+from scf_mcp import (
     MCPConnectionManager,
     MCPNamespaceError,
     MCPTransportUnavailableError,
     live_transport_factory,
     query_through,
 )
-from forge_mcp.reference_server import PLANTED_SECRET, start_http_server
+from scf_mcp.reference_server import PLANTED_SECRET, start_http_server
 
 pytestmark = [pytest.mark.integration, pytest.mark.live_mcp]
 
@@ -139,12 +139,10 @@ def test_live_read_and_query_through(server: object) -> None:
 def test_live_read_and_query_through_over_stdio() -> None:
     if not _live_enabled():  # pragma: no cover - guarded by module autouse skip
         pytest.skip("live disabled")
-    from forge_mcp.transports.stdio import StdioMcpTransport
+    from scf_mcp.transports.stdio import StdioMcpTransport
 
     cmd = os.environ.get("MCP_STDIO_COMMAND")
-    command = (
-        cmd.split() if cmd else [sys.executable, "-m", "forge_mcp.reference_server", "--stdio"]
-    )
+    command = cmd.split() if cmd else [sys.executable, "-m", "scf_mcp.reference_server", "--stdio"]
     factory = live_transport_factory(
         token_resolver=lambda conn: None,
         stdio_command_resolver=lambda conn: command,

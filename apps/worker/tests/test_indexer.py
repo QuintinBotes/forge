@@ -18,16 +18,16 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.enums import ChunkType
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, Workspace
-from forge_db.session import create_session_factory
-from forge_knowledge import (
+from scf_contracts.enums import ChunkType
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, Workspace
+from scf_db.session import create_session_factory
+from scf_knowledge import (
     DeterministicEmbeddingClient,
     FixtureRerankerClient,
     KnowledgeService,
 )
-from forge_worker.indexer import chunk_files, index_source, index_source_task
+from scf_worker.indexer import chunk_files, index_source, index_source_task
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ def test_index_source_indexes_and_is_searchable(
     assert result.indexed > 0
     assert result.source_id == str(source_id)
 
-    from forge_contracts.dtos import KnowledgeScope
+    from scf_contracts.dtos import KnowledgeScope
 
     hits = service.search("validate_jwt", KnowledgeScope(), k=5)
     assert any(c.path == "auth.py" for c in hits)
@@ -104,7 +104,7 @@ def test_index_source_is_idempotent(service: KnowledgeService, source_id: uuid.U
 
 
 def test_celery_task_is_registered() -> None:
-    from forge_worker.celery_app import celery_app
+    from scf_worker.celery_app import celery_app
 
     assert "forge.knowledge.index_source" in celery_app.tasks
     assert index_source_task.name == "forge.knowledge.index_source"
@@ -113,7 +113,7 @@ def test_celery_task_is_registered() -> None:
 def _clear_embedder_cache() -> None:
     # The embedder is cached per process (a local model loads once); tests
     # that swap settings must clear it or they would observe a stale client.
-    from forge_worker.indexer import get_configured_embedder
+    from scf_worker.indexer import get_configured_embedder
 
     get_configured_embedder.cache_clear()
 
@@ -122,10 +122,10 @@ def test_build_knowledge_service_constructs(
     monkeypatch: pytest.MonkeyPatch, session_factory: sessionmaker[Session]
 ) -> None:
     # ``build_knowledge_service`` resolves the default session factory at call
-    # time via ``from forge_db import create_session_factory``; redirect it at the
+    # time via ``from scf_db import create_session_factory``; redirect it at the
     # source module so we get an in-memory service instead of a live Postgres one.
-    monkeypatch.setattr("forge_db.create_session_factory", lambda *a, **k: session_factory)
-    from forge_worker.indexer import build_knowledge_service
+    monkeypatch.setattr("scf_db.create_session_factory", lambda *a, **k: session_factory)
+    from scf_worker.indexer import build_knowledge_service
 
     _clear_embedder_cache()
     try:
@@ -142,13 +142,13 @@ def test_build_knowledge_service_defaults_to_honest_bm25_only(
     # BM25-only service (chunks stored without vectors), never the hash
     # embedder or fixture reranker. Settings are pinned explicitly so the
     # test does not depend on the developer's environment/.env.
-    from forge_api.settings import Settings
+    from scf_api.settings import Settings
 
     fake_settings = Settings(embedding_provider=None, rerank_provider="none")
-    monkeypatch.setattr("forge_api.settings.get_settings", lambda: fake_settings)
-    monkeypatch.setattr("forge_db.create_session_factory", lambda *a, **k: session_factory)
+    monkeypatch.setattr("scf_api.settings.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("scf_db.create_session_factory", lambda *a, **k: session_factory)
     monkeypatch.delenv("FORGE_EMBEDDING_API_KEY", raising=False)
-    from forge_worker.indexer import build_knowledge_service
+    from scf_worker.indexer import build_knowledge_service
 
     _clear_embedder_cache()
     try:
@@ -165,7 +165,7 @@ def test_build_knowledge_service_refuses_bad_embedding_dimension(
     monkeypatch: pytest.MonkeyPatch, session_factory: sessionmaker[Session]
 ) -> None:
     # A dimension that does not match the vector column refuses at build time.
-    from forge_api.settings import Settings
+    from scf_api.settings import Settings
 
     fake_settings = Settings(
         embedding_provider="openai-compatible",
@@ -173,9 +173,9 @@ def test_build_knowledge_service_refuses_bad_embedding_dimension(
         embedding_dimension=384,
         rerank_provider="none",
     )
-    monkeypatch.setattr("forge_api.settings.get_settings", lambda: fake_settings)
-    monkeypatch.setattr("forge_db.create_session_factory", lambda *a, **k: session_factory)
-    from forge_worker.indexer import build_knowledge_service
+    monkeypatch.setattr("scf_api.settings.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("scf_db.create_session_factory", lambda *a, **k: session_factory)
+    from scf_worker.indexer import build_knowledge_service
 
     _clear_embedder_cache()
     try:
@@ -192,8 +192,8 @@ def test_worker_init_hook_refuses_bad_embedder_config(
     # embedder at worker startup and translates a factory refusal into
     # SystemExit (Celery signal dispatch swallows plain Exception), instead
     # of every knowledge task failing forever.
-    from forge_api.settings import Settings
-    from forge_worker.celery_app import _init_worker_embedder
+    from scf_api.settings import Settings
+    from scf_worker.celery_app import _init_worker_embedder
 
     fake_settings = Settings(
         embedding_provider="openai-compatible",
@@ -201,7 +201,7 @@ def test_worker_init_hook_refuses_bad_embedder_config(
         embedding_dimension=768,
         rerank_provider="none",
     )
-    monkeypatch.setattr("forge_api.settings.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("scf_api.settings.get_settings", lambda: fake_settings)
     _clear_embedder_cache()
     try:
         with pytest.raises(SystemExit, match="does not match"):
@@ -213,11 +213,11 @@ def test_worker_init_hook_refuses_bad_embedder_config(
 def test_worker_init_hook_refuses_the_test_only_reranker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from forge_api.settings import Settings
-    from forge_worker.celery_app import _init_worker_embedder
+    from scf_api.settings import Settings
+    from scf_worker.celery_app import _init_worker_embedder
 
     fake_settings = Settings(rerank_provider="fixture")
-    monkeypatch.setattr("forge_api.settings.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("scf_api.settings.get_settings", lambda: fake_settings)
     _clear_embedder_cache()
     try:
         with pytest.raises(SystemExit, match="test-only"):
@@ -229,8 +229,8 @@ def test_worker_init_hook_refuses_the_test_only_reranker(
 def test_worker_embedder_is_cached_per_process(monkeypatch: pytest.MonkeyPatch) -> None:
     # A local model must load once per process, not per task: two calls
     # return the identical client object.
-    from forge_api.settings import Settings
-    from forge_worker.indexer import get_configured_embedder
+    from scf_api.settings import Settings
+    from scf_worker.indexer import get_configured_embedder
 
     fake_settings = Settings(
         embedding_provider="openai-compatible",
@@ -240,7 +240,7 @@ def test_worker_embedder_is_cached_per_process(monkeypatch: pytest.MonkeyPatch) 
         # SSRF allowlist keeps the URL validator off the network (hermetic).
         outbound_allowlist=["api.openai.com"],
     )
-    monkeypatch.setattr("forge_api.settings.get_settings", lambda: fake_settings)
+    monkeypatch.setattr("scf_api.settings.get_settings", lambda: fake_settings)
     _clear_embedder_cache()
     try:
         first = get_configured_embedder()
@@ -255,7 +255,7 @@ def test_index_source_task_delegates(
     service: KnowledgeService,
     source_id: uuid.UUID,
 ) -> None:
-    monkeypatch.setattr("forge_worker.indexer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("scf_worker.indexer.build_knowledge_service", lambda: service)
     result = index_source_task(str(source_id), FILES)
     assert isinstance(result, dict)
     assert result["indexed"] > 0

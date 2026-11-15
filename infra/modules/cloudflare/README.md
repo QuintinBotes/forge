@@ -1,6 +1,6 @@
 # Module: `cloudflare`
 
-Provisions the Cloudflare-side footprint for the Forge control plane: **R2
+Provisions the Cloudflare-side footprint for the Swarm Code Factory control plane: **R2
 object storage**, **DNS**, and a **Cloudflare Tunnel** so the Hetzner
 control plane (see [`../hetzner-control-plane`](../hetzner-control-plane))
 doesn't need to expose any public port at all.

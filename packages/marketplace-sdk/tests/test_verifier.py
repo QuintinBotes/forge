@@ -8,8 +8,8 @@ from collections.abc import Callable
 from _mp_helpers import Keypair, Package
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from forge_marketplace.models import VerificationStatus
-from forge_marketplace.verifier import Ed25519SignatureVerifier, verify_version
+from scf_marketplace.models import VerificationStatus
+from scf_marketplace.verifier import Ed25519SignatureVerifier, verify_version
 
 
 def test_verify_version_valid_signature(

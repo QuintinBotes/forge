@@ -11,10 +11,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts import SkillProfile
-from forge_db.base import Base
-from forge_db.models import AgentRun, Project, Workspace
-from forge_obs.analytics.skill_snapshot import (
+from scf_contracts import SkillProfile
+from scf_db.base import Base
+from scf_db.models import AgentRun, Project, Workspace
+from scf_obs.analytics.skill_snapshot import (
     SqlSkillProfileSnapshotRepository,
     build_directives_payload,
 )
@@ -52,7 +52,7 @@ def seeded(factory) -> dict:
         ws = Workspace(name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}")
         session.add(ws)
         session.flush()
-        project = Project(workspace_id=ws.id, name="Forge", key=f"FRG{uuid.uuid4().hex[:4]}")
+        project = Project(workspace_id=ws.id, name="SCF", key=f"FRG{uuid.uuid4().hex[:4]}")
         session.add(project)
         session.flush()
         run = AgentRun(workspace_id=ws.id, role="primary", skill_profile="incident-response")

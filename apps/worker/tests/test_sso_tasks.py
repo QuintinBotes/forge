@@ -18,12 +18,12 @@ from cryptography.x509.oid import NameOID
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from forge_api.sso.config_service import SsoConfigService
-from forge_api.sso.replay import DbReplayGuard
-from forge_contracts.sso import SamlIdpConfig, SsoConfigIn
-from forge_db.base import Base
-from forge_db.models import AuditLog, SamlReplay, SsoConfiguration, Workspace
-from forge_worker.tasks.sso import (
+from scf_api.sso.config_service import SsoConfigService
+from scf_api.sso.replay import DbReplayGuard
+from scf_contracts.sso import SamlIdpConfig, SsoConfigIn
+from scf_db.base import Base
+from scf_db.models import AuditLog, SamlReplay, SsoConfiguration, Workspace
+from scf_worker.tasks.sso import (
     cleanup_saml_replay_core,
     propagate_deprovision_core,
     refresh_all_saml_metadata_core,
@@ -199,7 +199,7 @@ class TestPropagateDeprovision:
 
 class TestTaskRegistration:
     def test_celery_tasks_registered(self):
-        from forge_worker.celery_app import celery_app
+        from scf_worker.celery_app import celery_app
 
         for name in (
             "sso.refresh_saml_metadata",
@@ -210,7 +210,7 @@ class TestTaskRegistration:
             assert name in celery_app.tasks
 
     def test_beat_entries_present(self):
-        from forge_worker.beat import BEAT_SCHEDULE
+        from scf_worker.beat import BEAT_SCHEDULE
 
         assert BEAT_SCHEDULE["sso-refresh-saml-metadata"]["task"] == (
             "sso.refresh_all_saml_metadata"
@@ -219,8 +219,8 @@ class TestTaskRegistration:
 
 
 def test_metadata_fetch_requires_https():
-    from forge_api.sso.config_service import fetch_idp_metadata
-    from forge_api.sso.errors import SsoConfigError
+    from scf_api.sso.config_service import fetch_idp_metadata
+    from scf_api.sso.errors import SsoConfigError
 
     with pytest.raises(SsoConfigError):
         fetch_idp_metadata("http://idp.example/metadata.xml")

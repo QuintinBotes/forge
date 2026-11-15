@@ -14,14 +14,14 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from forge_agent import AgentRunner
-from forge_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_agent.tools import ToolRegistry, ToolResult
-from forge_contracts import AgentObjective, ModelRequest, ModelResponse
-from forge_db.base import Base
-from forge_db.models import AgentRun, Project, RunRecording, Task, WorkflowRun, Workspace
-from forge_worker.agent_runner import (
+from scf_agent import AgentRunner
+from scf_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_agent.tools import ToolRegistry, ToolResult
+from scf_contracts import AgentObjective, ModelRequest, ModelResponse
+from scf_db.base import Base
+from scf_db.models import AgentRun, Project, RunRecording, Task, WorkflowRun, Workspace
+from scf_worker.agent_runner import (
     build_agent_runner,
     persist_run_recording,
     run_agent_task,

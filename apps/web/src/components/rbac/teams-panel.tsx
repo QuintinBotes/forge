@@ -20,7 +20,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { type ForgeApiClient } from "@/lib/api/client";
+import { type ScfApiClient } from "@/lib/api/client";
 import {
   useAddTeamMember,
   useCreateTeam,
@@ -50,7 +50,7 @@ import {
 } from "./rbac-ui";
 
 export interface TeamsPanelProps {
-  client: ForgeApiClient;
+  client: ScfApiClient;
 }
 
 export function TeamsPanel({ client }: TeamsPanelProps) {
@@ -262,7 +262,7 @@ function TeamDetail({
   client,
 }: {
   team: { id: string; name: string; key: string; description?: string | null };
-  client: ForgeApiClient;
+  client: ScfApiClient;
 }) {
   const membersQuery = useTeamMembers(team.id, client);
   const add = useAddTeamMember(client);

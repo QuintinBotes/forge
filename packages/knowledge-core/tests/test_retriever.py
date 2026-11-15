@@ -1,12 +1,12 @@
-"""Tests for ``forge_knowledge.retriever`` — the hybrid retriever (Task 1.3).
+"""Tests for ``scf_knowledge.retriever`` — the hybrid retriever (Task 1.3).
 
 :class:`HybridRetriever` structurally satisfies the frozen
-:class:`forge_contracts.protocols.Retriever` Protocol and wires the two indexed
+:class:`scf_contracts.protocols.Retriever` Protocol and wires the two indexed
 legs (pgvector semantic + BM25 keyword) to RRF fusion and the reranker:
 
 * ``semantic`` / ``keyword`` return ``Ranked`` lists (1-based ranks, carrying the
   ``RetrievedChunk`` for downstream attribution);
-* ``fuse`` is RRF (delegates to ``forge_knowledge.fusion``);
+* ``fuse`` is RRF (delegates to ``scf_knowledge.fusion``);
 * ``rerank`` runs the cross-encoder over candidate contents, sets ``rerank_score``
   and a weight-boosted final ``score``, and returns the top-n attributed chunks.
 
@@ -24,20 +24,20 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.dtos import Chunk, KnowledgeScope, Ranked, RetrievedChunk
-from forge_contracts.enums import ChunkType
-from forge_contracts.protocols import Retriever
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, Workspace
-from forge_db.session import create_session_factory
-from forge_knowledge.embeddings import DeterministicEmbeddingClient
-from forge_knowledge.reranker import (
+from scf_contracts.dtos import Chunk, KnowledgeScope, Ranked, RetrievedChunk
+from scf_contracts.enums import ChunkType
+from scf_contracts.protocols import Retriever
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, Workspace
+from scf_db.session import create_session_factory
+from scf_knowledge.embeddings import DeterministicEmbeddingClient
+from scf_knowledge.reranker import (
     FixtureRerankerClient,
     GracefulReranker,
     JinaRerankerClient,
 )
-from forge_knowledge.retriever import HybridRetriever
-from forge_knowledge.stores import Bm25Store, PgVectorStore
+from scf_knowledge.retriever import HybridRetriever
+from scf_knowledge.stores import Bm25Store, PgVectorStore
 
 
 @pytest.fixture

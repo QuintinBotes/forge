@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type {
   AgentRole,
   AoSettingsOut,
@@ -57,7 +57,7 @@ function makePreview(over: Partial<RoutingPreviewResponse> = {}): RoutingPreview
   };
 }
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listAoRoleConfig: vi.fn(() => Promise.resolve(makeRoleConfig())),
     getAoSettings: vi.fn(() => Promise.resolve(makeSettings())),
@@ -83,10 +83,10 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
     ),
     previewAoRouting: vi.fn(() => Promise.resolve(makePreview())),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

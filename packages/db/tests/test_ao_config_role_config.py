@@ -1,11 +1,11 @@
 """Postgres integration tests for the ao-config ``agent_role_config`` model +
-:class:`~forge_db.role_config.SqlRoleConfigStore`.
+:class:`~scf_db.role_config.SqlRoleConfigStore`.
 
 Exercises the real constraints: the partial unique index enforcing at most one
 workspace-wide override per role, the plain unique constraint enforcing at most
 one project-scoped override per (workspace, project, role), the upsert path
 (insert then update-in-place), workspace CASCADE delete, and the resolver
-(``forge_orchestration_policy.resolve_effective_config``) reading through the
+(``scf_orchestration_policy.resolve_effective_config``) reading through the
 real store end-to-end. Uses the shared ``pg_engine`` fixture; parks without
 Postgres.
 """
@@ -20,11 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.orchestration_config import AgentRole, Effort
-from forge_db.base import Base
-from forge_db.models import AgentRoleConfig, Project, Workspace
-from forge_db.role_config import SqlRoleConfigStore
-from forge_orchestration_policy import resolve_effective_config
+from scf_contracts.orchestration_config import AgentRole, Effort
+from scf_db.base import Base
+from scf_db.models import AgentRoleConfig, Project, Workspace
+from scf_db.role_config import SqlRoleConfigStore
+from scf_orchestration_policy import resolve_effective_config
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 
@@ -42,7 +42,7 @@ def _seed(session: Session) -> tuple[uuid.UUID, uuid.UUID]:
     ws = Workspace(name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}")
     session.add(ws)
     session.flush()
-    project = Project(workspace_id=ws.id, name="Forge", key=f"F{uuid.uuid4().hex[:5]}")
+    project = Project(workspace_id=ws.id, name="SCF", key=f"F{uuid.uuid4().hex[:5]}")
     session.add(project)
     session.flush()
     return ws.id, project.id
@@ -231,7 +231,7 @@ def test_workspace_cascade_delete_removes_role_config(factory: sessionmaker[Sess
 
 
 def test_resolver_reads_through_the_real_store(factory: sessionmaker[Session]) -> None:
-    """End-to-end: ``forge_orchestration_policy.resolve_effective_config`` against
+    """End-to-end: ``scf_orchestration_policy.resolve_effective_config`` against
     the real ``SqlRoleConfigStore`` -- default, then workspace override, then
     project override taking precedence, exactly as the fake-store unit tests
     assert in ``packages/orchestration-policy/tests/test_role_config.py``.

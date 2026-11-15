@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { EpicDTO, SpecDraft, SpecManifest } from "@/lib/api/types";
 
 import { NewSpecPage } from "./new-spec-page";
@@ -31,7 +31,7 @@ const aiDraft: SpecDraft = {
   usage: { cost_usd: 0.01 },
 };
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listEpics: vi.fn(() => Promise.resolve(epics)),
     createEpic: vi.fn((epic: EpicDTO) =>
@@ -45,7 +45,7 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
     ),
     draftSpec: vi.fn(() => Promise.resolve(aiDraft)),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
 afterEach(() => {
@@ -54,7 +54,7 @@ afterEach(() => {
   }
 });
 
-function renderPage(client: ForgeApiClient, onCreated = vi.fn()) {
+function renderPage(client: ScfApiClient, onCreated = vi.fn()) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

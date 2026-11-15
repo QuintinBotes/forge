@@ -1,5 +1,7 @@
 # Forge industry-standard roadmap
 
+> **Renamed.** This project was renamed from "Forge" to "Swarm Code Factory" (SCF) on 2026-11-15. Entries below keep the name the project had when they were written.
+
 Status: Draft for owner review. Date: 2026-11-14. Audited at `main` @ `b178e7d`. Owner decisions of
 2026-11-15 are recorded in section 3a.
 

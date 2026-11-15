@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_obs.tracing import SpanStore, current_span_id, current_trace_id, traced
+from scf_obs.tracing import SpanStore, current_span_id, current_trace_id, traced
 
 
 def test_nested_spans_share_trace_id_and_link_parent() -> None:

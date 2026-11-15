@@ -8,13 +8,13 @@ import uuid
 import pytest
 from _sandbox_fakes import FakeDockerClient, FakeExecResult
 
-from forge_agent.sandbox import (
+from scf_agent.sandbox import (
     ContainerSandboxProvider,
     SandboxSettings,
     SandboxStartupError,
     build_sandbox_provider,
 )
-from forge_contracts import SandboxKind, SandboxNetwork, SandboxSpec
+from scf_contracts import SandboxKind, SandboxNetwork, SandboxSpec
 
 
 async def test_create_args_hardening(fake_docker_client: FakeDockerClient, container_spec) -> None:
@@ -112,7 +112,7 @@ async def test_env_carries_no_secrets(fake_docker_client: FakeDockerClient) -> N
         host_worktree_path="/wt/tree",
         worktree_volume="forge_repos",
         worktree_subpath="runA/tree",
-        image="ghcr.io/forge-platform/forge-sandbox-python:0.1.0",
+        image="ghcr.io/quintinbotes/swarm-code-factory/sandbox-python:0.1.0",
         env={"CI": "true", "LANG": "C.UTF-8"},
     )
     session = await ContainerSandboxProvider(client=fake_docker_client).create(spec)
@@ -159,7 +159,7 @@ async def test_egress_attaches_network(fake_docker_client: FakeDockerClient) -> 
         host_worktree_path="/wt/tree",
         worktree_volume="forge_repos",
         worktree_subpath="runA/tree",
-        image="ghcr.io/forge-platform/forge-sandbox-python:0.1.0",
+        image="ghcr.io/quintinbotes/swarm-code-factory/sandbox-python:0.1.0",
         network=SandboxNetwork.EGRESS,
     )
     provider = ContainerSandboxProvider(client=fake_docker_client, egress_network="forge_egress")

@@ -3,8 +3,8 @@ import subprocess
 
 import pytest
 
-from forge_agent.providers.local_cli.backends import backend_for, run_cli
-from forge_agent.providers.local_cli.detect import CliName
+from scf_agent.providers.local_cli.backends import backend_for, run_cli
+from scf_agent.providers.local_cli.detect import CliName
 
 #: Fix round 1, CRITICAL regression fixture: a prompt that is itself a real,
 #: known claude flag. Before the fix this was emitted as argv[-1] with no

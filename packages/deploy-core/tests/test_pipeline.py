@@ -8,16 +8,16 @@ import pytest
 from conftest import WS_ID, make_deployment, seed_pipeline
 from sqlalchemy.orm import Session
 
-from forge_contracts.dtos import DeployRules
-from forge_deploy.errors import RuleValidationError
-from forge_deploy.pipeline import PipelineResolver, resolve_environments
-from forge_deploy.repository import DeploymentRepository
-from forge_deploy.schemas import (
+from scf_contracts.dtos import DeployRules
+from scf_deploy.errors import RuleValidationError
+from scf_deploy.pipeline import PipelineResolver, resolve_environments
+from scf_deploy.repository import DeploymentRepository
+from scf_deploy.schemas import (
     DeployProviderConfig,
     EnvironmentSpec,
     PipelineSpec,
 )
-from forge_deploy.states import DeploymentState
+from scf_deploy.states import DeploymentState
 
 RULES = DeployRules(
     allow_agent_deploy=False,

@@ -1,4 +1,4 @@
-"""Structural conformance to the frozen ``forge_contracts`` Protocols (Task 1.13).
+"""Structural conformance to the frozen ``scf_contracts`` Protocols (Task 1.13).
 
 ``runtime_checkable`` Protocols verify the public method surface matches the
 frozen contract so DI wiring and the API layer can depend on the protocol type.
@@ -6,19 +6,19 @@ frozen contract so DI wiring and the API layer can depend on the protocol type.
 
 from __future__ import annotations
 
-from forge_contracts import (
+from scf_contracts import (
     GitHubClient as GitHubClientProtocol,
 )
-from forge_contracts import (
+from scf_contracts import (
     IntegrationClient as IntegrationClientProtocol,
 )
-from forge_contracts import (
+from scf_contracts import (
     PMAdapter as PMAdapterProtocol,
 )
-from forge_contracts import (
+from scf_contracts import (
     SlackNotifier as SlackNotifierProtocol,
 )
-from forge_integrations import (
+from scf_integrations import (
     GenericPMAdapter,
     GitHubClient,
     SlackNotifier,
@@ -45,9 +45,9 @@ def test_pm_adapter_conforms() -> None:
 def test_github_issues_conforms_to_async_pm_contract() -> None:
     from uuid import uuid4
 
-    from forge_contracts.pm import AdapterContext, PMAdapter, PMProvider
-    from forge_integrations.pm import GitHubIssuesAdapter
-    from forge_integrations.pm.base import BaseAdapter
+    from scf_contracts.pm import AdapterContext, PMAdapter, PMProvider
+    from scf_integrations.pm import GitHubIssuesAdapter
+    from scf_integrations.pm.base import BaseAdapter
 
     ctx = AdapterContext(
         connection_id=uuid4(),
@@ -63,7 +63,7 @@ def test_github_issues_conforms_to_async_pm_contract() -> None:
 
 
 def test_public_exports_present() -> None:
-    import forge_integrations as mod
+    import scf_integrations as mod
 
     for name in (
         "GitHubClient",

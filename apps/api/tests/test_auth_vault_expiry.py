@@ -7,15 +7,15 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from forge_api.auth.crypto import EnvelopeCipher, HmacAeadCipher, generate_key
-from forge_api.auth.keyring import KeyRing
-from forge_api.auth.vault import (
+from scf_api.auth.crypto import EnvelopeCipher, HmacAeadCipher, generate_key
+from scf_api.auth.keyring import KeyRing
+from scf_api.auth.vault import (
     InMemorySecretStore,
     SecretExpiredError,
     SecretNotFoundError,
     SecretVault,
 )
-from forge_contracts.enums import APIKeyKind
+from scf_contracts.enums import APIKeyKind
 
 _NOW = datetime(2026, 7, 4, 12, 0, tzinfo=UTC)
 

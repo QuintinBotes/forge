@@ -12,9 +12,9 @@ import os
 
 import pytest
 
-from forge_agent.testing import ScriptedModelClient
-from forge_contracts.enums import RunStatus
-from forge_worker.agent_runner import build_agent_runner, run_agent_task
+from scf_agent.testing import ScriptedModelClient
+from scf_contracts.enums import RunStatus
+from scf_worker.agent_runner import build_agent_runner, run_agent_task
 
 pytestmark = [pytest.mark.integration, pytest.mark.live_model]
 

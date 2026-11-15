@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useCreateEpic, useEpics } from "@/lib/api/hooks";
 import { useCreateSpec } from "@/lib/api/spec";
 import type { SpecDraft, SpecManifest } from "@/lib/api/types";
@@ -21,7 +21,7 @@ type EntryMode = "scratch" | "ai";
 const NEW_EPIC_VALUE = "__new_epic__";
 
 export interface NewSpecPageProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
   /** Navigate to the created spec (defaults to router push to /specs/{id}). */
   onCreated?: (specId: string) => void;
 }

@@ -67,9 +67,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import make_url
 
-import forge_db.models  # noqa: F401  (registers every model on Base.metadata)
-from forge_db.base import Base
-from forge_db.migration_utils import build_alembic_config
+import scf_db.models  # noqa: F401  (registers every model on Base.metadata)
+from scf_db.base import Base
+from scf_db.migration_utils import build_alembic_config
 
 
 def _diff_lines(diffs: list) -> str:
@@ -305,7 +305,7 @@ def test_compare_metadata_detects_add_table_without_postgres() -> None:
 def scratch_pg_config(postgres_url: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Config]:
     """Provision a throwaway Postgres database and yield an Alembic ``Config``.
 
-    A fresh, empty database (public schema, no Forge tables) is created on the
+    A fresh, empty database (public schema, no SCF tables) is created on the
     same server the ``postgres_url`` fixture resolves, so ``alembic upgrade``
     runs against a clean slate and the baseline's ``CREATE EXTENSION vector`` +
     every table is provisioned end-to-end without touching any other test's data.

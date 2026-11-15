@@ -16,12 +16,12 @@ from pathlib import Path
 
 import yaml
 
-from forge_eval.benchmark import load_manifest, parse_swe_case_fields
-from forge_eval.benchmark.manifest import compute_content_hash, freeze
-from forge_eval.golden import GoldenCase
-from forge_eval.mint import ChangedFile
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks.self_eval_mint import (
+from scf_eval.benchmark import load_manifest, parse_swe_case_fields
+from scf_eval.benchmark.manifest import compute_content_hash, freeze
+from scf_eval.golden import GoldenCase
+from scf_eval.mint import ChangedFile
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks.self_eval_mint import (
     MINTED_CASE_FILE,
     append_minted_cases,
     mint_and_store,
@@ -77,7 +77,7 @@ def _seed_suite(version_dir: Path) -> None:
         "primary_metric": "benchmark.composite",
         "metric_weights": {"retrieval.recall_at_k": 1.0},
     }
-    from forge_eval.benchmark import BenchmarkManifest
+    from scf_eval.benchmark import BenchmarkManifest
 
     manifest = BenchmarkManifest.model_validate(
         {

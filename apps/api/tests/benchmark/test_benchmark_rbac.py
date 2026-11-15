@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from conftest import SLUG, VERSION, faithful_submission
 
-from forge_contracts import UserRole
+from scf_contracts import UserRole
 
 BASE = f"/benchmarks/{SLUG}/{VERSION}"
 

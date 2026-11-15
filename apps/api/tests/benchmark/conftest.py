@@ -19,16 +19,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.observability.audit import AuditLog
-from forge_api.routers.benchmarks import get_benchmark_service
-from forge_api.routers.public_leaderboard import rate_limiter
-from forge_api.services.benchmark_service import BenchmarkService
-from forge_api.settings import Settings
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_eval.benchmark import (
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.observability.audit import AuditLog
+from scf_api.routers.benchmarks import get_benchmark_service
+from scf_api.routers.public_leaderboard import rate_limiter
+from scf_api.services.benchmark_service import BenchmarkService
+from scf_api.settings import Settings
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_eval.benchmark import (
     BenchmarkScore,
     compute_benchmark_score,
     compute_content_hash,
@@ -208,8 +208,8 @@ def faithful_submission(bundle_outputs: dict[str, list[str]] | None = None) -> d
     outputs = bundle_outputs or {cid: out for cid, (_exp, out) in CASES.items()}
     bundles = [make_bundle(cid, out) for cid, out in outputs.items()]
     # Recompute the claimed score the same way verification will.
-    from forge_eval.benchmark import BenchmarkScoring
-    from forge_eval.golden import GoldenCase
+    from scf_eval.benchmark import BenchmarkScoring
+    from scf_eval.golden import GoldenCase
 
     scoring = BenchmarkScoring(
         metric_weights={

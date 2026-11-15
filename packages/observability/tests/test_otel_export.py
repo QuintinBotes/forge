@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import pytest
 
-from forge_obs.metrics import NoopMetrics, RecordingMetrics, reset_metrics
-from forge_obs.otel_export import install_otel, otel_sdk_available, shutdown_otel
-from forge_obs.settings import ObsSettings
-from forge_obs.telemetry import setup_telemetry, shutdown_telemetry
+from scf_obs.metrics import NoopMetrics, RecordingMetrics, reset_metrics
+from scf_obs.otel_export import install_otel, otel_sdk_available, shutdown_otel
+from scf_obs.settings import ObsSettings
+from scf_obs.telemetry import setup_telemetry, shutdown_telemetry
 
 ENDPOINT = "http://otel-collector.invalid:4318"
 

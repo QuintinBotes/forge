@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ForgeApiClient } from "./client";
+import { ScfApiClient } from "./client";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -11,14 +11,14 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function makeClient(response: Response) {
   const fetchImpl = vi.fn(() => Promise.resolve(response));
-  const client = new ForgeApiClient({
+  const client = new ScfApiClient({
     baseUrl: "http://api.test",
     fetch: fetchImpl as unknown as typeof fetch,
   });
   return { client, fetchImpl };
 }
 
-describe("ForgeApiClient — attestations", () => {
+describe("ScfApiClient — attestations", () => {
   it("maps a 404 from the by-approval endpoint to null (confirmed absence)", async () => {
     const { client, fetchImpl } = makeClient(
       jsonResponse(404, { detail: "no attestation recorded for approval a1" }),

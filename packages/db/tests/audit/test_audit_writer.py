@@ -15,15 +15,15 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.audit import (
+from scf_contracts.audit import (
     GENESIS_HASH,
     AuditEvent,
     compute_entry_hash,
     compute_payload_hash,
 )
-from forge_db.audit.writer import SqlAuditWriter
-from forge_db.base import Base
-from forge_db.models import AuditChainHead, AuditLog, Workspace
+from scf_db.audit.writer import SqlAuditWriter
+from scf_db.base import Base
+from scf_db.models import AuditChainHead, AuditLog, Workspace
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000a2")

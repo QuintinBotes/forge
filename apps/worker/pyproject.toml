@@ -1,39 +1,39 @@
 [project]
-name = "forge-worker"
+name = "scf-worker"
 version = "0.1.0"
 description = "Celery worker application: indexer, syncer, and agent-runner tasks."
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
-authors = [{ name = "The Forge Authors" }]
+authors = [{ name = "The Swarm Code Factory Authors" }]
 dependencies = [
-    "forge-contracts",
-    "forge-db",
-    "forge-agent",
-    "forge-knowledge",
-    "forge-mcp",
-    "forge-board",
-    "forge-skill",
+    "scf-contracts",
+    "scf-db",
+    "scf-agent",
+    "scf-knowledge",
+    "scf-mcp",
+    "scf-board",
+    "scf-skill",
     # F32 — integration marketplace: catalog-sync + update-flag worker tasks.
-    "forge-marketplace",
-    "forge-api",
+    "scf-marketplace",
+    "scf-api",
     # F38 — cost.reprice + obs.refresh_freshness_gauges tasks and the worker
     # UsageMeter wiring.
-    "forge-obs",
-    "forge-workflow",
+    "scf-obs",
+    "scf-workflow",
     # F31 — deployment gates: drive promotions/health/rollback on the worker.
-    "forge-deploy",
+    "scf-deploy",
     "celery>=5.3",
     "redis>=5.0",
-    "forge-approval",
+    "scf-approval",
     # F41 — Self-Eval Gate: mint hidden regression cases into private suites and
-    # re-freeze their manifests (forge_eval.mint + benchmark.manifest.freeze);
-    # forge-integrations supplies the GitHub PR-data source in the prod seam.
-    "forge-eval",
-    "forge-integrations",
+    # re-freeze their manifests (scf_eval.mint + benchmark.manifest.freeze);
+    # scf-integrations supplies the GitHub PR-data source in the prod seam.
+    "scf-eval",
+    "scf-integrations",
     # Task 17 — supervised multi-agent dispatch: forge.agent.run drives the F27
-    # Supervisor (forge_coordinator) when execution_mode=supervised_multi_agent.
-    "forge-coordinator",
+    # Supervisor (scf_coordinator) when execution_mode=supervised_multi_agent.
+    "scf-coordinator",
 ]
 
 [build-system]
@@ -41,7 +41,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["forge_worker"]
+packages = ["scf_worker"]
 
 [tool.uv.sources]
-forge-approval = { workspace = true }
+scf-approval = { workspace = true }

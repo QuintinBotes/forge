@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from forge_contracts.incident import BlastRadius
-from forge_skill import (
+from scf_contracts.incident import BlastRadius
+from scf_skill import (
     SkillProfileRegistry,
     blast_within,
     normalize_action,

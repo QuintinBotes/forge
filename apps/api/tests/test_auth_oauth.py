@@ -16,7 +16,7 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from forge_api.auth.oauth import (
+from scf_api.auth.oauth import (
     DEFAULT_PROVIDERS,
     OAuthClient,
     OAuthClientCredentials,

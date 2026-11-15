@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Forge deploy preflight checks.
+# SCF deploy preflight checks.
 #
 # F19 adds a Docker Engine >= 26.1 gate: per-task sandbox containers mount only the
 # run's subpath of the worktree volume via `volume-subpath`, which requires Engine
@@ -8,14 +8,14 @@
 # F34 adds the kernel-boundary sandbox gates: when FORGE_SANDBOX_KIND is gvisor or
 # microvm, the matching OCI runtime (runsc / kata-fc) must be registered with the
 # daemon, and microvm additionally requires /dev/kvm (+ best-effort nested-virt
-# check). Forge NEVER silently downgrades to a weaker runtime — a missing
+# check). SCF NEVER silently downgrades to a weaker runtime — a missing
 # capability fails here, before `up`.
 set -euo pipefail
 
 MIN_ENGINE_MAJOR=26
 MIN_ENGINE_MINOR=1
 
-# F34 kernel-boundary sandbox configuration (mirrors forge_agent SandboxSettings).
+# F34 kernel-boundary sandbox configuration (mirrors scf_agent SandboxSettings).
 FORGE_SANDBOX_KIND="${FORGE_SANDBOX_KIND:-worktree}"
 FORGE_SANDBOX_GVISOR_RUNTIME="${FORGE_SANDBOX_GVISOR_RUNTIME:-runsc}"
 FORGE_SANDBOX_MICROVM_RUNTIME="${FORGE_SANDBOX_MICROVM_RUNTIME:-kata-fc}"

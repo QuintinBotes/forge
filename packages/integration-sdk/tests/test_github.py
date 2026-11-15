@@ -3,7 +3,7 @@
 Every request is served by an ``httpx.MockTransport`` from recorded fixtures —
 no live GitHub calls. Asserts the *outbound payload* is correct (the plan's
 "PR-open builds correct payload (fixture)") and that responses parse into the
-frozen ``forge_contracts`` DTOs.
+frozen ``scf_contracts`` DTOs.
 """
 
 from __future__ import annotations
@@ -14,14 +14,14 @@ import httpx
 import pytest
 from conftest import RequestRecorder, load_fixture, make_transport
 
-from forge_contracts import (
+from scf_contracts import (
     PRState,
     PullRequest,
     PullRequestRequest,
     RepositoryConnection,
     RepoSyncResult,
 )
-from forge_integrations import GitHubClient, GitHubError
+from scf_integrations import GitHubClient, GitHubError
 
 
 def _client(handler, *, token: str = "ghs_testtoken") -> GitHubClient:

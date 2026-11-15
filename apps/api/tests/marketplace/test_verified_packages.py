@@ -23,13 +23,13 @@ from conftest import (
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from forge_db.models.marketplace import (
+from scf_db.models.marketplace import (
     MarketplaceAuditLog,
     MarketplaceInstallation,
     MarketplaceRegistry,
 )
-from forge_db.models.profiles import SkillProfile
-from forge_marketplace.models import ArtifactKind, RegistryIndexVersion
+from scf_db.models.profiles import SkillProfile
+from scf_marketplace.models import ArtifactKind, RegistryIndexVersion
 
 
 def _install_body(registry, kind: str, slug: str, *, ack: bool = True) -> dict:

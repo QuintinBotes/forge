@@ -12,8 +12,8 @@ import uuid
 import pytest
 from conftest import make_principal, make_request
 
-from forge_approval.authorizer import ApprovalAuthorizer, AuthorizationError
-from forge_approval.models import ApprovalAction, ApprovalDecisionRequest, GateType, Role
+from scf_approval.authorizer import ApprovalAuthorizer, AuthorizationError
+from scf_approval.models import ApprovalAction, ApprovalDecisionRequest, GateType, Role
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-0000000000d1")
 OUTSIDER = uuid.UUID("00000000-0000-0000-0000-0000000000d2")

@@ -25,15 +25,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.middleware.idempotency import (
+from scf_api.middleware.idempotency import (
     IdempotencyMiddleware,
     IdempotencyStore,
     InMemoryIdempotencyStore,
     StoredResponse,
 )
-from forge_api.middleware.idempotency_db import DbIdempotencyStore
-from forge_db.base import Base
-from forge_db.models import IdempotencyKey
+from scf_api.middleware.idempotency_db import DbIdempotencyStore
+from scf_db.base import Base
+from scf_db.models import IdempotencyKey
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 

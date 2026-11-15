@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ForgeApiClient } from "./client";
+import { ScfApiClient } from "./client";
 import {
   resolveApiBaseUrl,
   sameOriginApiBaseUrl,
@@ -174,7 +174,7 @@ describe("toAbsoluteApiBase", () => {
   });
 });
 
-describe("ForgeApiClient with a relative base URL", () => {
+describe("ScfApiClient with a relative base URL", () => {
   it("does not throw and issues requests to an absolute same-origin URL", async () => {
     stubLocation({
       protocol: "https:",
@@ -191,7 +191,7 @@ describe("ForgeApiClient with a relative base URL", () => {
         }),
       ),
     );
-    const client = new ForgeApiClient({
+    const client = new ScfApiClient({
       baseUrl: "/api",
       fetch: fetchImpl as unknown as typeof fetch,
     });

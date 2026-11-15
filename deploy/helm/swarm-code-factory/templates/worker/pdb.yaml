@@ -1,0 +1,13 @@
+{{- if and .Values.worker.enabled .Values.worker.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "swarm-code-factory.fullname" . }}-worker
+  labels:
+    {{- include "swarm-code-factory.componentLabels" (dict "ctx" . "component" "worker") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.worker.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "swarm-code-factory.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+{{- end }}

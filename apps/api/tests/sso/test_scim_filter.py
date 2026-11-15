@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.dialects import sqlite
 
-from forge_api.sso.errors import ScimApiError
-from forge_api.sso.scim_filter import parse_scim_filter
+from scf_api.sso.errors import ScimApiError
+from scf_api.sso.scim_filter import parse_scim_filter
 
 
 def _sql(text: str) -> str:

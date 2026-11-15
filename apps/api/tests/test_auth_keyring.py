@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_api.auth.keyring import KeyRing
-from forge_api.auth.providers import EnvSecretProvider
+from scf_api.auth.keyring import KeyRing
+from scf_api.auth.providers import EnvSecretProvider
 
 
 def _provider(env: dict[str, str]) -> EnvSecretProvider:

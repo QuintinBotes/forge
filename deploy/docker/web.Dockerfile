@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Forge web (Next.js) image — standalone production build (HARD-07).
+# SCF web (Next.js) image — standalone production build (HARD-07).
 #
 # Build stage installs the pnpm workspace and runs `next build` with
 # `output: "standalone"` (apps/web/next.config.mjs); the runtime stage ships

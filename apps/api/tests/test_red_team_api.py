@@ -20,14 +20,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import Project, Task, WorkflowRun, Workspace
-from forge_db.models.red_team import VERDICT_BLOCKED, VERDICT_SURVIVED, RedTeamRecord
-from forge_db.redteam import RedTeamRepository
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import Project, Task, WorkflowRun, Workspace
+from scf_db.models.red_team import VERDICT_BLOCKED, VERDICT_SURVIVED, RedTeamRecord
+from scf_db.redteam import RedTeamRepository
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000d1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000d2")

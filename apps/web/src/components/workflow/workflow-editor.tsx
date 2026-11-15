@@ -19,7 +19,7 @@ import {
 
 import { useRegisterCommands } from "@/components/command-palette";
 import { toast } from "@/components/ui/toast";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useForkBundledWorkflow,
   usePublishWorkflow,
@@ -100,7 +100,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 export interface WorkflowEditorProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

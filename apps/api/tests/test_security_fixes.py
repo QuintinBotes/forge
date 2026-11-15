@@ -17,9 +17,9 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from forge_api.deps import get_current_principal
-from forge_api.main import create_app
-from forge_api.settings import Settings
+from scf_api.deps import get_current_principal
+from scf_api.main import create_app
+from scf_api.settings import Settings
 
 # --------------------------------------------------------------------------- #
 # Authentication is wired (Task 1.15) — no anonymous admin                     #

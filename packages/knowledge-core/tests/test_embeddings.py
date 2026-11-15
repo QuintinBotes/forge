@@ -1,4 +1,4 @@
-"""Tests for ``forge_knowledge.embeddings`` (plan Task 1.2, RAG spine).
+"""Tests for ``scf_knowledge.embeddings`` (plan Task 1.2, RAG spine).
 
 Two embedding clients are covered:
 
@@ -23,10 +23,10 @@ import httpx
 import numpy as np
 import pytest
 
-from forge_contracts.constants import DEFAULT_EMBEDDING_DIM
-from forge_contracts.protocols import EmbeddingClient
-from forge_db.models.knowledge import EMBEDDING_DIM
-from forge_knowledge.embeddings import (
+from scf_contracts.constants import DEFAULT_EMBEDDING_DIM
+from scf_contracts.protocols import EmbeddingClient
+from scf_db.models.knowledge import EMBEDDING_DIM
+from scf_knowledge.embeddings import (
     DeterministicEmbeddingClient,
     HttpEmbeddingClient,
     SentenceTransformerEmbeddingClient,

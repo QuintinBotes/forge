@@ -20,12 +20,12 @@ from typing import Any
 
 import pytest
 
-from forge_contracts import WorkflowRun
-from forge_workflow.store import InMemoryWorkflowStore
-from forge_workflow.temporal.activities import WorkflowActivities
-from forge_workflow.temporal.engine import TemporalWorkflowEngine
-from forge_workflow.temporal.worker import build_temporal_worker
-from forge_workflow.temporal.workflows import FeatureWorkflow
+from scf_contracts import WorkflowRun
+from scf_workflow.store import InMemoryWorkflowStore
+from scf_workflow.temporal.activities import WorkflowActivities
+from scf_workflow.temporal.engine import TemporalWorkflowEngine
+from scf_workflow.temporal.worker import build_temporal_worker
+from scf_workflow.temporal.workflows import FeatureWorkflow
 
 TASK_QUEUE = "forge-feature-test"
 

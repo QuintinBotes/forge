@@ -8,8 +8,8 @@ from decimal import Decimal
 
 import pytest
 
-from forge_obs.analytics.budgets import Budget, evaluate_budget
-from forge_obs.analytics.fx import FxRate, InMemoryFxRateBook, convert
+from scf_obs.analytics.budgets import Budget, evaluate_budget
+from scf_obs.analytics.fx import FxRate, InMemoryFxRateBook, convert
 
 NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
 

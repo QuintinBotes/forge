@@ -5,9 +5,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from forge_contracts import SubAgentArtifact, SubAgentResult, SubAgentRole
-from forge_coordinator import BranchMerger, SubAgentWorkspaceManager
-from forge_coordinator.gitutil import rev_parse
+from scf_contracts import SubAgentArtifact, SubAgentResult, SubAgentRole
+from scf_coordinator import BranchMerger, SubAgentWorkspaceManager
+from scf_coordinator.gitutil import rev_parse
 
 
 def _git(repo: Path, *args: str) -> str:

@@ -3,7 +3,7 @@
 /**
  * Dependency-free chart primitives for the Sprints & velocity screen.
  *
- * Inline SVG styled with Forge design tokens (no chart library, no hardcoded
+ * Inline SVG styled with SCF design tokens (no chart library, no hardcoded
  * colour) so both charts are theme-aware in light + dark and never touch a CDN.
  * They follow the dataviz mark specs: thin bars with a 3px rounded data-end
  * anchored to the baseline, a 2px surface gap between paired bars, 2px lines, a

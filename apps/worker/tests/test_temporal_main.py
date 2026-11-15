@@ -11,7 +11,7 @@ from typing import ClassVar
 
 import pytest
 
-import forge_worker.temporal_main as tm
+import scf_worker.temporal_main as tm
 
 
 class _FakeSession:
@@ -70,11 +70,11 @@ def test_session_per_call_store_reads_and_updates_runs_in_their_workspace() -> N
     from sqlalchemy import StaticPool, create_engine
     from sqlalchemy.orm import Session, sessionmaker
 
-    from forge_contracts import RunStatus, WorkflowRun
-    from forge_db.base import Base
-    from forge_db.models import Project, Task, Workspace
-    from forge_workflow import WorkflowRunNotFoundError
-    from forge_workflow.store import SqlAlchemyWorkflowStore
+    from scf_contracts import RunStatus, WorkflowRun
+    from scf_db.base import Base
+    from scf_db.models import Project, Task, Workspace
+    from scf_workflow import WorkflowRunNotFoundError
+    from scf_workflow.store import SqlAlchemyWorkflowStore
 
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool

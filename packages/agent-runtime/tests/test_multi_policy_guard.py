@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent.policy_guard import MultiRepoPolicyGuard
-from forge_contracts import (
+from scf_agent.policy_guard import MultiRepoPolicyGuard
+from scf_contracts import (
     DecisionEffect,
     Policy,
     ToolCall,
     UnknownRepoError,
     WriteRules,
 )
-from forge_policy import RepoPolicyEvaluator
+from scf_policy import RepoPolicyEvaluator
 
 
 def _policies() -> dict[str, Policy]:

@@ -7,8 +7,8 @@ import uuid
 import pytest
 from conftest import AGENT_ID, MEMBER_ID, make_principal, make_request
 
-from forge_approval.authorizer import ApprovalAuthorizer, AuthorizationError
-from forge_approval.models import (
+from scf_approval.authorizer import ApprovalAuthorizer, AuthorizationError
+from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRequest,
     ApprovalRequest,
@@ -16,7 +16,7 @@ from forge_approval.models import (
     Principal,
     Role,
 )
-from forge_contracts.dtos import DeployRules, ReviewRules
+from scf_contracts.dtos import DeployRules, ReviewRules
 
 APPROVE = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
 

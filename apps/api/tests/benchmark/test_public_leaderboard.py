@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from conftest import SLUG, VERSION, WS_ID, faithful_submission
 
-from forge_api.routers import public_leaderboard as public_module
-from forge_api.settings import Settings
-from forge_contracts import UserRole
+from scf_api.routers import public_leaderboard as public_module
+from scf_api.settings import Settings
+from scf_contracts import UserRole
 
 BOARD = f"/public/leaderboard/{SLUG}/{VERSION}"
 
@@ -89,7 +89,7 @@ def test_public_detail_reproduce_affordance(make_client) -> None:
     sid = _published_submission(make_client)
     anon = make_client(None)
     detail = anon.get(f"{BOARD}/submissions/{sid}").json()
-    assert "forge-cli bench verify" in detail["reproduce_command"]
+    assert "scf-cli bench verify" in detail["reproduce_command"]
     assert detail["replay_bundle_urls"] == [f"{BOARD}/submissions/{sid}/bundles"]
     assert detail["verified"] is True
     assert detail["scores"]["composite"] == detail["composite_score"]
@@ -122,7 +122,7 @@ def test_public_rate_limited_429(make_client, monkeypatch: pytest.MonkeyPatch) -
 
 def test_unpublished_suite_hidden_from_public(make_client, service) -> None:
     with service._session_factory() as session:  # test-only reach-in
-        from forge_db.models.benchmark import BenchmarkSuite
+        from scf_db.models.benchmark import BenchmarkSuite
 
         suite = session.query(BenchmarkSuite).one()
         suite.published = False
@@ -148,7 +148,7 @@ def test_private_self_eval_suite_never_public(make_client, service, mutate) -> N
     """
     sid = _published_submission(make_client)  # give the suite a rankable entry
     with service._session_factory() as session:  # test-only reach-in
-        from forge_db.models.benchmark import BenchmarkSuite
+        from scf_db.models.benchmark import BenchmarkSuite
 
         suite = session.query(BenchmarkSuite).one()
         assert suite.published is True  # precondition: only privacy hides it now

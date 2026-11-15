@@ -24,33 +24,33 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.observability.audit import AuditLog
-from forge_api.routers.integration import (
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.observability.audit import AuditLog
+from scf_api.routers.integration import (
     get_feedback_session_factory,
     get_github_webhook_secret,
 )
-from forge_api.routers.knowledge import get_knowledge_service
-from forge_api.routers.mcp_server import get_mcp_server_audit_log
-from forge_api.routers.spec import get_spec_engine
-from forge_api.services.context_service import _spec_candidates
-from forge_api.services.world_service import get_world_service, make_world_service
-from forge_contracts import Chunk, Requirement, SpecManifest, UserRole
-from forge_contracts.enums import ChunkType, SpecStatus
-from forge_db.base import Base
-from forge_db.models import (
+from scf_api.routers.knowledge import get_knowledge_service
+from scf_api.routers.mcp_server import get_mcp_server_audit_log
+from scf_api.routers.spec import get_spec_engine
+from scf_api.services.context_service import _spec_candidates
+from scf_api.services.world_service import get_world_service, make_world_service
+from scf_contracts import Chunk, Requirement, SpecManifest, UserRole
+from scf_contracts.enums import ChunkType, SpecStatus
+from scf_db.base import Base
+from scf_db.models import (
     AgentRun,
     KnowledgeSource,
     Workspace,
     WorldEntity,
     WorldFactFeedback,
 )
-from forge_integrations import sign_github_payload
-from forge_knowledge import KnowledgeService
-from forge_spec import FileSpecEngine
-from forge_world import WorldModelService
+from scf_integrations import sign_github_payload
+from scf_knowledge import KnowledgeService
+from scf_spec import FileSpecEngine
+from scf_world import WorldModelService
 
 WS = uuid.UUID("00000000-0000-0000-0000-00000000dd01")
 WS2 = uuid.UUID("00000000-0000-0000-0000-00000000dd02")
@@ -887,7 +887,7 @@ _GUIDE = "\n\n".join(
 
 
 def _seed_guide(knowledge: KnowledgeService) -> list[Chunk]:
-    from forge_knowledge import chunk_markdown
+    from scf_knowledge import chunk_markdown
 
     chunks = chunk_markdown("docs/guide.md", f"# Guide\n\n{_GUIDE}\n", max_chars=120)
     assert len(chunks) > 4

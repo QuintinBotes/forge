@@ -11,7 +11,7 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from forge_api.observability.audit import (
+from scf_api.observability.audit import (
     AuditCategory,
     AuditEntry,
     AuditLog,
@@ -19,7 +19,7 @@ from forge_api.observability.audit import (
     compute_payload_hash,
     verify_chain,
 )
-from forge_contracts import MCPAuditEntry
+from scf_contracts import MCPAuditEntry
 
 
 def test_record_assigns_monotonic_sequence_numbers() -> None:
@@ -125,7 +125,7 @@ def test_tampered_entry_breaks_chain_verification() -> None:
     for i in range(3):
         log.record(category=AuditCategory.AGENT_ACTION, action=f"a{i}")
     entries = log.store.all()
-    # Forge a record that changes content but keeps the original hash.
+    # SCF a record that changes content but keeps the original hash.
     tampered = entries[1].model_copy(update={"action": "MALICIOUS"})
     chain = [entries[0], tampered, entries[2]]
     assert verify_chain(chain) is False

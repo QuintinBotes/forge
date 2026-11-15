@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from forge_integrations.pm.linear.webhooks import sign_linear
+from scf_integrations.pm.linear.webhooks import sign_linear
 
 from .conftest import WORKSPACE_ID
 
@@ -133,7 +133,7 @@ def test_webhook_dedup_one_row(client, project_id, pm_service, vault, session_fa
     assert client.post(url, content=body, headers=headers).status_code == 202
     assert client.post(url, content=body, headers=headers).status_code == 202
 
-    from forge_db.models.pm import PMWebhookDelivery
+    from scf_db.models.pm import PMWebhookDelivery
 
     with session_factory() as session:
         rows = session.query(PMWebhookDelivery).all()
@@ -166,8 +166,8 @@ def test_outbound_only_records_skipped(
     )
     assert resp.status_code == 202
 
-    from forge_db.models.enums import PMDeliveryStatus
-    from forge_db.models.pm import PMWebhookDelivery
+    from scf_db.models.enums import PMDeliveryStatus
+    from scf_db.models.pm import PMWebhookDelivery
 
     with session_factory() as session:
         row = session.query(PMWebhookDelivery).one()
@@ -205,7 +205,7 @@ def test_webhook_enqueues_board_write_once(
     assert client.post(url, content=body, headers=headers).status_code == 202
     assert client.post(url, content=body, headers=headers).status_code == 202
 
-    from forge_db.models.pm import PMWebhookDelivery
+    from scf_db.models.pm import PMWebhookDelivery
 
     with session_factory() as session:
         row = session.query(PMWebhookDelivery).one()
@@ -225,7 +225,7 @@ def test_webhook_enqueue_failure_still_202(
         raise RuntimeError("broker down")
 
     monkeypatch.setattr(pm_service, "_enqueue_process_webhook", _boom)
-    with caplog.at_level(logging.WARNING, logger="forge_api.services.pm_service"):
+    with caplog.at_level(logging.WARNING, logger="scf_api.services.pm_service"):
         resp = client.post(
             f"/integrations/pm/webhooks/linear/{conn['id']}", content=body, headers=headers
         )

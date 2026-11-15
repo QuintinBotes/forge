@@ -16,18 +16,18 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.marketplace_service import InstallBlockedError, MarketplaceService
-from forge_db.base import Base
-from forge_db.models import Workspace
-from forge_db.models.marketplace import (
+from scf_api.services.marketplace_service import InstallBlockedError, MarketplaceService
+from scf_db.base import Base
+from scf_db.models import Workspace
+from scf_db.models.marketplace import (
     MarketplaceAuditLog,
     MarketplaceInstallation,
     MarketplaceRegistry,
 )
-from forge_db.models.workflow_editor import WorkflowDefinition, WorkflowDefinitionRevision
-from forge_marketplace.installer import INSTALLERS, ValidatedArtifact
-from forge_marketplace.models import ArtifactKind, InstallRequest
-from forge_workflow.editor.repository import DbWorkflowDefinitionRepository
+from scf_db.models.workflow_editor import WorkflowDefinition, WorkflowDefinitionRevision
+from scf_marketplace.installer import INSTALLERS, ValidatedArtifact
+from scf_marketplace.models import ArtifactKind, InstallRequest
+from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
 
 pytestmark = [pytest.mark.postgres]
 

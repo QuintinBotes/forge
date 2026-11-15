@@ -1,6 +1,6 @@
 # Backups
 
-Forge keeps durable state in four places, and a complete backup must capture
+Swarm Code Factory keeps durable state in four places, and a complete backup must capture
 all four together:
 
 | State | Where it lives | What you lose without it |

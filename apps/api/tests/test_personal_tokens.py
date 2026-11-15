@@ -18,18 +18,18 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, update
 
-import forge_api.auth.service as auth_service_module
-from forge_api.auth.service import AuthService
-from forge_api.main import create_app
-from forge_api.observability.redaction import redact_mapping
-from forge_api.services.approval_service import build_gate_registry, get_approval_service
-from forge_approval import ApprovalAuthorizer, ApprovalService, InMemoryApprovalRepository
-from forge_approval.providers import InMemoryGrantStore
-from forge_auth.tokens import encode_session_jwt
-from forge_contracts.auth import SessionClaims
-from forge_contracts.authz import PrincipalType, ScopeType
-from forge_contracts.enums import UserRole
-from forge_db.models import Project, RoleGrant, User, Workspace
+import scf_api.auth.service as auth_service_module
+from scf_api.auth.service import AuthService
+from scf_api.main import create_app
+from scf_api.observability.redaction import redact_mapping
+from scf_api.services.approval_service import build_gate_registry, get_approval_service
+from scf_approval import ApprovalAuthorizer, ApprovalService, InMemoryApprovalRepository
+from scf_approval.providers import InMemoryGrantStore
+from scf_auth.tokens import encode_session_jwt
+from scf_contracts.auth import SessionClaims
+from scf_contracts.authz import PrincipalType, ScopeType
+from scf_contracts.enums import UserRole
+from scf_db.models import Project, RoleGrant, User, Workspace
 
 AUTH_SECRET = "personal-token-test-secret"
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000e1")

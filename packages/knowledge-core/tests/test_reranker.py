@@ -1,7 +1,7 @@
-"""Tests for ``forge_knowledge.reranker`` (plan Task 1.3, RAG spine).
+"""Tests for ``scf_knowledge.reranker`` (plan Task 1.3, RAG spine).
 
 Two implementations of the frozen
-:class:`forge_contracts.protocols.RerankerClient` Protocol:
+:class:`scf_contracts.protocols.RerankerClient` Protocol:
 
 * :class:`FixtureRerankerClient` — the deterministic, dependency-free fake used
   by every retrieval/eval test and as an offline default. It reorders documents
@@ -24,9 +24,9 @@ from itertools import pairwise
 import httpx
 import pytest
 
-from forge_contracts.dtos import RerankResult
-from forge_contracts.protocols import RerankerClient
-from forge_knowledge.reranker import (
+from scf_contracts.dtos import RerankResult
+from scf_contracts.protocols import RerankerClient
+from scf_knowledge.reranker import (
     FixtureRerankerClient,
     GracefulReranker,
     JinaRerankerClient,
@@ -419,15 +419,15 @@ def test_api_key_never_appears_in_error_on_401(caplog: pytest.LogCaptureFixture)
 @pytest.mark.parametrize(
     ("raw", "expected"), [(None, "none"), ("", "none"), ("OFF", "none"), (" Jina ", "jina")]
 )
-def test_check_rerank_provider_normalises_names_forge_accepts(raw, expected) -> None:
-    from forge_knowledge.reranker import check_rerank_provider
+def test_check_rerank_provider_normalises_names_scf_accepts(raw, expected) -> None:
+    from scf_knowledge.reranker import check_rerank_provider
 
     assert check_rerank_provider(raw) == expected
 
 
 @pytest.mark.parametrize("raw", ["fixture", "FIXTURE", "jinna"])
 def test_check_rerank_provider_refuses_test_only_and_unknown_names(raw) -> None:
-    from forge_knowledge.reranker import check_rerank_provider
+    from scf_knowledge.reranker import check_rerank_provider
 
     with pytest.raises(ValueError):
         check_rerank_provider(raw)

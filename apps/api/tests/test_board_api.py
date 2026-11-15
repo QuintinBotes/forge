@@ -15,9 +15,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
-from forge_api.routers.board import get_board_service
-from forge_board import InMemoryBoardService
+from scf_api.main import create_app
+from scf_api.routers.board import get_board_service
+from scf_board import InMemoryBoardService
 
 PROJECT = "00000000-0000-0000-0000-0000000000a1"
 

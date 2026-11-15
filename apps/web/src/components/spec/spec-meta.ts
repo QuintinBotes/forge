@@ -2,7 +2,7 @@
  * Pure presentation helpers for the spec-validation dashboard.
  *
  * Kept framework-free (no JSX) so the lifecycle ordering, gate roll-ups and
- * token-class maps are unit-testable in isolation. Every colour is a Forge
+ * token-class maps are unit-testable in isolation. Every colour is an SCF
  * design-token utility class (never a raw hex/rgb).
  */
 

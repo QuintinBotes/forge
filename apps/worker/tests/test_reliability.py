@@ -1,6 +1,6 @@
 """HARD-11: worker reliability primitives (hermetic, no broker).
 
-Covers the ``ForgeTask`` base (acks_late + autoretry + SETNX dedup), the
+Covers the ``ScfTask`` base (acks_late + autoretry + SETNX dedup), the
 ``configure_reliability`` Celery knobs, and the env-driven settings — the
 reliability half of the worker coverage gate.
 """
@@ -11,13 +11,13 @@ import pytest
 from celery import Celery
 from celery.exceptions import SoftTimeLimitExceeded
 
-import forge_worker.reliability as reliability
-from forge_worker.agent_runner import run_agent_task
-from forge_worker.indexer import index_source_task
-from forge_worker.reliability import (
-    ForgeTask,
+import scf_worker.reliability as reliability
+from scf_worker.agent_runner import run_agent_task
+from scf_worker.indexer import index_source_task
+from scf_worker.reliability import (
     InMemoryDedupBackend,
     RedisDedupBackend,
+    ScfTask,
     TransientError,
     WorkerReliabilitySettings,
     configure_reliability,
@@ -25,7 +25,7 @@ from forge_worker.reliability import (
     set_dedup_backend,
     transient_errors,
 )
-from forge_worker.syncer import sync_source_task
+from scf_worker.syncer import sync_source_task
 
 
 @pytest.fixture(autouse=True)
@@ -120,26 +120,26 @@ def test_configure_reliability_reads_env_when_no_settings(
 
 
 # --------------------------------------------------------------------------- #
-# ForgeTask base config                                                        #
+# ScfTask base config                                                        #
 # --------------------------------------------------------------------------- #
 
 
-def test_forgetask_reliability_attributes() -> None:
-    assert ForgeTask.acks_late is True
-    assert ForgeTask.reject_on_worker_lost is True
-    assert TransientError in ForgeTask.autoretry_for
-    assert ForgeTask.retry_backoff is True
-    assert ForgeTask.retry_jitter is True
+def test_scftask_reliability_attributes() -> None:
+    assert ScfTask.acks_late is True
+    assert ScfTask.reject_on_worker_lost is True
+    assert TransientError in ScfTask.autoretry_for
+    assert ScfTask.retry_backoff is True
+    assert ScfTask.retry_jitter is True
 
 
-def test_forgetask_autoretries_transient_error_in_eager_mode() -> None:
+def test_scftask_autoretries_transient_error_in_eager_mode() -> None:
     app = Celery("retry-eager")
     app.conf.task_always_eager = True
     app.conf.task_eager_propagates = False
     calls = {"n": 0}
 
-    @app.task(bind=True, base=ForgeTask, max_retries=2, default_retry_delay=0)
-    def flaky(self: ForgeTask) -> str:
+    @app.task(bind=True, base=ScfTask, max_retries=2, default_retry_delay=0)
+    def flaky(self: ScfTask) -> str:
         calls["n"] += 1
         if calls["n"] < 3:
             raise TransientError("blip")
@@ -151,14 +151,14 @@ def test_forgetask_autoretries_transient_error_in_eager_mode() -> None:
     assert result.result == "ok"
 
 
-def test_forgetask_does_not_retry_deterministic_error() -> None:
+def test_scftask_does_not_retry_deterministic_error() -> None:
     app = Celery("deterministic")
     app.conf.task_always_eager = True
     app.conf.task_eager_propagates = False
     calls = {"n": 0}
 
-    @app.task(bind=True, base=ForgeTask, max_retries=3, default_retry_delay=0)
-    def boom(self: ForgeTask) -> str:
+    @app.task(bind=True, base=ScfTask, max_retries=3, default_retry_delay=0)
+    def boom(self: ScfTask) -> str:
         calls["n"] += 1
         raise ValueError("deterministic")
 
@@ -173,7 +173,7 @@ def test_forgetask_does_not_retry_deterministic_error() -> None:
 
 
 def test_is_duplicate_first_then_replay() -> None:
-    task = ForgeTask()
+    task = ScfTask()
     task.name = "forge.test.dedup"
     assert task.is_duplicate("key-1") is False  # first sight claims the slot
     assert task.is_duplicate("key-1") is True  # replay is a duplicate
@@ -181,7 +181,7 @@ def test_is_duplicate_first_then_replay() -> None:
 
 
 def test_is_duplicate_ignores_empty_key() -> None:
-    task = ForgeTask()
+    task = ScfTask()
     task.name = "forge.test.dedup"
     assert task.is_duplicate(None) is False
     assert task.is_duplicate("") is False
@@ -190,7 +190,7 @@ def test_is_duplicate_ignores_empty_key() -> None:
 
 
 def test_dedup_key_is_namespaced_by_task_name() -> None:
-    task = ForgeTask()
+    task = ScfTask()
     task.name = "forge.agent.run"
     assert task.dedup_key("abc") == "forge:task:dedup:forge.agent.run:abc"
 
@@ -283,7 +283,7 @@ def test_run_agent_task_explicit_idempotency_key() -> None:
 
 
 def test_run_agent_task_soft_time_limit_escalates(monkeypatch: pytest.MonkeyPatch) -> None:
-    import forge_worker.agent_runner as ar
+    import scf_worker.agent_runner as ar
 
     def _raise(*_a, **_k):
         raise SoftTimeLimitExceeded
@@ -295,7 +295,7 @@ def test_run_agent_task_soft_time_limit_escalates(monkeypatch: pytest.MonkeyPatc
 
 
 def test_index_source_task_dedups_re_enqueue(monkeypatch: pytest.MonkeyPatch) -> None:
-    import forge_worker.indexer as idx
+    import scf_worker.indexer as idx
 
     def _build_boom():  # pragma: no cover - must not be reached on a duplicate
         raise AssertionError("build_knowledge_service must not run on a duplicate")
@@ -309,7 +309,7 @@ def test_index_source_task_dedups_re_enqueue(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_sync_source_task_dedups_re_enqueue(monkeypatch: pytest.MonkeyPatch) -> None:
-    import forge_worker.syncer as syncer
+    import scf_worker.syncer as syncer
 
     def _build_boom():  # pragma: no cover - must not run on a duplicate
         raise AssertionError("build_knowledge_service must not run on a duplicate")

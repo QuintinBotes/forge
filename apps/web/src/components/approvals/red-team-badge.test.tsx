@@ -3,16 +3,16 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { RedTeamGateOut } from "@/lib/api/types";
 
 import { RedTeamBadge } from "./red-team-badge";
 
-function makeClient(getWorkflowRunRedTeam: () => Promise<RedTeamGateOut>): ForgeApiClient {
-  return { getWorkflowRunRedTeam: vi.fn(getWorkflowRunRedTeam) } as unknown as ForgeApiClient;
+function makeClient(getWorkflowRunRedTeam: () => Promise<RedTeamGateOut>): ScfApiClient {
+  return { getWorkflowRunRedTeam: vi.fn(getWorkflowRunRedTeam) } as unknown as ScfApiClient;
 }
 
-function renderBadge(workflowRunId: string | null | undefined, client: ForgeApiClient) {
+function renderBadge(workflowRunId: string | null | undefined, client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });

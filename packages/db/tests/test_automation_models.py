@@ -16,14 +16,14 @@ from sqlalchemy import text, update
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import (
+from scf_db.base import Base
+from scf_db.models import (
     AutomationExecution,
     AutomationRule,
     Project,
     Workspace,
 )
-from forge_db.models.enums import (
+from scf_db.models.enums import (
     AutomationEntityType,
     AutomationExecutionStatus,
     AutomationTriggerSource,

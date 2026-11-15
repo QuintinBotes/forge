@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Forge MCP gateway image (plan Task 0.6 substrate; built + verified in Phase 2 Task 2.1).
+# SCF MCP gateway image (plan Task 0.6 substrate; built + verified in Phase 2 Task 2.1).
 FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim@sha256:7cf77f594be8042dab6daa9fe326f90962252268b4f120a7f5dccce4d947e6c1
 
 ENV UV_COMPILE_BYTECODE=1 \
@@ -23,4 +23,4 @@ RUN mkdir -p /srv/forge/specs && chown -R forge:forge /srv/forge
 USER forge
 
 EXPOSE 8001
-CMD ["uvicorn", "forge_mcp_gateway.app:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "scf_mcp_gateway.app:app", "--host", "0.0.0.0", "--port", "8001"]

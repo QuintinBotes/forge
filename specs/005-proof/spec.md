@@ -6,21 +6,21 @@
 
 **Status**: Draft
 
-**Input**: Roadmap milestone M5 (`docs/superpowers/plans/2026-11-14-industry-standard-roadmap.md`, issues R23 to R27): "Prove it in public: forge builds forge from its own issues, with published metrics."
+**Input**: Roadmap milestone M5 (`docs/superpowers/plans/2026-11-14-industry-standard-roadmap.md`, issues R23 to R27): "Prove it in public: SCF builds SCF from its own issues, with published metrics."
 
 **Builds on**: lettered spec J (`docs/superpowers/specs/2026-11-07-context-memory-and-lines-design.md` section 2.4), lettered spec M (`docs/superpowers/specs/2026-11-07-bring-your-own-tracker-design.md`), the unified programme (`docs/superpowers/specs/2026-11-07-unified-factory-programme.md` section 5), ADR-0005 (machines propose, people decide), ADR-0007 (production paths fail closed), ADR-0010 (licence and clean-room policy), ADR-0018 (retrieval degrades honestly).
 
 ## Why this exists
 
-Forge measures one thing today: retrieval quality (`docs/EVAL_RESULTS.md`). Nothing measures whether an issue handed to forge becomes a correct, landed change, what that costs, or how often a person has to step in. The only agent benchmark in the repository, `forge-swe` 1.0.0, holds five cases in 37 lines and has no tests behind its agent cases. The context benchmark that spec J names as its bar has not been written. Six of the ten Beta release gates have never run because no credentials were supplied, and no release is tagged.
+Swarm Code Factory measures one thing today: retrieval quality (`docs/EVAL_RESULTS.md`). Nothing measures whether an issue handed to SCF becomes a correct, landed change, what that costs, or how often a person has to step in. The only agent benchmark in the repository, `forge-swe` 1.0.0, holds five cases in 37 lines and has no tests behind its agent cases. The context benchmark that spec J names as its bar has not been written. Six of the ten Beta release gates have never run because no credentials were supplied, and no release is tagged.
 
-A factory that asks to be trusted has to show its numbers and show itself doing the work. This feature defines the numbers, builds the benchmarks, runs the gates, and then has forge deliver its own roadmap.
+A factory that asks to be trusted has to show its numbers and show itself doing the work. This feature defines the numbers, builds the benchmarks, runs the gates, and then has SCF deliver its own roadmap.
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Read the factory's five numbers (Priority: P1)
 
-An engineering lead who is deciding whether to let forge work on a repository asks for a time window and gets five numbers for it: autonomous merge rate, cost per merged change, revert rate, human intervention rate and cycle time. Each number comes with its written formula, its sample size, and the evidence rows it was computed from.
+An engineering lead who is deciding whether to let SCF work on a repository asks for a time window and gets five numbers for it: autonomous merge rate, cost per merged change, revert rate, human intervention rate and cycle time. Each number comes with its written formula, its sample size, and the evidence rows it was computed from.
 
 **Why this priority**: Every later claim (the benchmark, the dogfood report, the open specification in M8) quotes these metrics. Without one definition, each report would invent its own.
 
@@ -49,7 +49,7 @@ A maintainer changes a model, a prompt or a gate and wants to know whether the f
 1. **Given** a frozen suite version, **When** any case file or the scoring rubric is edited, **Then** every benchmark command rejects the suite until a new version is created.
 2. **Given** a case with held-out tests, **When** the harness hands the case to a solver, **Then** the solver receives no held-out test id, path or content.
 3. **Given** a solver whose patch makes the fail-to-pass tests pass but breaks a pass-to-pass test, **When** the case is scored, **Then** it is not resolved and the regressed test is named.
-4. **Given** a completed run, **When** the report is written, **Then** it states the suite version and content hash, the forge commit, the model identifiers, the sandbox tier, per-case outcomes and totals, and it can be reproduced from the published harness.
+4. **Given** a completed run, **When** the report is written, **Then** it states the suite version and content hash, the SCF commit, the model identifiers, the sandbox tier, per-case outcomes and totals, and it can be reproduced from the published harness.
 
 ---
 
@@ -74,7 +74,7 @@ A maintainer who changes retrieval, the world model or context assembly runs a 6
 
 The owner supplies credentials for a model provider, a GitHub App, an MCP server, Slack and Postgres, and runs the readiness report. The six gates that were skipped now run. The owner fixes or records what they find and tags a release when the Beta bar is met.
 
-**Why this priority**: Until these gates run, "works in tests" is the strongest statement forge can make. It ranks P2 because it needs the owner and cannot be done by the loop.
+**Why this priority**: Until these gates run, "works in tests" is the strongest statement SCF can make. It ranks P2 because it needs the owner and cannot be done by the loop.
 
 **Independent Test**: Regenerate `RELEASE_READINESS.md` with all six gate environments set and confirm that no gate reports `SKIPPED_NO_CREDS`.
 
@@ -86,13 +86,13 @@ The owner supplies credentials for a model provider, a GitHub App, an MCP server
 
 ---
 
-### User Story 5 - Forge delivers its own roadmap (Priority: P3)
+### User Story 5 - SCF delivers its own roadmap (Priority: P3)
 
-The owner labels an open roadmap issue `forge:run`. Forge starts a run from the issue, the run goes through the governed pipeline, and a pull request with an attestation appears. The owner reviews it. The issue queue that Orbit served is now served by forge, and the five metrics for this work are published.
+The owner labels an open roadmap issue `forge:run`. SCF starts a run from the issue, the run goes through the governed pipeline, and a pull request with an attestation appears. The owner reviews it. The issue queue that Orbit served is now served by SCF, and the five metrics for this work are published.
 
 **Why this priority**: This is the public proof, and it depends on the governed pipeline (M1) and automation lines (M2) being in place.
 
-**Independent Test**: Label one small roadmap issue on the forge repository and follow it to a pull request that carries a verifiable attestation, with a write-back comment on the issue.
+**Independent Test**: Label one small roadmap issue on the SCF repository and follow it to a pull request that carries a verifiable attestation, with a write-back comment on the issue.
 
 **Acceptance Scenarios**:
 
@@ -122,35 +122,35 @@ The owner labels an open roadmap issue `forge:run`. Forge starts a run from the 
 
 **Metrics (R23)**
 
-- **FR-001**: Forge MUST publish one document that defines the five factory metrics with formulas, populations, exclusions and worked examples. The definitions below are normative.
+- **FR-001**: SCF MUST publish one document that defines the five factory metrics with formulas, populations, exclusions and worked examples. The definitions below are normative.
 - **FR-002**: An **attempt** is a top-level agent run. It is **settled** when the run is terminal and its change, if it produced one, has a final outcome (landed or closed without landing). A metrics window selects attempts by settle time. `S` is the set of settled attempts in the window and `L` is the subset whose change landed.
 - **FR-003**: **Autonomous merge rate** MUST be `|{a in L : interventions(a) = 0}| / |S|`.
 - **FR-004**: **Cost per merged change** MUST be `sum(cost(a) for a in S) / |L|`, where `cost(a)` includes the attempt's sub-agent runs. The cost of attempts that did not land is included in the numerator.
 - **FR-005**: **Revert rate** MUST be `|{a in L : reverted(a)}| / |L|`, where `reverted(a)` means a later landed change reverted it within 30 days of landing. A window whose newest landed change is younger than 30 days MUST be marked provisional.
-- **FR-006**: **Human intervention rate** MUST be `|{a in S : interventions(a) >= 1}| / |S|`. An intervention is one of: a rejection or request for changes on a gate tied to the attempt; a review on the change that requests changes; a commit on the change's branch by an identity other than forge; a run that ended escalated to a person. Approving a gate is not an intervention.
+- **FR-006**: **Human intervention rate** MUST be `|{a in S : interventions(a) >= 1}| / |S|`. An intervention is one of: a rejection or request for changes on a gate tied to the attempt; a review on the change that requests changes; a commit on the change's branch by an identity other than SCF; a run that ended escalated to a person. Approving a gate is not an intervention.
 - **FR-007**: **Cycle time** MUST be reported as the median and the 90th percentile, over `L`, of the time from the attempt's creation to the moment its change landed.
 - **FR-008**: Every metric MUST be returned with its numerator, denominator, sample size and window, and MUST be reported as not available (with a reason) when its denominator is zero.
-- **FR-009**: Forge MUST record, for each attempt, the final outcome of its change with timestamps, each intervention with its kind, and any revert, from events it receives or decisions it records. A record MUST be idempotent under redelivery.
+- **FR-009**: SCF MUST record, for each attempt, the final outcome of its change with timestamps, each intervention with its kind, and any revert, from events it receives or decisions it records. A record MUST be idempotent under redelivery.
 - **FR-010**: Metrics MUST be scoped to one workspace and MUST be filterable by repository and by how the attempt started (API call or tracker dispatch).
-- **FR-011**: The metrics MUST be available through the API and through `forge-cli` with JSON output that carries the provenance fields of ADR-0015.
+- **FR-011**: The metrics MUST be available through the API and through `scf-cli` with JSON output that carries the provenance fields of ADR-0015.
 
 **Factory benchmark (R24)**
 
-- **FR-012**: Forge MUST ship a benchmark suite named `forge-factory-bench` in which each case consists of an issue text, a repository state, and held-out tests split into fail-to-pass and pass-to-pass.
+- **FR-012**: SCF MUST ship a benchmark suite named `forge-factory-bench` in which each case consists of an issue text, a repository state, and held-out tests split into fail-to-pass and pass-to-pass.
 - **FR-013**: Held-out tests MUST never be visible to the solver: not their ids, paths or content.
 - **FR-014**: A case is resolved only when every fail-to-pass test passes and no pass-to-pass test fails, with tests run in a sandbox.
-- **FR-015**: The harness MUST accept any solver through one interface, MUST ship a reference solver for self-test, and MUST be able to drive a running forge instance as the solver.
-- **FR-016**: The report MUST state, per run: suite version and content hash, forge commit, model identifiers, sandbox tier, per-case outcome (resolved, not resolved, infrastructure error), resolve rate, the share of resolved cases whose change passed forge's own verification, cost and wall time.
+- **FR-015**: The harness MUST accept any solver through one interface, MUST ship a reference solver for self-test, and MUST be able to drive a running SCF instance as the solver.
+- **FR-016**: The report MUST state, per run: suite version and content hash, SCF commit, model identifiers, sandbox tier, per-case outcome (resolved, not resolved, infrastructure error), resolve rate, the share of resolved cases whose change passed SCF's own verification, cost and wall time.
 - **FR-017**: A released suite version MUST be frozen by content hash. `forge-swe` 1.0.0 stays frozen and unedited, and documentation MUST stop presenting it as an agent benchmark.
 - **FR-018**: No case may require a change to land without a person's approval (ADR-0005). Cases end no later than a pull request awaiting review.
 
 **Context benchmark (R25)**
 
-- **FR-019**: Forge MUST ship a context benchmark of 60 questions with, for each question, the evidence a correct answer needs. Questions, answers and corpus MUST be written new for forge (ADR-0010). No text from another project's benchmark may be copied.
+- **FR-019**: SCF MUST ship a context benchmark of 60 questions with, for each question, the evidence a correct answer needs. Questions, answers and corpus MUST be written new for SCF (ADR-0010). No text from another project's benchmark may be copied.
 - **FR-020**: The hermetic lane MUST score context sufficiency (the share of questions whose assembled context contains all required evidence) and the median context size in tokens, with no network and no model, over a corpus pinned by content hash.
 - **FR-021**: The hermetic lane MUST fail the test suite when a score falls below its committed floor.
 - **FR-022**: The model-graded lane MUST report answer accuracy and the rate of unsupported claims, MUST be opt-in, and MUST skip visibly without credentials.
-- **FR-023**: Decided 2026-11-15: the pass bar for answer accuracy is measured first. The 0.86 figure of spec J section 2.4 is not carried over. #199 writes forge's own questions and records a baseline, and a follow-up (#249) sets the bar from that measurement. Until then the model-graded lane reports answer accuracy with no pass bar. Spec J's other two figures, unsupported claims at or below 7 percent and median context at or below 17,800 tokens, are not covered by the decision and stay as stated. Open: the rule that turns the baseline into a bar.
+- **FR-023**: Decided 2026-11-15: the pass bar for answer accuracy is measured first. The 0.86 figure of spec J section 2.4 is not carried over. #199 writes SCF's own questions and records a baseline, and a follow-up (#249) sets the bar from that measurement. Until then the model-graded lane reports answer accuracy with no pass bar. Spec J's other two figures, unsupported claims at or below 7 percent and median context at or below 17,800 tokens, are not covered by the decision and stay as stated. Open: the rule that turns the baseline into a bar.
 
 **Live gates and release (R26)**
 
@@ -160,9 +160,9 @@ The owner labels an open roadmap issue `forge:run`. Forge starts a run from the 
 
 **Dogfood (R27)**
 
-- **FR-027**: The roadmap queue MUST be servable by forge's own issue dispatch: one issue at a time, in dependency order, skipping issues labelled `owner-decision`, `needs-credentials` or `blocked`.
+- **FR-027**: The roadmap queue MUST be servable by SCF's own issue dispatch: one issue at a time, in dependency order, skipping issues labelled `owner-decision`, `needs-credentials` or `blocked`.
 - **FR-028**: The queue MUST stop on the first run that does not end in a pull request with a passing verification record, and MUST mark that issue blocked.
-- **FR-029**: Forge MUST publish a dogfood report that lists each delivered roadmap issue with its run, pull request and attestation verification result, and the five metrics for the set.
+- **FR-029**: SCF MUST publish a dogfood report that lists each delivered roadmap issue with its run, pull request and attestation verification result, and the five metrics for the set.
 - **FR-030**: A dogfood run MUST work under the same policy as any other run. It MUST NOT be able to change its own policy, CI definitions or credentials.
 
 ### Key Entities
@@ -175,7 +175,7 @@ The owner labels an open roadmap issue `forge:run`. Forge starts a run from the 
 - **Benchmark report**: The scored outcome of one harness run over one frozen suite version.
 - **Context question**: A question, the evidence a correct answer needs, and the claims a correct answer must not make.
 - **Readiness report**: The gate-by-gate result that decides whether a release bar is met.
-- **Dogfood report**: The list of roadmap issues forge delivered, with evidence and metrics.
+- **Dogfood report**: The list of roadmap issues SCF delivered, with evidence and metrics.
 
 ## Success Criteria *(mandatory)*
 
@@ -187,14 +187,14 @@ The owner labels an open roadmap issue `forge:run`. Forge starts a run from the 
 - **SC-004**: A third party can reproduce a published benchmark report from the suite version, the harness and the stated configuration.
 - **SC-005**: The context benchmark has exactly 60 questions and its hermetic lane completes in under two minutes on a developer machine.
 - **SC-006**: The readiness report shows zero gates skipped for missing credentials.
-- **SC-007**: At least five roadmap issues are delivered through forge's own dispatch, each with a verifiable attestation, and the dogfood report is published in the repository.
-- **SC-008**: After the queue moves to forge, no roadmap issue is implemented through the earlier loop.
+- **SC-007**: At least five roadmap issues are delivered through SCF's own dispatch, each with a verifiable attestation, and the dogfood report is published in the repository.
+- **SC-008**: After the queue moves to SCF, no roadmap issue is implemented through the earlier loop.
 
 ## Assumptions
 
 - M1 (spec 001) delivers the governed pipeline, held-out scenarios (R09) and attestations (R08) that the benchmark and the dogfood report read. M2 (spec 002) delivers the station workflow (R11).
-- GitHub is the only tracker and code host in scope. The outcome, review and revert signals come from GitHub webhook deliveries that forge already receives.
-- Cost is the priced model usage forge records per run. Infrastructure cost and human time are out of scope.
+- GitHub is the only tracker and code host in scope. The outcome, review and revert signals come from GitHub webhook deliveries that SCF already receives.
+- Cost is the priced model usage SCF records per run. Infrastructure cost and human time are out of scope.
 - The 30-day revert observation period is a default and may be configured.
 - Published figures from other vendors or benchmarks are not used as targets. The 0.86 bar that spec J states is not carried over (decided 2026-11-15). The only external numbers left in this spec are spec J's 7 percent and 17,800 token ceilings.
 - True lead time and per-change production outcomes belong to M10 (R46). Cycle time here ends when the change lands.

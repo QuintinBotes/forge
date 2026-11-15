@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type {
   ApprovalContext,
   ApprovalSummary,
@@ -52,7 +52,7 @@ function contextFor(id: string): ApprovalContext {
   };
 }
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listApprovals: vi.fn(() => Promise.resolve(gates)),
     approvalCount: vi.fn(() => Promise.resolve({ count: gates.length })),
@@ -66,10 +66,10 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
       }),
     ),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderInbox(client: ForgeApiClient) {
+function renderInbox(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

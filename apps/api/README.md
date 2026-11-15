@@ -1,5 +1,5 @@
-# forge-api
+# scf-api
 
-FastAPI backend application for Forge.
+FastAPI backend application for Swarm Code Factory.
 
-Part of the [Forge](../../README.md) monorepo. Apache-2.0 licensed.
+Part of the [SCF](../../README.md) monorepo. Apache-2.0 licensed.

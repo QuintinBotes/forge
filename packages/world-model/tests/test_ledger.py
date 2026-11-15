@@ -1,4 +1,4 @@
-"""Pure tests for forge_world.ledger (statements, dedup identity, keys)."""
+"""Pure tests for scf_world.ledger (statements, dedup identity, keys)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 
-from forge_world import (
+from scf_world import (
     Layer,
     Mood,
     Statement,

@@ -31,7 +31,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useInstallations,
   useListingDetail,
@@ -83,7 +83,7 @@ interface Selection {
 }
 
 export interface MarketplaceViewProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**
@@ -685,7 +685,7 @@ function ExternalLinkText({ href }: { href: string }) {
 
 // --- Installed panel ------------------------------------------------------ //
 
-function InstalledPanel({ client }: { client: ForgeApiClient }) {
+function InstalledPanel({ client }: { client: ScfApiClient }) {
   const installationsQuery = useInstallations(client);
   const update = useUpdateInstallation(client);
   const installations = installationsQuery.data ?? [];

@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from forge_contracts import DecisionEffect, ToolCall, UnknownRepoError
-from forge_policy import (
+from scf_contracts import DecisionEffect, ToolCall, UnknownRepoError
+from scf_policy import (
     PolicyLoadError,
     RepoScopedPolicyEvaluator,
     load_policies,
@@ -42,9 +42,9 @@ WEB_POLICY = textwrap.dedent(
 
 
 def _write_policy(root: Path, body: str) -> Path:
-    forge = root / ".forge"
-    forge.mkdir(parents=True)
-    (forge / "policy.yaml").write_text(body, encoding="utf-8")
+    scf_dir = root / ".forge"
+    scf_dir.mkdir(parents=True)
+    (scf_dir / "policy.yaml").write_text(body, encoding="utf-8")
     return root
 
 

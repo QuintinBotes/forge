@@ -1,4 +1,4 @@
-# Forge — local development Docker Compose (single-command dev stack).
+# SCF — local development Docker Compose (single-command dev stack).
 #
 # ONE command brings the whole stack up, healthy, migrated and seeded:
 #
@@ -30,7 +30,7 @@ name: forge-dev
 
 # Durable persistence selection (composition root).
 #
-# Every one of these seams defaults to ``memory`` in ``forge_api.settings`` so
+# Every one of these seams defaults to ``memory`` in ``scf_api.settings`` so
 # the unit suite stays hermetic and Postgres-free. That default is a TEST
 # default, not a deployment one: a stack that leaves them unset keeps minted API
 # keys, board rows, audit entries, approvals, and BYOK ciphertext in the API
@@ -161,7 +161,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/api.Dockerfile
-    image: forge/api:dev
+    image: swarm-code-factory/api:dev
     command: ["alembic", "-c", "packages/db/alembic.ini", "upgrade", "head"]
     environment: *python-env
     restart: "no"
@@ -170,8 +170,8 @@ services:
         condition: service_healthy
 
   seed:
-    image: forge/api:dev
-    command: ["python", "-m", "forge_api.scripts.seed"]
+    image: swarm-code-factory/api:dev
+    command: ["python", "-m", "scf_api.scripts.seed"]
     environment:
       <<: *python-env
       # Mint + print an admin API key. A fresh install has no other way in: the
@@ -190,8 +190,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/api.Dockerfile
-    image: forge/api:dev
-    command: ["uvicorn", "forge_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    image: swarm-code-factory/api:dev
+    command: ["uvicorn", "scf_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       <<: *python-env
       FORGE_CORS_ORIGINS: '["http://localhost:3000","http://localhost:8080"]'
@@ -219,8 +219,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/worker.Dockerfile
-    image: forge/worker:dev
-    command: ["celery", "-A", "forge_worker", "worker", "--loglevel=info"]
+    image: swarm-code-factory/worker:dev
+    command: ["celery", "-A", "scf_worker", "worker", "--loglevel=info"]
     environment: *python-env
     volumes:
       - forge-specs:/srv/forge/specs
@@ -232,7 +232,7 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "celery -A forge_worker inspect ping || exit 1"]
+      test: ["CMD-SHELL", "celery -A scf_worker inspect ping || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -242,10 +242,10 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/mcp-gateway.Dockerfile
-    image: forge/mcp-gateway:dev
+    image: swarm-code-factory/mcp-gateway:dev
     command:
       - "uvicorn"
-      - "forge_mcp_gateway.app:app"
+      - "scf_mcp_gateway.app:app"
       - "--host"
       - "0.0.0.0"
       - "--port"
@@ -271,7 +271,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/web.dev.Dockerfile
-    image: forge/web:dev
+    image: swarm-code-factory/web:dev
     environment:
       NODE_ENV: development
       NEXT_TELEMETRY_DISABLED: "1"

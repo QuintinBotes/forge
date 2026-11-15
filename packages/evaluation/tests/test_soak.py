@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from forge_eval.soak.soak_runner import (
+from scf_eval.soak.soak_runner import (
     SoakReport,
     WorkloadMix,
     run_soak,

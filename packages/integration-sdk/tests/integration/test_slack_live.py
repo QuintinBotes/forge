@@ -29,8 +29,8 @@ import uuid
 import httpx
 import pytest
 
-from forge_contracts import ApprovalGate, ApprovalRequest, CheckResult
-from forge_integrations import SlackNotifier, sign_slack_payload, verify_slack_signature
+from scf_contracts import ApprovalGate, ApprovalRequest, CheckResult
+from scf_integrations import SlackNotifier, sign_slack_payload, verify_slack_signature
 
 pytestmark = [pytest.mark.integration, pytest.mark.live_slack]
 
@@ -68,7 +68,7 @@ def notifier():
 
 def test_live_notify_posts_to_test_channel(notifier: SlackNotifier) -> None:
     """AC1: a real chat.postMessage returns ok:true + a non-empty ts."""
-    from forge_contracts import SlackMessage
+    from scf_contracts import SlackMessage
 
     channel = os.environ["SLACK_TEST_CHANNEL"]
     token = os.environ["SLACK_BOT_TOKEN"]

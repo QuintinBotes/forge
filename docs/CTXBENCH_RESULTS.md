@@ -3,7 +3,7 @@
 No live run yet.
 
 This file will hold the committed numbers of lore's agent-question benchmark on
-forge (spec J §2.4.1): `forge-cli ctxbench report RUN_DIR --write
+Swarm Code Factory (spec J §2.4.1): `scf-cli ctxbench report RUN_DIR --write
 docs/CTXBENCH_RESULTS.md` replaces it with the headline, by-category,
 consistency, per-question and lost-points tables of a graded live run.
 

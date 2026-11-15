@@ -1,7 +1,7 @@
 """Offline enforcement-matrix checks (HARD-09).
 
 Each function here is named by a row in ``security/enforcement-matrix.yaml``
-(`check:` key) and asserts one FORGE_SPEC security control **on the wired
+(`check:` key) and asserts one SCF_SPEC security control **on the wired
 path** — route -> dependency -> primitive — so a control that is implemented
 but never mounted is still a red test. Pure asserts, no fixtures, no network,
 no DB, no external creds (live-db rows live in ``test_enforcement_matrix.py``).
@@ -15,10 +15,10 @@ from collections.abc import Callable
 import pytest
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.settings import Settings
-from forge_contracts import UserRole
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.settings import Settings
+from scf_contracts import UserRole
 
 WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-00000000c0de")
 USER_ID = uuid.UUID("00000000-0000-0000-0000-00000000beef")
@@ -52,10 +52,10 @@ def _client(role: UserRole | None = None, settings: Settings | None = None) -> T
     """A wired app; ``role=None`` leaves the app unauthenticated.
 
     Both authentication dependencies are overridden: the router-level
-    ``forge_api.deps.get_current_principal`` and the auth service's own
+    ``scf_api.deps.get_current_principal`` and the auth service's own
     ``get_authenticated_principal`` (the /auth router keys off the latter).
     """
-    from forge_api.auth.service import get_authenticated_principal
+    from scf_api.auth.service import get_authenticated_principal
 
     app = create_app(settings or Settings())
     if role is not None:
@@ -71,7 +71,7 @@ def _client(role: UserRole | None = None, settings: Settings | None = None) -> T
 
 
 def check_rbac_default_deny() -> None:
-    from forge_api.auth.rbac import (
+    from scf_api.auth.rbac import (
         ROLE_PERMISSIONS,
         Permission,
         PermissionDeniedError,
@@ -155,7 +155,7 @@ PUBLIC_BY_DESIGN: dict[str, str] = {
 def check_auth_required_401() -> None:
     from fastapi.routing import APIRoute
 
-    from forge_api.routers import FEATURE_ROUTERS
+    from scf_api.routers import FEATURE_ROUTERS
 
     # Disable rate limiting: this sweep probes every route on every router (well
     # over the burst budget), and a 429 partway through would mask the 401 we
@@ -196,11 +196,11 @@ def check_auth_required_401() -> None:
 
 
 def check_mcp_write_default_deny() -> None:
-    from forge_contracts import MCPConnection, MCPWriteForbiddenError
-    from forge_mcp.client import MCPGatewayClient
-    from forge_mcp.security import is_write_tool
-    from forge_mcp.testing import FakeTransport
-    from forge_mcp.transport import ToolSpec
+    from scf_contracts import MCPConnection, MCPWriteForbiddenError
+    from scf_mcp.client import MCPGatewayClient
+    from scf_mcp.security import is_write_tool
+    from scf_mcp.testing import FakeTransport
+    from scf_mcp.transport import ToolSpec
 
     # Classification fails closed: unrecognised verbs and un-annotated tools
     # are writes; only an explicit read_only annotation (or read verb) passes.
@@ -225,8 +225,8 @@ def check_mcp_write_default_deny() -> None:
 
 
 def check_policy_default_deny() -> None:
-    from forge_contracts import DecisionEffect, Policy, ToolCall, WriteRules
-    from forge_policy.evaluator import evaluate
+    from scf_contracts import DecisionEffect, Policy, ToolCall, WriteRules
+    from scf_policy.evaluator import evaluate
 
     policy = Policy(
         repo_id="r1",
@@ -250,11 +250,11 @@ def check_policy_default_deny() -> None:
 
 
 def check_agent_policy_gate() -> None:
-    from forge_agent.policy_gate import ActionPolicyGate
-    from forge_agent.runtime import AgentRunner
-    from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-    from forge_agent.tools import ToolRegistry, ToolResult
-    from forge_contracts import AgentObjective, RunStatus
+    from scf_agent.policy_gate import ActionPolicyGate
+    from scf_agent.runtime import AgentRunner
+    from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+    from scf_agent.tools import ToolRegistry, ToolResult
+    from scf_contracts import AgentObjective, RunStatus
 
     executed: list[str] = []
     tools = ToolRegistry()
@@ -280,10 +280,10 @@ def check_agent_policy_gate() -> None:
 
 
 def check_redaction_sinks() -> None:
-    from forge_api.observability.audit import AuditCategory, AuditLog
-    from forge_api.observability.redaction import redact_mapping, redact_text, redact_value
-    from forge_mcp.security import redact as mcp_redact
-    from forge_mcp.security import redact_text as mcp_redact_text
+    from scf_api.observability.audit import AuditCategory, AuditLog
+    from scf_api.observability.redaction import redact_mapping, redact_text, redact_value
+    from scf_mcp.security import redact as mcp_redact
+    from scf_mcp.security import redact_text as mcp_redact_text
 
     payload = {
         "authorization": _BEARER,
@@ -296,7 +296,7 @@ def check_redaction_sinks() -> None:
     secrets = [_BEARER_TOKEN, _SK_KEY, _JWT, _AWS_KEY]
     detail = f"authz {_BEARER} key {_SK_KEY} jwt {_JWT} aws {_AWS_KEY}"
 
-    # Log/trace sink (forge_api.observability.redaction).
+    # Log/trace sink (scf_api.observability.redaction).
     flat = str(redact_mapping(dict(payload))) + redact_text(str(payload))
     # Audit sink: detail flows through redact_text, metadata through
     # redact_mapping, and the raw payload is stored only as a hash.
@@ -312,10 +312,10 @@ def check_redaction_sinks() -> None:
     )
     audit_repr = entry.model_dump_json()
     # MCP query-through snapshot sink: the transport redactor
-    # (forge_mcp.security.redact) runs first, then the observability redactor
+    # (scf_mcp.security.redact) runs first, then the observability redactor
     # scrubs again before the snapshot lands in any trace/retrieval sink —
     # defense-in-depth, exactly the wired pipeline (AC8: "re-using
-    # forge_mcp.security.redact + forge_api.observability.redaction").
+    # scf_mcp.security.redact + scf_api.observability.redaction").
     mcp_snapshot = str(redact_value(mcp_redact(dict(payload)))) + redact_text(
         mcp_redact_text(detail)
     )
@@ -326,9 +326,9 @@ def check_redaction_sinks() -> None:
 
 
 def check_vault_no_plaintext() -> None:
-    from forge_api.auth.crypto import FernetCipher, InvalidTokenError, generate_key
-    from forge_api.auth.vault import SecretVault
-    from forge_contracts import APIKeyKind
+    from scf_api.auth.crypto import FernetCipher, InvalidTokenError, generate_key
+    from scf_api.auth.vault import SecretVault
+    from scf_contracts import APIKeyKind
 
     plaintext = "sk-byok-very-secret-value-42"
     vault = SecretVault(cipher=FernetCipher(b"k" * 32))
@@ -349,9 +349,9 @@ def check_vault_no_plaintext() -> None:
 
 
 def check_tenant_isolation() -> None:
-    from forge_api.auth.crypto import FernetCipher
-    from forge_api.auth.vault import SecretNotFoundError, SecretVault
-    from forge_contracts import APIKeyKind
+    from scf_api.auth.crypto import FernetCipher
+    from scf_api.auth.vault import SecretNotFoundError, SecretVault
+    from scf_contracts import APIKeyKind
 
     vault = SecretVault(cipher=FernetCipher(b"t" * 32))
     ws_a, ws_b = uuid.uuid4(), uuid.uuid4()
@@ -366,7 +366,7 @@ def check_tenant_isolation() -> None:
 
 
 def check_crypto_default_fernet() -> None:
-    from forge_api.auth.crypto import FernetCipher, default_cipher
+    from scf_api.auth.crypto import FernetCipher, default_cipher
 
     cipher = default_cipher(b"m" * 32)
     assert isinstance(cipher, FernetCipher)
@@ -377,7 +377,7 @@ def check_secret_key_required_prod() -> None:
     import os
     from unittest import mock
 
-    from forge_api.auth.service import _resolve_master_key
+    from scf_api.auth.service import _resolve_master_key
 
     env = {k: v for k, v in os.environ.items() if k != "FORGE_SECRET_KEY"}
     env["FORGE_ENVIRONMENT"] = "production"
@@ -389,7 +389,7 @@ def check_secret_key_required_prod() -> None:
 
 
 def check_audit_tamper_evident() -> None:
-    from forge_api.observability.audit import AuditCategory, AuditLog, verify_chain
+    from scf_api.observability.audit import AuditCategory, AuditLog, verify_chain
 
     log = AuditLog()
     for i in range(3):
@@ -412,7 +412,7 @@ def check_audit_tamper_evident() -> None:
 
 
 def check_webhook_signature_fail_closed() -> None:
-    from forge_integrations.webhooks import sign_github_payload, verify_github_signature
+    from scf_integrations.webhooks import sign_github_payload, verify_github_signature
 
     secret, body = "whsec_test", b'{"action":"opened"}'
     good = sign_github_payload(secret, body)
@@ -428,9 +428,9 @@ def check_webhook_signature_fail_closed() -> None:
 
 
 def check_ssrf_guard() -> None:
-    from forge_api.security import SsrfBlockedError, assert_safe_url
-    from forge_knowledge.embeddings import HttpEmbeddingClient
-    from forge_knowledge.reranker import JinaRerankerClient
+    from scf_api.security import SsrfBlockedError, assert_safe_url
+    from scf_knowledge.embeddings import HttpEmbeddingClient
+    from scf_knowledge.reranker import JinaRerankerClient
 
     blocked = [
         "http://169.254.169.254/latest/meta-data/",
@@ -521,7 +521,7 @@ def check_docs_lockdown_prod() -> None:
 
 
 def check_principal_fails_safe() -> None:
-    from forge_api.auth.rbac import Permission, can
+    from scf_api.auth.rbac import Permission, can
 
     principal = Principal(user_id=USER_ID, workspace_id=WORKSPACE_ID)
     assert principal.role is UserRole.VIEWER

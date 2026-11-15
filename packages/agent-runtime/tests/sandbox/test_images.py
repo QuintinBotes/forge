@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_agent.sandbox import SandboxImageNotAllowed, SandboxSettings, resolve_image
-from forge_contracts import PolicySandboxBlock
+from scf_agent.sandbox import SandboxImageNotAllowed, SandboxSettings, resolve_image
+from scf_contracts import PolicySandboxBlock
 
 
 def test_per_language_defaults() -> None:

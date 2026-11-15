@@ -1,5 +1,5 @@
-# forge-mcp-gateway
+# scf-mcp-gateway
 
-MCP client manager gateway service for Forge.
+MCP client manager gateway service for Swarm Code Factory.
 
-Part of the [Forge](../../README.md) monorepo. Apache-2.0 licensed.
+Part of the [SCF](../../README.md) monorepo. Apache-2.0 licensed.

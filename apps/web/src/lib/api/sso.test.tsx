@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ForgeApiClient } from "./client";
+import { ApiError, type ScfApiClient } from "./client";
 import {
   ssoKeys,
   useCreateScimToken,
@@ -86,7 +86,7 @@ describe("useSsoConfig", () => {
       getSsoConfig: vi.fn(() =>
         Promise.reject(new ApiError(404, "no config", null)),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useSsoConfig("w1", client), {
       wrapper: makeWrapper(newClient()),
@@ -100,7 +100,7 @@ describe("useSsoConfig", () => {
   it("propagates non-404 errors", async () => {
     const client = {
       getSsoConfig: vi.fn(() => Promise.reject(new ApiError(500, "boom", null))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useSsoConfig("w1", client), {
       wrapper: makeWrapper(newClient()),
@@ -116,7 +116,7 @@ describe("useSetSsoEnabled", () => {
     const client = {
       enableSso: vi.fn(() => Promise.resolve(enabled)),
       disableSso: vi.fn(),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = newClient();
 
     const { result } = renderHook(() => useSetSsoEnabled(client), {
@@ -134,7 +134,7 @@ describe("useSetSsoEnabled", () => {
     const client = {
       enableSso: vi.fn(),
       disableSso: vi.fn(() => Promise.resolve(config())),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useSetSsoEnabled(client), {
       wrapper: makeWrapper(newClient()),
@@ -153,7 +153,7 @@ describe("useOidcConfig", () => {
       getOidcConfig: vi.fn(() =>
         Promise.reject(new ApiError(404, "no oidc config", null)),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useOidcConfig("w1", client), {
       wrapper: makeWrapper(newClient()),
@@ -167,7 +167,7 @@ describe("useOidcConfig", () => {
   it("propagates non-404 errors", async () => {
     const client = {
       getOidcConfig: vi.fn(() => Promise.reject(new ApiError(500, "boom", null))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useOidcConfig("w1", client), {
       wrapper: makeWrapper(newClient()),
@@ -179,7 +179,7 @@ describe("useOidcConfig", () => {
   it("resolves the config on success", async () => {
     const client = {
       getOidcConfig: vi.fn(() => Promise.resolve(oidcConfig())),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useOidcConfig("w1", client), {
       wrapper: makeWrapper(newClient()),
@@ -194,7 +194,7 @@ describe("usePutOidcConfig", () => {
     const saved = oidcConfig();
     const client = {
       putOidcConfig: vi.fn(() => Promise.resolve(saved)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = newClient();
 
     const { result } = renderHook(() => usePutOidcConfig(client), {
@@ -226,7 +226,7 @@ describe("useCreateScimToken", () => {
     };
     const client = {
       createScimToken: vi.fn(() => Promise.resolve(created)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = newClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
 

@@ -7,7 +7,7 @@ import { ConnectDialog } from "@/components/auth/connect-dialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useCurrentUser } from "@/lib/api/hooks";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import { maskApiToken } from "@/lib/api/session";
 import { useApiSession } from "@/lib/api/use-api-session";
 
@@ -24,7 +24,7 @@ function ConnectedIdentity({
   client,
 }: {
   fallback: string;
-  client: ForgeApiClient;
+  client: ScfApiClient;
 }) {
   const me = useCurrentUser(client);
   return <>{me.data?.email ?? me.data?.role ?? fallback}</>;
@@ -33,9 +33,9 @@ function ConnectedIdentity({
 /**
  * Top-bar session control: who you are connected as, and the way in when you
  * are not. Rendered on every screen, because there is no separate login route —
- * on a self-hosted Forge the API key *is* the session.
+ * on a self-hosted SCF the API key *is* the session.
  */
-export function SessionMenu({ client = apiClient }: { client?: ForgeApiClient } = {}) {
+export function SessionMenu({ client = apiClient }: { client?: ScfApiClient } = {}) {
   const { token, ready, signIn, signOut } = useApiSession();
   const [open, setOpen] = useState(false);
 
@@ -72,7 +72,7 @@ export function SessionMenu({ client = apiClient }: { client?: ForgeApiClient } 
         size="sm"
         variant="ghost"
         onClick={signOut}
-        aria-label="Disconnect from this Forge instance"
+        aria-label="Disconnect from this SCF instance"
       >
         <LogOut aria-hidden />
         <span className="hidden sm:inline">Disconnect</span>
@@ -95,7 +95,7 @@ export function SessionGate({
   client = apiClient,
 }: {
   children: ReactNode;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }) {
   const { token, ready, signIn } = useApiSession();
   const [open, setOpen] = useState(false);
@@ -121,7 +121,7 @@ export function SessionGate({
       <EmptyState
         data-testid="session-gate"
         icon={<KeyRound aria-hidden />}
-        title={rejected ? "This API key was rejected" : "Connect to this Forge instance"}
+        title={rejected ? "This API key was rejected" : "Connect to this SCF instance"}
         description={
           rejected ? (
             <>

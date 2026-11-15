@@ -1,4 +1,4 @@
-"""Shared fixtures for the forge_world tests (pure + SQLite + fake model)."""
+"""Shared fixtures for the scf_world tests (pure + SQLite + fake model)."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_db.models  # noqa: F401  (registers all models)
-from forge_contracts import ModelRequest, ModelResponse, ModelStreamEvent
-from forge_db.base import Base
-from forge_db.models import Workspace
-from forge_world import (
+import scf_db.models  # noqa: F401  (registers all models)
+from scf_contracts import ModelRequest, ModelResponse, ModelStreamEvent
+from scf_db.base import Base
+from scf_db.models import Workspace
+from scf_world import (
     FactData,
     InvalidatedReason,
     Layer,
@@ -45,7 +45,7 @@ class FakeClock:
 
 
 class FakeModelClient:
-    """A scripted forge_contracts.ModelClient (contents or exceptions)."""
+    """A scripted scf_contracts.ModelClient (contents or exceptions)."""
 
     def __init__(self, script: list[str | Exception] | None = None) -> None:
         self._script = list(script or [])

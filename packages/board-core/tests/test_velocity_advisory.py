@@ -2,15 +2,15 @@
 
 No workflow gate or agent decision may read the velocity/burndown service, so this
 contract test asserts the workflow + agent packages never import
-``forge_board.sprint_service`` / the ``SprintVelocity`` projection.
+``scf_board.sprint_service`` / the ``SprintVelocity`` projection.
 """
 
 from __future__ import annotations
 
 import pathlib
 
-import forge_agent
-import forge_workflow
+import scf_agent
+import scf_workflow
 
 _FORBIDDEN = ("sprint_service", "SprintVelocity", "sprint_velocity", "SprintBurndownSnapshot")
 
@@ -22,7 +22,7 @@ def _sources(module) -> list[pathlib.Path]:
 
 def test_workflow_and_agent_do_not_read_velocity_projection() -> None:
     offenders: list[str] = []
-    for module in (forge_workflow, forge_agent):
+    for module in (scf_workflow, scf_agent):
         for path in _sources(module):
             text = path.read_text(encoding="utf-8")
             for token in _FORBIDDEN:

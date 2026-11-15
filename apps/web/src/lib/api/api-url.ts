@@ -1,5 +1,5 @@
 /**
- * Runtime resolution of the Forge REST API base URL for the typed client.
+ * Runtime resolution of the SCF REST API base URL for the typed client.
  *
  * Next.js inlines `NEXT_PUBLIC_*` at **build** time, and the `web` image takes no
  * `NEXT_PUBLIC_API_URL` build arg (see `deploy/docker/web.Dockerfile`) — so a
@@ -80,7 +80,7 @@ function joinOrigin(origin: string, path: string): string {
 /**
  * Ensure `baseUrl` is absolute before it is handed to `new URL(path, base)`,
  * which throws on a relative base. A relative base (e.g. `/api`, whether derived
- * or from an explicit `new ForgeApiClient({ baseUrl: "/api" })`) is resolved
+ * or from an explicit `new ScfApiClient({ baseUrl: "/api" })`) is resolved
  * against the live page origin, or the static default origin in SSR — so requests
  * are always built against an absolute base and never throw.
  */

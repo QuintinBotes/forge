@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ForgeApiClient } from "./client";
+import { ScfApiClient } from "./client";
 import { clearApiToken, writeApiToken } from "./session";
 
 /** A `fetch` stub typed as `fetch`, so `mock.calls` keeps its real shape. */
@@ -17,14 +17,14 @@ function authHeader(fetchImpl: ReturnType<typeof stub>): string | undefined {
   return (headers as Record<string, string> | undefined)?.Authorization;
 }
 
-describe("ForgeApiClient credential resolution", () => {
+describe("ScfApiClient credential resolution", () => {
   beforeEach(() => {
     clearApiToken();
   });
 
   it("sends no Authorization header when this browser has no key", async () => {
     const fetchImpl = stub();
-    await new ForgeApiClient({ fetch: fetchImpl }).health();
+    await new ScfApiClient({ fetch: fetchImpl }).health();
 
     expect(authHeader(fetchImpl)).toBeUndefined();
   });
@@ -34,7 +34,7 @@ describe("ForgeApiClient credential resolution", () => {
     // before anyone pastes a key. Latching the token in the constructor would
     // mean signing in never took effect without a full reload.
     const fetchImpl = stub();
-    const client = new ForgeApiClient({ fetch: fetchImpl });
+    const client = new ScfApiClient({ fetch: fetchImpl });
 
     writeApiToken("forge_system_pasted");
     await client.health();
@@ -43,7 +43,7 @@ describe("ForgeApiClient credential resolution", () => {
   });
 
   it("exposes the same token to realtime transports", () => {
-    const client = new ForgeApiClient({ fetch: stub() });
+    const client = new ScfApiClient({ fetch: stub() });
     writeApiToken("forge_system_pasted");
 
     // The board/collab WebSockets read `client.token` for their `?token=`
@@ -54,7 +54,7 @@ describe("ForgeApiClient credential resolution", () => {
   it("stops sending the key after sign-out", async () => {
     writeApiToken("forge_system_pasted");
     const fetchImpl = stub();
-    const client = new ForgeApiClient({ fetch: fetchImpl });
+    const client = new ScfApiClient({ fetch: fetchImpl });
 
     clearApiToken();
     await client.health();
@@ -65,7 +65,7 @@ describe("ForgeApiClient credential resolution", () => {
   it("lets an explicitly configured token win over stored state", async () => {
     writeApiToken("forge_system_stored");
     const fetchImpl = stub();
-    const client = new ForgeApiClient({
+    const client = new ScfApiClient({
       fetch: fetchImpl,
       token: "forge_system_pinned",
     });
@@ -77,7 +77,7 @@ describe("ForgeApiClient credential resolution", () => {
   it("lets a per-call token win over everything", async () => {
     writeApiToken("forge_system_stored");
     const fetchImpl = stub();
-    const client = new ForgeApiClient({ fetch: fetchImpl });
+    const client = new ScfApiClient({ fetch: fetchImpl });
 
     await client.me({ token: "forge_system_candidate" });
     expect(authHeader(fetchImpl)).toBe("Bearer forge_system_candidate");

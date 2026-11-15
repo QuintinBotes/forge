@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# scripts/setup-github.sh — apply Forge's baseline GitHub repository hardening.
+# scripts/setup-github.sh — apply SCF's baseline GitHub repository hardening.
 #
 # Idempotent by construction: every call sets a *desired state* (a full-replace
 # PUT or a PATCH), so re-running the script simply reconverges to the same
 # configuration and never errors on "already configured". Safe to run repeatedly.
 #
-# What it configures on the target repo (default: service-hive/forge):
+# What it configures on the target repo (default: QuintinBotes/swarm-code-factory):
 #
 #   * Branch protection on `main`:
 #       - require a pull request before merging
@@ -27,7 +27,7 @@
 #
 # Usage:
 #   scripts/setup-github.sh [<owner>/<repo>] [<branch>]
-#   REPO=service-hive/forge BRANCH=main scripts/setup-github.sh
+#   REPO=QuintinBotes/swarm-code-factory BRANCH=main scripts/setup-github.sh
 #
 set -euo pipefail
 

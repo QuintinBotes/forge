@@ -23,21 +23,21 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.observability.redaction import redact_mapping
-from forge_api.services.approval_service import build_gate_registry, get_approval_service
-from forge_api.services.workflow_engine import select_workflow_engine
-from forge_approval import (
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.observability.redaction import redact_mapping
+from scf_api.services.approval_service import build_gate_registry, get_approval_service
+from scf_api.services.workflow_engine import select_workflow_engine
+from scf_approval import (
     ApprovalAuthorizer,
     ApprovalService,
     InMemoryApprovalRepository,
 )
-from forge_approval.providers import InMemoryGrantStore
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import Project, Task, Workspace
+from scf_approval.providers import InMemoryGrantStore
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import Project, Task, Workspace
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000e1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000e2")

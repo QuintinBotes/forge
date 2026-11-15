@@ -123,7 +123,7 @@ def pg_engine(postgres_url: str) -> Iterator[Engine]:
         except (IntegrityError, OperationalError, ProgrammingError):
             pass
         with bootstrap.begin() as conn:
-            # Self-heal: a reused DB may carry leftover Forge tables in `public`
+            # Self-heal: a reused DB may carry leftover SCF tables in `public`
             # from a pre-isolation or crashed run. No session keeps tables in
             # public anymore, so drop any stragglers — otherwise they would shadow
             # a session schema's create_all (has_table sees the whole search_path).

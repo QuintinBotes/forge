@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from forge_contracts import LineDefinition, WorkflowDefinition, validate_line
-from forge_contracts.lines import FEATURE_INVARIANTS as LINE_FEATURE_INVARIANTS
-from forge_workflow.default_workflow import DEFAULT_FEATURE_WORKFLOW_YAML
-from forge_workflow.dsl import parse_definition
-from forge_workflow.editor.validation import FEATURE_INVARIANTS
-from forge_workflow.exceptions import WorkflowDefinitionError
+from scf_contracts import LineDefinition, WorkflowDefinition, validate_line
+from scf_contracts.lines import FEATURE_INVARIANTS as LINE_FEATURE_INVARIANTS
+from scf_workflow.default_workflow import DEFAULT_FEATURE_WORKFLOW_YAML
+from scf_workflow.dsl import parse_definition
+from scf_workflow.editor.validation import FEATURE_INVARIANTS
+from scf_workflow.exceptions import WorkflowDefinitionError
 
 IMPLEMENTATION_LOOP = (
     Path(__file__).resolve().parents[2] / "contracts/tests/fixtures/implementation_loop.yaml"

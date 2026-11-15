@@ -1,8 +1,8 @@
 """In-app publish endpoint tests (marketplace-publish slice).
 
-``POST /marketplace/publish`` is the in-app counterpart to the offline ``forge
+``POST /marketplace/publish`` is the in-app counterpart to the offline ``scf
 marketplace package`` CLI step: it runs the submitted artifact through the same
-authoritative :func:`~forge_marketplace.packaging.build_package` validation
+authoritative :func:`~scf_marketplace.packaging.build_package` validation
 (never bypassed) and, on success, persists a cached listing/version directly —
 covering a successful publish, a schema-invalid rejection, version upsert
 semantics, and the RBAC/tenant boundary the rest of the router enforces.
@@ -16,8 +16,8 @@ from conftest import WS_ID, count_rows, seed_official_registry
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from forge_contracts import UserRole
-from forge_db.models.marketplace import (
+from scf_contracts import UserRole
+from scf_db.models.marketplace import (
     MarketplaceAuditLog,
     MarketplaceListing,
     MarketplaceListingVersion,

@@ -11,7 +11,7 @@
 @config "../../tailwind.config.ts";
 
 /*
-  Forge design tokens.
+  SCF design tokens.
   ---------------------------------------------------------------------------
   Identity: metalworking / craftsmanship. A warm molten-ember accent on cool
   graphite-steel neutrals, with a bright "spark" highlight for focus + active.
@@ -19,7 +19,7 @@
 
   Colours are stored as bare `H S% L%` triples so existing components keep
   consuming them via `hsl(var(--token))`. Both light ("cooled steel") and dark
-  ("forge at night") themes are fully defined.
+  ("graphite at night") themes are fully defined.
 */
 @layer base {
   :root {
@@ -46,7 +46,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 215 32% 15%;
 
-    /* Ember — the Forge primary */
+    /* Ember — the SCF primary */
     --primary: 20 88% 52%;
     --primary-foreground: 24 45% 12%;
 
@@ -97,7 +97,7 @@
   .dark {
     color-scheme: dark;
 
-    /* Surfaces + text (forge at night — deep graphite) */
+    /* Surfaces + text (graphite at night) */
     --background: 220 26% 8%;
     --foreground: 210 18% 90%;
     --card: 220 22% 11%;
@@ -133,7 +133,7 @@
 
     --spark: 38 100% 66%;
 
-    /* Categorical chart ramp — dark forge. Own steps (not a flip of the light
+    /* Categorical chart ramp — dark theme. Own steps (not a flip of the light
        ramp), re-tuned into the dark lightness band and re-validated against the
        dark card surface. */
     --chart-1: 22 88% 49%;

@@ -1,8 +1,8 @@
 # Example workflow DSL — the default feature lifecycle.
 #
-# Parsed by `forge_workflow.load_definition`, which validates the transition
+# Parsed by `scf_workflow.load_definition`, which validates the transition
 # graph at parse time (no orphan or duplicate edges). States and the retry /
-# escalation policy mirror docs/FORGE_SPEC.md ("Default Feature Workflow").
+# escalation policy mirror docs/SCF_SPEC.md ("Default Feature Workflow").
 workflow: default_feature
 version: "1"
 modes:

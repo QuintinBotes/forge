@@ -1,0 +1,109 @@
+"""Celery application for the SCF worker (indexer, syncer, agent-runner).
+
+The :class:`~celery.Celery` instance is created at import time but does **not**
+open a broker connection until a worker starts or a task is dispatched, so
+importing this module stays hermetic (tests register/inspect tasks without a live
+Redis). Broker/result-backend URLs come from ``FORGE_REDIS_URL`` to match the
+rest of the workspace; ``include`` pre-imports the task modules so their
+``@celery_app.task`` registrations are present.
+"""
+
+from __future__ import annotations
+
+import os
+
+from celery import Celery
+
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+
+
+def get_broker_url() -> str:
+    """Resolve the Celery broker/result URL from the environment."""
+    return os.environ.get("FORGE_REDIS_URL", DEFAULT_REDIS_URL)
+
+
+celery_app = Celery(
+    "forge",
+    broker=get_broker_url(),
+    backend=get_broker_url(),
+    include=[
+        "scf_worker.indexer",
+        "scf_worker.syncer",
+        "scf_worker.agent_runner",
+        "scf_worker.tasks.incident",
+        "scf_worker.tasks.sandbox",
+        "scf_worker.tasks.knowledge_mcp",
+        "scf_worker.tasks.automations",
+        "scf_worker.tasks.sprint_tasks",
+        "scf_worker.tasks.auth",
+        "scf_worker.tasks.authz",
+        "scf_worker.tasks.approvals",
+        "scf_worker.tasks.marketplace",
+        "scf_worker.tasks.observability",
+        "scf_worker.tasks.sso",
+        "scf_worker.tasks.audit",
+        "scf_worker.tasks.self_eval_mint",
+        "scf_worker.tasks.self_eval_run",
+        "scf_worker.tasks.deployments",
+        "scf_worker.tasks.pm_sync",
+        "scf_worker.beat",
+    ],
+)
+celery_app.conf.task_default_queue = "forge"
+
+# HARD-11: apply the env-driven reliability knobs (acks_late + reject-on-lost so
+# an interrupted task re-queues, fair prefetch, per-child task cap bounding
+# memory, soft/hard time limits for runaway tasks). Default-on with safe
+# defaults so dev/test are unaffected; overridden via FORGE_* env vars.
+from scf_worker.reliability import configure_reliability  # noqa: E402
+
+configure_reliability(celery_app)
+
+
+# F38 + HARD-10: one shared telemetry init per worker process (env-driven; the
+# lean default installs no-op providers and never opens a connection, while
+# OBS_ENABLED=true + an OTLP endpoint stands up the real exporters). Delegates
+# to the worker observability module (which also owns the process UsageMeter).
+def _init_worker_telemetry(**_kwargs: object) -> None:  # pragma: no cover - worker boot
+    from scf_worker.observability import setup_worker_telemetry
+
+    setup_worker_telemetry()
+
+
+try:  # connecting the signal is safe at import; it fires only in real workers
+    from celery.signals import worker_process_init
+
+    worker_process_init.connect(_init_worker_telemetry, weak=False)
+except Exception:  # pragma: no cover - celery signal API unavailable
+    pass
+
+
+# ADR-0018: a bad embedder config refuses worker startup, not every knowledge
+# task. ``worker_init`` fires once in the main worker process (unlike
+# ``worker_process_init``, whose failure would respawn pool children in a
+# loop). Celery's signal dispatch swallows ``Exception``, so a factory
+# refusal is re-raised as ``SystemExit`` — a ``BaseException`` the dispatcher
+# cannot swallow — which stops the worker boot. Warming the per-process
+# cached embedder here also means a ``local`` model loads once at boot.
+def _init_worker_embedder(**_kwargs: object) -> None:
+    from scf_api.settings import get_settings
+    from scf_knowledge.reranker import check_rerank_provider
+    from scf_worker.indexer import get_configured_embedder
+
+    try:
+        get_configured_embedder()
+        settings = get_settings()
+        if settings.rerank_enabled:
+            check_rerank_provider(settings.rerank_provider)
+    except (ValueError, RuntimeError) as exc:
+        raise SystemExit(f"refusing to start worker: {exc}") from exc
+
+
+try:  # connecting the signal is safe at import; it fires only in real workers
+    from celery.signals import worker_init
+
+    worker_init.connect(_init_worker_embedder, weak=False)
+except Exception:  # pragma: no cover - celery signal API unavailable
+    pass
+
+__all__ = ["celery_app", "get_broker_url"]

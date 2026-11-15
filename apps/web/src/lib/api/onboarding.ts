@@ -4,14 +4,14 @@
  * TanStack Query hook for the guided walkthrough's onboarding progress.
  *
  * Reads the derived {@link OnboardingProgress} over the typed
- * {@link ForgeApiClient} (which composes the specs / approvals / deployments
+ * {@link ScfApiClient} (which composes the specs / approvals / deployments
  * router reads). Kept in its own module — like `spec.ts` and `marketplace.ts` —
  * so the walkthrough surface owns its query key + cache policy.
  */
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type { OnboardingProgress } from "./types";
 
 export const onboardingKeys = {
@@ -26,7 +26,7 @@ export const onboardingKeys = {
  */
 export function useOnboardingProgress(
   projectId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<OnboardingProgress> {
   return useQuery({
     queryKey: onboardingKeys.progress(projectId),

@@ -23,25 +23,25 @@ work this depends on: R22 (risk-proportionate auto-merge), R23 (factory metric d
 What exists today, verified in the code:
 
 - `packages/deploy-core` has a deployment state machine, a policy gate, freeze windows, post-deploy
-  health checkers (`forge_deploy/health.py`) and an automatic rollback path that is off by default:
+  health checkers (`scf_deploy/health.py`) and an automatic rollback path that is off by default:
   a failed health check after a full deployment moves to `rolling_back` when the gate's
-  `auto_rollback` setting is on (`forge_deploy/definitions/deployment_promotion.yaml`,
-  `forge_deploy/schemas.py`). A deployment is all or nothing. There is no rollout strategy, no
+  `auto_rollback` setting is on (`scf_deploy/definitions/deployment_promotion.yaml`,
+  `scf_deploy/schemas.py`). A deployment is all or nothing. There is no rollout strategy, no
   canary state and no feature flag store anywhere in `packages/` or `apps/`.
 - The automation action that would trigger a deployment uses a mock dispatcher
-  (`apps/worker/forge_worker/tasks/automations.py`, `_build_executor`).
-- `packages/observability/forge_obs/analytics/dora.py` reports lead time as the promotion's own
+  (`apps/worker/scf_worker/tasks/automations.py`, `_build_executor`).
+- `packages/observability/scf_obs/analytics/dora.py` reports lead time as the promotion's own
   request-to-finish duration and says in its docstring that this is a proxy. The `deployment` row
   holds a `commit_sha` and no authored or landed timestamp.
-- Forge already learns when a pull request closes and whether it landed
-  (`apps/api/forge_api/routers/integration.py`, pull-request outcome feedback).
+- Swarm Code Factory already learns when a pull request closes and whether it landed
+  (`apps/api/scf_api/routers/integration.py`, pull-request outcome feedback).
 - Cost is metered per model call in the `cost_event` ledger with `agent_run_id`, `task_id` and
-  `workflow_run_id` (`packages/db/forge_db/models/cost.py`). Local-CLI calls are recorded as
-  unpriced (`packages/observability/forge_obs/cost/meter.py`). No aggregation by delivered change
+  `workflow_run_id` (`packages/db/scf_db/models/cost.py`). Local-CLI calls are recorded as
+  unpriced (`packages/observability/scf_obs/cost/meter.py`). No aggregation by delivered change
   exists.
 - A `budget` table with a `hard_cap` flag exists and `evaluate_budget`
-  (`forge_obs/analytics/budgets.py`) reports an alert when it is exceeded. Nothing stops a run on
-  that alert. A run has a token budget (`packages/agent-runtime/forge_agent/budget.py`) and no
+  (`scf_obs/analytics/budgets.py`) reports an alert when it is exceeded. Nothing stops a run on
+  that alert. A run has a token budget (`packages/agent-runtime/scf_agent/budget.py`) and no
   currency cap.
 - Lettered spec A is not implemented at the audited commit. This feature takes the risk class and
   the identity of a change from R20 to R23 and does not define them.
@@ -52,7 +52,7 @@ What exists today, verified in the code:
 
 A workspace owner opens a delivered change and sees what it cost, itemised, with unpriced usage
 shown separately. They set a spend cap for the workspace or a project. When the cap is reached,
-forge refuses to start new agent runs under it and stops runs that are in flight, and it says why.
+SCF refuses to start new agent runs under it and stops runs that are in flight, and it says why.
 
 **Why this priority**: An autonomous loop without a currency cap can spend without limit, and that
 is the failure owners fear most. It is also the smallest slice: the ledger and the budget records
@@ -82,7 +82,7 @@ per-change cost and attempt to start a run. Needs nothing from Stories 2 to 4.
 ### User Story 2 - Know the true lead time of a change and where it waited (Priority: P2)
 
 An engineering lead asks how long changes take from first commit to running in the target
-environment, and how much of that was waiting. Forge answers from recorded timestamps and stops
+environment, and how much of that was waiting. SCF answers from recorded timestamps and stops
 reporting the promotion duration as lead time.
 
 **Why this priority**: The current figure measures the wrong interval and the code says so. Until
@@ -132,7 +132,7 @@ incident, and request the last ten verdicts.
 
 ### User Story 4 - Ship an agent change gradually and have it reverse itself (Priority: P4)
 
-A platform engineer lets higher-risk agent changes go out as a canary. Forge promotes the canary
+A platform engineer lets higher-risk agent changes go out as a canary. SCF promotes the canary
 when its health signals hold and aborts and rolls it back when they breach, without a person on
 call. A change can also ship dark behind a flag bound to it, and flags that no longer matter are
 reported.
@@ -289,11 +289,11 @@ with passing signals, one with a breach. Flags are testable alone through their 
   not provide a change identity, R46 defines it as repository plus landed commit.
 - Health signals for a canary come from the existing post-deploy health checkers. Binding to an
   external metrics system is out of scope.
-- Review time and rework are measured only where forge already holds the timestamps (approval
+- Review time and rework are measured only where SCF already holds the timestamps (approval
   requests and decisions, follow-up runs on the same task). Support cost is out of scope for this
   version, as lettered spec D section 5 leaves open.
 - Spec B's scheduled rollback rehearsal, spec C's semantic layer and spec D's cost-against-outcome
   view are not in roadmap issues R45 to R47. They stay as design input for later work.
 - Ring deployments are treated as a canary with a wider cohort and are not modelled separately.
-- Flag evaluation is served by forge's API. Evaluation at a network edge or in a sidecar, raised in
+- Flag evaluation is served by SCF's API. Evaluation at a network edge or in a sidecar, raised in
   lettered spec B section 5, is out of scope.

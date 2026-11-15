@@ -1,5 +1,5 @@
 # Example forge-package.yaml for a skill profile (F32).
-# Build with: forge marketplace package --kind skill_profile skill.yaml --out dist/
+# Build with: scf marketplace package --kind skill_profile skill.yaml --out dist/
 # then sign `manifest_hash` with your Ed25519 key and open a PR to a registry repo.
 artifact:
   description: Backend feature development with strict TDD discipline

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from forge_policy import load_policy, load_test_suite, run_policy_tests
-from forge_policy.tests_runner import suite_path_for
+from scf_policy import load_policy, load_test_suite, run_policy_tests
+from scf_policy.tests_runner import suite_path_for
 
 # repo_root/examples/policies/conditional
 EXAMPLES_DIR = Path(__file__).resolve().parents[3] / "examples" / "policies" / "conditional"

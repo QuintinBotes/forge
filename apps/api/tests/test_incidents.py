@@ -8,13 +8,13 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.incidents import IncidentServiceRegistry, get_incident_registry
-from forge_api.settings import Settings, get_settings
-from forge_contracts import UserRole
-from forge_contracts.incident import AlertProvider
-from forge_integrations.alerts import get_alert_adapter
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.incidents import IncidentServiceRegistry, get_incident_registry
+from scf_api.settings import Settings, get_settings
+from scf_contracts import UserRole
+from scf_contracts.incident import AlertProvider
+from scf_integrations.alerts import get_alert_adapter
 
 TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000b2")

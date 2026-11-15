@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { AuditEntry, AuditListResponse, ChainVerifyResult } from "@/lib/api/types";
 
 import { AuditView } from "./audit-view";
@@ -70,7 +70,7 @@ const VERDICT: ChainVerifyResult = {
   detail: null,
 };
 
-function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(over: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listAudit: vi.fn(() =>
       Promise.resolve<AuditListResponse>({ items: ENTRIES, next_cursor: null }),
@@ -83,10 +83,10 @@ function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
       ),
     ),
     ...over,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

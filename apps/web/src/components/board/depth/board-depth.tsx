@@ -18,7 +18,7 @@ import {
   type CommandAction,
 } from "@/components/command-palette";
 import { Button } from "@/components/ui/button";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useBulkUpdateTasks,
   useCreateTask,
@@ -52,7 +52,7 @@ export type DepthViewMode = "board" | "roadmap" | "list";
 
 export interface BoardDepthProps {
   initialView?: DepthViewMode;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
   enableRealtime?: boolean;
 }
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent.sandbox import (
+from scf_agent.sandbox import (
     SandboxError,
     WorktreeSandbox,
     _git,
@@ -136,7 +136,7 @@ def test_git_missing_binary_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     def _raise(*_args: object, **_kwargs: object) -> object:
         raise FileNotFoundError("git")
 
-    monkeypatch.setattr("forge_agent.sandbox.subprocess.run", _raise)
+    monkeypatch.setattr("scf_agent.sandbox.subprocess.run", _raise)
     with pytest.raises(SandboxError, match="git executable not found"):
         _git(tmp_path, "status")
 

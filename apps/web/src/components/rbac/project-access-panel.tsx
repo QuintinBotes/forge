@@ -20,7 +20,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import {
   useProjectAccess,
   useRemoveProjectTeamAccess,
@@ -71,7 +71,7 @@ const VIS_META: Record<
 };
 
 export interface ProjectAccessPanelProps {
-  client: ForgeApiClient;
+  client: ScfApiClient;
 }
 
 export function ProjectAccessPanel({ client }: ProjectAccessPanelProps) {
@@ -193,7 +193,7 @@ function ProjectAccessDetail({
   onClose,
 }: {
   projectId: string;
-  client: ForgeApiClient;
+  client: ScfApiClient;
   onClose: () => void;
 }) {
   const accessQuery = useProjectAccess(projectId, client);

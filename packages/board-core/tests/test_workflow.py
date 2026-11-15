@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from forge_board.exceptions import InvalidStatusTransitionError
-from forge_board.workflow import (
+from scf_board.exceptions import InvalidStatusTransitionError
+from scf_board.workflow import (
     TASK_STATUS_TRANSITIONS,
     TERMINAL_STATUSES,
     allowed_transitions,
     can_transition,
     validate_transition,
 )
-from forge_contracts import TaskStatus
+from scf_contracts import TaskStatus
 
 
 def test_every_status_has_a_transition_entry() -> None:

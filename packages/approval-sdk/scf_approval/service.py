@@ -1,0 +1,690 @@
+"""``ApprovalService`` — the one service every gate type routes through.
+
+Orchestrates repository + authorizer + registry + activity bus + audit +
+redaction. Any slice creates a gate with :meth:`create`; any surface resolves
+through :meth:`resolve` (identical authorization + audit everywhere).
+"""
+
+from __future__ import annotations
+
+import builtins
+import logging
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+from scf_approval.audit import ApprovalAuditSink, NullAuditSink
+from scf_approval.authorizer import ApprovalAuthorizer, AuthorizationError, quorum_met
+from scf_approval.delegation import DelegationDirectory
+from scf_approval.escalation import (
+    EscalationDecision,
+    EscalationOutcome,
+    SlaPolicy,
+    route_escalation,
+)
+from scf_approval.events import (
+    APPROVAL_REQUESTED_TOPIC,
+    APPROVAL_RESOLVED_TOPIC,
+    ActivityBus,
+    ApprovalRequestedEvent,
+    ApprovalResolvedEvent,
+    InMemoryActivityBus,
+)
+from scf_approval.models import (
+    ApprovalAction,
+    ApprovalContext,
+    ApprovalDecisionRecord,
+    ApprovalDecisionRequest,
+    ApprovalRequest,
+    ApprovalResolution,
+    ApprovalSummary,
+    GateStatus,
+    GateType,
+    Principal,
+    ResolutionOutcome,
+    RiskLevel,
+    risk_rank,
+)
+from scf_approval.redaction import Redactor, passthrough_redactor
+from scf_approval.registry import (
+    GateRegistry,
+    GateResolutionHook,
+    MissingProviderError,
+    default_actions,
+)
+from scf_approval.repository import (
+    AlreadyResolvedError,
+    ApprovalNotFoundError,
+    ApprovalRepository,
+)
+
+logger = logging.getLogger(__name__)
+
+#: ``ResolutionOutcome.details["error_code"]`` when the gate's hook raised.
+HOOK_FAILED = "resolution_hook_failed"
+
+
+class ApprovalService:
+    """Create, list, contextualize, and resolve approval gates (all six types)."""
+
+    def __init__(
+        self,
+        repo: ApprovalRepository,
+        registry: GateRegistry,
+        authorizer: ApprovalAuthorizer,
+        events: ActivityBus | None = None,
+        audit: ApprovalAuditSink | None = None,
+        redactor: Redactor | None = None,
+    ) -> None:
+        self._repo = repo
+        self._registry = registry
+        self._authorizer = authorizer
+        self._events = events or InMemoryActivityBus()
+        self._audit = audit or NullAuditSink()
+        self._redact = redactor or passthrough_redactor
+
+    # ------------------------------------------------------------------ #
+    # create                                                              #
+    # ------------------------------------------------------------------ #
+
+    async def create(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        gate_type: GateType,
+        subject_type: str,
+        subject_id: uuid.UUID | None,
+        workflow_run_id: uuid.UUID | None = None,
+        agent_run_id: uuid.UUID | None = None,
+        task_id: uuid.UUID | None = None,
+        project_id: uuid.UUID | None = None,
+        requested_by: uuid.UUID | None = None,
+        requested_actor: str = "system",
+        required_approvals: int = 1,
+        risk_level: RiskLevel = "info",
+        title: str | None = None,
+        gate_payload: dict[str, Any] | None = None,
+        expires_at: datetime | None = None,
+    ) -> ApprovalRequest:
+        """Open a gate; idempotent while a matching gate is still pending.
+
+        Returns the existing pending gate for the same
+        ``(subject_type, subject_id, gate_type)`` instead of a duplicate (the
+        ``uq_pending_gate`` partial-unique invariant) — no second row, no
+        second event. ``gate_payload`` is secret-redacted before persist.
+        """
+        existing = await self._repo.find_pending(
+            workspace_id=workspace_id,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            gate_type=gate_type,
+        )
+        if existing is not None:
+            return existing
+
+        request = ApprovalRequest(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            project_id=project_id,
+            gate_type=gate_type,
+            status=GateStatus.PENDING,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            workflow_run_id=workflow_run_id,
+            agent_run_id=agent_run_id,
+            task_id=task_id,
+            required_approvals=required_approvals,
+            risk_level=risk_level,
+            title=title,
+            gate_payload=self._redact(gate_payload or {}),
+            requested_by=requested_by,
+            requested_actor=requested_actor,
+            expires_at=expires_at,
+            requested_at=datetime.now(UTC),
+        )
+        # Policy-driven quorum: a repo raising review_rules.min_approvals turns the
+        # PR gate into a multi-approver quorum even if the caller passed 1.
+        request.required_approvals = max(
+            request.required_approvals, self._authorizer.min_approvals_for(request)
+        )
+        stored = await self._repo.add(request)
+
+        self._audit.record_approval(
+            stored.gate_type.value,
+            status="requested",
+            actor=stored.requested_actor,
+            run_id=stored.workflow_run_id or stored.agent_run_id,
+            request_id=stored.id,
+            workspace_id=stored.workspace_id,
+            detail=stored.title,
+        )
+        self._events.publish(
+            APPROVAL_REQUESTED_TOPIC,
+            ApprovalRequestedEvent(
+                approval_id=stored.id,
+                workspace_id=stored.workspace_id,
+                project_id=stored.project_id,
+                gate_type=stored.gate_type,
+                subject_type=stored.subject_type,
+                subject_id=stored.subject_id,
+                risk_level=stored.risk_level,
+                requested_actor=stored.requested_actor,
+                requested_at=stored.requested_at,
+            ),
+        )
+        return stored
+
+    # ------------------------------------------------------------------ #
+    # read                                                                #
+    # ------------------------------------------------------------------ #
+
+    async def get(self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID) -> ApprovalRequest:
+        """Workspace-scoped fetch; cross-workspace ids look nonexistent (404)."""
+        request = await self._repo.get(approval_id, workspace_id=workspace_id)
+        if request is None:
+            raise ApprovalNotFoundError(approval_id)
+        return request
+
+    async def list(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        actor: Principal,
+        status: GateStatus | None = None,
+        gate_type: GateType | None = None,
+        project_id: uuid.UUID | None = None,
+        mine: bool = False,
+    ) -> list[ApprovalSummary]:
+        """Inbox listing: workspace-scoped, ``critical`` risk first (AC#18).
+
+        ``mine=True`` keeps only gates the actor is authorized to resolve.
+        """
+        rows = await self._repo.list(
+            workspace_id=workspace_id,
+            status=status,
+            gate_type=gate_type,
+            project_id=project_id,
+        )
+        if mine:
+            rows = [r for r in rows if self._can_resolve(actor, r)]
+        rows.sort(
+            key=lambda r: (
+                -risk_rank(r.risk_level),
+                r.requested_at or datetime.now(UTC),
+            )
+        )
+        return [
+            ApprovalSummary(
+                id=r.id,
+                gate_type=r.gate_type,
+                status=r.status,
+                title=r.title or f"{r.gate_type.value} approval",
+                project_id=r.project_id,
+                risk_level=r.risk_level,
+                requested_actor=r.requested_actor,
+                requested_at=r.requested_at,
+            )
+            for r in rows
+        ]
+
+    async def count(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        actor: Principal,
+        status: GateStatus = GateStatus.PENDING,
+        mine: bool = False,
+    ) -> int:
+        """Nav-badge count — matches the inbox length by construction."""
+        return len(
+            await self.list(workspace_id=workspace_id, actor=actor, status=status, mine=mine)
+        )
+
+    async def get_context(
+        self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID, session: Any = None
+    ) -> ApprovalContext:
+        """The nine "must-show" items, built by the registered provider.
+
+        A gate whose provider is not registered degrades to a read-only
+        fallback context (never a crash) — slice risk #3.
+        """
+        request = await self.get(approval_id, workspace_id=workspace_id)
+        try:
+            provider = self._registry.provider(request.gate_type)
+        except MissingProviderError:
+            return self._fallback_context(request)
+        context = await provider.build_context(request, session=session)
+        context.gate_payload = self._redact(context.gate_payload)
+        return context
+
+    async def latest_for_gate(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        subject_type: str,
+        subject_id: uuid.UUID,
+        gate_type: GateType,
+    ) -> ApprovalRequest | None:
+        """The most recently opened request for one subject + gate, any status.
+
+        The gate-sync recovery path (spec K P0) re-reads the run's latest
+        request for a gate; ``find_pending`` cannot answer that once the gate
+        has resolved. Repository ``list`` order is insertion order, so the
+        last match is the latest.
+        """
+        rows = await self._repo.list(workspace_id=workspace_id, gate_type=gate_type)
+        matches = [r for r in rows if r.subject_type == subject_type and r.subject_id == subject_id]
+        return matches[-1] if matches else None
+
+    def resolution_hook(self, gate_type: GateType) -> GateResolutionHook | None:
+        """The hook :meth:`resolve` runs for ``gate_type`` (gate sync re-runs part of it)."""
+        return self._registry.hook(gate_type)
+
+    async def save_gate_payload(self, request: ApprovalRequest) -> ApprovalRequest:
+        """Persist ``request.gate_payload`` alone: a marker recorded outside :meth:`resolve`
+        (gate sync's ``blocked``). The decision fields are never written here."""
+        stored = await self.get(request.id, workspace_id=request.workspace_id)
+        stored.gate_payload = request.gate_payload
+        return await self._repo.update(stored)
+
+    async def decisions(
+        self, approval_id: uuid.UUID, *, workspace_id: uuid.UUID
+    ) -> builtins.list[ApprovalDecisionRecord]:
+        await self.get(approval_id, workspace_id=workspace_id)  # 404 if cross-tenant
+        return await self._repo.decisions_for(approval_id)
+
+    # ------------------------------------------------------------------ #
+    # resolve                                                             #
+    # ------------------------------------------------------------------ #
+
+    async def resolve(
+        self,
+        approval_id: uuid.UUID,
+        decision: ApprovalDecisionRequest,
+        actor: Principal,
+        *,
+        workspace_id: uuid.UUID,
+        session: Any = None,
+    ) -> ApprovalResolution:
+        """Record one reviewer's decision and run the gate's resolution hook.
+
+        1. load (workspace-scoped; cross-workspace => not-found, never 403);
+        2. reject already-resolved gates;
+        3. ``authorizer.check`` — the single policy;
+        4. persist the (unique-per-approver) decision row;
+        5. derive gate status (escalate keeps pending, raises the bar);
+        6. invoke the gate's hook; fold its :class:`ResolutionOutcome` in;
+        7. audit + emit ``approval.resolved``.
+        """
+        request = await self.get(approval_id, workspace_id=workspace_id)
+        if request.status is not GateStatus.PENDING:
+            raise AlreadyResolvedError(approval_id, request.status)
+
+        self._authorizer.check(actor, request, decision)
+
+        assert actor.id is not None  # guaranteed: authorizer requires kind == "user"
+        await self._repo.add_decision(
+            ApprovalDecisionRecord(
+                approval_request_id=request.id,
+                approver_user_id=actor.id,
+                decision=decision.decision,
+                note=decision.note,
+            )
+        )
+
+        if decision.decision is ApprovalAction.ESCALATE:
+            return await self._escalate(request, decision, actor)
+
+        if decision.decision is ApprovalAction.APPROVE and request.required_approvals > 1:
+            partial = await self._partial_approval(request, decision, actor)
+            if partial is not None:
+                return partial
+
+        now = datetime.now(UTC)
+        request.status = _STATUS_FOR_ACTION[decision.decision]
+        request.resolved_at = now
+        request.resolver_user_id = actor.id
+        request.decision_note = decision.note
+        request = await self._repo.update(request)
+
+        hook = self._registry.hook(request.gate_type)
+        if hook is None:
+            outcome = ResolutionOutcome(
+                completed=False,
+                details={"result": "not_implemented"},
+            )
+        else:
+            try:
+                outcome = await hook.on_resolved(request, decision, actor, session=session)
+            except Exception as exc:
+                # The decision stands: a hook error is reported, never a 500 (spec K §4.11).
+                logger.exception(
+                    "resolution hook for %s gate %s failed after the decision was recorded",
+                    request.gate_type.value,
+                    request.id,
+                )
+                outcome = ResolutionOutcome(
+                    completed=False,
+                    blocking_reasons=["the gate's resolution hook failed"],
+                    details={"error_code": HOOK_FAILED, "error_type": type(exc).__name__},
+                )
+            # Persist anything the hook recorded on the request (e.g. a failed
+            # downstream hand-off stamped into ``gate_payload``). The decision
+            # itself was already committed by the update above, so a hook
+            # failure can never roll it back (spec K §4.7).
+            request = await self._repo.update(request)
+
+        self._audit.record_approval(
+            request.gate_type.value,
+            status=request.status.value,
+            actor=actor.actor_ref,
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+            workspace_id=request.workspace_id,
+            detail=decision.note,
+            metadata=_decision_metadata(actor),
+        )
+        self._events.publish(
+            APPROVAL_RESOLVED_TOPIC,
+            ApprovalResolvedEvent(
+                approval_id=request.id,
+                workspace_id=request.workspace_id,
+                gate_type=request.gate_type,
+                status=request.status,
+                resolver_user_id=request.resolver_user_id,
+                outcome=outcome,
+                resolved_at=request.resolved_at,
+            ),
+        )
+        return ApprovalResolution(approval_id=request.id, status=request.status, outcome=outcome)
+
+    async def expire_pending(
+        self, *, now: datetime | None = None
+    ) -> builtins.list[ApprovalResolution]:
+        """Mark pending gates past ``expires_at`` as ``expired`` (SLA sweep).
+
+        Emits ``approval.resolved(status=expired)`` + audit per gate; routing
+        the subject workflow is the gate hook's concern downstream.
+        """
+        now = now or datetime.now(UTC)
+        resolutions: list[ApprovalResolution] = []
+        # Sweep across workspaces: repository list is workspace-scoped, so the
+        # sweep iterates the known workspaces from pending rows.
+        for request in await self._all_pending():
+            if request.expires_at is None or request.expires_at > now:
+                continue
+            request.status = GateStatus.EXPIRED
+            request.resolved_at = now
+            await self._repo.update(request)
+            outcome = ResolutionOutcome(
+                completed=False,
+                blocking_reasons=["approval expired before a decision"],
+                follow_up_state="needs_human_input",
+            )
+            self._audit.record_approval(
+                request.gate_type.value,
+                status=GateStatus.EXPIRED.value,
+                actor="system",
+                run_id=request.workflow_run_id or request.agent_run_id,
+                request_id=request.id,
+                workspace_id=request.workspace_id,
+            )
+            self._events.publish(
+                APPROVAL_RESOLVED_TOPIC,
+                ApprovalResolvedEvent(
+                    approval_id=request.id,
+                    workspace_id=request.workspace_id,
+                    gate_type=request.gate_type,
+                    status=GateStatus.EXPIRED,
+                    resolver_user_id=None,
+                    outcome=outcome,
+                    resolved_at=now,
+                ),
+            )
+            resolutions.append(
+                ApprovalResolution(
+                    approval_id=request.id, status=GateStatus.EXPIRED, outcome=outcome
+                )
+            )
+        return resolutions
+
+    async def sweep_sla(
+        self,
+        *,
+        sla: SlaPolicy,
+        now: datetime | None = None,
+        delegation: DelegationDirectory | None = None,
+    ) -> builtins.list[EscalationDecision]:
+        """Route / escalate / expire aging pending gates per the SLA ladder.
+
+        For each pending gate this computes :func:`route_escalation` and applies
+        the first-hit action: an OOO assignee (per ``delegation``) is re-routed to
+        their delegate, an over-SLA gate is escalated (bar raised to admin), and a
+        gate past its hard deadline is expired. Returns the actionable decisions.
+        The gate's assignee is read from (and a route writes back to) the payload
+        ``assignee`` key, so routing survives a reload without a schema change.
+        """
+        now = now or datetime.now(UTC)
+        applied: list[EscalationDecision] = []
+        for request in await self._all_pending():
+            assignee = _payload_assignee(request)
+            decision = route_escalation(
+                request, now=now, sla=sla, delegation=delegation, assignee=assignee
+            )
+            if not decision.is_actionable:
+                continue
+            if decision.outcome is EscalationOutcome.EXPIRE:
+                await self._apply_expiry(request, now)
+            elif decision.outcome is EscalationOutcome.ROUTE_TO_DELEGATE:
+                await self._apply_route(request, decision)
+            elif decision.outcome is EscalationOutcome.ESCALATE_TO_ADMIN:
+                if request.escalated:
+                    continue  # already escalated — idempotent no-op
+                await self._apply_escalation(request, decision)
+            applied.append(decision)
+        return applied
+
+    async def _apply_expiry(self, request: ApprovalRequest, now: datetime) -> None:
+        request.status = GateStatus.EXPIRED
+        request.resolved_at = now
+        await self._repo.update(request)
+        outcome = ResolutionOutcome(
+            completed=False,
+            blocking_reasons=["approval expired before a decision"],
+            follow_up_state="needs_human_input",
+        )
+        self._audit.record_approval(
+            request.gate_type.value,
+            status=GateStatus.EXPIRED.value,
+            actor="system",
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+            workspace_id=request.workspace_id,
+        )
+        self._events.publish(
+            APPROVAL_RESOLVED_TOPIC,
+            ApprovalResolvedEvent(
+                approval_id=request.id,
+                workspace_id=request.workspace_id,
+                gate_type=request.gate_type,
+                status=GateStatus.EXPIRED,
+                resolver_user_id=None,
+                outcome=outcome,
+                resolved_at=now,
+            ),
+        )
+
+    async def _apply_route(self, request: ApprovalRequest, decision: EscalationDecision) -> None:
+        request.gate_payload = {
+            **request.gate_payload,
+            "assignee": str(decision.route_to) if decision.route_to else None,
+        }
+        await self._repo.update(request)
+        self._audit.record_approval(
+            request.gate_type.value,
+            status="routed_to_delegate",
+            actor="system",
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+            workspace_id=request.workspace_id,
+            detail=decision.reason,
+        )
+
+    async def _apply_escalation(
+        self, request: ApprovalRequest, decision: EscalationDecision
+    ) -> None:
+        request.escalated = True
+        request.risk_level = "critical"
+        await self._repo.update(request)
+        self._audit.record_approval(
+            request.gate_type.value,
+            status="escalated",
+            actor="system",
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+            workspace_id=request.workspace_id,
+            detail=decision.reason,
+        )
+
+    # ------------------------------------------------------------------ #
+    # helpers                                                             #
+    # ------------------------------------------------------------------ #
+
+    def available_actions(self, request: ApprovalRequest) -> builtins.list[ApprovalAction]:
+        """Gate-correct actions (provider override, else the registry default)."""
+        if self._registry.has_provider(request.gate_type):
+            return self._registry.provider(request.gate_type).available_actions(request)
+        return default_actions(request.gate_type)
+
+    def _can_resolve(self, actor: Principal, request: ApprovalRequest) -> bool:
+        try:
+            self._authorizer.check(
+                actor, request, ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
+            )
+        except AuthorizationError:
+            return False
+        return True
+
+    def _fallback_context(self, request: ApprovalRequest) -> ApprovalContext:
+        """Read-only degradation for gates whose provider is not registered."""
+        return ApprovalContext(
+            approval_id=request.id,
+            gate_type=request.gate_type,
+            goal=request.title or f"{request.gate_type.value} approval",
+            risk_flags=[],
+            run_trace_ref=(
+                {
+                    "workflow_run_id": str(request.workflow_run_id)
+                    if request.workflow_run_id
+                    else None,
+                    "agent_run_id": str(request.agent_run_id) if request.agent_run_id else None,
+                }
+                if (request.workflow_run_id or request.agent_run_id)
+                else None
+            ),
+            available_actions=default_actions(request.gate_type),
+            gate_payload=self._redact(request.gate_payload),
+        )
+
+    async def _partial_approval(
+        self,
+        request: ApprovalRequest,
+        decision: ApprovalDecisionRequest,
+        actor: Principal,
+    ) -> ApprovalResolution | None:
+        """Hold a multi-approver gate ``pending`` until the quorum is reached.
+
+        Returns a ``pending`` resolution while fewer than
+        ``required_approvals`` distinct reviewers have approved; ``None`` once the
+        quorum is met so the caller finalizes the gate as ``approved``.
+        """
+        records = await self._repo.decisions_for(request.id)
+        approvers = {r.approver_user_id for r in records if r.decision is ApprovalAction.APPROVE}
+        if quorum_met(approvers, request.required_approvals):
+            return None
+        self._audit.record_approval(
+            request.gate_type.value,
+            status="approval_recorded",
+            actor=actor.actor_ref,
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+            workspace_id=request.workspace_id,
+            detail=decision.note,
+            metadata=_decision_metadata(actor),
+        )
+        return ApprovalResolution(
+            approval_id=request.id,
+            status=GateStatus.PENDING,
+            outcome=ResolutionOutcome(
+                completed=False,
+                follow_up_state="awaiting_more_approvals",
+                details={
+                    "approvals": len(approvers),
+                    "required_approvals": request.required_approvals,
+                },
+            ),
+        )
+
+    async def _escalate(
+        self,
+        request: ApprovalRequest,
+        decision: ApprovalDecisionRequest,
+        actor: Principal,
+    ) -> ApprovalResolution:
+        """Escalate: keep pending, raise risk to critical + required role to admin."""
+        request.risk_level = "critical"
+        request.escalated = True
+        request = await self._repo.update(request)
+        self._audit.record_approval(
+            request.gate_type.value,
+            status="escalated",
+            actor=actor.actor_ref,
+            run_id=request.workflow_run_id or request.agent_run_id,
+            request_id=request.id,
+            workspace_id=request.workspace_id,
+            detail=decision.note,
+            metadata=_decision_metadata(actor),
+        )
+        return ApprovalResolution(
+            approval_id=request.id,
+            status=GateStatus.PENDING,
+            outcome=ResolutionOutcome(
+                completed=True,
+                follow_up_state="escalated_to_admin",
+                details={"escalated": True, "risk_level": request.risk_level},
+            ),
+        )
+
+    async def _all_pending(self) -> builtins.list[ApprovalRequest]:
+        """Every pending gate across workspaces (in-memory sweep support)."""
+        items = getattr(self._repo, "_items", None)
+        if items is None:  # pragma: no cover — DB-backed repos sweep in the worker
+            return []
+        return [i.model_copy(deep=True) for i in items.values() if i.status is GateStatus.PENDING]
+
+
+def _decision_metadata(actor: Principal) -> dict[str, Any]:
+    """What a decision's audit row records about the credential (spec L §6a)."""
+    key_id = str(actor.credential_id) if actor.credential_id else None
+    return {"surface": actor.surface, "key_id": key_id}
+
+
+def _payload_assignee(request: ApprovalRequest) -> uuid.UUID | None:
+    """The gate's currently-assigned approver id from its payload, if any."""
+    raw = request.gate_payload.get("assignee")
+    if not isinstance(raw, str):
+        return None
+    try:
+        return uuid.UUID(raw)
+    except ValueError:
+        return None
+
+
+_STATUS_FOR_ACTION: dict[ApprovalAction, GateStatus] = {
+    ApprovalAction.APPROVE: GateStatus.APPROVED,
+    ApprovalAction.REJECT: GateStatus.REJECTED,
+    ApprovalAction.REQUEST_CHANGES: GateStatus.CHANGES_REQUESTED,
+}
+
+
+__all__ = ["HOOK_FAILED", "ApprovalService"]

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Forge backup — Postgres dump + MinIO mirror + spec documents.
+# SCF backup — Postgres dump + MinIO mirror + spec documents.
 #
 # Creates a timestamped backup directory containing a compressed Postgres dump,
 # a mirror of the MinIO artifact bucket, and the spec engine's documents.

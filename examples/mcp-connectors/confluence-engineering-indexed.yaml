@@ -1,6 +1,6 @@
 # Example MCP connection — Engineering Confluence in SYNC-AND-INDEX mode (F20).
 #
-# With `index_strategy: sync_and_index`, Forge auto-provisions a linked
+# With `index_strategy: sync_and_index`, SCF auto-provisions a linked
 # `mcp_resource` KnowledgeSource and a background worker periodically pulls this
 # connection's namespace-scoped resources through the read-only F09 gateway,
 # chunks/redacts/embeds them, and upserts them into the local `retrieval_chunk`

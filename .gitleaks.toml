@@ -5,7 +5,7 @@
 # A new fake credential in a new test file is EXPECTED to trip the scan — the
 # author either uses an obviously-fake value or consciously extends this list.
 
-title = "forge gitleaks config"
+title = "swarm-code-factory gitleaks config"
 
 [extend]
 useDefault = true
@@ -22,10 +22,10 @@ paths = [
   # (GracefulReranker / JinaRerankerClient) — no real credential.
   '''packages/knowledge-core/tests/test_reranker\.py''',
   '''packages/knowledge-core/tests/test_reranker_live\.py''',
-  '''packages/mcp-sdk/forge_mcp/testing\.py''',
+  '''packages/mcp-sdk/scf_mcp/testing\.py''',
   # HARD-05: fake bearer/sk-… shapes exercising the live MCP transport redaction
   # + a planted FAKE secret in the reference server's fixture corpus. No real cred.
-  '''packages/mcp-sdk/forge_mcp/reference_server\.py''',
+  '''packages/mcp-sdk/scf_mcp/reference_server\.py''',
   '''packages/mcp-sdk/tests/test_transports_jsonrpc\.py''',
   '''packages/mcp-sdk/tests/test_transports_http\.py''',
   '''packages/mcp-sdk/tests/test_live_mcp_integration\.py''',

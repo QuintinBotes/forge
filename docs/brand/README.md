@@ -1,7 +1,6 @@
-# Forge Brand Guidelines
+# Swarm Code Factory Brand Guidelines
 
-Forge shapes raw specs into precise, shipped software — the way a smith shapes
-raw metal at the anvil. The identity is deliberately **warm and industrial**:
+Swarm Code Factory: From specification to shipped software. The identity is deliberately **warm and industrial**:
 molten ember on cool graphite steel, with a bright struck spark for moments of
 focus. It is intentionally *not* the cool indigo/gray of Linear-style tools.
 
@@ -9,49 +8,21 @@ focus. It is intentionally *not* the cool indigo/gray of Linear-style tools.
 
 ## 1. The mark
 
-The Forge mark is a **geometric monogram "F" that reads as a struck anvil**:
-three heavy ember strokes standing on a steel plinth (the anvil base), with a
-bright amber **spark** flying off the top-right corner — the instant the hammer
-strikes hot metal.
-
-**One coherent motif**: anvil + spark. Do not introduce a second metaphor
-(hammer, gear, flame) alongside it.
-
-### Assets (`apps/web/public/`)
-
-| File | Use |
-| --- | --- |
-| `forge-icon.svg` | App tile / favicon — ember mark on a graphite rounded square. Legible on any browser-tab colour. |
-| `forge-icon-light.svg` | Standalone square icon for **light** surfaces (transparent bg). |
-| `forge-icon-dark.svg` | Standalone square icon for **dark** surfaces (transparent bg). |
-| `forge-wordmark-light.svg` | Horizontal lockup (icon + "Forge") for light surfaces. |
-| `forge-wordmark-dark.svg` | Horizontal lockup for dark surfaces. |
-
-In-app, the mark renders from the themed React component
-`apps/web/src/components/forge-logo.tsx` (`<ForgeMark />`), whose colours are
-driven by design tokens so it re-themes automatically.
-
-### Clear space & sizing
-
-- Keep clear space around the mark equal to the height of the anvil base on all
-  sides.
-- Minimum icon size: **20px**. Below this the spark and middle arm blur — use
-  the solid tile (`forge-icon.svg`) for favicons.
-- Never render the wordmark narrower than **120px** wide.
+Until new artwork exists, the mark is plain text: **SCF** set in `--font-mono`,
+bold, in `--primary-foreground` on a small `--primary` square, followed by the
+full name **Swarm Code Factory** in `--font-display`. It is rendered in
+`apps/web/src/components/app-shell.tsx` from the design tokens, so it re-themes
+in light and dark. There are no logo image files and no favicon.
 
 ### Do / Don't
 
 **Do**
-- Use `forge-icon.svg` (the graphite tile) as the favicon and app icon.
-- Pair the ember mark with the steel neutrals; let the ember be the only warm hue.
-- Use the light/dark variant that matches the surface underneath.
+- Write the full name, Swarm Code Factory, next to the SCF mark the first time it appears.
+- Use the design tokens for its colours, so it follows the theme.
 
 **Don't**
-- Recolour the mark outside the palette (no blue, green or purple F).
-- Add a drop shadow, gradient or bevel to the mark.
-- Stretch, rotate, or rearrange the strokes / spark.
-- Place the ember mark on a mid-tone that kills its contrast — use a light or
-  dark surface.
+- Draw a pictorial mark or a wordmark image until the new identity is designed.
+- Recolour the mark outside the palette.
 
 ---
 
@@ -60,7 +31,7 @@ driven by design tokens so it re-themes automatically.
 Tokens live in `apps/web/src/app/globals.css` (`:root` + `.dark`) and are wired
 into Tailwind in `apps/web/tailwind.config.ts`. They are stored as bare
 `H S% L%` triples and consumed via `hsl(var(--token))`. Every colour has a light
-("cooled steel") and dark ("forge at night") value.
+("cooled steel") and dark ("graphite at night") value.
 
 ### Brand
 
@@ -146,7 +117,6 @@ layer). Body inherits `--font-sans`.
   nothing is.
 - **Steel does the work.** Structure, surfaces and text are cool graphite; the
   ember only marks intent (primary actions, active nav, the brand).
-- **Spark = focus.** Reserve the bright spark tone for focus rings and the logo
-  spark, so keyboard focus always reads as "struck".
+- **Spark = focus.** Reserve the bright spark tone for focus rings, so keyboard focus always reads as "struck".
 - **Warm hovers.** Hover/active surfaces warm toward amber (`--accent`) rather
   than going cooler — the interface "heats up" under the cursor.

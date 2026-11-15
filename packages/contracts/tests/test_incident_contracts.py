@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import uuid
 
-from forge_contracts.enums import IncidentSeverity
-from forge_contracts.incident import (
+from scf_contracts.enums import IncidentSeverity
+from scf_contracts.incident import (
     AlertProvider,
     BlastRadius,
     IncidentAlert,

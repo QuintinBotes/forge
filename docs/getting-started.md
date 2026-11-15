@@ -1,6 +1,6 @@
 # Getting started
 
-> **Status:** Forge is **pre-1.0 and under active development**. This guide runs
+> **Status:** Swarm Code Factory is **pre-1.0 and under active development**. This guide runs
 > the self-hosted stack for **evaluation and testing** — not production. See
 > [Status](../README.md#status) and
 > [`RELEASE_READINESS.md`](../RELEASE_READINESS.md) for the honest per-area
@@ -10,7 +10,7 @@ This walkthrough takes you from a clone to your first orchestrated run: stand up
 the stack, open the board, write a spec, and watch an agent execute it. It
 should take about 15 minutes on a machine with Docker.
 
-![The Forge in-app walkthrough — the loop every change travels through: create a
+![The SCF in-app walkthrough — the loop every change travels through: create a
 spec, run an agent, review the PR, merge & ship.](./assets/screenshots/walkthrough.png)
 
 For the deeper self-hosting reference (production hardening, day-2 operations,
@@ -32,8 +32,8 @@ behind specs, workflows, agents, and runs, read [Concepts](./concepts.md).
 ## 1. Clone and configure
 
 ```bash
-git clone https://github.com/QuintinBotes/forge.git
-cd forge
+git clone https://github.com/QuintinBotes/swarm-code-factory.git
+cd swarm-code-factory
 cp .env.example .env
 ```
 
@@ -72,7 +72,7 @@ make dev
 MinIO, the API, worker, MCP gateway, web UI, and the Caddy edge proxy — then runs
 migrations and seeds a demo workspace. When it reports healthy:
 
-- **Forge:** <http://localhost:8080>
+- **SCF:** <http://localhost:8080>
 - **API health check:** <http://localhost:8080/api/health>
 
 Use **port 8080**. That is the Caddy edge, which serves the UI and `/api/*` from
@@ -90,8 +90,8 @@ If a service fails to come up, see
 
 ## 3. Connect and open the board
 
-Open <http://localhost:8080>. Forge asks you to **connect** before it shows any
-data: every API route is authenticated, and until OIDC lands a Forge API key
+Open <http://localhost:8080>. SCF asks you to **connect** before it shows any
+data: every API route is authenticated, and until OIDC lands an SCF API key
 *is* the credential. Paste the key `make dev` printed.
 
 By default the key is held only for the current tab. "Remember on this browser"
@@ -115,12 +115,12 @@ gives a guided tour of the platform.
 
 ## 4. Write a spec
 
-Forge is **spec-driven**: work begins from a written specification, not a bare
+SCF is **spec-driven**: work begins from a written specification, not a bare
 prompt. A spec is a `manifest.yaml` describing what to build — requirements,
 acceptance criteria, open questions, and constraints — that the **spec engine**
 validates before any agent is allowed to run.
 
-`acceptance_criteria` is yours to write, and starts empty. Forge deliberately
+`acceptance_criteria` is yours to write, and starts empty. SCF deliberately
 does not generate one per requirement: a criterion that reads "Implementation
 satisfies R1: *<R1 verbatim>*" restates the obligation rather than defining
 evidence for it, so it can never fail — and a dashboard counting 7 of 7 present
@@ -151,7 +151,7 @@ skill_profile: backend-tdd
 ```
 
 A spec starts at `draft`, and the spec engine's **implementation gate blocks any
-run** until it reaches `approved` — Forge will not let an agent execute a spec
+run** until it reaches `approved` — SCF will not let an agent execute a spec
 nobody has signed off. The gate names the status it refused, so a blocked run
 tells you exactly why:
 

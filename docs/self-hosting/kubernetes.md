@@ -1,7 +1,7 @@
 # Kubernetes deployment
 
-Forge ships a production Helm chart at [`../../deploy/helm/forge`](../../deploy/helm/forge)
-that installs a horizontally-scalable, highly-available Forge onto any conformant
+Swarm Code Factory ships a production Helm chart at [`../../deploy/helm/swarm-code-factory`](../../deploy/helm/swarm-code-factory)
+that installs a horizontally-scalable, highly-available SCF onto any conformant
 Kubernetes >= 1.28 cluster with one command. This is the recommended path for
 50+ engineers who need auto-scaling, high availability and cloud-native
 operations that Docker Compose cannot provide. For smaller single-node
@@ -23,10 +23,10 @@ a `PodDisruptionBudget`, liveness/readiness probes, a hardened `securityContext`
 
 | Workload | Image | Probe |
 |---|---|---|
-| `api` | `ghcr.io/forge-platform/forge-api` | readiness `GET /readyz`, liveness `GET /healthz` |
-| `worker` | `ghcr.io/forge-platform/forge-worker` | liveness `celery -A forge_worker inspect ping` |
-| `web` | `ghcr.io/forge-platform/forge-web` | liveness/readiness `GET /healthz` |
-| `mcp-gateway` | `ghcr.io/forge-platform/forge-mcp-gateway` | liveness/readiness `GET /health` |
+| `api` | `ghcr.io/quintinbotes/swarm-code-factory/api` | readiness `GET /readyz`, liveness `GET /healthz` |
+| `worker` | `ghcr.io/quintinbotes/swarm-code-factory/worker` | liveness `celery -A scf_worker inspect ping` |
+| `web` | `ghcr.io/quintinbotes/swarm-code-factory/web` | liveness/readiness `GET /healthz` |
+| `mcp-gateway` | `ghcr.io/quintinbotes/swarm-code-factory/mcp-gateway` | liveness/readiness `GET /health` |
 
 Datastores run in **bundled mode** (pinned `pgvector`/`redis`/`minio` subcharts
 with PVCs) for evaluation, or **external/managed mode** (managed Postgres with
@@ -46,9 +46,9 @@ the `vector` extension, managed Redis, S3) for production.
 ## Quick evaluation install (bundled datastores)
 
 ```bash
-helm dependency build deploy/helm/forge          # pulls pinned subcharts
+helm dependency build deploy/helm/swarm-code-factory          # pulls pinned subcharts
 kubectl create namespace forge
-helm install forge deploy/helm/forge -n forge \
+helm install forge deploy/helm/swarm-code-factory -n forge \
   --set forge.domain=forge.example.com \
   --set ingress.tls.certManager.enabled=true \
   --set-string secrets.data.SECRET_KEY="$(openssl rand -hex 32)" \
@@ -70,7 +70,7 @@ if you set them instead.
 The pre-install hook runs the Alembic chain (`alembic -c packages/db/alembic.ini
 upgrade head`, the same command as `make migrate`) to completion before any app
 pod serves traffic; readiness is gated on `/readyz`. Override `migrations.command`
-to drop in a different entrypoint (e.g. a future `forge-cli db migrate`) without
+to drop in a different entrypoint (e.g. a future `scf-cli db migrate`) without
 re-templating.
 
 > **Bundled subchart images.** The bundled `postgresql`/`redis`/`minio`
@@ -79,7 +79,7 @@ re-templating.
 > overridden to the retained `docker.io/bitnamilegacy/*` repo (e.g.
 > `--set postgresql.image.repository=bitnamilegacy/postgresql`), or — recommended
 > — use managed/external datastores (below). The local kind smoke
-> (`deploy/helm/forge/tests/e2e/`) runs the **external** path against in-cluster
+> (`deploy/helm/swarm-code-factory/tests/e2e/`) runs the **external** path against in-cluster
 > official `pgvector`/`redis` images for exactly this reason.
 
 ## Production install (managed datastores)
@@ -89,10 +89,10 @@ secret in an operator-managed `Secret` (e.g. via External Secrets Operator /
 sealed-secrets / Vault CSI), then:
 
 ```bash
-helm install forge deploy/helm/forge -n forge -f values-production.yaml
+helm install forge deploy/helm/swarm-code-factory -n forge -f values-production.yaml
 ```
 
-[`../../deploy/helm/forge/values-production.yaml`](../../deploy/helm/forge/values-production.yaml)
+[`../../deploy/helm/swarm-code-factory/values-production.yaml`](../../deploy/helm/swarm-code-factory/values-production.yaml)
 sets `postgresql.enabled=false`, `redis.enabled=false`, `minio.enabled=false`,
 points `externalDatabase`/`externalRedis`/`externalObjectStore` at the managed
 endpoints, sets `secrets.existingSecret`, and pins every image by `@sha256`
@@ -101,8 +101,8 @@ digest. No bundled stateful pods or PVCs are rendered.
 ## Values reference
 
 The full, documented values surface lives in
-[`../../deploy/helm/forge/values.yaml`](../../deploy/helm/forge/values.yaml) and is
-validated by [`../../deploy/helm/forge/values.schema.json`](../../deploy/helm/forge/values.schema.json).
+[`../../deploy/helm/swarm-code-factory/values.yaml`](../../deploy/helm/swarm-code-factory/values.yaml) and is
+validated by [`../../deploy/helm/swarm-code-factory/values.schema.json`](../../deploy/helm/swarm-code-factory/values.schema.json).
 Key blocks:
 
 | Block | Purpose |
@@ -161,7 +161,7 @@ key (`FORGE_MODEL_API_KEY`) is **not** boot-critical: the worker/api boot withou
 it and fall back to the offline scripted model, so it is optional. `FORGE_VAULT_KEYS`
 is the AES-256-GCM envelope-vault master key (KEK)
 and is distinct from `SECRET_KEY`; store it in a managed secret store and rotate
-it with `forge-cli secrets rotate-key`. A Postgres restore of encrypted rows is
+it with `scf-cli secrets rotate-key`. A Postgres restore of encrypted rows is
 useless without the same `FORGE_VAULT_KEYS` material. See
 [security.md](security.md) for the full posture.
 
@@ -188,7 +188,7 @@ kubectl get hpa -n forge
 ## Upgrade and rollback
 
 ```bash
-helm upgrade forge deploy/helm/forge -n forge -f values-production.yaml
+helm upgrade forge deploy/helm/swarm-code-factory -n forge -f values-production.yaml
 ```
 
 `helm upgrade` runs the **pre-upgrade** Alembic migration hook first; only

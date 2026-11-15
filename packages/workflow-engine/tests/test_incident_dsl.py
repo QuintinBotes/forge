@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from forge_workflow import (
+from scf_workflow import (
     InvalidTransitionError,
     default_incident_definition,
     drive_incident,
     incident_graph,
     load_definition,
 )
-from forge_workflow.incident.definition import INCIDENT_STATES
+from scf_workflow.incident.definition import INCIDENT_STATES
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE = REPO_ROOT / "examples" / "workflows" / "incident.yaml"

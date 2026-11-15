@@ -10,11 +10,11 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.audit import AuditEvent
-from forge_db.audit.repository import AuditQueryRepository, decode_cursor, encode_cursor
-from forge_db.audit.writer import SqlAuditWriter
-from forge_db.base import Base
-from forge_db.models import Workspace
+from scf_contracts.audit import AuditEvent
+from scf_db.audit.repository import AuditQueryRepository, decode_cursor, encode_cursor
+from scf_db.audit.writer import SqlAuditWriter
+from scf_db.base import Base
+from scf_db.models import Workspace
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000a2")

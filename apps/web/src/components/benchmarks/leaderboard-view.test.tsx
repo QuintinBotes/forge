@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { PublicBenchmark, PublicLeaderboard } from "@/lib/api/types";
 
 import { LeaderboardView } from "./leaderboard-view";
@@ -79,17 +79,17 @@ const AGENT_LEADERBOARD: PublicLeaderboard = {
   entries: [],
 };
 
-function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(over: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listPublicBenchmarks: vi.fn(() => Promise.resolve(SUITES)),
     getPublicLeaderboard: vi.fn((slug: string) =>
       Promise.resolve(slug === "agent-ops" ? AGENT_LEADERBOARD : SWE_LEADERBOARD),
     ),
     ...over,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

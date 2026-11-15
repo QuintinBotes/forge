@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type {
   ApprovalContext,
   ApprovalSummary,
@@ -85,18 +85,18 @@ const verifiedAttestation: AttestationOut = {
   },
 };
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     getWorkflowRunRedTeam: vi.fn(noRedTeamScan),
     getApprovalAttestation: vi.fn(() => Promise.resolve<AttestationOut | null>(null)),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
 function renderPanel(
   context: ApprovalContext | undefined,
   extra: Record<string, unknown> = {},
-  client: ForgeApiClient = makeClient(),
+  client: ScfApiClient = makeClient(),
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },

@@ -6,13 +6,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
-from forge_api.security.ratelimit import (
+from scf_api.main import create_app
+from scf_api.security.ratelimit import (
     RateLimitMiddleware,
     TokenBucket,
     parse_rate,
 )
-from forge_api.settings import Settings
+from scf_api.settings import Settings
 
 
 def _bare_app() -> FastAPI:

@@ -1,6 +1,6 @@
 # Docker Compose deployment
 
-Forge ships two Compose files: a hardened single-node production stack and a
+Swarm Code Factory ships two Compose files: a hardened single-node production stack and a
 lighter local-development stack. This guide explains the production topology,
 the hardening applied, and how to operate it. To get running quickly first, see
 [quickstart.md](quickstart.md).

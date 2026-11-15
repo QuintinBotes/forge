@@ -23,12 +23,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
-from forge_api.observability import AuditCategory, AuditLog, MCPAuditSink
-from forge_api.routers.mcp import get_mcp_manager
-from forge_contracts import MCPConnection, MCPTransport
-from forge_mcp import MCPConnectionManager, TeeAuditLog, live_transport_factory
-from forge_mcp.reference_server import PLANTED_SECRET, start_http_server
+from scf_api.main import create_app
+from scf_api.observability import AuditCategory, AuditLog, MCPAuditSink
+from scf_api.routers.mcp import get_mcp_manager
+from scf_contracts import MCPConnection, MCPTransport
+from scf_mcp import MCPConnectionManager, TeeAuditLog, live_transport_factory
+from scf_mcp.reference_server import PLANTED_SECRET, start_http_server
 
 pytestmark = [pytest.mark.integration, pytest.mark.live_mcp]
 

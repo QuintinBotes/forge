@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 
 // HARD-09: security response headers, mirroring the API edge
-// (forge_api.security.headers) and src/lib/security-headers.ts. Kept in JS here
+// (scf_api.security.headers) and src/lib/security-headers.ts. Kept in JS here
 // because next.config.mjs is loaded by Node (cannot import the .ts module); a
 // Vitest parity test (src/lib/security-headers.test.ts) asserts the two agree.
 //

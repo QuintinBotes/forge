@@ -8,9 +8,9 @@ from decimal import Decimal
 
 import pytest
 
-from forge_obs.cost.models import ModelPrice, ModelUsage
-from forge_obs.cost.pricing import InMemoryPriceBook
-from forge_obs.cost.repository import InMemoryCostLedger
+from scf_obs.cost.models import ModelPrice, ModelUsage
+from scf_obs.cost.pricing import InMemoryPriceBook
+from scf_obs.cost.repository import InMemoryCostLedger
 
 WS = uuid.uuid4()
 PROJECT = uuid.uuid4()

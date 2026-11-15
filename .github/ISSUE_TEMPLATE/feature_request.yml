@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an enhancement or new capability for Forge.
+description: Suggest an enhancement or new capability for SCF.
 title: "[feat]: "
 labels: ["enhancement", "triage"]
 body:
@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for proposing an idea! For open-ended discussion or questions,
-        consider starting a [Discussion](https://github.com/service-hive/forge/discussions)
+        consider starting a [Discussion](https://github.com/QuintinBotes/swarm-code-factory/discussions)
         first — feature requests here should describe a concrete, actionable change.
 
   - type: checkboxes
@@ -15,7 +15,7 @@ body:
     attributes:
       label: Preflight checklist
       options:
-        - label: I searched existing [issues](https://github.com/service-hive/forge/issues) and [discussions](https://github.com/service-hive/forge/discussions) and this is not a duplicate.
+        - label: I searched existing [issues](https://github.com/QuintinBotes/swarm-code-factory/issues) and [discussions](https://github.com/QuintinBotes/swarm-code-factory/discussions) and this is not a duplicate.
           required: true
 
   - type: textarea
@@ -47,7 +47,7 @@ body:
     id: component
     attributes:
       label: Affected area
-      description: Which part of Forge would this touch? Pick the closest.
+      description: Which part of SCF would this touch? Pick the closest.
       options:
         - api (apps/api — FastAPI backend)
         - worker (apps/worker — Celery workers)

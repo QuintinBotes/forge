@@ -1,6 +1,6 @@
-# Forge Threat Model (STRIDE)
+# Swarm Code Factory Threat Model (STRIDE)
 
-> HARD-09 deliverable. This models the real Forge attack surface with STRIDE
+> HARD-09 deliverable. This models the real SCF attack surface with STRIDE
 > (Spoofing, Tampering, Repudiation, Information disclosure, Denial of service,
 > Elevation of privilege). Each surface lists the threats, the **existing**
 > controls, and any **residual** risk (which is carried into
@@ -34,7 +34,7 @@ MCP/OAuth URLs).
 | STRIDE | Threat | Control |
 |---|---|---|
 | **S** | Anonymous caller acts as a user/admin | API-key auth wired into `get_current_principal`; every feature router rejects missing/invalid creds with 401 ✅ (`auth-required-401`). No hardcoded principal. |
-| **E** | Under-privileged role performs a write/admin action | Deny-by-default RBAC matrix (`forge_api.auth.rbac`); `require_permission` returns 403 per role ✅ (`rbac-default-deny`, `rbac-wired-403`). |
+| **E** | Under-privileged role performs a write/admin action | Deny-by-default RBAC matrix (`scf_api.auth.rbac`); `require_permission` returns 403 per role ✅ (`rbac-default-deny`, `rbac-wired-403`). |
 | **E** | Partially-constructed `Principal` defaults to admin (fail-open) | `Principal.role` defaults to **VIEWER** ✅ (`principal-fails-safe`). |
 | **S** | Session-JWT / OAuth spoofing | HS256 session JWT verified against the shared `AUTH_SECRET`; OAuth code exchange is server-side; RFC 8707 resource indicators bound for MCP tokens. |
 | **T/R** | CORS credential leak via reflected origin | CORS deny-by-default; wildcard never paired with credentials ✅ (`cors-lockdown`). |
@@ -61,7 +61,7 @@ operator-driven (see rotation runbook).
 | STRIDE | Threat | Control |
 |---|---|---|
 | **E** | A write/mutating tool runs on a read-only connection | `is_write_tool` fails **closed** (unknown verb ⇒ write); `MCPGatewayClient` raises `MCPWriteForbiddenError` before any transport I/O ✅ (`mcp-write-default-deny`). |
-| **I** | Secrets in tool args/results reach logs/audit | `forge_mcp.security.redact` + `forge_api.observability.redaction` scrub every sink; payloads stored only as hashes ✅ (`redaction-sinks`). |
+| **I** | Secrets in tool args/results reach logs/audit | `scf_mcp.security.redact` + `scf_api.observability.redaction` scrub every sink; payloads stored only as hashes ✅ (`redaction-sinks`). |
 | **E** | Resource access outside the connection namespace | Per-connection namespace scoping (`resource_in_scope` / `filter_resources`). |
 | **R** | Tool call not attributable | Tamper-evident MCP audit entries (hash chain). |
 
@@ -90,7 +90,7 @@ registry client is **PT-07**. Pentest: SSRF via redirect + rebind (**PT-05**).
 
 **Residual:** replay window tuning per provider; pentest: signature-bypass and
 timing (**PT-06**). After signature verification, Slack interaction/command
-payloads carry no Forge tenant principal; approval-decide and run-status
+payloads carry no SCF tenant principal; approval-decide and run-status
 resolve tenancy via an `owner_of(id)` lookup, so object-UUID unguessability is
 the sole cross-tenant secrecy control on these surfaces (status/step-count
 exposure for runs; decide for approvals).
@@ -99,7 +99,7 @@ exposure for runs; decide for approvals).
 
 | STRIDE | Threat | Control |
 |---|---|---|
-| **E** | Agent executes a policy-denied tool | Default-deny policy (`forge_policy.evaluate`); the dispatch path never runs a denied call ✅ (`policy-default-deny`, `agent-policy-gate`). |
+| **E** | Agent executes a policy-denied tool | Default-deny policy (`scf_policy.evaluate`); the dispatch path never runs a denied call ✅ (`policy-default-deny`, `agent-policy-gate`). |
 | **E** | Path-traversal write escaping the repo root | Traversal denial is an immutable floor a conditional rule can never loosen ✅. |
 | **E** | Command injection via tool args | Commands run as argv lists, never `shell=True` (semgrep-enforced). |
 | **T** | Worktree escape / host FS access | Isolated git worktrees; container/gVisor/Firecracker sandbox tiers (F19/F34). |

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from forge_approval import parse_codeowners, required_owners_for_paths
-from forge_approval.authorizer import required_approvals
-from forge_contracts.dtos import ReviewRules
+from scf_approval import parse_codeowners, required_owners_for_paths
+from scf_approval.authorizer import required_approvals
+from scf_contracts.dtos import ReviewRules
 
 CODEOWNERS = """
 # Default owners for everything

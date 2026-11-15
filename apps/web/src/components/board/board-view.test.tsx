@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { TaskDTO } from "@/lib/api/types";
 
 import { BoardView } from "./board-view";
@@ -18,7 +18,7 @@ const tasks: TaskDTO[] = [
   { id: "t2", key: "FORGE-2", title: "Add logout", status: "in_progress" },
 ];
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listTasks: vi.fn(() => Promise.resolve(tasks)),
     setTaskStatus: vi.fn((taskId: string, status: string) =>
@@ -26,10 +26,10 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
     ),
     createTask: vi.fn((task: TaskDTO) => Promise.resolve(task)),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderBoard(client: ForgeApiClient, initialView: "list" | "board" = "list") {
+function renderBoard(client: ScfApiClient, initialView: "list" | "board" = "list") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

@@ -16,14 +16,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.sprints import get_sprint_service
-from forge_board.sprint_service import SprintService
-from forge_contracts import UserRole
-from forge_contracts.enums import TaskStatus
-from forge_db.base import Base
-from forge_db.models import Project, Task, Workspace
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.sprints import get_sprint_service
+from scf_board.sprint_service import SprintService
+from scf_contracts import UserRole
+from scf_contracts.enums import TaskStatus
+from scf_db.base import Base
+from scf_db.models import Project, Task, Workspace
 
 WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000c3")

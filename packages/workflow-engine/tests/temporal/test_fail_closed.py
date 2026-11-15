@@ -8,8 +8,8 @@ import pytest
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
-from forge_workflow.temporal.activities import WorkflowActivities
-from forge_workflow.temporal.payloads import (
+from scf_workflow.temporal.activities import WorkflowActivities
+from scf_workflow.temporal.payloads import (
     AgentRunResultDTO,
     OpenPrInput,
     OpenPrResult,

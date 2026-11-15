@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from forge_contracts import (
+from scf_contracts import (
     ROLE_TOOLS,
     AgentObjective,
     CoordinationPattern,
@@ -12,8 +12,8 @@ from forge_contracts import (
     SubAgentRole,
     SubagentRules,
 )
-from forge_coordinator import CoordinatorDeps, DefaultPatternSelector
-from forge_skill.directives import SkillDirectives
+from scf_coordinator import CoordinatorDeps, DefaultPatternSelector
+from scf_skill.directives import SkillDirectives
 
 
 def _select(objective: AgentObjective, rules: SubagentRules, directives: SkillDirectives):

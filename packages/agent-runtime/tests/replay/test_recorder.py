@@ -6,18 +6,18 @@ from __future__ import annotations
 
 import itertools
 
-from forge_agent.replay import (
+from scf_agent.replay import (
     RecordingModelClient,
     RecordingToolRegistry,
     RunCassette,
     args_digest,
     request_digest,
 )
-from forge_agent.replay.cassette import canonical_json
-from forge_agent.runtime import AgentRunner
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_agent.tools import ToolRegistry, ToolResult
-from forge_contracts import AgentObjective, RunStatus
+from scf_agent.replay.cassette import canonical_json
+from scf_agent.runtime import AgentRunner
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_agent.tools import ToolRegistry, ToolResult
+from scf_contracts import AgentObjective, RunStatus
 
 
 def _clock() -> object:
@@ -110,7 +110,7 @@ def test_recording_model_client_returns_inner_response_unchanged() -> None:
     cassette = RunCassette(clock=_clock())
     client = RecordingModelClient(inner, cassette)
 
-    from forge_contracts import ModelRequest
+    from scf_contracts import ModelRequest
 
     request = ModelRequest(model="test-model", system="sys")
     response = client.complete(request)

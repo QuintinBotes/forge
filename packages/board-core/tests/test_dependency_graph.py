@@ -6,13 +6,13 @@ import uuid
 
 import pytest
 
-from forge_board.graph import (
+from scf_board.graph import (
     has_cycle,
     is_reachable,
     topological_order,
     would_create_cycle,
 )
-from forge_contracts import CycleError
+from scf_contracts import CycleError
 
 
 def _ids(n: int) -> list[uuid.UUID]:

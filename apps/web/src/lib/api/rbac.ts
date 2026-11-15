@@ -21,7 +21,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   Principal,
   ProjectAccess,
@@ -55,7 +55,7 @@ export const rbacKeys = {
  * workspace-role grant is issued against.
  */
 export function useCurrentPrincipal(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<Principal> {
   return useQuery({
     queryKey: rbacKeys.me(),
@@ -69,7 +69,7 @@ export function useCurrentPrincipal(
 /** Role grants in the workspace (filter by scope / principal). */
 export function useRoleGrants(
   query: RoleGrantQuery = {},
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<RoleGrant[]> {
   return useQuery({
     queryKey: rbacKeys.grants(query),
@@ -79,7 +79,7 @@ export function useRoleGrants(
 
 /** Grant a role to a principal; revalidates every grant list. */
 export function useCreateRoleGrant(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<RoleGrant, Error, RoleGrantInput> {
   const queryClient = useQueryClient();
   return useMutation<RoleGrant, Error, RoleGrantInput>({
@@ -92,7 +92,7 @@ export function useCreateRoleGrant(
 
 /** Revoke a role grant; revalidates every grant list. */
 export function useRevokeRoleGrant(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<void, Error, string> {
   const queryClient = useQueryClient();
   return useMutation<void, Error, string>({
@@ -114,7 +114,7 @@ export interface SetMemberRoleVariables {
  * admin is rejected by the server before the old grant is gone.
  */
 export function useSetMemberRole(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<RoleGrant, Error, SetMemberRoleVariables> {
   const queryClient = useQueryClient();
   return useMutation<RoleGrant, Error, SetMemberRoleVariables>({
@@ -138,7 +138,7 @@ export function useSetMemberRole(
 
 /** Every team in the workspace. */
 export function useTeams(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<Team[]> {
   return useQuery({
     queryKey: rbacKeys.teams(),
@@ -148,7 +148,7 @@ export function useTeams(
 
 /** Create a team; revalidates the team list. */
 export function useCreateTeam(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<Team, Error, TeamInput> {
   const queryClient = useQueryClient();
   return useMutation<Team, Error, TeamInput>({
@@ -162,7 +162,7 @@ export function useCreateTeam(
 /** A team's members (skipped until a team is selected). */
 export function useTeamMembers(
   teamId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<TeamMember[]> {
   return useQuery({
     queryKey: rbacKeys.teamMembers(teamId),
@@ -178,7 +178,7 @@ export interface AddTeamMemberVariables {
 
 /** Add a member to a team; revalidates that team's roster. */
 export function useAddTeamMember(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<TeamMember, Error, AddTeamMemberVariables> {
   const queryClient = useQueryClient();
   return useMutation<TeamMember, Error, AddTeamMemberVariables>({
@@ -199,7 +199,7 @@ export interface SetTeamMemberRoleVariables {
 
 /** Change a member's team role (lead / member). */
 export function useSetTeamMemberRole(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<TeamMember, Error, SetTeamMemberRoleVariables> {
   const queryClient = useQueryClient();
   return useMutation<TeamMember, Error, SetTeamMemberRoleVariables>({
@@ -220,7 +220,7 @@ export interface RemoveTeamMemberVariables {
 
 /** Remove a member from a team. */
 export function useRemoveTeamMember(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<void, Error, RemoveTeamMemberVariables> {
   const queryClient = useQueryClient();
   return useMutation<void, Error, RemoveTeamMemberVariables>({
@@ -238,7 +238,7 @@ export function useRemoveTeamMember(
 /** A project's visibility + per-team access (skipped until one is opened). */
 export function useProjectAccess(
   projectId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ProjectAccess> {
   return useQuery({
     queryKey: rbacKeys.projectAccess(projectId),
@@ -254,7 +254,7 @@ export interface SetProjectVisibilityVariables {
 
 /** Set a project's visibility; seeds + revalidates its access cache. */
 export function useSetProjectVisibility(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<ProjectAccess, Error, SetProjectVisibilityVariables> {
   const queryClient = useQueryClient();
   return useMutation<ProjectAccess, Error, SetProjectVisibilityVariables>({
@@ -278,7 +278,7 @@ export interface UpsertProjectTeamAccessVariables {
 
 /** Grant or update a team's access on a project; revalidates its access. */
 export function useUpsertProjectTeamAccess(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<
   ProjectTeamAccess,
   Error,
@@ -305,7 +305,7 @@ export interface RemoveProjectTeamAccessVariables {
 
 /** Remove a team's access on a project; revalidates its access. */
 export function useRemoveProjectTeamAccess(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<void, Error, RemoveProjectTeamAccessVariables> {
   const queryClient = useQueryClient();
   return useMutation<void, Error, RemoveProjectTeamAccessVariables>({

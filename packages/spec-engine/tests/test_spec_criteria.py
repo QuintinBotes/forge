@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import AcceptanceCriterion, Requirement, SpecManifest
-from forge_spec import (
+from scf_contracts import AcceptanceCriterion, Requirement, SpecManifest
+from scf_spec import (
     ASSERTION,
     CHECKLIST,
     GHERKIN,
@@ -165,7 +165,7 @@ def test_checklist_criterion_keeps_req_refs_after_round_trip() -> None:
 
 
 def test_dangling_acceptance_continuation_raises() -> None:
-    from forge_spec import SpecParseError
+    from scf_spec import SpecParseError
 
     text = (
         "---\nid: SPEC-1\n---\n\n## Goal\n\nName\n\n"

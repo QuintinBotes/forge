@@ -1,0 +1,80 @@
+"""Observability + audit subsystem for the SCF API (plan Task 1.14).
+
+Public surface:
+- Immutable, queryable, hash-chained audit log (:mod:`.audit`).
+- Step-level run-trace assembler for the trace viewer (:mod:`.trace`).
+- OpenTelemetry span hooks with in-memory fallback (:mod:`.otel`).
+- Secret redaction primitive shared by all of the above (:mod:`.redaction`).
+- :class:`ObservabilityService` that the ``/observability/*`` routes depend on.
+"""
+
+from __future__ import annotations
+
+from scf_api.observability.audit import (
+    GENESIS_HASH,
+    AuditCategory,
+    AuditEntry,
+    AuditLog,
+    AuditStore,
+    InMemoryAuditStore,
+    MCPAuditSink,
+    compute_payload_hash,
+    verify_chain,
+)
+from scf_api.observability.audit_db import (
+    DbAuditStore,
+    build_audit_store,
+    default_audit_log,
+)
+from scf_api.observability.otel import (
+    OTEL_AVAILABLE,
+    SpanRecord,
+    SpanRecorder,
+    get_span_recorder,
+    get_tracer,
+    span,
+    traced,
+)
+from scf_api.observability.redaction import (
+    REDACTED,
+    redact_mapping,
+    redact_text,
+    redact_value,
+)
+from scf_api.observability.service import (
+    ObservabilityService,
+    RunNotFoundError,
+    get_observability_service,
+)
+from scf_api.observability.trace import RunTrace, RunTraceAssembler
+
+__all__ = [
+    "GENESIS_HASH",
+    "OTEL_AVAILABLE",
+    "REDACTED",
+    "AuditCategory",
+    "AuditEntry",
+    "AuditLog",
+    "AuditStore",
+    "DbAuditStore",
+    "InMemoryAuditStore",
+    "MCPAuditSink",
+    "ObservabilityService",
+    "RunNotFoundError",
+    "RunTrace",
+    "RunTraceAssembler",
+    "SpanRecord",
+    "SpanRecorder",
+    "build_audit_store",
+    "compute_payload_hash",
+    "default_audit_log",
+    "get_observability_service",
+    "get_span_recorder",
+    "get_tracer",
+    "redact_mapping",
+    "redact_text",
+    "redact_value",
+    "span",
+    "traced",
+    "verify_chain",
+]

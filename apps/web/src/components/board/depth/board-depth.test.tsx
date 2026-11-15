@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { Principal, TaskDTO } from "@/lib/api/types";
 
 import { BoardDepth, type DepthViewMode } from "./board-depth";
@@ -22,10 +22,10 @@ const tasks: TaskDTO[] = [
 const principal: Principal = { user_id: "u1", workspace_id: "w1", role: "admin" };
 
 interface ClientOverrides {
-  listTasks?: ForgeApiClient["listTasks"];
+  listTasks?: ScfApiClient["listTasks"];
 }
 
-function makeClient(overrides: ClientOverrides = {}): ForgeApiClient {
+function makeClient(overrides: ClientOverrides = {}): ScfApiClient {
   return {
     listTasks: overrides.listTasks ?? vi.fn(() => Promise.resolve(tasks)),
     listEpics: vi.fn(() => Promise.resolve([])),
@@ -38,10 +38,10 @@ function makeClient(overrides: ClientOverrides = {}): ForgeApiClient {
     bulkUpdateTasks: vi.fn((updates) => Promise.resolve(updates as TaskDTO[])),
     createTask: vi.fn((task: TaskDTO) => Promise.resolve(task)),
     updateTask: vi.fn((taskId: string) => Promise.resolve({ id: taskId, title: "x" } as TaskDTO)),
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderDepth(client: ForgeApiClient, initialView: DepthViewMode = "board") {
+function renderDepth(client: ScfApiClient, initialView: DepthViewMode = "board") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

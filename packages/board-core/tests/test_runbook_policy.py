@@ -7,9 +7,9 @@ import uuid
 
 import pytest
 
-from forge_board.incidents import assert_runbook_within_policy
-from forge_contracts.incident import BlastRadius, Runbook, RunbookStep
-from forge_skill import SkillProfileRegistry, to_directives
+from scf_board.incidents import assert_runbook_within_policy
+from scf_contracts.incident import BlastRadius, Runbook, RunbookStep
+from scf_skill import SkillProfileRegistry, to_directives
 
 INCIDENT_DIRECTIVES = to_directives(SkillProfileRegistry().get("incident-response"))
 

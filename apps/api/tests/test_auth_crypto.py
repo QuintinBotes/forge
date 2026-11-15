@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_api.auth.crypto import (
+from scf_api.auth.crypto import (
     FernetCipher,
     HmacAeadCipher,
     InvalidTokenError,

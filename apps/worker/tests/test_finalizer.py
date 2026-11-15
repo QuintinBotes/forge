@@ -13,10 +13,10 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from forge_contracts import AgentObjective, AgentRunResult, PullRequest, RunStatus
-from forge_worker import agent_runner as agent_runner_module
-from forge_worker import finalizer as finalizer_module
-from forge_worker.finalizer import (
+from scf_contracts import AgentObjective, AgentRunResult, PullRequest, RunStatus
+from scf_worker import agent_runner as agent_runner_module
+from scf_worker import finalizer as finalizer_module
+from scf_worker.finalizer import (
     RUN_TOKEN_PERMISSIONS,
     GitHubAppCredentials,
     git_push,

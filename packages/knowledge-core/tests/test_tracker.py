@@ -1,4 +1,4 @@
-"""Tests for ``forge_knowledge.tracker`` (spec J §2.3): GitHub items and commits as chunks.
+"""Tests for ``scf_knowledge.tracker`` (spec J §2.3): GitHub items and commits as chunks.
 
 The fixtures follow the GitHub REST shapes for ``GET /repos/{r}/issues``,
 ``/pulls``, ``/issues/comments`` and ``/pulls/comments`` (only the fields
@@ -10,8 +10,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from forge_contracts.enums import ChunkType
-from forge_knowledge.tracker import (
+from scf_contracts.enums import ChunkType
+from scf_knowledge.tracker import (
     CommitRecord,
     at_cutoff,
     commit_chunks,

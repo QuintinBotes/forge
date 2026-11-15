@@ -1,6 +1,6 @@
 """Integration tests for the spec router (Phase 2 Task 2.1 wires ``/spec/*``).
 
-Exercises the real handlers wired to a tmp-rooted :class:`~forge_spec.FileSpecEngine`:
+Exercises the real handlers wired to a tmp-rooted :class:`~scf_spec.FileSpecEngine`:
 the SDD lifecycle (constitution -> create -> clarify -> plan -> approve -> tasks),
 manifest read, and gate enforcement (tasks before approval -> 409).
 """
@@ -17,12 +17,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.main import create_app
-from forge_api.routers.spec import get_spec_engine
-from forge_db.base import Base
-from forge_db.models import Workspace
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_api.db import get_db
+from scf_api.main import create_app
+from scf_api.routers.spec import get_spec_engine
+from scf_db.base import Base
+from scf_db.models import Workspace
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 #: Mirrors ``conftest.py``'s deterministic test workspace (tests mirror rather
 #: than cross-import conftest constants, per repo convention).

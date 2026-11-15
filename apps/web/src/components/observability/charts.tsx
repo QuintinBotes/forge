@@ -3,7 +3,7 @@
 /**
  * Dependency-free chart primitives for the Observability & cost screen.
  *
- * Everything is inline HTML/SVG styled with Forge design tokens (no chart
+ * Everything is inline HTML/SVG styled with SCF design tokens (no chart
  * library, no hardcoded colour) so it is theme-aware in light + dark and can
  * never reach for a CDN. Marks follow the dataviz specs: thin bars with a
  * rounded data-end, a 2px surface ring on overlapping dots, 2px lines, a legend

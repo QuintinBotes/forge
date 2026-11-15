@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The knowledge base page (`/knowledge`): what forge has indexed — each
+ * The knowledge base page (`/knowledge`): what SCF has indexed — each
  * source's freshness and how much of it is embedded — and a search over it
  * that states which retrieval legs ran (ADR-0018) and opens whole documents
  * as plain text (ADR-0014: indexed text is untrusted, so it is never
@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useCurrentUser } from "@/lib/api/hooks";
 import type { KnowledgeSourceSummary } from "@/lib/api/types";
 
@@ -25,7 +25,7 @@ import { KnowledgeSearch } from "./knowledge-search";
 const SOURCES_KEY = ["knowledge", "sources"] as const;
 
 export interface KnowledgeViewProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 export function KnowledgeView({ client = apiClient }: KnowledgeViewProps) {
@@ -41,7 +41,7 @@ export function KnowledgeView({ client = apiClient }: KnowledgeViewProps) {
           Knowledge base
         </h1>
         <p className="text-sm text-muted-foreground">
-          What forge has indexed for retrieval, how fresh it is, and a search
+          What SCF has indexed for retrieval, how fresh it is, and a search
           that says which retrieval legs ran.
         </p>
       </div>
@@ -87,7 +87,7 @@ function SourcesTable({
   client,
 }: {
   sources: KnowledgeSourceSummary[];
-  client: ForgeApiClient;
+  client: ScfApiClient;
 }) {
   const isAdmin = useCurrentUser(client).data?.role === "admin";
 
@@ -124,7 +124,7 @@ function SourceRow({
   isAdmin,
 }: {
   source: KnowledgeSourceSummary;
-  client: ForgeApiClient;
+  client: ScfApiClient;
   isAdmin: boolean;
 }) {
   const queryClient = useQueryClient();

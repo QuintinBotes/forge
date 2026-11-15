@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type {
   BurndownSeries,
   CapacityReport,
@@ -34,7 +34,7 @@ const ACTIVE: Sprint = {
   project_id: "default",
   workspace_id: "ws",
   name: "Sprint 7",
-  goal: "Ship the forge",
+  goal: "Ship the factory",
   state: "active",
   start_date: "2026-06-01",
   end_date: "2026-06-14",
@@ -205,7 +205,7 @@ const TASKS: TaskDTO[] = [
   },
 ];
 
-function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(over: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listProjectSprints: vi.fn(() => Promise.resolve([ACTIVE, PLANNED])),
     getVelocityDashboard: vi.fn(() => Promise.resolve(VELOCITY)),
@@ -242,10 +242,10 @@ function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
       }),
     ),
     ...over,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

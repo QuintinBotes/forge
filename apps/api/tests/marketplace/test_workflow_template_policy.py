@@ -22,14 +22,14 @@ from conftest import (
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from forge_api.services.marketplace_service import MarketplaceService
-from forge_db.models.marketplace import (
+from scf_api.services.marketplace_service import MarketplaceService
+from scf_db.models.marketplace import (
     MarketplaceAuditLog,
     MarketplaceInstallation,
     MarketplaceRegistry,
 )
-from forge_db.models.workflow_editor import WorkflowDefinition
-from forge_marketplace.models import ArtifactKind, InstallRequest
+from scf_db.models.workflow_editor import WorkflowDefinition
+from scf_marketplace.models import ArtifactKind, InstallRequest
 
 SLUG = LINE_SLUG
 _wt_version = make_line_version

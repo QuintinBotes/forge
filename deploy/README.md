@@ -1,4 +1,4 @@
-# Forge deploy
+# Swarm Code Factory deploy
 
 Self-hosting substrate (plan Task 0.6; hardened by HARD-07). Detailed guides
 live in `docs/self-hosting/` (Task 1.17); this is the operator quick reference.
@@ -42,7 +42,7 @@ containers, and per-container log rotation. The web image ships the Next.js
 
 `deploy/build-manifest.json` records the resolved digest of every pulled/base
 image and the locally-built image IDs + SBOM paths of the 4 first-party images
-(`forge/api|worker|mcp-gateway|web`). To roll digests forward deliberately:
+(`swarm-code-factory/api|worker|mcp-gateway|web`). To roll digests forward deliberately:
 
 ```bash
 make pin-digests    # docker buildx imagetools inspect each tag; rewrite refs + manifest

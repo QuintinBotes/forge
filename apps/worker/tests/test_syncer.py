@@ -15,23 +15,23 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.auth.crypto import HmacAeadCipher
-from forge_api.auth.vault import SecretVault
-from forge_api.observability.audit import AuditLog
-from forge_api.services.pm_service import PMConnectionService
-from forge_contracts.enums import APIKeyKind, SyncMode
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, Project, Workspace
-from forge_db.models.enums import PMConnectionStatus, PMProvider
-from forge_db.models.pm import PMConnection
-from forge_db.session import create_session_factory
-from forge_integrations.github import RetryPolicy
-from forge_knowledge import (
+from scf_api.auth.crypto import HmacAeadCipher
+from scf_api.auth.vault import SecretVault
+from scf_api.observability.audit import AuditLog
+from scf_api.services.pm_service import PMConnectionService
+from scf_contracts.enums import APIKeyKind, SyncMode
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, Project, Workspace
+from scf_db.models.enums import PMConnectionStatus, PMProvider
+from scf_db.models.pm import PMConnection
+from scf_db.session import create_session_factory
+from scf_integrations.github import RetryPolicy
+from scf_knowledge import (
     DeterministicEmbeddingClient,
     FixtureRerankerClient,
     KnowledgeService,
 )
-from forge_worker.syncer import (
+from scf_worker.syncer import (
     TRACKER_NOT_CONNECTED,
     TrackerNotConnectedError,
     github_tracker_client,
@@ -96,7 +96,7 @@ def test_sync_files_is_idempotent(service: KnowledgeService, source_id: uuid.UUI
 
 
 def test_celery_task_is_registered() -> None:
-    from forge_worker.celery_app import celery_app
+    from scf_worker.celery_app import celery_app
 
     assert "forge.knowledge.sync_source" in celery_app.tasks
     assert sync_source_task.name == "forge.knowledge.sync_source"
@@ -117,7 +117,7 @@ def test_sync_source_task_with_files(
     service: KnowledgeService,
     source_id: uuid.UUID,
 ) -> None:
-    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("scf_worker.syncer.build_knowledge_service", lambda: service)
     result = sync_source_task(str(source_id), files=FILES)
     assert isinstance(result, dict)
     assert result["indexed"] > 0
@@ -130,7 +130,7 @@ def test_sync_source_task_with_root(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "auth.py").write_text(FILES["auth.py"])
-    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("scf_worker.syncer.build_knowledge_service", lambda: service)
     result = sync_source_task(str(source_id), root=str(tmp_path))
     assert isinstance(result, dict)
     assert result["indexed"] > 0
@@ -141,7 +141,7 @@ def test_sync_source_task_requires_files_or_root(
     service: KnowledgeService,
     source_id: uuid.UUID,
 ) -> None:
-    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("scf_worker.syncer.build_knowledge_service", lambda: service)
     with pytest.raises(ValueError, match="requires either"):
         sync_source_task(str(source_id))
 
@@ -254,8 +254,8 @@ def test_sync_source_task_syncs_a_tracker_through_the_client_factory(
         clients.append(_FakeGitHub())
         return clients[-1]
 
-    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
-    monkeypatch.setattr("forge_worker.syncer.tracker_client_factory", factory)
+    monkeypatch.setattr("scf_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("scf_worker.syncer.tracker_client_factory", factory)
 
     first = sync_source_task(str(tracker_id))
     second = sync_source_task(str(tracker_id))
@@ -277,9 +277,9 @@ def test_a_tracker_sync_without_a_github_connection_fails_tracker_not_connected(
     _connect(session_factory, vault, workspace_id, repo="org/other")
     _connect(session_factory, vault, workspace_id, status=PMConnectionStatus.DISABLED)
     connections = _connections(session_factory, vault)
-    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("scf_worker.syncer.build_knowledge_service", lambda: service)
     monkeypatch.setattr(
-        "forge_worker.syncer.tracker_client_factory",
+        "scf_worker.syncer.tracker_client_factory",
         lambda source: github_tracker_client(source, connections),
     )
 
@@ -327,7 +327,7 @@ def test_sync_source_task_indexes_commits_only_when_the_source_enables_them(
 ) -> None:
     import subprocess
 
-    from forge_db.models import RetrievalChunk
+    from scf_db.models import RetrievalChunk
 
     git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
     subprocess.run([*git, "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
@@ -338,7 +338,7 @@ def test_sync_source_task_indexes_commits_only_when_the_source_enables_them(
     with session_factory() as session:
         session.get(KnowledgeSource, source_id).config = config
         session.commit()
-    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("scf_worker.syncer.build_knowledge_service", lambda: service)
 
     sync_source_task(str(source_id), root=str(tmp_path))
 
@@ -369,8 +369,8 @@ def test_a_successful_sync_records_freshness(
     source_id: uuid.UUID,
     tracker_id: uuid.UUID,
 ) -> None:
-    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
-    monkeypatch.setattr("forge_worker.syncer.tracker_client_factory", lambda _s: _FakeGitHub())
+    monkeypatch.setattr("scf_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("scf_worker.syncer.tracker_client_factory", lambda _s: _FakeGitHub())
 
     sync_source_task(str(source_id), files=FILES)
     sync_source_task(str(tracker_id))
@@ -386,15 +386,15 @@ def test_a_failed_sync_never_records_freshness(
     source_id: uuid.UUID,
     tracker_id: uuid.UUID,
 ) -> None:
-    from forge_contracts import IndexResult
+    from scf_contracts import IndexResult
 
     def no_connection(_source: KnowledgeSource) -> _FakeGitHub:
         raise TrackerNotConnectedError("tracker_not_connected: no GitHub Issues connection")
 
-    monkeypatch.setattr("forge_worker.syncer.build_knowledge_service", lambda: service)
-    monkeypatch.setattr("forge_worker.syncer.tracker_client_factory", no_connection)
+    monkeypatch.setattr("scf_worker.syncer.build_knowledge_service", lambda: service)
+    monkeypatch.setattr("scf_worker.syncer.tracker_client_factory", no_connection)
     monkeypatch.setattr(
-        "forge_worker.syncer.sync_files",
+        "scf_worker.syncer.sync_files",
         lambda _svc, sid, _files, prune: IndexResult(source_id=sid, errors=["embedding: down"]),
     )
 

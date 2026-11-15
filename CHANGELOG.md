@@ -1,5 +1,7 @@
 # Changelog
 
+> **Renamed.** This project was renamed from "Forge" to "Swarm Code Factory" (SCF) on 2026-11-15. Entries below keep the name the project had when they were written.
+
 All notable changes to Forge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/). This file is generated from the

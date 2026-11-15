@@ -17,17 +17,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
-from forge_agent.runtime import AgentRunner
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_agent.tools import ToolRegistry
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.agent import get_fork_model_factory
-from forge_contracts import AgentObjective, ModelClient, UserRole
-from forge_db.base import Base
-from forge_db.models import RunRecording, Workspace
+from scf_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
+from scf_agent.runtime import AgentRunner
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_agent.tools import ToolRegistry
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.agent import get_fork_model_factory
+from scf_contracts import AgentObjective, ModelClient, UserRole
+from scf_db.base import Base
+from scf_db.models import RunRecording, Workspace
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000d1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000d2")

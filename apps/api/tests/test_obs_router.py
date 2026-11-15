@@ -14,12 +14,12 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from forge_api.deps import get_current_principal
-from forge_api.main import app
-from forge_api.observability.audit import AuditCategory
-from forge_api.observability.service import ObservabilityService, get_observability_service
-from forge_contracts import Step
-from forge_contracts.enums import RunStatus, StepKind
+from scf_api.deps import get_current_principal
+from scf_api.main import app
+from scf_api.observability.audit import AuditCategory
+from scf_api.observability.service import ObservabilityService, get_observability_service
+from scf_contracts import Step
+from scf_contracts.enums import RunStatus, StepKind
 
 # The audit log and run traces are workspace-scoped (Phase-2 bug fix r3): the
 # router scopes every read to the authenticated principal's workspace. The

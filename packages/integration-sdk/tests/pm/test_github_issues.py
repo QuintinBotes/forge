@@ -12,11 +12,11 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from forge_contracts.enums import Direction
-from forge_contracts.pm import ForgePriority, ForgeTask, HttpResponse, PMProvider, StatusCategory
-from forge_integrations import GitHubClient, RetryPolicy, sign_github_payload
-from forge_integrations.pm import GitHubIssuesAdapter, build_adapter
-from forge_integrations.pm.errors import (
+from scf_contracts.enums import Direction
+from scf_contracts.pm import HttpResponse, PMProvider, ScfPriority, ScfTask, StatusCategory
+from scf_integrations import GitHubClient, RetryPolicy, sign_github_payload
+from scf_integrations.pm import GitHubIssuesAdapter, build_adapter
+from scf_integrations.pm.errors import (
     ExternalNotFound,
     MappingError,
     PMAuthError,
@@ -27,8 +27,8 @@ from forge_integrations.pm.errors import (
 from .conftest import load_json
 
 
-def task(**overrides) -> ForgeTask:
-    return ForgeTask.model_validate(
+def task(**overrides) -> ScfTask:
+    return ScfTask.model_validate(
         {
             "id": uuid4(),
             "key": "M1-1",
@@ -59,7 +59,7 @@ async def test_fetch_fixture(github_issues_adapter):
 
 
 @pytest.mark.parametrize("status", list(StatusCategory))
-@pytest.mark.parametrize("priority", list(ForgePriority))
+@pytest.mark.parametrize("priority", list(ScfPriority))
 async def test_default_maps_round_trip(
     status, priority, github_issues_adapter, github_issues_requests
 ):
@@ -77,14 +77,14 @@ async def test_default_maps_round_trip(
 
 
 @pytest.mark.parametrize("status", list(StatusCategory))
-@pytest.mark.parametrize("priority", list(ForgePriority))
+@pytest.mark.parametrize("priority", list(ScfPriority))
 async def test_configured_maps_round_trip(
     status, priority, github_issues_ctx, github_issues_transport
 ):
     ctx = github_issues_ctx.model_copy(
         update={
             "status_map": {value.value: f"workflow:{value.value}" for value in StatusCategory},
-            "priority_map": {value.value: f"severity:{value.value}" for value in ForgePriority},
+            "priority_map": {value.value: f"severity:{value.value}" for value in ScfPriority},
         }
     )
     with GitHubClient(transport=github_issues_transport) as client:
@@ -222,11 +222,11 @@ def test_issue_webhooks_and_label_hint(action, github_issues_adapter):
     }
 
 
-def test_forge_marker_comment_surfaces_run_id_without_body(github_issues_adapter):
-    """Spec M M2: the echo of forge's own run-state comment is recognisable."""
+def test_scf_marker_comment_surfaces_run_id_without_body(github_issues_adapter):
+    """Spec M M2: the echo of SCF's own run-state comment is recognisable."""
     payload = load_json("github_issues/issue_comment.json")
     run_id = "12345678-1234-1234-1234-1234567890ab"
-    payload["comment"]["body"] = f"Forge run finished.\n\n<!-- forge:run:{run_id} -->"
+    payload["comment"]["body"] = f"SCF run finished.\n\n<!-- forge:run:{run_id} -->"
     raw = json.dumps(payload).encode()
     event = github_issues_adapter.parse_webhook(raw, {"x-github-event": "issue_comment"})
     assert event.payload["forge_run_marker"] == run_id
@@ -474,7 +474,7 @@ def test_unknown_mappings_fail(github_issues_adapter):
 async def test_transition_tolerates_a_status_label_already_removed(
     github_issues_adapter, github_issues_requests, monkeypatch
 ):
-    from forge_integrations.pm.errors import ExternalNotFound
+    from scf_integrations.pm.errors import ExternalNotFound
 
     original = github_issues_adapter._request
 

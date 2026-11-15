@@ -20,8 +20,8 @@ from mcp_fakes import (
     FakeRunRecorder,
 )
 
-from forge_knowledge.mcp_chunking import McpResourceChunker, provenance_uri
-from forge_knowledge.mcp_indexer import McpSyncIndexer, SyncDirection
+from scf_knowledge.mcp_chunking import McpResourceChunker, provenance_uri
+from scf_knowledge.mcp_indexer import McpSyncIndexer, SyncDirection
 
 SOURCE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000c1")
 WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
@@ -320,8 +320,8 @@ def test_a_failing_backlog_does_not_fail_the_mcp_sync() -> None:
 def test_a_chunker_change_rechunks_unchanged_resources_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from forge_knowledge import mcp_indexer
-    from forge_knowledge.chunking import CHUNKER_VERSION
+    from scf_knowledge import mcp_indexer
+    from scf_knowledge.chunking import CHUNKER_VERSION
 
     fetcher = FakeMcpResourceFetcher(
         [

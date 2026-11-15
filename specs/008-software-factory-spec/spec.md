@@ -6,39 +6,39 @@
 
 **Status**: Draft
 
-**Input**: Roadmap milestone M8 (`docs/superpowers/plans/2026-11-14-industry-standard-roadmap.md`), issues R39 to R41: "Publish the 'issue in, attested change out' contract as an open specification with levels and an evidence format, a conformance suite that forge passes in CI, and a name, licence and governance decision."
+**Input**: Roadmap milestone M8 (`docs/superpowers/plans/2026-11-14-industry-standard-roadmap.md`), issues R39 to R41: "Publish the 'issue in, attested change out' contract as an open specification with levels and an evidence format, a conformance suite that SCF passes in CI, and a name, licence and governance decision."
 
-**Builds on**: `docs/trust-layer.md` (attested changesets, audit chain), `packages/contracts/forge_contracts/attestation.py`, ADR-0002 (forge is the system of record), ADR-0005 (machines propose, people decide), ADR-0007 (production paths fail closed), ADR-0010 (licence and clean-room policy), ADR-0016 (interoperability standards are pinned), the programme documents `docs/superpowers/specs/2026-09-19-software-factory-programme.md` and `2026-11-07-unified-factory-programme.md`, and specs 001 (governed pipeline), 003 (containment), 005 (proof) and 007 (standards conformance).
+**Builds on**: `docs/trust-layer.md` (attested changesets, audit chain), `packages/contracts/scf_contracts/attestation.py`, ADR-0002 (SCF is the system of record), ADR-0005 (machines propose, people decide), ADR-0007 (production paths fail closed), ADR-0010 (licence and clean-room policy), ADR-0016 (interoperability standards are pinned), the programme documents `docs/superpowers/specs/2026-09-19-software-factory-programme.md` and `2026-11-07-unified-factory-programme.md`, and specs 001 (governed pipeline), 003 (containment), 005 (proof) and 007 (standards conformance).
 
 ## Why
 
-The roadmap's thesis is that forge wins on verifiable delivery. A claim of verifiable delivery is only useful if someone outside forge can check it, and only becomes a standard if someone else can implement it. The projects the roadmap takes as its model each published a narrow contract and a conformance suite, with a working implementation behind them.
+The roadmap's thesis is that SCF wins on verifiable delivery. A claim of verifiable delivery is only useful if someone outside SCF can check it, and only becomes a standard if someone else can implement it. The projects the roadmap takes as its model each published a narrow contract and a conformance suite, with a working implementation behind them.
 
-The research notes report that no ratified software-factory standard exists, that the published maturity ladders define levels in prose with no test, and that other projects already use the name "forge". These are reported, not confirmed. A web search on 2026-11-14 listed several public repositories named forge that describe themselves as software factories; none was opened. This milestone does not depend on the reports being exact: it publishes a small specification, makes it testable, and puts the naming question to the owner. Decided 2026-11-15: the project is renamed in one pass, the new name is not chosen yet, and the rename is its own issue (#248).
+The research notes report that no ratified software-factory standard exists, that the published maturity ladders define levels in prose with no test, and that other projects already use the name "forge". These are reported, not confirmed. A web search on 2026-11-14 listed several public repositories named SCF that describe themselves as software factories; none was opened. This milestone does not depend on the reports being exact: it publishes a small specification, makes it testable, and puts the naming question to the owner. Decided 2026-11-15: the project is renamed in one pass, the new name is not chosen yet, and the rename is its own issue (#248).
 
-The specification is narrower than forge. It says what a factory must output and prove. It does not say how a factory is built, which agent it uses, or which tracker it reads.
+The specification is narrower than SCF. It says what a factory must output and prove. It does not say how a factory is built, which agent it uses, or which tracker it reads.
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - An implementer learns what a conforming factory must produce (Priority: P1)
 
-An engineer who builds a different factory reads one versioned document and learns the contract: what counts as the work item going in, what counts as the change coming out, which evidence must accompany the change, and what each conformance level requires. They can produce a conforming evidence bundle without reading forge's code.
+An engineer who builds a different factory reads one versioned document and learns the contract: what counts as the work item going in, what counts as the change coming out, which evidence must accompany the change, and what each conformance level requires. They can produce a conforming evidence bundle without reading SCF's code.
 
 **Why this priority**: Everything else in this milestone tests or governs this document.
 
-**Independent Test**: A reviewer who has not worked on forge reads the specification and the example bundles and writes down, for each level, the evidence required. Their list matches the specification's requirement index.
+**Independent Test**: A reviewer who has not worked on SCF reads the specification and the example bundles and writes down, for each level, the evidence required. Their list matches the specification's requirement index.
 
 **Acceptance Scenarios**:
 
 1. **Given** the specification, **When** a reader looks up a level, **Then** they find a numbered list of requirements, each with an identifier and a normative keyword.
 2. **Given** the evidence format, **When** a reader validates the published example bundles against the published schemas, **Then** the valid examples pass and the invalid examples fail for the stated reason.
-3. **Given** the specification text, **When** a reader searches it for a requirement that only forge could meet, **Then** they find none: no requirement names a forge component, endpoint or table.
+3. **Given** the specification text, **When** a reader searches it for a requirement that only SCF could meet, **Then** they find none: no requirement names an SCF component, endpoint or table.
 
 ---
 
 ### User Story 2 - Anyone checks an evidence bundle against a level (Priority: P1)
 
-A buyer, an auditor or another implementer runs one command on an evidence bundle and gets a report: the highest level the bundle meets and, for each requirement, pass, fail or not tested. The command needs no network access and no forge installation.
+A buyer, an auditor or another implementer runs one command on an evidence bundle and gets a report: the highest level the bundle meets and, for each requirement, pass, fail or not tested. The command needs no network access and no SCF installation.
 
 **Why this priority**: A level that cannot be tested is another prose ladder. The suite is what makes the specification different from what is reported to exist.
 
@@ -54,25 +54,25 @@ A buyer, an auditor or another implementer runs one command on an evidence bundl
 
 ---
 
-### User Story 3 - Forge proves its own claim on every change (Priority: P2)
+### User Story 3 - Swarm Code Factory proves its own claim on every change (Priority: P2)
 
-A forge maintainer sees a failing check when a change would make forge's exported evidence stop conforming, or when forge's published claim is higher than what the suite measures.
+An SCF maintainer sees a failing check when a change would make SCF's exported evidence stop conforming, or when SCF's published claim is higher than what the suite measures.
 
-**Why this priority**: Forge is the reference implementation. A reference implementation that does not pass its own suite, or that claims more than it passes, discredits the specification.
+**Why this priority**: SCF is the reference implementation. A reference implementation that does not pass its own suite, or that claims more than it passes, discredits the specification.
 
-**Independent Test**: In the test suite, export an evidence bundle from a governed run produced by forge's real services, run the conformance suite on it, and compare the result with forge's published claim.
+**Independent Test**: In the test suite, export an evidence bundle from a governed run produced by SCF's real services, run the conformance suite on it, and compare the result with SCF's published claim.
 
 **Acceptance Scenarios**:
 
-1. **Given** a completed governed run, **When** the evidence bundle is exported, **Then** the conformance suite passes it at the level forge claims.
-2. **Given** forge's published claim, **When** it names a level above what the suite reports for the exported bundle, **Then** the test suite fails.
+1. **Given** a completed governed run, **When** the evidence bundle is exported, **Then** the conformance suite passes it at the level SCF claims.
+2. **Given** SCF's published claim, **When** it names a level above what the suite reports for the exported bundle, **Then** the test suite fails.
 3. **Given** a run that is missing evidence a level requires, **When** the bundle is exported, **Then** the export does not invent the evidence and the suite reports the lower level.
 
 ---
 
 ### User Story 4 - The owner settles name, licence and governance (Priority: P3)
 
-The project owner reads one decision record. It records the licence decided on 2026-11-15 (specification text under CC BY 4.0, conformance suite under Apache-2.0, forge's code licence unchanged), lays out how changes to the specification are decided, and comes with a draft proposal to a foundation's entry stage. The rename of the project was also decided on 2026-11-15 and is its own issue (#248); the record states the name once the owner has chosen it.
+The project owner reads one decision record. It records the licence decided on 2026-11-15 (specification text under CC BY 4.0, conformance suite under Apache-2.0, SCF's code licence unchanged), lays out how changes to the specification are decided, and comes with a draft proposal to a foundation's entry stage. The rename of the project was also decided on 2026-11-15 and is its own issue (#248); the record states the name once the owner has chosen it.
 
 **Why this priority**: It decides how the specification is offered to others, but it changes no behaviour and needs a person.
 
@@ -111,31 +111,31 @@ The project owner reads one decision record. It records the licence decided on 2
 - **FR-005**: The evidence format MUST be defined by machine-readable schemas published with the specification, and the schemas MUST be the authority when prose and schema disagree.
 - **FR-006**: The specification MUST publish example bundles: at least one valid example per level and invalid examples that each break one named requirement.
 - **FR-007**: The specification MUST reuse existing standards where one exists and MUST NOT define a new wire protocol or signature format. Signed statements are in-toto statements in DSSE envelopes.
-- **FR-008**: The specification MUST be implementation-neutral: no requirement may name a forge component, and the document MUST state what it does not cover.
+- **FR-008**: The specification MUST be implementation-neutral: no requirement may name an SCF component, and the document MUST state what it does not cover.
 - **FR-009**: The specification MUST state how a factory makes a conformance claim, and how the specification itself is versioned and changed.
-- **FR-010**: The specification MUST define how metrics are reported in evidence, using the definitions from spec 005, without setting thresholds. Whether a level requires metrics or whether they are informative is [NEEDS CLARIFICATION: requiring metrics at a level ties the specification to five definitions that have not been used outside forge].
+- **FR-010**: The specification MUST define how metrics are reported in evidence, using the definitions from spec 005, without setting thresholds. Whether a level requires metrics or whether they are informative is [NEEDS CLARIFICATION: requiring metrics at a level ties the specification to five definitions that have not been used outside SCF].
 - **FR-011**: The specification MUST define how isolation is declared in evidence, using the isolation levels published by spec 003.
 - **FR-012**: The specification's requirement identifiers MUST be listed in one machine-readable index that matches the document.
 
 **The conformance suite (R40a)**
 
 - **FR-013**: The project MUST publish a conformance suite that takes an evidence bundle and a level and reports, per requirement identifier, pass, fail, or not tested, and the highest level met.
-- **FR-014**: The suite MUST run offline, MUST NOT import or call forge, and MUST use only the published schemas, the bundle and a verification key.
+- **FR-014**: The suite MUST run offline, MUST NOT import or call SCF, and MUST use only the published schemas, the bundle and a verification key.
 - **FR-015**: The suite MUST verify signatures and digests, and MUST fail a bundle that was altered, that lacks evidence its claimed level requires, or that claims a level it does not meet.
 - **FR-016**: The suite MUST distinguish "does not conform" from "cannot be checked" in its report and exit status.
 - **FR-017**: Every requirement identifier in the index MUST be covered by a check or listed as not machine-checkable with a reason.
 - **FR-018**: The suite MUST refuse a bundle that names a specification version it does not implement.
 
-**Forge as reference implementation (R40b)**
+**SCF as reference implementation (R40b)**
 
-- **FR-019**: Forge MUST be able to export an evidence bundle for a completed run in the specification's format, from real records only. Missing evidence stays missing.
-- **FR-020**: Forge's test suite MUST export a bundle from a governed run and pass it through the conformance suite on every change.
-- **FR-021**: Forge MUST publish the level it claims, and a test MUST fail when the claim is higher than the level the suite reports.
+- **FR-019**: SCF MUST be able to export an evidence bundle for a completed run in the specification's format, from real records only. Missing evidence stays missing.
+- **FR-020**: SCF's test suite MUST export a bundle from a governed run and pass it through the conformance suite on every change.
+- **FR-021**: SCF MUST publish the level it claims, and a test MUST fail when the claim is higher than the level the suite reports.
 
 **Name, licence, governance (R41)**
 
 - **FR-022**: Decided 2026-11-15: the project is renamed in one pass covering the repository, the Python packages and imports, the CLI, the `FORGE_*` environment variables, the images, the Helm chart and the docs, with compatibility aliases only where a self-hoster would otherwise break. The rename runs after #170 has landed and before any other roadmap issue, and is tracked in #248, not in R41. The new name is not chosen yet. The owner MUST record the chosen name, with the evidence considered, before the rename starts. Open: the decision does not say whether the specification takes the project's new name or one of its own.
-- **FR-023**: The owner MUST record the licence of the specification text and of its schemas. Decided 2026-11-15: the specification text is licensed under CC BY 4.0 and the conformance suite under Apache-2.0. The licence of forge's code is unchanged (Apache-2.0, `LICENSE`). Open: the decision does not name a licence for the schemas and examples.
+- **FR-023**: The owner MUST record the licence of the specification text and of its schemas. Decided 2026-11-15: the specification text is licensed under CC BY 4.0 and the conformance suite under Apache-2.0. The licence of SCF's code is unchanged (Apache-2.0, `LICENSE`). Open: the decision does not name a licence for the schemas and examples.
 - **FR-024**: The repository MUST contain a governance document that says who decides changes to the specification, how a change is proposed, and how a second implementer gains a say.
 - **FR-025**: The project MUST prepare a draft proposal to a neutral foundation's entry stage that answers that foundation's published entry criteria as they stand when the draft is written. Submitting it is the owner's act.
 
@@ -155,18 +155,18 @@ The project owner reads one decision record. It records the licence decided on 2
 
 ### Measurable Outcomes
 
-- **SC-001**: A reader new to forge can list the evidence required at each level from the specification alone, in under 30 minutes.
+- **SC-001**: A reader new to SCF can list the evidence required at each level from the specification alone, in under 30 minutes.
 - **SC-002**: 100 percent of normative requirements have an identifier, and the document and the index agree.
 - **SC-003**: Every published valid example passes the suite at its stated level, and every invalid example fails on exactly the requirement it was built to break.
 - **SC-004**: The suite checks a bundle in under 10 seconds on a laptop with no network access.
 - **SC-005**: 100 percent of requirement identifiers are either covered by a suite check or listed as not machine-checkable with a reason.
-- **SC-006**: Forge's exported bundle passes the suite at forge's claimed level on every change, and the claim is never above the measured level.
-- **SC-007**: The specification text contains zero references to forge components.
+- **SC-006**: SCF's exported bundle passes the suite at SCF's claimed level on every change, and the claim is never above the measured level.
+- **SC-007**: The specification text contains zero references to SCF components.
 - **SC-008**: The decision record states the licence decided on 2026-11-15, answers the governance question with one chosen option, and states the name once the owner has chosen it.
 
 ## Assumptions
 
-- R08 (signed attestation on every agent change), R15 (published isolation levels) and R23 (metric definitions) are complete before R39 is written. The specification describes what forge does, not what it plans to do.
+- R08 (signed attestation on every agent change), R15 (published isolation levels) and R23 (metric definitions) are complete before R39 is written. The specification describes what SCF does, not what it plans to do.
 - Version 0.1 is a draft for comment. It makes no compatibility promise.
 - The suite verifies bundles. It does not drive a live factory, score an agent, or measure quality. The end-to-end benchmark is spec 005.
 - The implementation loop cannot add a workspace package or a third-party dependency, so the suite uses what the repository already has for schema validation and signature verification.

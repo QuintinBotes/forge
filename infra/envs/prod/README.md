@@ -21,7 +21,7 @@ only covers what's specific to `prod`.
 
 ## HONEST CEILING — what "HA-leaning" means here
 
-The Forge compose stack is **single-node today**: Postgres/pgvector and
+The Swarm Code Factory compose stack is **single-node today**: Postgres/pgvector and
 MinIO run on, and hold their data volumes on, the **primary** node
 (`server_count` index `0`) only. `server_count = 2` provisions a **second**
 node on the same private network so prod is topology-ready to grow into

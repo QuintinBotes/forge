@@ -15,12 +15,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.policy import get_policy_service
-from forge_api.services.policy_service import InMemoryPolicyAuditSink, PolicyService
-from forge_contracts import (
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.policy import get_policy_service
+from scf_api.services.policy_service import InMemoryPolicyAuditSink, PolicyService
+from scf_contracts import (
     Condition,
     ConditionalRule,
     ConditionGroup,
@@ -31,9 +31,9 @@ from forge_contracts import (
     ToolCall,
     WriteRules,
 )
-from forge_db.base import Base
-from forge_db.models import PolicyRuleEvaluation, Workspace
-from forge_policy import PolicyContext
+from scf_db.base import Base
+from scf_db.models import PolicyRuleEvaluation, Workspace
+from scf_policy import PolicyContext
 
 WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000c3")

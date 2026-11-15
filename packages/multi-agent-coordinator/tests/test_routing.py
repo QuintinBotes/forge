@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from forge_contracts import (
+from scf_contracts import (
     AgentObjective,
     MergeConflict,
     MergeResult,
@@ -13,13 +13,13 @@ from forge_contracts import (
     SubAgentRole,
     SubagentRules,
 )
-from forge_coordinator.routing import (
+from scf_coordinator.routing import (
     router_after_dispatch,
     router_after_gate,
     router_after_merge,
 )
-from forge_coordinator.state import SupervisionState
-from forge_skill.directives import SkillDirectives
+from scf_coordinator.state import SupervisionState
+from scf_skill.directives import SkillDirectives
 
 
 def _state(**kw) -> SupervisionState:

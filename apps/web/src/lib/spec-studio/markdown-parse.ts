@@ -1,10 +1,10 @@
 /**
- * Client-side, best-effort port of `forge_spec.markdown.parse_spec_md` for
+ * Client-side, best-effort port of `scf_spec.markdown.parse_spec_md` for
  * Spec Studio's Markdown mode live preview.
  *
  * `spec.md` is one of the two first-class, round-tripping serializations of a
  * `SpecManifest` (the other being `manifest.yaml`; see
- * `forge_spec.markdown`/`forge_spec.manifest` on the backend). This module
+ * `scf_spec.markdown`/`scf_spec.manifest` on the backend). This module
  * gives the Markdown editor a *fast, offline* structural parse — with
  * line-anchored errors mirroring the backend's `SpecParseError` — so the
  * Structure/Preview/Traceability panes and error list update as the user

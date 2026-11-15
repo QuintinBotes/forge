@@ -1,7 +1,7 @@
 """Tests for the MCP connection manager (plan Task 1.12).
 
 The manager is the gateway's control plane: it registers connections, builds a
-per-connection :class:`~forge_mcp.MCPGatewayClient`, and aggregates a shared
+per-connection :class:`~scf_mcp.MCPGatewayClient`, and aggregates a shared
 audit log. Live transport is mocked.
 """
 
@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import MCPConnection, MCPToolResult, MCPWriteForbiddenError
-from forge_mcp import MCPConnectionNotFoundError
-from forge_mcp.testing import FakeTransport, sample_connection, sample_transport
-from forge_mcp_gateway.manager import MCPConnectionManager
+from scf_contracts import MCPConnection, MCPToolResult, MCPWriteForbiddenError
+from scf_mcp import MCPConnectionNotFoundError
+from scf_mcp.testing import FakeTransport, sample_connection, sample_transport
+from scf_mcp_gateway.manager import MCPConnectionManager
 
 
 def _manager() -> MCPConnectionManager:
@@ -78,7 +78,7 @@ def test_audit_log_is_shared_across_connections() -> None:
 
 def test_default_transport_factory_blocks_live_calls() -> None:
     # No transport injected => live ops are unavailable (no real network).
-    from forge_mcp import MCPTransportUnavailableError
+    from scf_mcp import MCPTransportUnavailableError
 
     mgr = MCPConnectionManager()
     mgr.register(sample_connection())

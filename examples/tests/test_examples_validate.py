@@ -1,4 +1,4 @@
-"""Validate every shipped example against the real Forge loader for its kind.
+"""Validate every shipped example against the real SCF loader for its kind.
 
 Task 1.17's gate is that the example YAMLs *actually parse and validate* against
 the frozen contracts via each owning package's loader (cross-check with Tasks
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     DecisionEffect,
     MCPConnection,
     Policy,
@@ -22,11 +22,11 @@ from forge_contracts import (
     ToolCall,
     WorkflowDefinition,
 )
-from forge_mcp import load_connection_file
-from forge_policy import RepoPolicyEvaluator, load_policy
-from forge_skill import SkillProfileRegistry, load_profile, load_profiles
-from forge_spec import load_manifest
-from forge_workflow import load_definition
+from scf_mcp import load_connection_file
+from scf_policy import RepoPolicyEvaluator, load_policy
+from scf_skill import SkillProfileRegistry, load_profile, load_profiles
+from scf_spec import load_manifest
+from scf_workflow import load_definition
 
 EXAMPLES_ROOT = Path(__file__).resolve().parents[1]
 POLICIES_DIR = EXAMPLES_ROOT / "policies"

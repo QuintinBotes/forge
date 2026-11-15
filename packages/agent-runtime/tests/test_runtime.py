@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forge_agent.runtime import AgentRunner
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_agent.tools import ToolRegistry, ToolResult
-from forge_contracts import (
+from scf_agent.runtime import AgentRunner
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_agent.tools import ToolRegistry, ToolResult
+from scf_contracts import (
     AgentObjective,
     AgentRunResult,
     AgentRuntime,
@@ -134,7 +134,7 @@ def test_low_confidence_triggers_handoff() -> None:
 
 
 def test_model_stop_without_finish_uses_content_as_output() -> None:
-    from forge_contracts import ModelResponse
+    from scf_contracts import ModelResponse
 
     model = ScriptedModelClient([ModelResponse(content="plain answer", stop_reason="end_turn")])
     runner = AgentRunner(model=model)
@@ -185,7 +185,7 @@ def test_worktree_used_when_enabled(tmp_path: Path) -> None:
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-m", "i"], check=True, capture_output=True)
 
-    from forge_contracts import RepoTarget
+    from scf_contracts import RepoTarget
 
     model = ScriptedModelClient([finish_response("done", confidence=0.9)])
     runner = AgentRunner(model=model, repo_root=repo, use_worktree=True)

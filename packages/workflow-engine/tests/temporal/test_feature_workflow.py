@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from forge_contracts import WorkflowState
-from forge_workflow.temporal.payloads import (
+from scf_contracts import WorkflowState
+from scf_workflow.temporal.payloads import (
     AgentRunResultDTO,
     ChecksResult,
     GuardInputs,
@@ -79,7 +79,7 @@ async def test_full_happy_path_temporal(harness: Any) -> None:
 
 async def test_spec_gate_update_and_invalid_event(harness: Any) -> None:
     """AC5 — a no-rule event from the current gate is rejected (state unchanged)."""
-    from forge_workflow.exceptions import InvalidTransitionError
+    from scf_workflow.exceptions import InvalidTransitionError
 
     h = harness()
     async with h.worker():
@@ -220,7 +220,7 @@ async def test_cancel_signal_runs_cleanup(harness: Any) -> None:
 
 async def test_merge_gate_guard_failure(harness: Any) -> None:
     """AC12 — review with incomplete signals fails the merge_ready guard (409)."""
-    from forge_workflow.exceptions import GuardFailedError
+    from scf_workflow.exceptions import GuardFailedError
 
     h = harness()
     async with h.worker():
@@ -249,7 +249,7 @@ async def test_open_pr_idempotent_on_activity_retry(harness: Any) -> None:
     opens = {"n": 0}
 
     def open_pr(inp: Any) -> Any:
-        from forge_workflow.temporal.payloads import OpenPrResult
+        from scf_workflow.temporal.payloads import OpenPrResult
 
         if inp.idempotency_key not in seen:
             seen.add(inp.idempotency_key)

@@ -10,15 +10,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts import parse_line
-from forge_db.models.workflow_editor import (
+from scf_contracts import parse_line
+from scf_db.models.workflow_editor import (
     RevisionValidationStatus,
     WorkflowDefinition,
     WorkflowDefinitionRevision,
     WorkflowDefinitionSource,
 )
-from forge_workflow.editor.graph import line_graph_from_yaml
-from forge_workflow.editor.repository import DbWorkflowDefinitionRepository
+from scf_workflow.editor.graph import line_graph_from_yaml
+from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
 
 from .conftest import USER_ID, WS_A
 

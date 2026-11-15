@@ -13,8 +13,8 @@ import uuid
 
 import pytest
 
-from forge_contracts import Requirement, TaskStatus
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_contracts import Requirement, TaskStatus
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 
 @pytest.fixture

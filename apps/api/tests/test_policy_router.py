@@ -1,6 +1,6 @@
 """Integration tests for the policy router (Phase 2 Task 2.1 wires ``/policy/*``).
 
-Exercises the real handlers wired to a :class:`~forge_policy.RepoPolicyEvaluator`:
+Exercises the real handlers wired to a :class:`~scf_policy.RepoPolicyEvaluator`:
 loading ``.forge/policy.yaml`` from a repo root and evaluating a tool call against
 an inline or loaded policy. Errors map: missing policy -> 404; no policy/repo
 -> 422.
@@ -15,7 +15,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
+from scf_api.main import create_app
 
 
 @pytest.fixture

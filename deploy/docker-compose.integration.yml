@@ -2,7 +2,7 @@
 #
 # This is the integration substrate for the live MCP lane — NO external SaaS or
 # credential. It stands up the reference server on a real socket so the
-# `forge_mcp` transports can be driven over REAL HTTP end-to-end.
+# `scf_mcp` transports can be driven over REAL HTTP end-to-end.
 #
 #   docker compose -f deploy/docker-compose.integration.yml up -d mcp-reference
 #   export MCP_LIVE_TRANSPORT=true MCP_SERVER_URL=http://localhost:8901/mcp
@@ -14,7 +14,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/mcp-reference/Dockerfile
-    image: forge/mcp-reference:${FORGE_VERSION:-0.1.0}
+    image: swarm-code-factory/mcp-reference:${FORGE_VERSION:-0.1.0}
     restart: unless-stopped
     user: "1000:1000"
     ports:

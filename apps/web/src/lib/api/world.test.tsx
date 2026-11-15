@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ForgeApiClient } from "./client";
+import { ScfApiClient } from "./client";
 import type {
   EntityListOut,
   EntityOut,
@@ -67,7 +67,7 @@ describe("useWorldEntities", () => {
       offset: 0,
     };
     const listWorldEntities = vi.fn(() => Promise.resolve(page));
-    const client = { listWorldEntities } as unknown as ForgeApiClient;
+    const client = { listWorldEntities } as unknown as ScfApiClient;
 
     const { result } = renderHook(
       () =>
@@ -91,7 +91,7 @@ describe("useWorldEntityProfile", () => {
     const getWorldEntity = vi.fn((id: string) =>
       Promise.resolve(profile(id, "Ada Lovelace")),
     );
-    const client = { getWorldEntity } as unknown as ForgeApiClient;
+    const client = { getWorldEntity } as unknown as ScfApiClient;
 
     const { result } = renderHook(
       () => useWorldEntityProfile("e1", { at: AT, as_of: AS_OF }, client),
@@ -109,7 +109,7 @@ describe("useWorldEntityProfile", () => {
     const getWorldEntity = vi.fn((id: string) =>
       Promise.resolve(profile(id, "Ada Lovelace")),
     );
-    const client = { getWorldEntity } as unknown as ForgeApiClient;
+    const client = { getWorldEntity } as unknown as ScfApiClient;
 
     const { result } = renderHook(
       () => useWorldEntityProfile(null, undefined, client),
@@ -126,7 +126,7 @@ describe("useWorldNeighbourEntities", () => {
     const getWorldEntity = vi.fn((id: string) =>
       Promise.resolve(profile(id, `Label ${id}`)),
     );
-    const client = { getWorldEntity } as unknown as ForgeApiClient;
+    const client = { getWorldEntity } as unknown as ScfApiClient;
 
     const { result } = renderHook(
       () => useWorldNeighbourEntities(["e2", "e3"], { at: AT }, client),
@@ -142,7 +142,7 @@ describe("useWorldNeighbourEntities", () => {
 describe("useWorldConflicts", () => {
   it("passes at only (the endpoint does not accept as_of)", async () => {
     const listWorldConflicts = vi.fn(() => Promise.resolve({ items: [] }));
-    const client = { listWorldConflicts } as unknown as ForgeApiClient;
+    const client = { listWorldConflicts } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useWorldConflicts(AT, client), {
       wrapper: makeWrapper(newClient()),
@@ -194,7 +194,7 @@ describe("useDecideWorldProposal", () => {
       listWorldEntities,
       getWorldEntity,
       decideWorldProposal,
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(
       () => ({
@@ -227,7 +227,7 @@ describe("useDecideWorldProposal", () => {
     const decideWorldProposal = vi.fn(() =>
       Promise.resolve({ proposal: {} as ProposalOut, fact: null }),
     );
-    const client = { decideWorldProposal } as unknown as ForgeApiClient;
+    const client = { decideWorldProposal } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useDecideWorldProposal(client), {
       wrapper: makeWrapper(newClient()),
@@ -258,7 +258,7 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function makeFetchClient(response: Response) {
   const fetchImpl = vi.fn(() => Promise.resolve(response));
-  const client = new ForgeApiClient({
+  const client = new ScfApiClient({
     baseUrl: "http://api.test",
     fetch: fetchImpl as unknown as typeof fetch,
   });
@@ -273,7 +273,7 @@ function calledInit(fetchImpl: ReturnType<typeof vi.fn>): RequestInit {
   return fetchImpl.mock.calls[0][1] as RequestInit;
 }
 
-describe("ForgeApiClient — world model", () => {
+describe("ScfApiClient — world model", () => {
   it("searches entities with q, type and both clocks", async () => {
     const { client, fetchImpl } = makeFetchClient(
       jsonResponse(200, { items: [], limit: 10, offset: 5 }),

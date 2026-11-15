@@ -10,7 +10,7 @@ Marked ``live_github`` + ``integration`` and **skips cleanly** without
 
 Deviation note (foundation-conforming): the as-built
 ``POST /integration/github/webhooks`` route (F03) verifies the HMAC and then
-parses Forge's ``WebhookEvent`` envelope — it is not a raw-GitHub-payload
+parses SCF's ``WebhookEvent`` envelope — it is not a raw-GitHub-payload
 ingress. So the route-level 200/401 assertion drives a signed **envelope** (the
 faithful test of the route's fail-closed behaviour), while the *real-delivery*
 assertion exercises the signature primitive on the actual delivered bytes — the
@@ -29,9 +29,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
-from forge_api.routers.integration import get_github_webhook_secret
-from forge_integrations import (
+from scf_api.main import create_app
+from scf_api.routers.integration import get_github_webhook_secret
+from scf_integrations import (
     build_app_jwt,
     load_private_key,
     sign_github_payload,

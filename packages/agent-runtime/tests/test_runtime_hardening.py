@@ -1,7 +1,7 @@
 """Hardening tests for the agent runtime: escalation, retry, cleanup, worktree.
 
 These exercise the error/escalation/retry/cleanup/worktree-failure branches of
-:class:`forge_agent.runtime.AgentRunner` that the happy-path integration tests in
+:class:`scf_agent.runtime.AgentRunner` that the happy-path integration tests in
 ``test_runtime.py`` do not reach. All hermetic: scripted/raising fake models, no
 network, no live model provider, no git required (the worktree failure paths use
 a monkeypatched sandbox).
@@ -14,13 +14,13 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent import runtime as runtime_mod
-from forge_agent.runtime import AgentRunner, _base_branch, _branch_name
-from forge_agent.sandbox import SandboxError
-from forge_agent.state import AgentState
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_agent.tools import ToolRegistry, ToolResult
-from forge_contracts import (
+from scf_agent import runtime as runtime_mod
+from scf_agent.runtime import AgentRunner, _base_branch, _branch_name
+from scf_agent.sandbox import SandboxError
+from scf_agent.state import AgentState
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_agent.tools import ToolRegistry, ToolResult
+from scf_contracts import (
     AgentObjective,
     Decision,
     DecisionEffect,

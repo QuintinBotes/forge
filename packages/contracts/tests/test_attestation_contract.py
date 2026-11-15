@@ -1,4 +1,4 @@
-"""Tests for the Attested Changesets contract surface (forge_contracts.attestation)."""
+"""Tests for the Attested Changesets contract surface (scf_contracts.attestation)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-import forge_contracts.attestation as att
-from forge_contracts.sandbox import SandboxKind
+import scf_contracts.attestation as att
+from scf_contracts.sandbox import SandboxKind
 
 WORKFLOW_RUN_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 AGENT_RUN_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a2")
@@ -41,7 +41,7 @@ def _statement(predicate: dict[str, object]) -> att.Statement:
     return att.Statement(
         subject=[
             att.Subject(
-                name="apps/api/forge_api/routers/changesets.py",
+                name="apps/api/scf_api/routers/changesets.py",
                 digest=att.DigestSet(sha256="b" * 64),
             )
         ],

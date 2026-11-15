@@ -20,11 +20,11 @@ from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import Project, RedTeamRecord, Task, WorkflowRun, Workspace
-from forge_db.models.audit import AuditLog
-from forge_db.models.red_team import VERDICT_BLOCKED, VERDICT_SURVIVED
-from forge_db.redteam import (
+from scf_db.base import Base
+from scf_db.models import Project, RedTeamRecord, Task, WorkflowRun, Workspace
+from scf_db.models.audit import AuditLog
+from scf_db.models.red_team import VERDICT_BLOCKED, VERDICT_SURVIVED
+from scf_db.redteam import (
     REDTEAM_SURVIVED_ACTION,
     RedTeamRepository,
     record_red_team_verdict,

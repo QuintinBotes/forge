@@ -24,8 +24,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-import forge_db.models  # noqa: F401  (registers all models on Base.metadata)
-from forge_db.base import Base
+import scf_db.models  # noqa: F401  (registers all models on Base.metadata)
+from scf_db.base import Base
 
 # revision identifiers, used by Alembic.
 revision: str = "0005_f21_automations"

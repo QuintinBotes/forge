@@ -1,11 +1,11 @@
-"""Unit tests for system-prompt assembly (``forge_agent.context``)."""
+"""Unit tests for system-prompt assembly (``scf_agent.context``)."""
 
 from __future__ import annotations
 
 import re
 
-from forge_agent.context import build_system_prompt, skill_profile_directives
-from forge_contracts import AcceptanceCriterion, AgentObjective, SkillProfile
+from scf_agent.context import build_system_prompt, skill_profile_directives
+from scf_contracts import AcceptanceCriterion, AgentObjective, SkillProfile
 
 
 def test_skill_profile_directives_render_all_flags() -> None:

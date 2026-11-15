@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from forge_agent.sandbox import LocalSandboxProvider, SandboxSettings
-from forge_contracts import SandboxKind
-from forge_worker.beat import BEAT_SCHEDULE, SANDBOX_REAP_TASK, configure_beat
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks import sandbox as sandbox_task
+from scf_agent.sandbox import LocalSandboxProvider, SandboxSettings
+from scf_contracts import SandboxKind
+from scf_worker.beat import BEAT_SCHEDULE, SANDBOX_REAP_TASK, configure_beat
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks import sandbox as sandbox_task
 
 
 class _FakeProvider:

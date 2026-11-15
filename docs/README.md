@@ -1,13 +1,13 @@
-# Forge documentation
+# SCF documentation
 
-> **Forge is pre-1.0 and under active development** — usable for evaluation and
+> **SCF is pre-1.0 and under active development** — usable for evaluation and
 > self-host testing, not yet for production. See
 > [`RELEASE_READINESS.md`](../RELEASE_READINESS.md) for the honest per-area
 > status.
 
 Start here and follow the path that fits you.
 
-## Learn Forge
+## Learn SCF
 
 | Doc | What it covers |
 |-----|----------------|
@@ -33,7 +33,7 @@ Start here and follow the path that fits you.
 | **[Kubernetes / Helm](./self-hosting/kubernetes.md)** | Clustered deployment |
 | **[Infrastructure as Code](./self-hosting/iac.md)** | OpenTofu apply for Hetzner + Cloudflare + Fly.io (dev/staging/prod) |
 | **[Local agent CLI provider](./self-hosting/local-cli-provider.md)** | Drive a locally installed `claude`/`codex` CLI instead of a BYOK API key (dev/self-host only) |
-| **[Backup](./self-hosting/backup.md)** · **[Restore](./self-hosting/restore.md)** · **[Upgrade](./self-hosting/upgrade.md)** | Day-2 operations |
+| **[Backup](./self-hosting/backup.md)** · **[Restore](./self-hosting/restore.md)** · **[Upgrade](./self-hosting/upgrade.md)** · **[Rename to Swarm Code Factory](./self-hosting/rename-to-swarm-code-factory.md)** | Day-2 operations |
 | **[Observability](./self-hosting/observability.md)** · **[Reliability](./self-hosting/reliability.md)** · **[Performance](./self-hosting/performance.md)** | Running it well |
 | **[Troubleshooting](./self-hosting/troubleshooting.md)** | When something won't come up |
 
@@ -49,7 +49,7 @@ Start here and follow the path that fits you.
 
 | Doc | What it covers |
 |-----|----------------|
-| **[Platform specification](./FORGE_SPEC.md)** | The full Forge spec |
+| **[Platform specification](./SCF_SPEC.md)** | The full SCF spec |
 | **[Release readiness](../RELEASE_READINESS.md)** | Automated gate status at the beta bar |
 | **[Eval results](./EVAL_RESULTS.md)** | Real-corpus retrieval evaluation |
 

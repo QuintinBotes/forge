@@ -12,7 +12,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from forge_agent.providers import (
+from scf_agent.providers import (
     DEFAULT_TIER_MODELS,
     MODEL_PRICING,
     ModelClientConfig,
@@ -23,7 +23,7 @@ from forge_agent.providers import (
     classify_tier,
     route,
 )
-from forge_contracts import (
+from scf_contracts import (
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
@@ -31,11 +31,11 @@ from forge_contracts import (
     TaskKind,
     TokenUsage,
 )
-from forge_orchestration_policy import ComplexitySizing, SizingSignals, score_complexity
+from scf_orchestration_policy import ComplexitySizing, SizingSignals, score_complexity
 
 
 # --------------------------------------------------------------------------- #
-# Fake ModelClient (satisfies the frozen forge_contracts.ModelClient Protocol) #
+# Fake ModelClient (satisfies the frozen scf_contracts.ModelClient Protocol) #
 # --------------------------------------------------------------------------- #
 class FakeClassifierClient:
     """Records the request and returns a scripted ``ModelResponse`` content."""
@@ -140,7 +140,7 @@ class TestValidation:
     def test_missing_tier_without_defaults_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # With no built-in defaults for the provider, an incomplete override
         # must fail loudly rather than silently resolve a partial ladder.
-        monkeypatch.setattr("forge_agent.providers.router.DEFAULT_TIER_MODELS", {})
+        monkeypatch.setattr("scf_agent.providers.router.DEFAULT_TIER_MODELS", {})
         with pytest.raises(ValueError, match="no model configured for tier"):
             ModelRouter(provider=ProviderName.openai, tier_models={"junior": "x"})
 

@@ -21,7 +21,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   CreateWorkflowDefinition,
   ForkWorkflowRequest,
@@ -42,7 +42,7 @@ export const workflowKeys = {
 
 /** The registry palette the editor composes transitions from (states/guards/…). */
 export function useWorkflowCatalog(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<WorkflowCatalog> {
   return useQuery({
     queryKey: workflowKeys.catalog(),
@@ -53,7 +53,7 @@ export function useWorkflowCatalog(
 
 /** Every workflow definition in the workspace (bundled + custom + forks). */
 export function useWorkflowDefinitions(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<WorkflowDefinitionSummary[]> {
   return useQuery({
     queryKey: workflowKeys.definitions(),
@@ -68,7 +68,7 @@ export function useWorkflowDefinitions(
  */
 export function useWorkflowDefinition(
   name: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<WorkflowDefinitionDetail> {
   return useQuery({
     queryKey: workflowKeys.definition(name ?? ""),
@@ -80,7 +80,7 @@ export function useWorkflowDefinition(
 
 /** Author a new custom workflow; refreshes the definition list. */
 export function useCreateWorkflowDefinition(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<WorkflowDefinitionDetail, Error, CreateWorkflowDefinition> {
   const queryClient = useQueryClient();
   return useMutation<WorkflowDefinitionDetail, Error, CreateWorkflowDefinition>({
@@ -93,7 +93,7 @@ export function useCreateWorkflowDefinition(
 
 /** Fork a bundled workflow into an editable copy; refreshes the list + detail. */
 export function useForkBundledWorkflow(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<WorkflowDefinitionDetail, Error, string> {
   const queryClient = useQueryClient();
   return useMutation<WorkflowDefinitionDetail, Error, string>({
@@ -111,7 +111,7 @@ export interface ForkWorkflowVariables {
 
 /** Copy a definition (e.g. a marketplace line) to a new name; refreshes the list. */
 export function useForkWorkflowDefinition(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<WorkflowDefinitionDetail, Error, ForkWorkflowVariables> {
   const queryClient = useQueryClient();
   return useMutation<WorkflowDefinitionDetail, Error, ForkWorkflowVariables>({
@@ -129,7 +129,7 @@ export interface SaveWorkflowDraftVariables {
 
 /** Save the working graph as the draft (re-validated server-side on save). */
 export function useSaveWorkflowDraft(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<WorkflowRevisionDetail, Error, SaveWorkflowDraftVariables> {
   const queryClient = useQueryClient();
   return useMutation<WorkflowRevisionDetail, Error, SaveWorkflowDraftVariables>({
@@ -147,7 +147,7 @@ export function useSaveWorkflowDraft(
 
 /** Re-run validation on the saved draft; returns every issue. */
 export function useValidateWorkflowDraft(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<WorkflowValidationIssue[], Error, string> {
   return useMutation<WorkflowValidationIssue[], Error, string>({
     mutationFn: (name) => client.validateWorkflowDraft(name),
@@ -156,7 +156,7 @@ export function useValidateWorkflowDraft(
 
 /** Publish the draft as the new active revision; refreshes the list + detail. */
 export function usePublishWorkflow(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<WorkflowRevisionDetail, Error, string> {
   const queryClient = useQueryClient();
   return useMutation<WorkflowRevisionDetail, Error, string>({

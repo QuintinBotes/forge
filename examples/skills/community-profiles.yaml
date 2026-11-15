@@ -1,6 +1,6 @@
 # Example community skill profiles (wrapped `skill_profiles:` collection form).
 #
-# Parsed by `forge_skill.load_profiles`; each top-level key becomes the profile
+# Parsed by `scf_skill.load_profiles`; each top-level key becomes the profile
 # `name`. These are NEW profiles that extend the seven built-ins — they enforce
 # engineering discipline structurally, not via prompt text. Register them with a
 # `SkillProfileRegistry` to make them resolvable by name in a task or workflow.

@@ -13,10 +13,10 @@ from collections.abc import Callable, Iterator
 import httpx
 import pytest
 
-from forge_api.auth.oauth import OAuthClient, OAuthClientCredentials
-from forge_api.auth.service import AuthService, get_auth_service
-from forge_api.main import app
-from forge_contracts.enums import UserRole
+from scf_api.auth.oauth import OAuthClient, OAuthClientCredentials
+from scf_api.auth.service import AuthService, get_auth_service
+from scf_api.main import app
+from scf_contracts.enums import UserRole
 
 WS = uuid.uuid4()
 

@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.auth.apikeys import (
+from scf_api.auth.apikeys import (
     APIKeyBackend,
     APIKeyRecord,
     APIKeyStore,
@@ -32,11 +32,11 @@ from forge_api.auth.apikeys import (
     _token_prefix,
     generate_api_token,
 )
-from forge_api.auth.apikeys_db import DbAPIKeyBackend
-from forge_contracts.auth import PlatformKeyKind
-from forge_contracts.enums import APIKeyKind, UserRole
-from forge_db.base import Base
-from forge_db.models import PlatformAPIKey, User, Workspace
+from scf_api.auth.apikeys_db import DbAPIKeyBackend
+from scf_contracts.auth import PlatformKeyKind
+from scf_contracts.enums import APIKeyKind, UserRole
+from scf_db.base import Base
+from scf_db.models import PlatformAPIKey, User, Workspace
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 

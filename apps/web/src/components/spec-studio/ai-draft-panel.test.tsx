@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { SpecDraft } from "@/lib/api/types";
 
 import { AiDraftPanel } from "./ai-draft-panel";
@@ -21,18 +21,18 @@ const draft: SpecDraft = {
   usage: { input_tokens: 120, output_tokens: 340, cost_usd: 0.0123, calls: 1 },
 };
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     draftSpec: vi.fn(() => Promise.resolve(draft)),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
 // Real timers throughout (fake timers + RTL's `waitFor` polling deadlock one
 // another): a 1ms reveal interval with a tiny chunk size still exercises the
 // progressive-reveal behaviour (asserting an early, partial frame) while
 // keeping the test fast and using real setTimeout/setInterval end to end.
-function renderPanel(client: ForgeApiClient, onDraft = vi.fn()) {
+function renderPanel(client: ScfApiClient, onDraft = vi.fn()) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

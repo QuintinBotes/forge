@@ -20,11 +20,11 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_board import SqlAlchemyBoardService
-from forge_board.exceptions import NoProjectError
-from forge_contracts import EpicDTO, IncidentDTO, MilestoneDTO, SprintDTO, TaskDTO
-from forge_db.base import Base
-from forge_db.models import Project, Workspace
+from scf_board import SqlAlchemyBoardService
+from scf_board.exceptions import NoProjectError
+from scf_contracts import EpicDTO, IncidentDTO, MilestoneDTO, SprintDTO, TaskDTO
+from scf_db.base import Base
+from scf_db.models import Project, Workspace
 
 
 @pytest.fixture

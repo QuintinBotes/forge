@@ -9,10 +9,10 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import Project, Workspace
-from forge_db.models.enums import PMConflictPolicy, PMProvider
-from forge_db.models.pm import PMConnection
+from scf_db.base import Base
+from scf_db.models import Project, Workspace
+from scf_db.models.enums import PMConflictPolicy, PMProvider
+from scf_db.models.pm import PMConnection
 
 
 @pytest.fixture

@@ -25,7 +25,7 @@ import {
 } from "@/components/command-palette";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useCostSummary,
   useCostTimeseries,
@@ -69,7 +69,7 @@ const WINDOW_OPTIONS: { id: number; label: string }[] = [
 ];
 
 export interface ObservabilityViewProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

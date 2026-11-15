@@ -23,9 +23,9 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_board import SqlAlchemyBoardService
-from forge_board.exceptions import EntityNotFoundError, InvalidStatusTransitionError
-from forge_contracts import (
+from scf_board import SqlAlchemyBoardService
+from scf_board.exceptions import EntityNotFoundError, InvalidStatusTransitionError
+from scf_contracts import (
     BoardFilter,
     BoardService,
     BulkUpdate,
@@ -41,9 +41,9 @@ from forge_contracts import (
     TaskKind,
     TaskStatus,
 )
-from forge_contracts.enums import IncidentSeverity, IncidentState
-from forge_db.base import Base
-from forge_db.models import Project, Task, TaskDependency, Workspace
+from scf_contracts.enums import IncidentSeverity, IncidentState
+from scf_db.base import Base
+from scf_db.models import Project, Task, TaskDependency, Workspace
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 

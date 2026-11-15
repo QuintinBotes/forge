@@ -30,7 +30,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useApproveSpec, useSpecOverview } from "@/lib/api/spec";
 import type { SpecOverview } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -68,7 +68,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export interface SpecDashboardProps {
   projectId?: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

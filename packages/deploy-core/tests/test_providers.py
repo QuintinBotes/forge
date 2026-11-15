@@ -7,14 +7,14 @@ from typing import Any
 
 import pytest
 
-from forge_deploy.errors import ProviderError
-from forge_deploy.providers import (
+from scf_deploy.errors import ProviderError
+from scf_deploy.providers import (
     GitHubActionsProvider,
     GitHubDeploymentsProvider,
     NullDeployProvider,
     WebhookCommandProvider,
 )
-from forge_deploy.schemas import DeployHandle, DeployRequest, DeployStatus
+from scf_deploy.schemas import DeployHandle, DeployRequest, DeployStatus
 
 
 def _req(**kw: Any) -> DeployRequest:

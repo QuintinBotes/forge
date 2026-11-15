@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CHART: deploy/helm/forge
+  CHART: deploy/helm/swarm-code-factory
 
 jobs:
   # ------------------------------------------------------------------- #
@@ -105,15 +105,15 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
-      # Build the four Forge images under the `forge/<svc>:<appVersion>` tags the
-      # kind smoke overlay (deploy/helm/forge/tests/e2e/values.kind.yaml) expects.
+      # Build the four SCF images under the `swarm-code-factory/<svc>:<appVersion>` tags the
+      # kind smoke overlay (deploy/helm/swarm-code-factory/tests/e2e/values.kind.yaml) expects.
       # The test fixture loads these + the datastore/test images into the cluster
       # and stands up the in-cluster external pgvector/redis (datastores.yaml), so
       # no bundled Bitnami subchart images are pulled.
-      - name: Build the four Forge images
+      - name: Build the four SCF images
         run: |
           for svc in api worker web mcp-gateway; do
-            docker build -t forge/$svc:0.1.0 -f deploy/docker/$svc.Dockerfile .
+            docker build -t swarm-code-factory/$svc:0.1.0 -f deploy/docker/$svc.Dockerfile .
           done
 
       # The chart declares postgresql/redis/minio subchart deps in Chart.yaml, so

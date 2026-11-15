@@ -1,0 +1,653 @@
+"""Provider-agnostic bidirectional sync engine (the heart of F18).
+
+``PMSyncEngine`` maps SCF tasks <-> external issues, suppresses echo loops
+(content-hash safety net; the activity-event origin tag is the worker's primary
+signal), detects/resolves conflicts deterministically, and persists durable
+links. It depends only on small Protocols (``LinkRepository`` / ``BoardWriter`` /
+``AuditSink``) and a ``PMAdapter``, so the exact same engine serves every
+provider and can be wired to the real board service or to in-memory fakes.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Literal, Protocol
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from scf_contracts.enums import Direction
+from scf_contracts.pm import (
+    ConflictPolicy,
+    ExternalTask,
+    PMAdapter,
+    PMProvider,
+    PMSyncState,
+    ScfPriority,
+    ScfTask,
+    StatusCategory,
+    SyncDirection,
+    SyncOutcome,
+    WebhookEvent,
+)
+from scf_integrations.pm.errors import MappingError, ProviderError, SyncConflict
+from scf_integrations.pm.hashing import external_content_hash, scf_content_hash
+
+# --------------------------------------------------------------------------- #
+# Records + Protocols                                                          #
+# --------------------------------------------------------------------------- #
+
+
+class LinkRecord(BaseModel):
+    """In-engine view of a ``pm_task_link`` row."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: UUID = Field(default_factory=uuid4)
+    connection_id: UUID
+    workspace_id: UUID
+    forge_task_id: UUID
+    provider: PMProvider
+    external_id: str
+    external_key: str = ""
+    external_url: str = ""
+    last_synced_at: datetime | None = None
+    forge_version_at_sync: int | None = None
+    external_updated_at_at_sync: datetime | None = None
+    last_outbound_hash: str | None = None
+    last_inbound_hash: str | None = None
+    sync_state: PMSyncState = PMSyncState.synced
+    conflict_detail: dict | None = None
+    last_error: str | None = None
+
+
+class ScfTaskPatch(BaseModel):
+    """Fields applied to the board when writing an inbound (external->SCF) change."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    project_id: UUID | None = None
+    title: str
+    description_md: str | None = None
+    status_category: StatusCategory
+    priority: ScfPriority
+    assignee_email: str | None = None
+    label_names: list[str] = Field(default_factory=list)
+
+
+class LinkRepository(Protocol):
+    def get(self, link_id: UUID) -> LinkRecord | None: ...
+    def get_by_scf_task(self, connection_id: UUID, forge_task_id: UUID) -> LinkRecord | None: ...
+    def get_by_external(self, connection_id: UUID, external_id: str) -> LinkRecord | None: ...
+    def upsert(self, link: LinkRecord) -> LinkRecord: ...
+    def delete(self, link_id: UUID) -> None: ...
+    def list_by_state(self, connection_id: UUID, state: PMSyncState) -> list[LinkRecord]: ...
+
+
+class BoardWriter(Protocol):
+    """The board-write surface the engine needs (tagged ``source='pm_sync'``)."""
+
+    def get(self, forge_task_id: UUID) -> ScfTask | None: ...
+    def create(self, patch: ScfTaskPatch, *, source: dict) -> ScfTask: ...
+    def update(
+        self,
+        forge_task_id: UUID,
+        patch: ScfTaskPatch,
+        *,
+        expected_version: int | None,
+        source: dict,
+    ) -> ScfTask: ...
+
+
+class AuditSink(Protocol):
+    def record(self, entry: dict) -> None: ...
+
+
+# --------------------------------------------------------------------------- #
+# In-memory implementations (tests + reference)                               #
+# --------------------------------------------------------------------------- #
+
+
+class InMemoryLinkRepository:
+    def __init__(self) -> None:
+        self._by_id: dict[UUID, LinkRecord] = {}
+
+    def get(self, link_id: UUID) -> LinkRecord | None:
+        rec = self._by_id.get(link_id)
+        return rec.model_copy(deep=True) if rec else None
+
+    def get_by_scf_task(self, connection_id: UUID, forge_task_id: UUID) -> LinkRecord | None:
+        for rec in self._by_id.values():
+            if rec.connection_id == connection_id and rec.forge_task_id == forge_task_id:
+                return rec.model_copy(deep=True)
+        return None
+
+    def get_by_external(self, connection_id: UUID, external_id: str) -> LinkRecord | None:
+        for rec in self._by_id.values():
+            if rec.connection_id == connection_id and rec.external_id == external_id:
+                return rec.model_copy(deep=True)
+        return None
+
+    def upsert(self, link: LinkRecord) -> LinkRecord:
+        self._by_id[link.id] = link.model_copy(deep=True)
+        return link.model_copy(deep=True)
+
+    def delete(self, link_id: UUID) -> None:
+        self._by_id.pop(link_id, None)
+
+    def list_by_state(self, connection_id: UUID, state: PMSyncState) -> list[LinkRecord]:
+        return [
+            rec.model_copy(deep=True)
+            for rec in self._by_id.values()
+            if rec.connection_id == connection_id and rec.sync_state == state
+        ]
+
+
+class InMemoryAuditSink:
+    def __init__(self) -> None:
+        self.entries: list[dict] = []
+
+    def record(self, entry: dict) -> None:
+        self.entries.append(dict(entry))
+
+
+class InMemoryBoardWriter:
+    """A minimal in-memory board for engine unit tests; records source tags."""
+
+    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
+        self._store: dict[UUID, ScfTask] = {}
+        self._counter = 0
+        self.created_sources: list[dict] = []
+        self.updated_sources: list[dict] = []
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    def get(self, forge_task_id: UUID) -> ScfTask | None:
+        task = self._store.get(forge_task_id)
+        return task.model_copy(deep=True) if task else None
+
+    def create(self, patch: ScfTaskPatch, *, source: dict) -> ScfTask:
+        self._counter += 1
+        task_id = uuid4()
+        task = ScfTask(
+            id=task_id,
+            key=f"TASK-{self._counter}",
+            project_id=patch.project_id or uuid4(),
+            title=patch.title,
+            description_md=patch.description_md,
+            status_category=patch.status_category,
+            priority=patch.priority,
+            assignee_email=patch.assignee_email,
+            label_names=list(patch.label_names),
+            version=1,
+            updated_at=self._clock(),
+        )
+        self._store[task_id] = task
+        self.created_sources.append(dict(source))
+        return task.model_copy(deep=True)
+
+    def update(
+        self,
+        forge_task_id: UUID,
+        patch: ScfTaskPatch,
+        *,
+        expected_version: int | None,
+        source: dict,
+    ) -> ScfTask:
+        existing = self._store[forge_task_id]
+        updated = existing.model_copy(
+            update={
+                "title": patch.title,
+                "description_md": patch.description_md,
+                "status_category": patch.status_category,
+                "priority": patch.priority,
+                "assignee_email": patch.assignee_email,
+                "label_names": list(patch.label_names),
+                "version": existing.version + 1,
+                "updated_at": self._clock(),
+            }
+        )
+        self._store[forge_task_id] = updated
+        self.updated_sources.append(dict(source))
+        return updated.model_copy(deep=True)
+
+    # test helper
+    def put(self, task: ScfTask) -> None:
+        self._store[task.id] = task.model_copy(deep=True)
+
+
+# --------------------------------------------------------------------------- #
+# Engine                                                                       #
+# --------------------------------------------------------------------------- #
+
+ECHO_SOURCE = "pm_sync"
+
+#: Fields the connected tracker owns (spec M M2 / ADR-0019). Under
+#: ``external_wins`` an outbound sync must never write them; SCF writes back
+#: only what it owns (a run-state comment carrying the PR link, and the one
+#: optional status transition the connection maps).
+TRACKER_OWNED_FIELDS: frozenset[str] = frozenset(
+    {"title", "description", "status", "assignee", "priority", "labels"}
+)
+
+_RUN_MARKER_RE = re.compile(r"<!--\s*forge:run:([0-9a-fA-F-]{36})\s*-->")
+
+
+def run_comment_marker(run_id: UUID | str) -> str:
+    """The hidden marker every forge-authored run-state comment carries."""
+    return f"<!-- forge:run:{run_id} -->"
+
+
+def extract_run_marker(text: str | None) -> str | None:
+    """The run id from an SCF comment marker in ``text``, else ``None``.
+
+    A tracker webhook echoing a comment whose body carries the marker is an
+    echo of SCF's own write-back and is skipped at intake (spec M M2).
+    """
+    if not isinstance(text, str) or not text:
+        return None
+    match = _RUN_MARKER_RE.search(text)
+    return match.group(1) if match else None
+
+
+class PMSyncEngine:
+    def __init__(
+        self,
+        *,
+        adapter: PMAdapter,
+        links: LinkRepository,
+        board: BoardWriter,
+        audit: AuditSink,
+        connection_id: UUID,
+        workspace_id: UUID,
+        scf_project_id: UUID,
+        conflict_policy: ConflictPolicy = ConflictPolicy.newest_wins,
+        sync_direction: SyncDirection = SyncDirection.bidirectional,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self.adapter = adapter
+        self.links = links
+        self.board = board
+        self.audit = audit
+        self.connection_id = connection_id
+        self.workspace_id = workspace_id
+        self.scf_project_id = scf_project_id
+        self.conflict_policy = conflict_policy
+        self.sync_direction = sync_direction
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    # ------------------------------------------------------------------ #
+    # public                                                             #
+    # ------------------------------------------------------------------ #
+
+    async def sync_out(self, scf_task: ScfTask) -> SyncOutcome:
+        if self.sync_direction == SyncDirection.inbound_only:
+            return SyncOutcome(
+                direction=Direction.OUT,
+                forge_task_id=scf_task.id,
+                action="no_change",
+                detail={"reason": "inbound_only"},
+            )
+
+        link = self.links.get_by_scf_task(self.connection_id, scf_task.id)
+        scf_hash = scf_content_hash(scf_task)
+
+        if link is None:
+            if self.conflict_policy == ConflictPolicy.external_wins:
+                # Spec M M2 (tracker wins): the tracker is the record, so an
+                # unlinked SCF task is never pushed into it — creating the
+                # issue would write every tracker-owned field.
+                return SyncOutcome(
+                    direction=Direction.OUT,
+                    forge_task_id=scf_task.id,
+                    action="no_change",
+                    detail={"reason": "external_wins", "suppressed": "create"},
+                )
+            external = await self._create_external(scf_task)
+            new_link = LinkRecord(
+                connection_id=self.connection_id,
+                workspace_id=self.workspace_id,
+                forge_task_id=scf_task.id,
+                provider=self.adapter.provider,
+                external_id=external.external_id,
+                external_key=external.external_key,
+                external_url=external.url,
+            )
+            self._refresh(new_link, scf_task, external)
+            self.links.upsert(new_link)
+            return SyncOutcome(
+                direction=Direction.OUT,
+                forge_task_id=scf_task.id,
+                external_id=external.external_id,
+                action="created",
+            )
+
+        if scf_hash == link.last_outbound_hash:
+            return SyncOutcome(
+                direction=Direction.OUT,
+                forge_task_id=scf_task.id,
+                external_id=link.external_id,
+                action="no_change",
+            )
+
+        # SCF changed. Did external change too since the last sync?
+        external_now = await self.adapter.fetch_external(link.external_id)
+        if self.conflict_policy == ConflictPolicy.external_wins:
+            # Spec M M2 (tracker wins): a forge-side edit of a tracker-owned
+            # field never reaches the tracker, conflict or not — the board is
+            # brought back to the tracker's value instead.
+            scf_applied = self._apply_inbound_update(link, external_now)
+            self._refresh(link, scf_applied, external_now)
+            self.links.upsert(link)
+            return SyncOutcome(
+                direction=Direction.IN,
+                forge_task_id=link.forge_task_id,
+                external_id=external_now.external_id,
+                action="updated",
+                winner="external",
+                detail={"reason": "external_wins"},
+            )
+        external_changed = (
+            external_content_hash(external_now) != link.last_inbound_hash
+            if link.last_inbound_hash is not None
+            else False
+        )
+        if external_changed:
+            return await self._resolve(
+                link, scf_task=scf_task, external_task=external_now, origin=Direction.OUT
+            )
+
+        external = await self._update_external(link.external_id, scf_task)
+        self._refresh(link, scf_task, external)
+        self.links.upsert(link)
+        return SyncOutcome(
+            direction=Direction.OUT,
+            forge_task_id=scf_task.id,
+            external_id=link.external_id,
+            action="updated",
+        )
+
+    async def sync_in(
+        self, external_task: ExternalTask, event: WebhookEvent | None = None
+    ) -> SyncOutcome:
+        if self.sync_direction == SyncDirection.outbound_only:
+            return SyncOutcome(
+                direction=Direction.IN,
+                external_id=external_task.external_id,
+                action="skipped_echo",
+                detail={"reason": "outbound_only"},
+            )
+
+        link = self.links.get_by_external(self.connection_id, external_task.external_id)
+        external_hash = external_content_hash(external_task)
+
+        if link is None:
+            scf_task = self._apply_inbound_create(external_task)
+            new_link = LinkRecord(
+                connection_id=self.connection_id,
+                workspace_id=self.workspace_id,
+                forge_task_id=scf_task.id,
+                provider=self.adapter.provider,
+                external_id=external_task.external_id,
+                external_key=external_task.external_key,
+                external_url=external_task.url,
+            )
+            self._refresh(new_link, scf_task, external_task)
+            self.links.upsert(new_link)
+            return SyncOutcome(
+                direction=Direction.IN,
+                forge_task_id=scf_task.id,
+                external_id=external_task.external_id,
+                action="created",
+            )
+
+        if external_hash == link.last_inbound_hash:
+            return SyncOutcome(
+                direction=Direction.IN,
+                forge_task_id=link.forge_task_id,
+                external_id=external_task.external_id,
+                action="skipped_echo",
+            )
+
+        # External changed. Did SCF change too since the last sync?
+        scf_now = self.board.get(link.forge_task_id)
+        scf_changed = (
+            scf_now is not None
+            and link.last_outbound_hash is not None
+            and scf_content_hash(scf_now) != link.last_outbound_hash
+        )
+        if scf_changed and scf_now is not None:
+            return await self._resolve(
+                link, scf_task=scf_now, external_task=external_task, origin=Direction.IN
+            )
+
+        scf_task = self._apply_inbound_update(link, external_task)
+        self._refresh(link, scf_task, external_task)
+        self.links.upsert(link)
+        return SyncOutcome(
+            direction=Direction.IN,
+            forge_task_id=link.forge_task_id,
+            external_id=external_task.external_id,
+            action="updated",
+        )
+
+    async def resolve_conflict(
+        self, link_id: UUID, winner: Literal["forge", "external"]
+    ) -> SyncOutcome:
+        link = self.links.get(link_id)
+        if link is None:
+            raise SyncConflict("link not found", link_id=str(link_id))
+        if winner == "forge" and self.conflict_policy == ConflictPolicy.external_wins:
+            # ADR-0019: under external_wins the tracker owns those fields, so
+            # an SCF win can never be pushed (a stale conflict from an
+            # earlier policy does not change that).
+            raise SyncConflict(
+                "external_wins: tracker-owned fields cannot be pushed",
+                link_id=str(link_id),
+            )
+        detail = link.conflict_detail or {}
+        if winner == "forge":
+            scf_task = ScfTask.model_validate(detail["forge"])
+            external = await self._update_external(link.external_id, scf_task)
+            self._refresh(link, scf_task, external)
+            self.links.upsert(link)
+            return SyncOutcome(
+                direction=Direction.OUT,
+                forge_task_id=scf_task.id,
+                external_id=link.external_id,
+                action="updated",
+                winner="forge",
+            )
+        external_task = ExternalTask.model_validate(detail["external"])
+        scf_task = self._apply_inbound_update(link, external_task)
+        self._refresh(link, scf_task, external_task)
+        self.links.upsert(link)
+        return SyncOutcome(
+            direction=Direction.IN,
+            forge_task_id=link.forge_task_id,
+            external_id=external_task.external_id,
+            action="updated",
+            winner="external",
+        )
+
+    # ------------------------------------------------------------------ #
+    # conflict resolution                                                #
+    # ------------------------------------------------------------------ #
+
+    async def _resolve(
+        self,
+        link: LinkRecord,
+        *,
+        scf_task: ScfTask,
+        external_task: ExternalTask,
+        origin: Direction,
+    ) -> SyncOutcome:
+        policy = self.conflict_policy
+        winner: Literal["forge", "external"]
+        if policy == ConflictPolicy.manual:
+            link.sync_state = PMSyncState.conflict
+            link.conflict_detail = {
+                "forge": scf_task.model_dump(mode="json"),
+                "external": external_task.model_dump(mode="json"),
+            }
+            self.links.upsert(link)
+            return SyncOutcome(
+                direction=origin,
+                forge_task_id=scf_task.id,
+                external_id=external_task.external_id,
+                action="conflict",
+            )
+        if policy == ConflictPolicy.forge_wins:
+            winner = "forge"
+        elif policy == ConflictPolicy.external_wins:
+            winner = "external"
+        else:  # newest_wins
+            winner = (
+                "forge" if scf_task.updated_at >= external_task.external_updated_at else "external"
+            )
+
+        if winner == "forge":
+            external = await self._update_external(link.external_id, scf_task)
+            self._refresh(link, scf_task, external)
+            self.links.upsert(link)
+            return SyncOutcome(
+                direction=Direction.OUT,
+                forge_task_id=scf_task.id,
+                external_id=link.external_id,
+                action="updated",
+                winner="forge",
+            )
+        scf_applied = self._apply_inbound_update(link, external_task)
+        self._refresh(link, scf_applied, external_task)
+        self.links.upsert(link)
+        return SyncOutcome(
+            direction=Direction.IN,
+            forge_task_id=link.forge_task_id,
+            external_id=external_task.external_id,
+            action="updated",
+            winner="external",
+        )
+
+    # ------------------------------------------------------------------ #
+    # external + board writes (audited)                                  #
+    # ------------------------------------------------------------------ #
+
+    async def _create_external(self, scf_task: ScfTask) -> ExternalTask:
+        external = await self.adapter.create_external(scf_task)
+        self._audit("create_external", Direction.OUT, scf_task, external)
+        return external
+
+    async def _update_external(self, external_id: str, scf_task: ScfTask) -> ExternalTask:
+        external = await self.adapter.update_external(external_id, scf_task)
+        self._audit("update_external", Direction.OUT, scf_task, external)
+        return external
+
+    def _source_tag(self, link_id: UUID | None) -> dict:
+        return {
+            "source": ECHO_SOURCE,
+            "connection_id": str(self.connection_id),
+            "link_id": str(link_id) if link_id else None,
+            "direction": "in",
+        }
+
+    def _apply_inbound_create(self, external_task: ExternalTask) -> ScfTask:
+        patch = self._external_to_patch(external_task)
+        scf_task = self.board.create(patch, source=self._source_tag(None))
+        self._audit("board_create", Direction.IN, scf_task, external_task)
+        return scf_task
+
+    def _apply_inbound_update(self, link: LinkRecord, external_task: ExternalTask) -> ScfTask:
+        patch = self._external_to_patch(external_task)
+        current = self.board.get(link.forge_task_id)
+        expected = current.version if current else None
+        scf_task = self.board.update(
+            link.forge_task_id,
+            patch,
+            expected_version=expected,
+            source=self._source_tag(link.id),
+        )
+        self._audit("board_update", Direction.IN, scf_task, external_task)
+        return scf_task
+
+    # ------------------------------------------------------------------ #
+    # helpers                                                            #
+    # ------------------------------------------------------------------ #
+
+    def _external_to_patch(self, external_task: ExternalTask) -> ScfTaskPatch:
+        category = external_task.status_category
+        if category is None:
+            try:
+                category = StatusCategory(
+                    self.adapter.map_status(external_task.status_name, Direction.IN)
+                )
+            except (MappingError, ValueError):
+                category = StatusCategory.backlog
+        priority = ScfPriority.none
+        if external_task.priority_token is not None:
+            try:
+                priority = ScfPriority(
+                    self.adapter.map_priority(external_task.priority_token, Direction.IN)
+                )
+            except (MappingError, ValueError):
+                priority = ScfPriority.none
+        return ScfTaskPatch(
+            project_id=self.scf_project_id,
+            title=external_task.title,
+            description_md=external_task.description_md,
+            status_category=category,
+            priority=priority,
+            assignee_email=external_task.assignee_email,
+            label_names=list(external_task.labels),
+        )
+
+    def _refresh(self, link: LinkRecord, scf_task: ScfTask, external_task: ExternalTask) -> None:
+        link.forge_version_at_sync = scf_task.version
+        link.external_updated_at_at_sync = external_task.external_updated_at
+        link.last_outbound_hash = scf_content_hash(scf_task)
+        link.last_inbound_hash = external_content_hash(external_task)
+        link.last_synced_at = self._clock()
+        link.sync_state = PMSyncState.synced
+        link.conflict_detail = None
+        link.last_error = None
+        link.external_key = external_task.external_key or link.external_key
+        link.external_url = external_task.url or link.external_url
+
+    def _audit(
+        self,
+        operation: str,
+        direction: Direction,
+        scf_task: ScfTask | None,
+        external_task: ExternalTask | None,
+    ) -> None:
+        self.audit.record(
+            {
+                "operation": operation,
+                "connection_id": str(self.connection_id),
+                "provider": self.adapter.provider.value,
+                "direction": direction.value,
+                "forge_task_id": str(scf_task.id) if scf_task else None,
+                "external_id": external_task.external_id if external_task else None,
+                "payload_hash": (scf_content_hash(scf_task) if scf_task else None),
+                "result": "ok",
+                "at": self._clock().isoformat(),
+            }
+        )
+
+
+__all__ = [
+    "ECHO_SOURCE",
+    "TRACKER_OWNED_FIELDS",
+    "AuditSink",
+    "BoardWriter",
+    "InMemoryAuditSink",
+    "InMemoryBoardWriter",
+    "InMemoryLinkRepository",
+    "LinkRecord",
+    "LinkRepository",
+    "PMSyncEngine",
+    "ProviderError",
+    "ScfTaskPatch",
+    "extract_run_marker",
+    "run_comment_marker",
+]

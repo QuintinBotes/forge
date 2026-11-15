@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * TanStack Query hooks over the typed {@link ForgeApiClient}.
+ * TanStack Query hooks over the typed {@link ScfApiClient}.
  *
  * Board surface for Task 1.6: read hooks (tasks/epics/incidents), a create
  * mutation, and an **optimistic** status mutation that updates the cache
@@ -17,7 +17,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   BulkUpdate,
   EpicDTO,
@@ -49,7 +49,7 @@ export const queryKeys = {
 
 export function useTasks(
   filters?: Record<string, string | number | boolean | undefined>,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<TaskDTO[]> {
   return useQuery({
     queryKey: queryKeys.tasks(filters),
@@ -59,7 +59,7 @@ export function useTasks(
 
 export function useTask(
   taskId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<TaskDTO> {
   return useQuery({
     queryKey: queryKeys.task(taskId),
@@ -69,7 +69,7 @@ export function useTask(
 }
 
 export function useEpics(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<EpicDTO[]> {
   return useQuery({
     queryKey: queryKeys.epics(),
@@ -83,7 +83,7 @@ export function useEpics(
  * pick — it creates the epic, then the spec underneath it.
  */
 export function useCreateEpic(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<EpicDTO, Error, EpicDTO> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -95,7 +95,7 @@ export function useCreateEpic(
 }
 
 export function useIncidents(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<IncidentDTO[]> {
   return useQuery({
     queryKey: queryKeys.incidents(),
@@ -104,7 +104,7 @@ export function useIncidents(
 }
 
 export function useSprints(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<SprintDTO[]> {
   return useQuery({
     queryKey: queryKeys.sprints(),
@@ -113,7 +113,7 @@ export function useSprints(
 }
 
 export function useMilestones(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<MilestoneDTO[]> {
   return useQuery({
     queryKey: queryKeys.milestones(),
@@ -127,7 +127,7 @@ export function useMilestones(
  * rather than surfacing an error on the board.
  */
 export function useCurrentUser(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<Principal> {
   return useQuery({
     queryKey: queryKeys.currentUser(),
@@ -138,7 +138,7 @@ export function useCurrentUser(
 }
 
 export function useCreateTask(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<TaskDTO, Error, TaskDTO> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -168,7 +168,7 @@ interface SetTaskStatusContext {
  * `onSettled` revalidates from the server.
  */
 export function useSetTaskStatus(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<
   TaskDTO,
   Error,
@@ -237,7 +237,7 @@ export interface UpdateTaskVariables {
 
 /** Patch a single task (e.g. reassign) and revalidate the board. */
 export function useUpdateTask(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<TaskDTO, Error, UpdateTaskVariables> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -269,7 +269,7 @@ function applyBulkPatch(task: TaskDTO, update: BulkUpdate): TaskDTO {
  * immediately, rolls the snapshots back on error, and revalidates on settle.
  */
 export function useBulkUpdateTasks(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<TaskDTO[], Error, BulkUpdate[], BulkUpdateContext> {
   const queryClient = useQueryClient();
   return useMutation<TaskDTO[], Error, BulkUpdate[], BulkUpdateContext>({

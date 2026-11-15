@@ -1,9 +1,9 @@
-"""Tests for ``forge_spec.diff`` (ss-versioning: spec version diffing)."""
+"""Tests for ``scf_spec.diff`` (ss-versioning: spec version diffing)."""
 
 from __future__ import annotations
 
-from forge_contracts import AcceptanceCriterion, Requirement, SpecManifest, SpecStatus
-from forge_spec.diff import diff_manifest, diff_markdown
+from scf_contracts import AcceptanceCriterion, Requirement, SpecManifest, SpecStatus
+from scf_spec.diff import diff_manifest, diff_markdown
 
 
 def _manifest(**overrides: object) -> SpecManifest:

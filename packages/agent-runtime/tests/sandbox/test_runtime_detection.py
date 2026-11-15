@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from _sandbox_fakes import FakeDockerClient
 
-from forge_agent.sandbox import detect_registered_runtimes, isolation_class_for
-from forge_agent.sandbox.runtime import DEFAULT_RUNTIMES
-from forge_contracts import SandboxIsolationClass, SandboxKind
+from scf_agent.sandbox import detect_registered_runtimes, isolation_class_for
+from scf_agent.sandbox.runtime import DEFAULT_RUNTIMES
+from scf_contracts import SandboxIsolationClass, SandboxKind
 
 
 def test_detect_parses_docker_info_runtimes() -> None:

@@ -1,0 +1,30 @@
+suite: migration hook ordering + command (AC12)
+templates:
+  - templates/job-migrate.yaml
+tests:
+  - it: is a pre-install/pre-upgrade hook with a negative weight
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-5"
+  - it: runs `alembic upgrade head` on the api image by default
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["sh", "-c", "alembic -c packages/db/alembic.ini upgrade head"]
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "swarm-code-factory/api"
+  - it: honours an overridden migrations.command (e.g. a future scf-cli)
+    set:
+      migrations:
+        command: ["scf-cli", "db", "migrate"]
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["scf-cli", "db", "migrate"]

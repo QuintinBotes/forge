@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from forge_eval.benchmark import (
+from scf_eval.benchmark import (
     BenchmarkFrozenError,
     SweCaseFields,
     parse_swe_case_fields,
     validate_freezable,
 )
-from forge_eval.golden import GoldenCase
+from scf_eval.golden import GoldenCase
 
 
 def _minted_case(**metadata_overrides) -> GoldenCase:

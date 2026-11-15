@@ -1,4 +1,4 @@
-"""``forge-replay`` CLI tests — DB-backed cassette replay exit codes.
+"""``scf-replay`` CLI tests — DB-backed cassette replay exit codes.
 
 Mirrors ``test_cli_verify.py``'s convention: the DB-backed lookup runs against
 a throwaway file-backed SQLite (in-memory ``sqlite://`` is not shared across
@@ -17,14 +17,14 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from forge_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
-from forge_agent.runtime import AgentRunner
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_agent.tools import ToolRegistry
-from forge_api.cli_replay import main
-from forge_contracts import AgentObjective
-from forge_db.base import Base
-from forge_db.models import RunRecording, Workspace
+from scf_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
+from scf_agent.runtime import AgentRunner
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_agent.tools import ToolRegistry
+from scf_api.cli_replay import main
+from scf_contracts import AgentObjective
+from scf_db.base import Base
+from scf_db.models import RunRecording, Workspace
 
 
 def _objective(text: str = "edit main") -> AgentObjective:

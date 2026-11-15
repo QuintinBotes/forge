@@ -15,14 +15,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
-from forge_api.routers.integration import (
+from scf_api.main import create_app
+from scf_api.routers.integration import (
     get_github_client,
     get_github_client_optional,
     get_github_webhook_secret,
     get_slack_notifier,
 )
-from forge_integrations import GitHubClient, SlackNotifier, sign_github_payload
+from scf_integrations import GitHubClient, SlackNotifier, sign_github_payload
 
 WEBHOOK_SECRET = "whsec_test_123"
 
@@ -84,8 +84,8 @@ def _slack_principal(ws_id):
     ``conftest`` name under the full-suite run)."""
     import uuid as _uuid
 
-    from forge_api.deps import Principal
-    from forge_contracts import UserRole
+    from scf_api.deps import Principal
+    from scf_contracts import UserRole
 
     return Principal(
         user_id=_uuid.UUID("00000000-0000-0000-0000-0000000000e8"),
@@ -101,14 +101,14 @@ def test_slack_notify_approval_records_ts(authenticate_app: Callable[..., FastAP
     """POST /slack/approvals/{id}/notify posts the gate + stashes channel/ts (AC)."""
     import uuid
 
-    from forge_api.routers.integration import (
+    from scf_api.routers.integration import (
         ApprovalStore,
         SlackApprovalRefStore,
         get_approval_store,
         get_slack_notifier,
         get_slack_ref_store,
     )
-    from forge_contracts import ApprovalGate, ApprovalRequest
+    from scf_contracts import ApprovalGate, ApprovalRequest
 
     ws_id = uuid.UUID("00000000-0000-0000-0000-0000000000f9")
     store = ApprovalStore()
@@ -138,7 +138,7 @@ def test_slack_notify_approval_404_for_unknown_gate(
 ) -> None:
     import uuid
 
-    from forge_api.routers.integration import (
+    from scf_api.routers.integration import (
         ApprovalStore,
         get_approval_store,
         get_slack_notifier,
@@ -221,8 +221,8 @@ def test_github_client_dep_uses_app_creds_when_configured(
     tmp_path,
 ) -> None:
     """When App creds are configured, the DI builds an App-auth client."""
-    import forge_api.routers.integration as integ
-    from forge_api.settings import Settings
+    import scf_api.routers.integration as integ
+    from scf_api.settings import Settings
 
     pem = tmp_path / "app.pem"
     # A syntactically-valid throwaway RSA key so from_app constructs cleanly.
@@ -260,8 +260,8 @@ def test_write_route_501_when_no_github_creds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """With neither App creds nor a token, write routes fail closed (501)."""
-    import forge_api.routers.integration as integ
-    from forge_api.settings import Settings
+    import scf_api.routers.integration as integ
+    from scf_api.settings import Settings
 
     monkeypatch.setattr(integ, "get_settings", lambda: Settings())
     integ._github_client_singleton.cache_clear()
@@ -311,9 +311,9 @@ def test_health_route_not_configured(
 
 def test_audit_sink_redacts_detail() -> None:
     """The API audit sink scrubs any token-shaped substring before recording."""
-    from forge_api.observability.audit import AuditCategory, AuditLog
-    from forge_api.routers.integration import _github_audit_sink
-    from forge_integrations import GitHubAuditEvent
+    from scf_api.observability.audit import AuditCategory, AuditLog
+    from scf_api.routers.integration import _github_audit_sink
+    from scf_integrations import GitHubAuditEvent
 
     log = AuditLog()
     sink = _github_audit_sink(log)

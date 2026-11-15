@@ -1,6 +1,6 @@
 # Security Policy
 
-Forge is an open-source engineering-orchestration platform. We take the
+Swarm Code Factory is an open-source engineering-orchestration platform. We take the
 security of the platform and of the self-hosters who run it seriously. This
 document describes how to report a vulnerability, what to expect from us, and
 which versions we support.
@@ -12,7 +12,7 @@ which versions we support.
 Report a suspected vulnerability privately using one of:
 
 - **GitHub Security Advisories** — the preferred channel: open a draft advisory
-  at `https://github.com/<org>/forge/security/advisories/new` (Security tab →
+  at `https://github.com/<org>/swarm-code-factory/security/advisories/new` (Security tab →
   "Report a vulnerability"). This keeps the report private and lets us
   collaborate on a fix in the same place.
 - **Email** — `security@forge.example` (replace with your deployment's real
@@ -45,10 +45,10 @@ with you.
 
 ## Supported Versions
 
-Forge follows [Semantic Versioning](https://semver.org/) (SemVer): the single
+SCF follows [Semantic Versioning](https://semver.org/) (SemVer): the single
 source-of-truth version is bumped in lockstep across every package by
 `cz bump` (see [`CONTRIBUTING.md`](CONTRIBUTING.md) and the release tooling under
-`release/`). Forge is pre-1.0; security fixes land on `main` and in the most
+`release/`). SCF is pre-1.0; security fixes land on `main` and in the most
 recent tagged `vX.Y.Z` release line.
 
 | Version | Supported |
@@ -79,11 +79,11 @@ control set and its evidence are documented in:
 
 ## Scope
 
-In scope: the Forge API, worker, MCP gateway, web app, and first-party
-`forge_*` packages in this repository.
+In scope: the SCF API, worker, MCP gateway, web app, and first-party
+`scf_*` packages in this repository.
 
 Out of scope: third-party MCP servers, model providers, and integrations you
-connect Forge to (report those to their maintainers); social-engineering;
+connect SCF to (report those to their maintainers); social-engineering;
 denial-of-service via resource volume against your own self-hosted instance
 (tune the documented rate/body limits); and findings that require a
 pre-compromised host or physical access.

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import uuid
 
-from forge_contracts import SERVICE_CATALOG
-from forge_contracts.enums import ExecutionMode, WorkflowState
-from forge_workflow.editor.catalog import RegistryCatalog
+from scf_contracts import SERVICE_CATALOG
+from scf_contracts.enums import ExecutionMode, WorkflowState
+from scf_workflow.editor.catalog import RegistryCatalog
 
 
 def test_catalog_line_palette(registry_catalog: RegistryCatalog) -> None:

@@ -7,8 +7,8 @@ import uuid
 
 import pytest
 
-from forge_auth.errors import DecryptionError, KeyMaterialError, KeyRotationError
-from forge_auth.vault import (
+from scf_auth.errors import DecryptionError, KeyMaterialError, KeyRotationError
+from scf_auth.vault import (
     FORMAT_VERSION,
     NONCE_SIZE,
     EnvKeyProvider,

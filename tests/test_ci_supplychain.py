@@ -53,4 +53,4 @@ def test_release_workflow_has_oidc_permissions_and_signing() -> None:
 def test_ci_workflow_lints_commits_and_runs_readiness() -> None:
     text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "cz check" in text, "ci.yml must lint commit messages with cz check"
-    assert "forge-release-readiness" in text, "ci.yml must run the readiness report on PRs"
+    assert "scf-release-readiness" in text, "ci.yml must run the readiness report on PRs"

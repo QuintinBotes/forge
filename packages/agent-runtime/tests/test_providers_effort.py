@@ -1,6 +1,6 @@
 """ao-effort: map AO effort levels -> provider reasoning knobs in the ModelClient.
 
-The five roles' ao-config (:class:`forge_contracts.orchestration_config.Effort`:
+The five roles' ao-config (:class:`scf_contracts.orchestration_config.Effort`:
 ``low``/``medium``/``high``/``max``) selects how hard a model should think. Each
 provider exposes a *different* knob:
 
@@ -20,24 +20,24 @@ from __future__ import annotations
 import pytest
 from _provider_fakes import FakeAnthropicSDK, FakeOpenAISDK
 
-from forge_agent.providers import (
+from scf_agent.providers import (
     AnthropicModelClient,
     OpenAIModelClient,
     ProviderName,
     build_model_client,
     translate,
 )
-from forge_agent.providers import (
+from scf_agent.providers import (
     effort as effort_map,
 )
-from forge_agent.providers.config import ModelClientConfig
-from forge_agent.providers.router import ModelRouter
-from forge_contracts import ModelMessage, ModelRequest
-from forge_contracts.orchestration_config import Effort
+from scf_agent.providers.config import ModelClientConfig
+from scf_agent.providers.router import ModelRouter
+from scf_contracts import ModelMessage, ModelRequest
+from scf_contracts.orchestration_config import Effort
 
 _REQUEST = ModelRequest(
     model="",
-    system="You are Forge.",
+    system="You are SCF.",
     messages=[ModelMessage(role="user", content="do the thing")],
 )
 

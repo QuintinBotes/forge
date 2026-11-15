@@ -2,10 +2,10 @@
 
 /**
  * In-app guided walkthrough — the first-run product tour that ties the whole
- * Forge loop together: create a spec -> run an agent -> review the PR -> merge.
+ * SCF loop together: create a spec -> run an agent -> review the PR -> merge.
  *
  * The screen lays the loop out as four real, navigable "stops". A custom tour
- * (built on the Forge design tokens, no third-party dependency) spotlights each
+ * (built on the SCF design tokens, no third-party dependency) spotlights each
  * stop in turn; it is dismissible, resumable across sessions, and restartable
  * from the on-page Help menu or the ⌘K command palette. Every stop shows the
  * user's live progress, read from the real routers (specs / approvals /
@@ -37,7 +37,7 @@ import {
 
 import { useRegisterCommands } from "@/components/command-palette";
 import { Button } from "@/components/ui/button";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useOnboardingProgress } from "@/lib/api/onboarding";
 import type { OnboardingProgress, OnboardingStepKey } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -118,7 +118,7 @@ const STOPS: readonly StopMeta[] = [
 ];
 
 export interface WalkthroughViewProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
   projectId?: string;
   /** Auto-open the tour on a first-ever visit. Defaults to true. */
   autoStart?: boolean;
@@ -144,7 +144,7 @@ function WalkthroughInner({
   client,
   projectId,
 }: {
-  client: ForgeApiClient;
+  client: ScfApiClient;
   projectId: string;
 }) {
   const tour = useTour();
@@ -193,7 +193,7 @@ function WalkthroughInner({
 
       <section
         data-tour="loop"
-        aria-label="The Forge build loop"
+        aria-label="The SCF build loop"
         className={cn(
           "relative rounded-2xl border border-border bg-card/40 p-5 transition-all",
           loopActive && "z-50 ring-2 ring-primary shadow-lg",
@@ -241,7 +241,7 @@ function Hero({
           </span>
           <div className="flex flex-col gap-1">
             <h1 className="font-display text-2xl font-semibold tracking-tight">
-              Get started with Forge
+              Get started with SCF
             </h1>
             <p className="max-w-xl text-sm text-muted-foreground">
               A two-minute tour of the loop every change travels through — from a

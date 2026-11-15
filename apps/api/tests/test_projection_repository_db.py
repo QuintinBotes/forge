@@ -27,16 +27,16 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.projection_repository_db import SqlAlchemyProjectionRepository
-from forge_db.base import Base
-from forge_db.models import (
+from scf_api.services.projection_repository_db import SqlAlchemyProjectionRepository
+from scf_db.base import Base
+from scf_db.models import (
     Project,
     SpecDocument,
     TraceabilitySpecRollup,
     Workspace,
 )
-from forge_spec import InMemoryProjectionRepository, ProjectionRepository
-from forge_spec.dashboard_schemas import (
+from scf_spec import InMemoryProjectionRepository, ProjectionRepository
+from scf_spec.dashboard_schemas import (
     CellStatus,
     CriterionLinkRecord,
     SpecRollupRecord,

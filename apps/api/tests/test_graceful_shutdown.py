@@ -5,15 +5,15 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
-from forge_api.middleware import shutdown as shutdown_mod
-from forge_api.middleware.shutdown import (
+from scf_api.main import create_app
+from scf_api.middleware import shutdown as shutdown_mod
+from scf_api.middleware.shutdown import (
     ShutdownState,
     current_state,
     lifespan,
     set_current_state,
 )
-from forge_api.settings import Settings
+from scf_api.settings import Settings
 
 
 @pytest.fixture(autouse=True)
@@ -49,7 +49,7 @@ def test_readiness_503_once_draining() -> None:
 
 def test_readiness_requires_deps_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     # With the hard-gate on and the DB unreachable, readiness is 503.
-    import forge_api.routers.health as health
+    import scf_api.routers.health as health
 
     def _boom(checks: dict[str, str]) -> bool:
         checks["database"] = "error: Boom"
@@ -96,8 +96,8 @@ def test_lifespan_refuses_bad_embedder_config_at_startup(
     # refuse the process at startup — previously /health stayed 200 while
     # every /knowledge/* call 500'd. The lifespan warms the embedder before
     # marking serving, so entering the TestClient raises.
-    from forge_api.routers import knowledge as knowledge_router
-    from forge_api.settings import get_settings
+    from scf_api.routers import knowledge as knowledge_router
+    from scf_api.settings import get_settings
 
     monkeypatch.setenv("FORGE_EMBEDDING_PROVIDER", "openai-compatible")
     monkeypatch.setenv("FORGE_EMBEDDING_MODEL", "text-embedding-3-small")
@@ -116,7 +116,7 @@ def test_lifespan_refuses_bad_embedder_config_at_startup(
 
 def test_dispose_db_engine_noop_when_never_built(monkeypatch: pytest.MonkeyPatch) -> None:
     # If the engine cache is empty, dispose must not build one just to close it.
-    from forge_api import db
+    from scf_api import db
 
     monkeypatch.setattr(db.get_engine, "cache_clear", db.get_engine.cache_clear)
     db.get_engine.cache_clear()
@@ -144,8 +144,8 @@ def test_lifespan_refuses_the_test_only_reranker_at_startup(
 ) -> None:
     # A .env copied from an old template still selects the fixture reranker;
     # the process must refuse to serve rather than fail every /knowledge call.
-    from forge_api.routers import knowledge as knowledge_router
-    from forge_api.settings import get_settings
+    from scf_api.routers import knowledge as knowledge_router
+    from scf_api.settings import get_settings
 
     monkeypatch.setenv("FORGE_RERANK_PROVIDER", "fixture")
     get_settings.cache_clear()

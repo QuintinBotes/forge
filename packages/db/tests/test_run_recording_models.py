@@ -21,8 +21,8 @@ from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import AgentRun, Project, RunRecording, Task, WorkflowRun, Workspace
+from scf_db.base import Base
+from scf_db.models import AgentRun, Project, RunRecording, Task, WorkflowRun, Workspace
 
 
 def _sample_cassette() -> dict[str, object]:

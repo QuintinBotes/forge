@@ -1,5 +1,5 @@
-# forge-db
+# scf-db
 
-SQLAlchemy 2.x data model and Alembic migrations for Forge.
+SQLAlchemy 2.x data model and Alembic migrations for Swarm Code Factory.
 
-Part of the [Forge](../../README.md) monorepo. Apache-2.0 licensed.
+Part of the [SCF](../../README.md) monorepo. Apache-2.0 licensed.

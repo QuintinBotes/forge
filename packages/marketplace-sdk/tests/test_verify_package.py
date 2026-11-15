@@ -15,15 +15,15 @@ from datetime import UTC, datetime
 
 from _mp_helpers import Keypair, Package
 
-from forge_marketplace.manifest import compute_manifest_hash
-from forge_marketplace.models import (
+from scf_marketplace.manifest import compute_manifest_hash
+from scf_marketplace.models import (
     ArtifactKind,
     InstallRequest,
     RegistryIndexEntry,
     RegistryIndexVersion,
     VerificationStatus,
 )
-from forge_marketplace.verifier import verify_package
+from scf_marketplace.verifier import verify_package
 
 REGISTRY_ID = uuid.UUID("00000000-0000-0000-0000-0000000000d1")
 

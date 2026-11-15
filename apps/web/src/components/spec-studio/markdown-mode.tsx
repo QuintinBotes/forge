@@ -243,7 +243,7 @@ function PreviewPanel({ manifest }: { manifest: ReturnType<typeof parseSpecMarkd
  * **Preview** (a readable render of the parsed sections) and
  * **Traceability** (local requirement -> acceptance-criteria coverage) — plus
  * a line-anchored parse-issue list, all recomputed on every keystroke via
- * `parseSpecMarkdown` (a client-side mirror of `forge_spec.markdown.parse_spec_md`).
+ * `parseSpecMarkdown` (a client-side mirror of `scf_spec.markdown.parse_spec_md`).
  * Saving re-renders `manifest.yaml` to match on the backend, which remains
  * the authoritative parser.
  */

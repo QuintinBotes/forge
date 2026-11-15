@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from forge_contracts import SubAgentPolicy, SubAgentRole, SubagentRules
-from forge_coordinator import resolve_allowed_actions, resolve_max_parallel
+from scf_contracts import SubAgentPolicy, SubAgentRole, SubagentRules
+from scf_coordinator import resolve_allowed_actions, resolve_max_parallel
 
 
 def test_implementer_lacks_query_mcp() -> None:

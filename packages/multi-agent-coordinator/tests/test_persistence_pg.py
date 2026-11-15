@@ -13,7 +13,7 @@ pytestmark = pytest.mark.postgres
 def session_factory(pg_engine):
     from sqlalchemy.orm import Session
 
-    from forge_db.base import Base
+    from scf_db.base import Base
 
     Base.metadata.create_all(pg_engine)
 
@@ -24,7 +24,7 @@ def session_factory(pg_engine):
 
 
 def _seed_parent(session_factory) -> tuple[uuid.UUID, uuid.UUID]:
-    from forge_db.models import AgentRun, Workspace
+    from scf_db.models import AgentRun, Workspace
 
     ws_id = uuid.uuid4()
     parent_id = uuid.uuid4()
@@ -46,8 +46,8 @@ def _seed_parent(session_factory) -> tuple[uuid.UUID, uuid.UUID]:
 
 
 def test_sub_agent_run_create_update_list_roundtrip(session_factory) -> None:
-    from forge_contracts import RunStatus, SubAgentRole
-    from forge_coordinator import SqlAlchemySubAgentRunSink, SubAgentRunCreate
+    from scf_contracts import RunStatus, SubAgentRole
+    from scf_coordinator import SqlAlchemySubAgentRunSink, SubAgentRunCreate
 
     ws_id, parent_id = _seed_parent(session_factory)
     sink = SqlAlchemySubAgentRunSink(session_factory)
@@ -66,7 +66,7 @@ def test_sub_agent_run_create_update_list_roundtrip(session_factory) -> None:
     )
 
     # The child F06 run row must exist (FK target).
-    from forge_db.models import AgentRun
+    from scf_db.models import AgentRun
 
     child_run_id = uuid.uuid4()
     with session_factory() as session:
@@ -95,7 +95,7 @@ def test_sub_agent_run_create_update_list_roundtrip(session_factory) -> None:
     assert res.token_usage.input_tokens == 10
 
     # AC 20 (at rest): the model api key never lands in the persisted objective.
-    from forge_db.models import SubAgentRun
+    from scf_db.models import SubAgentRun
 
     with session_factory() as session:
         obj = session.get(SubAgentRun, row_id)
@@ -108,8 +108,8 @@ def test_sub_agent_run_create_update_list_roundtrip(session_factory) -> None:
 def test_unique_assignment_per_parent(session_factory) -> None:
     from sqlalchemy.exc import IntegrityError
 
-    from forge_contracts import RunStatus, SubAgentRole
-    from forge_coordinator import SqlAlchemySubAgentRunSink, SubAgentRunCreate
+    from scf_contracts import RunStatus, SubAgentRole
+    from scf_coordinator import SqlAlchemySubAgentRunSink, SubAgentRunCreate
 
     ws_id, parent_id = _seed_parent(session_factory)
     sink = SqlAlchemySubAgentRunSink(session_factory)

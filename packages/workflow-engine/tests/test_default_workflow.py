@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from itertools import pairwise
 
-from forge_contracts import WorkflowState
-from forge_workflow.default_workflow import (
+from scf_contracts import WorkflowState
+from scf_workflow.default_workflow import (
     DEFAULT_WORKFLOW_NAME,
     default_feature_definition,
 )
-from forge_workflow.fsm import TransitionGraph
+from scf_workflow.fsm import TransitionGraph
 
 # The spec's documented happy-path chain.
 SPEC_HAPPY_PATH = [

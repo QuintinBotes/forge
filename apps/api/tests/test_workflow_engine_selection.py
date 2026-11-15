@@ -7,13 +7,13 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal
-from forge_api.main import app
-from forge_api.services import temporal_health, workflow_engine
-from forge_contracts import UserRole
-from forge_workflow import WorkflowEngineImpl
-from forge_workflow.store import SqlAlchemyWorkflowStore
-from forge_workflow.temporal.engine import TemporalWorkflowEngine
+from scf_api.deps import Principal
+from scf_api.main import app
+from scf_api.services import temporal_health, workflow_engine
+from scf_contracts import UserRole
+from scf_workflow import WorkflowEngineImpl
+from scf_workflow.store import SqlAlchemyWorkflowStore
+from scf_workflow.temporal.engine import TemporalWorkflowEngine
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 
@@ -55,7 +55,7 @@ def test_temporal_backend_selected_by_env(monkeypatch: pytest.MonkeyPatch, workf
 def test_router_dependency_returns_selected_engine(
     monkeypatch: pytest.MonkeyPatch, workflow_db
 ) -> None:
-    from forge_api.routers.workflow import get_workflow_engine
+    from scf_api.routers.workflow import get_workflow_engine
 
     principal = make_test_principal(workspace_id=WS)
     with workflow_db.factory() as session:
@@ -99,7 +99,7 @@ def test_readyz_temporal_healthy_is_200(
 
 
 # --------------------------------------------------------------------------- #
-# F25 — forge-cli temporal bootstrap idempotency (AC20)                        #
+# F25 — scf-cli temporal bootstrap idempotency (AC20)                        #
 # --------------------------------------------------------------------------- #
 
 
@@ -126,7 +126,7 @@ class _FakeClient:
 
 
 async def test_temporal_bootstrap_is_idempotent() -> None:
-    from forge_api.cli import bootstrap_namespace
+    from scf_api.cli import bootstrap_namespace
 
     client = _FakeClient()
     created_first = await bootstrap_namespace(client, "forge", 30)
@@ -138,7 +138,7 @@ async def test_temporal_bootstrap_is_idempotent() -> None:
 
 
 def test_cli_parser_exposes_temporal_commands() -> None:
-    from forge_api.cli import build_parser
+    from scf_api.cli import build_parser
 
     args = build_parser().parse_args(["temporal", "bootstrap"])
     assert (args.group, args.command) == ("temporal", "bootstrap")

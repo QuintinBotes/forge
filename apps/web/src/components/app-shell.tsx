@@ -31,7 +31,6 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { SessionMenu } from "@/components/auth/session-gate";
 import { useCommandPaletteOptional } from "@/components/command-palette";
-import { ForgeMark } from "@/components/forge-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { DevBanner } from "@/components/ui/dev-banner";
@@ -165,8 +164,13 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
       <div className="flex h-14 items-center gap-2 px-5 font-display text-lg font-semibold tracking-tight">
-        <ForgeMark className="h-7 w-7" />
-        Forge
+        <span
+          aria-hidden
+          className="flex h-7 w-7 items-center justify-center rounded-md bg-primary font-mono text-[0.625rem] font-bold text-primary-foreground"
+        >
+          SCF
+        </span>
+        Swarm Code Factory
       </div>
       <nav aria-label="Primary" className="flex min-h-0 flex-1 flex-col">
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-3">

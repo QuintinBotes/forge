@@ -1,4 +1,4 @@
-"""Dual-format engine tests for ``forge_spec`` (slice ss-engine).
+"""Dual-format engine tests for ``scf_spec`` (slice ss-engine).
 
 ``FileSpecEngine`` treats ``spec.md`` (prose) and ``manifest.yaml`` (machine) as
 BOTH first-class, EDITABLE serializations of the one canonical
@@ -20,14 +20,14 @@ import uuid
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     AcceptanceCriterion,
     Constraint,
     Requirement,
     SpecManifest,
     SpecStatus,
 )
-from forge_spec import (
+from scf_spec import (
     FileSpecEngine,
     SpecReconcileWarning,
     dump_manifest,
@@ -36,7 +36,7 @@ from forge_spec import (
     render_spec_md,
     spec_id_for_key,
 )
-from forge_spec import manifest as manifest_io
+from scf_spec import manifest as manifest_io
 
 
 @pytest.fixture

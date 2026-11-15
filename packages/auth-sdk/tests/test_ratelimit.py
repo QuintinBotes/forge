@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from forge_auth.ratelimit import InMemoryRateLimiter
+from scf_auth.ratelimit import InMemoryRateLimiter
 
 
 class FakeClock:

@@ -1,4 +1,4 @@
-"""Unit tests for the Forge core data model (Task 0.2).
+"""Unit tests for the SCF core data model (Task 0.2).
 
 These exercise the SHARED SUBSTRATE every later package consumes:
 - every spec entity has a SQLAlchemy model,
@@ -20,9 +20,9 @@ from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session, configure_mappers
 
-import forge_db.models as models
-from forge_db.base import Base
-from forge_db.models import (
+import scf_db.models as models
+from scf_db.base import Base
+from scf_db.models import (
     EMBEDDING_DIM,
     APIKey,
     KnowledgeSource,
@@ -30,8 +30,8 @@ from forge_db.models import (
     User,
     Workspace,
 )
-from forge_db.models.enums import ChunkType
-from forge_db.models.knowledge import CHUNK_TYPE_WEIGHTS
+from scf_db.models.enums import ChunkType
+from scf_db.models.knowledge import CHUNK_TYPE_WEIGHTS
 
 # The full spec Core Data Model — base entities + the F17 incident-workflow
 # tables (incident_alert / incident_event / remediation_plan / postmortem /

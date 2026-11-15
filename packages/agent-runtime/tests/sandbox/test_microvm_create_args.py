@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 from _sandbox_fakes import FakeDockerClient, FakeExecResult
 
-from forge_agent.sandbox import MicroVMSandboxProvider
-from forge_agent.sandbox import microvm as microvm_module
-from forge_agent.sandbox.microvm import (
+from scf_agent.sandbox import MicroVMSandboxProvider
+from scf_agent.sandbox import microvm as microvm_module
+from scf_agent.sandbox.microvm import (
     KATA_MEMORY_ANNOTATION,
     KATA_VCPUS_ANNOTATION,
 )
-from forge_contracts import SandboxKind
+from scf_contracts import SandboxKind
 
 
 @pytest.fixture(autouse=True)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from forge_contracts import UserRole
+from scf_contracts import UserRole
 
 
 def _payload(project_id: uuid.UUID, **overrides) -> dict:

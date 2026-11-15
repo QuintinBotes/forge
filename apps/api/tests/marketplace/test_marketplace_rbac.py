@@ -14,9 +14,9 @@ from conftest import (
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from forge_api.services.marketplace_service import MarketplaceService
-from forge_contracts import UserRole
-from forge_db.models.marketplace import MarketplaceAuditLog
+from scf_api.services.marketplace_service import MarketplaceService
+from scf_contracts import UserRole
+from scf_db.models.marketplace import MarketplaceAuditLog
 
 
 def _body(registry, slug: str = "rbac-x") -> dict:
@@ -71,7 +71,7 @@ def test_audit_completeness_one_row_per_op(
     service: MarketplaceService, registry, gateway: FakeGateway, keypair: Keypair, session_factory
 ) -> None:
     """AC18: add/sync/install/uninstall each write exactly one audit row."""
-    from forge_marketplace.models import ArtifactKind, InstallRequest
+    from scf_marketplace.models import ArtifactKind, InstallRequest
 
     manifest, version = make_skill_version(keypair, slug="audited", name="audited")
     gateway.add(manifest, version)

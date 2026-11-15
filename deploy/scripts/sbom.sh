@@ -25,7 +25,7 @@ fi
 
 mkdir -p "$SBOM_DIR"
 for svc in "${services[@]}"; do
-  image="forge/${svc}:${FORGE_VERSION}"
+  image="swarm-code-factory/${svc}:${FORGE_VERSION}"
   out="$SBOM_DIR/${svc}.cdx.json"
   echo "syft $image -> $out"
   syft "$image" -o "cyclonedx-json=$out" -q

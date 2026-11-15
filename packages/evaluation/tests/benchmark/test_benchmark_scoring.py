@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from forge_eval.benchmark import (
+from scf_eval.benchmark import (
     BenchmarkCaseResult,
     BenchmarkReport,
     BenchmarkScoring,
     MetricAggregate,
     compute_benchmark_score,
 )
-from forge_eval.golden import GoldenCase
+from scf_eval.golden import GoldenCase
 
 
 def _report(aggregate: dict[str, float]) -> BenchmarkReport:

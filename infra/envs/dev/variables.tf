@@ -152,7 +152,7 @@ variable "admin_ssh_cidrs" {
 variable "forge_repo_url" {
   description = "Git URL cloud-init clones on first boot to obtain deploy/docker-compose.yml. Empty string skips the clone (Docker is still installed)."
   type        = string
-  default     = "https://github.com/QuintinBotes/forge.git"
+  default     = "https://github.com/QuintinBotes/swarm-code-factory.git"
 }
 
 variable "forge_repo_ref" {

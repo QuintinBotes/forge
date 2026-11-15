@@ -14,7 +14,7 @@ pm_connection:
   auth_type: oauth            # oauth | api_token (personal API key)
   sync_direction: bidirectional
   conflict_policy: newest_wins
-  status_map: {}              # Linear workflow-state type is 1:1 with Forge category
+  status_map: {}              # Linear workflow-state type is 1:1 with SCF category
   priority_map: {}
   field_map: {}
   on_external_delete: unlink

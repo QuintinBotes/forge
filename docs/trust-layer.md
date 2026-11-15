@@ -42,8 +42,8 @@ raw step log lives in), the human approver, the linked workflow/agent run, the
 PR numbers, and the spec key/version.
 
 The contract lives in
-`packages/contracts/forge_contracts/attestation.py`. The signer/verifier
-(`packages/observability/forge_obs/attest/signing.py`) uses raw **Ed25519** keys
+`packages/contracts/scf_contracts/attestation.py`. The signer/verifier
+(`packages/observability/scf_obs/attest/signing.py`) uses raw **Ed25519** keys
 and signs over the DSSE **PAE** (Pre-Authentication Encoding) of
 `(payloadType, payload)`, so relabeling the payload type invalidates the
 signature. Signing and verifying are pure and total — malformed input is "not
@@ -59,7 +59,7 @@ rather than trusting a signer-asserted one.
 
 ### Data model
 
-`AttestationService` (`apps/api/forge_api/services/attestation_service.py`)
+`AttestationService` (`apps/api/scf_api/services/attestation_service.py`)
 reads the strongly-linked rows for a workflow run (`AgentRun`,
 `TraceabilityCriterionLink`, `SpecVersion`), assembles the `ChangesetProvenance`
 predicate inside an in-toto `Statement`, signs it, inserts one append-only
@@ -70,7 +70,7 @@ append-only, the id is pre-generated so the audit event can reference it and
 `audit_seq` lands in the single INSERT.
 
 The `attestation` table (migration `0036`,
-`packages/db/forge_db/models/attestation.py`) is append-only, hardened by the
+`packages/db/scf_db/models/attestation.py`) is append-only, hardened by the
 shared Postgres BEFORE UPDATE/DELETE immutability trigger. Columns:
 `subject_digest`, `predicate_type`, `envelope` (the full DSSE JSON),
 `payload_hash` (sha256 of the PAE-encoded payload the signature covers),
@@ -87,7 +87,7 @@ approving a `pr` gate that carries a `workflow_run_id` attests the changeset
 HTTP route that mints one.
 
 Records are surfaced **read-only over REST**
-(`apps/api/forge_api/routers/attestations.py`), workspace-scoped with the same
+(`apps/api/scf_api/routers/attestations.py`), workspace-scoped with the same
 auth/tenancy contract as the approvals router (cross-workspace ids read as
 `404` — no existence leak):
 
@@ -98,8 +98,8 @@ auth/tenancy contract as the approvals router (cross-workspace ids read as
 | `GET /approvals/{id}/attestation` | The record minted for the gate's linked workflow run (`404` when none exists — normal while the gate is still pending) |
 
 Every response carries a computed `verified: bool` produced by the **same
-verification seam `forge-verify --run` uses**
-(`forge_api.cli_verify.verify_stored_attestation`): re-derive `payload_hash`
+verification seam `scf-verify --run` uses**
+(`scf_api.cli_verify.verify_stored_attestation`): re-derive `payload_hash`
 from the envelope's PAE encoding, confirm it matches the recorded column, then
 Ed25519-verify the signature against the deployment's verification key (the
 public half of `FORGE_ATTEST_SIGNING_KEY`). A record this deployment cannot
@@ -113,8 +113,8 @@ signed + verified, signed + verification-failed, and confirmed-absent ("not
 attested" — normal while the gate is pending, since records are minted on
 approval). A failed fetch renders nothing: an error is not proof of absence.
 
-Verification is offline-first via the `forge-verify` CLI (`python -m
-forge_api.cli_verify`, `apps/api/forge_api/cli_verify.py`). Three
+Verification is offline-first via the `scf-verify` CLI (`python -m
+scf_api.cli_verify`, `apps/api/scf_api/cli_verify.py`). Three
 mutually-exclusive modes, all exiting **non-zero on any verification failure** so
 they can gate a release:
 
@@ -137,7 +137,7 @@ tampered").
 - **REST `verified` is deployment-relative.** The endpoints verify against the
   public half of this deployment's `FORGE_ATTEST_SIGNING_KEY`, and the raw DSSE
   envelope is not exposed over REST — independent third-party verification goes
-  through `forge-verify`, which re-reads the stored row.
+  through `scf-verify`, which re-reads the stored row.
 - **Default signing key is process-ephemeral.** If `FORGE_ATTEST_SIGNING_KEY`
   is unset, signatures are made with a warned-about ephemeral key and will fail
   verification after a restart or from another process. Set a stable key in any
@@ -161,7 +161,7 @@ the first point where a re-run stops matching the tape.
 
 Recording is opt-in behind `FORGE_RECORD_RUNS=1` (default **off**). When
 enabled, `build_agent_runner`
-(`apps/worker/forge_worker/agent_runner.py`) wraps the model and tools with
+(`apps/worker/scf_worker/agent_runner.py`) wraps the model and tools with
 `RecordingModelClient` / `RecordingToolRegistry` bound to a fresh cassette;
 `persist_run_recording` then redacts the cassette, offloads oversized tool
 outputs to the artifact store, and inserts an append-only `RunRecording` row.
@@ -169,7 +169,7 @@ outputs to the artifact store, and inserts an append-only `RunRecording` row.
 ### Data model
 
 The `run_recording` table (migration `0037`,
-`packages/db/forge_db/models/run_recording.py`) is append-only via the shared
+`packages/db/scf_db/models/run_recording.py`) is append-only via the shared
 immutability trigger. Columns: nullable `agent_run_id`/`workflow_run_id`, the
 redacted `cassette` snapshot (LLM calls, tool calls, and the redacted env, keyed
 by call-index), `model` (the id the run was driven under — nullable, since a
@@ -178,7 +178,7 @@ cassette's canonical JSON — a whole-tape fingerprint).
 
 ### API / CLI surface
 
-Two endpoints on the agent router (`apps/api/forge_api/routers/agent.py`), both
+Two endpoints on the agent router (`apps/api/scf_api/routers/agent.py`), both
 loading the workspace-scoped recording (404 for a missing or foreign-tenant
 one):
 
@@ -187,8 +187,8 @@ one):
 | `POST /agent/runs/{run_id}/replay` | `READ` | Re-run the objective by substitution and return a per-step diff plus any divergence. Read-only — never mutates the recording or produces a new persisted run. |
 | `POST /agent/runs/{run_id}/fork` | `RUN_AGENT` | Counterfactual fork: replay up to `fork_index`, then from the fork on, LLM completions run against a **different** model (`model`, optionally with a `prompt_override` appended to the system prompt) and tool dispatches run **live**. If the pre-fork prefix no longer reproduces the tape, the fork aborts and the divergence is reported. |
 
-The `forge-replay` CLI (`python -m forge_api.cli_replay`,
-`apps/api/forge_api/cli_replay.py`) loads a persisted cassette by id, replays a
+The `scf-replay` CLI (`python -m scf_api.cli_replay`,
+`apps/api/scf_api/cli_replay.py`) loads a persisted cassette by id, replays a
 supplied objective by substitution, and prints a step-by-step diff. Exit codes:
 `0` reproduced, `1` diverged or error, `3` no database configured.
 
@@ -227,13 +227,13 @@ Otherwise the change earns a `survived` verdict — the "survived adversarial
 review" signal that feeds the Attested Changeset. Heterogeneity is enforced up
 front: a homogeneous adversary (same provider as the coder) is rejected with
 `HomogeneousAdversaryError` before any model or sandbox work. The harness lives
-in `packages/multi-agent-coordinator/forge_coordinator/red_team.py`
+in `packages/multi-agent-coordinator/scf_coordinator/red_team.py`
 (`run_red_team`).
 
 ### Data model
 
 The `red_team_record` table (migration `0038`,
-`packages/db/forge_db/models/red_team.py`) is append-only via the shared
+`packages/db/scf_db/models/red_team.py`) is append-only via the shared
 immutability trigger. Columns: nullable `workflow_run_id`, `verdict`
 (`blocked`/`survived`), `kind` (`failing_test`, `spec_violation`, or `parked`),
 `evidence` (the structured attack result), and the heterogeneous
@@ -243,17 +243,17 @@ adversary model).
 ### API / CLI surface
 
 The gate runs on **both** engine spines, minting the same verdict contract
-through the shared `forge_workflow.red_team_gate` helper:
+through the shared `scf_workflow.red_team_gate` helper:
 
 - **Temporal (V2)** — driven inside the workflow
-  (`packages/workflow-engine/forge_workflow/temporal/workflows.py`): after the
+  (`packages/workflow-engine/scf_workflow/temporal/workflows.py`): after the
   spec is drafted and clarified but **before** the human spec-approval gate, the
   workflow runs a red-team scan. A `blocked` verdict routes the change back for
   changes (→ clarification → spec review) so a human must address the finding; a
   `survived` verdict proceeds unchanged. The `forge.run_red_team_scan` activity
-  (`packages/workflow-engine/forge_workflow/temporal/activities.py`) returns
+  (`packages/workflow-engine/scf_workflow/temporal/activities.py`) returns
   exactly `self._red_team_fn(inp)` and persists nothing itself; the worker's
-  bound `red_team_fn` (`apps/worker/forge_worker/temporal_services.py`) records
+  bound `red_team_fn` (`apps/worker/scf_worker/temporal_services.py`) records
   the `RedTeamRecord` and, on a survive, the `redteam.survived` audit event
   through `ensure_red_team_verdict`, once per run.
 - **V1 (Postgres FSM)** — the FSM is a plain transition graph with no gate
@@ -266,7 +266,7 @@ through the shared `forge_workflow.red_team_gate` helper:
   extra step or injected recorder required.
 
 The verdict is surfaced at `GET /workflow/runs/{run_id}/red-team`
-(`apps/api/forge_api/routers/workflow.py`), returning the latest verdict plus the
+(`apps/api/scf_api/routers/workflow.py`), returning the latest verdict plus the
 full scan history (a `blocked` scan followed by a re-submitted `survived` one is
 common). It reads the append-only table scoped to the caller's workspace on the
 row itself; an unscanned or foreign run reads as `latest=None` with an empty
@@ -284,7 +284,7 @@ foreign runs (no existence leak).
 ### Current limitations
 
 - **Parked-pass when no adversary is wired.** The default `red_team_fn` on both
-  spines (`forge_workflow.red_team_gate.parked_pass_verdict`, which the Temporal
+  spines (`scf_workflow.red_team_gate.parked_pass_verdict`, which the Temporal
   activity's `_default_red_team` and the API's `get_red_team_fn` default to)
   builds a **parked-pass** verdict: `verdict=survived`, `kind=parked`,
   `evidence={"parked": true, "reason": "no adversary model/sandbox wired"}`.
@@ -296,7 +296,7 @@ foreign runs (no existence leak).
 - **The parked-pass is persisted on both spines.** The V1 router transition
   handler calls `ensure_red_team_verdict` when a run reaches `spec_review`. The
   Temporal worker binds the same function to `forge.run_red_team_scan`
-  (`apps/worker/forge_worker/temporal_services.py`), so a Temporal run with no
+  (`apps/worker/scf_worker/temporal_services.py`), so a Temporal run with no
   adversary wired also has one `survived`/`parked` row and `GET
   /workflow/runs/{run_id}/red-team` shows it. A retried scan records no second
   row. A `WorkflowActivities` built without a `red_team_fn` and without
@@ -318,7 +318,7 @@ accumulator* minted from the org's own merged PRs: each merge can mint one hidde
 regression case, and those minted test ids live only on disk in the suite dir —
 they never enter a model prompt.
 
-The gate itself (`packages/evaluation/forge_eval/sweval/gate.py`,
+The gate itself (`packages/evaluation/scf_eval/sweval/gate.py`,
 `SelfEvalGate.check_config`) is small and injectable: it looks up the baseline,
 runs the eval runner over the proposed config, and raises
 `SelfEvalRegressionError` when the new resolution rate is below the baseline. It
@@ -336,13 +336,13 @@ Two migrations:
   preserves today's shared/community-suite semantics for every pre-existing row;
   only a newly-minted self-eval suite opts into `private=true`.
 - **`0040`** adds the `self_eval_baseline` table
-  (`packages/db/forge_db/models/benchmark.py`, `SelfEvalBaseline`): exactly one
+  (`packages/db/scf_db/models/benchmark.py`, `SelfEvalBaseline`): exactly one
   baseline per `(workspace, suite)` (unique constraint), carrying
   `baseline_rate`, `resolved`, `total`, a **redacted** `config` snapshot (no
   secrets ever land in this table), and `recorded_by`. A run upserts the row.
 
 `SelfEvalService`
-(`apps/api/forge_api/services/self_eval_service.py`) is the storage layer:
+(`apps/api/scf_api/services/self_eval_service.py`) is the storage layer:
 `workspace_baseline` is the gate's baseline lookup (most-recently-updated wins;
 `None` on cold start), and `record_baseline` upserts — with `overwrite=False`, an
 existing baseline is left untouched so a regressing run can never silently
@@ -351,7 +351,7 @@ existing baseline is left untouched so a regressing run can never silently
 ### API / CLI surface
 
 The gate is consulted at the Adaptive Orchestration config-change API
-(`apps/api/forge_api/routers/ao_settings.py`) on `PUT /ao/role-config/{role}`
+(`apps/api/scf_api/routers/ao_settings.py`) on `PUT /ao/role-config/{role}`
 and `PUT /ao/settings`. Enforcement is behind the `self_eval_enforce` app
 setting (a no-op unless set). On a regression the block is **audited**
 (`ao.config.self_eval_blocked`, its own committed row) and a `409` is raised
@@ -369,7 +369,7 @@ Two thin endpoints back the web panel (same router):
   `forge.self_eval.run` Celery task with the workspace's current effective AO
   config snapshot (redacted) via the api->worker `send_task` seam
   (`enqueue_self_eval_run` in
-  `apps/api/forge_api/services/self_eval_service.py`, mirroring
+  `apps/api/scf_api/services/self_eval_service.py`, mirroring
   `pm_service.py`). `409 no_private_suite` when no published private suite
   exists (nothing the worker could score); the request is audited
   (`ao.self_eval.run_requested`). The run itself still executes only in the
@@ -378,10 +378,10 @@ Two thin endpoints back the web panel (same router):
 Two worker tasks own the offline, agent-driven halves (they run in the worker,
 never a request path, because a real run is minutes-long):
 
-- `forge.self_eval.mint` (`apps/worker/forge_worker/tasks/self_eval_mint.py`) —
+- `forge.self_eval.mint` (`apps/worker/scf_worker/tasks/self_eval_mint.py`) —
   mints a hidden regression case from each merged PR and appends it to the
   private suite, re-freezing the manifest with a fresh `content_hash`.
-- `forge.self_eval.run` (`apps/worker/forge_worker/tasks/self_eval_run.py`) —
+- `forge.self_eval.run` (`apps/worker/scf_worker/tasks/self_eval_run.py`) —
   drives the `ProductionEvalRunner` over the private suite and records the
   baseline the gate blocks against. It is an honest **no-op** until an operator
   provisions the prerequisites (a published private suite, `FORGE_BENCHMARK_DIR`,
@@ -393,9 +393,9 @@ never a request path, because a real run is minutes-long):
 
 - **Phase A: the API-layer gate no-ops without an injected runner.** The default
   eval runner at the API layer (`_unavailable_runner` in
-  `apps/api/forge_api/services/self_eval_gate.py`) returns `None`, because
+  `apps/api/scf_api/services/self_eval_gate.py`) returns `None`, because
   running a workspace's private suite is a minutes-long worker job and
-  `apps/api` cannot import `forge_worker` without an import cycle. So at
+  `apps/api` cannot import `scf_worker` without an import cycle. So at
   config-change time the API gate has **no fresh scorecard for the proposed
   config and no-ops** — the gate *mechanism* (baseline lookup, regression block,
   force override, audit) is fully wired and exercised in tests by injecting a

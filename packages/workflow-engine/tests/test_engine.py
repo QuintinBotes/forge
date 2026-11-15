@@ -14,10 +14,10 @@ import uuid
 
 import pytest
 
-from forge_contracts import RunStatus, WorkflowEngine, WorkflowRun, WorkflowState
-from forge_workflow.engine import RETRY_COUNT_KEY, WorkflowEngineImpl
-from forge_workflow.exceptions import InvalidTransitionError, WorkflowRunNotFoundError
-from forge_workflow.store import InMemoryWorkflowStore
+from scf_contracts import RunStatus, WorkflowEngine, WorkflowRun, WorkflowState
+from scf_workflow.engine import RETRY_COUNT_KEY, WorkflowEngineImpl
+from scf_workflow.exceptions import InvalidTransitionError, WorkflowRunNotFoundError
+from scf_workflow.store import InMemoryWorkflowStore
 
 
 @pytest.fixture
@@ -130,7 +130,7 @@ def test_should_escalate_uses_confidence_threshold(engine: WorkflowEngineImpl) -
 
 
 def test_load_definition_round_trips(engine: WorkflowEngineImpl) -> None:
-    from forge_workflow.default_workflow import DEFAULT_FEATURE_WORKFLOW_YAML
+    from scf_workflow.default_workflow import DEFAULT_FEATURE_WORKFLOW_YAML
 
     definition = engine.load_definition(DEFAULT_FEATURE_WORKFLOW_YAML)
     assert definition.name == "default_feature"

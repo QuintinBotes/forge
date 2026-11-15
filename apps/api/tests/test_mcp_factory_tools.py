@@ -1,4 +1,4 @@
-"""Forge's factory records over its own MCP server (spec L seam 1, ADR-0015)."""
+"""SCF's factory records over its own MCP server (spec L seam 1, ADR-0015)."""
 
 from __future__ import annotations
 
@@ -13,29 +13,29 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.observability.audit import AuditCategory, AuditLog
-from forge_api.observability.redaction import redact_mapping
-from forge_api.routers.agent import get_agent_store
-from forge_api.routers.board import get_board_service
-from forge_api.routers.mcp_server import get_mcp_server_audit_log
-from forge_api.routers.spec import get_spec_engine
-from forge_api.services.approval_service import build_gate_registry, get_approval_service
-from forge_approval import (
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.observability.audit import AuditCategory, AuditLog
+from scf_api.observability.redaction import redact_mapping
+from scf_api.routers.agent import get_agent_store
+from scf_api.routers.board import get_board_service
+from scf_api.routers.mcp_server import get_mcp_server_audit_log
+from scf_api.routers.spec import get_spec_engine
+from scf_api.services.approval_service import build_gate_registry, get_approval_service
+from scf_approval import (
     ApprovalAuthorizer,
     ApprovalService,
     InMemoryActivityBus,
     InMemoryApprovalRepository,
 )
-from forge_approval.providers import InMemoryGrantStore
-from forge_board import InMemoryBoardService
-from forge_contracts import AgentRunResult, EpicDTO, RunStatus, UserRole
-from forge_db.base import Base
-from forge_db.models import Project, Workspace
-from forge_mcp.transports.http import HttpMcpTransport
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_approval.providers import InMemoryGrantStore
+from scf_board import InMemoryBoardService
+from scf_contracts import AgentRunResult, EpicDTO, RunStatus, UserRole
+from scf_db.base import Base
+from scf_db.models import Project, Workspace
+from scf_mcp.transports.http import HttpMcpTransport
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS = uuid.UUID("00000000-0000-0000-0000-0000000000a2")

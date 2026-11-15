@@ -18,30 +18,30 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-import forge_api.auth.service as auth_service_module
-import forge_api.db
-from forge_api.auth.service import AuthService
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.observability.redaction import redact_mapping
-from forge_api.observability.service import ObservabilityService, get_observability_service
-from forge_api.realtime.broadcaster import get_broadcaster
-from forge_api.realtime.manager import ConnectionManager, get_connection_manager
-from forge_api.routers.realtime import get_api_key_socket_lifetime
-from forge_api.services.approval_service import build_gate_registry, get_approval_service
-from forge_approval import (
+import scf_api.auth.service as auth_service_module
+import scf_api.db
+from scf_api.auth.service import AuthService
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.observability.redaction import redact_mapping
+from scf_api.observability.service import ObservabilityService, get_observability_service
+from scf_api.realtime.broadcaster import get_broadcaster
+from scf_api.realtime.manager import ConnectionManager, get_connection_manager
+from scf_api.routers.realtime import get_api_key_socket_lifetime
+from scf_api.services.approval_service import build_gate_registry, get_approval_service
+from scf_approval import (
     ENFORCED_GATES,
     ApprovalAuthorizer,
     ApprovalService,
     GateType,
     InMemoryApprovalRepository,
 )
-from forge_approval.providers import InMemoryGrantStore
-from forge_auth.tokens import encode_session_jwt
-from forge_contracts import RealtimeEvent, RealtimeEventType
-from forge_contracts.auth import SessionClaims
-from forge_contracts.enums import UserRole
-from forge_db.models import User, Workspace
+from scf_approval.providers import InMemoryGrantStore
+from scf_auth.tokens import encode_session_jwt
+from scf_contracts import RealtimeEvent, RealtimeEventType
+from scf_contracts.auth import SessionClaims
+from scf_contracts.enums import UserRole
+from scf_db.models import User, Workspace
 
 AUTH_SECRET = "approval-push-test-secret"
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000d1")
@@ -311,7 +311,7 @@ class RecordingBroadcaster:
 def test_the_v1_engine_announces_the_gate_it_opens(
     workflow_db: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(forge_api.db, "get_session_factory", lambda: workflow_db.factory)
+    monkeypatch.setattr(scf_api.db, "get_session_factory", lambda: workflow_db.factory)
     approvals = ApprovalService(
         InMemoryApprovalRepository(),
         build_gate_registry(InMemoryGrantStore()),

@@ -1,4 +1,4 @@
-# forge-approval
+# scf-approval
 
 The canonical Review & Approval Layer (slice F36 — human-approval-system).
 
@@ -14,7 +14,7 @@ One gate primitive backs every approval gate type in the spec (`spec`, `plan`,
 - `GateRegistry` — per-gate `GateContextProvider` (the nine "must-show" items)
   and `GateResolutionHook` (the side effect on approve) plug-in points; gate
   owners register at the composition root, so this package depends on nothing
-  above `forge-contracts`.
+  above `scf-contracts`.
 - `providers/` — the two gate primitives no other slice owns: `deploy` and
   `policy_override` (with the single-use, short-TTL `PolicyOverrideGrant`).
 

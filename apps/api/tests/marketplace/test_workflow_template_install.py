@@ -27,23 +27,23 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.observability.audit import AuditCategory
-from forge_api.services import marketplace_service
-from forge_api.services.marketplace_service import MarketplaceService
-from forge_contracts import UserRole
-from forge_db.models import Project, Task
-from forge_db.models.marketplace import (
+from scf_api.observability.audit import AuditCategory
+from scf_api.services import marketplace_service
+from scf_api.services.marketplace_service import MarketplaceService
+from scf_contracts import UserRole
+from scf_db.models import Project, Task
+from scf_db.models.marketplace import (
     MarketplaceAuditLog,
     MarketplaceInstallation,
     MarketplaceRegistry,
 )
-from forge_db.models.workflow_editor import (
+from scf_db.models.workflow_editor import (
     RevisionValidationStatus,
     WorkflowDefinition,
     WorkflowDefinitionRevision,
     WorkflowDefinitionSource,
 )
-from forge_workflow.editor.repository import DbWorkflowDefinitionRepository
+from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
 
 V2_LINE = LINE.replace("max_usd: 60", "max_usd: 70")
 

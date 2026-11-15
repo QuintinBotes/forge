@@ -1,7 +1,7 @@
-"""SDD lifecycle + gating tests for ``forge_spec`` (plan Task 1.7).
+"""SDD lifecycle + gating tests for ``scf_spec`` (plan Task 1.7).
 
 Covers: constitution_init -> spec_create -> spec_clarify -> spec_plan ->
-approve -> spec_tasks, the on-disk folder layout (FORGE_SPEC: Spec Folder
+approve -> spec_tasks, the on-disk folder layout (SCF_SPEC: Spec Folder
 Layout), and the spec gate (no task generation / implementation without an
 approved spec).
 """
@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     CheckResult,
     Constitution,
     Constraint,
@@ -23,7 +23,7 @@ from forge_contracts import (
     TaskDTO,
     ValidationReport,
 )
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 
 @pytest.fixture
@@ -279,7 +279,7 @@ def test_approve_after_review_decision_clears_the_note(engine) -> None:
 
 
 def test_reject_unknown_spec_raises_not_found(engine) -> None:
-    from forge_spec import SpecNotFoundError
+    from scf_spec import SpecNotFoundError
 
     with pytest.raises(SpecNotFoundError):
         engine.reject_spec(uuid.uuid4(), "no such spec")
@@ -309,7 +309,7 @@ def test_write_manifest_persists_edits(engine) -> None:
 
 
 def test_read_manifest_unknown_spec_raises(engine) -> None:
-    from forge_spec import SpecNotFoundError
+    from scf_spec import SpecNotFoundError
 
     with pytest.raises(SpecNotFoundError):
         engine.read_manifest(uuid.uuid4())

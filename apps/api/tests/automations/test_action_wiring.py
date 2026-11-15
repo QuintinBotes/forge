@@ -15,8 +15,8 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
-from forge_api.observability.audit import AuditCategory, AuditLog
-from forge_api.services.automation_actions import (
+from scf_api.observability.audit import AuditCategory, AuditLog
+from scf_api.services.automation_actions import (
     AutomationActionAuditSink,
     IncidentServiceDeclarer,
     MockDeployDispatcher,
@@ -25,21 +25,21 @@ from forge_api.services.automation_actions import (
     PmConnectionDisabledError,
     SprintServiceAutoStarter,
 )
-from forge_api.services.incident_service import IncidentService
-from forge_board.automation.executor import ActionContext
-from forge_board.automation.schemas import EntitySnapshot
-from forge_board.sprint_service import SprintService
-from forge_contracts.automation import (
+from scf_api.services.incident_service import IncidentService
+from scf_board.automation.executor import ActionContext
+from scf_board.automation.schemas import EntitySnapshot
+from scf_board.sprint_service import SprintService
+from scf_contracts.automation import (
     AutomationActionType,
     AutomationEntityType,
     AutomationTriggerEnvelope,
     AutomationTriggerSource,
     AutomationTriggerType,
 )
-from forge_contracts.enums import IncidentSeverity, SprintState
-from forge_contracts.pm import ExternalTask, ForgeTask, PMProvider
-from forge_db.base import Base
-from forge_db.models import Project, Sprint, Workspace
+from scf_contracts.enums import IncidentSeverity, SprintState
+from scf_contracts.pm import ExternalTask, PMProvider, ScfTask
+from scf_db.base import Base
+from scf_db.models import Project, Sprint, Workspace
 
 WS_ID = uuid.uuid4()
 
@@ -175,16 +175,16 @@ class _FakePMAdapter:
     provider = PMProvider.asana
 
     def __init__(self) -> None:
-        self.created: ForgeTask | None = None
+        self.created: ScfTask | None = None
 
-    async def create_external(self, forge_task: ForgeTask) -> ExternalTask:
-        self.created = forge_task
+    async def create_external(self, scf_task: ScfTask) -> ExternalTask:
+        self.created = scf_task
         return ExternalTask(
             provider=PMProvider.asana,
             external_id="EXT-9",
             external_key="EXT-9",
             url="https://asana.test/EXT-9",
-            title=forge_task.title,
+            title=scf_task.title,
             status_name="To Do",
             external_updated_at=datetime.now(UTC),
         )

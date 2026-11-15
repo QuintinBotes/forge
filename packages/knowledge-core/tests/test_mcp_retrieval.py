@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections import Counter
 
-from forge_contracts.dtos import KnowledgeScope, RetrievedChunk
-from forge_contracts.enums import ChunkType, MCPIndexStrategy
-from forge_knowledge.mcp_retrieval import retrieve_with_mcp
+from scf_contracts.dtos import KnowledgeScope, RetrievedChunk
+from scf_contracts.enums import ChunkType, MCPIndexStrategy
+from scf_knowledge.mcp_retrieval import retrieve_with_mcp
 
 
 class _FakeSearch:

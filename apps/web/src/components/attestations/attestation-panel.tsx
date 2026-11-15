@@ -4,7 +4,7 @@ import { BadgeCheck, BadgeX, FileQuestion } from "lucide-react";
 import { useState } from "react";
 
 import { useApprovalAttestation } from "@/lib/api/approvals";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import type { AttestationOut } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +14,7 @@ export interface AttestationPanelProps {
    * Absent -> nothing renders.
    */
   approvalId?: string | null;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**
@@ -26,7 +26,7 @@ export interface AttestationPanelProps {
  *
  * - **verified** — a signed record exists and its signature verifies against
  *   the deployment's key (computed server-side by the same path the
- *   `forge-verify` CLI uses);
+ *   `scf-verify` CLI uses);
  * - **verification-failed** — a signed record exists but its signature does
  *   NOT verify (wrong or rotated key, or a tampered record);
  * - **absent** — the server confirmed no attestation exists (normal while the

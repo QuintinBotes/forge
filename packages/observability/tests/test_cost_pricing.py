@@ -6,8 +6,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from forge_obs.cost.models import ModelPrice, ModelUsage
-from forge_obs.cost.pricing import InMemoryPriceBook, compute_cost
+from scf_obs.cost.models import ModelPrice, ModelUsage
+from scf_obs.cost.pricing import InMemoryPriceBook, compute_cost
 
 WS = uuid.uuid4()
 NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)

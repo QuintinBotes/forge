@@ -8,7 +8,7 @@ from collections.abc import Callable
 from conftest import APPROVER2_ID, APPROVER_ID, MEMBER_ID, configure_pipeline
 from fastapi.testclient import TestClient
 
-from forge_contracts import UserRole
+from scf_contracts import UserRole
 
 
 def _promote_to(client: TestClient, project_id: uuid.UUID, env: str, commit: str):

@@ -16,12 +16,12 @@ import uuid
 
 import pytest
 
-from forge_agent.sandbox import (
+from scf_agent.sandbox import (
     GvisorSandboxProvider,
     MicroVMSandboxProvider,
     detect_registered_runtimes,
 )
-from forge_contracts import SandboxKind, SandboxSpec
+from scf_contracts import SandboxKind, SandboxSpec
 
 _OPT_IN = os.environ.get("FORGE_SANDBOX_DOCKER_TESTS") == "1"
 _SANDBOX_IMAGE = os.environ.get("FORGE_SANDBOX_IMAGE_PYTHON", "")

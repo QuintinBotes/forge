@@ -2,7 +2,7 @@
 
 The real Celery worker dispatch path (``evaluate_envelope``) — not a hand-built
 test double — must actually route the six F40 action types through
-``forge_api.services.automation_actions.ExternalActionExecutor``. Prior to this
+``scf_api.services.automation_actions.ExternalActionExecutor``. Prior to this
 wiring, ``evaluate_envelope`` only ever constructed ``DbActionExecutor``, whose
 isinstance chain has no branch for the new action types: every one of them fell
 through to ``ActionResult(status="error", detail={"error": "unknown_action"})``
@@ -26,18 +26,18 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.automation import (
+from scf_contracts.automation import (
     AutomationEntityType,
     AutomationExecutionStatus,
     AutomationTriggerEnvelope,
     AutomationTriggerSource,
     AutomationTriggerType,
 )
-from forge_contracts.enums import IncidentSeverity
-from forge_db.base import Base
-from forge_db.models import AutomationRule, Project, Sprint, Task, Workspace
-from forge_db.models.enums import SprintState, TaskStatus
-from forge_worker.tasks.automations import evaluate_envelope
+from scf_contracts.enums import IncidentSeverity
+from scf_db.base import Base
+from scf_db.models import AutomationRule, Project, Sprint, Task, Workspace
+from scf_db.models.enums import SprintState, TaskStatus
+from scf_worker.tasks.automations import evaluate_envelope
 
 WS_ID = uuid.uuid4()
 

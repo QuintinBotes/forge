@@ -1,7 +1,7 @@
 """Spec M M3/M2 worker path: issue-driven dispatch + run write-back.
 
 Covers acceptance criteria 2, 4 and 6 at the worker seam
-(``forge.pm.process_webhook`` + ``forge_worker.tasks.pm_dispatch``):
+(``forge.pm.process_webhook`` + ``scf_worker.tasks.pm_dispatch``):
 
 * an ``issues.labeled`` delivery with ``forge:run`` on a connected repository
   from an allowed sender enqueues exactly one run whose objective is built
@@ -32,25 +32,25 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.auth.crypto import HmacAeadCipher
-from forge_api.auth.vault import SecretVault
-from forge_api.observability.audit import AuditLog
-from forge_api.services import pm_service as pm_service_module
-from forge_api.services.pm_service import PMConnectionService
-from forge_contracts import AgentObjective, AgentRunResult, RunStatus
-from forge_contracts.enums import Direction
-from forge_contracts.pm import ExternalTask, StatusCategory
-from forge_contracts.pm import PMProvider as ContractsProvider
-from forge_db.base import Base
-from forge_db.models import AgentRun, Project, RepositoryConnection, Workspace
-from forge_db.models.enums import PMConnectionStatus, PMDeliveryStatus, PMSyncDirection
-from forge_db.models.enums import PMProvider as DbPMProvider
-from forge_db.models.enums import RunStatus as DbRunStatus
-from forge_db.models.pm import PMConnection, PMWebhookDelivery
-from forge_worker.agent_runner import _maybe_tracker_writeback
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks.pm_dispatch import PM_DISPATCH_TASK, maybe_dispatch, post_run_writeback
-from forge_worker.tasks.pm_sync import process_webhook
+from scf_api.auth.crypto import HmacAeadCipher
+from scf_api.auth.vault import SecretVault
+from scf_api.observability.audit import AuditLog
+from scf_api.services import pm_service as pm_service_module
+from scf_api.services.pm_service import PMConnectionService
+from scf_contracts import AgentObjective, AgentRunResult, RunStatus
+from scf_contracts.enums import Direction
+from scf_contracts.pm import ExternalTask, StatusCategory
+from scf_contracts.pm import PMProvider as ContractsProvider
+from scf_db.base import Base
+from scf_db.models import AgentRun, Project, RepositoryConnection, Workspace
+from scf_db.models.enums import PMConnectionStatus, PMDeliveryStatus, PMSyncDirection
+from scf_db.models.enums import PMProvider as DbPMProvider
+from scf_db.models.enums import RunStatus as DbRunStatus
+from scf_db.models.pm import PMConnection, PMWebhookDelivery
+from scf_worker.agent_runner import _maybe_tracker_writeback
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks.pm_dispatch import PM_DISPATCH_TASK, maybe_dispatch, post_run_writeback
+from scf_worker.tasks.pm_sync import process_webhook
 
 WS_ID = uuid.uuid4()
 
@@ -149,7 +149,7 @@ def fake_adapter(monkeypatch: pytest.MonkeyPatch) -> FakeGitHubAdapter:
     ) -> FakeGitHubAdapter:
         return adapter
 
-    monkeypatch.setattr("forge_integrations.pm.registry.build_adapter", _fake_build_adapter)
+    monkeypatch.setattr("scf_integrations.pm.registry.build_adapter", _fake_build_adapter)
     monkeypatch.setattr(pm_service_module, "build_adapter", _fake_build_adapter)
     return adapter
 
@@ -294,7 +294,7 @@ def test_labeled_webhook_dispatches_exactly_one_run_from_refetched_issue(
     assert objective.objective == "Make widgets accessible"
     assert objective.description == BODY
     assert [c.text for c in objective.acceptance_criteria] == ["Widget renders", "Tests pass"]
-    # Server-owned + provenance context, all set by forge.
+    # Server-owned + provenance context, all set by SCF.
     runs = _runs(factory)
     assert len(runs) == 1
     assert runs[0].status == DbRunStatus.PENDING
@@ -535,7 +535,7 @@ def test_tracker_text_cannot_set_server_owned_context_and_body_truncates(
     assert "repo_path" not in objective.context
 
 
-def test_forge_marker_echo_is_skipped_without_fetch(
+def test_scf_marker_echo_is_skipped_without_fetch(
     factory: sessionmaker[Session],
     connections: PMConnectionService,
     project_id: uuid.UUID,
@@ -931,7 +931,7 @@ def test_writeback_claim_survives_outcome_rewrite(
     fake_adapter: FakeGitHubAdapter,
 ) -> None:
     """A redelivered run records its outcome again, then must not re-post."""
-    from forge_worker.agent_runner import _record_run_outcome
+    from scf_worker.agent_runner import _record_run_outcome
 
     run_id, tracker = _dispatched_run(factory, connections, project_id)
     result = AgentRunResult(run_id=run_id, status=RunStatus.SUCCEEDED)

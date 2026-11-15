@@ -7,7 +7,7 @@ Covers the delta wired on top of the existing Task-1.12 seam:
 * a server-initiated elicitation request is surfaced as a typed error,
 * a per-connection rate limit raises a typed, retryable error (NOT a run failure).
 
-Live transport is mocked via :class:`forge_mcp.testing.FakeTransport`. The Redis
+Live transport is mocked via :class:`scf_mcp.testing.FakeTransport`. The Redis
 token-bucket test skips cleanly when no Redis server answers (repo convention).
 """
 
@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import ApprovalRequiredError, MCPToolResult
-from forge_mcp import (
+from scf_contracts import ApprovalRequiredError, MCPToolResult
+from scf_mcp import (
     InMemoryRateLimiter,
     MCPElicitationRequiredError,
     MCPGatewayClient,
@@ -28,7 +28,7 @@ from forge_mcp import (
     default_mcp_policy,
     redis_rate_limiter,
 )
-from forge_mcp.testing import FakeTransport, sample_connection, sample_transport
+from scf_mcp.testing import FakeTransport, sample_connection, sample_transport
 
 _REDIS_URL = "redis://localhost:6379/0"
 
@@ -75,7 +75,7 @@ def test_read_tool_passes_the_approval_gate() -> None:
 
 def test_read_only_connection_still_rejects_write_before_approval() -> None:
     # The rule-1 write-forbidden check precedes the approval gate.
-    from forge_contracts import MCPWriteForbiddenError
+    from scf_contracts import MCPWriteForbiddenError
 
     client = _approving_client(allow_write=False)
     with pytest.raises(MCPWriteForbiddenError):
@@ -108,7 +108,7 @@ def test_get_prompt_returns_redacted_messages() -> None:
 
 
 def test_get_prompt_empty_name_rejected() -> None:
-    from forge_mcp.exceptions import MCPInputError
+    from scf_mcp.exceptions import MCPInputError
 
     client = _approving_client(allow_write=False)
     with pytest.raises(MCPInputError):

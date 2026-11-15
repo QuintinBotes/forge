@@ -20,11 +20,11 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_worker.temporal_main as tm
-from forge_api.services.approval_repository_db import SqlAlchemyApprovalRepository
-from forge_api.services.approval_service import build_gate_registry
-from forge_approval import ApprovalAuthorizer, ApprovalService
-from forge_approval.models import (
+import scf_worker.temporal_main as tm
+from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
+from scf_api.services.approval_service import build_gate_registry
+from scf_approval import ApprovalAuthorizer, ApprovalService
+from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRequest,
     GateStatus,
@@ -32,17 +32,17 @@ from forge_approval.models import (
     Principal,
     Role,
 )
-from forge_approval.providers import InMemoryGrantStore
-from forge_contracts import RunStatus, WorkflowRun, WorkflowState
-from forge_db.base import Base
-from forge_db.models import Project, Task, Workspace
-from forge_worker.approval_activity import make_create_approval_fn
-from forge_workflow.store import InMemoryWorkflowStore, SqlAlchemyWorkflowStore, WorkflowStore
-from forge_workflow.temporal.activities import WorkflowActivities
-from forge_workflow.temporal.engine import TemporalWorkflowEngine
-from forge_workflow.temporal.payloads import GuardInputs, GuardInputsRequest
-from forge_workflow.temporal.worker import build_temporal_worker
-from forge_workflow.temporal.workflows import FeatureWorkflow
+from scf_approval.providers import InMemoryGrantStore
+from scf_contracts import RunStatus, WorkflowRun, WorkflowState
+from scf_db.base import Base
+from scf_db.models import Project, Task, Workspace
+from scf_worker.approval_activity import make_create_approval_fn
+from scf_workflow.store import InMemoryWorkflowStore, SqlAlchemyWorkflowStore, WorkflowStore
+from scf_workflow.temporal.activities import WorkflowActivities
+from scf_workflow.temporal.engine import TemporalWorkflowEngine
+from scf_workflow.temporal.payloads import GuardInputs, GuardInputsRequest
+from scf_workflow.temporal.worker import build_temporal_worker
+from scf_workflow.temporal.workflows import FeatureWorkflow
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000d2")
 TASK_QUEUE = "forge-k-p0-gates"

@@ -1,11 +1,11 @@
 [project]
-name = "forge-contracts"
+name = "scf-contracts"
 version = "0.1.0"
-description = "Frozen Pydantic DTOs and Protocol interfaces shared across all Forge packages."
+description = "Frozen Pydantic DTOs and Protocol interfaces shared across all Swarm Code Factory packages."
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
-authors = [{ name = "The Forge Authors" }]
+authors = [{ name = "The Swarm Code Factory Authors" }]
 dependencies = [
     "pydantic>=2.7,<3",
 ]
@@ -15,4 +15,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["forge_contracts"]
+packages = ["scf_contracts"]

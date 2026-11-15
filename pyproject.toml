@@ -1,37 +1,37 @@
 [project]
-name = "forge"
+name = "swarm-code-factory"
 version = "0.1.0"
-description = "Forge — OSS engineering orchestration platform"
+description = "Swarm Code Factory — From specification to shipped software."
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
-authors = [{ name = "The Forge Authors" }]
+authors = [{ name = "The Swarm Code Factory Authors" }]
 dependencies = [
-    "forge-contracts",
-    "forge-db",
-    "forge-workflow",
-    "forge-deploy",
-    "forge-agent",
-    "forge-coordinator",
-    "forge-spec",
-    "forge-board",
-    "forge-knowledge",
-    "forge-integrations",
-    "forge-mcp",
-    "forge-policy",
-    "forge-authz",
-    "forge-auth",
-    "forge-skill",
-    "forge-eval",
-    "forge-marketplace",
-    "forge-approval",
-    "forge-world",
-    "forge-obs",
-    "forge-api",
-    "forge-worker",
-    "forge-mcp-gateway",
-    "forge-orchestration-policy",
-    "forge-cli-bridge",
+    "scf-contracts",
+    "scf-db",
+    "scf-workflow",
+    "scf-deploy",
+    "scf-agent",
+    "scf-coordinator",
+    "scf-spec",
+    "scf-board",
+    "scf-knowledge",
+    "scf-integrations",
+    "scf-mcp",
+    "scf-policy",
+    "scf-authz",
+    "scf-auth",
+    "scf-skill",
+    "scf-eval",
+    "scf-marketplace",
+    "scf-approval",
+    "scf-world",
+    "scf-obs",
+    "scf-api",
+    "scf-worker",
+    "scf-mcp-gateway",
+    "scf-orchestration-policy",
+    "scf-cli-bridge",
 ]
 
 [dependency-groups]
@@ -42,7 +42,7 @@ dev = [
     "ruff>=0.15.21",
     "mypy>=2.2.0",
     "httpx>=0.27",
-    # Validates the Helm chart values files against deploy/helm/forge/values.schema.json (F24).
+    # Validates the Helm chart values files against deploy/helm/swarm-code-factory/values.schema.json (F24).
     "jsonschema>=4.0",
     "pyyaml>=6.0",
     # The `sarif` extra backs the CI step `bandit -f sarif` (no longer bundled).
@@ -50,7 +50,7 @@ dev = [
     "pip-audit>=2.10.1",
     "cyclonedx-bom>=7.3.0",
     # semgrep is not here: it pins mcp and opentelemetry exactly, which held
-    # forge-obs's runtime OpenTelemetry on vulnerable versions. CI installs it
+    # scf-obs's runtime OpenTelemetry on vulnerable versions. CI installs it
     # as an isolated tool (`uv tool install semgrep==…`); do the same locally.
     # HARD-12: single-source-of-truth versioning + conventional-commit lint +
     # SemVer bump + CHANGELOG generation. `uv run cz …` works with no global
@@ -68,31 +68,31 @@ members = ["packages/*", "apps/*"]
 exclude = ["apps/web"]
 
 [tool.uv.sources]
-forge-contracts = { workspace = true }
-forge-db = { workspace = true }
-forge-workflow = { workspace = true }
-forge-deploy = { workspace = true }
-forge-agent = { workspace = true }
-forge-coordinator = { workspace = true }
-forge-spec = { workspace = true }
-forge-board = { workspace = true }
-forge-knowledge = { workspace = true }
-forge-integrations = { workspace = true }
-forge-mcp = { workspace = true }
-forge-policy = { workspace = true }
-forge-authz = { workspace = true }
-forge-auth = { workspace = true }
-forge-skill = { workspace = true }
-forge-eval = { workspace = true }
-forge-marketplace = { workspace = true }
-forge-approval = { workspace = true }
-forge-world = { workspace = true }
-forge-obs = { workspace = true }
-forge-api = { workspace = true }
-forge-worker = { workspace = true }
-forge-mcp-gateway = { workspace = true }
-forge-orchestration-policy = { workspace = true }
-forge-cli-bridge = { workspace = true }
+scf-contracts = { workspace = true }
+scf-db = { workspace = true }
+scf-workflow = { workspace = true }
+scf-deploy = { workspace = true }
+scf-agent = { workspace = true }
+scf-coordinator = { workspace = true }
+scf-spec = { workspace = true }
+scf-board = { workspace = true }
+scf-knowledge = { workspace = true }
+scf-integrations = { workspace = true }
+scf-mcp = { workspace = true }
+scf-policy = { workspace = true }
+scf-authz = { workspace = true }
+scf-auth = { workspace = true }
+scf-skill = { workspace = true }
+scf-eval = { workspace = true }
+scf-marketplace = { workspace = true }
+scf-approval = { workspace = true }
+scf-world = { workspace = true }
+scf-obs = { workspace = true }
+scf-api = { workspace = true }
+scf-worker = { workspace = true }
+scf-mcp-gateway = { workspace = true }
+scf-orchestration-policy = { workspace = true }
+scf-cli-bridge = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages", "apps", "deploy"]
@@ -120,7 +120,7 @@ markers = [
 # --------------------------------------------------------------------------- #
 # HARD-09 — SAST configuration (bandit). Scope: first-party source only; test
 # trees are excluded (fixture secrets + asserts are deliberate there). B101
-# (assert_used) is skipped globally: Forge's production images never run
+# (assert_used) is skipped globally: SCF's production images never run
 # `python -O`, so asserts are not stripped, and the flagged asserts are internal
 # invariants, not auth checks (triage: SECURITY_FINDINGS.md).
 # --------------------------------------------------------------------------- #
@@ -183,31 +183,31 @@ version_files = [
     "apps/worker/pyproject.toml:^version",
     "apps/mcp-gateway/pyproject.toml:^version",
     "apps/cli-bridge/pyproject.toml:^version",
-    "packages/agent-runtime/forge_agent/__init__.py:__version__",
-    "packages/approval-sdk/forge_approval/__init__.py:__version__",
-    "packages/auth-sdk/forge_auth/__init__.py:__version__",
-    "packages/authz-sdk/forge_authz/__init__.py:__version__",
-    "packages/board-core/forge_board/__init__.py:__version__",
-    "packages/contracts/forge_contracts/__init__.py:__version__",
-    "packages/db/forge_db/__init__.py:__version__",
-    "packages/deploy-core/forge_deploy/__init__.py:__version__",
-    "packages/evaluation/forge_eval/__init__.py:__version__",
-    "packages/integration-sdk/forge_integrations/__init__.py:__version__",
-    "packages/knowledge-core/forge_knowledge/__init__.py:__version__",
-    "packages/marketplace-sdk/forge_marketplace/__init__.py:__version__",
-    "packages/mcp-sdk/forge_mcp/__init__.py:__version__",
-    "packages/multi-agent-coordinator/forge_coordinator/__init__.py:__version__",
-    "packages/observability/forge_obs/__init__.py:__version__",
-    "packages/orchestration-policy/forge_orchestration_policy/__init__.py:__version__",
-    "packages/policy-sdk/forge_policy/__init__.py:__version__",
-    "packages/skill-sdk/forge_skill/__init__.py:__version__",
-    "packages/spec-engine/forge_spec/__init__.py:__version__",
-    "packages/workflow-engine/forge_workflow/__init__.py:__version__",
-    "packages/world-model/forge_world/__init__.py:__version__",
-    "apps/api/forge_api/__init__.py:__version__",
-    "apps/worker/forge_worker/__init__.py:__version__",
-    "apps/mcp-gateway/forge_mcp_gateway/__init__.py:__version__",
-    "apps/cli-bridge/forge_cli_bridge/__init__.py:__version__",
+    "packages/agent-runtime/scf_agent/__init__.py:__version__",
+    "packages/approval-sdk/scf_approval/__init__.py:__version__",
+    "packages/auth-sdk/scf_auth/__init__.py:__version__",
+    "packages/authz-sdk/scf_authz/__init__.py:__version__",
+    "packages/board-core/scf_board/__init__.py:__version__",
+    "packages/contracts/scf_contracts/__init__.py:__version__",
+    "packages/db/scf_db/__init__.py:__version__",
+    "packages/deploy-core/scf_deploy/__init__.py:__version__",
+    "packages/evaluation/scf_eval/__init__.py:__version__",
+    "packages/integration-sdk/scf_integrations/__init__.py:__version__",
+    "packages/knowledge-core/scf_knowledge/__init__.py:__version__",
+    "packages/marketplace-sdk/scf_marketplace/__init__.py:__version__",
+    "packages/mcp-sdk/scf_mcp/__init__.py:__version__",
+    "packages/multi-agent-coordinator/scf_coordinator/__init__.py:__version__",
+    "packages/observability/scf_obs/__init__.py:__version__",
+    "packages/orchestration-policy/scf_orchestration_policy/__init__.py:__version__",
+    "packages/policy-sdk/scf_policy/__init__.py:__version__",
+    "packages/skill-sdk/scf_skill/__init__.py:__version__",
+    "packages/spec-engine/scf_spec/__init__.py:__version__",
+    "packages/workflow-engine/scf_workflow/__init__.py:__version__",
+    "packages/world-model/scf_world/__init__.py:__version__",
+    "apps/api/scf_api/__init__.py:__version__",
+    "apps/worker/scf_worker/__init__.py:__version__",
+    "apps/mcp-gateway/scf_mcp_gateway/__init__.py:__version__",
+    "apps/cli-bridge/scf_cli_bridge/__init__.py:__version__",
     "package.json:version",
     "apps/web/package.json:version",
     "deploy/docker-compose.yml:FORGE_VERSION",

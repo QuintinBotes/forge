@@ -9,9 +9,9 @@ import pytest
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.context_service import resolve_run_for_pull_request
-from forge_db.base import Base
-from forge_db.models import AgentRun, Workspace
+from scf_api.services.context_service import resolve_run_for_pull_request
+from scf_db.base import Base
+from scf_db.models import AgentRun, Workspace
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

@@ -1,4 +1,4 @@
-# Forge Tempo config (HARD-10, observability profile). Self-hosted trace sink
+# SCF Tempo config (HARD-10, observability profile). Self-hosted trace sink
 # (the ADR default over LangSmith, which stays an optional extra). Receives OTLP
 # from the collector; filesystem backend for the single-node self-host. No host
 # port — reached only by the collector (ingest) and Grafana (query), both on the

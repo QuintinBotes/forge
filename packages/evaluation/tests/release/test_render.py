@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from forge_eval.release.model import Bar, Gate, GateResult, Status
-from forge_eval.release.render import COMPLIANCE_NOTE, HONEST_ASTERISK, render_markdown
+from scf_eval.release.model import Bar, Gate, GateResult, Status
+from scf_eval.release.render import COMPLIANCE_NOTE, HONEST_ASTERISK, render_markdown
 
 
 def _gate(gid: str, bar: Bar, kind: str = "evidence") -> Gate:

@@ -1,10 +1,10 @@
-# Forge sandbox base image (F19) — the locked-down rootfs every per-task
+# SCF sandbox base image (F19) — the locked-down rootfs every per-task
 # container runs as. Non-root uid/gid 10001 (must match FORGE_SANDBOX_RUN_UID/GID
 # and the worktree ownership), tini as PID 1, coreutils for `timeout`, git +
 # ca-certificates. Deliberately minimal: NO docker client, NO build tooling
 # beyond what a language image adds on top.
 #
-# Build:  docker build -f deploy/sandbox/base.Dockerfile -t forge-sandbox-base .
+# Build:  docker build -f deploy/sandbox/base.Dockerfile -t swarm-code-factory/sandbox-base .
 # Production pins by @sha256 digest (PARKED: digest resolution needs registry
 # network, unavailable in the offline sandbox).
 FROM debian:12-slim

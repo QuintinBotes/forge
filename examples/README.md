@@ -1,4 +1,4 @@
-# Forge examples
+# Swarm Code Factory examples
 
 Copy-paste-ready configuration for the four declarative subsystems plus sample
 spec manifests. Every file here is **executed as a test fixture** by
@@ -16,11 +16,11 @@ uv run pytest examples
 
 | Directory | Loaded by | What it shows |
 |---|---|---|
-| [policies/](policies) | `forge_policy.load_policy` | `.forge/policy.yaml` for 5 repo types |
-| [skills/](skills) | `forge_skill.load_profiles` / `load_profile` | Community skill profiles |
-| [workflows/](workflows) | `forge_workflow.load_definition` | Workflow DSL state machines |
-| [mcp-connectors/](mcp-connectors) | `forge_mcp.load_connection_file` | MCP connection definitions |
-| [specs/](specs) | `forge_spec.load_manifest` | Spec `manifest.yaml` documents |
+| [policies/](policies) | `scf_policy.load_policy` | `.forge/policy.yaml` for 5 repo types |
+| [skills/](skills) | `scf_skill.load_profiles` / `load_profile` | Community skill profiles |
+| [workflows/](workflows) | `scf_workflow.load_definition` | Workflow DSL state machines |
+| [mcp-connectors/](mcp-connectors) | `scf_mcp.load_connection_file` | MCP connection definitions |
+| [specs/](specs) | `scf_spec.load_manifest` | Spec `manifest.yaml` documents |
 
 ## Policies (`policies/`)
 
@@ -48,7 +48,7 @@ floors, forbidden shortcuts) rather than via prompt text.
 - [single-profile.yaml](skills/single-profile.yaml) — one profile per file
   (`performance-tuning`).
 
-These extend the seven built-in profiles shipped in `forge_skill`; register them
+These extend the seven built-in profiles shipped in `scf_skill`; register them
 with a `SkillProfileRegistry` to resolve them by name.
 
 ## Workflows (`workflows/`)

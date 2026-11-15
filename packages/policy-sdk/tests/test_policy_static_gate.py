@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from forge_policy import ShortcutViolation, StaticGateResult, scan_forbidden_shortcuts
+from scf_policy import ShortcutViolation, StaticGateResult, scan_forbidden_shortcuts
 
 
 def test_clean_files_pass() -> None:

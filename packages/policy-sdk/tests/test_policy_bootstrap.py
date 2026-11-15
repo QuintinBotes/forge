@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from forge_policy import (
+from scf_policy import (
     POLICY_PROFILES,
     PolicyBootstrapError,
     bootstrap_policy_file,

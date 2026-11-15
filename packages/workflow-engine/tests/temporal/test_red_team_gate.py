@@ -20,8 +20,8 @@ from typing import Any
 
 import pytest
 
-from forge_contracts import WorkflowState
-from forge_workflow.temporal.payloads import (
+from scf_contracts import WorkflowState
+from scf_workflow.temporal.payloads import (
     REDTEAM_BLOCKED,
     REDTEAM_SURVIVED,
     RedTeamInput,

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     ENFORCEMENT,
     Decision,
     DecisionEffect,

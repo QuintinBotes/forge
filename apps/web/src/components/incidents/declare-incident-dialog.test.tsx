@@ -3,12 +3,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type { IncidentView } from "@/lib/api/types";
 
 import { DeclareIncidentDialog } from "./declare-incident-dialog";
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     declareIncident: vi.fn((body) =>
       Promise.resolve({
@@ -25,11 +25,11 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
       } as IncidentView),
     ),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
 function renderDialog(
-  client: ForgeApiClient,
+  client: ScfApiClient,
   props: Partial<React.ComponentProps<typeof DeclareIncidentDialog>> = {},
 ) {
   const queryClient = new QueryClient({

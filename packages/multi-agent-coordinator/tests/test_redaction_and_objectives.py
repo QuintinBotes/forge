@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from forge_contracts import (
+from scf_contracts import (
     AgentObjective,
     RetrievedChunk,
     SubAgentArtifact,
     SubAgentAssignment,
     SubAgentRole,
 )
-from forge_coordinator import build_subagent_objective
-from forge_coordinator.artifacts import normalize_artifact_to_chunks
-from forge_coordinator.redaction import REDACTED, redact_obj, redact_secrets
+from scf_coordinator import build_subagent_objective
+from scf_coordinator.artifacts import normalize_artifact_to_chunks
+from scf_coordinator.redaction import REDACTED, redact_obj, redact_secrets
 
 
 def test_redact_secrets_masks_common_patterns() -> None:

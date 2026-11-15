@@ -15,9 +15,9 @@ from conftest import (
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from forge_api.auth.service import get_auth_service
-from forge_contracts import UserRole
-from forge_db.models import AuditLog, ScimToken, User
+from scf_api.auth.service import get_auth_service
+from scf_contracts import UserRole
+from scf_db.models import AuditLog, ScimToken, User
 
 
 @pytest.fixture
@@ -174,7 +174,7 @@ class TestScimUsers:
             user = session.execute(select(User).where(User.email == "eve@acme.com")).scalar_one()
             user_id = user.id
 
-        # Give eve a live Forge session/agent token (the F37 in-memory store).
+        # Give eve a live SCF session/agent token (the F37 in-memory store).
         _info, token = get_auth_service().bootstrap_key(
             workspace_id=WS_ID, name="eve-session", role=UserRole.MEMBER, user_id=user_id
         )
@@ -196,7 +196,7 @@ class TestScimUsers:
             assert user.deactivated_at is not None
 
         # Sessions revoked immediately: the minted key no longer authenticates.
-        from forge_api.auth.service import AuthenticationError
+        from scf_api.auth.service import AuthenticationError
 
         with pytest.raises(AuthenticationError):
             get_auth_service().authenticate(token)

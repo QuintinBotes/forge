@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from forge_board.automation import AutomationRuleSpec, validate_rule
-from forge_contracts.automation import AutomationTriggerType
+from scf_board.automation import AutomationRuleSpec, validate_rule
+from scf_contracts.automation import AutomationTriggerType
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[3] / "examples" / "automations"
 EXAMPLE_FILES = sorted(EXAMPLES_DIR.glob("*.yaml"))

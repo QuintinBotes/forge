@@ -1,4 +1,4 @@
-# Ruff configuration for the Forge workspace.
+# Ruff configuration for the SCF workspace.
 target-version = "py312"
 line-length = 100
 src = ["packages", "apps", "tests"]
@@ -35,31 +35,31 @@ ignore = []
 
 [lint.isort]
 known-first-party = [
-    "forge_contracts",
-    "forge_db",
-    "forge_workflow",
-    "forge_deploy",
-    "forge_agent",
-    "forge_coordinator",
-    "forge_spec",
-    "forge_orchestration_policy",
-    "forge_board",
-    "forge_knowledge",
-    "forge_integrations",
-    "forge_mcp",
-    "forge_policy",
-    "forge_authz",
-    "forge_auth",
-    "forge_skill",
-    "forge_eval",
-    "forge_marketplace",
-    "forge_approval",
-    "forge_world",
-    "forge_obs",
-    "forge_api",
-    "forge_worker",
-    "forge_mcp_gateway",
-    "forge_cli_bridge",
+    "scf_contracts",
+    "scf_db",
+    "scf_workflow",
+    "scf_deploy",
+    "scf_agent",
+    "scf_coordinator",
+    "scf_spec",
+    "scf_orchestration_policy",
+    "scf_board",
+    "scf_knowledge",
+    "scf_integrations",
+    "scf_mcp",
+    "scf_policy",
+    "scf_authz",
+    "scf_auth",
+    "scf_skill",
+    "scf_eval",
+    "scf_marketplace",
+    "scf_approval",
+    "scf_world",
+    "scf_obs",
+    "scf_api",
+    "scf_worker",
+    "scf_mcp_gateway",
+    "scf_cli_bridge",
 ]
 
 [format]

@@ -17,14 +17,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import CostEvent, Project, Task, Workspace
-from forge_db.models import ModelPrice as ModelPriceRow
-from forge_obs.cost.meter import UsageMeter
-from forge_obs.cost.models import ModelUsage
-from forge_obs.cost.pricing import DbPriceBook
-from forge_obs.cost.repository import SqlCostLedger, SqlCostReader
-from forge_obs.metrics import RecordingMetrics
+from scf_db.base import Base
+from scf_db.models import CostEvent, Project, Task, Workspace
+from scf_db.models import ModelPrice as ModelPriceRow
+from scf_obs.cost.meter import UsageMeter
+from scf_obs.cost.models import ModelUsage
+from scf_obs.cost.pricing import DbPriceBook
+from scf_obs.cost.repository import SqlCostLedger, SqlCostReader
+from scf_obs.metrics import RecordingMetrics
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 
@@ -48,7 +48,7 @@ def seeded(factory) -> dict:
         other = Workspace(name="Rival", slug=f"rival-{uuid.uuid4().hex[:8]}")
         session.add_all([ws, other])
         session.flush()
-        project = Project(workspace_id=ws.id, name="Forge", key=f"FRG{uuid.uuid4().hex[:4]}")
+        project = Project(workspace_id=ws.id, name="SCF", key=f"FRG{uuid.uuid4().hex[:4]}")
         session.add(project)
         session.flush()
         task = Task(

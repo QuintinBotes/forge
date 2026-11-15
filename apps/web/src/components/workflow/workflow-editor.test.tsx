@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type {
   WorkflowCatalog,
   WorkflowDefinitionDetail,
@@ -189,7 +189,7 @@ function detailFor(name: string): WorkflowDefinitionDetail {
   };
 }
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     getWorkflowCatalog: vi.fn(() => Promise.resolve(catalog)),
     listWorkflowDefinitions: vi.fn(() => Promise.resolve(summaries)),
@@ -227,10 +227,10 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
       Promise.resolve({ ...detailFor("release_review"), ...body }),
     ),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderEditor(client: ForgeApiClient) {
+function renderEditor(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

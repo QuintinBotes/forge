@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useDeclareIncident } from "@/lib/api/incidents";
 import { toast } from "@/components/ui/toast";
 import { INCIDENT_SEVERITIES, type IncidentSeverity, type IncidentView } from "@/lib/api/types";
@@ -35,7 +35,7 @@ export interface DeclareIncidentDialogProps {
   /** Prefilled project scope (the currently-viewed incident's project). */
   defaultProjectId?: string;
   onDeclared?: (incident: IncidentView) => void;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from forge_eval.release.model import Bar, Status, bar_met, load_gates
-from forge_eval.release.readiness import evaluate, main
+from scf_eval.release.model import Bar, Status, bar_met, load_gates
+from scf_eval.release.readiness import evaluate, main
 
 _MANIFEST = """
 gates:

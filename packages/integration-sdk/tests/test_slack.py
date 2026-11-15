@@ -13,14 +13,14 @@ import uuid
 import httpx
 from conftest import RequestRecorder, make_transport
 
-from forge_contracts import (
+from scf_contracts import (
     ApprovalGate,
     ApprovalRequest,
     CheckResult,
     SlackDeliveryResult,
     SlackMessage,
 )
-from forge_integrations import SlackNotifier
+from scf_integrations import SlackNotifier
 
 
 def _ok_handler(rec: RequestRecorder):
@@ -141,7 +141,7 @@ def test_notify_approval_prefers_payload_channel() -> None:
 def test_health_uses_auth_test() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/auth.test")
-        return httpx.Response(200, json={"ok": True, "team": "Forge"})
+        return httpx.Response(200, json={"ok": True, "team": "SCF"})
 
     notifier = SlackNotifier(token="t", transport=make_transport(handler))
     health = notifier.health()
@@ -333,7 +333,7 @@ def test_secret_never_in_repr_or_str() -> None:
 
 
 def test_slacknotifier_satisfies_frozen_protocol() -> None:
-    from forge_contracts import SlackNotifier as SlackNotifierProtocol
+    from scf_contracts import SlackNotifier as SlackNotifierProtocol
 
     notifier = SlackNotifier(token="t")
     # The concrete client still structurally satisfies the frozen Protocol.

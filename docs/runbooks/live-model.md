@@ -1,15 +1,15 @@
 # Runbook — Live BYOK model provider (HARD-02)
 
-The agent runtime (`forge_agent.AgentRunner`) runs its plan→act→observe loop
+The agent runtime (`scf_agent.AgentRunner`) runs its plan→act→observe loop
 against a **provider-agnostic BYOK model client**. Two real adapters ship behind
-the frozen `forge_contracts.ModelClient` seam:
+the frozen `scf_contracts.ModelClient` seam:
 
 - `AnthropicModelClient` — official `anthropic` SDK (reference/default provider,
   default model `claude-opus-4-8`, adaptive thinking + `output_config.effort`,
   streaming with `get_final_message()`).
 - `OpenAIModelClient` — official `openai` SDK (operator picks `FORGE_MODEL_NAME`).
 
-The provider SDKs are an **optional extra** (`forge-agent[providers]`) imported
+The provider SDKs are an **optional extra** (`scf-agent[providers]`) imported
 lazily inside the adapters, so the default hermetic suite needs neither installed
 and runs network-free. This runbook covers turning the live path on.
 
@@ -23,7 +23,7 @@ the offline deterministic `ScriptedModelClient` — the agent still runs end-to-
 client per run:
 
 ```
-build_agent_runner()               # apps/worker/forge_worker/agent_runner.py
+build_agent_runner()               # apps/worker/scf_worker/agent_runner.py
   1. injected model_client?  -> use it
   2. ModelClientConfig.from_env() -> real AnthropicModelClient / OpenAIModelClient
   3. otherwise                -> ScriptedModelClient (offline)
@@ -34,7 +34,7 @@ If the provider SDK extra is missing while creds are present, the build raises
 than crashing.
 
 The API-side, vault-backed path is
-`forge_api.auth.service.AuthService.resolve_model_client(workspace_id, secret_id=…)`:
+`scf_api.auth.service.AuthService.resolve_model_client(workspace_id, secret_id=…)`:
 it reads the BYOK key from the per-workspace vault (`APIKeyKind.MODEL_PROVIDER`),
 merges the `FORGE_MODEL_*` provider/limits from env, and returns a client. The
 key is read per call, handed straight to the SDK client, and never held in a
@@ -106,7 +106,7 @@ uv run pytest -q -m "not live_model and not integration"   # network-free
 - **Cost visibility** — per-run token totals + a derived USD cost land in
   `AgentRunResult.artifacts["model_usage"]` (`input_tokens`, `output_tokens`,
   `cost_usd`, `calls`, `cache_read_input_tokens`), priced from
-  `forge_agent.providers.pricing.MODEL_PRICING`. Keep `FORGE_MODEL_MAX_TOKENS`
+  `scf_agent.providers.pricing.MODEL_PRICING`. Keep `FORGE_MODEL_MAX_TOKENS`
   low for smoke runs.
 - **Refusal is fail-safe** — a provider safety stop (`stop_reason == "refusal"`)
   escalates to a human (`RunStatus.ESCALATED`, `needs_human`) with the refusal

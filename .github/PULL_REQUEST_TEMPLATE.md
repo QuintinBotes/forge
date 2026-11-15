@@ -1,5 +1,5 @@
 <!--
-Thanks for contributing to Forge! Please fill out the sections below.
+Thanks for contributing to Swarm Code Factory! Please fill out the sections below.
 Keep the PR focused — one logical change per PR is easier to review.
 -->
 
@@ -26,8 +26,8 @@ Closes #
 ## Checklist
 
 - [ ] I read the contributing guidelines and this change follows the repo conventions.
-- [ ] Tests pass locally — Python: `make test` (`uv run pytest`); Web: `pnpm --filter @forge/web test` (if `apps/web` was touched).
-- [ ] Lint & types are clean — Python: `uv run ruff check .` + `make typecheck`; Web: `pnpm -r lint` + `pnpm --filter @forge/web build` (if `apps/web` was touched).
+- [ ] Tests pass locally — Python: `make test` (`uv run pytest`); Web: `pnpm --filter @scf/web test` (if `apps/web` was touched).
+- [ ] Lint & types are clean — Python: `uv run ruff check .` + `make typecheck`; Web: `pnpm -r lint` + `pnpm --filter @scf/web build` (if `apps/web` was touched).
 - [ ] I added or updated tests covering my change (TDD: failing test first).
 - [ ] I updated the relevant docs (`README.md`, `docs/`, `.env.example`) where behavior or config changed.
 - [ ] No secrets, credentials, or real customer data are included (a gitleaks gate runs in CI).

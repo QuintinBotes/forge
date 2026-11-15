@@ -14,10 +14,10 @@ import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.models import Project
-from forge_db.models.enums import PMDeliveryStatus, PMProvider
-from forge_db.models.pm import PMWebhookDelivery
-from forge_integrations import sign_github_payload
+from scf_db.models import Project
+from scf_db.models.enums import PMDeliveryStatus, PMProvider
+from scf_db.models.pm import PMWebhookDelivery
+from scf_integrations import sign_github_payload
 
 from .conftest import SDK_FIXTURES, WORKSPACE_ID
 
@@ -130,14 +130,14 @@ def test_github_webhook_unsigned_and_forged_401(client, project_id, pm_service, 
     )
 
 
-def test_forge_marker_comment_echo_suppressed_at_intake(
+def test_scf_marker_comment_echo_suppressed_at_intake(
     client, project_id, pm_service, vault, session_factory, enqueued
 ) -> None:
     conn = _create_github(client, project_id)
     secret = _secret(pm_service, vault, conn["id"])
     payload = _fixture("issue_comment.json")
     payload["comment"]["body"] = (
-        "Forge run finished.\n\n<!-- forge:run:12345678-1234-1234-1234-1234567890ab -->"
+        "SCF run finished.\n\n<!-- forge:run:12345678-1234-1234-1234-1234567890ab -->"
     )
     body = json.dumps(payload).encode()
 

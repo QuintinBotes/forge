@@ -1,6 +1,6 @@
 # Observability & Cost Metrics (F38)
 
-Forge's observability substrate is **opt-in and free when off**: the lean
+Swarm Code Factory's observability substrate is **opt-in and free when off**: the lean
 default (`OBS_ENABLED=false`) boots every service with no-op telemetry
 providers, structured JSON logs on stdout (captured by Docker's capped
 json-file logs), and a fully working cost ledger + in-product Cost API — the
@@ -8,9 +8,9 @@ ledger is Postgres, not the metrics stack.
 
 ## What ships today
 
-- **`forge_obs`** (`packages/observability`): one `setup_telemetry()` init per
+- **`scf_obs`** (`packages/observability`): one `setup_telemetry()` init per
   service (`forge-api`, `forge-worker`, `forge-mcp-gateway`), the typed
-  `ForgeMetrics` Key-Metric facade with a frozen instrument catalog and bounded
+  `ScfMetrics` Key-Metric facade with a frozen instrument catalog and bounded
   label cardinality, secret-redacted JSON logging with `trace_id`/`span_id`
   correlation, and the single `UsageMeter` cost-emission path.
 - **Durable cost ledger**: `cost_event` + `model_price` (Alembic
@@ -24,7 +24,7 @@ ledger is Postgres, not the metrics stack.
   registry in the Prometheus text format (authenticated; empty when disabled).
 - **Worker**: `cost.reprice` task + the `obs.refresh_freshness_gauges` beat
   entry (samples `forge_mcp_freshness_lag_seconds` per MCP connection, 60s).
-- **CLI**: `forge cost compute | price-set | reprice | summary`.
+- **CLI**: `scf cost compute | price-set | reprice | summary`.
 
 ## Environment
 
@@ -44,7 +44,7 @@ The full self-hosted pipeline — the `observability` Compose profile
 digests + provisioned dashboards) and real OTLP export via the OpenTelemetry
 SDK — is **parked**: this build environment has no third-party network access,
 so SDK dependencies cannot be locked and image digests cannot be pinned
-honestly. The `forge_obs` facade is the frozen contract; when the OTel SDK
+honestly. The `scf_obs` facade is the frozen contract; when the OTel SDK
 lands it slots in behind `setup_telemetry()` without changing any caller.
 Tempo remains the intended self-hosted trace backend (Grafana-native companion
 to Loki/Prometheus), with LangSmith as an optional additional sink via

@@ -1,10 +1,10 @@
 # Performance & soak evidence
 
 HARD-11 ships a load/perf harness and a bounded multi-tenant soak so an operator
-can quote Forge with real numbers instead of asserted ones. The harnesses live
+can quote Swarm Code Factory with real numbers instead of asserted ones. The harnesses live
 under [`deploy/load/`](../../deploy/load) and
-[`packages/evaluation/forge_eval/perf`](../../packages/evaluation/forge_eval/perf)
-/ [`.../soak`](../../packages/evaluation/forge_eval/soak). Budgets are in
+[`packages/evaluation/scf_eval/perf`](../../packages/evaluation/scf_eval/perf)
+/ [`.../soak`](../../packages/evaluation/scf_eval/soak). Budgets are in
 [`deploy/load/budgets.toml`](../../deploy/load/budgets.toml).
 
 > **Honest asterisk.** The perf bench, API load test, and soak all require a
@@ -70,7 +70,7 @@ FORGE_RUN_SOAK=1 FORGE_SOAK_TENANTS=5 FORGE_SOAK_DURATION_SECONDS=900 make soak
 The soak seeds **identical content under every tenant** and asserts, as hard
 pass/fail:
 
-- `cross_tenant_leaks == 0` — no tenant ever sees another's rows (the FORGE_SPEC
+- `cross_tenant_leaks == 0` — no tenant ever sees another's rows (the SCF_SPEC
   multi-tenant isolation property under sustained mixed load);
 - `resource_stable == true` — RSS / open-FD / DB-connection samples show no
   unbounded growth beyond a slack threshold;

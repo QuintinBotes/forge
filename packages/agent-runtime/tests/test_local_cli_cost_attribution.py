@@ -19,12 +19,12 @@ import subprocess
 
 import httpx
 
-from forge_agent import AgentRunner
-from forge_agent.providers.bridge_client import LocalCliBridgeClient
-from forge_agent.providers.local_cli.client import LocalCliModelClient
-from forge_agent.providers.local_cli.detect import CliName
-from forge_agent.providers.pricing import MODEL_PRICING, cost_usd
-from forge_contracts import AgentObjective, ModelMessage, ModelRequest, RunStatus, TokenUsage
+from scf_agent import AgentRunner
+from scf_agent.providers.bridge_client import LocalCliBridgeClient
+from scf_agent.providers.local_cli.client import LocalCliModelClient
+from scf_agent.providers.local_cli.detect import CliName
+from scf_agent.providers.pricing import MODEL_PRICING, cost_usd
+from scf_contracts import AgentObjective, ModelMessage, ModelRequest, RunStatus, TokenUsage
 
 #: A real, priced model id — the kind an operator pins per role. If the
 #: local-CLI model id failed to reach the meter, the run below would be priced

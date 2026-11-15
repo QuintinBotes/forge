@@ -7,18 +7,18 @@ from datetime import timedelta
 
 from conftest import ADMIN_ID, make_principal, make_request
 
-from forge_approval.models import (
+from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRequest,
     GateType,
     Role,
 )
-from forge_approval.providers.deploy import (
+from scf_approval.providers.deploy import (
     DEPLOY_APPROVED_SIGNAL,
     DeployGateProvider,
     DeployResolutionHook,
 )
-from forge_approval.providers.policy_override import (
+from scf_approval.providers.policy_override import (
     POLICY_OVERRIDE_GRANTED_SIGNAL,
     InMemoryGrantStore,
     PolicyOverrideGateProvider,

@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent.multi_repo import MultiRepoWorkspace
-from forge_contracts import RepoTarget
+from scf_agent.multi_repo import MultiRepoWorkspace
+from scf_contracts import RepoTarget
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
 

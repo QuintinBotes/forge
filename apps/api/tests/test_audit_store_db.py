@@ -25,7 +25,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.observability.audit import (
+from scf_api.observability.audit import (
     AuditCategory,
     AuditEntry,
     AuditLog,
@@ -33,9 +33,9 @@ from forge_api.observability.audit import (
     InMemoryAuditStore,
     verify_chain,
 )
-from forge_api.observability.audit_db import DbAuditStore
-from forge_db.base import Base
-from forge_db.models.observability_audit import ObservabilityAuditEntry
+from scf_api.observability.audit_db import DbAuditStore
+from scf_db.base import Base
+from scf_db.models.observability_audit import ObservabilityAuditEntry
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 

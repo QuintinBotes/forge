@@ -32,7 +32,7 @@ def _member_pyprojects() -> list[Path]:
 def _package_inits() -> list[Path]:
     inits: list[Path] = []
     for base in ("packages", "apps"):
-        for init in (REPO_ROOT / base).glob("*/forge_*/__init__.py"):
+        for init in (REPO_ROOT / base).glob("*/scf_*/__init__.py"):
             if "__version__" in init.read_text(encoding="utf-8"):
                 inits.append(init)
     return sorted(inits)

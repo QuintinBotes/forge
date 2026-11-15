@@ -23,10 +23,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.board import BoardServiceRegistry, get_board_registry
-from forge_contracts import UserRole
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.board import BoardServiceRegistry, get_board_registry
+from scf_contracts import UserRole
 
 WORKSPACE_A = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 WORKSPACE_B = uuid.UUID("00000000-0000-0000-0000-0000000000c3")

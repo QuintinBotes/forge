@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from forge_workflow.editor.diff import definition_diff
-from forge_workflow.editor.graph import yaml_to_graph
+from scf_workflow.editor.diff import definition_diff
+from scf_workflow.editor.graph import yaml_to_graph
 
 from .conftest import REVIEW_LINE
 

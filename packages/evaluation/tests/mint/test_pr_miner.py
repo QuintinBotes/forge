@@ -16,16 +16,16 @@ from pathlib import Path
 
 import pytest
 
-from forge_eval.benchmark import parse_swe_case_fields
-from forge_eval.mint import ChangedFile, GitWorktreeTestRunner, changed_test_node_ids
-from forge_eval.mint.pr_miner import mint_case_from_pr
+from scf_eval.benchmark import parse_swe_case_fields
+from scf_eval.mint import ChangedFile, GitWorktreeTestRunner, changed_test_node_ids
+from scf_eval.mint.pr_miner import mint_case_from_pr
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git required for worktrees")
 
 
 @dataclass
 class FakePR:
-    """Duck-typed on the frozen forge_contracts.PullRequest surface."""
+    """Duck-typed on the frozen scf_contracts.PullRequest surface."""
 
     number: int
     head_sha: str

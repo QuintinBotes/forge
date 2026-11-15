@@ -1,6 +1,6 @@
-# forge-orchestration-policy
+# scf-orchestration-policy
 
-Deterministic **Adaptive Orchestration** sizing for Forge.
+Deterministic **Adaptive Orchestration** sizing for Swarm Code Factory.
 
 Scores a task or spec's complexity/seniority signals (kind, priority,
 blast radius, file/repo counts, requirement + acceptance-criteria counts,
@@ -16,9 +16,9 @@ This is a pure, side-effect-free scoring module. It does not pick a model or
 run an agent — later Adaptive Orchestration slices (the model router,
 per-role config) consume its `tier`/`strategy` output.
 
-See `forge_orchestration_policy.complexity` for the public API:
+See `scf_orchestration_policy.complexity` for the public API:
 
 * `SizingSignals` — the normalized input signal bundle.
-* `signals_from_spec` — builds `SizingSignals` from a `forge_contracts.SpecManifest`
+* `signals_from_spec` — builds `SizingSignals` from a `scf_contracts.SpecManifest`
   (plus optional task-level overrides).
 * `score_complexity` — the deterministic scoring function.

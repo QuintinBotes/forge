@@ -1,0 +1,54 @@
+{{- if .Values.createAdmin.enabled }}
+# Post-install ONLY (never on upgrade): seed the first admin. Reads the password
+# from the Secret via --password-stdin (never argv). Deleted on success.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "swarm-code-factory.fullname" . }}-create-admin
+  labels:
+    {{- include "swarm-code-factory.componentLabels" (dict "ctx" . "component" "create-admin") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        {{- include "swarm-code-factory.componentSelectorLabels" (dict "ctx" . "component" "create-admin") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "swarm-code-factory.serviceAccountName" . }}
+      {{- include "swarm-code-factory.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: create-admin
+          image: {{ include "swarm-code-factory.image" (dict "ctx" . "wl" .Values.api) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - >-
+              printf '%s' "$ADMIN_PASSWORD" |
+              scf-cli users create-admin --email {{ .Values.createAdmin.email | quote }} --password-stdin
+          env:
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "swarm-code-factory.secretName" . }}
+                  key: {{ .Values.createAdmin.passwordKey }}
+          envFrom:
+            {{- include "swarm-code-factory.envFrom" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

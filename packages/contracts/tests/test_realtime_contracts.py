@@ -14,7 +14,7 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from forge_contracts import (
+from scf_contracts import (
     Broadcaster,
     CursorRange,
     PresenceState,

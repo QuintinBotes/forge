@@ -16,7 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useIncidentDetail,
   useIncidentTimeline,
@@ -73,7 +73,7 @@ function eventErrorMessage(error: unknown): string {
 }
 
 export interface IncidentsViewProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

@@ -1,7 +1,7 @@
 """Integration tests for the MCP router (Task 1.12 fills ``/mcp/*``).
 
 These exercise the real handlers wired to an :class:`MCPConnectionManager` whose
-transport is the fixture-backed :class:`forge_mcp.testing.FakeTransport` (the live
+transport is the fixture-backed :class:`scf_mcp.testing.FakeTransport` (the live
 transport is mocked — no network traffic). They prove the route layer:
 
 * registers + lists connections (read-only by default),
@@ -21,18 +21,18 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal
-from forge_api.main import create_app
-from forge_api.routers.mcp import get_mcp_manager
-from forge_contracts import UserRole
-from forge_mcp import (
+from scf_api.deps import Principal
+from scf_api.main import create_app
+from scf_api.routers.mcp import get_mcp_manager
+from scf_contracts import UserRole
+from scf_mcp import (
     InMemoryRateLimiter,
     MCPConnectionManager,
     MCPWriteApprovalEvaluator,
     RateLimiter,
     default_mcp_policy,
 )
-from forge_mcp.testing import FakeTransport, sample_connection, sample_transport
+from scf_mcp.testing import FakeTransport, sample_connection, sample_transport
 
 
 @pytest.fixture

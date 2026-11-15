@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from forge_board.automation import (
+from scf_board.automation import (
     ActionContext,
     ActionResult,
     AutomationEngine,
@@ -35,8 +35,8 @@ from forge_board.automation import (
     trigger_type_for,
     validate_rule,
 )
-from forge_board.automation.errors import ActionForbiddenError
-from forge_contracts.automation import (
+from scf_board.automation.errors import ActionForbiddenError
+from scf_contracts.automation import (
     AutomationEntityType,
     AutomationExecutionStatus,
     AutomationTriggerEnvelope,
@@ -44,7 +44,7 @@ from forge_contracts.automation import (
     AutomationTriggerType,
     ConditionOp,
 )
-from forge_contracts.enums import Priority, TaskStatus
+from scf_contracts.enums import Priority, TaskStatus
 
 # --------------------------------------------------------------------------- #
 # helpers                                                                      #
@@ -178,7 +178,7 @@ def test_conditions_use_shared_contracts_primitive() -> None:
     ``Condition``/``ConditionGroup``/``ConditionOp`` are the identical objects the
     policy engine uses — no drifted F21-private copies remain.
     """
-    from forge_contracts import conditions as shared
+    from scf_contracts import conditions as shared
 
     assert Condition is shared.Condition
     assert ConditionGroup is shared.ConditionGroup

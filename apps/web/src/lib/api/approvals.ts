@@ -19,7 +19,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   ApprovalContext,
   ApprovalCount,
@@ -56,7 +56,7 @@ export type ApprovalFilters = Record<
 /** The pending (or filtered) approval queue. */
 export function useApprovals(
   filters?: ApprovalFilters,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ApprovalSummary[]> {
   return useQuery({
     queryKey: approvalKeys.list(filters),
@@ -67,7 +67,7 @@ export function useApprovals(
 /** The pending-count nav badge. */
 export function useApprovalCount(
   filters?: ApprovalFilters,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ApprovalCount> {
   return useQuery({
     queryKey: approvalKeys.count(filters),
@@ -78,7 +78,7 @@ export function useApprovalCount(
 /** The nine "must-show" review items for one gate. */
 export function useApprovalContext(
   approvalId: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ApprovalContext> {
   return useQuery({
     queryKey: approvalKeys.context(approvalId ?? ""),
@@ -90,7 +90,7 @@ export function useApprovalContext(
 /** The per-approver decision trail for one gate. */
 export function useApprovalDecisions(
   approvalId: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ApprovalDecisionRecord[]> {
   return useQuery({
     queryKey: approvalKeys.decisions(approvalId ?? ""),
@@ -108,7 +108,7 @@ export function useApprovalDecisions(
  */
 export function useRedTeamVerdict(
   workflowRunId: string | null | undefined,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<RedTeamGateOut> {
   return useQuery({
     queryKey: approvalKeys.redTeam(workflowRunId ?? ""),
@@ -128,7 +128,7 @@ export function useRedTeamVerdict(
  */
 export function useApprovalAttestation(
   approvalId: string | null | undefined,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<AttestationOut | null> {
   return useQuery({
     queryKey: approvalKeys.attestation(approvalId ?? ""),
@@ -155,7 +155,7 @@ interface DecideContext {
  * revalidates the lists + counts from the server.
  */
 export function useDecideApproval(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<ApprovalResolution, Error, DecideVariables, DecideContext> {
   const queryClient = useQueryClient();
   return useMutation<ApprovalResolution, Error, DecideVariables, DecideContext>({

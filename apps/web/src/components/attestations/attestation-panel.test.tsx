@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { AttestationOut } from "@/lib/api/types";
 
 import { AttestationPanel } from "./attestation-panel";
@@ -28,13 +28,13 @@ const verifiedAttestation: AttestationOut = {
 
 function makeClient(
   getApprovalAttestation: () => Promise<AttestationOut | null>,
-): ForgeApiClient {
+): ScfApiClient {
   return {
     getApprovalAttestation: vi.fn(getApprovalAttestation),
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderPanel(approvalId: string | null | undefined, client: ForgeApiClient) {
+function renderPanel(approvalId: string | null | undefined, client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });

@@ -1,6 +1,6 @@
 # Module: `fly-agents`
 
-Models the Forge **agent-execution layer** — Firecracker microVMs,
+Models the Swarm Code Factory **agent-execution layer** — Firecracker microVMs,
 scale-to-zero, "one Fly Machine per task" — on **Fly.io**.
 
 > **CEILING (same as the rest of `infra/`):** this is written, `fmt`-clean,

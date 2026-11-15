@@ -23,7 +23,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   AgentRole,
   AoSettingsOut,
@@ -48,7 +48,7 @@ export const aoSettingsKeys = {
 /** Every role's effective `{model_or_tier, effort}` (optionally project-scoped). */
 export function useAoRoleConfig(
   projectId?: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<RoleConfigListResponse> {
   return useQuery({
     queryKey: aoSettingsKeys.roleConfig(projectId),
@@ -58,7 +58,7 @@ export function useAoRoleConfig(
 
 /** The workspace-wide auto-route toggle, tier-model map and complexity thresholds. */
 export function useAoSettings(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<AoSettingsOut> {
   return useQuery({
     queryKey: aoSettingsKeys.settings(),
@@ -74,7 +74,7 @@ export interface UpsertAoRoleConfigVariables {
 
 /** Pin a workspace- or project-scoped override for one role, then revalidate. */
 export function useUpsertAoRoleConfig(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<RoleConfigOut, Error, UpsertAoRoleConfigVariables> {
   const queryClient = useQueryClient();
   return useMutation<RoleConfigOut, Error, UpsertAoRoleConfigVariables>({
@@ -95,7 +95,7 @@ export interface DeleteAoRoleConfigVariables {
 
 /** Remove an override for one role, reverting to the next fallback. */
 export function useDeleteAoRoleConfig(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<RoleConfigOut, Error, DeleteAoRoleConfigVariables> {
   const queryClient = useQueryClient();
   return useMutation<RoleConfigOut, Error, DeleteAoRoleConfigVariables>({
@@ -110,7 +110,7 @@ export function useDeleteAoRoleConfig(
 
 /** Partially update the workspace-wide AO settings (auto-route, tier map, thresholds). */
 export function useUpdateAoSettings(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<AoSettingsOut, Error, AoSettingsUpdateRequest> {
   const queryClient = useQueryClient();
   return useMutation<AoSettingsOut, Error, AoSettingsUpdateRequest>({
@@ -130,7 +130,7 @@ export function useUpdateAoSettings(
  * on demand as the sample-task signals change.
  */
 export function usePreviewAoRouting(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<RoutingPreviewResponse, Error, RoutingPreviewRequest> {
   return useMutation<RoutingPreviewResponse, Error, RoutingPreviewRequest>({
     mutationFn: (body) => client.previewAoRouting(body),
@@ -139,7 +139,7 @@ export function usePreviewAoRouting(
 
 /** Self-Eval Gate facts: enforcement flag, private suite, recorded baseline. */
 export function useSelfEvalStatus(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<SelfEvalStatusOut> {
   return useQuery({
     queryKey: aoSettingsKeys.selfEval(),
@@ -152,7 +152,7 @@ export function useSelfEvalStatus(
  * status read so a freshly recorded baseline eventually shows up on refetch.
  */
 export function useRunSelfEval(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SelfEvalRunAccepted, Error, void> {
   const queryClient = useQueryClient();
   return useMutation<SelfEvalRunAccepted, Error, void>({

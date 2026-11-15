@@ -8,7 +8,7 @@ from collections.abc import Iterator
 import pytest
 from _sandbox_fakes import FakeDockerClient, FakeObjectStore
 
-from forge_contracts import SandboxKind, SandboxResourceLimits, SandboxSpec
+from scf_contracts import SandboxKind, SandboxResourceLimits, SandboxSpec
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def container_spec() -> SandboxSpec:
         host_worktree_path="/srv/worktrees/runA/tree",
         worktree_volume="forge_repos",
         worktree_subpath="runA/tree",
-        image="ghcr.io/forge-platform/forge-sandbox-python:0.1.0",
+        image="ghcr.io/quintinbotes/swarm-code-factory/sandbox-python:0.1.0",
         limits=SandboxResourceLimits(cpus=2.0, memory_mb=4096, pids_limit=512, tmpfs_mb=1024),
     )
 
@@ -50,7 +50,7 @@ def _kernel_spec(kind: SandboxKind, runtime: str, **overrides) -> SandboxSpec:
         "host_worktree_path": "/srv/worktrees/runA/tree",
         "worktree_volume": "forge_repos",
         "worktree_subpath": "runA/tree",
-        "image": "ghcr.io/forge-platform/forge-sandbox-python:0.1.0",
+        "image": "ghcr.io/quintinbotes/swarm-code-factory/sandbox-python:0.1.0",
         "limits": SandboxResourceLimits(cpus=2.0, memory_mb=4096, pids_limit=512, tmpfs_mb=1024),
         "runtime": runtime,
     }

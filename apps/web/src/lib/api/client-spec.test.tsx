@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ForgeApiClient } from "./client";
+import { ScfApiClient } from "./client";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -21,12 +21,12 @@ function text(body: string, status = 200): Response {
  * editing it via both first-class formats (spec.md and manifest.yaml), plus
  * the lifecycle actions and constitution read.
  */
-describe("ForgeApiClient spec-engine surface", () => {
+describe("ScfApiClient spec-engine surface", () => {
   it("createSpec posts to /spec/specs", async () => {
     const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(json({ id: "SPEC-1", name: "Customer search", status: "draft" })),
     );
-    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+    const client = new ScfApiClient({ fetch: fetchImpl as unknown as typeof fetch });
 
     const manifest = await client.createSpec({
       epic_id: "epic-1",
@@ -52,7 +52,7 @@ describe("ForgeApiClient spec-engine surface", () => {
       }
       throw new Error(`unexpected request: ${url}`);
     });
-    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+    const client = new ScfApiClient({ fetch: fetchImpl as unknown as typeof fetch });
 
     const md = await client.getSpecMarkdown("spec-uuid-1");
     expect(md).toContain("Customer search");
@@ -75,7 +75,7 @@ describe("ForgeApiClient spec-engine surface", () => {
       }
       throw new Error(`unexpected request: ${url}`);
     });
-    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+    const client = new ScfApiClient({ fetch: fetchImpl as unknown as typeof fetch });
 
     const created = await client.putSpecManifestYaml("spec-uuid-99", yamlText);
     expect(created.name).toBe("Billing v2");
@@ -89,7 +89,7 @@ describe("ForgeApiClient spec-engine surface", () => {
       expect(init?.method).toBe("PUT");
       return Promise.resolve(json({ id: "SPEC-1", name: "Renamed", status: "draft" }));
     });
-    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+    const client = new ScfApiClient({ fetch: fetchImpl as unknown as typeof fetch });
 
     const updated = await client.putSpecManifest("spec-uuid-1", {
       id: "SPEC-1",
@@ -123,7 +123,7 @@ describe("ForgeApiClient spec-engine surface", () => {
       }
       throw new Error(`unexpected request: ${url}`);
     });
-    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+    const client = new ScfApiClient({ fetch: fetchImpl as unknown as typeof fetch });
 
     expect((await client.clarifySpec("spec-1")).status).toBe("clarifying");
     expect((await client.planSpec("spec-1")).status).toBe("clarifying");
@@ -149,7 +149,7 @@ describe("ForgeApiClient spec-engine surface", () => {
       }
       throw new Error(`unexpected request: ${url}`);
     });
-    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+    const client = new ScfApiClient({ fetch: fetchImpl as unknown as typeof fetch });
 
     const rejected = await client.rejectSpec("spec-1", "nope");
     expect(rejected.status).toBe("rejected");
@@ -172,7 +172,7 @@ describe("ForgeApiClient spec-engine surface", () => {
     const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(json({ project_id: "proj-1", principles: ["Ship small"] })),
     );
-    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+    const client = new ScfApiClient({ fetch: fetchImpl as unknown as typeof fetch });
 
     const constitution = await client.getConstitution("proj-1");
 
@@ -192,7 +192,7 @@ describe("ForgeApiClient spec-engine surface", () => {
         }),
       ),
     );
-    const client = new ForgeApiClient({ fetch: fetchImpl as unknown as typeof fetch });
+    const client = new ScfApiClient({ fetch: fetchImpl as unknown as typeof fetch });
 
     const result = await client.importSpec({
       content: "# Imported feature\n",

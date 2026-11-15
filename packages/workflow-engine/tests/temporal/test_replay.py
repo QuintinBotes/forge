@@ -15,9 +15,9 @@ from temporalio import workflow
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Replayer
 
-from forge_workflow.temporal.payloads import WorkflowResult
-from forge_workflow.temporal.worker import feature_workflow_runner
-from forge_workflow.temporal.workflows import FeatureWorkflow
+from scf_workflow.temporal.payloads import WorkflowResult
+from scf_workflow.temporal.worker import feature_workflow_runner
+from scf_workflow.temporal.workflows import FeatureWorkflow
 
 pytestmark = pytest.mark.asyncio
 
@@ -53,7 +53,7 @@ class _DivergentWorkflow:
 
     @workflow.run
     async def run(self, params: Any) -> WorkflowResult:  # pragma: no cover - replay only
-        from forge_contracts import WorkflowState
+        from scf_contracts import WorkflowState
 
         return WorkflowResult(final_state=WorkflowState.CREATED, transition_count=0)
 

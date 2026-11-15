@@ -16,7 +16,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from forge_contracts.pm import (
+from scf_contracts.pm import (
     AdapterContext,
     GenericAdapterConfig,
     GenericEndpointConfig,
@@ -25,26 +25,26 @@ from forge_contracts.pm import (
     HttpResponse,
     PMProvider,
 )
-from forge_integrations.github import GitHubClient
-from forge_integrations.pm import FixturePMTransport
-from forge_integrations.pm.asana.adapter import AsanaAdapter
-from forge_integrations.pm.asana.client import AsanaClient
-from forge_integrations.pm.clickup.adapter import ClickUpAdapter
-from forge_integrations.pm.clickup.client import ClickUpClient
-from forge_integrations.pm.generic.adapter import GenericAdapter
-from forge_integrations.pm.github_issues.adapter import GitHubIssuesAdapter
-from forge_integrations.pm.github_projects.adapter import GitHubProjectsAdapter
-from forge_integrations.pm.github_projects.client import GitHubProjectsClient
-from forge_integrations.pm.gitlab.adapter import GitLabAdapter
-from forge_integrations.pm.gitlab.client import GitLabClient
-from forge_integrations.pm.jira.adapter import JiraAdapter
-from forge_integrations.pm.jira.client import JiraClient
-from forge_integrations.pm.linear.adapter import LinearAdapter
-from forge_integrations.pm.linear.client import LinearClient
-from forge_integrations.pm.monday.adapter import MondayAdapter
-from forge_integrations.pm.monday.client import MondayClient
-from forge_integrations.pm.trello.adapter import TrelloAdapter
-from forge_integrations.pm.trello.client import TrelloClient
+from scf_integrations.github import GitHubClient
+from scf_integrations.pm import FixturePMTransport
+from scf_integrations.pm.asana.adapter import AsanaAdapter
+from scf_integrations.pm.asana.client import AsanaClient
+from scf_integrations.pm.clickup.adapter import ClickUpAdapter
+from scf_integrations.pm.clickup.client import ClickUpClient
+from scf_integrations.pm.generic.adapter import GenericAdapter
+from scf_integrations.pm.github_issues.adapter import GitHubIssuesAdapter
+from scf_integrations.pm.github_projects.adapter import GitHubProjectsAdapter
+from scf_integrations.pm.github_projects.client import GitHubProjectsClient
+from scf_integrations.pm.gitlab.adapter import GitLabAdapter
+from scf_integrations.pm.gitlab.client import GitLabClient
+from scf_integrations.pm.jira.adapter import JiraAdapter
+from scf_integrations.pm.jira.client import JiraClient
+from scf_integrations.pm.linear.adapter import LinearAdapter
+from scf_integrations.pm.linear.client import LinearClient
+from scf_integrations.pm.monday.adapter import MondayAdapter
+from scf_integrations.pm.monday.client import MondayClient
+from scf_integrations.pm.trello.adapter import TrelloAdapter
+from scf_integrations.pm.trello.client import TrelloClient
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

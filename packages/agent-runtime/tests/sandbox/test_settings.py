@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from forge_agent.sandbox import SandboxSettings
-from forge_contracts import SandboxKind, SandboxNetwork
+from scf_agent.sandbox import SandboxSettings
+from scf_contracts import SandboxKind, SandboxNetwork
 
 
 def test_defaults() -> None:

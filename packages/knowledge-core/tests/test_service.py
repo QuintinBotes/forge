@@ -1,4 +1,4 @@
-"""End-to-end tests for ``forge_knowledge.service.KnowledgeService`` (Task 1.3).
+"""End-to-end tests for ``scf_knowledge.service.KnowledgeService`` (Task 1.3).
 
 This is the proof of the RAG spine: index a tiny repository, then ``search``
 chains semantic (pgvector) + keyword (BM25) -> RRF fusion (k=60) -> reranking ->
@@ -22,15 +22,15 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.dtos import Chunk, KnowledgeScope, RetrievedChunk
-from forge_contracts.protocols import KnowledgeStore
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, Workspace
-from forge_db.session import create_session_factory
-from forge_knowledge.embeddings import DeterministicEmbeddingClient
-from forge_knowledge.reranker import FixtureRerankerClient
-from forge_knowledge.service import KnowledgeService
-from forge_knowledge.stores import VectorLegUnconfiguredError
+from scf_contracts.dtos import Chunk, KnowledgeScope, RetrievedChunk
+from scf_contracts.protocols import KnowledgeStore
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, Workspace
+from scf_db.session import create_session_factory
+from scf_knowledge.embeddings import DeterministicEmbeddingClient
+from scf_knowledge.reranker import FixtureRerankerClient
+from scf_knowledge.service import KnowledgeService
+from scf_knowledge.stores import VectorLegUnconfiguredError
 
 
 @pytest.fixture

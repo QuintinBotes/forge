@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type { RunTrace } from "@/lib/api/types";
 
 import { RunTraceViewer } from "./run-trace-viewer";
@@ -55,11 +55,11 @@ const trace: RunTrace = {
   ],
 };
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     getRunTrace: vi.fn(() => Promise.resolve(trace)),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
 function renderViewer(

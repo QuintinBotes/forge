@@ -16,8 +16,8 @@ import pytest
 import yaml
 from pydantic import SecretBytes, SecretStr, ValidationError
 
-from forge_contracts import ROLE_TOOLS, SubAgentRole
-from forge_contracts.lines import (
+from scf_contracts import ROLE_TOOLS, SubAgentRole
+from scf_contracts.lines import (
     SERVICE_CATALOG,
     AgentStation,
     HumanStation,
@@ -807,9 +807,9 @@ def test_catalog_inputs_and_outputs_declare_trust() -> None:
 
 def test_lines_import_pulls_in_no_engine_db_or_temporal() -> None:
     code = (
-        "import sys, forge_contracts.lines\n"
+        "import sys, scf_contracts.lines\n"
         "bad = {m.split('.')[0] for m in sys.modules}\n"
-        "bad &= {'forge_workflow', 'forge_db', 'temporalio'}\n"
+        "bad &= {'scf_workflow', 'scf_db', 'temporalio'}\n"
         "print(sorted(bad))\n"
     )
     result = subprocess.run(

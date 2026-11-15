@@ -42,7 +42,7 @@ export const STEP_KIND_META: Record<StepKind, { label: string; Icon: LucideIcon 
     handoff: { label: "Handoff", Icon: ArrowRightLeft },
   };
 
-/** Node/badge classes per tone — all Forge tokens, never raw colour. */
+/** Node/badge classes per tone — all SCF tokens, never raw colour. */
 export const TONE_NODE_CLASS: Record<Tone, string> = {
   muted: "border-border bg-muted text-muted-foreground",
   info: "border-border bg-card text-foreground",

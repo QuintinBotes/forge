@@ -1,6 +1,6 @@
 """Unit tests for the MCP -> platform audit bridge (HARD-05 AC8, offline).
 
-:class:`~forge_api.observability.MCPAuditSink` forwards each frozen
+:class:`~scf_api.observability.MCPAuditSink` forwards each frozen
 ``MCPAuditEntry`` the SDK emits onto the durable, redacted, hash-chained platform
 audit log as an ``MCPAuditEntry``-category row. This runs in the default gate
 against the in-memory platform store (the durable-Postgres assertion is the
@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import uuid
 
-from forge_api.observability import AuditCategory, AuditLog, MCPAuditSink
-from forge_contracts import MCPAuditEntry
-from forge_mcp import TeeAuditLog
-from forge_mcp.audit import build_audit_entry
+from scf_api.observability import AuditCategory, AuditLog, MCPAuditSink
+from scf_contracts import MCPAuditEntry
+from scf_mcp import TeeAuditLog
+from scf_mcp.audit import build_audit_entry
 
 
 def test_bridge_forwards_mcp_entry_to_platform_log() -> None:

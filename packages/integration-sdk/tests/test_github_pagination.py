@@ -8,9 +8,9 @@ import httpx
 import pytest
 from conftest import RequestRecorder, load_fixture, make_transport
 
-from forge_contracts import PullRequest
-from forge_integrations import GitHubClient
-from forge_integrations.errors import GitHubError
+from scf_contracts import PullRequest
+from scf_integrations import GitHubClient
+from scf_integrations.errors import GitHubError
 
 
 def _client(handler) -> GitHubClient:
@@ -70,7 +70,7 @@ def test_paginate_envelope_items_key() -> None:
             return httpx.Response(200, json=load_fixture("git_tree"))
         return httpx.Response(404, json={})
 
-    from forge_contracts import RepositoryConnection
+    from scf_contracts import RepositoryConnection
 
     client = _client(handler)
     result = client.sync_repo(RepositoryConnection(full_name="org/api", default_branch="main"))

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useAoRoleConfig,
   useAoSettings,
@@ -163,7 +163,7 @@ function buildUpdateBody(form: SettingsForm, base: AoSettingsOut | null) {
 
 export interface AoSettingsViewProps {
   projectId?: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

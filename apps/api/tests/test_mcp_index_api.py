@@ -19,21 +19,21 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.mcp import get_mcp_manager, get_mcp_session_factory
-from forge_api.services import mcp_index_service
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import (
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.mcp import get_mcp_manager, get_mcp_session_factory
+from scf_api.services import mcp_index_service
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import (
     KnowledgeSource,
     MCPIndexedResource,
     RetrievalChunk,
     Workspace,
 )
-from forge_db.models.enums import KnowledgeSourceKind, SyncMode
-from forge_mcp import MCPConnectionManager
-from forge_mcp.testing import sample_connection, sample_transport
+from scf_db.models.enums import KnowledgeSourceKind, SyncMode
+from scf_mcp import MCPConnectionManager
+from scf_mcp.testing import sample_connection, sample_transport
 
 WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 
@@ -220,7 +220,7 @@ def test_index_status_staleness_follows_the_shared_rule(
 ) -> None:
     from datetime import UTC, datetime, timedelta
 
-    from forge_db.models import KnowledgeSource
+    from scf_db.models import KnowledgeSource
 
     slug = _register(client)
     client.patch(f"/mcp/connections/{slug}", json={"index_strategy": "sync_and_index"})

@@ -1,6 +1,6 @@
 # Reverse proxy: Caddy (default) vs. nginx (alternative)
 
-Forge's edge — the single TLS-terminating entrypoint in front of the API, web
+Swarm Code Factory's edge — the single TLS-terminating entrypoint in front of the API, web
 UI, MCP gateway, and the admin-gated Temporal/Grafana UIs — is
 [Caddy](https://caddyserver.com/) by default. This guide explains why, what it
 routes, and how to swap in the nginx alternative this repo also ships if you'd
@@ -22,7 +22,7 @@ a specific reason not to.
 
 ## nginx (alternative)
 
-[`deploy/nginx/forge.conf`](../../deploy/nginx/forge.conf) is a route-for-route
+[`deploy/nginx/swarm-code-factory.conf`](../../deploy/nginx/swarm-code-factory.conf) is a route-for-route
 equivalent of the Caddyfile, for operators who'd rather run nginx — an
 existing nginx-based load balancer/WAF in front, more familiar config syntax,
 or an nginx-specific module you need. It is **not** a generic reverse-proxy
@@ -46,7 +46,7 @@ from `docker-compose.yml`.
 | everything else | `handle` (catch-all) | `web:3000` | No |
 
 **`/api/integration/github/webhooks`** (the GitHub App webhook ingress,
-`forge_api.routers.integration`) is not a dedicated `handle` block like the
+`scf_api.routers.integration`) is not a dedicated `handle` block like the
 alerts/PM webhook rows above — it rides the generic `/api/*` prefix-stripped
 route, because `api_prefix` defaults to empty and the router already mounts
 the path at `/integration/github/webhooks` internally. Configure the GitHub
@@ -55,9 +55,9 @@ App's Webhook URL as `https://<domain>/api/integration/github/webhooks` (see
 un-prefixed path is not externally reachable behind either proxy.
 
 **`/ws` and `/ws/spec/{spec_id}`** (the board-push and CRDT spec-co-editing
-websocket channels, `forge_api.routers.realtime`) mount at the API app **root**,
+websocket channels, `scf_api.routers.realtime`) mount at the API app **root**,
 not under `/api` — `app.include_router(realtime_router)` with no prefix (see
-`apps/api/forge_api/main.py`). The web client opens a bare same-origin **`/ws`**
+`apps/api/scf_api/main.py`). The web client opens a bare same-origin **`/ws`**
 path — no `/api` prefix. It **auto-derives** the URL from the page's
 `window.location` at runtime (`wss://<page-host>/ws` on an https page, `ws://`
 otherwise; see `apps/web/src/lib/realtime/ws-url.ts`), so behind either proxy
@@ -69,7 +69,7 @@ non-same-origin endpoint, override with `NEXT_PUBLIC_WS_URL=wss://<host>/ws` as 
 `next dev` server on :3000 serves no `/ws`, so the client keeps
 `ws://localhost:8000/ws` there.) The edge must still route bare `/ws` to the API,
 and both proxies now do: the Caddyfile has explicit `handle /ws` + `handle /ws/spec/*`
-blocks and `forge.conf` has `location = /ws` + `location /ws/spec/`, each
+blocks and `swarm-code-factory.conf` has `location = /ws` + `location /ws/spec/`, each
 proxying to `api:8000`. Without them, `/ws` falls through to the catch-all
 `web:3000` route — wrong, since neither socket exists on the frontend — and
 realtime is silently dead behind the proxy.
@@ -96,13 +96,13 @@ origin.
   today.
 - **Timeouts.** nginx's default `proxy_read_timeout`/`proxy_send_timeout` is
   60s, which would kill an idle websocket or a slow-trickling stream; Caddy
-  has no such default. `forge.conf` sets both to `3600s` on the websocket and
+  has no such default. `swarm-code-factory.conf` sets both to `3600s` on the websocket and
   `/api/` locations — matching the `sseReadTimeout` this repo's Kubernetes
-  ingress already uses for the same reason (`deploy/helm/forge/values.yaml`).
+  ingress already uses for the same reason (`deploy/helm/swarm-code-factory/values.yaml`).
 - **Buffering.** nginx buffers proxied responses (and, separately, request
-  bodies) by default; Caddy streams both by default. `forge.conf` sets
+  bodies) by default; Caddy streams both by default. `swarm-code-factory.conf` sets
   `proxy_buffering off` on `/api/` (it carries the NDJSON audit-export stream,
-  `forge_api.routers.audit`) and `proxy_request_buffering off` on the two
+  `scf_api.routers.audit`) and `proxy_request_buffering off` on the two
   webhook routes, where request-body buffering would be actively harmful:
   alert/PM webhook signatures are HMAC'd over the exact raw body, and a
   buffering proxy that rewrites or re-chunks it breaks verification.
@@ -110,7 +110,7 @@ origin.
   Compose's non-deterministic service start order never matters. A static
   nginx `upstream {}` block resolves once at startup and fails hard
   (`nginx: [emerg] host not found in upstream`) if that name isn't up yet.
-  `forge.conf` works around this with `resolver 127.0.0.11` (Docker's embedded
+  `swarm-code-factory.conf` works around this with `resolver 127.0.0.11` (Docker's embedded
   DNS, present on every container on a user-defined/Compose network) plus a
   `set $upstream_x http://service:port;` + variable `proxy_pass` on every
   location, which defers resolution to request time.
@@ -120,15 +120,15 @@ origin.
 - **Request body size cap.** Caddy's `reverse_proxy` imposes no `client_max_body_size`
   equivalent — request bodies of any size pass through uncapped. Stock nginx
   defaults `client_max_body_size` to 1m, which would silently 413 any >1 MB
-  webhook/API payload Caddy would have let through. `forge.conf` sets an
+  webhook/API payload Caddy would have let through. `swarm-code-factory.conf` sets an
   explicit `client_max_body_size 50m;` at the `server` level instead of
   relying on the 1m default; tune it for your actual max payload.
 - **TLS is not automatic.** Caddy's ACME integration has no nginx equivalent
   in this file. Run certbot/acme.sh alongside nginx, or terminate TLS
   upstream of it, and uncomment the `listen 443 ssl; ssl_certificate ...;`
-  block in `forge.conf`.
+  block in `swarm-code-factory.conf`.
 - **`zstd` compression.** The Caddyfile does `encode gzip zstd`; stock nginx
-  ships gzip only (no zstd module compiled in), so `forge.conf` only does
+  ships gzip only (no zstd module compiled in), so `swarm-code-factory.conf` only does
   gzip.
 - **Removing the `Server` header.** Caddy's `-Server` in its `header` block
   strips the header outright. Stock nginx has no directive to do that (it
@@ -138,7 +138,7 @@ origin.
 - **Basic-auth credentials aren't environment-driven.** Caddy reads
   `TEMPORAL_UI_BASIC_AUTH`/`GRAFANA_BASIC_AUTH` bcrypt hashes from env vars,
   defaulting to a hash that accepts nothing. nginx's `auth_basic_user_file`
-  needs a real htpasswd file on disk; `forge.conf` points at
+  needs a real htpasswd file on disk; `swarm-code-factory.conf` points at
   `/etc/nginx/secrets/{temporal,grafana}.htpasswd`, which don't exist until
   you create them, so both routes fail closed (401 for everyone) the same way
   Caddy's dummy hash does. Generate one with:
@@ -166,7 +166,7 @@ API's own liveness/readiness endpoints (`/health`, `/healthz`, `/readyz`,
 `/health/ready`) are mounted at the API app root, same as `/ws`; reachable
 through either proxy only via `/api/health` etc. (under the `/api/*` surface),
 not bare `/health` — the Caddyfile doesn't expose the bare paths externally
-either, so `forge.conf` doesn't add that.
+either, so `swarm-code-factory.conf` doesn't add that.
 
 ### Switching to it
 
@@ -175,21 +175,21 @@ either, so `forge.conf` doesn't add that.
 caddy:
   image: nginx:1.27-alpine
   volumes:
-    - ./nginx/forge.conf:/etc/nginx/conf.d/forge.conf:ro
+    - ./nginx/swarm-code-factory.conf:/etc/nginx/conf.d/swarm-code-factory.conf:ro
     - ./nginx/secrets:/etc/nginx/secrets:ro   # htpasswd files, see above
     # Remove or override the image's own conf.d/default.conf too — it also
-    # `listen`s on 80 and will otherwise shadow forge.conf as the default
+    # `listen`s on 80 and will otherwise shadow swarm-code-factory.conf as the default
     # server for that port.
 ```
 
 Validate the syntax before rolling it out:
 
 ```bash
-docker run --rm -v "$PWD/deploy/nginx/forge.conf:/etc/nginx/conf.d/forge.conf:ro" nginx:alpine nginx -t
+docker run --rm -v "$PWD/deploy/nginx/swarm-code-factory.conf:/etc/nginx/conf.d/swarm-code-factory.conf:ro" nginx:alpine nginx -t
 ```
 
-This checks config syntax and routing logic only (see `forge.conf`'s header
+This checks config syntax and routing logic only (see `swarm-code-factory.conf`'s header
 comment for exactly what was and wasn't exercised) — it does not stand up the
-real Forge services, so it can't catch a runtime issue like a proxy and an
+real SCF services, so it can't catch a runtime issue like a proxy and an
 upstream landing on different networks. Confirm end-to-end behavior against a
 running stack before trusting either proxy in production.

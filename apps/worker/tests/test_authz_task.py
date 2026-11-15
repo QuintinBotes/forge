@@ -16,13 +16,13 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.authz import PrincipalType, ScopeType
-from forge_contracts.enums import UserRole
-from forge_db.base import Base
-from forge_db.models import AuditLog, RoleGrant, Workspace
-from forge_worker.beat import AUTHZ_PURGE_TASK, BEAT_SCHEDULE
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks.authz import PURGE_EXPIRED_GRANTS_TASK, run_purge
+from scf_contracts.authz import PrincipalType, ScopeType
+from scf_contracts.enums import UserRole
+from scf_db.base import Base
+from scf_db.models import AuditLog, RoleGrant, Workspace
+from scf_worker.beat import AUTHZ_PURGE_TASK, BEAT_SCHEDULE
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks.authz import PURGE_EXPIRED_GRANTS_TASK, run_purge
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 

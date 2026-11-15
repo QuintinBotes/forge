@@ -21,8 +21,8 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
-import forge_db.models as models
-from forge_db.migration_utils import (
+import scf_db.models as models
+from scf_db.migration_utils import (
     build_alembic_config,
     head_revision,
     iter_revisions,
@@ -304,7 +304,7 @@ def test_f25_temporal_engine_migration_up_down(alembic_config: Config) -> None:
     """F25 AC17: 0007 adds the engine-attribution columns + indexes to
     workflow_run and drops them on downgrade, leaving the table intact.
 
-    (forge_db's baseline is metadata-driven, so the columns are provisioned on a
+    (scf_db's baseline is metadata-driven, so the columns are provisioned on a
     fresh chain; this asserts the F25 migration *owns* a clean, reversible down.)"""
     url = alembic_config.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -414,7 +414,7 @@ def test_f27_multi_agent_migration_up_down(alembic_config: Config) -> None:
     (with their indexes + unique index) and drops them on downgrade, leaving the
     baseline-owned tables intact.
 
-    (forge_db's baseline is metadata-driven, so the columns are provisioned on a
+    (scf_db's baseline is metadata-driven, so the columns are provisioned on a
     fresh chain; this asserts the F27 migration owns a clean, reversible down.)"""
     url = alembic_config.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -753,7 +753,7 @@ def test_f34_kernel_sandbox_migration_up_down(alembic_config: Config) -> None:
     the isolation-class index and drops them on downgrade, leaving the F19
     ``sandbox_instance`` table intact.
 
-    (forge_db's baseline is metadata-driven, so the columns are provisioned on a
+    (scf_db's baseline is metadata-driven, so the columns are provisioned on a
     fresh chain; this asserts the F34 migration owns a clean, reversible down.)"""
     url = alembic_config.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -849,7 +849,7 @@ def test_f36_approval_migration_up_down(alembic_config: Config) -> None:
     partial-unique indexes) and generalizes approval_request additively; the
     downgrade removes exactly what F36 introduced, leaving the chain intact.
 
-    (forge_db's baseline is metadata-driven, so a fresh chain provisions the
+    (scf_db's baseline is metadata-driven, so a fresh chain provisions the
     columns at 0001; like 0007, the 0019 step is idempotent about that.)"""
     url = alembic_config.get_main_option("sqlalchemy.url")
     assert url is not None
@@ -904,7 +904,7 @@ def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) 
     ``audit_chain_head``, and backfills a gap-free, verifiable chain over
     pre-F39 rows; the downgrade removes exactly what F39 introduced.
 
-    (forge_db's baseline chain is metadata-driven, so a fresh chain provisions
+    (scf_db's baseline chain is metadata-driven, so a fresh chain provisions
     the columns at 0012; like 0019/0021, the 0022 step is idempotent about that
     and the backfill is exercised by seeding unchained rows first.)"""
     import uuid
@@ -961,9 +961,9 @@ def test_f39_audit_chain_migration_up_down_and_backfill(alembic_config: Config) 
             assert head is not None and head[0] == 3
 
         # The backfilled prefix verifies, and stays ok after a live append.
-        from forge_contracts.audit import AuditEvent
-        from forge_db.audit.chain import verify_chain
-        from forge_db.audit.writer import SqlAuditWriter
+        from scf_contracts.audit import AuditEvent
+        from scf_db.audit.chain import verify_chain
+        from scf_db.audit.writer import SqlAuditWriter
 
         with Session(engine) as session:
             assert verify_chain(session, ws_id).ok is True
@@ -995,7 +995,7 @@ def test_approval_repository_columns_migration_up_down(alembic_config: Config) -
     ``approval_request`` (backing the DB-backed ``SqlAlchemyApprovalRepository``)
     and drops exactly them on downgrade, leaving the table intact.
 
-    (forge_db's baseline is metadata-driven, so a fresh chain provisions the
+    (scf_db's baseline is metadata-driven, so a fresh chain provisions the
     columns at 0001; like 0019, the 0026 step is idempotent about that and owns a
     clean, reversible down.)"""
     url = alembic_config.get_main_option("sqlalchemy.url")
@@ -1030,7 +1030,7 @@ def test_idempotency_store_migration_up_down(alembic_config: Config) -> None:
     UNIQUE index + ``expires_at`` index) and drops exactly it on downgrade, leaving
     the prior chain intact.
 
-    (forge_db's baseline is metadata-driven, so a fresh chain provisions the table
+    (scf_db's baseline is metadata-driven, so a fresh chain provisions the table
     at 0001; like 0025/0027, the 0028 step is idempotent about that and owns a
     clean, reversible down.)"""
     url = alembic_config.get_main_option("sqlalchemy.url")
@@ -1068,7 +1068,7 @@ def test_ao_config_role_model_config_migration_up_down(alembic_config: Config) -
     plain ``uq_agent_role_config_project`` unique constraint) and drops exactly
     it on downgrade, leaving the prior chain intact.
 
-    (forge_db's baseline is metadata-driven, so a fresh chain provisions the
+    (scf_db's baseline is metadata-driven, so a fresh chain provisions the
     table at 0001; like 0025/0027/0028, the 0029 step is idempotent about that
     and owns a clean, reversible down.)"""
     url = alembic_config.get_main_option("sqlalchemy.url")
@@ -1112,7 +1112,7 @@ _CORE_PG_TABLES = {"workspace", "app_user", "api_key"}
 def scratch_pg_config(postgres_url: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Config]:
     """Provision a throwaway Postgres database and yield an Alembic ``Config``.
 
-    A fresh, empty database (public schema, no Forge tables) is created on the
+    A fresh, empty database (public schema, no SCF tables) is created on the
     same server the ``postgres_url`` fixture resolves, so ``alembic upgrade`` runs
     against a clean slate and the ``CREATE EXTENSION vector`` + full drop on
     ``downgrade base`` are exercised end-to-end without touching any other test's

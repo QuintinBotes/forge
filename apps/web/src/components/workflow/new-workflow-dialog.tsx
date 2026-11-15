@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useCreateWorkflowDefinition,
   useForkWorkflowDefinition,
@@ -29,7 +29,7 @@ export interface NewWorkflowDialogProps {
   onCreated?: (definition: WorkflowDefinitionDetail) => void;
   /** Copy this definition (a marketplace line) to the new name instead of a starter. */
   forkFrom?: string | null;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 function createErrorMessage(error: unknown, verb: string): string {

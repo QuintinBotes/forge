@@ -1,6 +1,6 @@
 """Requirement -> acceptance -> task -> test traceability + validation tests.
 
-Plan Task 1.7: "traceability maps R->A->task". FORGE_SPEC Spec Gating Rules:
+Plan Task 1.7: "traceability maps R->A->task". SCF_SPEC Spec Gating Rules:
 validation must map back to acceptance criteria; the approval UI shows
 requirement-to-test traceability.
 """
@@ -11,13 +11,13 @@ import uuid
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     AcceptanceCriterion,
     Requirement,
     RequirementTrace,
     ValidationReport,
 )
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ def test_validate_writes_validation_md(engine) -> None:
 
 
 def test_validate_unknown_task_raises(engine) -> None:
-    from forge_spec import SpecNotFoundError
+    from scf_spec import SpecNotFoundError
 
     with pytest.raises(SpecNotFoundError):
         engine.validate(uuid.uuid4())

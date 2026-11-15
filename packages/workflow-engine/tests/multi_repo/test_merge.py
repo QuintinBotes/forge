@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import CrossPRLink, PRGroup, RepoMergeStatus
-from forge_workflow.multi_repo import MultiRepoMergeGate, MultiRepoMerger
+from scf_contracts import CrossPRLink, PRGroup, RepoMergeStatus
+from scf_workflow.multi_repo import MultiRepoMergeGate, MultiRepoMerger
 
 
 class FakeMultiGitHub:

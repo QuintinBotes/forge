@@ -2,7 +2,7 @@
 canonical, redacted ``AuditEvent`` through the injected ``AuditSink``.
 
 Uses an in-memory ``FakeAuditSink`` (implements the F39-owned
-``forge_contracts.audit.AuditSink`` protocol) and asserts: exactly one event
+``scf_contracts.audit.AuditSink`` protocol) and asserts: exactly one event
 per mutation, correct action + ``Principal``→``actor_type`` mapping, denied
 escalation attempts audited, and no secret substring in any emitted event.
 """
@@ -15,11 +15,11 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
-from forge_api.auth.service import AuthService, get_auth_service
-from forge_api.main import app
-from forge_api.services.auth_audit import LoggingAuditSink
-from forge_contracts.audit import AuditEvent, AuditSink
-from forge_contracts.enums import UserRole
+from scf_api.auth.service import AuthService, get_auth_service
+from scf_api.main import app
+from scf_api.services.auth_audit import LoggingAuditSink
+from scf_contracts.audit import AuditEvent, AuditSink
+from scf_contracts.enums import UserRole
 
 WS = uuid.uuid4()
 

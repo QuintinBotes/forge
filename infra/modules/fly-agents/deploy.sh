@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy.sh — flyctl wrapper for the Forge agent-runtime Fly.io app.
+# deploy.sh — flyctl wrapper for the SCF agent-runtime Fly.io app.
 #
 # Fly's own supported deploy path IS `fly.toml` + `flyctl` (see the Fly TF
 # provider caveat in ../../README.md), so this script — not a Tofu

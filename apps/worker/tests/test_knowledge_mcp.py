@@ -20,27 +20,27 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts import MCPResource
-from forge_contracts.dtos import KnowledgeScope
-from forge_db.base import Base
-from forge_db.models import (
+from scf_contracts import MCPResource
+from scf_contracts.dtos import KnowledgeScope
+from scf_db.base import Base
+from scf_db.models import (
     KnowledgeSource,
     KnowledgeSyncRun,
     MCPIndexedResource,
     RetrievalChunk,
     Workspace,
 )
-from forge_db.models.enums import KnowledgeSourceKind, RunStatus, SyncMode
-from forge_knowledge import (
+from scf_db.models.enums import KnowledgeSourceKind, RunStatus, SyncMode
+from scf_knowledge import (
     DeterministicEmbeddingClient,
     FixtureRerankerClient,
     KnowledgeService,
     SyncDirection,
 )
-from forge_mcp.client import MCPGatewayClient
-from forge_mcp.testing import FakeTransport, sample_connection, sample_transport
-from forge_worker.adapters.gateway_fetcher import GatewayMcpResourceFetcher
-from forge_worker.tasks.knowledge_mcp import refresh_stale_mcp_sources, run_sync
+from scf_mcp.client import MCPGatewayClient
+from scf_mcp.testing import FakeTransport, sample_connection, sample_transport
+from scf_worker.adapters.gateway_fetcher import GatewayMcpResourceFetcher
+from scf_worker.tasks.knowledge_mcp import refresh_stale_mcp_sources, run_sync
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

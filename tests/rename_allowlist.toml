@@ -1,0 +1,316 @@
+# Every place the old project name ("forge") still appears after
+# scripts/rename_project.py, and why. tests/test_rename_allowlist.py fails when the
+# name appears in a tracked file anywhere else.
+#
+# [[paths]]  a file or directory (prefix) that is not checked at all.
+# [[spans]]  a regular expression; the text it matches is ignored. `paths`, when
+#            present, is a regular expression that limits where the span applies.
+#
+# category is one of:
+#   compatibility     read by another system, or stored in data that already exists
+#   third-party       someone else's name, or an ordinary English word
+#   historical        a record of the project as it was named then
+#
+# docs/self-hosting/rename-to-swarm-code-factory.md explains each group to a self-hoster.
+
+# --------------------------------------------------------------------------- #
+# Paths
+# --------------------------------------------------------------------------- #
+
+[[paths]]
+path = "CHANGELOG.md"
+category = "historical"
+reason = "Released entries keep the name the project had; one line at the top notes the rename."
+
+[[paths]]
+path = "docs/architecture/adr/"
+category = "historical"
+reason = "ADRs record decisions as they were made, file names included."
+
+[[paths]]
+path = "docs/superpowers/"
+category = "historical"
+reason = "Dated design specs and plans; the roadmap carries one line noting the rename."
+
+[[paths]]
+path = "packages/db/migrations/versions/"
+category = "historical"
+reason = "Existing migrations: only the first-party import lines changed."
+
+[[paths]]
+path = "docs/security/evidence/semgrep.sarif"
+category = "historical"
+reason = "Recorded scanner output from before the rename; it changes when the scan is next run."
+
+[[paths]]
+path = "docs/security/evidence/sbom.cdx.json"
+category = "historical"
+reason = "The committed SBOM, a snapshot that lists the distributions under their old names; regenerate it at the next release."
+
+[[paths]]
+path = "release/sbom/"
+category = "historical"
+reason = "Generated source SBOM, named forge-source.cdx.json; regenerate at the next release."
+
+[[paths]]
+path = "deploy/sbom/"
+category = "historical"
+reason = "Generated per-image SBOMs; regenerate at the next release."
+
+[[paths]]
+path = "packages/evaluation/scf_eval/benchmarks/forge-swe/"
+category = "compatibility"
+reason = "Frozen, content-hashed benchmark suite; its slug is stored with leaderboard submissions."
+
+[[paths]]
+path = "scripts/rename_project.py"
+category = "historical"
+reason = "The rename script names what it renames and what it preserves."
+
+[[paths]]
+path = "tests/rename_allowlist.toml"
+category = "historical"
+reason = "The allow-list itself."
+
+[[paths]]
+path = "tests/test_rename_allowlist.py"
+category = "historical"
+reason = "The test that reads the allow-list."
+
+[[paths]]
+path = "docs/self-hosting/rename-to-swarm-code-factory.md"
+category = "historical"
+reason = "The upgrade note lists the old names a self-hoster still uses."
+
+# --------------------------------------------------------------------------- #
+# Spans: compatibility-sensitive identifiers, by name
+# --------------------------------------------------------------------------- #
+
+[[spans]]
+pattern = '\b[A-Z0-9_]*FORGE_[A-Z0-9_]*'
+category = "compatibility"
+reason = "FORGE_* environment variables (deployment .env files and CI secrets use these names), and the constants named after them."
+
+[[spans]]
+pattern = '(?i)\bx-forge-[a-z-]+'
+category = "compatibility"
+reason = "HTTP headers on the wire: X-Forge-Signature, X-Forge-PM-Secret."
+
+[[spans]]
+pattern = '\bforge_session\b'
+category = "compatibility"
+reason = "The session cookie name; renaming it signs every user out."
+
+[[spans]]
+pattern = 'Forge-Run\b'
+category = "compatibility"
+reason = "The git commit trailer the agent writes and the run workspace reads back."
+
+[[spans]]
+pattern = '\bforge:run\b'
+category = "compatibility"
+reason = "The issue label that starts a run, and the forge:run:<id> comment marker used to suppress echoes."
+
+[[spans]]
+pattern = '\.forge\b'
+category = "compatibility"
+reason = "The .forge/ directory in governed repositories: .forge/policy.yaml, .forge/policy.tests.yaml, .forge/cache."
+
+[[spans]]
+pattern = 'https?://(marketplace\.)?forge\.dev\b|\bforge\.dev/'
+category = "compatibility"
+reason = "Signed and stored URIs: the attestation predicate type, statement field URIs, the node label key forge.dev/sandbox-runtime, the default marketplace registry URL."
+
+[[spans]]
+pattern = '\bforge_[a-z0-9_]+_(total|seconds|ratio|delta|confidence|completeness)(_bucket|_sum|_count)?\b|\bforge_mcp_\*'
+category = "compatibility"
+reason = "Prometheus metric names that dashboards and alert rules read."
+
+[[spans]]
+pattern = '\bforge:[a-z0-9_]+:(rate\d+[mh]|p\d+)\b'
+category = "compatibility"
+reason = "Prometheus recording-rule names."
+
+[[spans]]
+pattern = 'name: forge_[a-z_]+|forge\.(rules|alerts)\.yml|\bforge-(prometheus|loki|tempo|cost|agent-quality|retrieval-quality|workflow-quality|observability|critical|default)\b'
+paths = '^deploy/|^docs/self-hosting/observability|^docs/runbooks/'
+category = "compatibility"
+reason = "Prometheus rule group names and rule file names, Grafana datasource and dashboard uids, Alertmanager receivers."
+
+[[spans]]
+pattern = '\bforge_(system|svc|pat|scim|agt|int|sc|sy|mc|xxx|zz|x|not|secret|mig|drift|bm25)(_[A-Za-z0-9_-]*)?\b'
+category = "compatibility"
+reason = "Prefixes of issued credentials and stored keys (API keys, service tokens, SCIM tokens, advisory-lock and index names); existing values are recognised by prefix."
+
+[[spans]]
+pattern = '"authority"\]? ?[:=]=? "forge_policy"'
+category = "compatibility"
+reason = "A value inside hashed run-event payloads; changing it would change audit-chain hashes."
+
+[[spans]]
+pattern = 'forge_worker\.tasks\.incident\.run_incident_diagnosis'
+category = "compatibility"
+reason = "A Celery task name on the wire that happens to spell the old module path."
+
+[[spans]]
+pattern = '\bforge-(api|worker|web|mcp-gateway|agent|mcp|marketplace|reference-mcp)\b'
+category = "compatibility"
+reason = "Service names on the wire or in other systems: OpenTelemetry service.name, JWT audience and issuer, Prometheus jobs, Kubernetes workloads, published image repositories, MCP client and server info, the HTTP User-Agent, the agent's git author."
+
+[[spans]]
+pattern = '(?m)^forge-(cli|verify|replay|release-readiness) = '
+paths = 'pyproject\.toml$'
+category = "compatibility"
+reason = "The old console script names, kept as extra entry points so existing scripts still run."
+
+[[spans]]
+pattern = '\bforge-no-[a-z-]+'
+category = "compatibility"
+reason = "Semgrep rule ids: code-scanning alerts, waivers and nosemgrep comments are keyed by them."
+
+[[spans]]
+pattern = '\bforge-swe\b|\bforge-official\b|\bForge Official( Marketplace)?|\bforge-golden-retrieval(-real)?-v1\b|\bforge-factory-bench\b'
+category = "compatibility"
+reason = "Stored slugs and names: the frozen benchmark suite, the official marketplace registry, the golden evaluation sets."
+
+[[spans]]
+pattern = '"forge-[a-z-]+",'
+paths = '^tests/security/test_scanners_and_waivers\.py$'
+category = "historical"
+reason = "The distribution names the committed SBOM snapshot lists; the test reads that snapshot."
+
+[[spans]]
+pattern = 'requires Forge\b|"requires forge"|Min Forge Version|Forge SWE Benchmark|registry_name\.startswith\("Forge"\)'
+category = "compatibility"
+reason = "Text that code or stored data depends on: the install-block reason the API classifies errors by, the schema title pydantic derives from min_forge_version, the frozen benchmark suite's title, and a test of the stored registry name."
+
+[[spans]]
+pattern = '\bforge-source\b'
+category = "historical"
+reason = "The name of the generated source SBOM and its file; it changes when the SBOM is regenerated at the next release."
+
+[[spans]]
+pattern = 'b"forge-[a-z0-9-]+"|\bforge-(internal-service-token-v1|vault-dek)\b|test-forge-master-secret-\d+'
+category = "compatibility"
+reason = "Key-derivation and MAC labels (forge-secret-enc-v1, forge-cipher, forge-apikey, ...); changing one makes every stored ciphertext and issued token unreadable."
+
+[[spans]]
+pattern = '\bforge-package\.yaml\b'
+category = "compatibility"
+reason = "The manifest file name inside signed marketplace packages."
+
+[[spans]]
+pattern = '(?<=:-)forge\b|(?<=%2F)forge\b'
+category = "compatibility"
+reason = "Shell defaults for the database name, user and volume names in the Compose files (${POSTGRES_USER:-forge}), and the URL-encoded /forge Slack slash command."
+
+[[spans]]
+pattern = '(?i)forge'
+paths = '^packages/evaluation/scf_eval/(retrieval_eval\.py|data/|golden/)'
+category = "compatibility"
+reason = "The evaluation corpus and golden sets; their text is what the retrieval scores are measured on."
+
+# --------------------------------------------------------------------------- #
+# Spans: first-party names kept by the owner's decisions of 2026-11-15
+# --------------------------------------------------------------------------- #
+
+[[spans]]
+pattern = '\bforge_(task_id|version_at_sync|version_incompatible|version|wins|run_marker)\b|\bmin_forge_version\b'
+category = "compatibility"
+reason = "Fields that are persisted or on the wire, and the Python names that carry them (no serialisation alias renames them): forge_task_id (pm_links column, API schema, event payload), forge_version (benchmark submission and leaderboard API field and column, build manifest key), min_forge_version (signed marketplace manifest field, API field, CLI flag), forge_version_at_sync (column), forge_version_incompatible (API error code), forge_wins (stored conflict-policy value), forge_run_marker (webhook event payload key)."
+
+[[spans]]
+pattern = '\bforge_(repo_url|repo_ref|repos|sandbox_egress|egress|secret_key|test|world_fact_guard|block_mutation)\b|\bforge_test_|\bforge_(?=\{|<|\(\?:|"|\.\.\.|\[)|\bnotaforgekey\b|\\bforge_(?=\(\?:)'
+category = "compatibility"
+reason = "Names of deployed or stored things: Terraform variables in operators' tfvars (forge_repo_url, forge_repo_ref), Docker volume, network and secret names (forge_repos, forge_sandbox_egress, forge_secret_key, and a test's stand-in network), the forge_test database, database trigger and function names (forge_world_fact_guard, forge_block_mutation), and the forge_ credential prefix in code that builds or matches it."
+
+[[spans]]
+pattern = '\btest_(conflict_forge_wins_is_deterministic|generate_api_token_has_forge_prefix|reaper_reaps_forge_sandbox_containers|resolve_conflict_applies_winner_forge|resolve_conflict_forge_winner_refused_under_external_wins|shipped_forge_swe_suite_is_frozen_and_valid)\b'
+category = "compatibility"
+reason = "Tests named after a kept stored or wire value: the forge_wins policy and forge winner value, the forge_ token prefix, the forge-sandbox- container prefix, the frozen forge-swe suite."
+
+[[spans]]
+pattern = '\bforge acp\b|\bforge --json\b|(?<!\w)_forge/inspect\b|under forge\.(?= so)|"forge\."'
+category = "compatibility"
+reason = "Wire names spelled in code and tests: the command spellings the tervin integration reads (specs/006-tervin-bridge: the planned forge acp agent command, the JSON CLI mode in the architecture diagram), the reference MCP server's _forge/inspect JSON-RPC method, and the forge. prefix of the browser storage key."
+
+[[spans]]
+pattern = '\bmcp__forge__|\bexpect_forge\b|\bforge_(sha|dirty)\b|\btest_(a_forge_ask_is_isolated_and_parsed|an_unreachable_forge_makes_the_run_invalid|a_forge_tool_error_makes_(the_run|an_ask)_invalid|only_forge_tools_may_be_listed)\b'
+category = "compatibility"
+reason = "ctxbench: mcp__forge__* is the tool prefix the Claude CLI derives from the MCP server name forge; forge_sha and forge_dirty are keys of the stored run manifest; expect_forge and the tests are named after the stored forge arm."
+
+[[spans]]
+pattern = '(?<![\w-])forge(?![\w-])'
+paths = 'cli_ctxbench\.py$|/ctxbench/'
+category = "compatibility"
+reason = "ctxbench: forge is the name of a benchmark arm (--arms none,forge) and of the MCP server the arm connects to; both are written into stored results and problem strings (mcp server forge failed, forge tool error)."
+
+[[spans]]
+pattern = 'forge (repo|tracker)'
+paths = 'knowledge-view\.test\.tsx$'
+category = "compatibility"
+reason = "Test fixture: knowledge sources named after the repository github.com/o/forge; the assertions find them by those names."
+
+[[spans]]
+pattern = '\bForge[A-Za-z0-9]+(Down|High|Failures|Spend)\b'
+category = "compatibility"
+reason = "Prometheus alert names that routing rules and runbooks key on."
+
+# --------------------------------------------------------------------------- #
+# Spans: third-party names and ordinary English
+# --------------------------------------------------------------------------- #
+
+[[spans]]
+pattern = 'forgecode\.dev|\(e\.g\. forge, cline\)'
+category = "third-party"
+reason = "Forge Code, another project: a cited blog post, and the agent name in the vendored Spec Kit script."
+
+[[spans]]
+pattern = 'forge a chain link|cannot forge\b|can forge a\b|cannot_forge_|\\x1f(FORGED|forged)|\\nForged\b'
+category = "third-party"
+reason = "The English verb."
+
+[[spans]]
+pattern = '(?i)(?<![a-z])(un)?forge(d|ry|ries|t|ts|tting|tful|able)(?![a-z])|\breforged\b|fire-and-forget'
+category = "third-party"
+reason = "Ordinary English words that contain the letters: forged, forgery, forget, unforgeable, reforged."
+
+# --------------------------------------------------------------------------- #
+# Spans: the general shapes the names above take. These come last, so that a
+# more specific entry above claims its text first.
+# --------------------------------------------------------------------------- #
+
+[[spans]]
+pattern = '(?<![A-Za-z0-9_])forge-[A-Za-z0-9-]*|\b[A-Za-z0-9]+-forge\b'
+category = "compatibility"
+reason = "Names of deployed or configured things: Compose volumes and containers, Kubernetes objects and runtime classes, cloud buckets, clusters and apps under infra/, Temporal task queues, OIDC client ids and group names, temp-file and sandbox container prefixes, and the fixtures that mirror them."
+
+[[spans]]
+pattern = '(?<![A-Za-z0-9_-])forge(?=[.:/=,][A-Za-z0-9_<{$*`.-])'
+category = "compatibility"
+reason = "forge as a namespace prefix in a stored or wire name: Celery task, Temporal workflow, activity and task-queue names, logger names, container labels, browser storage keys, Helm values keys (forge.domain), Redis keys, git branch prefixes (forge/...), Terraform state keys, the worker queue list (forge,incident), and example host names (forge.example.com)."
+
+[[spans]]
+pattern = '(?<=[/.@=:])forge(?![A-Za-z0-9_-])'
+category = "compatibility"
+reason = "forge as a deployment value: filesystem paths (/srv/forge, /etc/forge, /var/lib/forge), the database name and user in connection strings, example host names and e-mail addresses, environment values, example repository slugs."
+
+[[spans]]
+pattern = '''(?<=["'`])forge(?=["'`])'''
+category = "compatibility"
+reason = "forge as a literal value: the default Celery queue, database, bucket, vault path, branch prefix, MCP server name, the observed_by and conflict-winner values in stored records."
+
+[[spans]]
+pattern = '(?m)(?<=: )forge(?=\s*\}?\s*$)|^forge:$'
+category = "compatibility"
+reason = "forge as a configuration value or key: the database name, user and default password, the Kubernetes namespace, Helm release name and name override (which keeps object names and selector labels stable), the part-of label, bucket and Redis list names, and the top-level `forge:` key of the Helm values."
+
+[[spans]]
+pattern = '(-[Udngm]|USER|ROLE|namespace|nologin|\d{4,5}|helm (install|template|upgrade|rollback|test)) forge\b'
+category = "compatibility"
+reason = "forge as an operand on a command line: the database user and name (psql -U forge -d forge), the Kubernetes namespace and Helm release (helm install forge ... -n forge), the unix user inside the images."
+
+[[spans]]
+pattern = '\bFORGE-[A-Z0-9-]+'
+category = "compatibility"
+reason = "Sample board task keys (FORGE-1) in fixtures and docs; a board key is user data, not the product name."

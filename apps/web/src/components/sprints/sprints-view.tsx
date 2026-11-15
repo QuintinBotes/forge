@@ -27,7 +27,7 @@ import { useRegisterCommands } from "@/components/command-palette";
 import { KanbanBoard } from "@/components/board/kanban-board";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import { queryKeys, useSetTaskStatus } from "@/lib/api/hooks";
 import {
   useCompleteSprint,
@@ -72,7 +72,7 @@ const VELOCITY_WINDOW = 6;
 
 export interface SprintsViewProps {
   projectId?: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

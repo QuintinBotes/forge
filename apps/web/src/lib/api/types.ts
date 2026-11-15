@@ -1,12 +1,12 @@
 /**
- * TypeScript mirrors of the Python `forge_contracts` DTOs (Pydantic v2).
+ * TypeScript mirrors of the Python `scf_contracts` DTOs (Pydantic v2).
  *
- * These are hand-maintained against `packages/contracts/forge_contracts` and
+ * These are hand-maintained against `packages/contracts/scf_contracts` and
  * kept intentionally minimal in Phase 0 (the board surface Task 1.6 needs). Enum
  * string values match the Python `StrEnum` members verbatim.
  */
 
-// --- Enums (string unions matching forge_contracts.enums) ----------------- //
+// --- Enums (string unions matching scf_contracts.enums) ----------------- //
 
 export const TASK_STATUSES = [
   "backlog",
@@ -225,10 +225,10 @@ export interface NotImplementedResponse {
 }
 
 // --- Approvals (F36 unified /approvals router) ---------------------------- //
-// Hand-maintained mirror of `forge_approval.models` (Pydantic v2). Enum string
+// Hand-maintained mirror of `scf_approval.models` (Pydantic v2). Enum string
 // values match the Python StrEnum members verbatim.
 
-/** The six approval gate types (forge_contracts.enums.ApprovalGate). */
+/** The six approval gate types (scf_contracts.enums.ApprovalGate). */
 export const GATE_TYPES = [
   "spec",
   "plan",
@@ -362,7 +362,7 @@ export interface ApprovalCount {
 }
 
 // --- Red-Team Gate (GET /workflow/runs/{run_id}/red-team) ----------------- //
-// Hand-maintained mirror of `forge_api.schemas.red_team.*`. Surfaces the
+// Hand-maintained mirror of `scf_api.schemas.red_team.*`. Surfaces the
 // adversarial-review verdict on the human approval gate: before a spec/PR
 // reaches a human, a heterogeneous adversary attacks the candidate and either
 // BLOCKS it (an executed failing test, or a structured spec-violation) or the
@@ -393,10 +393,10 @@ export interface RedTeamGateOut {
 }
 
 // --- Attested Changesets (GET /attestations, /approvals/{id}/attestation) - //
-// Hand-maintained mirror of `forge_api.schemas.attestation.*`. A DSSE/Ed25519
+// Hand-maintained mirror of `scf_api.schemas.attestation.*`. A DSSE/Ed25519
 // signed provenance record over a changeset, minted as a side effect of
 // approving a `pr` gate. `verified` is computed server-side by the exact
-// verification path the `forge-verify` CLI uses — never stored, never faked.
+// verification path the `scf-verify` CLI uses — never stored, never faked.
 
 /** The queryable provenance columns of one attestation row. */
 export interface AttestationProvenance {
@@ -437,11 +437,11 @@ export interface AttestationListResponse {
 }
 
 // --- Spec engine / SDD (F02 /spec + F23 spec-validation) ------------------ //
-// Hand-maintained mirror of the spec DTOs in `forge_contracts.dtos` (Pydantic
+// Hand-maintained mirror of the spec DTOs in `scf_contracts.dtos` (Pydantic
 // v2). Enum string values match the Python `SpecStatus` StrEnum verbatim.
 
 /**
- * The SDD lifecycle stages (forge_contracts.enums.SpecStatus), in order.
+ * The SDD lifecycle stages (scf_contracts.enums.SpecStatus), in order.
  * `changes_requested`/`rejected` are review decisions at the human gate: they
  * sit between `clarifying` and `approved` (reviewed, but NOT past the gate) —
  * ordering matters to every `indexOf`-based lifecycle comparison below.
@@ -634,7 +634,7 @@ export interface SpecVersionDiff {
 }
 
 /**
- * Token/cost accounting for one model call (`forge_agent.providers`'s
+ * Token/cost accounting for one model call (`scf_agent.providers`'s
  * `UsageAccumulator.to_artifact` shape — mirrored here, not reimplemented).
  */
 export interface ModelUsage {
@@ -664,10 +664,10 @@ export interface SpecDraft {
 
 /**
  * The draft-only result of `POST /spec/import` (`ss-import`): an existing
- * markdown or YAML spec pasted/uploaded from outside Forge, parsed or
+ * markdown or YAML spec pasted/uploaded from outside SCF, parsed or
  * best-effort normalized into a `spec.md` draft. No model call — `normalized`
  * is `true` when the source needed loose-shape mapping (arbitrary headings,
- * alternate YAML keys) rather than parsing directly as a canonical Forge
+ * alternate YAML keys) rather than parsing directly as a canonical SCF
  * document. `manifest` is `null` (with `parse_error` set) only for genuinely
  * unparseable content. Nothing is persisted — a human refines the result via
  * the normal spec-editing endpoints.
@@ -681,7 +681,7 @@ export interface SpecImport {
 }
 
 // --- Observability: run traces -------------------------------------------- //
-// Mirrors forge_api.observability.trace.RunTrace + forge_contracts.Step, the
+// Mirrors scf_api.observability.trace.RunTrace + scf_contracts.Step, the
 // response shape of GET /observability/runs/{run_id}/trace.
 
 export const STEP_KINDS = [
@@ -761,7 +761,7 @@ export interface RunTrace {
 }
 
 // --- Time-Travel Runs: replay (POST /agent/runs/{run_id}/replay) --------- //
-// Mirrors forge_api.schemas.replay.* — a RunRecording cassette holds no
+// Mirrors scf_api.schemas.replay.* — a RunRecording cassette holds no
 // objective (see that module's docstring), so the caller supplies the same
 // one that produced the run being replayed.
 
@@ -800,7 +800,7 @@ export interface ReplayRunResult {
 }
 
 // --- Marketplace (F32 integration marketplace) ---------------------------- //
-// Hand-maintained mirror of `forge_marketplace.models` + the marketplace router
+// Hand-maintained mirror of `scf_marketplace.models` + the marketplace router
 // DTOs (Pydantic v2). Enum string values match the Python `StrEnum` verbatim.
 
 /** The distributable artifact kinds a registry can advertise (ArtifactKind). */
@@ -973,7 +973,7 @@ export interface Registry {
 
 /**
  * Body of POST /marketplace/publish — the in-app equivalent of the offline
- * `forge marketplace package` CLI authoring step. `artifact` is the raw F09
+ * `scf marketplace package` CLI authoring step. `artifact` is the raw F09
  * `mcp_connector` / F11 `skill_profile` body; the server validates it through
  * the same authoritative installer schema before persisting anything.
  */
@@ -1116,7 +1116,7 @@ export interface IncidentEventRequest {
 }
 
 // --- Observability & cost (F38) ------------------------------------------- //
-// Mirrors `forge_obs.cost.models` (Pydantic v2). Money is a `Decimal` on the
+// Mirrors `scf_obs.cost.models` (Pydantic v2). Money is a `Decimal` on the
 // server and serialises to a JSON **string** (e.g. "0.43"); token counts are
 // integers. Consumers coerce with `toNum` before arithmetic.
 
@@ -1186,11 +1186,11 @@ export interface CostTimeseriesQuery {
 }
 
 // --- Sprints & velocity (F26 sprint router) ------------------------------- //
-// Hand-maintained mirror of `forge_board.sprint_service` view models (Pydantic
+// Hand-maintained mirror of `scf_board.sprint_service` view models (Pydantic
 // v2). These back the /projects/{id}/sprints, /velocity, /sprints/{id}/burndown
 // and /report routes. Distinct from the Phase-0 board `SprintDTO` above.
 
-/** Sprint lifecycle states (forge_contracts.enums.SprintState), in order. */
+/** Sprint lifecycle states (scf_contracts.enums.SprintState), in order. */
 export const SPRINT_STATES = [
   "planned",
   "active",
@@ -1418,7 +1418,7 @@ export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];
 
 /**
  * One persisted, redacted audit row (GET /audit) including its hash-chain
- * fields. Mirrors `forge_contracts.audit.AuditEntry`. The server redacts
+ * fields. Mirrors `scf_contracts.audit.AuditEntry`. The server redacts
  * secrets before persisting; the viewer redacts again defensively on render.
  */
 export interface AuditEntry {
@@ -1493,7 +1493,7 @@ export interface AuditQuery {
 
 // --- Deployments / gates (F31 deployment-gates) --------------------------- //
 
-/** The 12 states of the deployment promotion FSM (forge_contracts.DeploymentState). */
+/** The 12 states of the deployment promotion FSM (scf_contracts.DeploymentState). */
 export const DEPLOYMENT_STATES = [
   "requested",
   "gate_evaluating",
@@ -1552,7 +1552,7 @@ export type GateCheckStatus = (typeof GATE_CHECK_STATUSES)[number];
 export const HEALTH_STATUSES = ["passing", "failing", "unknown"] as const;
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
 
-/** A read-model of a single deployment run (forge_contracts.DeploymentDTO). */
+/** A read-model of a single deployment run (scf_contracts.DeploymentDTO). */
 export interface DeploymentRead {
   id: string;
   project_id: string;
@@ -1668,7 +1668,7 @@ export interface DeploymentListQuery {
 export const SSO_ROLES = ["admin", "member", "viewer", "agent-runner"] as const;
 export type SsoRole = (typeof SSO_ROLES)[number];
 
-/** Where in the SAML assertion each Forge identity field is read from. */
+/** Where in the SAML assertion each SCF identity field is read from. */
 export interface SamlAttributeMapping {
   email: string;
   name?: string | null;
@@ -1824,7 +1824,7 @@ export interface HrdDiscoverResponse {
 }
 
 // --- Multi-team & RBAC (F30) ---------------------------------------------- //
-// Mirrors `forge_contracts.authz` + the `/teams`, `/access` and
+// Mirrors `scf_contracts.authz` + the `/teams`, `/access` and
 // `/projects/{id}/access` router schemas. Enum string values match the Python
 // StrEnum members verbatim (note the HYPHEN in "agent-runner").
 
@@ -2076,7 +2076,7 @@ export interface PmConnectionPatch {
   enabled?: boolean | null;
 }
 
-/** A durable Forge-task ↔ external-issue link. */
+/** A durable SCF-task ↔ external-issue link. */
 export interface PmLink {
   id: string;
   forge_task_id: string;
@@ -2302,7 +2302,7 @@ export interface WorkflowPublishBlocked {
 // loop is backed by an existing router read (specs, approvals, deployments), so
 // the walkthrough can reflect what the user has genuinely already accomplished.
 
-/** The four stages of the Forge build loop, in order. */
+/** The four stages of the SCF build loop, in order. */
 export const ONBOARDING_STEP_KEYS = [
   "spec",
   "run",
@@ -2520,9 +2520,9 @@ export interface PublicLeaderboard {
 }
 
 // --- World model (bitemporal knowledge graph, /world router) ------------- //
-// Mirrors `forge_api.schemas.world` exactly. Every id is a UUID string and
+// Mirrors `scf_api.schemas.world` exactly. Every id is a UUID string and
 // every datetime an ISO-8601 string. Reads take two clocks: `at` (world
-// time — when something was true) and `as_of` (system time — what forge had
+// time — when something was true) and `as_of` (system time — what SCF had
 // recorded by then); omitting both means "now".
 
 /** One entity in the knowledge graph (GET /world/entities). */
@@ -2665,7 +2665,7 @@ export interface ProposalDecisionOut {
 export interface WorldTimeQuery {
   /** World time: when the statement was true. */
   at?: string;
-  /** System time: what forge had recorded by then. */
+  /** System time: what SCF had recorded by then. */
   as_of?: string;
 }
 

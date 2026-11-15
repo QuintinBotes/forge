@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     AcceptanceCriterion,
     OpenQuestion,
     Priority,
@@ -12,8 +12,8 @@ from forge_contracts import (
     SpecManifest,
     TaskKind,
 )
-from forge_orchestration_policy import ComplexitySizing, SizingSignals, score_complexity
-from forge_orchestration_policy.complexity import signals_from_spec
+from scf_orchestration_policy import ComplexitySizing, SizingSignals, score_complexity
+from scf_orchestration_policy.complexity import signals_from_spec
 
 
 def _sizing(**kwargs: object) -> ComplexitySizing:

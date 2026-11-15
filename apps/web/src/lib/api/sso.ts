@@ -25,7 +25,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { ApiError, apiClient, type ForgeApiClient } from "./client";
+import { ApiError, apiClient, type ScfApiClient } from "./client";
 import type {
   HrdDiscoverResponse,
   OidcConfig,
@@ -53,7 +53,7 @@ export const ssoKeys = {
  */
 export function useSsoConfig(
   workspaceId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<SsoConfig | null> {
   return useQuery({
     queryKey: ssoKeys.config(workspaceId),
@@ -78,7 +78,7 @@ export function useSsoConfig(
  */
 export function useOidcConfig(
   workspaceId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<OidcConfig | null> {
   return useQuery({
     queryKey: ssoKeys.oidcConfig(workspaceId),
@@ -99,7 +99,7 @@ export function useOidcConfig(
 /** The workspace's SCIM provisioning tokens (redacted). */
 export function useScimTokens(
   workspaceId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ScimTokenInfo[]> {
   return useQuery({
     queryKey: ssoKeys.scimTokens(workspaceId),
@@ -115,7 +115,7 @@ export interface PutSsoConfigVariables {
 
 /** Save (create or replace) the SAML config; seeds + revalidates its cache. */
 export function usePutSsoConfig(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SsoConfig, Error, PutSsoConfigVariables> {
   const queryClient = useQueryClient();
   return useMutation<SsoConfig, Error, PutSsoConfigVariables>({
@@ -138,7 +138,7 @@ export interface PutOidcConfigVariables {
 
 /** Save (create or replace) the OIDC config; seeds + revalidates its cache. */
 export function usePutOidcConfig(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<OidcConfig, Error, PutOidcConfigVariables> {
   const queryClient = useQueryClient();
   return useMutation<OidcConfig, Error, PutOidcConfigVariables>({
@@ -162,7 +162,7 @@ export interface SetSsoEnabledVariables {
 
 /** Flip the master SSO switch (enable / break-glass-guarded disable). */
 export function useSetSsoEnabled(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SsoConfig, Error, SetSsoEnabledVariables> {
   const queryClient = useQueryClient();
   return useMutation<SsoConfig, Error, SetSsoEnabledVariables>({
@@ -181,7 +181,7 @@ export interface CreateScimTokenVariables {
 
 /** Issue a SCIM token, then revalidate the token list. */
 export function useCreateScimToken(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<ScimTokenCreated, Error, CreateScimTokenVariables> {
   const queryClient = useQueryClient();
   return useMutation<ScimTokenCreated, Error, CreateScimTokenVariables>({
@@ -202,7 +202,7 @@ export interface RevokeScimTokenVariables {
 
 /** Revoke a SCIM token, then revalidate the token list. */
 export function useRevokeScimToken(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<void, Error, RevokeScimTokenVariables> {
   const queryClient = useQueryClient();
   return useMutation<void, Error, RevokeScimTokenVariables>({
@@ -221,7 +221,7 @@ export function useRevokeScimToken(
  * email" field can fire it on demand and read the routing verdict imperatively.
  */
 export function useDiscoverSso(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<HrdDiscoverResponse, Error, string> {
   return useMutation<HrdDiscoverResponse, Error, string>({
     mutationFn: (email: string) => client.discoverSso({ email }),

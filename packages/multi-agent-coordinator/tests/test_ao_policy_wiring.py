@@ -16,10 +16,10 @@ from types import SimpleNamespace
 
 from _helpers import AgentScript, ScriptingHub, make_objective, obj_parent
 
-from forge_agent import ModelRouter, ProviderName, plan_execution
-from forge_contracts import AcceptanceCriterion
-from forge_contracts.orchestration_config import AgentRole, RoleConfigOverride
-from forge_orchestration_policy import SizingSignals
+from scf_agent import ModelRouter, ProviderName, plan_execution
+from scf_contracts import AcceptanceCriterion
+from scf_contracts.orchestration_config import AgentRole, RoleConfigOverride
+from scf_orchestration_policy import SizingSignals
 
 
 class _DefaultsOnlyStore:

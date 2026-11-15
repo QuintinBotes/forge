@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from forge_api.middleware.idempotency import (
+from scf_api.middleware.idempotency import (
     IdempotencyMiddleware,
     InMemoryIdempotencyStore,
 )
@@ -84,7 +84,7 @@ def test_disabled_is_noop() -> None:
 def test_store_put_if_absent_semantics() -> None:
     from datetime import UTC, datetime
 
-    from forge_api.middleware.idempotency import StoredResponse
+    from scf_api.middleware.idempotency import StoredResponse
 
     store = InMemoryIdempotencyStore()
     value = StoredResponse(

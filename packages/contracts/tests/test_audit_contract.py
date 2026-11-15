@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from forge_contracts.audit import (
+from scf_contracts.audit import (
     GENESIS_HASH,
     ActorType,
     AuditAction,

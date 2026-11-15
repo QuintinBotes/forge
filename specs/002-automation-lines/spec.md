@@ -37,7 +37,7 @@ A workspace admin requires two approvals and no self-approval on pull request ga
 
 ### User Story 2 - A line can be written and validated (Priority: P1)
 
-A platform engineer writes a line definition. Forge tells them, before anything runs, whether it is safe: every state has a station, success is routed, no failure routes to success, agents hold no write tools, and untrusted text cannot steer where a service writes.
+A platform engineer writes a line definition. Swarm Code Factory tells them, before anything runs, whether it is safe: every state has a station, success is routed, no failure routes to success, agents hold no write tools, and untrusted text cannot steer where a service writes.
 
 **Why this priority**: validation is pure and has no runtime dependency, and every later story loads definitions through it.
 
@@ -92,7 +92,7 @@ A line author places a human station on the `pr` gate. The run waits there until
 
 ### User Story 5 - Parallel runs do not collide (Priority: P2)
 
-Three tickets run at once on one repository. Two of them need the same file. Forge records which paths each run has changed, holds the second run when its paths overlap an active claim, and brings finished runs up to date with the base branch one at a time before their final check, so each pull request is checked against the code it will land on.
+Three tickets run at once on one repository. Two of them need the same file. SCF records which paths each run has changed, holds the second run when its paths overlap an active claim, and brings finished runs up to date with the base branch one at a time before their final check, so each pull request is checked against the code it will land on.
 
 **Why this priority**: it matters only once several lines run together, and dogfooding (R27) needs it.
 
@@ -110,7 +110,7 @@ Three tickets run at once on one repository. Two of them need the same file. For
 
 ### Edge Cases
 
-- A line definition from an older forge release fails today's validation: new runs are refused with 409 `line_invalid`; in-flight runs keep their pinned revision.
+- A line definition from an older SCF release fails today's validation: new runs are refused with 409 `line_invalid`; in-flight runs keep their pinned revision.
 - A station input path does not resolve: the outcome is `failed` with `input_unresolved`, before the service is called.
 - An agent returns a value outside its declared decisions: the outcome is `failed`.
 - A run is cancelled while a gate is open: the gate expires with reason `run_cancelled`; a draft pull request stays open with a comment.
@@ -127,11 +127,11 @@ Three tickets run at once on one repository. Two of them need the same file. For
 
 - **FR-001**: Entering `spec_review`, `plan_review` or `awaiting_review` on a feature run MUST open an approval request for that run and gate.
 - **FR-002**: The transition route MUST refuse the three `*_by_human` events with 409 `gate_events_come_from_approvals`.
-- **FR-003**: When such a request resolves `approved`, forge MUST submit the matching event to the run with the deciding user as actor. A failure to submit MUST NOT undo the recorded decision.
+- **FR-003**: When such a request resolves `approved`, SCF MUST submit the matching event to the run with the deciding user as actor. A failure to submit MUST NOT undo the recorded decision.
 
 **Line contract (R10)**
 
-- **FR-004**: Forge MUST define a strict line definition (DSL version 2) with `initial`, `terminals`, `budget`, `concurrency`, `stations` and `transitions`, as settled in spec K section 4.1. Unknown fields are rejected.
+- **FR-004**: SCF MUST define a strict line definition (DSL version 2) with `initial`, `terminals`, `budget`, `concurrency`, `stations` and `transitions`, as settled in spec K section 4.1. Unknown fields are rejected.
 - **FR-005**: Parsing MUST return today's version 1 definition for documents without a DSL version or with version 1, and a line definition for version 2.
 - **FR-006**: A service catalog MUST describe each service's params, inputs with trust level, outputs, extra outcomes, limits, idempotency, effect and credential name, as metadata only.
 - **FR-007**: A pure validator MUST report the error codes listed in spec K section 4.1, including `FAIL_OPEN_ROUTE`, and MUST always apply the line invariants `no_merge`, `agent_no_write_tools`, `trusted_inputs` and `agent_outputs_not_guards`.
@@ -146,14 +146,14 @@ Three tickets run at once on one repository. Two of them need the same file. For
 - **FR-013**: Agent stations MUST never receive tools that write outside the run's worktree.
 - **FR-014**: Human stations MUST resolve only through the approval service, with the decision read from the database. Wake-up signals MUST carry nothing the workflow trusts.
 - **FR-015**: On a station run the transition route MUST accept only `resume` and `cancel`, and only from a user with write access.
-- **FR-016**: Forge MUST ship the implementation-loop line of spec K section 4.5 with its services bound: failing tests confirmed first, local checks before delivery, CI awaited, bounded retries, pull request marked ready, no integration into the base branch.
+- **FR-016**: SCF MUST ship the implementation-loop line of spec K section 4.5 with its services bound: failing tests confirmed first, local checks before delivery, CI awaited, bounded retries, pull request marked ready, no integration into the base branch.
 - **FR-017**: Starting a line on the non-durable engine MUST be refused with 503 `durable_engine_required`.
 
 **Parallel safety (R13)**
 
-- **FR-018**: Forge MUST record, per active run, the repository paths the run has changed, and MUST refuse a claim that overlaps another active run's claim in the same repository.
+- **FR-018**: SCF MUST record, per active run, the repository paths the run has changed, and MUST refuse a claim that overlaps another active run's claim in the same repository.
 - **FR-019**: Claims MUST be released when a run reaches a terminal state, and MUST expire after a bounded lease if the run stops reporting.
-- **FR-020**: Forge MUST provide a per-repository serialised integration step that brings a run branch up to date with the base branch and re-runs the checks, one run at a time. [NEEDS CLARIFICATION: the roadmap calls R13 a "serialised merge step", while ADR-0020 forbids any service that integrates into the base branch until a `pr` gate guards it. Default assumed: the step updates the run branch only; integration into the base branch stays with a person until R22.]
+- **FR-020**: SCF MUST provide a per-repository serialised integration step that brings a run branch up to date with the base branch and re-runs the checks, one run at a time. [NEEDS CLARIFICATION: the roadmap calls R13 a "serialised merge step", while ADR-0020 forbids any service that integrates into the base branch until a `pr` gate guards it. Default assumed: the step updates the run branch only; integration into the base branch stays with a person until R22.]
 
 ### Key Entities
 
@@ -179,7 +179,7 @@ Three tickets run at once on one repository. Two of them need the same file. For
 ## Assumptions
 
 - Milestone M1 has landed: the durable worker has real activities, and service-side checks and CI read-back exist to reuse.
-- Spec K section 4.4 (the signed `workflow_template` installer and `verify_package`) is not in the roadmap's M2 issue list. The first line is loaded from a definition bundled with forge until the installer is scheduled. [NEEDS CLARIFICATION: ADR-0020 says lines are installed only from verified packages. Is a bundled first line acceptable for M2, or must the installer be added to the roadmap before R11?]
+- Spec K section 4.4 (the signed `workflow_template` installer and `verify_package`) is not in the roadmap's M2 issue list. The first line is loaded from a definition bundled with SCF until the installer is scheduled. [NEEDS CLARIFICATION: ADR-0020 says lines are installed only from verified packages. Is a bundled first line acceptable for M2, or must the installer be added to the roadmap before R11?]
 - Dependency-aware scheduling, tracker triggers, lines without a task, fan-out inside a run and compensation on cancel stay out of scope, as in spec K section 4.6.
 - `max_usd` is recorded and alerts but does not stop a run; `max_tokens` is the enforced cap (spec K section 4.7).
 - Yield and cost targets quoted in spec K come from another project's self-reported figures. They are leads for milestone M5, not requirements here.

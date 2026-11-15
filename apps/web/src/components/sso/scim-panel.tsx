@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useCreateScimToken,
   useRevokeScimToken,
@@ -43,7 +43,7 @@ export interface ScimPanelProps {
   config: SsoConfig | null;
   /** API base, used to derive the SCIM endpoint when no SAML config exists yet. */
   apiBaseUrl: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**
@@ -302,7 +302,7 @@ interface CreateTokenDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
-  client: ForgeApiClient;
+  client: ScfApiClient;
 }
 
 function createTokenErrorMessage(error: unknown): string {

@@ -4,14 +4,14 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { LifecycleStepper } from "@/components/spec/lifecycle-stepper";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useSpecStudioManifest } from "@/lib/api/spec-studio";
 
 import { SpecStudio } from "./spec-studio";
 
 export interface SpecStudioPageProps {
   specId: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

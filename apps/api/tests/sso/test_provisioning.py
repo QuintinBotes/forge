@@ -8,14 +8,14 @@ import pytest
 from conftest import ADMIN_ID, WS_ID, Keypair, install_config
 from sqlalchemy import select
 
-from forge_api.sso.errors import LastAdminError, SsoConfigError
-from forge_api.sso.provisioning import (
+from scf_api.sso.errors import LastAdminError, SsoConfigError
+from scf_api.sso.provisioning import (
     deprovision_user,
     link_or_jit_provision,
 )
-from forge_contracts.sso import MappedIdentity
-from forge_db.models import AuditLog, ExternalIdentity, User
-from forge_db.models.enums import UserRole
+from scf_contracts.sso import MappedIdentity
+from scf_db.models import AuditLog, ExternalIdentity, User
+from scf_db.models.enums import UserRole
 
 
 def _identity(email: str = "dana@acme.com", role: str = "member", **kw) -> MappedIdentity:

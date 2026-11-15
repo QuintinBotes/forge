@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-import forge_contracts as fc
+import scf_contracts as fc
 
 
 def test_repo_target_v1_defaults_are_backcompat() -> None:
@@ -114,5 +114,5 @@ def test_merge_gate_result_and_outcome() -> None:
 def test_unknown_repo_error_carries_repo() -> None:
     err = fc.UnknownRepoError("github.com/org/x")
     assert err.repo == "github.com/org/x"
-    assert isinstance(err, fc.ForgeError)
+    assert isinstance(err, fc.ScfError)
     assert isinstance(err, KeyError)

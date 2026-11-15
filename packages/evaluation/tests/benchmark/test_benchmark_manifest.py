@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from forge_eval.benchmark import (
+from scf_eval.benchmark import (
     BenchmarkContentHashMismatch,
     BenchmarkFrozenError,
     BenchmarkManifest,
@@ -20,12 +20,12 @@ from forge_eval.benchmark import (
     freeze,
     load_manifest,
 )
-from forge_eval.golden import GoldenCase
+from scf_eval.golden import GoldenCase
 
 FIXTURE_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "benchmarks"
 FIXTURE_SUITE = FIXTURE_DIR / "fixture" / "1.0.0"
 SHIPPED_SUITE = (
-    Path(__file__).resolve().parents[2] / "forge_eval" / "benchmarks" / "forge-swe" / "1.0.0"
+    Path(__file__).resolve().parents[2] / "scf_eval" / "benchmarks" / "forge-swe" / "1.0.0"
 )
 
 
@@ -62,8 +62,8 @@ def test_content_hash_stable_across_process() -> None:
     in_process = compute_content_hash(_cases(), _scoring())
     script = textwrap.dedent(
         """
-        from forge_eval.benchmark import BenchmarkScoring, compute_content_hash
-        from forge_eval.golden import GoldenCase
+        from scf_eval.benchmark import BenchmarkScoring, compute_content_hash
+        from scf_eval.golden import GoldenCase
         cases = [
             GoldenCase(id="b", query="q-b", expected_ids=["x"], tags=["retrieval"]),
             GoldenCase(id="a", query="q-a", expected_ids=["y", "z"], tags=["retrieval"]),

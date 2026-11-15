@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from forge_contracts import Policy
+from scf_contracts import Policy
 
-# The canonical ``.forge/policy.yaml`` from ``docs/FORGE_SPEC.md`` (policy.yaml
+# The canonical ``.forge/policy.yaml`` from ``docs/SCF_SPEC.md`` (policy.yaml
 # Schema), extended with the action allow/deny lists the ``Policy`` DTO supports.
 SPEC_POLICY_YAML = textwrap.dedent(
     """
@@ -64,9 +64,9 @@ def spec_policy() -> Policy:
 @pytest.fixture
 def repo_root(tmp_path: Path) -> Path:
     """A temp repo containing ``.forge/policy.yaml``."""
-    forge_dir = tmp_path / ".forge"
-    forge_dir.mkdir()
-    (forge_dir / "policy.yaml").write_text(SPEC_POLICY_YAML, encoding="utf-8")
+    scf_dir = tmp_path / ".forge"
+    scf_dir.mkdir()
+    (scf_dir / "policy.yaml").write_text(SPEC_POLICY_YAML, encoding="utf-8")
     return tmp_path
 
 
@@ -78,6 +78,6 @@ CANONICAL_POLICY_PATH = FIXTURES_DIR / "policy_conditional_canonical.yaml"
 @pytest.fixture
 def canonical_policy() -> Policy:
     """The §4 canonical conditional (``schema_version: 2``) policy."""
-    from forge_policy import load_policy
+    from scf_policy import load_policy
 
     return load_policy(CANONICAL_POLICY_PATH)

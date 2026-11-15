@@ -20,16 +20,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal
-from forge_api.main import create_app
-from forge_api.routers import ao_settings as ao_module
-from forge_api.services import self_eval_service as self_eval_service_module
-from forge_api.settings import Settings
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import AuditLog, Project, User, Workspace
-from forge_db.models.benchmark import BenchmarkSuite, SelfEvalBaseline
+from scf_api.db import get_db
+from scf_api.deps import Principal
+from scf_api.main import create_app
+from scf_api.routers import ao_settings as ao_module
+from scf_api.services import self_eval_service as self_eval_service_module
+from scf_api.settings import Settings
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import AuditLog, Project, User, Workspace
+from scf_db.models.benchmark import BenchmarkSuite, SelfEvalBaseline
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

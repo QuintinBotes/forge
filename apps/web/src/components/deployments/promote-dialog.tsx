@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useRequestDeployment } from "@/lib/api/deployments";
 import type { DeploymentRead, EnvironmentRead } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -35,7 +35,7 @@ export interface PromoteDialogProps {
   /** Prefill (from a stage's "Promote →": next env + the stage's live commit). */
   initialTarget?: PromoteTarget | null;
   onPromoted?: (deployment: DeploymentRead) => void;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 function promoteErrorMessage(error: unknown): string {

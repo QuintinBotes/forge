@@ -7,8 +7,8 @@ import uuid
 
 import pytest
 
-from forge_agent.sandbox import LocalSandboxProvider, SandboxSettings, build_sandbox_provider
-from forge_contracts import SandboxKind, SandboxSpec
+from scf_agent.sandbox import LocalSandboxProvider, SandboxSettings, build_sandbox_provider
+from scf_contracts import SandboxKind, SandboxSpec
 
 pytestmark = pytest.mark.skipif(shutil.which("sh") is None, reason="sh not available")
 

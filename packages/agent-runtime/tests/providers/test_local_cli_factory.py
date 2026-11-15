@@ -1,9 +1,9 @@
 import pytest
 
-from forge_agent.providers import ModelClientConfig, ProviderName, build_model_client
-from forge_agent.providers.bridge_client import LocalCliBridgeClient
-from forge_agent.providers.local_cli.client import LocalCliModelClient
-from forge_agent.providers.local_cli.detect import CliName
+from scf_agent.providers import ModelClientConfig, ProviderName, build_model_client
+from scf_agent.providers.bridge_client import LocalCliBridgeClient
+from scf_agent.providers.local_cli.client import LocalCliModelClient
+from scf_agent.providers.local_cli.detect import CliName
 
 
 def test_factory_builds_local_cli_client():
@@ -14,7 +14,7 @@ def test_factory_builds_local_cli_client():
 
 
 def test_factory_rejects_local_cli_without_a_cli_name():
-    from forge_agent.providers.base import ModelClientError
+    from scf_agent.providers.base import ModelClientError
 
     config = ModelClientConfig(provider=ProviderName.local_cli, model="local-cli")
     with pytest.raises(ModelClientError):
@@ -51,7 +51,7 @@ def test_factory_bridge_url_with_blank_token_raises():
     and simply fail on every request); it now raises `ModelClientError` from
     inside `build_model_client` itself, before a client is ever returned.
     """
-    from forge_agent.providers.base import ModelClientError
+    from scf_agent.providers.base import ModelClientError
 
     config = ModelClientConfig(
         provider=ProviderName.local_cli,

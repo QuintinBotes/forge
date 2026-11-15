@@ -7,7 +7,7 @@ Mints real records through :class:`AttestationService` (the same path the
 seeding) on hermetic SQLite (mirrors ``test_red_team_api.py``'s convention: the
 Postgres immutability trigger is a no-op here; the append-only property itself
 is proven by the service tests). ``verified`` must be computed by the exact
-verification path ``forge-verify --run`` uses — re-derive ``payload_hash`` from
+verification path ``scf-verify --run`` uses — re-derive ``payload_hash`` from
 the envelope's PAE, then Ed25519-verify against the deployment key — so a
 record signed by a *different* key honestly reads ``verified: false``.
 """
@@ -26,22 +26,22 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.services.approval_service import get_approval_service
-from forge_api.services.attestation_service import AttestationService
-from forge_approval import (
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.services.approval_service import get_approval_service
+from scf_api.services.attestation_service import AttestationService
+from scf_approval import (
     ApprovalAuthorizer,
     ApprovalService,
     GateRegistry,
     InMemoryApprovalRepository,
 )
-from forge_approval.models import GateType
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import AgentRun, Attestation, Project, Task, WorkflowRun, Workspace
-from forge_obs.attest.signing import DsseSigner, EnvSigningKeyProvider
+from scf_approval.models import GateType
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import AgentRun, Attestation, Project, Task, WorkflowRun, Workspace
+from scf_obs.attest.signing import DsseSigner, EnvSigningKeyProvider
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000e1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000e2")

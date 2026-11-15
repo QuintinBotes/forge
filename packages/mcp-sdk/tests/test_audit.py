@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import MCPAuditEntry
-from forge_mcp.audit import InMemoryAuditLog, build_audit_entry
+from scf_contracts import MCPAuditEntry
+from scf_mcp.audit import InMemoryAuditLog, build_audit_entry
 
 
 def test_build_audit_entry_records_required_fields() -> None:

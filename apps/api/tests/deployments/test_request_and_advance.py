@@ -8,7 +8,7 @@ from collections.abc import Callable
 from conftest import configure_pipeline
 from fastapi.testclient import TestClient
 
-from forge_contracts import UserRole
+from scf_contracts import UserRole
 
 
 def _setup(client_factory: Callable[..., TestClient], project_id: uuid.UUID) -> TestClient:

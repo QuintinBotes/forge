@@ -18,8 +18,8 @@ from sqlalchemy.pool import StaticPool
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
-from forge_db.base import Base
-from forge_db.models import (
+from scf_db.base import Base
+from scf_db.models import (
     ApprovalRequest,
     ApprovalStatus,
     Project,
@@ -28,10 +28,10 @@ from forge_db.models import (
     WorkflowRun,
     Workspace,
 )
-from forge_db.models.observability_audit import ObservabilityAuditEntry
-from forge_worker.temporal_main import build_activities
-from forge_workflow.temporal.activities import WorkflowActivities
-from forge_workflow.temporal.payloads import (
+from scf_db.models.observability_audit import ObservabilityAuditEntry
+from scf_worker.temporal_main import build_activities
+from scf_workflow.temporal.activities import WorkflowActivities
+from scf_workflow.temporal.payloads import (
     ApprovalInput,
     GuardInputsRequest,
     NotifyInput,
@@ -255,9 +255,9 @@ async def test_feature_workflow_reaches_its_first_human_gate_with_real_records(
     from temporalio.contrib.pydantic import pydantic_data_converter
     from temporalio.testing import WorkflowEnvironment
 
-    from forge_workflow.temporal.payloads import WorkflowParams
-    from forge_workflow.temporal.worker import build_temporal_worker
-    from forge_workflow.temporal.workflows import FeatureWorkflow
+    from scf_workflow.temporal.payloads import WorkflowParams
+    from scf_workflow.temporal.worker import build_temporal_worker
+    from scf_workflow.temporal.workflows import FeatureWorkflow
 
     try:
         env = await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter)

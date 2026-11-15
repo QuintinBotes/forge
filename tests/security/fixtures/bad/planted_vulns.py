@@ -1,5 +1,5 @@
 # SAST rule fixtures — every construct here MUST be flagged by
-# .semgrep/forge.yml (tests/security/test_scanners_and_waivers.py copies this
+# .semgrep/swarm-code-factory.yml (tests/security/test_scanners_and_waivers.py copies this
 # tree to a tmp dir and asserts findings land ONLY in bad/). Never imported.
 import logging
 import subprocess

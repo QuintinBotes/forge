@@ -6,7 +6,7 @@ from pathlib import Path
 
 from _helpers import AgentScript, ScriptingHub, make_objective
 
-from forge_contracts import AcceptanceCriterion, RunStatus
+from scf_contracts import AcceptanceCriterion, RunStatus
 
 
 class _F08Fake:

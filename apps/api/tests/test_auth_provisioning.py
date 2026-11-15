@@ -16,14 +16,14 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.auth_provisioning import (
+from scf_api.services.auth_provisioning import (
     LastLoginMethodError,
     OAuthProvisioningService,
     workspace_slug_for_email,
 )
-from forge_contracts.auth import OAuthProvider
-from forge_db.base import Base
-from forge_db.models import AuditLog, OAuthAccount, User, UserRole, Workspace
+from scf_contracts.auth import OAuthProvider
+from scf_db.base import Base
+from scf_db.models import AuditLog, OAuthAccount, User, UserRole, Workspace
 
 
 @pytest.fixture

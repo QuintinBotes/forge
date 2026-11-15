@@ -12,7 +12,7 @@ import itertools
 
 import pytest
 
-from forge_agent.replay import (
+from scf_agent.replay import (
     ForkModelClient,
     ForkToolRegistry,
     RecordingModelClient,
@@ -20,10 +20,10 @@ from forge_agent.replay import (
     ReplayDivergenceError,
     RunCassette,
 )
-from forge_agent.runtime import AgentRunner
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_agent.tools import ToolRegistry, ToolResult
-from forge_contracts import AgentObjective, AgentRunResult, RunStatus
+from scf_agent.runtime import AgentRunner
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_agent.tools import ToolRegistry, ToolResult
+from scf_contracts import AgentObjective, AgentRunResult, RunStatus
 
 
 def _clock():

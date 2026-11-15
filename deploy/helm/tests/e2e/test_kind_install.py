@@ -1,8 +1,8 @@
-"""kind/k3d-gated smoke install + upgrade/rollback of the Forge chart (AC18, AC19).
+"""kind/k3d-gated smoke install + upgrade/rollback of the SCF chart (AC18, AC19).
 
 Marked ``@pytest.mark.kind``; SKIPS (parked, never faked) unless ``kind``,
 ``helm``, ``kubectl`` and a live Docker daemon are all available AND the four
-locally-built ``forge/{api,worker,web,mcp-gateway}`` images are present (the
+locally-built ``swarm-code-factory/{api,worker,web,mcp-gateway}`` images are present (the
 container-build workstream / ``make build-images`` produces them). On a networked
 CI runner the fixture builds/loads them; in the hermetic sandbox the criterion is
 reported as skipped, not passed.
@@ -18,7 +18,7 @@ instead, override the three subchart images to ``bitnamilegacy/*`` (see
 docs/self-hosting/kubernetes.md).
 
 Run locally:
-    make build-images                       # produce forge/{api,worker,web,mcp-gateway}:<ver>
+    make build-images  # produce swarm-code-factory/{api,worker,web,mcp-gateway}:<ver>
     uv run pytest deploy/helm/tests/e2e -m kind
 Reuse an existing cluster (skip create/delete):
     FORGE_KIND_CLUSTER=my-cluster uv run pytest deploy/helm/tests/e2e -m kind
@@ -39,7 +39,7 @@ import yaml
 pytestmark = pytest.mark.kind
 
 E2E_DIR = Path(__file__).resolve().parent
-CHART_DIR = E2E_DIR.parents[1] / "forge"
+CHART_DIR = E2E_DIR.parents[1] / "swarm-code-factory"
 VALUES_KIND = CHART_DIR / "tests" / "e2e" / "values.kind.yaml"
 DATASTORES = CHART_DIR / "tests" / "e2e" / "datastores.yaml"
 
@@ -52,7 +52,9 @@ KUBECTL = shutil.which("kubectl")
 DOCKER = shutil.which("docker")
 
 APP_VERSION = str(yaml.safe_load((CHART_DIR / "Chart.yaml").read_text())["appVersion"])
-FORGE_IMAGES = [f"forge/{c}:{APP_VERSION}" for c in ("api", "worker", "web", "mcp-gateway")]
+SCF_IMAGES = [
+    f"swarm-code-factory/{c}:{APP_VERSION}" for c in ("api", "worker", "web", "mcp-gateway")
+]
 # Datastore + test images pre-loaded so the cluster never has to pull them.
 DATASTORE_IMAGES = ["pgvector/pgvector:pg16", "redis:7-alpine", "curlimages/curl:8.11.1"]
 DEPLOYMENTS = ["forge-api", "forge-worker", "forge-web", "forge-mcp-gateway"]
@@ -72,14 +74,14 @@ def _tooling_ready() -> bool:
         return False
     if subprocess.run([DOCKER, "info"], capture_output=True, check=False).returncode != 0:
         return False
-    # The forge images must exist; datastore/test images are pulled on demand.
-    return all(_image_present(img) for img in FORGE_IMAGES)
+    # The SCF images must exist; datastore/test images are pulled on demand.
+    return all(_image_present(img) for img in SCF_IMAGES)
 
 
 requires_kind = pytest.mark.skipif(
     not _tooling_ready(),
     reason=(
-        "PARKED: kind/helm/kubectl/docker or the built forge/* images are not all "
+        "PARKED: kind/helm/kubectl/docker or the built swarm-code-factory/* images are not all "
         "available — the kind smoke runs on a Docker-enabled CI runner. Build the "
         "images with `make build-images` first."
     ),
@@ -113,7 +115,7 @@ def cluster() -> Iterator[str]:
         for img in DATASTORE_IMAGES:
             if not _image_present(img):
                 _run([DOCKER, "pull", img])
-        for img in FORGE_IMAGES + DATASTORE_IMAGES:
+        for img in SCF_IMAGES + DATASTORE_IMAGES:
             load = _run([KIND, "load", "docker-image", "--name", name, img])
             assert load.returncode == 0, load.stderr
         _kubectl(ctx, "create", "namespace", NAMESPACE)  # ignore "already exists"

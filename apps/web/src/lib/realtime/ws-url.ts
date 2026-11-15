@@ -1,5 +1,5 @@
 /**
- * Runtime resolution of the Forge realtime WebSocket URL(s).
+ * Runtime resolution of the SCF realtime WebSocket URL(s).
  *
  * Next.js inlines `NEXT_PUBLIC_*` at **build** time, and nothing plumbs
  * `NEXT_PUBLIC_WS_URL` (the `web` image takes no such build arg — see

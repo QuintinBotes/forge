@@ -7,13 +7,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from forge_obs.cost.models import ModelPrice, ModelUsage
-from forge_obs.cost.pricing import InMemoryPriceBook
-from forge_obs.cost.repository import InMemoryCostLedger
-from forge_obs.metrics import NoopMetrics, RecordingMetrics, reset_metrics
-from forge_obs.settings import ObsSettings
-from forge_obs.telemetry import shutdown_telemetry
-from forge_worker.observability import build_usage_meter, setup_worker_telemetry
+from scf_obs.cost.models import ModelPrice, ModelUsage
+from scf_obs.cost.pricing import InMemoryPriceBook
+from scf_obs.cost.repository import InMemoryCostLedger
+from scf_obs.metrics import NoopMetrics, RecordingMetrics, reset_metrics
+from scf_obs.settings import ObsSettings
+from scf_obs.telemetry import shutdown_telemetry
+from scf_worker.observability import build_usage_meter, setup_worker_telemetry
 
 
 @pytest.fixture(autouse=True)

@@ -23,9 +23,9 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from lxml import etree
 
-from forge_api.sso.errors import SamlValidationError
-from forge_api.sso.saml import SamlSpService
-from forge_contracts.sso import SamlIdpConfig
+from scf_api.sso.errors import SamlValidationError
+from scf_api.sso.saml import SamlSpService
+from scf_contracts.sso import SamlIdpConfig
 
 NOW = datetime.now(UTC)
 SKEW = 120

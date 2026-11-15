@@ -35,11 +35,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from forge_agent import AgentRunner
-from forge_agent.testing import ScriptedModelClient, finish_response
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_contracts import RepositoryConnection, UserRole
+from scf_agent import AgentRunner
+from scf_agent.testing import ScriptedModelClient, finish_response
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_contracts import RepositoryConnection, UserRole
 
 # Deterministic identities (the tests dir is not an importable package, so these
 # mirror conftest rather than importing it).
@@ -77,7 +77,7 @@ def _as(app: FastAPI, principal: Principal) -> None:
 @pytest.fixture
 def app_with_agent(agent_session: Session) -> Iterator[FastAPI]:
     """App with an offline agent runner + fresh store wired (for run tests)."""
-    from forge_api.routers.agent import (
+    from scf_api.routers.agent import (
         AgentRunStore,
         get_agent_enqueue,
         get_agent_runner,
@@ -145,7 +145,7 @@ def test_viewer_cannot_write_or_run_across_routers() -> None:
 
 
 def test_agent_run_is_workspace_scoped(agent_session: Session) -> None:
-    from forge_api.routers.agent import (
+    from scf_api.routers.agent import (
         AgentRunStore,
         get_agent_enqueue,
         get_agent_runner,
@@ -195,11 +195,11 @@ def test_spec_is_workspace_scoped(tmp_path) -> None:
     from sqlalchemy import StaticPool, create_engine
     from sqlalchemy.orm import Session, sessionmaker
 
-    from forge_api.db import get_db
-    from forge_api.routers.spec import SpecEngineRegistry, get_spec_registry
-    from forge_db.base import Base
-    from forge_db.models import Workspace
-    from forge_spec import spec_id_for_key
+    from scf_api.db import get_db
+    from scf_api.routers.spec import SpecEngineRegistry, get_spec_registry
+    from scf_db.base import Base
+    from scf_db.models import Workspace
+    from scf_spec import spec_id_for_key
 
     app = create_app()
     registry = SpecEngineRegistry(tmp_path / "specs")
@@ -254,12 +254,12 @@ def test_spec_is_workspace_scoped(tmp_path) -> None:
 @pytest.fixture
 def sync_app() -> Iterator[tuple[FastAPI, list[str]]]:
     """App wired with a mock GitHub client recording the repos it is asked to sync."""
-    from forge_api.routers.integration import (
+    from scf_api.routers.integration import (
         RepoConnectionStore,
         get_github_client,
         get_repo_connection_store,
     )
-    from forge_integrations import GitHubClient
+    from scf_integrations import GitHubClient
 
     synced: list[str] = []
 

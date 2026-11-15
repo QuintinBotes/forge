@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from forge_eval.metrics import (
+from scf_eval.metrics import (
     hit_at_k,
     ndcg_at_k,
     precision_at_k,

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_marketplace.errors import SchemaInvalid
-from forge_marketplace.manifest import (
+from scf_marketplace.errors import SchemaInvalid
+from scf_marketplace.manifest import (
     canonical_artifact_bytes,
     compute_content_hash,
     dump_manifest,

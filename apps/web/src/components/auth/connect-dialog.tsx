@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import type { TokenPersistence } from "@/lib/api/session";
 
 export interface ConnectDialogProps {
@@ -21,13 +21,13 @@ export interface ConnectDialogProps {
   /** Called with the verified token once `/auth/me` accepts it. */
   onConnect: (token: string, persistence: TokenPersistence) => void;
   /** Injectable for tests. */
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**
- * The sign-in surface for a self-hosted Forge.
+ * The sign-in surface for a self-hosted SCF.
  *
- * Until OIDC lands, a Forge API key *is* the credential: `make dev` mints an
+ * Until OIDC lands, an SCF API key *is* the credential: `make dev` mints an
  * admin key and prints it, and this is where it goes. The key is verified
  * against `GET /auth/me` **before** it is stored, so a typo fails here with a
  * readable message instead of turning every screen into a silent 401.
@@ -85,10 +85,10 @@ export function ConnectDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound aria-hidden className="h-4 w-4" />
-            Connect to Forge
+            Connect to SCF
           </DialogTitle>
           <DialogDescription>
-            Paste a Forge API key. <code className="font-mono">make dev</code> prints
+            Paste an SCF API key. <code className="font-mono">make dev</code> prints
             an admin key when it seeds the demo workspace; you can also mint one with{" "}
             <code className="font-mono">scripts/dev.sh seed</code>.
           </DialogDescription>

@@ -13,7 +13,7 @@ waivers:
   - id: W-001
     tool: bandit
     rule: B108
-    location: packages/agent-runtime/forge_agent/sandbox/container.py:84
+    location: packages/agent-runtime/scf_agent/sandbox/container.py:84
     finding: 'Probable insecure usage of temp file/directory ("/tmp" literal).'
     justification: >
       False positive: the "/tmp" string is a tmpfs MOUNT TARGET inside the
@@ -51,7 +51,7 @@ waivers:
   - id: W-004
     tool: bandit
     rule: B310
-    location: packages/marketplace-sdk/forge_marketplace/registry_client.py:110
+    location: packages/marketplace-sdk/scf_marketplace/registry_client.py:110
     finding: urllib.request.urlopen audit (scheme/redirect concerns).
     justification: >
       Mitigated by design: the registry client resolves and validates every
@@ -85,7 +85,7 @@ waivers:
     location: "global (skips list in [tool.bandit], root pyproject.toml)"
     finding: assert_used in first-party source (26 sites outside tests).
     justification: >
-      Forge's production images run CPython without -O, so asserts are never
+      SCF's production images run CPython without -O, so asserts are never
       stripped; the flagged asserts are internal invariants (workflow/temporal
       state machines, coordinator graph wiring), not authentication or
       authorization checks (reviewed 2026-07-04, SECURITY_FINDINGS.md §bandit).
@@ -96,7 +96,7 @@ waivers:
   - id: W-007
     tool: codeql
     rule: py/clear-text-logging-sensitive-data
-    location: apps/api/forge_api/scripts/seed.py:108
+    location: apps/api/scf_api/scripts/seed.py:108
     finding: >
       The demo seed writes a freshly minted admin API key to stdout, which on
       the compose stack is the seed container's log.

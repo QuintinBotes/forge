@@ -22,17 +22,17 @@ from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.dtos import Chunk, KnowledgeScope
-from forge_db.base import Base
-from forge_db.models import (
+from scf_contracts.dtos import Chunk, KnowledgeScope
+from scf_db.base import Base
+from scf_db.models import (
     KnowledgeSource,
     RetrievalTermStat,
     RetrievalWorkspaceStat,
     Workspace,
 )
-from forge_db.session import create_session_factory
-from forge_knowledge.embeddings import DeterministicEmbeddingClient
-from forge_knowledge.stores import Bm25Store, PgVectorStore
+from scf_db.session import create_session_factory
+from scf_knowledge.embeddings import DeterministicEmbeddingClient
+from scf_knowledge.stores import Bm25Store, PgVectorStore
 
 # pg_engine is a session-scoped Engine; importing the fixture name is enough.
 pytestmark = pytest.mark.usefixtures("pg_engine")
@@ -262,14 +262,14 @@ def test_parity_dotted_names_and_identifiers(
 
 def test_parity_file_paths(pg_session_factory: sessionmaker[Session]) -> None:
     corpus = [
-        Chunk(content="see src/forge/retry_helper.py for details", path="guide.md"),
+        Chunk(content="see src/scf/retry_helper.py for details", path="guide.md"),
         Chunk(content="the retry helper module overview", path="overview.md"),
         Chunk(content="nothing relevant in this chunk", path="other.md"),
     ]
     _assert_parity(
         pg_session_factory,
         corpus,
-        [("retry_helper", True), ("forge retry_helper", True), ("retry", True)],
+        [("retry_helper", True), ("scf retry_helper", True), ("retry", True)],
     )
 
 
@@ -293,7 +293,7 @@ def test_parity_stem_flood_does_not_drown_exact_match(
     # tsquery they all matched "running", scored 0 in the rescore, and the
     # exact chunk fell out of the pool. Distinct contents (the indexer
     # dedups by content hash).
-    from forge_knowledge.stores import _BM25_CANDIDATE_LIMIT
+    from scf_knowledge.stores import _BM25_CANDIDATE_LIMIT
 
     corpus = [
         Chunk(
@@ -312,7 +312,7 @@ def test_english_stopwords_match_postgres_english_config(
     # Provenance guard for the shared stopword list: every entry is a
     # stopword of the Postgres 'english' config (empty tsvector), so the
     # list is the tsearch stop list, not an invented one.
-    from forge_knowledge.text import ENGLISH_STOPWORDS
+    from scf_knowledge.text import ENGLISH_STOPWORDS
 
     with pg_session_factory() as session:
         for word in sorted(ENGLISH_STOPWORDS):
@@ -325,8 +325,8 @@ def test_bm25_uses_workspace_wide_maintained_statistics_postgres(
 ) -> None:
     # Item 11, Postgres half: scores come from the maintained workspace-wide
     # statistics even when the scope narrows to one of two sources.
-    from forge_knowledge.stores import bm25_score
-    from forge_knowledge.text import tokenize
+    from scf_knowledge.stores import bm25_score
+    from scf_knowledge.text import tokenize
 
     workspace_id, source_a = _seed(pg_session_factory)
     with pg_session_factory() as session:
@@ -457,8 +457,8 @@ def test_migration_backfills_bm25_stats_for_existing_chunks(
     # 'simple' tsv, and NULL the old hash vectors.
     from alembic import command
 
-    from forge_db.migration_utils import build_alembic_config
-    from forge_knowledge.text import tokenize
+    from scf_db.migration_utils import build_alembic_config
+    from scf_knowledge.text import tokenize
 
     base_url = make_url(postgres_url)
     scratch_name = f"forge_bm25_{uuid.uuid4().hex[:12]}"
@@ -623,7 +623,7 @@ def test_parity_snake_case_flood_keeps_exact_tokens(
     # A text-search parser splits ``retry_count`` at the underscore, so every
     # flood chunk below matched ``retry`` and the exact chunk fell out of the
     # 200-candidate pool on Postgres. Lexemes are now the tokens themselves.
-    from forge_knowledge.stores import _BM25_CANDIDATE_LIMIT
+    from scf_knowledge.stores import _BM25_CANDIDATE_LIMIT
 
     corpus = [
         Chunk(
@@ -665,7 +665,7 @@ def test_parity_holds_for_queries_beyond_the_term_cap(
 ) -> None:
     # Postgres evaluates a tsquery recursively and overflowed its stack at ~15k
     # terms; both dialects keep the first MAX_QUERY_TERMS distinct terms.
-    from forge_knowledge.text import MAX_QUERY_TERMS
+    from scf_knowledge.text import MAX_QUERY_TERMS
 
     corpus = [
         Chunk(content="alpha retry handler", path="a.py"),
@@ -687,7 +687,7 @@ def test_concurrent_stat_upserts_add_up(pg_session_factory: sessionmaker[Session
     import threading
     from collections import Counter
 
-    from forge_knowledge.stores import _bump_term_stats, _bump_workspace_stat
+    from scf_knowledge.stores import _bump_term_stats, _bump_workspace_stat
 
     workspace_id, _ = _seed(pg_session_factory)
     first = pg_session_factory()

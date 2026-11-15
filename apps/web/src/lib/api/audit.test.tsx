@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "./client";
+import type { ScfApiClient } from "./client";
 import { useAuditLog, useAuditVocabulary, useVerifyAuditChain } from "./audit";
 import type { AuditEntry, AuditListResponse } from "./types";
 
@@ -41,7 +41,7 @@ describe("useAuditLog", () => {
     const listAudit = vi.fn((query?: { cursor?: string }) =>
       Promise.resolve(query?.cursor === "c2" ? page2 : page1),
     );
-    const client = { listAudit } as unknown as ForgeApiClient;
+    const client = { listAudit } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useAuditLog({ limit: 50 }, client), {
       wrapper: makeWrapper(newClient()),
@@ -77,7 +77,7 @@ describe("useAuditVocabulary", () => {
     };
     const client = {
       getAuditVocabulary: vi.fn(() => Promise.resolve(vocab)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useAuditVocabulary(client), {
       wrapper: makeWrapper(newClient()),
@@ -99,7 +99,7 @@ describe("useVerifyAuditChain", () => {
     };
     const client = {
       verifyAuditChain: vi.fn(() => Promise.resolve(verdict)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useVerifyAuditChain(client), {
       wrapper: makeWrapper(newClient()),

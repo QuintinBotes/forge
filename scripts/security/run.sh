@@ -47,10 +47,10 @@ else
 fi
 
 # --- SAST: custom semgrep rules --------------------------------------------- #
-step "semgrep (custom Forge rules)"
+step "semgrep (custom SCF rules)"
 if have semgrep || [ -x "${ROOT}/.venv/bin/semgrep" ]; then
   SEMGREP_BIN="semgrep"; [ -x "${ROOT}/.venv/bin/semgrep" ] && SEMGREP_BIN="${ROOT}/.venv/bin/semgrep"
-  if "${SEMGREP_BIN}" --config .semgrep/forge.yml --error --metrics=off \
+  if "${SEMGREP_BIN}" --config .semgrep/swarm-code-factory.yml --error --metrics=off \
       --disable-version-check --sarif -o "${EVIDENCE_DIR}/semgrep.sarif" . >/dev/null 2>&1; then
     record "semgrep" 0
   else

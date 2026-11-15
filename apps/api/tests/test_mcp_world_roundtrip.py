@@ -1,4 +1,4 @@
-"""The world model over forge's own MCP server, driven by forge's own MCP client (spec I §5, §8)."""
+"""The world model over SCF's own MCP server, driven by SCF's own MCP client (spec I §5, §8)."""
 
 from __future__ import annotations
 
@@ -13,15 +13,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.observability.audit import AuditCategory, AuditLog
-from forge_api.routers.mcp_server import get_mcp_server_audit_log
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import Workspace, WorldFact, WorldProposal
-from forge_mcp.transports.http import HttpMcpTransport
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.observability.audit import AuditCategory, AuditLog
+from scf_api.routers.mcp_server import get_mcp_server_audit_log
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import Workspace, WorldFact, WorldProposal
+from scf_mcp.transports.http import HttpMcpTransport
 
 WS = uuid.UUID("00000000-0000-0000-0000-00000000cc01")
 WS2 = uuid.UUID("00000000-0000-0000-0000-00000000cc02")

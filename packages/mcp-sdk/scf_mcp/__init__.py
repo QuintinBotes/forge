@@ -1,0 +1,106 @@
+"""MCP client SDK: connection model, query-through retrieval, audit, security.
+
+Implements the frozen :class:`scf_contracts.MCPClient` contract plus the
+spec's MCP Security Rules (read-only default, RFC 8707 token binding, namespace
+scoping, redacted audit log) and the query-through retrieval path. The live
+transport is pluggable; tests and the gateway inject
+:class:`scf_mcp.testing.FakeTransport`.
+"""
+
+from __future__ import annotations
+
+from scf_mcp.approval import MCPWriteApprovalEvaluator, default_mcp_policy
+from scf_mcp.audit import AuditSink, InMemoryAuditLog, TeeAuditLog, build_audit_entry
+from scf_mcp.client import MCPGatewayClient
+from scf_mcp.connection import load_connection, load_connection_file
+from scf_mcp.exceptions import (
+    MCPConnectionNotFoundError,
+    MCPElicitationRequiredError,
+    MCPError,
+    MCPInputError,
+    MCPNamespaceError,
+    MCPRateLimitedError,
+    MCPSecurityError,
+    MCPTransportUnavailableError,
+)
+from scf_mcp.manager import MCPConnectionManager, TransportFactory
+from scf_mcp.query_through import query_through
+from scf_mcp.ratelimit import (
+    InMemoryRateLimiter,
+    RateLimiter,
+    RedisTokenBucket,
+    redis_rate_limiter,
+)
+from scf_mcp.security import (
+    SENSITIVE_KEYS,
+    WRITE_KEYWORDS,
+    filter_resources,
+    is_write_tool,
+    namespace_of,
+    payload_hash,
+    redact,
+    resource_in_scope,
+    token_binding,
+)
+from scf_mcp.transport import (
+    NullTransport,
+    PromptMessage,
+    PromptSpec,
+    ToolSpec,
+    Transport,
+)
+from scf_mcp.transports import (
+    HttpMcpTransport,
+    JsonRpcError,
+    StdioMcpTransport,
+    TokenResolver,
+    live_transport_factory,
+)
+
+__version__ = "0.1.0"
+
+__all__ = [
+    "SENSITIVE_KEYS",
+    "WRITE_KEYWORDS",
+    "AuditSink",
+    "HttpMcpTransport",
+    "InMemoryAuditLog",
+    "InMemoryRateLimiter",
+    "JsonRpcError",
+    "MCPConnectionManager",
+    "MCPConnectionNotFoundError",
+    "MCPElicitationRequiredError",
+    "MCPError",
+    "MCPGatewayClient",
+    "MCPInputError",
+    "MCPNamespaceError",
+    "MCPRateLimitedError",
+    "MCPSecurityError",
+    "MCPTransportUnavailableError",
+    "MCPWriteApprovalEvaluator",
+    "NullTransport",
+    "PromptMessage",
+    "PromptSpec",
+    "RateLimiter",
+    "RedisTokenBucket",
+    "StdioMcpTransport",
+    "TeeAuditLog",
+    "TokenResolver",
+    "ToolSpec",
+    "Transport",
+    "TransportFactory",
+    "build_audit_entry",
+    "default_mcp_policy",
+    "filter_resources",
+    "is_write_tool",
+    "live_transport_factory",
+    "load_connection",
+    "load_connection_file",
+    "namespace_of",
+    "payload_hash",
+    "query_through",
+    "redact",
+    "redis_rate_limiter",
+    "resource_in_scope",
+    "token_binding",
+]

@@ -14,14 +14,14 @@ from conftest import (
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from forge_api.services.marketplace_service import MarketplaceService
-from forge_db.models.connections import MCPConnection
-from forge_db.models.marketplace import (
+from scf_api.services.marketplace_service import MarketplaceService
+from scf_db.models.connections import MCPConnection
+from scf_db.models.marketplace import (
     MarketplaceInstallation,
     MarketplaceListing,
     MarketplaceListingVersion,
 )
-from forge_db.models.profiles import SkillProfile
+from scf_db.models.profiles import SkillProfile
 
 
 def test_sync_upserts_and_prunes(
@@ -55,7 +55,7 @@ def test_sync_malformed_index_records_error(
 ) -> None:
     class BoomGateway:
         def fetch_index(self, reg):
-            from forge_marketplace.errors import RegistryFetchError
+            from scf_marketplace.errors import RegistryFetchError
 
             raise RegistryFetchError("schema violation")
 
@@ -213,6 +213,6 @@ def test_uninstall_deletes_object(
 
 
 def _req(registry, kind: str, slug: str):
-    from forge_marketplace.models import ArtifactKind, InstallRequest
+    from scf_marketplace.models import ArtifactKind, InstallRequest
 
     return InstallRequest(registry_id=registry.id, kind=ArtifactKind(kind), slug=slug)

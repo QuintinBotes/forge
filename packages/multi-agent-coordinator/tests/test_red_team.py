@@ -19,15 +19,15 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent.sandbox import LocalSandboxProvider
-from forge_contracts import (
+from scf_agent.sandbox import LocalSandboxProvider
+from scf_contracts import (
     AcceptanceCriterion,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
     ModelToolCall,
 )
-from forge_coordinator.red_team import (
+from scf_coordinator.red_team import (
     HomogeneousAdversaryError,
     RedTeamResult,
     run_red_team,

@@ -5,7 +5,7 @@
 # HA/worker capacity, a floating IP for zero-downtime primary
 # replacement, large volumes, and delete protection ON everywhere.
 #
-# HONEST CEILING: the Forge compose stack itself is single-node today —
+# HONEST CEILING: the SCF compose stack itself is single-node today —
 # Postgres/pgvector and MinIO run and hold their data volumes on the
 # PRIMARY node only (index 0). `server_count = 2` here provisions a
 # second node on the same private network (see
@@ -177,7 +177,7 @@ variable "admin_ssh_cidrs" {
 variable "forge_repo_url" {
   description = "Git URL cloud-init clones on first boot to obtain deploy/docker-compose.yml. Empty string skips the clone (Docker is still installed)."
   type        = string
-  default     = "https://github.com/QuintinBotes/forge.git"
+  default     = "https://github.com/QuintinBotes/swarm-code-factory.git"
 }
 
 variable "forge_repo_ref" {

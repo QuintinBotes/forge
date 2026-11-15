@@ -17,11 +17,11 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import AuditLog, PlatformAPIKey, PlatformKeyKind, UserRole, Workspace
-from forge_worker.beat import AUTH_PURGE_KEYS_TASK, BEAT_SCHEDULE
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks.auth import PURGE_EXPIRED_KEYS_TASK, run_purge_expired_keys
+from scf_db.base import Base
+from scf_db.models import AuditLog, PlatformAPIKey, PlatformKeyKind, UserRole, Workspace
+from scf_worker.beat import AUTH_PURGE_KEYS_TASK, BEAT_SCHEDULE
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks.auth import PURGE_EXPIRED_KEYS_TASK, run_purge_expired_keys
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000c3")
 

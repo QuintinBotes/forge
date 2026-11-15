@@ -11,9 +11,9 @@ import uuid
 
 import pytest
 
-from forge_api.auth.crypto import HmacAeadCipher, generate_key
-from forge_api.auth.vault import SecretInfo, SecretNotFoundError, SecretVault
-from forge_contracts.enums import APIKeyKind
+from scf_api.auth.crypto import HmacAeadCipher, generate_key
+from scf_api.auth.vault import SecretInfo, SecretNotFoundError, SecretVault
+from scf_contracts.enums import APIKeyKind
 
 
 def _vault() -> SecretVault:

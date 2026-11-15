@@ -13,8 +13,8 @@ import json
 import pytest
 from conftest import load_fixture
 
-from forge_contracts import CIState, CIStatus, WebhookEvent
-from forge_integrations import (
+from scf_contracts import CIState, CIStatus, WebhookEvent
+from scf_integrations import (
     parse_github_webhook,
     parse_slack_interaction,
     sign_github_payload,

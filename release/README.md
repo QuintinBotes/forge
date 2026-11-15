@@ -4,7 +4,7 @@ Machine-checkable release readiness, versioning, and supply-chain evidence.
 
 | Path | What it is |
 |---|---|
-| `gates.yaml` | The gate manifest — the machine encoding of `SPEC-PRODUCTION-HARDENING.md`'s ALPHA/BETA/PRODUCTION bars and the 18 lettered gates + the two named human-only asterisks. Consumed by `forge-release-readiness`. |
+| `gates.yaml` | The gate manifest — the machine encoding of `SPEC-PRODUCTION-HARDENING.md`'s ALPHA/BETA/PRODUCTION bars and the 18 lettered gates + the two named human-only asterisks. Consumed by `scf-release-readiness`. |
 | `attestations/*.yaml` | Human-only gate sign-offs (`G-PENTEST`, `G-SOAK-FLEET`). Default `signed_off: false`; flip to `true` **only** after the real engagement. The engine never auto-greens these. |
 | `scripts/source-sbom.sh` | Generates `sbom/forge-source.cdx.json`, the source-tree CycloneDX SBOM (uv.lock + pnpm-lock.yaml) — distinct from HARD-07's per-image SBOMs under `deploy/sbom/`. |
 | `sbom/forge-source.cdx.json` | The generated source SBOM (committed at release time; feeds `G-SEC-EVIDENCE`). |
@@ -13,7 +13,7 @@ Machine-checkable release readiness, versioning, and supply-chain evidence.
 ## Common commands
 
 ```bash
-make release-readiness      # forge-release-readiness --bar production  → RELEASE_READINESS.md (+ exit code)
+make release-readiness      # scf-release-readiness --bar production  → RELEASE_READINESS.md (+ exit code)
 make source-sbom            # regenerate release/sbom/forge-source.cdx.json (needs syft)
 make bump                   # cz bump: next SemVer across every version file + CHANGELOG + tag
 make changelog              # regenerate CHANGELOG.md from the commit history

@@ -6,8 +6,8 @@ from pathlib import Path
 
 from _helpers import AgentScript, ScriptingHub, make_objective, obj_parent
 
-from forge_contracts import RunStatus, SubagentRules
-from forge_coordinator import HumanResumeInput
+from scf_contracts import RunStatus, SubagentRules
+from scf_coordinator import HumanResumeInput
 
 
 def test_child_interrupt_then_resume_only_reruns_child(

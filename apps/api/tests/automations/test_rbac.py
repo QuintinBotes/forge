@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from forge_contracts import UserRole
+from scf_contracts import UserRole
 
 from .conftest import close_spec_rule_body
 

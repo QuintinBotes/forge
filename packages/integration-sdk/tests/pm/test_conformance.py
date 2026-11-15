@@ -19,9 +19,9 @@ from uuid import uuid4
 
 import pytest
 
-from forge_contracts.enums import Direction
-from forge_contracts.pm import ForgePriority, ForgeTask, StatusCategory
-from forge_contracts.pm import PMAdapter as PMAdapterProtocol
+from scf_contracts.enums import Direction
+from scf_contracts.pm import PMAdapter as PMAdapterProtocol
+from scf_contracts.pm import ScfPriority, ScfTask, StatusCategory
 
 PROVIDERS = [
     "jira",
@@ -55,7 +55,7 @@ def _adapter(request: pytest.FixtureRequest, provider: str):
     return request.getfixturevalue(f"{provider}_adapter")
 
 
-def _forge_task(**overrides) -> ForgeTask:
+def _scf_task(**overrides) -> ScfTask:
     base = {
         "id": uuid4(),
         "key": "CONF-1",
@@ -63,12 +63,12 @@ def _forge_task(**overrides) -> ForgeTask:
         "title": "Conformance task",
         "description_md": "conformance body",
         "status_category": StatusCategory.started,
-        "priority": ForgePriority.high,
+        "priority": ScfPriority.high,
         "version": 1,
         "updated_at": datetime.now(UTC),
     }
     base.update(overrides)
-    return ForgeTask(**base)
+    return ScfTask(**base)
 
 
 # --------------------------------------------------------------------------- #
@@ -86,7 +86,7 @@ def test_adapter_conforms_to_pm_adapter_protocol(
 
 
 # --------------------------------------------------------------------------- #
-# Pure mapping — never raises for every StatusCategory / ForgePriority         #
+# Pure mapping — never raises for every StatusCategory / ScfPriority         #
 # --------------------------------------------------------------------------- #
 
 
@@ -105,7 +105,7 @@ def test_priority_out_round_trips_for_every_priority(
     provider: str, request: pytest.FixtureRequest
 ) -> None:
     adapter = _adapter(request, provider)
-    for priority in ForgePriority:
+    for priority in ScfPriority:
         external_value = adapter.map_priority(priority.value, Direction.OUT)
         assert isinstance(external_value, str) and external_value
 
@@ -132,7 +132,7 @@ async def test_create_external_returns_task_with_external_id(
     provider: str, request: pytest.FixtureRequest
 ) -> None:
     adapter = _adapter(request, provider)
-    created = await adapter.create_external(_forge_task())
+    created = await adapter.create_external(_scf_task())
     assert created.provider == provider
     assert created.external_id
 
@@ -143,7 +143,7 @@ async def test_update_external_returns_task_with_same_external_id(
 ) -> None:
     adapter = _adapter(request, provider)
     external_id = EXTERNAL_IDS[provider]
-    updated = await adapter.update_external(external_id, _forge_task())
+    updated = await adapter.update_external(external_id, _scf_task())
     assert updated.external_id == external_id
 
 

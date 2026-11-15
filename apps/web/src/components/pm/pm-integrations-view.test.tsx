@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type {
   PmConnection,
   PmConnectionDetail,
@@ -69,7 +69,7 @@ const CONN_2 = makeConn({
   status: "error",
 });
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     baseUrl: "http://localhost:8000",
     listPmConnections: vi.fn(() => Promise.resolve([CONN_1, CONN_2])),
@@ -109,10 +109,10 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
       }),
     ),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -232,7 +232,7 @@ describe("PmIntegrationsView — detail", () => {
     await screen.findByTestId("pm-detail");
 
     // The seeded row maps "In Progress" → In progress; recategorize it to Done.
-    fireEvent.change(screen.getByLabelText("Forge category 1"), {
+    fireEvent.change(screen.getByLabelText("SCF category 1"), {
       target: { value: "completed" },
     });
     fireEvent.click(screen.getByTestId("pm-map-save"));
@@ -253,7 +253,7 @@ describe("PmIntegrationsView — detail", () => {
     fireEvent.change(screen.getByLabelText("Provider status 2"), {
       target: { value: "Blocked" },
     });
-    fireEvent.change(screen.getByLabelText("Forge category 2"), {
+    fireEvent.change(screen.getByLabelText("SCF category 2"), {
       target: { value: "canceled" },
     });
     fireEvent.click(screen.getByTestId("pm-map-save"));
@@ -380,7 +380,7 @@ describe("PmIntegrationsView — connect form", () => {
     fireEvent.change(screen.getByLabelText("External project key"), {
       target: { value: "ENG" },
     });
-    fireEvent.change(screen.getByLabelText("Forge project"), {
+    fireEvent.change(screen.getByLabelText("SCF project"), {
       target: { value: "proj-1" },
     });
     fireEvent.change(screen.getByLabelText("Jira site URL"), {

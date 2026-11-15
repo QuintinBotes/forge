@@ -15,8 +15,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from forge_authz import DefaultPermissionResolver
-from forge_contracts.authz import (
+from scf_authz import DefaultPermissionResolver
+from scf_contracts.authz import (
     AccessLevel,
     Permission,
     PrincipalContext,
@@ -129,7 +129,7 @@ def test_ac7_nested_team_inheritance() -> None:
 
 
 def test_ac7_inheritance_stops_at_max_depth() -> None:
-    from forge_authz import MAX_TEAM_DEPTH, team_closure
+    from scf_authz import MAX_TEAM_DEPTH, team_closure
 
     # Build a long chain leaf -> a1 -> a2 -> ... ; only the leaf is a membership
     # with each immediate parent linked, so the closure caps at MAX_TEAM_DEPTH.

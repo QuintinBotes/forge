@@ -1,4 +1,4 @@
-# Forge Prometheus recording rules (HARD-10 §3.5).
+# SCF Prometheus recording rules (HARD-10 §3.5).
 #
 # Pre-aggregate the load-bearing rollups the Grafana dashboards read so panels
 # stay cheap and percentiles are computed once. Every expression references only

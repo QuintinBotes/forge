@@ -25,7 +25,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-from forge_db.base import json_type
+from scf_db.base import json_type
 
 # revision identifiers, used by Alembic.
 revision: str = "0046_platform_api_key_scopes"

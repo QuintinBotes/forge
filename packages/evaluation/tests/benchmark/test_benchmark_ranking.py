@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from forge_eval.benchmark import LeaderboardRow, rank_submissions
+from scf_eval.benchmark import LeaderboardRow, rank_submissions
 
 T0 = datetime(2026, 7, 1, 12, 0, 0, tzinfo=UTC)
 

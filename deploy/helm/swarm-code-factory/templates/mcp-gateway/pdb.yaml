@@ -1,0 +1,13 @@
+{{- if and .Values.mcpGateway.enabled .Values.mcpGateway.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "swarm-code-factory.fullname" . }}-mcp-gateway
+  labels:
+    {{- include "swarm-code-factory.componentLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.mcpGateway.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "swarm-code-factory.componentSelectorLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 6 }}
+{{- end }}

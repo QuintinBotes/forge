@@ -1,7 +1,7 @@
 /**
- * Typed Forge API client.
+ * Typed SCF API client.
  *
- * A thin `fetch` wrapper that knows the Forge API surface. The backend routes
+ * A thin `fetch` wrapper that knows the SCF API surface. The backend routes
  * below are implemented; this client still surfaces a typed {@link ApiError}
  * (with `notImplemented` set for HTTP 501) as a residual safety net for any
  * route a given deployment has feature-flagged off or not yet enabled, so
@@ -232,7 +232,7 @@ function buildUrl(
   return url.toString();
 }
 
-export class ForgeApiClient {
+export class ScfApiClient {
   readonly baseUrl: string;
   /** Explicit per-instance token, if the caller pinned one (tests, SSR). */
   private readonly configuredToken?: string;
@@ -743,7 +743,7 @@ export class ForgeApiClient {
 
   /**
    * `ss-import`: import an existing markdown or YAML spec (uploaded/pasted from
-   * outside Forge) as a `spec.md` draft. Parse/normalize only — no model call.
+   * outside SCF) as a `spec.md` draft. Parse/normalize only — no model call.
    * Draft-only, like `draftSpec` — nothing is persisted; the caller reviews the
    * result in the Markdown/Guided editor before saving.
    */
@@ -795,7 +795,7 @@ export class ForgeApiClient {
    * Time-Travel Runs: replay a persisted `RunRecording` cassette by
    * substitution and diff it against the tape. `runId` here is the
    * `RunRecording` id (a separate id space from the `AgentRunResult.run_id`
-   * this viewer otherwise shows) — see `forge_api.routers.agent.replay_run`.
+   * this viewer otherwise shows) — see `scf_api.routers.agent.replay_run`.
    */
   replayRun(
     runId: string,
@@ -955,7 +955,7 @@ export class ForgeApiClient {
 
   /**
    * Author a package straight into the workspace's catalog — the in-app
-   * counterpart to the offline `forge marketplace package` CLI step. Any
+   * counterpart to the offline `scf marketplace package` CLI step. Any
    * member may publish; the artifact is validated server-side before persist.
    */
   publishListing(body: ListingPublishRequest): Promise<ListingDetail> {
@@ -1617,4 +1617,4 @@ async function parseBody(response: Response): Promise<unknown> {
 }
 
 /** Process-wide default client (browser/server share the same base URL). */
-export const apiClient = new ForgeApiClient();
+export const apiClient = new ScfApiClient();

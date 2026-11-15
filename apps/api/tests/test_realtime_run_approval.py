@@ -20,19 +20,19 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
-from forge_api.observability.redaction import redact_mapping
-from forge_api.observability.service import ObservabilityService, get_observability_service
-from forge_api.realtime.manager import ConnectionManager, get_connection_manager
-from forge_api.services.approval_service import build_gate_registry, get_approval_service
-from forge_approval import (
+from scf_api.main import create_app
+from scf_api.observability.redaction import redact_mapping
+from scf_api.observability.service import ObservabilityService, get_observability_service
+from scf_api.realtime.manager import ConnectionManager, get_connection_manager
+from scf_api.services.approval_service import build_gate_registry, get_approval_service
+from scf_approval import (
     ApprovalAuthorizer,
     ApprovalService,
     InMemoryActivityBus,
     InMemoryApprovalRepository,
 )
-from forge_approval.providers import InMemoryGrantStore
-from forge_contracts import RealtimeEventType
+from scf_approval.providers import InMemoryGrantStore
+from scf_contracts import RealtimeEventType
 
 # Matches the workspace the ``authenticate_app`` fixture's admin principal
 # carries (``tests/conftest.py``), so a socket registered here shares the

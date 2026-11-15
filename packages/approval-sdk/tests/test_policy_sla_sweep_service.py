@@ -12,10 +12,10 @@ from datetime import UTC, datetime, timedelta
 
 from conftest import WS
 
-from forge_approval import ApprovalService
-from forge_approval.delegation import DelegationDirectory, DelegationEntry
-from forge_approval.escalation import EscalationOutcome, SlaPolicy
-from forge_approval.models import GateStatus, GateType
+from scf_approval import ApprovalService
+from scf_approval.delegation import DelegationDirectory, DelegationEntry
+from scf_approval.escalation import EscalationOutcome, SlaPolicy
+from scf_approval.models import GateStatus, GateType
 
 ASSIGNEE = uuid.UUID("00000000-0000-0000-0000-00000000a001")
 DELEGATE = uuid.UUID("00000000-0000-0000-0000-00000000a002")

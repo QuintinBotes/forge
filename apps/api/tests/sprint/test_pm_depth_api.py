@@ -9,7 +9,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from forge_board.sprint_service import SprintService
+from scf_board.sprint_service import SprintService
 
 WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 

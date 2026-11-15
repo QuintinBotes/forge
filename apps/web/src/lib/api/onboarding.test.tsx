@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ForgeApiClient, type ForgeApiClient as Client } from "./client";
+import { ScfApiClient, type ScfApiClient as Client } from "./client";
 import { useOnboardingProgress } from "./onboarding";
 import type { OnboardingProgress } from "./types";
 
@@ -14,7 +14,7 @@ function json(data: unknown): Response {
   });
 }
 
-describe("ForgeApiClient.getOnboardingProgress", () => {
+describe("ScfApiClient.getOnboardingProgress", () => {
   it("composes specs + approvals + deployments into derived progress", async () => {
     const fetchImpl = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
@@ -57,7 +57,7 @@ describe("ForgeApiClient.getOnboardingProgress", () => {
       return Promise.resolve(json(null));
     }) as unknown as typeof fetch;
 
-    const client = new ForgeApiClient({
+    const client = new ScfApiClient({
       baseUrl: "http://api.test",
       fetch: fetchImpl,
     });

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from forge_workflow.default_workflow import default_feature_definition
-from forge_workflow.editor.graph import (
+from scf_workflow.default_workflow import default_feature_definition
+from scf_workflow.editor.graph import (
     auto_layout,
     definition_to_graph,
     graph_to_definition,
     graph_to_yaml,
     yaml_to_graph,
 )
-from forge_workflow.incident.definition import default_incident_definition
+from scf_workflow.incident.definition import default_incident_definition
 
 
 @pytest.fixture

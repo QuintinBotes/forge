@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forge_contracts import Policy
-from forge_policy import load_policy, load_test_suite, run_policy_tests
-from forge_policy.tests_runner import PolicyTestSuite, suite_path_for
+from scf_contracts import Policy
+from scf_policy import load_policy, load_test_suite, run_policy_tests
+from scf_policy.tests_runner import PolicyTestSuite, suite_path_for
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CANONICAL = FIXTURES / "policy_conditional_canonical.yaml"

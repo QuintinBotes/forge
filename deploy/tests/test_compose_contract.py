@@ -182,7 +182,7 @@ def test_temporal_services_have_healthchecks() -> None:
 def test_temporal_worker_runs_temporal_entrypoint() -> None:
     """AC18 — temporal-worker runs the F25 entrypoint with the temporal backend."""
     worker = _service("temporal-worker")
-    assert worker["command"] == ["python", "-m", "forge_worker.temporal_main"]
+    assert worker["command"] == ["python", "-m", "scf_worker.temporal_main"]
     assert worker["environment"]["WORKFLOW_ENGINE_BACKEND"] == "temporal"
 
 

@@ -6,8 +6,8 @@ from datetime import UTC, datetime, time
 
 import pytest
 
-from forge_deploy.freeze import is_frozen, next_open
-from forge_deploy.schemas import FreezeWindow
+from scf_deploy.freeze import is_frozen, next_open
+from scf_deploy.schemas import FreezeWindow
 
 # Fri 17:00 -> Mon 09:00 weekend freeze (wrap-around the week boundary).
 WEEKEND = FreezeWindow(

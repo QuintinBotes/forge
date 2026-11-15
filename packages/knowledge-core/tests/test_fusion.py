@@ -1,4 +1,4 @@
-"""Tests for ``forge_knowledge.fusion`` — Reciprocal Rank Fusion (Task 1.3, spine).
+"""Tests for ``scf_knowledge.fusion`` — Reciprocal Rank Fusion (Task 1.3, spine).
 
 RRF combines several independent rankings into one with the parameter-free
 formula fixed in the plan's Global Constraints and the spec's pipeline diagram::
@@ -15,9 +15,9 @@ from __future__ import annotations
 import math
 from itertools import pairwise
 
-from forge_contracts.constants import RRF_K
-from forge_contracts.dtos import Ranked, RetrievedChunk
-from forge_knowledge.fusion import fuse
+from scf_contracts.constants import RRF_K
+from scf_contracts.dtos import Ranked, RetrievedChunk
+from scf_knowledge.fusion import fuse
 
 
 def _ranking(ids: list[str]) -> list[Ranked]:

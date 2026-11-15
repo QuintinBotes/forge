@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useRunTrace } from "@/lib/api/observability";
 import type { RunTrace, StepKind } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -52,7 +52,7 @@ import { TraceStepRow } from "./trace-step";
 export interface RunTraceViewerProps {
   /** The run to inspect; when absent the entry form is shown. */
   runId?: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
   /** Navigate to another run (defaults to router push to /runs/{id}). */
   onOpenRun?: (runId: string) => void;
   /** Replay cadence in ms (injectable for deterministic tests). */

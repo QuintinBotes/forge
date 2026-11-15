@@ -9,7 +9,7 @@
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type { PublicBenchmark, PublicLeaderboard } from "./types";
 
 export const benchmarkKeys = {
@@ -21,7 +21,7 @@ export const benchmarkKeys = {
 
 /** Every published benchmark suite (the leaderboard's suite picker). */
 export function usePublicBenchmarks(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<PublicBenchmark[]> {
   return useQuery({
     queryKey: benchmarkKeys.suites(),
@@ -33,7 +33,7 @@ export function usePublicBenchmarks(
 export function usePublicLeaderboard(
   slug: string | null,
   version: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<PublicLeaderboard> {
   return useQuery({
     queryKey: benchmarkKeys.leaderboard(slug ?? "", version ?? ""),

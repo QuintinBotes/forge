@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_auth.redaction import REDACTED, SecretRedactor
+from scf_auth.redaction import REDACTED, SecretRedactor
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def test_bearer_and_jwt(redactor: SecretRedactor) -> None:
     assert "eyJ" not in out
 
 
-def test_forge_platform_token(redactor: SecretRedactor) -> None:
+def test_scf_platform_token(redactor: SecretRedactor) -> None:
     out = redactor.redact("token forge_svc_a1b2c3d4_wUdOaBk3xLmQ9RtY7ZpF leaked")
     assert "wUdOaBk3xLmQ9RtY7ZpF" not in out
 

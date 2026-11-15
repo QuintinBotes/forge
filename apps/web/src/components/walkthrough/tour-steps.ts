@@ -3,7 +3,7 @@
  *
  * Framework-free step definitions (no JSX) so ordering, targets and the
  * loop-stage mapping stay unit testable. The walkthrough highlights real,
- * navigable UI — each stop is a stage of the Forge build loop and deep-links
+ * navigable UI — each stop is a stage of the SCF build loop and deep-links
  * into the product route that runs it.
  */
 
@@ -31,7 +31,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   {
     id: "welcome",
     target: "loop",
-    title: "The Forge loop",
+    title: "The SCF loop",
     body: "Every change flows through one loop: draft a spec, let an agent build it, review the pull request, then merge. This tour walks you through each stop — you can leave any time and pick up where you left off.",
   },
   {

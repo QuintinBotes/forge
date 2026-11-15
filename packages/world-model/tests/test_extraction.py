@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from forge_world import DropReason, Precision, build_request, parse_reply, verify
-from forge_world.extraction import RawStatement
+from scf_world import DropReason, Precision, build_request, parse_reply, verify
+from scf_world.extraction import RawStatement
 
 CHUNK = "Acme moved to Berlin in 2020. The vendor supplies Acme with widgets."
 HEAD = "Annual report. Acme is a widget company."

@@ -90,8 +90,8 @@ jobs:
       # overall gate; these enforce the per-package floors.
       - name: Coverage floor (worker + agent-runtime >= 90%)
         run: |
-          uv run pytest apps/worker --cov=forge_worker --cov-report= --cov-fail-under=90 -q
-          uv run pytest packages/agent-runtime --cov=forge_agent --cov-report= --cov-fail-under=90 -q
+          uv run pytest apps/worker --cov=scf_worker --cov-report= --cov-fail-under=90 -q
+          uv run pytest packages/agent-runtime --cov=scf_agent --cov-report= --cov-fail-under=90 -q
 
   # ------------------------------------------------------------------- #
   # Honest real-corpus retrieval eval (HARD-04): learned local embedder #
@@ -137,7 +137,7 @@ jobs:
       - name: Write EVAL_RESULTS.md + enforce regression floor
         # Non-zero exit (below the committed FORGE_EVAL_RECALL_FLOOR /
         # FORGE_EVAL_NDCG_FLOOR) fails the job.
-        run: uv run python -m forge_eval.corpus_eval --write-report
+        run: uv run python -m scf_eval.corpus_eval --write-report
 
       - name: Upload eval report artifact
         if: always()
@@ -282,10 +282,10 @@ jobs:
       # every PR/push, after lint and before build, so a type error or a broken
       # component test blocks the merge instead of shipping.
       - name: Type-check (tsc)
-        run: pnpm --filter @forge/web typecheck
+        run: pnpm --filter @scf/web typecheck
 
       - name: Test (vitest)
-        run: pnpm --filter @forge/web test
+        run: pnpm --filter @scf/web test
 
       - name: Build
         run: pnpm -r build
@@ -343,9 +343,9 @@ jobs:
         run: |
           uv tool install semgrep==1.180.0
           uv tool dir --bin >> "$GITHUB_PATH"
-      - name: Semgrep (custom Forge rules, SARIF)
+      - name: Semgrep (custom SCF rules, SARIF)
         run: >-
-          semgrep --config .semgrep/forge.yml --config p/python
+          semgrep --config .semgrep/swarm-code-factory.yml --config p/python
           --error --metrics=off --sarif -o semgrep.sarif .
 
       # --- Dependency audit --- #
@@ -419,14 +419,14 @@ jobs:
           FORGE_ENVIRONMENT: production
         run: |
           export FORGE_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
-          uv run python -m forge_api.cli_secrets check-config
+          uv run python -m scf_api.cli_secrets check-config
 
       # A missing key must fail closed (exit non-zero) — assert it does.
       - name: check-config (missing key fails closed)
         env:
           FORGE_ENVIRONMENT: production
         run: |
-          if uv run python -m forge_api.cli_secrets check-config; then
+          if uv run python -m scf_api.cli_secrets check-config; then
             echo "::error::check-config passed with no FORGE_SECRET_KEY (should fail closed)"
             exit 1
           fi
@@ -584,7 +584,7 @@ jobs:
         run: |
           export FORGE_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
           uv run alembic -c packages/db/alembic.ini upgrade head
-          uv run uvicorn forge_api.main:app --host 127.0.0.1 --port 8000 &
+          uv run uvicorn scf_api.main:app --host 127.0.0.1 --port 8000 &
           for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:8000/health && break
             sleep 1
@@ -658,7 +658,7 @@ jobs:
 
       - name: Render readiness report (report-only, never fails the PR)
         run: >-
-          uv run forge-release-readiness --bar "${RELEASE_READINESS_BAR}"
+          uv run scf-release-readiness --bar "${RELEASE_READINESS_BAR}"
           --report-only --out RELEASE_READINESS.md
 
       - name: Upload readiness report

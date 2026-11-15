@@ -1,5 +1,5 @@
-# forge-workflow
+# scf-workflow
 
-Postgres-backed FSM workflow engine and DSL parser for Forge.
+Postgres-backed FSM workflow engine and DSL parser for Swarm Code Factory.
 
-Part of the [Forge](../../README.md) monorepo. Apache-2.0 licensed.
+Part of the [SCF](../../README.md) monorepo. Apache-2.0 licensed.

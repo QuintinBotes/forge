@@ -22,7 +22,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { ApiError, apiClient, type ForgeApiClient } from "./client";
+import { ApiError, apiClient, type ScfApiClient } from "./client";
 import type {
   DeploymentDecisionRequest,
   DeploymentDetail,
@@ -50,7 +50,7 @@ export const deploymentKeys = {
  */
 export function useDeploymentPipeline(
   projectId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<PipelineRead | null> {
   return useQuery({
     queryKey: deploymentKeys.pipeline(projectId),
@@ -72,7 +72,7 @@ export function useDeploymentPipeline(
 export function useProjectDeployments(
   projectId: string,
   filters?: DeploymentListQuery,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<DeploymentRead[]> {
   return useQuery({
     queryKey: deploymentKeys.list(projectId, filters),
@@ -89,7 +89,7 @@ export function useProjectDeployments(
  */
 export function useDeploymentDetail(
   deploymentId: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<DeploymentDetail> {
   return useQuery({
     queryKey: deploymentKeys.detail(deploymentId ?? ""),
@@ -106,7 +106,7 @@ export interface RequestDeploymentVariables {
 
 /** Request a promotion of a commit to an environment; refreshes the pipeline. */
 export function useRequestDeployment(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<DeploymentRead, Error, RequestDeploymentVariables> {
   const queryClient = useQueryClient();
   return useMutation<DeploymentRead, Error, RequestDeploymentVariables>({
@@ -124,7 +124,7 @@ export interface DecideDeploymentVariables {
 
 /** Approve / reject / request-changes on a gated deployment. */
 export function useDecideDeployment(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<DeploymentRead, Error, DecideDeploymentVariables> {
   const queryClient = useQueryClient();
   return useMutation<DeploymentRead, Error, DecideDeploymentVariables>({
@@ -138,7 +138,7 @@ export function useDecideDeployment(
 
 /** Cancel an in-flight deployment; refreshes the pipeline + list + detail. */
 export function useCancelDeployment(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<DeploymentRead, Error, string> {
   const queryClient = useQueryClient();
   return useMutation<DeploymentRead, Error, string>({
@@ -151,7 +151,7 @@ export function useCancelDeployment(
 
 /** Roll back a succeeded deployment; refreshes the pipeline + list + detail. */
 export function useRollbackDeployment(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<DeploymentRead, Error, string> {
   const queryClient = useQueryClient();
   return useMutation<DeploymentRead, Error, string>({

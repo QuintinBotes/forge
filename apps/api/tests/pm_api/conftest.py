@@ -19,17 +19,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.auth.crypto import HmacAeadCipher
-from forge_api.auth.vault import SecretVault
-from forge_api.main import create_app
-from forge_api.observability.audit import AuditLog
-from forge_api.routers.pm import get_pm_service
-from forge_api.services.pm_service import PMConnectionService
-from forge_contracts.pm import HttpResponse, PMProvider
-from forge_db.base import Base
-from forge_db.models import Project, Workspace
-from forge_db.models.pm import PMConnection
-from forge_integrations.pm import FixturePMTransport
+from scf_api.auth.crypto import HmacAeadCipher
+from scf_api.auth.vault import SecretVault
+from scf_api.main import create_app
+from scf_api.observability.audit import AuditLog
+from scf_api.routers.pm import get_pm_service
+from scf_api.services.pm_service import PMConnectionService
+from scf_contracts.pm import HttpResponse, PMProvider
+from scf_db.base import Base
+from scf_db.models import Project, Workspace
+from scf_db.models.pm import PMConnection
+from scf_integrations.pm import FixturePMTransport
 
 # Reuse the integration-sdk recorded fixtures.
 SDK_FIXTURES = (
@@ -140,8 +140,8 @@ def client_factory(
     authenticate_app: Callable[..., FastAPI],
 ) -> Iterator[Callable[..., TestClient]]:
     """Return a builder for an authenticated TestClient with a chosen role."""
-    from forge_api.deps import Principal
-    from forge_contracts import UserRole
+    from scf_api.deps import Principal
+    from scf_contracts import UserRole
 
     clients: list[TestClient] = []
 

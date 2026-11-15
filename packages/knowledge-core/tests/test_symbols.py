@@ -7,15 +7,15 @@ import uuid
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.dtos import KnowledgeScope
-from forge_contracts.enums import ChunkType
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, RetrievalChunk, Workspace
-from forge_db.session import create_session_factory
-from forge_knowledge.chunking import chunk_code
-from forge_knowledge.stores import Bm25Store, PgVectorStore
-from forge_knowledge.symbols import symbol_chunks
-from forge_knowledge.sync import full_sync
+from scf_contracts.dtos import KnowledgeScope
+from scf_contracts.enums import ChunkType
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, RetrievalChunk, Workspace
+from scf_db.session import create_session_factory
+from scf_knowledge.chunking import chunk_code
+from scf_knowledge.stores import Bm25Store, PgVectorStore
+from scf_knowledge.symbols import symbol_chunks
+from scf_knowledge.sync import full_sync
 
 SRC = '''"""Module."""
 import os

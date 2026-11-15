@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from _sandbox_fakes import FakeObjectStore
 
-from forge_agent.sandbox.output import cap_output
+from scf_agent.sandbox.output import cap_output
 
 
 def test_under_cap_unchanged() -> None:

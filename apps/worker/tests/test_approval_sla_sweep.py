@@ -15,17 +15,17 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_approval.delegation import DelegationDirectory, DelegationEntry
-from forge_db.base import Base
-from forge_db.models import (
+from scf_approval.delegation import DelegationDirectory, DelegationEntry
+from scf_db.base import Base
+from scf_db.models import (
     ApprovalGate,
     ApprovalRequest,
     ApprovalStatus,
     AuditLog,
     Workspace,
 )
-from forge_worker.tasks import approvals as approvals_tasks
-from forge_worker.tasks.approvals import run_sla_sweep
+from scf_worker.tasks import approvals as approvals_tasks
+from scf_worker.tasks.approvals import run_sla_sweep
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 ASSIGNEE = uuid.UUID("00000000-0000-0000-0000-00000000b001")
