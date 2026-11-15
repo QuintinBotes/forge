@@ -142,20 +142,27 @@ async def test_duplicate_active_run(factory: sessionmaker[Session]) -> None:
 
 
 async def test_partial_unique_temporal_workflow_id(factory: sessionmaker[Session]) -> None:
-    """AC4 (DB) — two runs cannot share a temporal_workflow_id; NULLs are allowed."""
+    """AC4 (DB) — two runs cannot share a temporal_workflow_id; NULLs are allowed.
+
+    Each run gets its own task: since #235 a task may hold only one non-terminal
+    run, and these cases are about the workflow id, not the task."""
     with factory() as session:
         ws_id, task_id = _seed_task(session)
+        _, other_task_id = _seed_task(session)
         wf_id = f"wf-{uuid.uuid4()}"
         session.add(DbWorkflowRun(workspace_id=ws_id, task_id=task_id, temporal_workflow_id=wf_id))
         session.flush()
-        session.add(DbWorkflowRun(workspace_id=ws_id, task_id=task_id, temporal_workflow_id=wf_id))
-        with pytest.raises(IntegrityError):
+        session.add(
+            DbWorkflowRun(workspace_id=ws_id, task_id=other_task_id, temporal_workflow_id=wf_id)
+        )
+        with pytest.raises(IntegrityError, match="temporal_workflow_id"):
             session.flush()
     # Two FSM runs (NULL temporal_workflow_id) must coexist fine.
     with factory() as session:
         ws_id, task_id = _seed_task(session)
+        _, other_task_id = _seed_task(session)
         session.add(DbWorkflowRun(workspace_id=ws_id, task_id=task_id))
-        session.add(DbWorkflowRun(workspace_id=ws_id, task_id=task_id))
+        session.add(DbWorkflowRun(workspace_id=ws_id, task_id=other_task_id))
         session.flush()
 
 
