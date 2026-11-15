@@ -111,7 +111,7 @@ def test_semgrep_rules_fire_on_bad_and_not_on_good(tmp_path: Path) -> None:
         [
             semgrep,
             "--config",
-            str(REPO_ROOT / ".semgrep" / "forge.yml"),
+            str(REPO_ROOT / ".semgrep" / "swarm-code-factory.yml"),
             "--metrics=off",
             "--disable-version-check",
             "--json",

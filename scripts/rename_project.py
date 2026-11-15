@@ -333,6 +333,13 @@ in light and dark. There are no logo image files and no favicon.
 """
 
 SECOND_EDITS = [
+    # The semgrep rules file moved; this test builds its path from parts, which the
+    # path rule above does not see, and the rest of the file is kept as it is.
+    (
+        "tests/security/test_scanners_and_waivers.py",
+        '".semgrep" / "forge.yml"',
+        f'".semgrep" / "{SLUG}.yml"',
+    ),
     # Model-facing prompts name the product.
     (
         "packages/agent-runtime/scf_agent/context.py",
