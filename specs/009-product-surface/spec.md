@@ -70,6 +70,11 @@ complete the sign-in flow in a browser and load the board. Fully testable withou
    the visitor's session cookie, **Then** forge refuses the request.
 6. **Given** a script, CLI or CI job, **When** it calls the API with an API key in a header,
    **Then** it authenticates exactly as it does today.
+7. **Given** a fresh installation with no identity provider, **When** an operator runs the CLI
+   command on the server, **Then** it prints a single-use, short-lived sign-in link, and the first
+   administrator who opens it is signed in and can configure an identity provider.
+8. **Given** a sign-in link that was already used or has expired, **When** it is opened, **Then**
+   it is refused.
 
 ---
 
@@ -178,10 +183,11 @@ commands exactly as written and time them.
 - **FR-009**: The sign-in screen MUST state plainly when the workspace has no identity provider
   configured or the provider returned an error.
 - **FR-010**: A first administrator MUST be able to reach a fresh installation and configure an
-  identity provider. [NEEDS CLARIFICATION: how the first administrator gets in when no identity
-  provider exists yet. Candidates: an API-key sign-in kept only behind an explicit development
-  flag, the device-code flow from R31, or operator-side configuration with the seeded key over the
-  API. The issues assume the first and third.]
+  identity provider. Decided 2026-11-15: when no identity provider exists yet, a CLI command run on
+  the server prints a single-use, short-lived sign-in link, and the first administrator signs in
+  with it. The development-only key flag is no longer the answer. Open: the decision does not give
+  the command's name or the link's lifetime, and does not say whether key entry stays in
+  development builds.
 
 **Start a run from an issue (R43)**
 

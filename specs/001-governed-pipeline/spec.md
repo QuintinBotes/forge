@@ -23,15 +23,15 @@ This feature makes them one path: every change an agent ships has passed indepen
 
 ### User Story 1 - An issue becomes a governed change (Priority: P1)
 
-A maintainer labels an issue for forge. Forge starts one workflow run for it. The agent works in its sandbox, forge re-checks the result itself, creates the pull request and opens a `pr` approval gate tied to that workflow run. The maintainer sees one run with its states, checks and gate, instead of an agent run that ends at a pull request.
+A maintainer labels an issue for forge. Forge starts one workflow run for it. The label only starts the run: the spec gate creates an approval request and waits for a person. After that the agent works in its sandbox, forge re-checks the result itself, creates the pull request and opens a `pr` approval gate tied to that workflow run. The maintainer sees one run with its states, checks and gate, instead of an agent run that ends at a pull request.
 
 **Why this priority**: every other story in this feature, and milestones M2 to M5, attach to this path. Without it the trust layer still governs nothing.
 
-**Independent Test**: start a run from an issue fixture on the durable engine with a scripted model and a local bare repository. Assert the workflow run reaches `awaiting_review`, the agent run row is linked to it, a branch was delivered and exactly one `pr` approval request names the workflow run.
+**Independent Test**: start a run from an issue fixture on the durable engine with a scripted model and a local bare repository. Assert the run waits at the spec gate on an approval request, record a person's approval, then assert the workflow run reaches `awaiting_review`, the agent run row is linked to it, a branch was delivered and exactly one `pr` approval request names the workflow run.
 
 **Acceptance Scenarios**:
 
-1. **Given** a workspace on the durable engine with a connected repository, **When** an authorised sender labels an issue for forge, **Then** forge creates one workflow run, and the agent run it starts is linked to that workflow run.
+1. **Given** a workspace on the durable engine with a connected repository, **When** an authorised sender labels an issue for forge, **Then** forge creates one workflow run, the run waits at the spec gate on an approval request until a person decides it, and the agent run it then starts is linked to that workflow run. The label is never recorded as an approval.
 2. **Given** a governed run whose agent has committed a change, **When** verification passes, **Then** forge creates one pull request and one pending `pr` approval request that carries the workflow run id.
 3. **Given** a worker with a service left unconfigured, **When** a run reaches the activity that needs it, **Then** the run stops with a named refusal and no pull request exists.
 4. **Given** the durable engine is selected, **When** a caller starts a repository-changing agent run that is not linked to a workflow run, **Then** forge refuses to deliver a pull request for it and says why.
@@ -94,7 +94,7 @@ An auditor opens an agent pull request and finds an attestation reference in its
 
 ### User Story 5 - Held-out scenarios (Priority: P3)
 
-A product owner writes acceptance scenarios the builder must never see. Forge stores them outside the repository and outside every prompt, runs them against the finished change and reports only pass and fail counts to the builder.
+A separate verifier agent, on a different model family from the builder, drafts acceptance scenarios from the spec. A person approves them at the spec gate. The builder never has access to them. Forge stores them outside the repository and outside every prompt, runs them against the finished change and reports only pass and fail counts to the builder.
 
 **Why this priority**: it is the strongest independence signal the research found, but it needs authored scenarios, so it follows the gates that work with no extra input.
 
@@ -105,6 +105,7 @@ A product owner writes acceptance scenarios the builder must never see. Forge st
 1. **Given** a task with held-out scenarios, **When** the builder runs, **Then** no prompt, tool output, context bundle or event visible to the builder contains scenario content.
 2. **Given** a change that passes visible checks and fails a held-out scenario, **When** verification completes, **Then** no pull request is created and the builder is told only how many scenarios failed.
 3. **Given** a task with no held-out scenarios, **When** verification completes, **Then** the record says `none_defined` and does not claim a pass.
+4. **Given** scenarios the verifier agent drafted from the spec, **When** the run reaches the spec gate, **Then** a person approves or rejects them there, and only approved scenarios are run against the change.
 
 ---
 
@@ -117,7 +118,7 @@ A product owner writes acceptance scenarios the builder must never see. Forge st
 - The issue is edited after the run starts: the run uses the content fetched at dispatch.
 - A held-out scenario cannot be executed (missing command, timeout): counted as failed, with the reason recorded.
 - The retry budget ends during review or scan failures: the run stops for a person, as it does for failed checks.
-- A deployment on the non-durable engine: the direct acting path still works and labels its pull requests as ungoverned.
+- The durable engine is unavailable: a production deployment refuses the repository-changing run. In a development environment the direct acting path still works and labels each run as ungoverned.
 
 ## Requirements *(mandatory)*
 
@@ -129,8 +130,8 @@ A product owner writes acceptance scenarios the builder must never see. Forge st
 - **FR-002**: The durable worker MUST have a real implementation bound for every workflow activity. An activity whose dependency is missing MUST refuse with a named, non-retryable error (ADR-0007).
 - **FR-003**: An agent run started by a workflow run MUST be recorded with a link to that workflow run and MUST use the same sandbox, tool belt, budget and event stream as the acting path does today.
 - **FR-004**: Every activity with an external effect (agent run, pull request, approval request, notification) MUST be idempotent on its idempotency key.
-- **FR-005**: Issue-label dispatch and the run-creation API MUST start a workflow run for any repository-changing run when the durable engine is selected. [NEEDS CLARIFICATION: on a deployment without the durable engine, should repository-changing runs be refused, or allowed and marked ungoverned? Default assumed: allowed and marked.]
-- **FR-006**: A run started from an issue MUST be tied to a board task. [NEEDS CLARIFICATION: does an issue-triggered run need a human spec approval before the agent starts, or does a label applied by an authorised sender count as that approval? Default assumed: the label counts, and the run enters at the ready-to-execute state.]
+- **FR-005**: Issue-label dispatch and the run-creation API MUST start a workflow run for any repository-changing run when the durable engine is selected. Decided 2026-11-15: when the durable engine is unavailable, a production deployment MUST refuse a repository-changing run. An ungoverned run is allowed only in a development environment, and each one MUST be labelled ungoverned.
+- **FR-006**: A run started from an issue MUST be tied to a board task. Decided 2026-11-15: the `forge:run` label does not count as spec approval. The label only starts the run. The spec gate MUST still create an approval request and wait for a person. Open: the decision does not say what the spec gate shows for an issue that has no drafted spec, or whether the plan gate also applies to an issue-triggered run.
 - **FR-007**: When the durable engine is selected, forge MUST NOT deliver a pull request for an agent run that has no workflow run.
 
 **Independent checks**
@@ -158,7 +159,7 @@ A product owner writes acceptance scenarios the builder must never see. Forge st
 
 **Held-out scenarios**
 
-- **FR-022**: Users with write access MUST be able to attach held-out scenarios to a task. [NEEDS CLARIFICATION: who may author them: people only, or also a separate scenario-writing agent? Default assumed: people and API clients only.]
+- **FR-022**: Held-out scenarios MUST be drafted from the spec by a separate verifier agent on a different model family from the builder, MUST be approved by a person at the spec gate before they are used, and MUST never be accessible to the builder. Decided 2026-11-15. Open: the decision does not say whether a person may also write a scenario directly.
 - **FR-023**: Held-out scenario content MUST NOT appear in the builder's objective, context bundle, tool outputs, run events, the repository or the pull request.
 - **FR-024**: The verifier MUST run each held-out scenario against the delivered commit and record a pass or fail per scenario. Feedback to the builder MUST be limited to counts.
 

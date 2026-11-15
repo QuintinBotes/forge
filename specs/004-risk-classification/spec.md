@@ -72,8 +72,9 @@ no decision changes; then in enforcing mode assert every changed decision is str
 
 ### User Story 3 - Low-risk changes integrate automatically, one at a time (Priority: P2)
 
-A repository owner opts in to automatic integration. A change whose final class is at or below the
-policy's automatic threshold, with all required checks green, the independent review passed and an
+A repository owner opts in to automatic integration. Opting a repository in is a standing
+authorisation, recorded with who gave it. A change whose final class is at or below the
+policy's automatic threshold (`minimal` or `low`), with all required checks green, the independent review passed and an
 attestation present, enters a queue. Forge takes one queued change at a time per target branch,
 confirms it is still green against the current head of that branch, and integrates it. Anything
 above the threshold, or anything that fails a precondition, waits for a person.
@@ -94,6 +95,8 @@ branch head, and that the high-risk change is never integrated automatically.
 5. **Given** a queued change whose checks turn red or whose branch conflicts with the head, **When** it reaches the head of the queue, **Then** it leaves the queue with a recorded reason and the next change proceeds.
 6. **Given** risk rules are absent, in shadow mode, or the classification used the fallback class, **When** a change becomes eligible, **Then** it is not integrated automatically.
 7. **Given** the repository host refuses the integration, **When** forge attempts it, **Then** the action reports an error and never reports success.
+8. **Given** a repository that is opted in, **When** the record of the opt-in is read, **Then** it names the person who gave the standing authorisation.
+9. **Given** a repository host that has a native queue, **When** a change is eligible, **Then** forge uses the host's queue. **Given** a host without one, **Then** forge uses its own queue. Both are reached through one interface.
 
 ---
 
@@ -107,7 +110,7 @@ branch head, and that the high-risk change is never integrated automatically.
 - Enforcement is switched from enforcing back to shadow: later evaluations record the mode in force at the time; earlier records are unchanged.
 - The worker restarts while a change is at the head of the queue: on restart the queue resumes without integrating the same change twice and without losing the entries behind it.
 - A person integrates a queued change by hand: the queue notices and drops the entry.
-- The impact gate from `specs/003-containment/spec.md` classifies automatic integration into a protected branch as irreversible: [NEEDS CLARIFICATION: does opting in to automatic integration for low-risk changes count as the standing human decision the impact gate needs, or is each one still held?].
+- The impact gate from `specs/003-containment/spec.md` classifies automatic integration into a protected branch as irreversible: Decided 2026-11-15: opting a repository in to automatic integration is a standing authorisation, recorded with who gave it. It is the human decision the impact gate needs, so a change within the threshold is not held one by one.
 
 ## Requirements *(mandatory)*
 
@@ -137,9 +140,9 @@ branch head, and that the high-risk change is never integrated automatically.
 **Automatic integration (R22)**
 
 - **FR-016**: The system MUST replace the mock integration dispatcher with one that performs the real integration on the repository host.
-- **FR-017**: Automatic integration MUST be off by default and MUST require both the automation rule's opt-in and the policy's allowance, as today.
-- **FR-018**: The system MUST integrate a change automatically only when its final class is at or below the policy's automatic threshold, risk rules are enforcing, the classification did not use the fallback, required checks are green on the change's current head, the independent review passed and an attestation exists. The default threshold is [NEEDS CLARIFICATION: `minimal` only, or `minimal` and `low`? Spec A's example gives `low` one required approval, which suggests `minimal` only].
-- **FR-019**: The system MUST integrate at most one change at a time per repository and target branch, in queue order, and MUST re-verify each change against the branch's current head before integrating it. Whether the queue is forge's own or the repository host's native queue is [NEEDS CLARIFICATION: a forge-side serial queue is assumed, because the host's native queue is not available on every plan and R13 already introduces a serialised step].
+- **FR-017**: Automatic integration MUST be off by default and MUST require both the automation rule's opt-in and the policy's allowance, as today. The opt-in of a repository MUST be recorded as a standing authorisation that names who gave it (Decided 2026-11-15).
+- **FR-018**: The system MUST integrate a change automatically only when its final class is at or below the policy's automatic threshold, risk rules are enforcing, the classification did not use the fallback, required checks are green on the change's current head, the independent review passed and an attestation exists. Decided 2026-11-15: the threshold is `low`. Changes classed `minimal` or `low` integrate automatically, and everything else waits for a person.
+- **FR-019**: The system MUST integrate at most one change at a time per repository and target branch, in queue order, and each change MUST be re-verified against the branch's current head before it is integrated. Decided 2026-11-15: the queue sits behind one interface with two implementations, the repository host's native queue where the host has one and forge's own queue otherwise. Open: the decision does not say how forge determines that a host has a native queue.
 - **FR-020**: A change that fails a precondition at the head of the queue MUST leave the queue with a recorded reason and MUST NOT block the changes behind it.
 - **FR-021**: Each automatic integration and each refusal MUST be recorded in the audit chain with the classification it relied on.
 - **FR-022**: A failed or refused integration MUST be reported as an error, never as success.
@@ -153,6 +156,7 @@ branch head, and that the high-risk change is never integrated automatically.
 - **Gate requirements**: what a class demands of each gate: approvals, deploy mode, adversarial review, self-evaluation.
 - **Risk classification record**: one append-only record per classified change, with change identity and the enforcement mode in force.
 - **Risk gate observation**: one append-only record per gate evaluation: actual decision, risk decision, agreement.
+- **Standing authorisation**: the record that a repository is opted in to automatic integration, with the person who gave it.
 - **Integration queue entry**: a change waiting for automatic integration: repository, target branch, change, position, state and reason.
 
 ## Success Criteria *(mandatory)*

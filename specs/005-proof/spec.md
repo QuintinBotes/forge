@@ -66,7 +66,7 @@ A maintainer who changes retrieval, the world model or context assembly runs a 6
 1. **Given** the committed corpus and question set, **When** the hermetic lane runs, **Then** it reports a sufficiency score, the median context size in tokens, and a pass or fail against the committed floors.
 2. **Given** a change that lowers the sufficiency score below the floor, **When** the test suite runs, **Then** it fails.
 3. **Given** a missing retrieval leg, **When** the benchmark runs, **Then** it reports an error for the run and never a score computed from the remaining leg (ADR-0018).
-4. **Given** model credentials, **When** the model-graded lane runs, **Then** it reports answer accuracy against the 0.86 bar and the rate of unsupported claims against the 7 percent ceiling.
+4. **Given** model credentials, **When** the model-graded lane runs, **Then** it reports answer accuracy as a measurement and the rate of unsupported claims against the 7 percent ceiling. No pass bar is applied to answer accuracy until one is set from the recorded baseline (#249).
 
 ---
 
@@ -150,7 +150,7 @@ The owner labels an open roadmap issue `forge:run`. Forge starts a run from the 
 - **FR-020**: The hermetic lane MUST score context sufficiency (the share of questions whose assembled context contains all required evidence) and the median context size in tokens, with no network and no model, over a corpus pinned by content hash.
 - **FR-021**: The hermetic lane MUST fail the test suite when a score falls below its committed floor.
 - **FR-022**: The model-graded lane MUST report answer accuracy and the rate of unsupported claims, MUST be opt-in, and MUST skip visibly without credentials.
-- **FR-023**: The bars are answer accuracy at or above 0.86, unsupported claims at or below 7 percent, and median context at or below 17,800 tokens (spec J section 2.4). [NEEDS CLARIFICATION: spec J set 0.86 as another system's score on another project's question set. Because ADR-0010 requires forge to write its own questions, the owner must confirm that 0.86 on forge's own set is still the bar, or set a new one after the first measured run.]
+- **FR-023**: Decided 2026-11-15: the pass bar for answer accuracy is measured first. The 0.86 figure of spec J section 2.4 is not carried over. #199 writes forge's own questions and records a baseline, and a follow-up (#249) sets the bar from that measurement. Until then the model-graded lane reports answer accuracy with no pass bar. Spec J's other two figures, unsupported claims at or below 7 percent and median context at or below 17,800 tokens, are not covered by the decision and stay as stated. Open: the rule that turns the baseline into a bar.
 
 **Live gates and release (R26)**
 
@@ -196,6 +196,6 @@ The owner labels an open roadmap issue `forge:run`. Forge starts a run from the 
 - GitHub is the only tracker and code host in scope. The outcome, review and revert signals come from GitHub webhook deliveries that forge already receives.
 - Cost is the priced model usage forge records per run. Infrastructure cost and human time are out of scope.
 - The 30-day revert observation period is a default and may be configured.
-- Published figures from other vendors or benchmarks are not used as targets. The only external number in this spec is the 0.86 bar that spec J already states.
+- Published figures from other vendors or benchmarks are not used as targets. The 0.86 bar that spec J states is not carried over (decided 2026-11-15). The only external numbers left in this spec are spec J's 7 percent and 17,800 token ceilings.
 - True lead time and per-change production outcomes belong to M10 (R46). Cycle time here ends when the change lands.
 - Benchmark cases use small repositories written for the suite. Cases drawn from public repositories are a later version.

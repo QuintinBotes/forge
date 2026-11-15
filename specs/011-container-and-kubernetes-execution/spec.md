@@ -43,8 +43,8 @@ The tier names the isolation class. It means the same on a Docker host and on Ku
 | `microvm` | A hardware virtual machine with its own guest kernel. | Everything `gvisor` stops, plus host kernel defects reachable from a guest process. | A defect in the hypervisor. Hardware side channels. |
 
 Running the agent loop in its own container or pod (User Story 3) is not a tier. It bounds the
-resources of one run and keeps delivery credentials out of the process that talks to the model. It
-does not sandbox commands; those still run in a sandbox session of the configured tier.
+resources of one run and keeps delivery credentials and the database credential out of the process
+that talks to the model. It does not sandbox commands; those still run in a sandbox session of the configured tier.
 
 No tier stops a harmful change from being proposed in the diff. Review, gates and approvals in
 specs 001, 003 and 004 handle that. No tier hides prompt content from the configured model
@@ -109,9 +109,12 @@ pod is gone after the run.
 
 An operator wants run capacity to follow the cluster, not the number of worker replicas. With the
 run executor set to `docker` or `kubernetes`, the worker launches one container or one Job per run
-and returns. The run process executes the agent loop and streams events. When it exits, forge's
+and returns. Decided 2026-11-15: this is the shipped default. The Helm chart defaults to one Job
+per run and Compose defaults to one container per run. `inline` stays available as an explicit
+setting. The run process executes the agent loop and streams events. When it exits, forge's
 control plane closes the run out: delivery, terminal events, recorded outcome and tracker
-write-back. The run process never holds delivery credentials.
+write-back. The run process never holds delivery credentials or the database credential. It reaches
+its run record with a short-lived token scoped to its own run, used against forge's API.
 
 **Why this priority**: it removes the shared-process bottleneck and the short task time limit, and
 it narrows what a misbehaving loop can reach. It builds on stories 1 and 2, so it comes second.
@@ -127,7 +130,9 @@ terminal state with the same recorded outcome an in-worker run gives, and both c
 3. **Given** a run process has exited with a result, **When** close-out runs, **Then** delivery, terminal events, outcome and tracker write-back happen exactly once, even if close-out is triggered twice.
 4. **Given** a run's unit is killed, evicted or lost, **When** the reconciler next runs, **Then** the run is recorded as failed with a reason and does not stay pending or running.
 5. **Given** the executor's runtime is unavailable, **When** a run is dispatched, **Then** the run fails with a clear error and is never executed inside the worker instead.
-6. **Given** a run process, **When** its environment and specification are inspected, **Then** they hold no source-control application key, no master secret key and no webhook secret.
+6. **Given** a run process, **When** its environment and specification are inspected, **Then** they hold no source-control application key, no master secret key, no webhook secret and no database credential.
+7. **Given** shipped defaults, **When** forge is installed with the Helm chart, **Then** each agent run is one Job. **When** it is started with Compose, **Then** each agent run is one container. A run executes inline only where `inline` is set explicitly.
+8. **Given** a run process, **When** it uses its token on another run's record or on any other API route, **Then** the call is refused.
 
 ---
 
@@ -189,13 +194,13 @@ command.
 **Credentials**
 
 - **FR-010**: No credential value MUST appear in a sandbox container's or pod's specification, image, environment, labels or annotations, or in any file an agent command can read.
-- **FR-011**: A run process MUST receive only what the agent loop needs: access to the model provider, the run's own record and event stream, and the sandbox backend. It MUST NOT receive the source-control application key, the master secret key or webhook secrets, and it MUST refuse to start if it finds one.
+- **FR-011**: A run process MUST receive only what the agent loop needs: access to the model provider, the run's own record and event stream, and the sandbox backend. It MUST NOT receive the source-control application key, the master secret key, webhook secrets or the database credential, and it MUST refuse to start if it finds one.
 - **FR-012**: Delivery of a change and tracker write-back MUST be performed by forge's control plane after the run process exits, never by the run process.
-- **FR-013**: On Kubernetes a run process MUST receive secrets only by reference to a cluster secret. No secret value MUST appear in a Job or pod specification, argument, label or annotation. How the run process reaches the run record is [NEEDS CLARIFICATION: a direct database credential, as the worker has today, or a run-scoped channel through the API. Assumed default: the existing database credential by secret reference, with the narrower channel left to a later spec].
+- **FR-013**: On Kubernetes a run process MUST receive secrets only by reference to a cluster secret. No secret value MUST appear in a Job or pod specification, argument, label or annotation. Decided 2026-11-15: a run process reaches the run record with a short-lived token scoped to its own run, used against forge's API. The run process MUST never hold the database credential. Open: the decision does not say how the token is handed to a run unit (a per-run token is not an existing cluster secret), or which API routes carry events and the handoff.
 
 **Run executor**
 
-- **FR-014**: An executor setting MUST choose where the agent loop runs: `inline` (inside the worker, today's behaviour), `docker` (one container per run) or `kubernetes` (one Job per run). The shipped default is [NEEDS CLARIFICATION: keep `inline` as the default and make per-run execution opt-in, or make it the default on Kubernetes. Assumed default: `inline` everywhere until the per-run path has run in a real cluster].
+- **FR-014**: An executor setting MUST choose where the agent loop runs: `inline` (inside the worker, today's behaviour), `docker` (one container per run) or `kubernetes` (one Job per run). Decided 2026-11-15: the shipped default is per-run isolation everywhere. The Helm chart defaults to `kubernetes` (one Job per agent run) and Compose defaults to `docker` (one container per run). `inline` stays available as an explicit setting. Open: the decision does not say what an unset value means outside the chart and Compose, or whether the development Compose overlay and the single-user profile follow the same default.
 - **FR-015**: A run executed by a run process MUST produce the same recorded outcome, steps, artifacts and event sequence as the same run executed inline.
 - **FR-016**: With a non-inline executor, dispatching a run MUST launch its unit and return without waiting for the run to finish.
 - **FR-017**: Run events MUST reach the run's event stream while the run executes, numbered and redacted as today (ADR-0013).
@@ -205,7 +210,7 @@ command.
 - **FR-021**: When the executor's runtime is unavailable the run MUST fail with a clear error. The system MUST never execute a run inline because a non-inline executor failed.
 - **FR-022**: A non-inline executor MUST be refused at worker start when combined with the `worktree` tier or with a sandbox backend on a different platform. Commands from a run process MUST still execute in a sandbox session of the configured tier.
 - **FR-023**: Launch and close-out of a run unit MUST be recorded in the audit chain with the executor, the unit identifier and the outcome, and without any secret.
-- **FR-024**: The Helm chart MUST provide what per-run Jobs need: permission for the worker to manage Jobs in one namespace, a separate identity for run pods limited to managing sandbox pods, a network policy for run pods, and storage that the worker, run pods and sandbox pods can all reach. The storage model is [NEEDS CLARIFICATION: a shared volume that many pods can mount read-write, or cloning inside the pod with a short-lived read credential. Assumed default: a shared read-write-many volume, because it keeps every credential out of run and sandbox pods; the chart refuses to render per-run execution without it].
+- **FR-024**: The Helm chart MUST provide what per-run Jobs need: permission for the worker to manage Jobs in one namespace, a separate identity for run pods limited to managing sandbox pods, a network policy for run pods, and storage that the worker, run pods and sandbox pods can all reach. Decided 2026-11-15: the storage model is a shared read-write-many volume. It keeps every credential out of run and sandbox pods, and the chart refuses to render per-run execution without it.
 
 **Local test services**
 
@@ -232,7 +237,8 @@ command.
 | FR-011, FR-012, FR-015, FR-017 | #238 |
 | FR-014, FR-016, FR-018, FR-019, FR-021, FR-022, FR-023 | #239 |
 | FR-020 and FR-010 for run containers, FR-030 for Docker per-run execution | #240 |
-| FR-013, FR-020 for run Jobs | #241 |
+| FR-013 (secrets by reference), FR-020 for run Jobs | #241 |
+| FR-013 (the run-scoped token and the API routes a run process uses) | not yet assigned to an issue |
 | FR-024, FR-030 for Kubernetes per-run execution | #242 |
 | FR-025 to FR-029 | #236 |
 

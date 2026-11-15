@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: Roadmap milestone M6 (`docs/superpowers/plans/2026-11-14-industry-standard-roadmap.md`, issues R28 to R33) and roadmap decisions D1 and D2: "Forge runs appear in tervin as ACP sessions and are approved there. Tervin as forge's local runner is a prototype only." Target: tervin's published v2.2.0.
+**Input**: Roadmap milestone M6 (`docs/superpowers/plans/2026-11-14-industry-standard-roadmap.md`, issues R28 to R33) and roadmap decisions D1 and D2 as decided on 2026-11-15. D1: both shapes, in order. First, forge runs appear in tervin as ACP sessions that can be watched and approved there. Then tervin as forge's local runner is built as real roadmap work, not a prototype. D2: the target is tervin's unreleased v3 line.
 
 **Builds on**: lettered spec L (`docs/superpowers/specs/2026-11-07-tervin-bridge-design.md`), ADR-0002 (forge is the system of record, tervin its desktop face), ADR-0013 (one run-event vocabulary), ADR-0015 (desktop integration contract), ADR-0012 (two executor modes, Proposed), ADR-0007 (production paths fail closed).
 
@@ -14,7 +14,7 @@
 
 The roadmap's goal says forge "runs with tervin". Forge's side of spec L seams 1 to 3 is built: MCP tools, `forge-cli --json` and the run event stream. Three things stand between that and a developer watching and approving a forge run from tervin.
 
-First, the two projects disagree. Forge's ADR-0002 makes forge the system of record and tervin its client. The roadmap records that tervin's spec 023 contradicts ADR-0002, ADR-0013 and ADR-0015. Spec L also claims that seam 1 needs only one `mcp.json` entry on tervin's side, while the roadmap records that tervin's MCP configuration is stdio-only and forge's MCP server speaks HTTP. A person has to settle this before code is written.
+First, the two projects disagree. Forge's ADR-0002 makes forge the system of record and tervin its client. The roadmap records that tervin's spec 023 contradicts ADR-0002, ADR-0013 and ADR-0015. Spec L also claims that seam 1 needs only one `mcp.json` entry on tervin's side, while the roadmap records that tervin's MCP configuration is stdio-only and forge's MCP server speaks HTTP. The owner settled this on 2026-11-15 (roadmap section 3a, decisions 1, 2 and 15): tervin gains HTTP MCP support on its v3 line, and forge ships no stdio proxy. The ADR of User Story 1 records it.
 
 Second, the one integration that needs no change in tervin does not exist. Tervin accepts any agent that speaks the Agent Client Protocol (ACP) over stdio. Forge has no ACP code.
 
@@ -24,7 +24,7 @@ Third, the supporting pieces of spec L are missing: a token narrowed to what a d
 
 ### User Story 1 - One written position on how forge and tervin fit (Priority: P1)
 
-The owner reads one ADR that lists the ways the two projects can fit together, states the default (forge runs appear in tervin as ACP sessions and are approved there), says what happens to each contradicted statement, and corrects spec L's seam 1 claim.
+The owner reads one ADR that lists the ways the two projects can fit together, records the decision of 2026-11-15 (first forge runs appear in tervin as ACP sessions that can be watched and approved there, then tervin is built as forge's local runner; the target is tervin's v3 line; tervin gains HTTP MCP support), says what happens to each contradicted statement, and corrects spec L's seam 1 claim.
 
 **Why this priority**: Every other story in this spec assumes the outcome. Building first and deciding later risks code that the other repository will not consume.
 
@@ -32,7 +32,7 @@ The owner reads one ADR that lists the ways the two projects can fit together, s
 
 **Acceptance Scenarios**:
 
-1. **Given** the ADR, **When** a reader looks for the options, **Then** each option is listed with what it needs from each project and its main risk, and one is marked as the default.
+1. **Given** the ADR, **When** a reader looks for the options, **Then** each option is listed with what it needs from each project and its main risk, and the decided order is stated: the ACP shape first, then the local runner.
 2. **Given** the accepted ADR, **When** a reader opens spec L section 2, **Then** the seam 1 row no longer says tervin needs only one `mcp.json` entry and no code change, and it points to the ADR.
 3. **Given** the accepted ADR, **When** a reader opens ADR-0002, ADR-0013 or ADR-0015, **Then** each states whether it stands, is amended or is superseded.
 
@@ -42,7 +42,7 @@ The owner reads one ADR that lists the ways the two projects can fit together, s
 
 A developer adds `forge acp` as an agent in tervin, or in any other ACP client. They type a request. A forge run starts on the forge server. The run's messages and tool activity appear in the client as the session progresses, each marked as gated by forge or only observed. When the run reaches an approval that the developer is allowed to decide, the client asks them, and their answer is recorded in forge.
 
-**Why this priority**: This is the owner's definition of "runs with tervin" (D1), and it is the only shape in which one side already has everything it needs.
+**Why this priority**: This is the first of the two shapes in the owner's definition of "runs with tervin" (D1), and it is the only shape in which one side already has everything it needs.
 
 **Independent Test**: Drive `forge acp` over stdio with a scripted ACP client against a stubbed forge server: initialise, open a session, send a prompt, and observe session updates, one permission request, the decision posted to forge, and the end of the turn.
 
@@ -93,18 +93,18 @@ A developer starts a small forge (API, worker and database only) with one comman
 
 ---
 
-### User Story 5 - Learn whether tervin can be forge's local runner (Priority: P3)
+### User Story 5 - Tervin as forge's local runner (Priority: P3)
 
-The owner wants to know what it would take for a forge run to execute on a developer's machine behind tervin's rules (spec L seam 5). A prototype on forge's side shows a run being parked for a runner, leased, streamed back and completed, and a written finding says whether to build it properly.
+A forge run executes on a developer's machine behind tervin's rules (spec L seam 5). Forge parks the run for a runner, a registered runner leases it, streams its events back and submits a result. Decided 2026-11-15: this is built as real roadmap work, not a prototype, after the ACP shape of User Story 2.
 
-**Why this priority**: D1 marks this shape as a prototype only. It needs new work in both repositories and is tied to a single-user desktop app.
+**Why this priority**: D1 puts this shape second. It needs new work in both repositories and is tied to a single-user desktop app.
 
-**Independent Test**: With the prototype switched on, a scripted runner leases a parked run, posts events and a result, and the run ends with those events in its stream. With the prototype switched off, none of the routes exist.
+**Independent Test**: With the runner protocol switched on, a scripted runner leases a parked run, posts events and a result, and the run ends with those events in its stream. With it switched off, none of the routes exist.
 
 **Acceptance Scenarios**:
 
-1. **Given** the prototype is off (the default), **When** any runner route is called, **Then** it is not found, and runs execute on the worker as before.
-2. **Given** the prototype is on and a run is marked for a runner, **When** a registered runner leases it, **Then** no other runner can lease the same run.
+1. **Given** the runner protocol is off, **When** any runner route is called, **Then** it is not found, and runs execute on the worker as before.
+2. **Given** the runner protocol is on and a run is marked for a runner, **When** a registered runner leases it, **Then** no other runner can lease the same run.
 3. **Given** a leased run, **When** the runner posts events, **Then** they appear in the run's event stream with `observed_by` naming the runner.
 4. **Given** a lease that is not renewed, **When** it expires, **Then** the run ends as failed with a stated reason and is not silently retried.
 
@@ -112,7 +112,7 @@ The owner wants to know what it would take for a forge run to execute on a devel
 
 ### User Story 6 - Prove it on a Mac with both apps (Priority: P2)
 
-A tester runs forge's single-user profile and tervin v2.2.0 on one macOS machine, adds `forge acp` as an agent, starts a run, sees it progress, approves a gate in tervin, and finds the decision in forge's audit chain naming tervin as the surface.
+A tester runs forge's single-user profile and a build of tervin's v3 line on one macOS machine, adds `forge acp` as an agent, starts a run, sees it progress, approves a gate in tervin, and finds the decision in forge's audit chain naming tervin as the surface.
 
 **Why this priority**: Stories 2 to 4 are tested against stubs. Only a paired run shows that the two real programs agree.
 
@@ -146,9 +146,9 @@ A tester runs forge's single-user profile and tervin v2.2.0 on one macOS machine
 
 **Decision record (R28)**
 
-- **FR-001**: An ADR MUST list the integration options (forge as an ACP agent that the desktop client gates; the desktop client as a reader of forge's record through seams 1 to 4; the desktop client as forge's local runner; each project keeping its own core), state for each what it needs from forge and from tervin and its main risk, and name the default from roadmap decision D1.
-- **FR-002**: The ADR MUST state, for ADR-0002, ADR-0013 and ADR-0015, whether each stands, is amended or is superseded, and MUST state which tervin release the bridge targets (D2).
-- **FR-003**: Spec L MUST be corrected: seam 1 no longer claims that one `mcp.json` entry and no code change are enough, and states how an HTTP MCP server reaches a client whose MCP configuration is stdio-only. [NEEDS CLARIFICATION: whether forge ships a stdio-to-HTTP MCP proxy command for this, or documents that agents inside tervin reach forge's MCP server through their own HTTP MCP configuration. The owner decides in R28.]
+- **FR-001**: An ADR MUST list the integration options (forge as an ACP agent that the desktop client gates; the desktop client as a reader of forge's record through seams 1 to 4; the desktop client as forge's local runner; each project keeping its own core), state for each what it needs from forge and from tervin and its main risk, and record roadmap decision D1 as decided on 2026-11-15: the ACP shape first, then the desktop client as forge's local runner, built as real roadmap work.
+- **FR-002**: The ADR MUST state, for ADR-0002, ADR-0013 and ADR-0015, whether each stands, is amended or is superseded, and MUST state that the bridge targets tervin's unreleased v3 line (D2, decided 2026-11-15).
+- **FR-003**: Spec L MUST be corrected: seam 1 no longer claims that one `mcp.json` entry and no code change are enough, and states how an HTTP MCP server reaches a client whose MCP configuration is stdio-only. Decided 2026-11-15: tervin is changed. HTTP MCP support is added on tervin's v3 line and is tracked in tervin's repository. Forge corrects the claim in spec L and ships no stdio proxy.
 - **FR-004**: The ADR and spec L MUST describe tervin only from forge's public documents and the roadmap. They MUST NOT quote tervin's source, paths or internals.
 
 **ACP shim (R29, seam 6)**
@@ -179,11 +179,11 @@ A tester runs forge's single-user profile and tervin v2.2.0 on one macOS machine
 - **FR-022**: Forge MUST offer a device-code flow: a client requests a code, the person confirms it in a signed-in browser session, and the client receives a scoped token once. Codes MUST be single-use, short-lived and rate-limited.
 - **FR-023**: The single-user profile MUST fail closed like any other profile. It MUST NOT enable a development-only bypass in a production configuration (ADR-0007).
 
-**Runner prototype (R32, seam 5)**
+**Runner protocol (R32, seam 5)**
 
-- **FR-024**: Behind a switch that is off by default and refused in production, forge MUST let a registered runner lease a run, stream run events and submit a result.
+- **FR-024**: Forge MUST let a registered runner lease a run, stream run events and submit a result. Decided 2026-11-15: this is real roadmap work, not a prototype. Open: the decision does not say whether the runner protocol is on by default or whether it is allowed in production. Until the owner answers, the earlier guard stays: it sits behind a switch that is off by default and refused in production.
 - **FR-025**: A leased run MUST have one leaseholder. An expired lease MUST end the run as failed with a reason.
-- **FR-026**: The prototype MUST end with a written finding that recommends building, changing or dropping seam 5.
+- **FR-026**: The runner protocol MUST be documented: what was built, and what is still needed before a runner-executed change can be delivered and attested. The earlier requirement for a finding that recommends building, changing or dropping seam 5 is withdrawn, because the owner decided to build it.
 
 **Paired test (R33)**
 
@@ -198,28 +198,28 @@ A tester runs forge's single-user profile and tervin v2.2.0 on one macOS machine
 - **Approval decision**: One person's decision on a gate, with the principal and the deciding surface.
 - **Scoped token**: A personal access token limited to a stated subset of permissions.
 - **Device authorisation**: A pending request by a client for a scoped token, confirmed or denied by a signed-in person.
-- **Runner lease**: The exclusive, expiring claim of one runner on one run (prototype).
+- **Runner lease**: The exclusive, expiring claim of one runner on one run.
 - **Test record**: The dated outcome of the paired macOS test.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: The ADR is accepted by the owner before any issue that depends on it starts.
+- **SC-001**: The ADR records the owner decisions of 2026-11-15 and lands before any issue that depends on it starts.
 - **SC-002**: A scripted ACP client completes initialise, new session, prompt, at least one update, one permission round trip and end of turn against a stubbed forge, with no forge-side change to tervin required.
 - **SC-003**: After a forced disconnect in the middle of a run, the client has received every event exactly once.
 - **SC-004**: For an approval decided through the shim, the audit chain verifies and the entry names the surface and the principal.
 - **SC-005**: A scoped token is refused on every route outside its scope in the route inventory test.
 - **SC-006**: From a clean checkout, the single-user profile reaches a healthy API in under five minutes on a developer machine.
 - **SC-007**: The paired macOS test record shows every step passing, or links an issue for each step that did not.
-- **SC-008**: With the runner prototype off, the route inventory and the behaviour of existing runs are unchanged.
+- **SC-008**: With the runner protocol off, the route inventory and the behaviour of existing runs are unchanged.
 
 ## Assumptions
 
-- Roadmap decisions D1 and D2 hold unless the owner changes them in R28.
+- Roadmap decisions D1 and D2 were decided by the owner on 2026-11-15 (roadmap section 3a). R28 records them.
 - Tervin is a private repository. This spec relies only on forge's public statements about it: it is a macOS desktop terminal, it holds no secrets and reads tokens from named environment variables, it opens no listening port, it admits tools as a process, a JSON CLI, MCP or repository data, and it accepts ACP agents over stdio with no code change.
 - No code moves between the repositories in either direction (ADR-0010, ADR-0015).
 - In forge's acting path today, a policy result of "requires approval" ends the tool call as denied and flags the run for a person. It does not open an approval or pause the run. Approvals that a client can decide therefore come from gates opened by the governed pipeline (M1, M2, R12, R19). The shim is built to handle both.
 - ACP is treated as an external standard pinned to one version, in the manner of ADR-0016.
 - Changes inside tervin are tracked in tervin's repository and are out of scope here.
-- The paired test needs a Mac, a tervin v2.2.0 build and a person. It cannot run in CI.
+- The paired test needs a Mac, a build of tervin's v3 line and a person. It cannot run in CI. The v3 line is unreleased, so the test record states the exact build it used.

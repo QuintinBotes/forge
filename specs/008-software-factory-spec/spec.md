@@ -14,7 +14,7 @@
 
 The roadmap's thesis is that forge wins on verifiable delivery. A claim of verifiable delivery is only useful if someone outside forge can check it, and only becomes a standard if someone else can implement it. The projects the roadmap takes as its model each published a narrow contract and a conformance suite, with a working implementation behind them.
 
-The research notes report that no ratified software-factory standard exists, that the published maturity ladders define levels in prose with no test, and that other projects already use the name "forge". These are reported, not confirmed. A web search on 2026-11-14 listed several public repositories named forge that describe themselves as software factories; none was opened. This milestone does not depend on the reports being exact: it publishes a small specification, makes it testable, and puts the naming question to the owner.
+The research notes report that no ratified software-factory standard exists, that the published maturity ladders define levels in prose with no test, and that other projects already use the name "forge". These are reported, not confirmed. A web search on 2026-11-14 listed several public repositories named forge that describe themselves as software factories; none was opened. This milestone does not depend on the reports being exact: it publishes a small specification, makes it testable, and puts the naming question to the owner. Decided 2026-11-15: the project is renamed in one pass, the new name is not chosen yet, and the rename is its own issue (#248).
 
 The specification is narrower than forge. It says what a factory must output and prove. It does not say how a factory is built, which agent it uses, or which tracker it reads.
 
@@ -72,7 +72,7 @@ A forge maintainer sees a failing check when a change would make forge's exporte
 
 ### User Story 4 - The owner settles name, licence and governance (Priority: P3)
 
-The project owner reads one decision record that lays out the options and the evidence for the name of the project and of the specification, the licence of the specification text and schemas, how changes to the specification are decided, and a draft proposal to a foundation's entry stage. The owner records a decision.
+The project owner reads one decision record. It records the licence decided on 2026-11-15 (specification text under CC BY 4.0, conformance suite under Apache-2.0, forge's code licence unchanged), lays out how changes to the specification are decided, and comes with a draft proposal to a foundation's entry stage. The rename of the project was also decided on 2026-11-15 and is its own issue (#248); the record states the name once the owner has chosen it.
 
 **Why this priority**: It decides how the specification is offered to others, but it changes no behaviour and needs a person.
 
@@ -134,8 +134,8 @@ The project owner reads one decision record that lays out the options and the ev
 
 **Name, licence, governance (R41)**
 
-- **FR-022**: The owner MUST record a decision on the name of the project and of the specification, with the evidence considered.
-- **FR-023**: The owner MUST record the licence of the specification text and of its schemas. The licence of forge's code is Apache-2.0 today (`LICENSE`); the licence of the specification is [NEEDS CLARIFICATION: owner decision in R41; one comparable baseline publishes prose under CC BY 4.0 and schemas under Apache-2.0].
+- **FR-022**: Decided 2026-11-15: the project is renamed in one pass covering the repository, the Python packages and imports, the CLI, the `FORGE_*` environment variables, the images, the Helm chart and the docs, with compatibility aliases only where a self-hoster would otherwise break. The rename runs after #170 has landed and before any other roadmap issue, and is tracked in #248, not in R41. The new name is not chosen yet. The owner MUST record the chosen name, with the evidence considered, before the rename starts. Open: the decision does not say whether the specification takes the project's new name or one of its own.
+- **FR-023**: The owner MUST record the licence of the specification text and of its schemas. Decided 2026-11-15: the specification text is licensed under CC BY 4.0 and the conformance suite under Apache-2.0. The licence of forge's code is unchanged (Apache-2.0, `LICENSE`). Open: the decision does not name a licence for the schemas and examples.
 - **FR-024**: The repository MUST contain a governance document that says who decides changes to the specification, how a change is proposed, and how a second implementer gains a say.
 - **FR-025**: The project MUST prepare a draft proposal to a neutral foundation's entry stage that answers that foundation's published entry criteria as they stand when the draft is written. Submitting it is the owner's act.
 
@@ -162,7 +162,7 @@ The project owner reads one decision record that lays out the options and the ev
 - **SC-005**: 100 percent of requirement identifiers are either covered by a suite check or listed as not machine-checkable with a reason.
 - **SC-006**: Forge's exported bundle passes the suite at forge's claimed level on every change, and the claim is never above the measured level.
 - **SC-007**: The specification text contains zero references to forge components.
-- **SC-008**: The decision record answers each of the three questions (name, licence, governance) with one chosen option.
+- **SC-008**: The decision record states the licence decided on 2026-11-15, answers the governance question with one chosen option, and states the name once the owner has chosen it.
 
 ## Assumptions
 
