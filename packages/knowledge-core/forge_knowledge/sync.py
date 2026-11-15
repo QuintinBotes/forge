@@ -415,7 +415,9 @@ def git_log(
             paths=tuple(paths),
         )
     if skipped:
-        _log.warning("git log %s: skipped %d unparseable commit records", rev, skipped)
+        # ``rev`` comes from the caller; without line breaks it cannot forge a log entry.
+        shown = rev.replace("\r", "").replace("\n", "")
+        _log.warning("git log %s: skipped %d unparseable commit records", shown, skipped)
 
 
 def commit_limit(config: Mapping[str, Any] | None) -> int | None:
