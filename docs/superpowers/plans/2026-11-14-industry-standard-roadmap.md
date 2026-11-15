@@ -55,7 +55,7 @@ defaults that the owner can still change. Section 3a lists every decision of 202
 | D3 | Spec format | Spec Kit for all new work under `specs/NNN-slug/`. Existing lettered specs stay where they are and are cited as design input | Migrating 14 approved design docs buys nothing. One benchmark found spec completeness matters more than the tool |
 | D4 | Which issues get a full spec | Features and cross-cutting work. Small fixes and docs get a plain issue | The same benchmark found no gain from specs on bug fixes, refactors and small tickets |
 | D5 | Implementation loop | Orbit, one issue at a time, driven by a small script. Switch to forge's own dispatch once milestone 1 lands | Orbit already has independent review and checks. Forge's acting path has neither yet. Parallel agent PRs conflict 20 to 42 percent of the time |
-| D6 | Name | Decided 2026-11-15: rename, in one pass covering everything (repository, Python packages and imports, CLI, `FORGE_*` environment variables, images, Helm chart, docs), with compatibility aliases only where a self-hoster would otherwise break. The new name is scantling, chosen 2026-11-15; a trademark search is still needed. Timing: after #170 has landed and before any other roadmap issue (#248) | Two other factory projects already use the name |
+| D6 | Name | Decided 2026-11-15: rename, in one pass covering everything (repository, Python packages and imports, CLI, `FORGE_*` environment variables, images, Helm chart, docs), with compatibility aliases only where a self-hoster would otherwise break. The new name is Swarm Code Factory (slug `swarm-code-factory`, abbreviation SCF), given by the owner on 2026-11-15; a trademark search is still needed. Timing: after #170 has landed and before any other roadmap issue (#248) | Two other factory projects already use the name |
 
 ## 3a. Owner decisions, 2026-11-15
 
@@ -75,7 +75,7 @@ open, the spec says so and does not fill it in.
 | 8 | Default executor for the agent loop | Per-run isolation everywhere: the Helm chart defaults to one Kubernetes Job per agent run, and Compose defaults to one container per run. `inline` stays available as an explicit setting | #239, #240, #241, #242 |
 | 9 | Kubernetes workspace storage for run pods | A shared read-write-many volume | #241, #242 |
 | 10 | How a per-run process reaches the run record | A short-lived token scoped to its own run, used against forge's API. The run process never holds the database credential | #238, #239, #240, #241; relates to #186 |
-| 11 | Project name | Rename, in one pass covering everything, with compatibility aliases only where a self-hoster would otherwise break. The new name is **scantling**, chosen 2026-11-15 from researched candidates. No trademark register or domain was checked, so a trademark search is still needed before the name is used for the specification or a foundation proposal. Timing: after #170 has landed and before any other roadmap issue | #248 (rename), #219 |
+| 11 | Project name | Rename, in one pass covering everything, with compatibility aliases only where a self-hoster would otherwise break. The new name is **Swarm Code Factory** (slug `swarm-code-factory`, abbreviation SCF, tagline "From specification to shipped software."), given by the owner on 2026-11-15. No trademark register or domain was checked, so a trademark search is still needed before the name is used for the specification or a foundation proposal. Third-party names, historical migrations and compatibility-sensitive identifiers are preserved. Timing: after #170 has landed and before any other roadmap issue | #248 (rename), #219 |
 | 12 | `load-smoke (k6)` CI job | Stays non-blocking; pull requests are not held by it. A roadmap issue investigates why it fails on every pull request | #247 |
 | 13 | First administrator sign-in with no identity provider | A CLI command on the server prints a single-use, short-lived sign-in link | #221 |
 | 14 | Context benchmark pass bar | Measure first. #199 writes forge's own questions and records a baseline; the bar is set from that measurement in a follow-up | #199, #249 |
@@ -110,7 +110,7 @@ the issue belongs to.
 | R02 | Done with this plan. Add `.orbit/config.yaml`, check ids, and `scripts/roadmap-loop.sh` that feeds open `roadmap` issues to Orbit one at a time | R01 |
 | R03 | Refresh stale status: spec G table, README package list, regenerate `RELEASE_READINESS.md` | None |
 | #247 | Find out why the `load-smoke (k6, non-blocking)` CI job fails on every pull request and make it pass or remove it. Owner decision: the fix is an edit under `.github/` | None |
-| #248 | Rename the project everywhere in one scripted pass. The name is scantling | #170 |
+| #248 | Rename the project everywhere in one scripted pass. The name is Swarm Code Factory | #170 |
 
 ### M1. One governed pipeline (spec 001)
 
