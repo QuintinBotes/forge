@@ -13,7 +13,8 @@ database audit chain (issue #170).
 
 A ``pr`` gate carries the repository's review rules from the default branch
 (:mod:`forge_worker.review_rules`, spec K §4.11), so repo policy can raise its
-quorum.
+quorum. The opened gate is announced on ``/ws`` through the Redis channel the
+API relays (spec L §6a), when the Redis realtime backend is selected.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from forge_api.observability.audit import AuditLog
 from forge_api.observability.audit_db import DbAuditStore
 from forge_api.observability.redaction import redact_mapping
+from forge_api.realtime.approval_events import create_published, relay_url
 from forge_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from forge_api.services.workflow_gate_hook import WORKFLOW_RUN_SUBJECT, agent_actor_for_run
 from forge_approval import ApprovalAuthorizer, ApprovalService, GateRegistry
@@ -76,6 +78,7 @@ def make_create_approval_fn(
     factory: sessionmaker[Session],
 ) -> Callable[[ApprovalInput], Awaitable[uuid.UUID]]:
     """Build the async ``forge.create_approval`` body bound to ``factory``."""
+    redis_url = relay_url()
 
     async def _create_approval(inp: ApprovalInput) -> uuid.UUID:
         with factory() as session:
@@ -94,7 +97,9 @@ def make_create_approval_fn(
             payload |= review_rules_stamp(
                 factory, workspace_id=inp.workspace_id, task_id=inp.task_id
             )
-        request = await build_approval_service(factory).create(
+        request = await create_published(
+            build_approval_service(factory),
+            redis_url=redis_url,
             workspace_id=inp.workspace_id,
             gate_type=GateType(inp.gate),
             subject_type=WORKFLOW_RUN_SUBJECT,

@@ -31,7 +31,7 @@ from urllib.parse import urlencode
 
 from fastapi import Depends, Header, HTTPException, status
 
-from forge_api.auth.apikeys import APIKeyBackend, APIKeyInfo, APIKeyStore
+from forge_api.auth.apikeys import APPROVALS_DECIDE, APIKeyBackend, APIKeyInfo, APIKeyStore
 from forge_api.auth.crypto import EnvelopeCipher, default_cipher
 from forge_api.auth.keyring import KeyRing
 from forge_api.auth.models import OAuthChallenge, OAuthResult
@@ -301,19 +301,37 @@ class AuthService:
                 email=claims.email,
                 auth_method="session_jwt",
                 scopes=[p.value for p in sorted(permissions_for(claims.role))],
+                decides=True,
+                surface="web",
             )
 
         record = self.api_keys.verify(token)
         if record is None:
             raise AuthenticationError("invalid or expired API key")
 
+        # A narrowed key acts as a viewer, so every existing role check confines it to reads
+        # (and its role column is VIEWER too). shortcut: narrowing supports read(+decide)
+        # only; general subsets need scope checks at each role check.
+        narrowed = record.scopes is not None
+        role = UserRole.VIEWER if narrowed else record.role
+        # Spec L §6a: only a key bound to a person decides (as that person); agents never.
+        decides = (
+            record.user_id is not None
+            and record.role is not UserRole.AGENT_RUNNER
+            and (not narrowed or APPROVALS_DECIDE in (record.scopes or ()))
+        )
         return Principal(
             user_id=record.user_id or record.id,
             workspace_id=record.workspace_id,
-            role=record.role,
+            role=role,
             email=None,
             auth_method="api_key",
-            scopes=[p.value for p in sorted(permissions_for(record.role))],
+            scopes=[p.value for p in sorted(permissions_for(role))],
+            decides=decides,
+            narrowed=narrowed,
+            surface=record.surface or "api",
+            credential_id=record.id,
+            credential_expires_at=record.expires_at,
         )
 
     def bootstrap_key(
@@ -325,8 +343,9 @@ class AuthService:
         user_id: uuid.UUID | None = None,
         kind: APIKeyKind = APIKeyKind.SYSTEM,
         expires_at: datetime | None = None,
+        surface: str | None = None,
     ) -> tuple[APIKeyInfo, str]:
-        """Mint an API key directly (CLI ``users create-admin`` / seed / tests)."""
+        """Mint an API key directly (CLI ``users create-admin`` / seed / SSO login / tests)."""
         return self.api_keys.mint(
             workspace_id=workspace_id,
             name=name,
@@ -334,6 +353,7 @@ class AuthService:
             kind=kind,
             user_id=user_id,
             expires_at=expires_at,
+            surface=surface,
         )
 
     def mint_agent_token(

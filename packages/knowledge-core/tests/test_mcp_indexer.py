@@ -315,3 +315,28 @@ def test_a_failing_backlog_does_not_fail_the_mcp_sync() -> None:
     )
     assert report.error is None
     assert report.resources_indexed == 3
+
+
+def test_a_chunker_change_rechunks_unchanged_resources_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from forge_knowledge import mcp_indexer
+    from forge_knowledge.chunking import CHUNKER_VERSION
+
+    fetcher = FakeMcpResourceFetcher(
+        [
+            FakeResource(uri="confluence://engineering/page-1", body="token", change_token="v1"),
+            FakeResource(uri="confluence://engineering/page-2", body="no token"),
+        ]
+    )
+    h = _indexer(fetcher)
+    # Indexed by the previous chunker.
+    monkeypatch.setattr(mcp_indexer, "CHUNKER_VERSION", CHUNKER_VERSION - 1)
+    _sync(h, SyncDirection.full)
+    monkeypatch.setattr(mcp_indexer, "CHUNKER_VERSION", CHUNKER_VERSION)
+
+    rechunked = _sync(h, SyncDirection.incremental)
+    settled = _sync(h, SyncDirection.incremental)
+
+    assert (rechunked.resources_indexed, rechunked.resources_skipped) == (2, 0)
+    assert (settled.resources_indexed, settled.resources_skipped) == (0, 2)

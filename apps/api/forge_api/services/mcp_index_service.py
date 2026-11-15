@@ -26,6 +26,11 @@ from forge_contracts.enums import MCPIndexStrategy
 from forge_db.models import KnowledgeSource, RetrievalChunk
 from forge_db.models.enums import KnowledgeSourceKind, SyncMode
 from forge_knowledge import index_status_counts, latest_run, purge_index
+from forge_knowledge.sync import (
+    DEFAULT_MCP_FRESHNESS_SLA_MINUTES,
+    freshness_sla_minutes,
+    is_stale,
+)
 
 SessionFactory = Callable[[], Session] | sessionmaker[Session]
 
@@ -145,8 +150,6 @@ def index_status(
 
     resource_count, chunk_count = index_status_counts(factory, source.id)
     run = latest_run(factory, source.id)
-    sla = source.freshness_sla_minutes or 30
-    stale = _is_stale(source.last_synced_at, sla, moment)
     return McpIndexStatus(
         source_id=source.id,
         index_strategy=index_strategy,
@@ -154,17 +157,11 @@ def index_status(
         resource_count=resource_count,
         chunk_count=chunk_count,
         last_synced_at=source.last_synced_at,
-        freshness_sla_minutes=sla,
-        stale=stale,
+        # Always set for an MCP source; the default only satisfies the type.
+        freshness_sla_minutes=freshness_sla_minutes(source) or DEFAULT_MCP_FRESHNESS_SLA_MINUTES,
+        stale=is_stale(source, moment),
         last_sync_run=_run_to_dict(run),
     )
-
-
-def _is_stale(last_synced_at: datetime | None, sla_minutes: int, now: datetime) -> bool:
-    if last_synced_at is None:
-        return True
-    last = last_synced_at if last_synced_at.tzinfo else last_synced_at.replace(tzinfo=UTC)
-    return (now - last).total_seconds() > sla_minutes * 60
 
 
 def _run_to_dict(run: object | None) -> dict | None:

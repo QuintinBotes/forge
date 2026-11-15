@@ -27,7 +27,16 @@ from forge_authz.errors import (
     TeamCycleError,
     TeamDepthError,
 )
-from forge_contracts.authz import Permission, PrincipalContext, ResourceRef
+from forge_contracts.authz import (
+    Permission,
+    PrincipalContext,
+    PrincipalRef,
+    PrincipalType,
+    ResourceRef,
+    RoleGrant,
+    ScopeRef,
+    ScopeType,
+)
 from forge_contracts.enums import UserRole
 from forge_db.models import Project
 
@@ -55,7 +64,27 @@ CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]
 def get_principal_context(
     principal: CurrentPrincipal, service: AuthzServiceDep
 ) -> PrincipalContext:
-    """Load the caller's :class:`PrincipalContext` (grants + memberships) once."""
+    """Load the caller's :class:`PrincipalContext` (grants + memberships) once.
+
+    A narrowed API key (spec L §6a) is a workspace viewer here, holding none of
+    its owner's grants or team memberships.
+    """
+    if principal.narrowed:
+        workspace = ScopeRef(type=ScopeType.WORKSPACE, id=principal.workspace_id)
+        who = PrincipalRef(type=PrincipalType.USER, id=principal.user_id)
+        viewer = RoleGrant(
+            id=principal.credential_id or principal.user_id,
+            workspace_id=principal.workspace_id,
+            principal=who,
+            scope=workspace,
+            role=UserRole.VIEWER,
+        )
+        return PrincipalContext(
+            principal=who,
+            workspace_id=principal.workspace_id,
+            grants=(viewer,),
+            team_memberships=(),
+        )
     return service.load_principal_context(principal.workspace_id, principal.user_id)
 
 

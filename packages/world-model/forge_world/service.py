@@ -20,7 +20,7 @@ from typing import Any, Literal
 from sqlalchemy.orm import Session
 
 from forge_contracts import PROVIDER_FAILURE_STOP_REASONS, ModelClient
-from forge_knowledge.chunking import chunk_markdown
+from forge_knowledge.chunking import chunk_paragraphs
 from forge_world.conflicts import Conflict, functional_conflicts
 from forge_world.decisions import DriftReport, drift
 from forge_world.extraction import DropReason, build_request, parse_reply, verify
@@ -1421,7 +1421,7 @@ class WorldModelService:
         client = self._model_client
         now = self._now()
         doc_time_utc = ensure_utc(doc_time) if doc_time is not None else None
-        chunks = chunk_markdown(source_ref, text)
+        chunks = chunk_paragraphs(source_ref, text)
         doc_head = text[:1500]
         relations = self._relations_map(workspace_id)
 

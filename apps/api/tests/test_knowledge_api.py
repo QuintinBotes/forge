@@ -15,14 +15,16 @@ connection), deterministic embedding, fixture reranker. No network.
 
 from __future__ import annotations
 
+import subprocess
 import uuid
 from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import StaticPool, create_engine
+from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from forge_api.main import create_app
@@ -32,7 +34,7 @@ from forge_api.routers.knowledge import (
 )
 from forge_contracts import Chunk
 from forge_db.base import Base
-from forge_db.models import KnowledgeSource, Workspace
+from forge_db.models import KnowledgeSource, RetrievalChunk, Workspace
 from forge_db.session import create_session_factory
 from forge_knowledge import (
     DeterministicEmbeddingClient,
@@ -448,3 +450,376 @@ def test_require_vector_succeeds_when_configured(client: TestClient, source_id: 
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["vector_leg"] == "configured"
+
+
+# --------------------------------------------------------------------------- #
+# Tracker sources and commit history (spec J §2.3)                             #
+# --------------------------------------------------------------------------- #
+
+
+def _add_source(
+    session_factory: sessionmaker[Session], workspace_id: str, **columns: object
+) -> uuid.UUID:
+    with session_factory() as session:
+        source = KnowledgeSource(workspace_id=uuid.UUID(workspace_id), name="s", **columns)
+        session.add(source)
+        session.commit()
+        return source.id
+
+
+def test_sync_of_a_tracker_source_enqueues_the_worker_sync(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    source_id: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from forge_api.routers import knowledge as knowledge_router
+
+    enqueued: list[str] = []
+    monkeypatch.setattr(knowledge_router, "enqueue_source_sync", enqueued.append)
+    tracker = _add_source(
+        session_factory,
+        WORKSPACE_ID,
+        kind="url",
+        uri="https://github.com/org/api",
+        config={"tracker": "github"},
+    )
+
+    resp = client.post("/knowledge/sync", json={"source_id": str(tracker), "mode": "full"})
+
+    assert resp.status_code == 202, resp.text
+    assert resp.json() == {"status": "enqueued", "source_id": str(tracker)}
+    assert enqueued == [str(tracker)]
+    assert knowledge_router.SYNC_SOURCE_TASK == "forge.knowledge.sync_source"
+
+    # Another tenant's tracker is never enqueued.
+    other_ws, _ = _seed_other_workspace(session_factory)
+    foreign = _add_source(
+        session_factory,
+        str(other_ws),
+        kind="url",
+        uri="https://github.com/other/secret",
+        config={"tracker": "github"},
+    )
+    assert client.post("/knowledge/sync", json={"source_id": str(foreign)}).status_code == 404
+    assert enqueued == [str(tracker)]
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
+
+
+def test_sync_of_a_repo_source_indexes_commits_only_when_its_config_enables_them(
+    client: TestClient, session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "forge@example.com")
+    _git(repo, "config", "user.name", "Forge Test")
+    _git(repo, "config", "commit.gpgsign", "false")
+    for i in range(2):
+        (repo / "a.py").write_text(f"a = {i}\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", f"Commit {i}")
+
+    plain = _add_source(session_factory, WORKSPACE_ID, kind="repo", uri="github.com/org/plain")
+    enabled = _add_source(
+        session_factory,
+        WORKSPACE_ID,
+        kind="repo",
+        uri="github.com/org/history",
+        config={"commits": {"enabled": True, "max_count": 1}},
+    )
+    for source in (plain, enabled):
+        resp = client.post("/knowledge/sync", json={"source_id": str(source), "root": str(repo)})
+        assert resp.status_code == 200, resp.text
+
+    def commit_paths(source: uuid.UUID) -> list[str]:
+        with session_factory() as session:
+            paths = session.scalars(
+                select(RetrievalChunk.path).where(RetrievalChunk.knowledge_source_id == source)
+            )
+            return sorted(p for p in paths if p and p.startswith("commits/"))
+
+    assert commit_paths(plain) == []
+    assert len(commit_paths(enabled)) == 1
+
+
+# --------------------------------------------------------------------------- #
+# GET /knowledge/sources (the web knowledge page)                              #
+# --------------------------------------------------------------------------- #
+
+
+def test_sources_are_workspace_scoped_with_counts_and_embedding_coverage(
+    client: TestClient,
+    service: KnowledgeService,
+    session_factory: sessionmaker[Session],
+    source_id: uuid.UUID,
+) -> None:
+    assert client.post("/knowledge/index", json=_index_payload(source_id)).status_code == 200
+    with session_factory() as session:
+        first = session.scalars(
+            select(RetrievalChunk).where(RetrievalChunk.path == "auth.py")
+        ).one()
+        first.embedding = None
+        session.commit()
+    empty = _add_source(session_factory, WORKSPACE_ID, kind="document", uri="docs/handbook")
+    _, foreign = _seed_other_workspace(session_factory)
+    service.index(str(foreign), [Chunk(content="other tenant", path="x.md")])
+
+    resp = client.get("/knowledge/sources")
+
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()
+    # Sorted by name ("api" < "s"); the other workspace's source never appears.
+    assert [r["id"] for r in rows] == [str(source_id), str(empty)]
+    api, docs = rows
+    assert (api["chunk_count"], api["embedded_chunk_count"]) == (3, 2)
+    assert api["newest_chunk_at"] is not None
+    assert (api["kind"], api["uri"], api["sync_mode"]) == ("repo", "github.com/org/api", "full")
+    assert (docs["chunk_count"], docs["embedded_chunk_count"]) == (0, 0)
+    assert docs["newest_chunk_at"] is None
+
+
+def test_sources_flag_a_sync_older_than_the_freshness_sla(
+    client: TestClient, session_factory: sessionmaker[Session]
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC).replace(tzinfo=None)  # the column is naive UTC
+    ago = lambda minutes: now - timedelta(minutes=minutes)  # noqa: E731
+    cases: dict[str, dict[str, object]] = {
+        "a-late": {"freshness_sla_minutes": 60, "last_synced_at": ago(120)},
+        "b-fresh": {"freshness_sla_minutes": 60, "last_synced_at": ago(5)},
+        "c-never": {"freshness_sla_minutes": 60},
+        "d-no-sla": {"last_synced_at": ago(30 * 24 * 60)},
+        "e-no-sla-never": {},
+        # MCP sources share the MCP index's rule: 30 minutes unless they set their own.
+        "f-mcp-never": {"kind": "mcp"},
+        "g-mcp-fresh": {"kind": "mcp", "last_synced_at": ago(10)},
+        "h-mcp-late": {"kind": "mcp", "last_synced_at": ago(45)},
+        "i-mcp-own-sla": {"kind": "mcp", "freshness_sla_minutes": 60, "last_synced_at": ago(45)},
+    }
+    for name, columns in cases.items():
+        with session_factory() as session:
+            session.add(
+                KnowledgeSource(
+                    workspace_id=uuid.UUID(WORKSPACE_ID),
+                    name=name,
+                    uri=f"github.com/org/{name}",
+                    **{"kind": "repo", **columns},
+                )
+            )
+            session.commit()
+
+    rows = client.get("/knowledge/sources").json()
+
+    assert {r["name"]: (r["stale"], r["freshness_sla_minutes"]) for r in rows} == {
+        "a-late": (True, 60),
+        "b-fresh": (False, 60),
+        "c-never": (True, 60),
+        "d-no-sla": (False, None),
+        "e-no-sla-never": (False, None),
+        "f-mcp-never": (True, 30),
+        "g-mcp-fresh": (False, 30),
+        "h-mcp-late": (True, 30),
+        "i-mcp-own-sla": (False, 60),
+    }
+    late = next(r for r in rows if r["name"] == "a-late")
+    assert late["last_synced_at"].endswith("Z")  # served as UTC
+
+
+def test_the_mcp_index_status_and_the_sources_list_share_one_staleness_rule() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from forge_api.services import mcp_index_service
+    from forge_knowledge import sync
+
+    assert mcp_index_service.is_stale is sync.is_stale
+    assert not hasattr(mcp_index_service, "_is_stale")
+    now = datetime.now(UTC)
+    mcp = KnowledgeSource(kind="mcp", last_synced_at=now - timedelta(minutes=31))
+    assert sync.freshness_sla_minutes(mcp) == sync.DEFAULT_MCP_FRESHNESS_SLA_MINUTES == 30
+    assert sync.is_stale(mcp, now)
+    assert not sync.is_stale(KnowledgeSource(kind="repo"), now)  # no SLA: never stale
+
+
+def test_sources_never_return_config_or_uri_credentials(
+    client: TestClient, session_factory: sessionmaker[Session]
+) -> None:
+    _add_source(
+        session_factory,
+        WORKSPACE_ID,
+        kind="url",
+        uri="https://x-access-token:ghp_uri_secret@github.test/org/api?token=q_secret",
+        config={"tracker": "github", "token": "cfg_secret", "headers": {"Authorization": "b"}},
+    )
+    # Scheme-less git remotes carry the token before the host too.
+    with session_factory() as session:
+        for name, uri in (
+            ("z-gitlab", "oauth2:glpat-secret@gitlab.test/o/r"),
+            ("z-github", "x-access-token:ghp_secret@github.test/o/r"),
+        ):
+            session.add(
+                KnowledgeSource(
+                    workspace_id=uuid.UUID(WORKSPACE_ID), kind="repo", name=name, uri=uri
+                )
+            )
+        session.commit()
+
+    resp = client.get("/knowledge/sources")
+
+    assert resp.status_code == 200, resp.text
+    assert "secret" not in resp.text and "Authorization" not in resp.text
+    assert "glpat" not in resp.text and "ghp_" not in resp.text
+    row, github, gitlab = resp.json()  # by name: "s" < "z-github" < "z-gitlab"
+    assert row["uri"] == "https://github.test/org/api"
+    assert (gitlab["uri"], github["uri"]) == ("gitlab.test/o/r", "github.test/o/r")
+    assert row["tracker"] == "github"
+    assert set(row) == {
+        "id",
+        "name",
+        "kind",
+        "uri",
+        "tracker",
+        "syncable",
+        "sync_mode",
+        "last_synced_at",
+        "freshness_sla_minutes",
+        "stale",
+        "chunk_count",
+        "embedded_chunk_count",
+        "newest_chunk_at",
+    }
+
+
+def test_sources_need_only_read_and_refuse_the_unauthenticated(
+    session_factory: sessionmaker[Session],
+    source_id: uuid.UUID,
+    authenticate_app: Callable[..., FastAPI],
+) -> None:
+    from forge_api.deps import Principal
+    from forge_contracts import UserRole
+
+    viewer_principal = Principal(
+        user_id=uuid.uuid4(),
+        workspace_id=uuid.UUID(WORKSPACE_ID),
+        role=UserRole.VIEWER,
+        auth_method="test",
+        scopes=["read"],
+    )
+    app = create_app()
+    app.dependency_overrides[get_knowledge_session_factory] = lambda: session_factory
+    with TestClient(app) as anonymous:
+        assert anonymous.get("/knowledge/sources").status_code == 401
+
+    authenticate_app(app, viewer_principal)
+    with TestClient(app) as viewer:
+        resp = viewer.get("/knowledge/sources")
+    assert resp.status_code == 200, resp.text
+    assert [r["id"] for r in resp.json()] == [str(source_id)]
+
+
+def test_only_github_tracker_sources_are_syncable(
+    client: TestClient, session_factory: sessionmaker[Session], source_id: uuid.UUID
+) -> None:
+    for name, kind, config in (
+        ("b-tracker", "url", {"tracker": "github"}),
+        ("c-jira", "url", {"tracker": "jira"}),
+        ("d-page", "url", {}),
+        ("e-repo-claiming-tracker", "repo", {"tracker": "github"}),
+    ):
+        with session_factory() as session:
+            session.add(
+                KnowledgeSource(
+                    workspace_id=uuid.UUID(WORKSPACE_ID),
+                    kind=kind,
+                    name=name,
+                    uri=f"https://github.com/org/{name}",
+                    config=config,
+                )
+            )
+            session.commit()
+
+    rows = client.get("/knowledge/sources").json()
+
+    assert {r["name"]: r["syncable"] for r in rows} == {
+        "api": False,
+        "b-tracker": True,
+        "c-jira": False,
+        "d-page": False,
+        "e-repo-claiming-tracker": False,
+    }
+
+
+def _last_synced(session_factory: sessionmaker[Session], source: uuid.UUID) -> object:
+    with session_factory() as session:
+        found = session.get(KnowledgeSource, source)
+        assert found is not None
+        return found.last_synced_at
+
+
+def test_a_successful_sync_records_freshness_and_a_failed_one_never_does(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    source_id: uuid.UUID,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from forge_api.routers import knowledge as knowledge_router
+
+    # Refused (422) and failed (a bad ref raises mid-sync) syncs leave it never-synced.
+    assert client.post("/knowledge/sync", json={"source_id": str(source_id)}).status_code == 422
+    bad_ref = client.post(
+        "/knowledge/sync",
+        json={
+            "source_id": str(source_id),
+            "mode": "incremental",
+            "root": str(tmp_path),
+            "base_ref": "--output=x",
+        },
+    )
+    assert bad_ref.status_code == 422, bad_ref.text
+    # A tracker sync is only enqueued here; the worker records it when it runs.
+    monkeypatch.setattr(knowledge_router, "enqueue_source_sync", lambda _id: None)
+    tracker = _add_source(
+        session_factory,
+        WORKSPACE_ID,
+        kind="url",
+        uri="https://github.com/org/api",
+        config={"tracker": "github"},
+    )
+    assert client.post("/knowledge/sync", json={"source_id": str(tracker)}).status_code == 202
+    assert _last_synced(session_factory, source_id) is None
+    assert _last_synced(session_factory, tracker) is None
+
+    ok = client.post(
+        "/knowledge/sync", json={"source_id": str(source_id), "files": {"a.md": "# A\n\nText."}}
+    )
+
+    assert ok.status_code == 200 and ok.json()["errors"] == [], ok.text
+    assert _last_synced(session_factory, source_id) is not None
+    (row,) = [r for r in client.get("/knowledge/sources").json() if r["id"] == str(source_id)]
+    assert row["last_synced_at"] is not None
+
+
+def test_a_sync_that_reports_errors_does_not_record_freshness(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    source_id: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from forge_api.routers import knowledge as knowledge_router
+    from forge_contracts import IndexResult
+
+    monkeypatch.setattr(
+        knowledge_router,
+        "full_sync",
+        lambda _svc, sid, _files, prune: IndexResult(source_id=sid, errors=["embedding: down"]),
+    )
+
+    resp = client.post("/knowledge/sync", json={"source_id": str(source_id), "files": {"a": "b"}})
+
+    assert resp.status_code == 200, resp.text
+    assert _last_synced(session_factory, source_id) is None

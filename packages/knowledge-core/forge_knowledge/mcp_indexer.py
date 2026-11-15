@@ -27,6 +27,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from forge_contracts.dtos import Chunk, IndexResult
+from forge_knowledge.chunking import CHUNKER_VERSION
 from forge_knowledge.mcp_chunking import (
     McpResourceSnapshot,
     provenance_uri,
@@ -271,8 +272,10 @@ class McpSyncIndexer:
         existing = self._ledger.get(source_id, ref.uri)
         live = existing if (existing and existing.deleted_at is None) else None
 
-        # Skip without reading when the server reports an unchanged change-token.
-        if live and ref.change_token is not None and live.change_token == ref.change_token:
+        # Skip without reading when the server reports an unchanged change-token
+        # that the current chunker indexed.
+        token = _ledger_token(ref.change_token)
+        if live and token is not None and live.change_token == token:
             report.resources_skipped += 1
             report.chunks_skipped += live.chunk_count
             self._ledger.mark_seen(source_id, ref.uri, sync_run_id=run_id)
@@ -319,7 +322,7 @@ class McpSyncIndexer:
                 namespace=snapshot.namespace,
                 title=snapshot.title,
                 mime_type=snapshot.mime_type,
-                change_token=ref.change_token,
+                change_token=token,
                 content_hash=content_hash,
                 chunk_count=len(chunks),
                 byte_size=len(redacted.encode("utf-8")),
@@ -347,5 +350,11 @@ class McpSyncIndexer:
 def _content_hash(connection_slug: str, resource_uri: str, redacted_content: str) -> str:
     import hashlib
 
-    key = f"{connection_slug}\0{resource_uri}\0{redacted_content}"
+    # The chunker version is in the key, so a chunker change re-chunks each resource once.
+    key = f"{CHUNKER_VERSION}\0{connection_slug}\0{resource_uri}\0{redacted_content}"
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def _ledger_token(change_token: str | None) -> str | None:
+    """A server change-token as the ledger keeps it: tied to the chunker version."""
+    return None if change_token is None else f"{change_token}#chunker-{CHUNKER_VERSION}"

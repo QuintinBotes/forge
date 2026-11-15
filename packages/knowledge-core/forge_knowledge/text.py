@@ -231,11 +231,29 @@ def tsquery_literal(terms: list[str]) -> str:
     return " | ".join(f"'{lexeme}'" for lexeme in dict.fromkeys(pg_lexeme(t) for t in terms))
 
 
+# -- Source uris shown to callers ------------------------------------------ #
+
+#: An optional ``scheme://`` then everything up to the last ``@`` before the
+#: first ``/``: the userinfo, also in scheme-less git remotes such as
+#: ``oauth2:glpat-x@gitlab.test/o/r`` (where ``urlsplit`` sees no host at all).
+# Up to the last ``@`` before the first ``/`` (after ``scheme://`` or ``//``), so a ``?``,
+# ``#`` or ``@`` inside a password goes with it.
+_USERINFO_RE = re.compile(r"^((?:[A-Za-z][A-Za-z0-9+.-]*:)?//)?[^/]*@")
+
+
+def strip_uri_credentials(uri: str) -> str:
+    """``uri`` as it may leave the server: no ``user:token@`` before the host,
+    and no query string or fragment (both can carry tokens too)."""
+    without_userinfo = _USERINFO_RE.sub(r"\1", uri.strip(), count=1)
+    return re.split(r"[?#]", without_userinfo, maxsplit=1)[0]
+
+
 __all__ = [
     "ENGLISH_STOPWORDS",
     "MAX_QUERY_TERMS",
     "pg_lexeme",
     "query_terms",
+    "strip_uri_credentials",
     "tokenize",
     "tsquery_literal",
     "tsvector_literal",

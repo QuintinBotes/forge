@@ -11,11 +11,12 @@ usable token is ever returned except the one-time mint token.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from forge_api.auth.apikeys import APIKeyInfo
+from forge_api.auth.apikeys import APPROVALS_DECIDE, APIKeyInfo
 from forge_api.auth.models import (
     APIKeyCreated,
     APIKeyCreateRequest,
@@ -23,6 +24,7 @@ from forge_api.auth.models import (
     OAuthCallbackRequest,
     OAuthChallenge,
     OAuthResult,
+    PersonalTokenCreateRequest,
     SecretCreateRequest,
     SecretRotateRequest,
 )
@@ -39,8 +41,11 @@ from forge_api.auth.service import (
     require_permission,
 )
 from forge_api.auth.vault import SecretExpiredError, SecretInfo, SecretNotFoundError
-from forge_api.deps import Principal
+from forge_api.deps import DbSession, Principal
+from forge_api.services.approval_service import owner_role
 from forge_auth.rbac import has_at_least
+from forge_authz import ROLE_RANK
+from forge_contracts.enums import UserRole
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -152,6 +157,68 @@ def create_api_key(
         target_type="platform_api_key",
         target_id=info.id,
         details={"name": info.name, "role": info.role.value, "kind": info.kind.value},
+    )
+    return APIKeyCreated(**info.model_dump(), token=token)
+
+
+@router.post(
+    "/personal-tokens",
+    response_model=APIKeyCreated,
+    status_code=status.HTTP_201_CREATED,
+    summary="Mint your own personal access token (a person only). Token shown once.",
+)
+def create_personal_token(
+    body: PersonalTokenCreateRequest,
+    principal: AuthedPrincipal,
+    service: AuthServiceDep,
+    session: DbSession,
+) -> APIKeyCreated:
+    """A token for another surface (tervin, the CLI), bound to the calling person.
+
+    A session or a person-bound unscoped key (the web's credential) may mint one;
+    a narrowed or unbound key may not, so a token never mints a token (spec L
+    §6a). It reads as a viewer (plus ``approvals:decide`` when asked, deciding
+    with its owner's current role) and expires.
+    """
+    if not principal.decides or principal.narrowed:  # a session or a person-bound unscoped key
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="personal tokens are minted by a person: a session or your own unscoped key",
+        )
+    current = owner_role(session, principal)
+    if current is None:  # deactivated, removed or expired: nothing to delegate
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="your account has no current role in this workspace",
+        )
+    if body.decide and ROLE_RANK[principal.role] < ROLE_RANK[current]:
+        # The token decides with its owner's role: never more than the minting key's.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="a deciding token is minted by a credential with your full role",
+        )
+    info, token = service.api_keys.mint(
+        workspace_id=principal.workspace_id,
+        name=body.name,
+        role=UserRole.VIEWER,
+        user_id=principal.user_id,
+        expires_at=datetime.now(UTC) + timedelta(days=body.expires_in_days),
+        scopes=["read", APPROVALS_DECIDE] if body.decide else ["read"],
+        surface=body.surface,
+    )
+    service.audit.emit(
+        action="apikey.created",
+        principal=principal,
+        target_type="platform_api_key",
+        target_id=info.id,
+        details={
+            "name": info.name,
+            "role": info.role.value,
+            "personal": True,
+            "surface": info.surface,
+            "scopes": info.scopes,
+            "expires_at": info.expires_at.isoformat() if info.expires_at else None,
+        },
     )
     return APIKeyCreated(**info.model_dump(), token=token)
 

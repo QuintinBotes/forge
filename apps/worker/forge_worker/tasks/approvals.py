@@ -6,7 +6,9 @@ Two DB-backed operations against the canonical F36 tables:
   past ``expires_at`` flip to ``expired`` (a terminal state; the subject's
   workflow routes to ``needs_human_input`` downstream). One immutable
   ``approval.expired`` audit row is written per swept gate; a re-run is
-  idempotent.
+  idempotent. The SLA ladder (:func:`run_sla_sweep`) also returns the ``/ws``
+  events for what it changed, which the Celery task publishes after the commit
+  (spec L §6a).
 * :func:`run_consume_grant` — the *consumption* side of J5, implementing the
   frozen ``PolicyOverrideGate.consume`` contract for the agent-runtime resume
   path: atomically check-and-consume a non-expired, unconsumed
@@ -24,17 +26,22 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import CursorResult, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from forge_api.realtime import approval_events
+from forge_api.realtime.approval_events import publish_sync, relay_url
+from forge_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from forge_approval.delegation import DelegationDirectory
 from forge_approval.escalation import EscalationOutcome, SlaPolicy, route_escalation
 from forge_approval.models import ApprovalRequest as ApprovalRequestDTO
 from forge_approval.models import GateType
+from forge_contracts import RealtimeEvent
 from forge_db.models import ApprovalRequest, ApprovalStatus, AuditLog, PolicyOverrideGrant
 from forge_db.session import create_session_factory
 from forge_worker.celery_app import celery_app
@@ -102,6 +109,8 @@ class SlaSweepResult:
     expired: int = 0
     escalated: int = 0
     routed: int = 0
+    #: ``/ws`` events for the gates changed, published only after the commit.
+    events: list[RealtimeEvent] = field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -142,6 +151,23 @@ def _assignee_of(request: ApprovalRequest) -> uuid.UUID | None:
         return None
 
 
+#: The approval repository's own row mapper (it never opens a session itself).
+_to_domain = SqlAlchemyApprovalRepository(sessionmaker())._to_domain
+
+
+def _collect(
+    result: SlaSweepResult,
+    request: ApprovalRequest,
+    build: Callable[..., RealtimeEvent],
+    **fields: Any,
+) -> None:
+    """Queue the ``/ws`` event for a changed gate; a failure here never blocks the sweep."""
+    try:
+        result.events.append(build(_to_domain(request), **fields))
+    except Exception:
+        logger.warning("no /ws event for approval %s", request.id, exc_info=True)
+
+
 def run_sla_sweep(
     session: Session,
     *,
@@ -180,15 +206,20 @@ def run_sla_sweep(
         if decision.outcome is EscalationOutcome.EXPIRE:
             if _expire_gate(session, request, now):
                 result.expired += 1
+                _collect(
+                    result, request, approval_events.decided, decided_by="system", surface="system"
+                )
             else:
                 logger.info("approval %s was decided during the SLA sweep; not expired", request.id)
         elif decision.outcome is EscalationOutcome.ESCALATE_TO_ADMIN:
             if not request.escalated:
                 _escalate_gate(session, request, now, decision.reason)
                 result.escalated += 1
+                _collect(result, request, approval_events.updated, reason="escalated")
         elif decision.outcome is EscalationOutcome.ROUTE_TO_DELEGATE and decision.route_to:
             _route_gate(session, request, now, decision.route_to, decision.reason)
             result.routed += 1
+            _collect(result, request, approval_events.updated, reason="routed_to_delegate")
     session.commit()
     return result
 
@@ -223,6 +254,7 @@ def _expire_gate(session: Session, request: ApprovalRequest, now: datetime) -> b
                 "gate": request.gate.value,
                 "expired_at": now.isoformat(),
                 "follow_up_state": "needs_human_input",
+                "surface": "system",
             },
         )
     )
@@ -239,7 +271,12 @@ def _escalate_gate(session: Session, request: ApprovalRequest, now: datetime, re
             actor_type="system",
             target_type="approval_request",
             target_id=request.id,
-            details={"gate": request.gate.value, "reason": reason, "at": now.isoformat()},
+            details={
+                "gate": request.gate.value,
+                "reason": reason,
+                "at": now.isoformat(),
+                "surface": "system",
+            },
         )
     )
 
@@ -259,7 +296,12 @@ def _route_gate(
             actor_type="system",
             target_type="approval_request",
             target_id=request.id,
-            details={"gate": request.gate.value, "delegate": str(delegate), "reason": reason},
+            details={
+                "gate": request.gate.value,
+                "delegate": str(delegate),
+                "reason": reason,
+                "surface": "system",
+            },
         )
     )
 
@@ -333,7 +375,12 @@ def expire_pending_approvals() -> int:
     """
     factory: sessionmaker[Session] = create_session_factory()
     with factory() as session:
-        return run_sla_sweep(session, escalate_ratio=_escalate_ratio()).total
+        result = run_sla_sweep(session, escalate_ratio=_escalate_ratio())
+    # run_sla_sweep has committed: a client never hears of a change that rolled back.
+    redis_url = relay_url()
+    for event in result.events:
+        publish_sync(redis_url, event)
+    return result.total
 
 
 @celery_app.task(name=CONSUME_OVERRIDE_GRANT_TASK)

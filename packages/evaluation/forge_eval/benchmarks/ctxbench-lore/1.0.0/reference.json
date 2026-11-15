@@ -1,0 +1,365 @@
+{
+  "suite": "ctxbench-lore",
+  "version": "1.0.0",
+  "source": "lore project, docs/building-lore/context-store-agent-questions.md (Apache-2.0), runs of 2026-10-27, section 'Every ask'",
+  "verdicts": {
+    "C": "correct",
+    "P": "partial",
+    "W": "wrong",
+    "A": "dont_know"
+  },
+  "arms": {
+    "none": {
+      "label": "no MCP",
+      "verdicts": {
+        "lore-code-01": "A/A/A",
+        "lore-code-02": "A/A/A",
+        "lore-code-03": "A/A/A",
+        "lore-code-04": "A/A/A",
+        "lore-dec-01": "A/A/A",
+        "lore-dec-02": "A/A/A",
+        "lore-dec-03": "A/A/A",
+        "lore-dec-04": "A/A/A",
+        "lore-dec-05": "A/A/A",
+        "lore-hist-01": "A/A/A",
+        "lore-hist-02": "A/A/A",
+        "lore-hist-03": "A/A/A",
+        "lore-hist-04": "A/A/A",
+        "lore-learn-01": "P/P/P",
+        "lore-learn-02": "A/A/A",
+        "lore-learn-03": "A/A/A",
+        "lore-none-01": "A/A/A",
+        "lore-none-02": "A/A/C",
+        "lore-req-01": "A/A/A",
+        "lore-req-02": "A/A/A",
+        "lore-req-03": "A/A/A",
+        "lore-req-04": "A/A/A",
+        "lore-req-05": "A/A/A",
+        "lore-temp-01": "A/A/A",
+        "lore-temp-02": "A/A/A",
+        "lore-temp-03": "A/A/A",
+        "lore-trk-01": "A/A/A",
+        "lore-trk-02": "A/A/A",
+        "lore-trk-03": "A/A/A",
+        "lore-trk-04": "A/A/A"
+      }
+    },
+    "lore": {
+      "label": "Lore",
+      "verdicts": {
+        "lore-code-01": "P/C/W",
+        "lore-code-02": "A/A/A",
+        "lore-code-03": "A/A/C",
+        "lore-code-04": "P/P/P",
+        "lore-dec-01": "C/C/P",
+        "lore-dec-02": "C/C/C",
+        "lore-dec-03": "C/C/C",
+        "lore-dec-04": "C/C/C",
+        "lore-dec-05": "C/C/C",
+        "lore-hist-01": "C/C/C",
+        "lore-hist-02": "C/C/C",
+        "lore-hist-03": "C/C/C",
+        "lore-hist-04": "A/C/A",
+        "lore-learn-01": "C/C/C",
+        "lore-learn-02": "C/C/C",
+        "lore-learn-03": "A/C/C",
+        "lore-none-01": "A/P/C",
+        "lore-none-02": "C/A/A",
+        "lore-req-01": "P/P/P",
+        "lore-req-02": "W/P/W",
+        "lore-req-03": "P/P/W",
+        "lore-req-04": "A/A/A",
+        "lore-req-05": "C/C/P",
+        "lore-temp-01": "C/W/P",
+        "lore-temp-02": "C/C/C",
+        "lore-temp-03": "W/W/A",
+        "lore-trk-01": "A/A/A",
+        "lore-trk-02": "A/A/A",
+        "lore-trk-03": "A/A/A",
+        "lore-trk-04": "A/A/A"
+      }
+    },
+    "utopia": {
+      "label": "Utopia (first run, 5-minute MCP timeout)",
+      "verdicts": {
+        "lore-code-01": "C/C/C",
+        "lore-code-02": "C/C/W",
+        "lore-code-03": "C/C/C",
+        "lore-code-04": "P/P/P",
+        "lore-dec-01": "C/C/C",
+        "lore-dec-02": "C/C/P",
+        "lore-dec-03": "C/W/P",
+        "lore-dec-04": "C/C/C",
+        "lore-dec-05": "C/C/C",
+        "lore-hist-01": "C/C/C",
+        "lore-hist-02": "C/C/C",
+        "lore-hist-03": "C/C/C",
+        "lore-hist-04": "C/C/C",
+        "lore-learn-01": "C/C/C",
+        "lore-learn-02": "C/C/C",
+        "lore-learn-03": "C/C/C",
+        "lore-none-01": "C/C/C",
+        "lore-none-02": "C/C/A",
+        "lore-req-01": "C/C/C",
+        "lore-req-02": "C/C/C",
+        "lore-req-03": "C/C/C",
+        "lore-req-04": "C/C/C",
+        "lore-req-05": "C/C/C",
+        "lore-temp-01": "W/W/W",
+        "lore-temp-02": "C/C/C",
+        "lore-temp-03": "C/C/C",
+        "lore-trk-01": "C/C/C",
+        "lore-trk-02": "C/C/C",
+        "lore-trk-03": "C/C/C",
+        "lore-trk-04": "C/C/C"
+      }
+    }
+  },
+  "question_scores": {
+    "utopia_evening": {
+      "label": "Utopia (after that evening's search fix)",
+      "scores": {
+        "lore-code-01": 1.0,
+        "lore-code-02": 0.5,
+        "lore-code-03": 1.0,
+        "lore-code-04": 0.5,
+        "lore-dec-01": 1.0,
+        "lore-dec-02": 1.0,
+        "lore-dec-03": 0.17,
+        "lore-dec-04": 1.0,
+        "lore-dec-05": 1.0,
+        "lore-hist-01": 1.0,
+        "lore-hist-02": 1.0,
+        "lore-hist-03": 1.0,
+        "lore-hist-04": 1.0,
+        "lore-learn-01": 1.0,
+        "lore-learn-02": 1.0,
+        "lore-learn-03": 1.0,
+        "lore-none-01": 0.67,
+        "lore-none-02": 1.0,
+        "lore-req-01": 1.0,
+        "lore-req-02": 1.0,
+        "lore-req-03": 1.0,
+        "lore-req-04": 1.0,
+        "lore-req-05": 1.0,
+        "lore-temp-01": 0.0,
+        "lore-temp-02": 1.0,
+        "lore-temp-03": 1.0,
+        "lore-trk-01": 1.0,
+        "lore-trk-02": 1.0,
+        "lore-trk-03": 1.0,
+        "lore-trk-04": 1.0
+      }
+    },
+    "utopia_night": {
+      "label": "Utopia (at the night's search speed)",
+      "scores": {
+        "lore-code-01": 1.0,
+        "lore-code-02": 0.83,
+        "lore-code-03": 1.0,
+        "lore-code-04": 0.5,
+        "lore-dec-01": 1.0,
+        "lore-dec-02": 0.83,
+        "lore-dec-03": 0.33,
+        "lore-dec-04": 1.0,
+        "lore-dec-05": 1.0,
+        "lore-hist-01": 1.0,
+        "lore-hist-02": 1.0,
+        "lore-hist-03": 1.0,
+        "lore-hist-04": 1.0,
+        "lore-learn-01": 1.0,
+        "lore-learn-02": 1.0,
+        "lore-learn-03": 1.0,
+        "lore-none-01": 1.0,
+        "lore-none-02": 1.0,
+        "lore-req-01": 0.5,
+        "lore-req-02": 1.0,
+        "lore-req-03": 1.0,
+        "lore-req-04": 1.0,
+        "lore-req-05": 1.0,
+        "lore-temp-01": 0.0,
+        "lore-temp-02": 1.0,
+        "lore-temp-03": 1.0,
+        "lore-trk-01": 1.0,
+        "lore-trk-02": 1.0,
+        "lore-trk-03": 1.0,
+        "lore-trk-04": 1.0
+      }
+    }
+  },
+  "published": {
+    "note": "Aggregates as published, over all 60 questions (these 30 plus the private half); not comparable to a 30-question run.",
+    "questions": 60,
+    "asks_per_question": 3,
+    "headline": {
+      "none": {
+        "score": 0.07,
+        "range": [
+          0.07,
+          0.07
+        ],
+        "hallucinated": 0.0,
+        "tokens_p50": 2731,
+        "tokens_p95": 2804,
+        "cost_per_question_usd": 0.011,
+        "time_p50_s": 2.6,
+        "time_p95_s": 8.1,
+        "mcp_calls": 0.0
+      },
+      "lore": {
+        "score": 0.57,
+        "range": [
+          0.55,
+          0.6
+        ],
+        "hallucinated": 0.1,
+        "tokens_p50": 49421,
+        "tokens_p95": 187507,
+        "cost_per_question_usd": 0.08,
+        "time_p50_s": 16.3,
+        "time_p95_s": 42.8,
+        "mcp_calls": 3.4
+      },
+      "utopia": {
+        "score": 0.86,
+        "range": [
+          0.84,
+          0.88
+        ],
+        "hallucinated": 0.07,
+        "tokens_p50": 17794,
+        "tokens_p95": 59782,
+        "cost_per_question_usd": 0.036,
+        "time_p50_s": 24.8,
+        "time_p95_s": 70.9,
+        "mcp_calls": 1.8
+      },
+      "utopia_evening": {
+        "score": 0.85,
+        "range": [
+          0.82,
+          0.87
+        ],
+        "hallucinated": 0.09,
+        "tokens_p50": 17813,
+        "tokens_p95": 58693,
+        "cost_per_question_usd": 0.034,
+        "time_p50_s": 14.4,
+        "time_p95_s": 51.3,
+        "mcp_calls": 1.7
+      },
+      "utopia_night": {
+        "score": 0.84,
+        "range": [
+          0.82,
+          0.87
+        ],
+        "hallucinated": 0.08,
+        "tokens_p50": 17800,
+        "tokens_p95": 60602,
+        "cost_per_question_usd": 0.023,
+        "time_p50_s": 8.8,
+        "time_p95_s": 30.6,
+        "mcp_calls": 1.7
+      }
+    },
+    "by_repository": {
+      "utopia": {
+        "lore": 0.92,
+        "private_half": 0.81
+      },
+      "lore": {
+        "lore": 0.57,
+        "private_half": 0.58
+      }
+    },
+    "by_category": {
+      "decision": {
+        "n": 10,
+        "none": 0.0,
+        "lore": 0.93,
+        "utopia": 0.9
+      },
+      "requirement": {
+        "n": 10,
+        "none": 0.0,
+        "lore": 0.52,
+        "utopia": 0.87
+      },
+      "code-location": {
+        "n": 8,
+        "none": 0.0,
+        "lore": 0.48,
+        "utopia": 0.69
+      },
+      "history": {
+        "n": 8,
+        "none": 0.0,
+        "lore": 0.54,
+        "utopia": 0.96
+      },
+      "tracker": {
+        "n": 8,
+        "none": 0.0,
+        "lore": 0.04,
+        "utopia": 1.0
+      },
+      "learned": {
+        "n": 6,
+        "none": 0.08,
+        "lore": 0.78,
+        "utopia": 0.89
+      },
+      "temporal": {
+        "n": 6,
+        "none": 0.0,
+        "lore": 0.53,
+        "utopia": 0.58
+      },
+      "unanswerable": {
+        "n": 4,
+        "none": 1.0,
+        "lore": 0.92,
+        "utopia": 1.0
+      }
+    },
+    "consistency": {
+      "none": {
+        "same_verdict_share": 0.98,
+        "cv_tokens_median": 0.0,
+        "cv_time_median": 0.26
+      },
+      "lore": {
+        "same_verdict_share": 0.62,
+        "cv_tokens_median": 0.25,
+        "cv_time_median": 0.3
+      },
+      "utopia": {
+        "same_verdict_share": 0.85,
+        "cv_tokens_median": 0.0,
+        "cv_time_median": 0.26
+      }
+    },
+    "head_to_head": {
+      "lore_vs_none": {
+        "better": 44,
+        "worse": 1,
+        "level": 15,
+        "mcnemar_p": "< 0.001"
+      },
+      "utopia_vs_none": {
+        "better": 54,
+        "worse": 0,
+        "level": 6,
+        "mcnemar_p": "< 0.001"
+      },
+      "lore_vs_utopia": {
+        "better": 7,
+        "worse": 32,
+        "level": 21,
+        "mcnemar_p": "< 0.001"
+      }
+    },
+    "judge_agreement": 0.97
+  }
+}

@@ -34,6 +34,7 @@ from forge_knowledge import (
     SyncDirection,
 )
 from forge_knowledge.mcp_indexer import McpResourceFetcher, SyncReport
+from forge_knowledge.sync import is_stale
 from forge_worker.adapters.gateway_fetcher import GatewayMcpResourceFetcher
 from forge_worker.celery_app import celery_app
 from forge_worker.indexer import build_knowledge_service
@@ -165,16 +166,6 @@ def mcp_incremental_sync(source_id: str, **kwargs: Any) -> SyncReport:
 # --------------------------------------------------------------------------- #
 
 
-def _is_stale(source: KnowledgeSource, now: datetime) -> bool:
-    if source.last_synced_at is None:
-        return True
-    last = source.last_synced_at
-    if last.tzinfo is None:
-        last = last.replace(tzinfo=UTC)
-    sla_minutes = source.freshness_sla_minutes or 30
-    return (now - last).total_seconds() > sla_minutes * 60
-
-
 def _enqueue_incremental(source_id: str) -> None:
     mcp_incremental_sync_task.delay(source_id)
 
@@ -207,7 +198,7 @@ def refresh_stale_mcp_sources(
         try:
             if (source.config or {}).get("index_status") != "ready":
                 continue
-            if _is_stale(source, moment):
+            if is_stale(source, moment):
                 do_enqueue(str(source.id))
                 enqueued.append(str(source.id))
         except Exception:  # isolate per-source failures; never abort the batch

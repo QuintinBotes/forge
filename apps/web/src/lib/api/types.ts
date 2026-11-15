@@ -45,6 +45,8 @@ export interface KnowledgeScope {
   source_ids?: string[];
   kinds?: string[];
   path_globs?: string[];
+  /** Knowledge source kinds to search (`repo`, `mcp`, `document`, `url`). */
+  source_types?: string[];
 }
 
 export interface EpicDTO {
@@ -143,6 +145,16 @@ export interface RetrievedChunk {
   score: number;
   start_line?: number | null;
   end_line?: number | null;
+  chunk_type?: string;
+  rerank_score?: number | null;
+  source_uri?: string | null;
+  /** The store sets `source_kind` (`repo`, `mcp`, `document`, `url`). */
+  metadata?: Record<string, unknown>;
+}
+
+/** A chunk with its ADR-0014 label `"{source kind}:{source uri}:{path}"`. */
+export interface KnowledgePassage extends RetrievedChunk {
+  source: string;
 }
 
 export interface KnowledgeSearchRequest {
@@ -153,12 +165,41 @@ export interface KnowledgeSearchRequest {
 
 /** `POST /knowledge/search` (spec J §2.5): the hits plus which legs ran. */
 export interface KnowledgeSearchResponse {
-  results: RetrievedChunk[];
+  results: KnowledgePassage[];
   legs: string[];
   /** "configured" | "unconfigured" (ADR-0018: never a faked vector leg). */
   vector_leg: string;
   /** "off", the provider name, or "fallback" when this call fell back to RRF. */
   rerank: string;
+}
+
+/** `GET /knowledge/document`: whole chunks in order until `max_tokens`. */
+export interface KnowledgeDocumentResponse {
+  source_id: string;
+  source: string;
+  path: string;
+  passages: KnowledgePassage[];
+  tokens: number;
+  total_chunks: number;
+  truncated: boolean;
+}
+
+/** One `GET /knowledge/sources` row (no config beyond `tracker`). */
+export interface KnowledgeSourceSummary {
+  id: string;
+  name: string;
+  kind: string;
+  uri: string;
+  tracker: string | null;
+  /** `POST /knowledge/sync` can sync it from its id alone (a GitHub tracker). */
+  syncable: boolean;
+  sync_mode: string;
+  last_synced_at: string | null;
+  freshness_sla_minutes: number | null;
+  stale: boolean;
+  chunk_count: number;
+  embedded_chunk_count: number;
+  newest_chunk_at: string | null;
 }
 
 // --- Service / stub envelopes (apps/api) ----------------------------------- //

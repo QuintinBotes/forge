@@ -38,6 +38,8 @@ from forge_contracts import RealtimeEventType
 # carries (``tests/conftest.py``), so a socket registered here shares the
 # caller's room.
 WORKSPACE = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
+#: The same fixture principal's user id: the decider every decision names.
+TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000b2")
 
 
 class _RecordingSocket:
@@ -216,7 +218,12 @@ def test_approval_create_emits_requested_event(
 
     assert [e["type"] for e in socket.sent] == [RealtimeEventType.APPROVAL_REQUESTED.value]
     assert socket.sent[0]["approval_id"] == created["id"]
-    assert socket.sent[0]["payload"] == {"gate_type": "pr"}
+    # Spec L §6a: the gate's identifiers, title and risk; never its gate_payload.
+    payload = socket.sent[0]["payload"]
+    assert (payload["gate"], payload["title"], payload["risk_level"]) == ("pr", "pr gate", "info")
+    assert payload["requested_actor"] == created["requested_actor"]
+    assert "gate_payload" not in payload
+    assert (socket.sent[0]["observed_by"], socket.sent[0]["enforceable"]) == ("forge", True)
     assert "workspace_id" not in socket.sent[0]
 
 
@@ -238,7 +245,9 @@ def test_approval_decision_emits_decided_event(
 
     assert [e["type"] for e in socket.sent] == [RealtimeEventType.APPROVAL_DECIDED.value]
     assert socket.sent[0]["approval_id"] == created["id"]
-    assert socket.sent[0]["payload"] == {"status": "approved"}
+    payload = socket.sent[0]["payload"]
+    assert (payload["status"], payload["gate"]) == ("approved", "pr")
+    assert payload["decided_by"] == f"user:{TEST_USER_ID}"
 
 
 def test_approval_broadcast_is_workspace_isolated(

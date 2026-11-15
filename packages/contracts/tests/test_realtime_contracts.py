@@ -40,6 +40,7 @@ EXPECTED_CLIENT_STRINGS = {
     "run.failed",
     "approval.requested",
     "approval.decided",
+    "approval.updated",
 }
 
 
@@ -127,3 +128,17 @@ def test_broadcaster_is_a_runtime_checkable_protocol() -> None:
             return _gen()
 
     assert isinstance(InMemoryBroadcaster(), Broadcaster)
+
+
+def test_every_event_carries_adr_0015_provenance() -> None:
+    """Defaults, so every producer's events carry them (spec L §6a)."""
+    from datetime import datetime
+
+    wire = RealtimeEvent(type=RealtimeEventType.TASK_UPDATED, workspace_id=uuid.uuid4()).model_dump(
+        mode="json"
+    )
+
+    assert (wire["observed_by"], wire["enforceable"]) == ("forge", False)
+    assert datetime.fromisoformat(wire["recorded_at"]).tzinfo is not None
+    with pytest.raises(ValidationError):
+        RealtimeEvent(type="task.updated", workspace_id=uuid.uuid4(), observed_by="tervin")

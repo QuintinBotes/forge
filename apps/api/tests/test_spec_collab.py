@@ -21,6 +21,7 @@ Hermetic: an in-memory SQLite factory backs ``SpecVersion``; a tmp-rooted
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -49,6 +50,7 @@ from forge_api.realtime.spec_room import (
     get_spec_room_registry,
     message_mutates,
 )
+from forge_api.routers.realtime import get_api_key_socket_lifetime
 from forge_contracts import Requirement, UserRole
 from forge_db.base import Base
 from forge_db.models import SpecVersion, Workspace
@@ -372,3 +374,25 @@ def test_writer_can_edit_over_the_socket(
             ws.send_bytes(create_update_message(update))
         # The socket stays open (no 1008): a follow-up read blocks, so just close.
         ws.close()
+
+
+def test_a_header_key_spec_socket_closes_after_its_lifetime(
+    ws_client: TestClient,
+    auth_service: AuthService,
+    room_registry: SpecRoomRegistry,
+    seeded_spec_id: uuid.UUID,
+) -> None:
+    """Spec L §6a: ``/ws/spec`` applies the same token-socket lifetime as ``/ws``."""
+    ws_client.app.dependency_overrides[get_api_key_socket_lifetime] = lambda: 0.2  # type: ignore[attr-defined]
+    token = _mint(auth_service, UserRole.MEMBER)
+    with ws_client.websocket_connect(
+        f"/ws/spec/{seeded_spec_id}", headers={"X-API-Key": token}
+    ) as ws:
+        assert ws.receive_bytes()[0] == YMessageType.SYNC
+        deadline = time.monotonic() + 5
+        while room_registry._rooms:  # released once the server closes the socket
+            assert time.monotonic() < deadline, "the server never closed the socket"
+            time.sleep(0.01)
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_bytes()
+    assert exc.value.code == 1000

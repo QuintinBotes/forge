@@ -14,10 +14,13 @@ table:
   imports, constants, ``__main__`` guard) are grouped into contiguous
   ``<module>`` chunks. Malformed input degrades to a single whole-file chunk —
   chunking never raises on bad input.
-* :func:`chunk_markdown` — semantic paragraph splitting. Splits on ATX headings
-  and blank-line-separated paragraphs, keeps fenced code blocks intact, carries
-  a heading breadcrumb for source attribution, and splits over-long paragraphs
-  by ``max_chars``. It doubles as the generic text chunker for non-Python files.
+* :func:`chunk_markdown` — section chunking (spec J §2.4.1, D-a). A heading and
+  its body up to the next heading of the same or a higher level is one chunk
+  when it fits ``max_chars``; otherwise it is packed at paragraph boundaries,
+  keeping lists and fenced code blocks whole. Every chunk starts with a
+  breadcrumb line: the path and headings joined by `` \u203a `` (single
+  right angle quote), then ``(status: …)``. It doubles as the generic text
+  chunker for non-Python files.
 
 Chunk-type weights come from the frozen ``CHUNK_TYPE_WEIGHTS`` table in
 ``forge_contracts.constants`` (single source of truth): README 1.3,
@@ -29,6 +32,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import re
+from dataclasses import dataclass, field
 
 from forge_contracts.constants import CHUNK_TYPE_WEIGHTS
 from forge_contracts.dtos import Chunk
@@ -41,11 +45,13 @@ from forge_knowledge.treesitter_chunking import (
 )
 
 __all__ = [
+    "CHUNKER_VERSION",
     "DEFAULT_MAX_CHARS",
     "TREE_SITTER_LANGUAGES",
     "chunk_code",
     "chunk_file",
     "chunk_markdown",
+    "chunk_paragraphs",
     "classify_path",
     "treesitter_available",
     "weight_for",
@@ -61,6 +67,22 @@ DEFAULT_MAX_CHARS: int = 1200
 # from group(2) in code below, which is linear.
 _HEADING_RE = re.compile(r"^[ ]{0,3}(#{1,6})[ \t]+(\S.*)$")
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+# A top-level front-matter key (no indentation), and a body line that starts
+# exactly with `Status:` or `**Status:**` (never a list item or a quote).
+_FRONT_STATUS_RE = re.compile(r"^status[ \t]*:[ \t]*(\S.*)$")
+_STATUS_LINE_RE = re.compile(r"^(?:Status:|\*\*Status:\*\*)[ \t]*(\S.*)$")
+_DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+
+#: Joins the path and headings in a chunk's breadcrumb line (U+203A, spec J §2.4.1).
+_CRUMB_SEP = " \u203a "
+
+#: Longest document status carried in every chunk's breadcrumb line.
+_MAX_STATUS_CHARS = 120
+
+#: Bumped whenever chunk output changes, so syncs that skip unchanged
+#: resources (the MCP ledger) re-chunk each of them once.
+CHUNKER_VERSION = 2
 
 # File extensions treated as source code for path classification.
 _CODE_EXTENSIONS: frozenset[str] = frozenset(
@@ -354,17 +376,19 @@ def _split_long_block(
     return pieces
 
 
-def chunk_markdown(
+def chunk_paragraphs(
     path: str,
     src: str,
     *,
     max_chars: int = DEFAULT_MAX_CHARS,
 ) -> list[Chunk]:
-    """Chunk markdown/text into heading and paragraph chunks.
+    """Chunk markdown/text into heading and paragraph chunks (no breadcrumb).
 
-    Each chunk's ``chunk_type`` (and weight) is derived from ``path`` via
-    :func:`classify_path`. Paragraph chunks carry the active heading breadcrumb
-    in ``metadata['heading']`` / ``metadata['heading_path']`` for retrieval
+    The pre-section chunker, kept for callers that need each chunk to be a
+    verbatim slice of ``src`` (world-model evidence offsets). Each chunk's
+    ``chunk_type`` (and weight) is derived from ``path`` via :func:`classify_path`.
+    Paragraph chunks carry the active heading breadcrumb in
+    ``metadata['heading']`` / ``metadata['heading_path']`` for retrieval
     source attribution. Over-long paragraphs are split by ``max_chars``.
     """
     if not src.strip():
@@ -433,6 +457,260 @@ def chunk_markdown(
             )
         )
 
+    return chunks
+
+
+@dataclass
+class _Section:
+    """A heading (``level`` 0: the preamble) and its own units, then subsections."""
+
+    level: int
+    title: str | None
+    units: list[tuple[int, int]] = field(default_factory=list)
+    children: list[_Section] = field(default_factory=list)
+
+    def span(self) -> tuple[int, int] | None:
+        """Inclusive line span of the section with every subsection."""
+        spans = [s for s in (*self.units, *(c.span() for c in self.children)) if s is not None]
+        return (spans[0][0], spans[-1][1]) if spans else None
+
+
+def _subtree_empty(section: _Section) -> bool:
+    """Only a heading here and in every subsection: no body to chunk."""
+    return len(section.units) == 1 and all(_subtree_empty(c) for c in section.children)
+
+
+def _units(lines: list[str]) -> list[tuple[int, int, re.Match[str] | None]]:
+    """Blocks, with a loose list (blank lines between items) merged into one unit."""
+    units: list[tuple[int, int, re.Match[str] | None]] = []
+    for start, end in _split_markdown_blocks(lines):
+        heading = _HEADING_RE.match(lines[start]) if start == end else None
+        if heading is None and units and units[-1][2] is None:
+            prev_start, _, _ = units[-1]
+            continues = _LIST_ITEM_RE.match(lines[start]) or lines[start][:1] in (" ", "\t")
+            if _LIST_ITEM_RE.match(lines[prev_start]) and continues:
+                units[-1] = (prev_start, end, None)
+                continue
+        units.append((start, end, heading))
+    return units
+
+
+def _clean_status(value: str) -> str | None:
+    value = " ".join(value.strip("*_'\" \t").split())
+    return value[:_MAX_STATUS_CHARS] or None
+
+
+def _document_status(lines: list[str]) -> str | None:
+    """The document's status, from the first of these that has one.
+
+    A top-level ``status:`` key in a leading ``---`` front-matter block; a
+    line starting exactly ``Status:`` or ``**Status:**`` before the first
+    H2 (outside fences); the first paragraph under a ``## Status`` heading.
+    """
+    body = 0
+    if lines and lines[0].strip() == "---":
+        end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+        if end is not None:
+            for line in lines[1:end]:
+                if match := _FRONT_STATUS_RE.match(line):
+                    return _clean_status(match.group(1))
+            body = end + 1
+    rest = lines[body:]
+    blocks = _split_markdown_blocks(rest)
+    before_h2 = True
+    for i, (start, end) in enumerate(blocks):
+        heading = _HEADING_RE.match(rest[start]) if start == end else None
+        if heading is not None and len(heading.group(1)) == 2:
+            before_h2 = False
+            title = heading.group(2).strip().rstrip("#").strip()
+            if title.lower() == "status" and i + 1 < len(blocks):
+                n_start, n_end = blocks[i + 1]
+                first = rest[n_start]
+                if not _not_prose(first):
+                    return _clean_status(" ".join(rest[n_start : n_end + 1]))
+        elif before_h2 and not _FENCE_RE.match(rest[start]) and not _is_comment(rest[start]):
+            for line in rest[start : end + 1]:
+                if match := _STATUS_LINE_RE.match(line):
+                    return _clean_status(match.group(1))
+    return None
+
+
+def _is_comment(line: str) -> bool:
+    return line.lstrip().startswith("<!--")
+
+
+def _not_prose(line: str) -> bool:
+    """A heading, fence, list item, quote or HTML comment: never a status paragraph."""
+    return bool(
+        _HEADING_RE.match(line)
+        or _FENCE_RE.match(line)
+        or _LIST_ITEM_RE.match(line)
+        or line.lstrip().startswith(">")
+        or _is_comment(line)
+    )
+
+
+def _pack(
+    lines: list[str],
+    units: list[tuple[int, int]],
+    budget: int,
+    limit: int,
+    *,
+    heading_first: bool = False,
+) -> list[tuple[str, int, int]]:
+    """Group whole units into pieces of at most ``budget`` chars (``(text, start, end)``).
+
+    A unit (a list, fence or paragraph) over the budget stays one piece up to
+    ``limit`` chars; only a unit longer than that is cut, on line boundaries.
+    With ``heading_first``, ``units[0]`` is a heading that joins the unit
+    after it rather than standing alone.
+    """
+    pieces: list[tuple[str, int, int]] = []
+    current: tuple[int, int] | None = None
+
+    def text(start: int, end: int) -> str:
+        return "\n".join(lines[start : end + 1])
+
+    for i, (unit_start, end) in enumerate(units):
+        start = unit_start
+        if current is not None and len(text(current[0], end)) <= budget:
+            current = (current[0], end)
+            continue
+        if current is not None and heading_first and i == 1:
+            start = current[0]  # the lone heading travels with this unit
+        elif current is not None:
+            pieces.append((text(*current), *current))
+        current = None
+        if len(text(start, end)) <= budget:
+            current = (start, end)
+        elif len(text(unit_start, end)) <= limit:
+            pieces.append((text(start, end), start, end))
+        else:
+            cut = _split_long_block(lines[unit_start : end + 1], unit_start, budget)
+            first_end = cut[0][2]
+            cut[0] = (text(start, first_end), start, first_end)
+            pieces.extend(cut)
+    if current is not None:
+        pieces.append((text(*current), *current))
+    return pieces
+
+
+def chunk_markdown(
+    path: str,
+    src: str,
+    *,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> list[Chunk]:
+    """Chunk markdown/text by section (spec J §2.4.1, D-a).
+
+    A section is a heading plus its body up to the next heading of the same
+    or a higher level; it is one chunk when it fits ``max_chars``, otherwise
+    its own body is packed at paragraph boundaries and each subsection is
+    chunked the same way. A list (a requirement block) is never split unless
+    it alone exceeds ``max_chars``. Every chunk's content starts with the
+    breadcrumb line ``"{path} \u203a {heading path} (status: …, amended …)"`` —
+    status from front matter or the first ``Status:`` line, plus the newest
+    amendment-heading date; the parenthesis is omitted when there is
+    neither. ``metadata['heading']`` / ``metadata['heading_path']`` carry the
+    breadcrumb too; ``start_line``/``end_line`` span the body after it.
+    """
+    if not src.strip():
+        return []
+
+    lines = src.splitlines()
+    chunk_type = classify_path(path)
+    weight = weight_for(chunk_type)
+
+    root = _Section(level=0, title=None)
+    stack = [root]
+    headings: list[str] = []
+    for start, end, heading in _units(lines):
+        if heading is None:
+            stack[-1].units.append((start, end))
+            continue
+        level = len(heading.group(1))
+        # Strip the optional closing ATX run of `#`s and surrounding spaces.
+        title = heading.group(2).strip().rstrip("#").strip()
+        headings.append(title)
+        while stack[-1].level >= level:
+            stack.pop()
+        section = _Section(level=level, title=title, units=[(start, end)])
+        stack[-1].children.append(section)
+        stack.append(section)
+
+    notes: list[str] = []
+    status = _document_status(lines)
+    if status:
+        notes.append(f"status: {status}")
+    amended = [d for h in headings if "amend" in h.lower() for d in _DATE_RE.findall(h)]
+    if amended:
+        notes.append(f"amended {max(amended)}")
+    suffix = f" ({', '.join(notes)})" if notes else ""
+
+    chunks: list[Chunk] = []
+
+    def emit(
+        section: _Section, crumbs: list[str], carry: int | None = None, *, last: bool = True
+    ) -> int | None:
+        """Chunk ``section``, starting at ``carry`` (an earlier lone heading) if given.
+
+        Returns the start of a lone heading still waiting for a body (an empty
+        section with more of the document after it) for the next section.
+        """
+        header = _CRUMB_SEP.join([path, *crumbs]) + suffix
+        budget = max(max_chars - len(header) - 1, max_chars // 2) if max_chars else len(src) + 1
+        metadata: dict[str, object] = {}
+        if crumbs:
+            metadata = {
+                "heading": crumbs[-1],
+                "heading_path": " > ".join(crumbs),
+                "level": section.level,
+            }
+        units = list(section.units)
+        span = section.span()
+        if carry is not None and units and span:
+            units[0] = (carry, units[0][1])
+            span = (carry, span[1])
+        whole = "\n".join(lines[span[0] : span[1] + 1]) if span else ""
+        children = section.children
+        pieces: list[tuple[str, int, int]] = []
+        if section.level > 0 and _subtree_empty(section) and not last:
+            # Headings with no body anywhere below: the first opens the next section.
+            return units[0][0]
+        # The preamble (level 0) never absorbs the sections after it.
+        if section.level > 0 and span and len(whole) <= budget:
+            pieces = [(whole, span[0], span[1])]
+            children = []
+            carry = None
+        elif section.level > 0 and len(units) == 1 and children:
+            carry = units[0][0]  # a heading with only subsections opens the first one
+        else:
+            carry = None
+            pieces = _pack(
+                lines, units, budget, max_chars or budget, heading_first=section.level > 0
+            )
+        for body, start, end in pieces:
+            content = f"{header}\n{body}"
+            chunks.append(
+                Chunk(
+                    content=content,
+                    chunk_type=chunk_type,
+                    path=path,
+                    start_line=start + 1,
+                    end_line=end + 1,
+                    language="markdown",
+                    symbol=section.title,
+                    weight=weight,
+                    content_hash=_hash(content),
+                    metadata=dict(metadata),
+                )
+            )
+        for i, child in enumerate(children):
+            child_last = last and i == len(children) - 1
+            carry = emit(child, [*crumbs, child.title or ""], carry, last=child_last)
+        return carry
+
+    emit(root, [])
     return chunks
 
 

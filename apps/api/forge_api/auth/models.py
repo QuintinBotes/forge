@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +24,19 @@ class APIKeyCreated(APIKeyInfo):
     """Mint response — carries the plaintext ``token`` exactly once."""
 
     token: str
+
+
+class PersonalTokenCreateRequest(BaseModel):
+    """Body for minting your own personal access token (spec L §6a).
+
+    The token is bound to the caller with the caller's role, narrowed to reads,
+    plus ``approvals:decide`` when ``decide`` is set.
+    """
+
+    name: str = Field(min_length=1, max_length=255)
+    surface: Literal["tervin", "cli"]
+    decide: bool = False
+    expires_in_days: int = Field(default=90, ge=1, le=365)
 
 
 class SecretCreateRequest(BaseModel):
@@ -115,6 +129,7 @@ __all__ = [
     "OAuthResult",
     "OAuthTokens",
     "OAuthUser",
+    "PersonalTokenCreateRequest",
     "SecretCreateRequest",
     "SecretRotateRequest",
 ]

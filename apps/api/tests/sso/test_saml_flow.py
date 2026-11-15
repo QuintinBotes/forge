@@ -92,6 +92,8 @@ class TestSpInitiatedLogin:
         cookie = response.headers["set-cookie"].split("forge_session=")[1].split(";")[0]
         principal = get_auth_service().authenticate(cookie)
         assert principal.workspace_id == WS_ID
+        # Spec L §6a: the login's key is the person, and says it came from the web.
+        assert (principal.surface, principal.decides, principal.narrowed) == ("web", True, False)
 
         # Round 2: same NameID links (no duplicate user).
         request_id = _request_id(_sp_login(client))

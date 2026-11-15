@@ -29,13 +29,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from forge_api.auth.rbac import Permission
-from forge_api.deps import Principal, get_current_principal
+from forge_api.deps import DbSession, Principal, get_current_principal
+from forge_api.realtime import approval_events
 from forge_api.realtime.broadcaster import Broadcaster, emit_event, get_broadcaster
 from forge_api.routers._rbac import require_permission
 from forge_api.schemas.approvals import ApprovalCount, CreateApprovalRequest
 from forge_api.services.approval_service import (
     get_approval_service,
-    to_approval_principal,
+    to_decider,
 )
 from forge_api.services.workflow_gate_hook import APPROVED_EVENT_BY_GATE, WORKFLOW_RUN_SUBJECT
 from forge_approval import (
@@ -46,6 +47,7 @@ from forge_approval import (
     DuplicateDecisionError,
 )
 from forge_approval.models import (
+    ApprovalAction,
     ApprovalContext,
     ApprovalDecisionRecord,
     ApprovalDecisionRequest,
@@ -55,7 +57,9 @@ from forge_approval.models import (
     GateStatus,
     GateType,
 )
-from forge_contracts import RealtimeEvent, RealtimeEventType
+from forge_approval.models import (
+    Principal as ApprovalPrincipal,
+)
 
 router = APIRouter(
     prefix="/approvals",
@@ -72,8 +76,16 @@ WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 
 ServiceDep = Annotated[ApprovalService, Depends(get_approval_service)]
 
-# RT-2: fan approval decisions out to the workspace's live ``/ws`` sockets.
+# RT-2 / spec L seam 4: fan approval events out to the workspace's live ``/ws`` sockets.
 BroadcasterDep = Annotated[Broadcaster, Depends(get_broadcaster)]
+
+
+def get_decider(principal: ReaderDep, session: DbSession) -> ApprovalPrincipal:
+    """The caller as an approver, an API key bounded by its owner's current role."""
+    return to_decider(principal, session)
+
+
+DeciderDep = Annotated[ApprovalPrincipal, Depends(get_decider)]
 
 
 def _not_found(approval_id: uuid.UUID) -> HTTPException:
@@ -118,15 +130,7 @@ async def create_approval(
         gate_payload=body.gate_payload,
         expires_at=body.expires_at,
     )
-    await emit_event(
-        broadcaster,
-        RealtimeEvent(
-            type=RealtimeEventType.APPROVAL_REQUESTED,
-            workspace_id=principal.workspace_id,
-            approval_id=request.id,
-            payload={"gate_type": body.gate_type.value},
-        ),
-    )
+    await emit_event(broadcaster, approval_events.requested(request))
     return request
 
 
@@ -134,15 +138,17 @@ async def create_approval(
 async def list_approvals(
     service: ServiceDep,
     principal: ReaderDep,
+    actor: DeciderDep,
     status_filter: Annotated[GateStatus | None, Query(alias="status")] = None,
     gate_type: Annotated[GateType | None, Query()] = None,
     project_id: Annotated[uuid.UUID | None, Query()] = None,
     mine: Annotated[bool, Query()] = False,
 ) -> list[ApprovalSummary]:
-    """The approval inbox: workspace-scoped, critical risk first."""
+    """The approval inbox: workspace-scoped, critical risk first. ``mine`` uses the
+    same live approver as a decision, so a deciding token sees what it can resolve."""
     return await service.list(
         workspace_id=principal.workspace_id,
-        actor=to_approval_principal(principal),
+        actor=actor,
         status=status_filter,
         gate_type=gate_type,
         project_id=project_id,
@@ -154,13 +160,14 @@ async def list_approvals(
 async def count_approvals(
     service: ServiceDep,
     principal: ReaderDep,
+    actor: DeciderDep,
     status_filter: Annotated[GateStatus, Query(alias="status")] = GateStatus.PENDING,
     mine: Annotated[bool, Query()] = False,
 ) -> ApprovalCount:
     """Pending-count badge; matches the inbox length by construction."""
     count = await service.count(
         workspace_id=principal.workspace_id,
-        actor=to_approval_principal(principal),
+        actor=actor,
         status=status_filter,
         mine=mine,
     )
@@ -204,6 +211,7 @@ async def list_approval_decisions(
 async def decide_approval(
     service: ServiceDep,
     principal: ReaderDep,
+    actor: DeciderDep,
     broadcaster: BroadcasterDep,
     approval_id: uuid.UUID,
     body: ApprovalDecisionRequest,
@@ -212,14 +220,12 @@ async def decide_approval(
 
     The decider identity is the authenticated principal — never the request
     body — and authorization is the domain ``ApprovalAuthorizer`` (the same
-    one every other surface calls), so accountability cannot be forged.
+    one every other surface calls), so accountability cannot be forged. The
+    surface recorded with the decision comes from the credential, never a header.
     """
     try:
         resolution = await service.resolve(
-            approval_id,
-            body,
-            to_approval_principal(principal),
-            workspace_id=principal.workspace_id,
+            approval_id, body, actor, workspace_id=principal.workspace_id
         )
     except ApprovalNotFoundError:
         raise _not_found(approval_id) from None
@@ -236,15 +242,15 @@ async def decide_approval(
             detail="this approver has already voted on this gate",
         ) from None
 
-    await emit_event(
-        broadcaster,
-        RealtimeEvent(
-            type=RealtimeEventType.APPROVAL_DECIDED,
-            workspace_id=principal.workspace_id,
-            approval_id=resolution.approval_id,
-            payload={"status": resolution.status.value},
-        ),
-    )
+    request = await service.get(approval_id, workspace_id=principal.workspace_id)
+    if resolution.status is GateStatus.PENDING:  # a partial approval or an escalation
+        escalated = body.decision is ApprovalAction.ESCALATE
+        event = approval_events.updated(
+            request, reason="escalated" if escalated else "partially_approved"
+        )
+    else:
+        event = approval_events.decided(request, decided_by=actor.actor_ref, surface=actor.surface)
+    await emit_event(broadcaster, event)
     return resolution
 
 

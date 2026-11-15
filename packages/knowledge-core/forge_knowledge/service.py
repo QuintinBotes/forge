@@ -31,7 +31,7 @@ reported as :attr:`rerank_status` ``"off"`` (weighted-RRF order).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable, Mapping
 
 from forge_contracts.dtos import Chunk, IndexResult, KnowledgeScope, RetrievedChunk
 from forge_contracts.protocols import EmbeddingClient, RerankerClient
@@ -151,9 +151,11 @@ class KnowledgeService:
         """Rerank state for search responses: ``"off"`` or the provider name."""
         return self._retriever.rerank_status
 
-    def index(self, source_id: str, chunks: list[Chunk]) -> IndexResult:
+    def index(
+        self, source_id: str, chunks: list[Chunk], *, defer_embedding: bool = False
+    ) -> IndexResult:
         """Embed and persist ``chunks`` for ``source_id`` (idempotent by hash)."""
-        return self._require_store().index(source_id, chunks)
+        return self._require_store().index(source_id, chunks, defer_embedding=defer_embedding)
 
     def embed_missing(self, source_id: str) -> tuple[int, list[str]]:
         """Embed rows indexed before an embedder was configured (see the store)."""
@@ -168,6 +170,15 @@ class KnowledgeService:
     def delete_source_paths(self, source_id: str, paths: Iterable[str]) -> int:
         """Delete every indexed chunk of ``source_id`` whose path is in ``paths``."""
         return self._require_store().delete_source_paths(source_id, paths)
+
+    def delete_stale(self, source_id: str, current: Mapping[str, Collection[str]]) -> int:
+        """Delete chunks at ``current``'s paths whose hash is no longer listed there."""
+        return self._require_store().delete_stale(source_id, current)
+
+    @property
+    def session_factory(self) -> SessionFactory:
+        """The session factory behind this service's store (sync reads a source's row)."""
+        return self._require_store()._session_factory
 
     def _require_store(self) -> PgVectorStore:
         if self._vector_store is None:

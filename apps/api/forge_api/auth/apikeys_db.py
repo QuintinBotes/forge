@@ -9,8 +9,9 @@ lists, and revokes through. The composition root swaps it in behind
 remains the unit-test default, so no existing behaviour changes.
 
 It maps the domain :class:`~forge_api.auth.apikeys.APIKeyRecord` onto the canonical
-``platform_api_key`` ORM row (``PlatformAPIKey``, created by migration 0020, F37) —
-so **no new migration** is required. Two storage-boundary details are load-bearing:
+``platform_api_key`` ORM row (``PlatformAPIKey``, created by migration 0020, F37;
+``scopes`` and ``surface`` added by 0046, spec L §6a). Two storage-boundary details
+are load-bearing:
 
 * **Enum taxonomy.** The record carries an
   :class:`~forge_contracts.enums.APIKeyKind` (BYOK-flavoured; the store only ever
@@ -135,6 +136,8 @@ class DbAPIKeyBackend:
             last_used_at=record.last_used_at,
             expires_at=record.expires_at,
             revoked_at=None if record.is_active else datetime.now(UTC),
+            scopes=record.scopes,
+            surface=record.surface,
         )
 
     def _to_record(self, row: PlatformAPIKey) -> _LiveAPIKeyRecord:
@@ -152,6 +155,8 @@ class DbAPIKeyBackend:
             last_used_at=_aware(row.last_used_at),
             expires_at=_aware(row.expires_at),
             is_active=row.revoked_at is None,
+            scopes=row.scopes,
+            surface=row.surface,
         )
         record._persist = self._persist_field
         return record

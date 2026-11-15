@@ -11,6 +11,7 @@ principal — the previous stub left every endpoint unauthenticated.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends, Header
@@ -38,6 +39,21 @@ class Principal(BaseModel):
     email: str | None = None
     auth_method: str = "stub"
     scopes: list[str] = Field(default_factory=list)
+    #: Whether the caller is a person who may decide approvals (spec L §6a): a
+    #: session, or an API key bound to a person (``user_id``) that is unscoped or
+    #: holds ``approvals:decide``. Unbound keys and agent tokens never decide; the
+    #: owner's current role still bounds a key at decision time.
+    decides: bool = False
+    #: An API key minted with scopes: a viewer on every role check, and F30 sees
+    #: only a workspace viewer grant, never its owner's grants.
+    narrowed: bool = False
+    #: Where the credential says the caller is (``web`` for a session, the key's
+    #: surface or ``api``); never taken from a request header.
+    surface: str | None = None
+    #: The API key's id and expiry, so a decision stays traceable and a socket
+    #: opened with it closes when the key does.
+    credential_id: uuid.UUID | None = None
+    credential_expires_at: datetime | None = None
 
 
 def get_current_principal(

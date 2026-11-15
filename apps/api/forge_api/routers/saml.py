@@ -274,6 +274,7 @@ def acs(
         user_id=user.id,
         kind=APIKeyKind.SYSTEM,
         expires_at=now + SESSION_TTL,
+        surface="web",
     )
     response = RedirectResponse(url=_safe_next(RelayState), status_code=status.HTTP_302_FOUND)
     response.set_cookie(
