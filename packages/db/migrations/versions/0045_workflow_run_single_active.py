@@ -45,17 +45,17 @@ def upgrade() -> None:
     if _INDEX in _existing_indexes():
         return
     op.execute(
-        f"""
-        UPDATE {_TABLE}
+        """
+        UPDATE workflow_run
         SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP
-        WHERE {_ACTIVE}
+        WHERE status NOT IN ('succeeded', 'failed', 'cancelled')
           AND EXISTS (
-            SELECT 1 FROM {_TABLE} AS older
-            WHERE older.task_id = {_TABLE}.task_id
-              AND older.{_ACTIVE}
+            SELECT 1 FROM workflow_run AS older
+            WHERE older.task_id = workflow_run.task_id
+              AND older.status NOT IN ('succeeded', 'failed', 'cancelled')
               AND (
-                older.created_at < {_TABLE}.created_at
-                OR (older.created_at = {_TABLE}.created_at AND older.id < {_TABLE}.id)
+                older.created_at < workflow_run.created_at
+                OR (older.created_at = workflow_run.created_at AND older.id < workflow_run.id)
               )
           )
         """
