@@ -147,6 +147,7 @@ class TemporalWorkflowEngine:
             raise DuplicateRunError(task_id)
         client = await self._get_client()
 
+        reused = active is not None and active.id is not None
         if active is not None and active.id is not None:
             # No workflow has reported to this run, so its start may have died before
             # start_workflow. Start it under its own id: Temporal refuses a second one.
@@ -197,6 +198,10 @@ class TemporalWorkflowEngine:
             # This run's workflow exists (another start launched it): the row is live.
             raise DuplicateRunError(task_id) from exc
         except Exception as exc:
+            if reused:
+                # The row's own start may still be live and its workflow running: an
+                # error here proves nothing about it, so leave the row and the workflow.
+                raise
             failed = self._store.get(run_id)
             failed.status = RunStatus.FAILED
             failed.completed_at = _now()

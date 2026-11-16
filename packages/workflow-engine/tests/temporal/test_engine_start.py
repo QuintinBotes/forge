@@ -221,6 +221,28 @@ async def test_a_start_whose_workflow_already_exists_leaves_the_row_running(
     assert client.terminated == []
 
 
+async def test_a_reusing_start_that_fails_transiently_leaves_the_run_and_its_workflow_alone(
+    factory: sessionmaker[Session],
+) -> None:
+    """The row may belong to a start whose workflow is live but has not reported yet:
+    a transient error on this second start must not fail that run or stop its workflow."""
+    ws_id, task_id = _seed_task(factory)
+    run_id = _seed_unstarted_run(factory, ws_id, task_id)
+    client = _FakeClient(
+        factory, fail=RPCError("deadline exceeded", RPCStatusCode.DEADLINE_EXCEEDED, b"")
+    )
+
+    with factory() as session, pytest.raises(RPCError):
+        await _engine(session, ws_id, client).astart(task_id)
+
+    with factory() as fresh:
+        row = fresh.get(DbWorkflowRun, run_id)
+        assert row is not None
+        assert row.status.value == "running"
+        assert "start_error" not in row.context
+    assert client.terminated == []
+
+
 async def test_a_start_that_lands_after_a_concurrent_start_failed_the_row_stops_its_workflow(
     factory: sessionmaker[Session],
 ) -> None:
