@@ -355,17 +355,10 @@ def notify_service(factory: sessionmaker[Session]) -> NotifyFn:
     def notify(inp: NotifyInput) -> bool:
         with factory() as session:
             _owned_run(session, inp.workflow_run_id, inp.workspace_id)
-            agent_run_id = session.scalar(
-                select(AgentRun.id)
-                .where(
-                    AgentRun.workflow_run_id == inp.workflow_run_id,
-                    AgentRun.workspace_id == inp.workspace_id,
-                )
-                .order_by(AgentRun.created_at.desc())
-                .limit(1)
-            )
-            if agent_run_id is None:
+            builder = _latest_agent_run(session, inp.workflow_run_id, inp.workspace_id)
+            if builder is None:
                 return False
+            agent_run_id = builder.id
             recorded = session.scalars(
                 select(AgentRunEvent.payload).where(
                     AgentRunEvent.run_id == agent_run_id,
@@ -513,7 +506,7 @@ def _independent_review(
             f"{c.get('id')}: {c.get('text')}"
             for c in (builder.inputs or {}).get("acceptance_criteria") or []
         ]
-        verdict, objective = review_change(
+        verdict, objective, result = review_change(
             mirror,
             base=base,
             head=head,
@@ -532,8 +525,12 @@ def _independent_review(
                     role=REVIEWER_ROLE,
                     model=model,
                     inputs=objective.model_dump(mode="json"),
-                    output=verdict.model_dump(mode="json"),
-                    status=RunStatus.SUCCEEDED,
+                    output={
+                        **verdict.model_dump(mode="json"),
+                        "error": result.error,
+                        "model_usage": result.artifacts.get("model_usage"),
+                    },
+                    status=RunStatus(result.status.value),
                 )
             )
             session.commit()

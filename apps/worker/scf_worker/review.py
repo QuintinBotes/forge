@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 from scf_agent.providers import ModelClientConfig, ModelClientError, build_model_client
 from scf_agent.providers.family import UnknownModelFamily, provider_family, same_family
 from scf_agent.tools import ToolRegistry, agent_tool_belt
-from scf_contracts import AgentObjective, ModelClient
+from scf_contracts import AgentObjective, AgentRunResult, ModelClient, RunStatus
 from scf_contracts.orchestration_config import AgentRole
 from scf_contracts.review import ReviewVerdict
 from scf_db.role_config import SqlRoleConfigStore
@@ -168,8 +169,12 @@ def review_change(
     client: ModelClient,
     reviewer: str,
     builder_model: str,
-) -> tuple[ReviewVerdict, AgentObjective]:
-    """Run the reviewer on ``base...head`` and return its verdict and its objective."""
+) -> tuple[ReviewVerdict, AgentObjective, AgentRunResult]:
+    """Run the reviewer on ``base...head``: its verdict, its objective and how it ended.
+
+    Only a reviewer run that succeeded can approve; one that failed or escalated
+    requests changes (``reviewer_run_failed``).
+    """
     diff = _git_out(repo_path, "diff", "--no-color", f"{base}...{head}")
     truncated = len(diff) > DIFF_CAP_CHARS
     objective = AgentObjective(
@@ -177,7 +182,10 @@ def review_change(
         instructions=_INSTRUCTIONS,
         allowed_actions=["read_repo"],
         context={
-            "review": {"criteria": criteria, "diff": diff[:DIFF_CAP_CHARS], "truncated": truncated}
+            "review": {"criteria": criteria, "diff": diff[:DIFF_CAP_CHARS], "truncated": truncated},
+            # The change may add or edit AGENTS.md files: only the base branch's are
+            # instructions, and the runtime would otherwise read the head's.
+            "agents_md": _base_agents_md(repo_path, base),
         },
     )
     with detached_worktree(repo_path, head) as worktree:
@@ -190,8 +198,16 @@ def review_change(
         result = run_objective(runner, objective)
     verdict = (
         parse_verdict(result.output)
-        if result.output
+        if result.status == RunStatus.SUCCEEDED
         else ReviewVerdict(verdict="request_changes", reason="reviewer_run_failed")
     )
     station = {"truncated": truncated, "reviewer_model": reviewer, "builder_model": builder_model}
-    return verdict.model_copy(update=station), objective
+    return verdict.model_copy(update=station), objective, result
+
+
+def _base_agents_md(repo_path: Path, base: str) -> str:
+    """The base branch's root AGENTS.md, or nothing when it has none."""
+    try:
+        return _git_out(repo_path, "show", f"{base}:AGENTS.md")
+    except subprocess.CalledProcessError:
+        return ""
