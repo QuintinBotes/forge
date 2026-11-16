@@ -146,9 +146,21 @@ the builder's objective.
   - **What it sees:** the spec (the issue's or the task's text and its
     acceptance criteria) as untrusted data, and no tools.
   - **What is stored:** each scenario is checked against the store's rules and
-    stored as a draft, drafted by `agent:<verifier run>/<model>`. Output that does
-    not parse is recorded as `unparseable_scenarios`, and a scenario the store
-    refuses is dropped with its reason.
+    stored as a draft, drafted by `agent:<verifier run>/<model>`, with its own
+    `held_out.created` audit entry. A scenario the store refuses is dropped with
+    its reason.
+  - **Why nothing was drafted:** the run's `held_out` records the reason, and the
+    spec gate opens as before. The reasons:
+    - `verifier_not_configured`: no reviewer model is configured, or there is no
+      key for its provider;
+    - `verifier_same_family`: the reviewer model is of the builder's family;
+    - `verifier_family_unknown`: the builder's family cannot be shown to differ;
+    - `verifier_run_failed`: the verifier's run failed or escalated, a provider
+      error included;
+    - `unparseable_scenarios`: its output did not parse;
+    - `no_scenarios_drafted`: its output parsed, but nothing could be stored;
+    - `no_spec_to_draft_from`: the spec has neither a description nor
+      acceptance criteria.
   - **What is kept out of records:** scenario content. The verifier's agent run
     keeps only ids and titles, with no steps and no events; the workflow run
     keeps only ids and counts; the audit entry keeps only counts and the model.

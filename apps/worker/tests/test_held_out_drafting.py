@@ -223,3 +223,113 @@ def test_a_retried_step_returns_what_it_drafted(factory: sessionmaker[Session]) 
     assert len(verifier.clients) == 1
     with factory() as s:
         assert len(s.scalars(select(HeldOutScenario)).all()) == 1
+
+
+class FailingClient:
+    """A provider that keeps refusing (a 429 after its own retries)."""
+
+    def complete(self, request: Any) -> Any:
+        from scf_agent.providers import ModelClientError
+
+        raise ModelClientError("429 too many requests")
+
+
+@pytest.mark.parametrize(
+    "client",
+    [
+        FailingClient(),
+        ScriptedModelClient(
+            [finish_response(json.dumps({"scenarios": [SCENARIO]}), needs_human=True)]
+        ),
+    ],
+    ids=["provider error", "escalated"],
+)
+def test_a_verifier_run_that_does_not_succeed_drafts_nothing_and_the_gate_opens(
+    factory: sessionmaker[Session], client: Any
+) -> None:
+    """A failed verifier is recorded as one, and does not fail the run (#258 review)."""
+    run_id = _seed(factory)
+
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        task_id = run.task_id
+    inp = DraftScenariosInput(
+        workflow_run_id=run_id, workspace_id=WS, task_id=task_id, idempotency_key="d0"
+    )
+    result = draft_scenarios_service(factory, verifier=lambda _m: client)(inp)
+
+    assert (result.reason, result.scenario_ids) == ("verifier_run_failed", [])
+    assert _context(factory, run_id)["held_out"] == "verifier_run_failed"
+    with factory() as s:
+        [verifier_run] = s.scalars(select(AgentRun)).all()
+        assert verifier_run.status.value in {"failed", "escalated"}
+        assert s.scalars(select(HeldOutScenario)).all() == []
+
+
+def test_parsed_output_with_nothing_to_store_says_so(factory: sessionmaker[Session]) -> None:
+    run_id = _seed(factory)
+
+    result = _draft(factory, run_id, Verifier(json.dumps({"scenarios": []})))
+
+    assert result.reason == "no_scenarios_drafted"
+    assert _context(factory, run_id)["held_out"] == "no_scenarios_drafted"
+
+
+def test_a_scenario_with_a_nul_is_dropped_and_the_others_kept(
+    factory: sessionmaker[Session],
+) -> None:
+    """Postgres refuses a NUL in JSON or text, and would refuse the whole batch."""
+    run_id = _seed(factory)
+    nul = {**SCENARIO, "title": "Nul", "command": "echo \x00"}
+
+    result = _draft(factory, run_id, Verifier(json.dumps({"scenarios": [nul, SCENARIO]})))
+
+    assert len(result.scenario_ids) == 1
+    assert _context(factory, run_id)["held_out_drafting"]["d0"]["dropped"] == 1
+
+
+def test_each_drafted_scenario_is_audited_as_the_verifiers(
+    factory: sessionmaker[Session],
+) -> None:
+    run_id = _seed(factory)
+
+    result = _draft(factory, run_id, Verifier(json.dumps({"scenarios": [SCENARIO]})))
+
+    with factory() as s:
+        [created] = s.scalars(select(AuditLog).where(AuditLog.action == "held_out.created")).all()
+        [verifier_run] = s.scalars(select(AgentRun)).all()
+    assert created.details["scenario_id"] == result.scenario_ids[0]
+    assert created.actor_type == "agent"
+    assert created.details["agent_run_id"] == str(verifier_run.id)
+
+
+def test_a_spec_with_nothing_to_draft_from_is_not_drafted(
+    factory: sessionmaker[Session],
+) -> None:
+    run_id = _seed(factory)
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        task = s.get(Task, run.task_id)
+        assert task is not None
+        task.description = None
+        task.acceptance_criteria = []
+        s.commit()
+    verifier = Verifier("{}")
+
+    result = _draft(factory, run_id, verifier)
+
+    assert result.reason == "no_spec_to_draft_from" and verifier.clients == []
+
+
+def test_the_builders_run_is_never_the_verifiers(factory: sessionmaker[Session]) -> None:
+    """Checks and the pull request read the builder's run, never the verifier's."""
+    from scf_worker.temporal_services import _latest_agent_run
+
+    run_id = _seed(factory)
+    _draft(factory, run_id, Verifier(json.dumps({"scenarios": [SCENARIO]})))
+
+    with factory() as s:
+        assert s.scalars(select(AgentRun)).one().role == "verifier"
+        assert _latest_agent_run(s, run_id, WS) is None

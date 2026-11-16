@@ -96,6 +96,9 @@ __all__ = [
     "compute_policy_version_hash",
 ]
 
+#: Agent runs on a workflow run that judge or draft checks, never build the change.
+_NOT_BUILDERS = frozenset({"verifier", "reviewer"})
+
 #: Audit action emitted when a changeset is attested.
 ATTESTED_ACTION = "changeset.attested"
 
@@ -387,10 +390,12 @@ class AttestationService:
         ]
         if built:
             return built[-1]
-        for run in runs:
+        # The verifier and the reviewer (#258, #173) ran on the run but built nothing.
+        builders = [run for run in runs if run.role not in _NOT_BUILDERS]
+        for run in builders:
             if not run.is_supervisor and run.model:
                 return run
-        return runs[0] if runs else None
+        return builders[0] if builders else (runs[0] if runs else None)
 
     def _spec_and_prs(
         self, workspace_id: uuid.UUID, task_id: uuid.UUID | None

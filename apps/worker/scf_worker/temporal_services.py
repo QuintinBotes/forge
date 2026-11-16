@@ -45,6 +45,7 @@ from scf_worker.dispatch import (
     workspace_mirrors,
 )
 from scf_worker.finalizer import GitHubAppCredentials, Pusher, git_push, push_and_open_pr
+from scf_worker.held_out_drafting import VERIFIER_ROLE
 from scf_worker.review import (
     REVIEWER_ROLE,
     ReviewerRefused,
@@ -390,13 +391,13 @@ def notify_service(factory: sessionmaker[Session]) -> NotifyFn:
 def _latest_agent_run(
     session: Session, workflow_run_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> AgentRun | None:
-    """The builder's latest run: a reviewer's run (#173) holds no branch or commit."""
+    """The builder's latest run: a reviewer's (#173) or verifier's (#258) holds no commit."""
     return session.scalars(
         select(AgentRun)
         .where(
             AgentRun.workflow_run_id == workflow_run_id,
             AgentRun.workspace_id == workspace_id,
-            AgentRun.role != REVIEWER_ROLE,
+            AgentRun.role.notin_((REVIEWER_ROLE, VERIFIER_ROLE)),
         )
         .order_by(AgentRun.created_at.desc())
         .limit(1)

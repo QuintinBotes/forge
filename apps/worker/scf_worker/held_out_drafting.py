@@ -20,14 +20,15 @@ from typing import Any
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
+from scf_agent.providers import ModelClientError
 from scf_agent.tools import ToolRegistry
 from scf_api.schemas.held_out import HeldOutScenarioCreate
+from scf_api.services.held_out import store_agent_draft
 from scf_contracts import AgentObjective, ModelClient, RunStatus
 from scf_contracts.audit import AuditEvent
 from scf_db.audit.writer import SqlAuditWriter
 from scf_db.models import AgentRun, Task, WorkflowRun
 from scf_db.models.enums import RunStatus as DbRunStatus
-from scf_db.models.held_out import SCENARIO_DRAFT, HeldOutScenario
 from scf_worker.agent_runner import (
     _run_token_budget,
     build_agent_runner,
@@ -172,32 +173,40 @@ def _run_verifier(
     runner = build_agent_runner(
         model_client=client, tools=verifier_tools(), token_budget=_run_token_budget()
     )
-    result = run_objective(runner, objective)  # no step sink: its steps are never recorded
-    scenarios = parse_scenarios(result.output) if result.status == RunStatus.SUCCEEDED else None
+    try:
+        result = run_objective(runner, objective)  # no step sink: its steps are never recorded
+        status = result.status
+        output = result.output
+    except ModelClientError:  # a provider error must not fail the run before its spec gate
+        status, output = RunStatus.FAILED, None
+    scenarios = parse_scenarios(output) if status == RunStatus.SUCCEEDED else None
     stored: list[dict[str, str]] = []
     dropped: list[dict[str, str]] = []
     with factory() as session:
         for raw in scenarios or []:
-            title = str(raw.get("title") or "")[:255]
+            title = str(raw.get("title") or "").replace("\x00", "")[:255]
             try:
                 body = HeldOutScenarioCreate.model_validate(raw)
             except ValidationError as exc:
                 dropped.append({"title": title, "reason": str(exc.errors()[0].get("msg", ""))})
                 continue
-            row = HeldOutScenario(
-                id=uuid.uuid4(),
+            row = store_agent_draft(
+                session,
                 workspace_id=inp.workspace_id,
                 task_id=task_id,
-                title=body.title,
-                files=[f.model_dump() for f in body.files],
-                command=body.command,
+                body=body,
                 drafted_by=f"agent:{run_id}/{model}",
-                drafted_by_user_id=None,
-                state=SCENARIO_DRAFT,
+                agent_run_id=run_id,
             )
-            session.add(row)
             stored.append({"id": str(row.id), "title": row.title})
-        reason = None if scenarios is not None else "unparseable_scenarios"
+        if status != RunStatus.SUCCEEDED:
+            reason: str | None = "verifier_run_failed"
+        elif scenarios is None:
+            reason = "unparseable_scenarios"
+        elif not stored:
+            reason = "no_scenarios_drafted"
+        else:
+            reason = None
         session.merge(
             AgentRun(
                 id=run_id,
@@ -210,7 +219,7 @@ def _run_verifier(
                 steps=[],
                 # Ids and titles only: the scenarios themselves live in the #176 store.
                 output={"scenarios": stored, "dropped": dropped, "reason": reason},
-                status=DbRunStatus(result.status.value),
+                status=DbRunStatus(status.value),
             )
         )
         SqlAuditWriter(session).emit(
