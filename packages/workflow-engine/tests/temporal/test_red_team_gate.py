@@ -135,6 +135,13 @@ async def test_red_team_block_routes_to_changes_requested(harness: Any) -> None:
         # now address the finding).
         assert h.engine.get_run(run.id).current_state == "spec_review"
 
-        # A human can still drive it forward after addressing the block.
-        await h.engine.atransition(run.id, "spec_approved_by_human")
-        assert h.engine.get_run(run.id).current_state == "spec_approved"
+        # A human can still drive it forward after addressing the block. spec_approved
+        # is not a resting state (the workflow moves on to plan_drafting by itself), so
+        # check the state the update reports and the transition it recorded, not a
+        # read of the run afterwards (#246).
+        state = await h.engine.atransition(run.id, "spec_approved_by_human")
+        assert state == WorkflowState.SPEC_APPROVED
+        human = [t for t in h.transitions(run) if t["event"] == "spec_approved_by_human"]
+        assert [(t["from_state"], t["to_state"], t["actor"]) for t in human] == [
+            ("spec_review", "spec_approved", "system")
+        ]
