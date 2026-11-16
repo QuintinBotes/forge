@@ -1,7 +1,7 @@
 """V1/V2 parity for Red-Team Gate verdict building (Task 20).
 
 ``scf_workflow.red_team_gate`` is the single source of the gate's verdict
-shape for BOTH spines: the Temporal activity's default parked-pass delegates to
+shape for BOTH spines: the Temporal activity's default ``not_run`` delegates to
 it (byte-identical), and the V1 (FSM) path evaluates + persists through
 ``ensure_red_team_verdict`` / ``run_and_record_red_team`` against the
 append-only ``red_team_record`` table (hermetic SQLite here, mirroring
@@ -116,7 +116,7 @@ def test_payloads_reexport_the_same_objects() -> None:
 
 
 def test_configured_adversary_fn_is_invoked() -> None:
-    """When an adversary is configured, the helper runs IT — never the parked-pass."""
+    """When an adversary is configured, the helper runs IT — never the default."""
     calls: list[RedTeamInput] = []
 
     def block(inp: RedTeamInput) -> RedTeamResult:
@@ -171,6 +171,22 @@ def test_ensure_persists_one_not_run_verdict_per_phase(sqlite_session: Session) 
     assert pr.evidence == {"reason": "red_team_not_configured", "phase": "pr"}
     rows = RedTeamRepository(sqlite_session).get_by_run(ws, run)
     assert len(rows) == 2 and REDTEAM_SURVIVED not in {r.verdict for r in rows}
+
+
+def test_a_record_made_before_phases_counts_as_the_spec_scan(sqlite_session: Session) -> None:
+    """A pre-#174 record has no phase in its evidence; it was the run's spec scan."""
+    ws, task, run = _seed(sqlite_session)
+    legacy = RedTeamRepository(sqlite_session).insert(
+        ws, verdict=REDTEAM_SURVIVED, kind="parked", evidence={"parked": True}, workflow_run_id=run
+    )
+
+    spec, created = ensure_red_team_verdict(sqlite_session, ws, workflow_run_id=run, task_id=task)
+    assert (spec.id, created) == (legacy.id, False)
+
+    _, created_pr = ensure_red_team_verdict(
+        sqlite_session, ws, workflow_run_id=run, task_id=task, phase="pr"
+    )
+    assert created_pr is True
 
 
 def test_only_an_adversarys_survive_chains_the_audit_event(sqlite_session: Session) -> None:

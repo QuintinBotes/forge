@@ -342,9 +342,10 @@ class WorkflowActivities:
 
         Idempotent on ``inp.idempotency_key``: the injected ``red_team_fn`` runs
         the (heterogeneous, sandboxed) adversary and records the verdict; the
-        default is a parked-pass so the spine runs with no adversary/sandbox
-        wired. Persisting the ``RedTeamRecord`` + emitting the ``redteam.survived``
-        audit event is the recorder's job inside ``red_team_fn`` (real wiring);
+        default is ``not_run``, never a pass, so the spine runs with no
+        adversary/sandbox wired (#174). Persisting the ``RedTeamRecord`` +
+        emitting the ``redteam.survived`` audit event is the recorder's job inside
+        ``red_team_fn`` (real wiring);
         the pure verdict returned here drives the deterministic routing.
         """
         details = {"phase": "red_team", "idempotency_key": inp.idempotency_key}

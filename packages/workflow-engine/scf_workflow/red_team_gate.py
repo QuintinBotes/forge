@@ -4,7 +4,7 @@ The Red-Team Gate's verdict shape was born inside the Temporal (V2) activity
 layer (``temporal/activities.py``); this module EXTRACTS it so the V1
 (Postgres-FSM) path mints the identical contract instead of copying it:
 
-* :class:`RedTeamInput` / :class:`RedTeamResult` + the two verdict constants —
+* :class:`RedTeamInput` / :class:`RedTeamResult` + the verdict constants —
   the pure gate payloads, moved here from ``temporal/payloads.py`` (which
   re-exports them unchanged, so every Temporal import path is untouched);
 * :func:`not_run_verdict` — the verdict when no adversary ran: ``not_run``,
@@ -191,7 +191,7 @@ def ensure_red_team_verdict(
 
     # Query-first idempotency is best-effort, not a hard guarantee: two
     # concurrent callers can both see "no existing scan" and both record.
-    # Worst case under a race is a duplicate honest `parked`/`survived` row in
+    # Worst case under a race is a duplicate honest `not_run`/`survived` row in
     # the append-only history (extra noise on the GET's `records` list) — it
     # is never a verdict flip, and never fabricates a block or a survive.
     existing = [

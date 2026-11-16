@@ -26,8 +26,8 @@ no gate hooks, and this router is its only production driver — so when a V1
 transition lands a run in ``spec_review`` (the human spec gate, exactly where
 the Temporal spine scans), the handler mints the run's verdict once via the
 shared :func:`scf_workflow.red_team_gate.ensure_red_team_verdict`: the
-configured adversary when one is wired (:func:`get_red_team_fn`), an explicit
-parked-pass otherwise — park-don't-fake, never silent. The Temporal spine keeps
+configured adversary when one is wired (:func:`get_red_team_fn`), ``not_run``
+otherwise — never a pass (#174). The Temporal spine keeps
 owning its own scan inside ``FeatureWorkflow.run`` (the mint is V1-engine-only).
 """
 
@@ -457,7 +457,7 @@ def transition(
     Red-Team Gate (V1 parity): when a V1 (FSM-engine) transition lands the run
     in ``spec_review`` — the human spec gate, exactly where the Temporal spine
     scans — mint the run's verdict once (idempotent across gate re-entries):
-    the configured adversary when wired, an explicit parked-pass otherwise.
+    the configured adversary when wired, ``not_run`` otherwise (#174).
     Failure to record is loud (500 via ``_run_id``/``_run_task_id``), never a
     silently skipped gate. The Temporal engine is excluded: its workflow body
     owns the scan. Recovery from a mint failure needs no special-casing: the
