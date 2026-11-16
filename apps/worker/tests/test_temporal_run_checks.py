@@ -11,6 +11,7 @@ import subprocess
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import StaticPool, create_engine
@@ -114,8 +115,12 @@ def _seed(factory: sessionmaker[Session], head: str | None) -> uuid.UUID:
         return run.id
 
 
-async def _checks(factory: sessionmaker[Session], run_id: uuid.UUID) -> ChecksResult:
-    inp = RunChecksInput(workflow_run_id=run_id, workspace_id=WS, attempt=0, idempotency_key="c0")
+async def _checks(
+    factory: sessionmaker[Session], run_id: uuid.UUID, attempt: int = 0
+) -> ChecksResult:
+    inp = RunChecksInput(
+        workflow_run_id=run_id, workspace_id=WS, attempt=attempt, idempotency_key=f"c{attempt}"
+    )
     result = await ActivityEnvironment().run(build_activities(factory).run_checks, inp)
     assert isinstance(result, ChecksResult)
     return result
@@ -220,3 +225,124 @@ async def test_a_run_outside_the_workspace_is_refused(
         await _checks(factory, uuid.uuid4())
 
     assert caught.value.type == "WorkflowRunNotFound"
+
+
+def _recorded(factory: sessionmaker[Session], run_id: uuid.UUID) -> list[dict[str, Any]]:
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        return list(run.context.get("checks", []))
+
+
+def _set_policy(work: Path, mirror: Path, policy: str) -> None:
+    _git(work, "checkout", "-q", "main")
+    (work / ".forge" / "policy.yaml").write_text(policy)
+    _git(work, "commit", "-q", "-am", "policy")
+    _git(work, "push", "-q", str(mirror), "main")
+
+
+async def test_each_check_is_recorded_on_the_run_and_a_retry_replaces_it(
+    factory: sessionmaker[Session], repo: tuple[Path, Path]
+) -> None:
+    """#172 criterion 4: command id, exit status, head commit, start time and duration
+    per check, on the workflow run, which GET /workflow/runs/{id} returns."""
+    _, mirror = repo
+    head = _git(mirror, "rev-parse", BRANCH)
+    run_id = _seed(factory, head)
+
+    await _checks(factory, run_id)
+    await _checks(factory, run_id)  # a retry of the same attempt
+
+    [attempt] = _recorded(factory, run_id)
+    assert (attempt["attempt"], attempt["head_commit"]) == (0, head)
+    assert attempt["no_checks_declared"] is False
+    by_id = {c["id"]: c for c in attempt["checks"]}
+    assert set(by_id) == {"marker", "lint"}
+    assert (by_id["marker"]["exit_code"], by_id["marker"]["passed"]) == (0, True)
+    assert by_id["marker"]["started_at"] and by_id["marker"]["duration_ms"] >= 0
+
+
+async def test_a_checks_output_is_kept_as_a_redacted_tail(
+    factory: sessionmaker[Session], repo: tuple[Path, Path]
+) -> None:
+    work, mirror = repo
+    token = "ghp_" + "a" * 36
+    _set_policy(
+        work,
+        mirror,
+        "repo_id: app\ncommands:\n"
+        f'  noisy: "for i in $(seq 1 500); do echo line$i; done; echo {token}; exit 3"\n',
+    )
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+
+    result = await _checks(factory, run_id)
+
+    assert result.results == {"noisy": False}
+    [attempt] = _recorded(factory, run_id)
+    [noisy] = attempt["checks"]
+    assert noisy["exit_code"] == 3
+    lines = noisy["output_tail"].splitlines()
+    assert len(lines) == 400 and lines[0] == "line102"
+    assert token not in noisy["output_tail"]
+
+
+async def test_checks_run_on_a_clean_checkout_with_no_network(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#172 criterion 2: only the commit is checked out, and the sandbox gets no network
+    even when the repository's policy asks for egress."""
+    import scf_worker.run_workspace as run_workspace_module
+
+    work, mirror = repo
+    _set_policy(
+        work,
+        mirror,
+        "repo_id: app\nsandbox:\n  network: egress\ncommands:\n"
+        '  clean: "test -z \\"$(git status --porcelain)\\""\n',
+    )
+    networks: list[object] = []
+    real = run_workspace_module.build_sandbox_provider
+
+    def recording(settings: Any) -> Any:
+        provider = real(settings)
+        create = provider.create
+
+        async def create_and_record(spec: Any) -> Any:
+            networks.append(spec.network)
+            return await create(spec)
+
+        provider.create = create_and_record  # type: ignore[method-assign]
+        return provider
+
+    monkeypatch.setattr(run_workspace_module, "build_sandbox_provider", recording)
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+
+    result = await _checks(factory, run_id)
+
+    assert result.results == {"clean": True}
+    assert [str(n) for n in networks] == ["none"]
+
+
+async def test_a_long_output_keeps_the_last_lines_of_each_stream(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A suite's verdict comes last: neither the sandbox's output cap nor a noisy stderr
+    may push it out of the recorded tail."""
+    monkeypatch.setenv("FORGE_SANDBOX_OUTPUT_CAP_BYTES", "2000")
+    work, mirror = repo
+    _set_policy(
+        work,
+        mirror,
+        "repo_id: app\ncommands:\n"
+        '  suite: "for i in $(seq 1 900); do echo out$i; echo err$i >&2; done; '
+        'echo 3 failed; exit 1"\n',
+    )
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+
+    await _checks(factory, run_id)
+
+    [attempt] = _recorded(factory, run_id)
+    [suite] = attempt["checks"]
+    assert suite["exit_code"] == 1
+    lines = suite["output_tail"].splitlines()
+    assert "3 failed" in lines and "out900" in lines and "err900" in lines

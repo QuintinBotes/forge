@@ -144,3 +144,14 @@ def test_cli_parser_exposes_temporal_commands() -> None:
     assert (args.group, args.command) == ("temporal", "bootstrap")
     args = build_parser().parse_args(["temporal", "replay", "wf-123"])
     assert args.command == "replay" and args.workflow_id == "wf-123"
+
+
+def test_the_selected_engine_takes_the_checks_activity_limit(
+    monkeypatch: pytest.MonkeyPatch, workflow_db
+) -> None:
+    monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "temporal")
+    monkeypatch.setenv("CHECKS_ACTIVITY_TIMEOUT", "2400")
+    with workflow_db.factory() as session:
+        engine = workflow_engine.select_workflow_engine(session=session, workspace_id=WS)
+    assert isinstance(engine, TemporalWorkflowEngine)
+    assert engine._checks_timeout_seconds == 2400

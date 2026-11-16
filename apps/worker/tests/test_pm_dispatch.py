@@ -1061,6 +1061,8 @@ def test_a_governed_dispatch_starts_one_workflow_run_and_enqueues_no_agent(
     # The objective comes from the re-fetched issue, kept for forge.run_agent.
     assert trigger["objective"]["objective"] == "Make widgets accessible"
     assert trigger["objective"]["description"] == BODY
+    # The agent renders the issue's text as untrusted data under this label (ADR-0014).
+    assert trigger["source_label"] == "github_issues:acme/widgets#42"
 
     # Another delivery for the same issue while the run is active is skipped.
     again = _seed_delivery(factory, connection_id, delivery_id="gh-2", payload_hash="cafe")

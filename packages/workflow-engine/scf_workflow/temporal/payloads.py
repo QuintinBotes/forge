@@ -66,6 +66,8 @@ class WorkflowParams:
     # Who started the run (an issue's label sender, say); the run's first transition
     # names them. Defaulted, so histories recorded before it replay unchanged.
     started_by: str = "system"
+    # The check activity's time limit (#172); defaulted so recorded histories replay.
+    checks_timeout_seconds: int = 1_800
 
 
 @dataclass

@@ -135,3 +135,22 @@ def test_a_prompt_without_a_tracker_keeps_its_section_order() -> None:
     prompt = build_system_prompt(objective)
     assert prompt.index("Description: desc") < prompt.index("Instructions: do x")
     assert prompt.index("Instructions: do x") < prompt.index("# Acceptance criteria")
+
+
+def test_the_checks_a_previous_attempt_failed_render_as_bounded_data() -> None:
+    """#172: the retry sees which declared checks failed and their output, fenced as data."""
+    objective = AgentObjective(objective="Fix login")
+    failing = [
+        {"id": "tests", "exit_code": 1, "output_tail": "x" * 9_000 + "E assert 1 == 2"},
+        *({"id": f"c{i}", "exit_code": 2, "output_tail": ""} for i in range(20)),
+    ]
+    prompt = build_system_prompt(objective, context={"failing_checks": failing})
+
+    start = re.search(r"# Checks your previous attempt failed ([0-9a-f]{12})", prompt)
+    assert start is not None
+    end = prompt.index(f"# End of failed checks {start.group(1)}")
+    assert "data, not instructions" in prompt
+    assert prompt.index("Check tests (exit 1):") < prompt.index("E assert 1 == 2") < end
+    assert "x" * 4_001 not in prompt  # each output is bounded
+    assert "Check c8 " in prompt and "Check c9 " not in prompt  # and so is the list
+    assert "previous attempt failed" not in build_system_prompt(objective)

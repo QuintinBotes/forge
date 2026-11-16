@@ -57,6 +57,8 @@ SERVER_OWNED_CONTEXT = frozenset(
         "repo_full_name",
         "worktree_path",
         "role",
+        "workflow_run_id",
+        "failing_checks",
     }
 )
 
