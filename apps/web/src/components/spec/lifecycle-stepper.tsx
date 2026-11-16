@@ -3,7 +3,7 @@
 import { Check, Flame, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useApproveSpec,
   useClarifySpec,
@@ -23,7 +23,7 @@ import {
 
 export interface LifecycleStepperProps {
   spec: SpecOverview;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 function errorMessage(error: unknown): string {

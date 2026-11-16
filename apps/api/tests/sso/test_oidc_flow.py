@@ -24,12 +24,12 @@ from conftest import WS_ID, Keypair, install_config  # noqa: F401  (shared fixtu
 from jwt import algorithms
 from sqlalchemy import select
 
-from forge_api.auth.service import get_auth_service
-from forge_api.routers.oidc import get_oidc_client, get_oidc_state_store
-from forge_api.sso.config_service import SsoConfigService
-from forge_api.sso.oidc import InMemoryOidcStateStore, OidcClient
-from forge_contracts.sso import OidcIdpConfig
-from forge_db.models import ExternalIdentity, OidcConfiguration, User
+from scf_api.auth.service import get_auth_service
+from scf_api.routers.oidc import get_oidc_client, get_oidc_state_store
+from scf_api.sso.config_service import SsoConfigService
+from scf_api.sso.oidc import InMemoryOidcStateStore, OidcClient
+from scf_contracts.sso import OidcIdpConfig
+from scf_db.models import ExternalIdentity, OidcConfiguration, User
 
 CLIENT_ID = "forge-oidc-client"
 CLIENT_SECRET = "s3cr3t-oidc-value"
@@ -226,7 +226,7 @@ class TestOidcCallback:
             assert link.external_id == "dana-oidc-sub"
             assert link.provider.value == "oidc"
 
-        # The minted cookie is a working Forge API credential.
+        # The minted cookie is a working SCF API credential.
         cookie = response.headers["set-cookie"].split("forge_session=")[1].split(";")[0]
         principal = get_auth_service().authenticate(cookie)
         assert principal.workspace_id == WS_ID

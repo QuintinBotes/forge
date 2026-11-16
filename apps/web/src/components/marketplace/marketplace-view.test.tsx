@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type {
   Installation,
   Listing,
@@ -129,7 +129,7 @@ const REGISTRIES: Registry[] = [
   },
 ];
 
-function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(over: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listListings: vi.fn(() => Promise.resolve(LISTINGS)),
     getListing: vi.fn((registrySlug: string, slug: string) =>
@@ -170,10 +170,10 @@ function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
       }),
     ),
     ...over,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

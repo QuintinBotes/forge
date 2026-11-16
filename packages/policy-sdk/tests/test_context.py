@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from forge_contracts import ToolCall
-from forge_policy import PolicyContext, build_context_from_run
+from scf_contracts import ToolCall
+from scf_policy import PolicyContext, build_context_from_run
 
 
 def test_to_fields_derives_action_path_ext_command() -> None:

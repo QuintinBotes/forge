@@ -12,7 +12,7 @@
 
 ## Why this exists
 
-Forge isolates the commands an agent runs through a sandbox tier. Three of the four tiers
+Swarm Code Factory isolates the commands an agent runs through a sandbox tier. Three of the four tiers
 (`container`, `gvisor`, `microvm`) need a Docker endpoint, so a Kubernetes install can only use the
 host-process tier, which is no boundary at all. On a Docker host the container tier exists but the
 main run path does not yet use it correctly: a run's worktree is created in the worker's temporary
@@ -59,7 +59,7 @@ published isolation levels (spec 003 FR-010) record these per backend.
 
 ### User Story 1 - Agent commands run in a container on a Docker host (Priority: P1)
 
-A self-hoster runs forge with Docker Compose on one machine. Every command an agent runs executes
+A self-hoster runs SCF with Docker Compose on one machine. Every command an agent runs executes
 in a locked-down container that sees only that run's repository checkout. The run's checkout and
 the repository mirror live on the shared worktree volume, so the sandbox container can mount
 exactly one run's directory.
@@ -83,7 +83,7 @@ visible.
 
 ### User Story 2 - Agent commands run in a pod on Kubernetes (Priority: P1)
 
-An operator installs forge with the Helm chart. Each sandbox session is one pod in a dedicated
+An operator installs SCF with the Helm chart. Each sandbox session is one pod in a dedicated
 namespace: no service account token, non-root, read-only root filesystem, all capabilities dropped,
 resource limits, and a network policy that denies ingress and limits egress. `gvisor` and `microvm`
 map to runtime classes. The worker needs permission in that one namespace and no container socket.
@@ -111,10 +111,10 @@ An operator wants run capacity to follow the cluster, not the number of worker r
 run executor set to `docker` or `kubernetes`, the worker launches one container or one Job per run
 and returns. Decided 2026-11-15: this is the shipped default. The Helm chart defaults to one Job
 per run and Compose defaults to one container per run. `inline` stays available as an explicit
-setting. The run process executes the agent loop and streams events. When it exits, forge's
+setting. The run process executes the agent loop and streams events. When it exits, SCF's
 control plane closes the run out: delivery, terminal events, recorded outcome and tracker
 write-back. The run process never holds delivery credentials or the database credential. It reaches
-its run record with a short-lived token scoped to its own run, used against forge's API.
+its run record with a short-lived token scoped to its own run, used against SCF's API.
 
 **Why this priority**: it removes the shared-process bottleneck and the short task time limit, and
 it narrows what a misbehaving loop can reach. It builds on stories 1 and 2, so it comes second.
@@ -131,7 +131,7 @@ terminal state with the same recorded outcome an in-worker run gives, and both c
 4. **Given** a run's unit is killed, evicted or lost, **When** the reconciler next runs, **Then** the run is recorded as failed with a reason and does not stay pending or running.
 5. **Given** the executor's runtime is unavailable, **When** a run is dispatched, **Then** the run fails with a clear error and is never executed inside the worker instead.
 6. **Given** a run process, **When** its environment and specification are inspected, **Then** they hold no source-control application key, no master secret key, no webhook secret and no database credential.
-7. **Given** shipped defaults, **When** forge is installed with the Helm chart, **Then** each agent run is one Job. **When** it is started with Compose, **Then** each agent run is one container. A run executes inline only where `inline` is set explicitly.
+7. **Given** shipped defaults, **When** SCF is installed with the Helm chart, **Then** each agent run is one Job. **When** it is started with Compose, **Then** each agent run is one container. A run executes inline only where `inline` is set explicitly.
 8. **Given** a run process, **When** it uses its token on another run's record or on any other API route, **Then** the call is refused.
 
 ---
@@ -195,8 +195,8 @@ command.
 
 - **FR-010**: No credential value MUST appear in a sandbox container's or pod's specification, image, environment, labels or annotations, or in any file an agent command can read.
 - **FR-011**: A run process MUST receive only what the agent loop needs: access to the model provider, the run's own record and event stream, and the sandbox backend. It MUST NOT receive the source-control application key, the master secret key, webhook secrets or the database credential, and it MUST refuse to start if it finds one.
-- **FR-012**: Delivery of a change and tracker write-back MUST be performed by forge's control plane after the run process exits, never by the run process.
-- **FR-013**: On Kubernetes a run process MUST receive secrets only by reference to a cluster secret. No secret value MUST appear in a Job or pod specification, argument, label or annotation. Decided 2026-11-15: a run process reaches the run record with a short-lived token scoped to its own run, used against forge's API. The run process MUST never hold the database credential. Open: the decision does not say how the token is handed to a run unit (a per-run token is not an existing cluster secret), or which API routes carry events and the handoff.
+- **FR-012**: Delivery of a change and tracker write-back MUST be performed by SCF's control plane after the run process exits, never by the run process.
+- **FR-013**: On Kubernetes a run process MUST receive secrets only by reference to a cluster secret. No secret value MUST appear in a Job or pod specification, argument, label or annotation. Decided 2026-11-15: a run process reaches the run record with a short-lived token scoped to its own run, used against SCF's API. The run process MUST never hold the database credential. Open: the decision does not say how the token is handed to a run unit (a per-run token is not an existing cluster secret), or which API routes carry events and the handoff.
 
 **Run executor**
 
@@ -272,9 +272,9 @@ their repository.
 
 ## Assumptions
 
-- Runs driven by the Temporal worker (`apps/worker/forge_worker/temporal_main.py`) are out of scope. This spec covers the Celery task `forge.agent.run`.
-- The delegated executor of ADR-0012 (third-party command-line agents inside the sandbox) is out of scope. "Executor" here means where forge's own loop runs.
-- The run process is forge's own code and is trusted to the same degree as the worker. It is isolated to bound resources and to hold fewer credentials, not because it is treated as hostile. Agent commands are the untrusted part and stay in a sandbox session.
+- Runs driven by the Temporal worker (`apps/worker/scf_worker/temporal_main.py`) are out of scope. This spec covers the Celery task `forge.agent.run`.
+- The delegated executor of ADR-0012 (third-party command-line agents inside the sandbox) is out of scope. "Executor" here means where SCF's own loop runs.
+- The run process is SCF's own code and is trusted to the same degree as the worker. It is isolated to bound resources and to hold fewer credentials, not because it is treated as hostile. Agent commands are the untrusted part and stay in a sandbox session.
 - The worker image is reused for run units with a different entry point. No new image is published.
 - An operator or CRD, autoscaling policy and multi-cluster scheduling are out of scope.
 - Tests that need a real daemon, kind, gVisor or Firecracker stay in the existing opt-in lanes. The default lane proves behaviour against fakes and reports the rest as skipped.

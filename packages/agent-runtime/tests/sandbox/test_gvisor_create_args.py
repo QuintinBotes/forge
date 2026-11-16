@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from _sandbox_fakes import FakeDockerClient
 
-from forge_agent.sandbox import GvisorSandboxProvider
-from forge_contracts import SandboxKind
+from scf_agent.sandbox import GvisorSandboxProvider
+from scf_contracts import SandboxKind
 
 
 def _provider(client: FakeDockerClient) -> GvisorSandboxProvider:

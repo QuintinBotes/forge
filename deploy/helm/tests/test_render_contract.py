@@ -111,18 +111,18 @@ def test_secret_and_config_keys_are_disjoint() -> None:
 
 
 def test_production_images_are_digest_pinned() -> None:
-    """AC4 — under the production profile every forge image is @sha256-pinned."""
+    """AC4 — under the production profile every SCF image is @sha256-pinned."""
     require_helm()
     docs = render_docs("production")
-    forge_images = [
+    scf_images = [
         c["image"]
         for d in docs
         if d.get("kind") in {"Deployment", "Job"}
         for c in _containers(d)
-        if "ghcr.io/forge-platform" in c["image"]
+        if "ghcr.io/quintinbotes/swarm-code-factory" in c["image"]
     ]
-    assert forge_images, "no forge workload images found in production render"
-    for image in forge_images:
+    assert scf_images, "no SCF workload images found in production render"
+    for image in scf_images:
         assert DIGEST_RE.search(image), f"image not digest-pinned: {image}"
 
 

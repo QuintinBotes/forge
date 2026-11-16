@@ -8,10 +8,10 @@ get billed at API rates and silently inflate every cost-per-delivered-change
 figure downstream. Conversely, if an unpriced call were recorded as
 ``cost_usd=0`` without a distinguishing marker, local runs would look free.
 
-``ProviderName.local_cli`` (``packages/agent-runtime/forge_agent/providers/config.py``)
+``ProviderName.local_cli`` (``packages/agent-runtime/scf_agent/providers/config.py``)
 namespaces the model string as ``local-cli:<cli>`` (``local-cli:claude``,
 ``local-cli:codex``), falling back to the bare ``local-cli`` when no CLI name
-is known. ``PriceBook.resolve`` (``forge_obs/cost/pricing.py``) already matches
+is known. ``PriceBook.resolve`` (``scf_obs/cost/pricing.py``) already matches
 ``provider``/``model``/``kind`` by exact equality — no prefix or substring
 matching — so these namespaced strings can never collide with a real pricing
 row by construction. These tests pin that behaviour end to end: resolution,
@@ -26,11 +26,11 @@ from decimal import Decimal
 
 import pytest
 
-from forge_obs.cost.meter import UsageMeter
-from forge_obs.cost.models import ModelPrice, ModelUsage
-from forge_obs.cost.pricing import InMemoryPriceBook, compute_cost
-from forge_obs.cost.repository import InMemoryCostLedger
-from forge_obs.metrics import RecordingMetrics
+from scf_obs.cost.meter import UsageMeter
+from scf_obs.cost.models import ModelPrice, ModelUsage
+from scf_obs.cost.pricing import InMemoryPriceBook, compute_cost
+from scf_obs.cost.repository import InMemoryCostLedger
+from scf_obs.metrics import RecordingMetrics
 
 WS = uuid.uuid4()
 NOW = datetime(2026, 9, 19, 12, 0, tzinfo=UTC)

@@ -19,9 +19,9 @@ from collections.abc import Iterator
 
 import pytest
 
-from forge_agent import AgentRunner
-from forge_agent.runtime import _is_provider_failure, _is_refusal
-from forge_contracts import (
+from scf_agent import AgentRunner
+from scf_agent.runtime import _is_provider_failure, _is_refusal
+from scf_contracts import (
     PROVIDER_FAILURE_STOP_REASONS,
     AgentObjective,
     ModelRequest,

@@ -3,12 +3,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { SpecOverview, TaskDTO } from "@/lib/api/types";
 
 import { LifecycleStepper } from "./lifecycle-stepper";
 
-function renderStepper(spec: SpecOverview, client: ForgeApiClient) {
+function renderStepper(spec: SpecOverview, client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -18,8 +18,8 @@ function renderStepper(spec: SpecOverview, client: ForgeApiClient) {
   return render(<LifecycleStepper spec={spec} client={client} />, { wrapper: Wrapper });
 }
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
-  return { ...overrides } as unknown as ForgeApiClient;
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
+  return { ...overrides } as unknown as ScfApiClient;
 }
 
 describe("LifecycleStepper", () => {

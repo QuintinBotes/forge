@@ -7,7 +7,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import { usePublicBenchmarks, usePublicLeaderboard } from "@/lib/api/benchmarks";
 import type {
   PublicBenchmark,
@@ -37,7 +37,7 @@ function formatDate(iso: string | undefined): string {
 }
 
 export interface LeaderboardViewProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**
@@ -101,7 +101,7 @@ export function LeaderboardView({ client = apiClient }: LeaderboardViewProps) {
           </span>
         </div>
         <p className="max-w-md text-sm text-muted-foreground">
-          Ranked, independently reproducible submissions to Forge&apos;s
+          Ranked, independently reproducible submissions to SCF&apos;s
           published benchmark suites.
         </p>
       </header>
@@ -302,7 +302,7 @@ function LeaderboardRow({ entry }: { entry: PublicLeaderboardEntry }) {
           <span className="text-foreground">{entry.model_label}</span>
           <span className="text-[11px] text-muted-foreground">
             {entry.agent_mode}
-            {entry.forge_version ? ` · forge ${entry.forge_version}` : ""}
+            {entry.forge_version ? ` · SCF ${entry.forge_version}` : ""}
           </span>
         </div>
       </td>

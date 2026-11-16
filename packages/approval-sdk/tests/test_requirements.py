@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from forge_approval.models import GateType
-from forge_approval.requirements import GateRequirementResolver
-from forge_contracts.dtos import ApprovalPolicy, DeployRules, ReviewRules, SkillProfile
+from scf_approval.models import GateType
+from scf_approval.requirements import GateRequirementResolver
+from scf_contracts.dtos import ApprovalPolicy, DeployRules, ReviewRules, SkillProfile
 
 
 @dataclass

@@ -11,9 +11,9 @@ import socket
 
 import pytest
 
-from forge_mcp import MCPConnectionManager, MCPTransportUnavailableError
-from forge_mcp.reference_server import PLANTED_SECRET, ReferenceMCPServer
-from forge_mcp.testing import sample_connection
+from scf_mcp import MCPConnectionManager, MCPTransportUnavailableError
+from scf_mcp.reference_server import PLANTED_SECRET, ReferenceMCPServer
+from scf_mcp.testing import sample_connection
 
 
 def test_initialize_captures_resource_indicator() -> None:

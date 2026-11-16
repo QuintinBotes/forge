@@ -6,8 +6,8 @@ namespace scoping (rule 5), and secret redaction + payload hashing (rules 4/6).
 
 from __future__ import annotations
 
-from forge_contracts import MCPAuth, MCPAuthType, MCPConnection, MCPResource
-from forge_mcp.security import (
+from scf_contracts import MCPAuth, MCPAuthType, MCPConnection, MCPResource
+from scf_mcp.security import (
     SENSITIVE_KEYS,
     filter_resources,
     is_write_tool,
@@ -17,7 +17,7 @@ from forge_mcp.security import (
     resource_in_scope,
     token_binding,
 )
-from forge_mcp.transport import ToolSpec
+from scf_mcp.transport import ToolSpec
 
 # --------------------------------------------------------------------------- #
 # Write-tool classification                                                    #

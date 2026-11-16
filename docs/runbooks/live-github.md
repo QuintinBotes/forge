@@ -1,6 +1,6 @@
 # Runbook — Live GitHub App integration (HARD-01)
 
-This runbook wires the **real** Forge GitHub App against a disposable test
+This runbook wires the **real** Swarm Code Factory GitHub App against a disposable test
 repository and runs the creds-gated integration lane (`pytest -m live_github`).
 It closes the GitHub half of release blocker #1 (BETA gate **G-GH**).
 
@@ -25,7 +25,7 @@ It closes the GitHub half of release blocker #1 (BETA gate **G-GH**).
 ## 1. Create + install the GitHub App
 
 1. Create a GitHub App (org → Settings → Developer settings → GitHub Apps → New),
-   or use Forge's published App.
+   or use SCF's published App.
 2. Permissions (least privilege): **Contents: Read & write**, **Pull requests:
    Read & write**, **Metadata: Read-only**. Subscribe to the **Push**,
    **Check run/suite**, **Status**, and **Workflow run** webhook events.
@@ -90,7 +90,7 @@ to the test repo (or open/close the smoke PR) to generate one, then re-run.
 
 **Route-shape note (foundation-conforming deviation):** the as-built
 `POST /integration/github/webhooks` route (F03) verifies the `X-Hub-Signature-256`
-HMAC and then parses Forge's `WebhookEvent` envelope — it is not a raw-GitHub
+HMAC and then parses SCF's `WebhookEvent` envelope — it is not a raw-GitHub
 payload ingress. The live lane therefore proves the **route** fail-closed
 behaviour (200 on a valid signature, 401 on a tamper) with a signed envelope, and
 proves the **HMAC primitive** on the actual delivered bytes. Raw-payload
@@ -99,7 +99,7 @@ ingestion is an F03 concern, out of scope for HARD-01.
 **Webhook delivery URL (configure this in the GitHub App):** the path above is
 the API's *internal* route — `api_prefix` defaults to empty, so the router
 serves it bare. Behind the edge proxy (Caddy's `handle_path /api/*` /
-`forge.conf`'s `location /api/`, see
+`swarm-code-factory.conf`'s `location /api/`, see
 [docs/self-hosting/reverse-proxy.md](../self-hosting/reverse-proxy.md)), only
 the `/api`-prefixed path is externally reachable — the bare path falls through
 to the web frontend's catch-all route. Set the GitHub App's **Webhook URL** to:

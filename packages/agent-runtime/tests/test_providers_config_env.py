@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from forge_agent.providers import ModelClientConfig, ProviderName
+from scf_agent.providers import ModelClientConfig, ProviderName
 
 # Non-secret-shaped fake keys so the fixture never trips the secret scanner.
 _ANTHROPIC_KEY = "test-anthropic-key"
@@ -140,7 +140,7 @@ def test_openai_compatible_never_borrows_the_openai_key() -> None:
 
 def test_local_cli_model_is_read_and_flag_shaped_values_are_dropped() -> None:
     def detect(**_: object) -> list:
-        from forge_agent.providers.local_cli.detect import CliName, DetectedCli
+        from scf_agent.providers.local_cli.detect import CliName, DetectedCli
 
         return [DetectedCli(name=CliName.muse, path="/usr/local/bin/muse")]
 

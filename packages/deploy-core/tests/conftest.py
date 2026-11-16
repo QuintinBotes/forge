@@ -1,4 +1,4 @@
-"""Shared fixtures for the forge_deploy engine unit suite.
+"""Shared fixtures for the scf_deploy engine unit suite.
 
 Hermetic: SQLite in-memory (JSON variant) + NullDeployProvider + scripted
 HealthChecker + fake GitHub/policy/validation readers + FakeClock. No network,
@@ -16,23 +16,23 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.dtos import DeployRules
-from forge_db.base import Base
-from forge_db.models import Project, User, Workspace
-from forge_db.models.deployment import (
+from scf_contracts.dtos import DeployRules
+from scf_db.base import Base
+from scf_db.models import Project, User, Workspace
+from scf_db.models.deployment import (
     Deployment,
     Environment,
     EnvironmentPipeline,
 )
-from forge_deploy.freeze import FakeClock
-from forge_deploy.schemas import (
+from scf_deploy.freeze import FakeClock
+from scf_deploy.schemas import (
     DeployProviderConfig,
     EnvironmentSpec,
     GateConfig,
     HealthCheckSpec,
     PipelineSpec,
 )
-from forge_deploy.states import DeploymentKind, DeploymentState, DeploymentTrigger
+from scf_deploy.states import DeploymentKind, DeploymentState, DeploymentTrigger
 
 WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000c3")

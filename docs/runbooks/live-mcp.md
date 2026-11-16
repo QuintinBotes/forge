@@ -1,12 +1,12 @@
 # Runbook — Live MCP transport over real HTTP/stdio (HARD-05)
 
-Forge's MCP control plane (`forge_mcp` SDK, the `apps/mcp-gateway` service, and
+Swarm Code Factory's MCP control plane (`scf_mcp` SDK, the `apps/mcp-gateway` service, and
 the `apps/api` `/mcp/*` router) lets operators register MCP servers and lets
 agents read from them (namespace-scoped, redacted) and call read-only-by-default
 tools — all audited. ALPHA proved every security rule against an in-memory
 `FakeTransport`; **HARD-05 makes the transport real**.
 
-The single load-bearing seam `forge_mcp.transport.Transport` now has two live
+The single load-bearing seam `scf_mcp.transport.Transport` now has two live
 implementations:
 
 - `HttpMcpTransport` — MCP **Streamable-HTTP** (JSON-RPC 2.0 over HTTP, revision
@@ -20,7 +20,7 @@ never implicit.
 
 > **No external SaaS or credential is required.** The live substrate is the
 > **self-hosted reference MCP server** (`deploy/mcp-reference/`, implemented in
-> `packages/mcp-sdk/forge_mcp/reference_server.py`). The only "cred" is a local
+> `packages/mcp-sdk/scf_mcp/reference_server.py`). The only "cred" is a local
 > URL. HARD-05 proves the path against it; a hosted Confluence/Jira/GitHub MCP
 > connector + a human SSRF/transport pentest are explicitly HARD-09's punch-list.
 
@@ -94,7 +94,7 @@ MCP_LIVE_TRANSPORT=true uv run pytest -m live_mcp -q
 
 > **PARKED:** with the Postgres-backed `AuditStore` not yet delivered by HARD-01,
 > the durable-row assertion is deferred to that store; the bridge
-> (`forge_api.observability.MCPAuditSink` → `AuditLog.record_mcp_call`) and the
+> (`scf_api.observability.MCPAuditSink` → `AuditLog.record_mcp_call`) and the
 > redaction/every-op assertions are proven here.
 
 ---

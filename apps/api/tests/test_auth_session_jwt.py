@@ -15,11 +15,11 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
-from forge_api.auth.service import AuthService, get_auth_service
-from forge_api.main import app
-from forge_auth.tokens import encode_session_jwt
-from forge_contracts.auth import SessionClaims
-from forge_contracts.enums import UserRole
+from scf_api.auth.service import AuthService, get_auth_service
+from scf_api.main import app
+from scf_auth.tokens import encode_session_jwt
+from scf_contracts.auth import SessionClaims
+from scf_contracts.enums import UserRole
 
 AUTH_SECRET = "test-auth-secret"
 WS = uuid.uuid4()

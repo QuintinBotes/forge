@@ -9,7 +9,7 @@ from __future__ import annotations
 import io
 import logging
 
-from forge_api.observability.redaction import (
+from scf_api.observability.redaction import (
     RedactingLogFilter,
     install_log_redaction,
 )

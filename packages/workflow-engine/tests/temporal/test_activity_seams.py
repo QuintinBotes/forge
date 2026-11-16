@@ -15,11 +15,11 @@ from temporalio.common import RetryPolicy
 from temporalio.testing import ActivityEnvironment
 from temporalio.worker import UnsandboxedWorkflowRunner, Worker
 
-import forge_workflow.temporal.activities as activities_module
-from forge_contracts import RunStatus, WorkflowRun
-from forge_workflow.store import InMemoryWorkflowStore
-from forge_workflow.temporal.activities import WorkflowActivities
-from forge_workflow.temporal.payloads import (
+import scf_workflow.temporal.activities as activities_module
+from scf_contracts import RunStatus, WorkflowRun
+from scf_workflow.store import InMemoryWorkflowStore
+from scf_workflow.temporal.activities import WorkflowActivities
+from scf_workflow.temporal.payloads import (
     AgentRunResultDTO,
     ResumeAgentInput,
     RunAgentInput,

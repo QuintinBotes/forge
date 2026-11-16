@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type {
   ProjectAccess,
   RoleGrant,
@@ -60,7 +60,7 @@ const PROJECT_ACCESS: ProjectAccess = {
   team_access: [{ project_id: P1, team_id: T1, access_level: "read" }],
 };
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     baseUrl: "http://localhost:8000",
     me: vi.fn(() => Promise.resolve({ user_id: "me", workspace_id: WS })),
@@ -90,10 +90,10 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
     ),
     removeProjectTeamAccess: vi.fn(() => Promise.resolve(undefined)),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

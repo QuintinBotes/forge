@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from forge_board.exceptions import SprintStateError
-from forge_board.sprint_state import SprintStateMachine
-from forge_contracts.enums import SprintState
+from scf_board.exceptions import SprintStateError
+from scf_board.sprint_state import SprintStateMachine
+from scf_contracts.enums import SprintState
 
 
 @pytest.fixture

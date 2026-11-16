@@ -1,6 +1,6 @@
-"""Manifest (de)serialization tests for ``forge_spec`` (plan Task 1.7).
+"""Manifest (de)serialization tests for ``scf_spec`` (plan Task 1.7).
 
-The ``manifest.yaml`` is the machine-readable spec artifact (FORGE_SPEC: Spec
+The ``manifest.yaml`` is the machine-readable spec artifact (SCF_SPEC: Spec
 Manifest Schema). These tests pin the on-disk schema keys and the round-trip
 ``SpecManifest`` <-> YAML so the engine and external tooling agree byte-for-byte.
 """
@@ -11,7 +11,7 @@ import uuid
 
 import yaml
 
-from forge_contracts import (
+from scf_contracts import (
     ADR,
     AcceptanceCriterion,
     ExecutionMode,
@@ -19,7 +19,7 @@ from forge_contracts import (
     SpecManifest,
     SpecStatus,
 )
-from forge_spec import dump_manifest, load_manifest
+from scf_spec import dump_manifest, load_manifest
 
 
 def _sample_manifest() -> SpecManifest:
@@ -51,7 +51,7 @@ def test_dump_manifest_is_valid_yaml_with_spec_schema_keys() -> None:
     text = dump_manifest(_sample_manifest())
     data = yaml.safe_load(text)
 
-    # Spec Manifest Schema top-level keys (FORGE_SPEC).
+    # Spec Manifest Schema top-level keys (SCF_SPEC).
     for key in (
         "id",
         "name",
@@ -125,7 +125,7 @@ def test_dump_manifest_status_enum_is_a_string_not_python_repr() -> None:
 
 
 def test_spec_id_for_key_is_deterministic_uuid() -> None:
-    from forge_spec import spec_id_for_key
+    from scf_spec import spec_id_for_key
 
     a = spec_id_for_key("SPEC-17")
     b = spec_id_for_key("SPEC-17")

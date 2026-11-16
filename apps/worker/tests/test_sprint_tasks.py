@@ -15,13 +15,13 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_board.sprint_service import SprintService
-from forge_contracts.enums import SprintState, TaskStatus
-from forge_db.base import Base
-from forge_db.models import Project, Sprint, SprintBurndownSnapshot, SprintVelocity, Task, Workspace
-from forge_worker.beat import BEAT_SCHEDULE, SPRINT_SNAPSHOT_TASK
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks.sprint_tasks import (
+from scf_board.sprint_service import SprintService
+from scf_contracts.enums import SprintState, TaskStatus
+from scf_db.base import Base
+from scf_db.models import Project, Sprint, SprintBurndownSnapshot, SprintVelocity, Task, Workspace
+from scf_worker.beat import BEAT_SCHEDULE, SPRINT_SNAPSHOT_TASK
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks.sprint_tasks import (
     RECOMPUTE_TASK,
     RECONCILE_TASK,
     SNAPSHOT_TASK,

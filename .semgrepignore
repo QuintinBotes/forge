@@ -1,4 +1,4 @@
-# Scope for `semgrep --config .semgrep/forge.yml .` (HARD-09).
+# Scope for `semgrep --config .semgrep/swarm-code-factory.yml .` (HARD-09).
 # Test trees deliberately contain fake secrets and rule-triggering fixtures;
 # the fixture regression test copies tests/security/fixtures to a tmp dir and
 # scans that copy, so excluding it here does not blind the rule tests.

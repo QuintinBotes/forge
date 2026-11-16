@@ -1,4 +1,4 @@
-# forge-marketplace
+# scf-marketplace
 
 The **integration-marketplace SDK** (slice F32). A thin, security-critical layer
 on top of the existing F09 MCP-connector and F11 skill-profile artifacts that
@@ -21,6 +21,6 @@ Key modules:
 * `installer` — per-kind validation + the MCP read-only/pending security floor.
 * `catalog` — semver compare, `min_forge_version` gate, latest-compatible + update.
 * `registry_client` — SSRF-bounded fetch guard.
-* `packaging` — `build_package` (the author-side `forge marketplace package`).
+* `packaging` — `build_package` (the author-side `scf marketplace package`).
 
 No package ever executes code — artifacts are declarative YAML only.

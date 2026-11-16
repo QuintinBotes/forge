@@ -6,12 +6,12 @@ import uuid
 
 import pytest
 
-from forge_agent.sandbox import (
+from scf_agent.sandbox import (
     SandboxSettings,
     resolve_sandbox_kind,
     resolve_sandbox_settings,
 )
-from forge_contracts import (
+from scf_contracts import (
     SANDBOX_KIND_RANK,
     PolicySandboxBlock,
     SandboxKind,

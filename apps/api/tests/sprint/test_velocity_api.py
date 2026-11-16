@@ -7,9 +7,9 @@ import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_board.sprint_service import SprintService
-from forge_contracts.enums import CarryoverTarget, TaskStatus
-from forge_db.models import Sprint, Task
+from scf_board.sprint_service import SprintService
+from scf_contracts.enums import CarryoverTarget, TaskStatus
+from scf_db.models import Sprint, Task
 
 from .conftest import PROJECT_ID, WS_ID
 

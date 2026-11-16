@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from _provider_fakes import anthropic_message, openai_completion
 
-from forge_agent.providers import translate
-from forge_contracts import ModelMessage, ModelRequest
+from scf_agent.providers import translate
+from scf_contracts import ModelMessage, ModelRequest
 
 _TOOLS = [
     {
@@ -22,7 +22,7 @@ _TOOLS = [
 
 _REQUEST = ModelRequest(
     model="claude-opus-4-8",
-    system="You are Forge.",
+    system="You are SCF.",
     messages=[
         ModelMessage(role="user", content="do the thing"),
         ModelMessage(role="assistant", content="on it"),
@@ -76,7 +76,7 @@ def test_anthropic_text_only_maps_to_content() -> None:
 
 def test_openai_request_prepends_system_and_maps_tools() -> None:
     kwargs = translate.openai_create_kwargs(_REQUEST, model="gpt-4o", max_tokens=8000)
-    assert kwargs["messages"][0] == {"role": "system", "content": "You are Forge."}
+    assert kwargs["messages"][0] == {"role": "system", "content": "You are SCF."}
     assert len(kwargs["messages"]) == 4
     assert kwargs["tools"][0]["type"] == "function"
     assert kwargs["tools"][0]["function"]["name"] == "write_file"

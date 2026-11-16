@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from forge_approval import DelegationDirectory, DelegationEntry
+from scf_approval import DelegationDirectory, DelegationEntry
 
 ALICE = uuid.UUID("00000000-0000-0000-0000-0000000000d1")
 BOB = uuid.UUID("00000000-0000-0000-0000-0000000000d2")

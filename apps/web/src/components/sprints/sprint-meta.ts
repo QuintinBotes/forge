@@ -3,7 +3,7 @@
  *
  * State labels + token-only badge classes, point/percent/date formatters, and
  * the "which sprint is in focus by default" rule (the running sprint, else the
- * most recent). No hardcoded colour — every class resolves a Forge token.
+ * most recent). No hardcoded colour — every class resolves an SCF token.
  */
 
 import type { AllocationStatus, Sprint, SprintState } from "@/lib/api/types";

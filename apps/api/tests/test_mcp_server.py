@@ -1,4 +1,4 @@
-"""Forge's own MCP server (spec I): protocol, permissions, limits and audit."""
+"""SCF's own MCP server (spec I): protocol, permissions, limits and audit."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from forge_api.db import get_db
-from forge_api.deps import Principal
-from forge_api.main import create_app
-from forge_api.mcp_server.protocol import (
+from scf_api.db import get_db
+from scf_api.deps import Principal
+from scf_api.main import create_app
+from scf_api.mcp_server.protocol import (
     FORBIDDEN,
     INVALID_PARAMS,
     INVALID_REQUEST,
@@ -22,21 +22,21 @@ from forge_api.mcp_server.protocol import (
     PARSE_ERROR,
     negotiate_version,
 )
-from forge_api.mcp_server.registry import (
+from scf_api.mcp_server.registry import (
     MAX_TEXT_CHARS,
     McpTool,
     ToolContext,
     ToolError,
     ToolRegistry,
 )
-from forge_api.observability.audit import AuditCategory, AuditLog
-from forge_api.routers.mcp_server import (
+from scf_api.observability.audit import AuditCategory, AuditLog
+from scf_api.routers.mcp_server import (
     MAX_BODY_BYTES,
     get_mcp_server_audit_log,
     get_mcp_tool_registry,
 )
-from forge_api.settings import Settings, get_settings
-from forge_contracts import UserRole
+from scf_api.settings import Settings, get_settings
+from scf_contracts import UserRole
 
 SECRET = "ghp_" + "a" * 36
 WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000c3")

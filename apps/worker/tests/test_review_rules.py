@@ -12,13 +12,13 @@ from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.approval_repository_db import SqlAlchemyApprovalRepository
-from forge_approval.models import ApprovalRequest, GateType
-from forge_db.base import Base
-from forge_db.models import Project, Task, WorkflowRun, Workspace
-from forge_worker import review_rules
-from forge_worker.approval_activity import make_create_approval_fn
-from forge_workflow.temporal.payloads import ApprovalInput
+from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
+from scf_approval.models import ApprovalRequest, GateType
+from scf_db.base import Base
+from scf_db.models import Project, Task, WorkflowRun, Workspace
+from scf_worker import review_rules
+from scf_worker.approval_activity import make_create_approval_fn
+from scf_workflow.temporal.payloads import ApprovalInput
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000e1")
 REPO = "acme/app"

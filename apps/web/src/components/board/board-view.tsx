@@ -7,7 +7,7 @@ import { buildBoardCommands, useRegisterCommands } from "@/components/command-pa
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useCreateTask,
   useSetTaskStatus,
@@ -25,7 +25,7 @@ export type BoardViewMode = "list" | "board";
 
 export interface BoardViewProps {
   initialView?: BoardViewMode;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
   filters?: Record<string, string | number | boolean | undefined>;
   /** Disable the WebSocket subscription (e.g. in tests). */
   enableRealtime?: boolean;

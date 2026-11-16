@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from forge_workflow.default_workflow import default_feature_definition
-from forge_workflow.editor.catalog import RegistryCatalog, Vocabulary
-from forge_workflow.editor.graph import WorkflowGraph, definition_to_graph
+from scf_workflow.default_workflow import default_feature_definition
+from scf_workflow.editor.catalog import RegistryCatalog, Vocabulary
+from scf_workflow.editor.graph import WorkflowGraph, definition_to_graph
 
 
 @pytest.fixture

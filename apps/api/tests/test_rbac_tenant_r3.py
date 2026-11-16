@@ -23,9 +23,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_contracts import UserRole
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_contracts import UserRole
 
 # Deterministic identities (the tests dir is not an importable package, so these
 # mirror conftest rather than importing it).
@@ -133,9 +133,9 @@ def test_member_can_write_board() -> None:
 
 @pytest.fixture
 def mcp_app() -> Iterator[FastAPI]:
-    from forge_api.routers.mcp import get_mcp_manager
-    from forge_mcp import MCPConnectionManager
-    from forge_mcp.testing import sample_transport
+    from scf_api.routers.mcp import get_mcp_manager
+    from scf_mcp import MCPConnectionManager
+    from scf_mcp.testing import sample_transport
 
     app = create_app()
     manager = MCPConnectionManager(transport_factory=lambda conn: sample_transport())
@@ -144,7 +144,7 @@ def mcp_app() -> Iterator[FastAPI]:
 
 
 def _register(client: TestClient, **overrides: object) -> dict[str, object]:
-    from forge_mcp.testing import sample_connection
+    from scf_mcp.testing import sample_connection
 
     conn = sample_connection(**overrides)
     resp = client.post("/mcp/connections", json=conn.model_dump(mode="json"))
@@ -154,7 +154,7 @@ def _register(client: TestClient, **overrides: object) -> dict[str, object]:
 
 def test_viewer_cannot_register_mcp_connection(mcp_app: FastAPI) -> None:
     _as(mcp_app, make_test_principal(role=UserRole.VIEWER))
-    from forge_mcp.testing import sample_connection
+    from scf_mcp.testing import sample_connection
 
     conn = sample_connection(allow_write=True)
     with TestClient(mcp_app) as client:
@@ -176,7 +176,7 @@ def test_viewer_cannot_call_mcp_tool(mcp_app: FastAPI) -> None:
 
 def test_agent_runner_cannot_register_mcp_connection(mcp_app: FastAPI) -> None:
     _as(mcp_app, make_test_principal(role=UserRole.AGENT_RUNNER))
-    from forge_mcp.testing import sample_connection
+    from scf_mcp.testing import sample_connection
 
     conn = sample_connection()
     with TestClient(mcp_app) as client:
@@ -221,7 +221,7 @@ def test_mcp_connections_are_workspace_scoped(mcp_app: FastAPI) -> None:
 
 @pytest.fixture
 def obs_app() -> Iterator[tuple[FastAPI, object]]:
-    from forge_api.observability.service import ObservabilityService, get_observability_service
+    from scf_api.observability.service import ObservabilityService, get_observability_service
 
     app = create_app()
     service = ObservabilityService()
@@ -230,7 +230,7 @@ def obs_app() -> Iterator[tuple[FastAPI, object]]:
 
 
 def test_audit_log_is_workspace_scoped(obs_app: tuple[FastAPI, object]) -> None:
-    from forge_api.observability.audit import AuditCategory
+    from scf_api.observability.audit import AuditCategory
 
     app, service = obs_app
     service.audit.record(  # type: ignore[attr-defined]
@@ -259,8 +259,8 @@ def test_audit_log_is_workspace_scoped(obs_app: tuple[FastAPI, object]) -> None:
 
 
 def test_run_trace_is_workspace_scoped(obs_app: tuple[FastAPI, object]) -> None:
-    from forge_contracts import Step
-    from forge_contracts.enums import RunStatus, StepKind
+    from scf_contracts import Step
+    from scf_contracts.enums import RunStatus, StepKind
 
     app, service = obs_app
     run_id = uuid.uuid4()

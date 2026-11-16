@@ -1,5 +1,5 @@
 """Postgres integration tests for the ao-settings-api ``ao_workspace_settings``
-model + :class:`~forge_db.ao_settings.SqlAoSettingsStore`.
+model + :class:`~scf_db.ao_settings.SqlAoSettingsStore`.
 
 Exercises the real constraints: the unique ``workspace_id`` index enforcing at
 most one settings row per workspace, the insert-then-partial-update upsert
@@ -16,9 +16,9 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.ao_settings import SqlAoSettingsStore
-from forge_db.base import Base
-from forge_db.models import AoWorkspaceSettings, Workspace
+from scf_db.ao_settings import SqlAoSettingsStore
+from scf_db.base import Base
+from scf_db.models import AoWorkspaceSettings, Workspace
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

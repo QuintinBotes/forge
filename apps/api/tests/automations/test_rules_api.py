@@ -11,8 +11,8 @@ import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
-from forge_db.models import AutomationExecution
-from forge_db.models.enums import (
+from scf_db.models import AutomationExecution
+from scf_db.models.enums import (
     AutomationEntityType,
     AutomationExecutionStatus,
     AutomationTriggerSource,
@@ -146,7 +146,7 @@ def test_delete_preserves_executions(
 
 
 def test_cross_workspace_is_404(client_factory, project_id) -> None:
-    from forge_contracts import UserRole
+    from scf_contracts import UserRole
 
     owner = client_factory(role=UserRole.ADMIN)
     rid = _create(owner, project_id).json()["id"]

@@ -1,7 +1,7 @@
 /**
  * Presentation metadata + secret redaction for the audit viewer (pure +
  * unit-testable; no JSX). Maps the F39 vocabulary — actions, actor types,
- * outcomes and severities — onto Forge design-token classes, labels and icon
+ * outcomes and severities — onto SCF design-token classes, labels and icon
  * refs, and provides the defensive client-side redaction that guarantees no
  * credential material renders even if a producer ever slipped one through.
  */

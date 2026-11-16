@@ -15,28 +15,28 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import StaticPool, create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_worker.tasks.marketplace as mkt
-from forge_api.services.marketplace_service import (
+import scf_worker.tasks.marketplace as mkt
+from scf_api.services.marketplace_service import (
     MarketplaceService,
     seed_official_registry,
 )
-from forge_db.base import Base
-from forge_db.models import User, Workspace
-from forge_db.models.marketplace import (
+from scf_db.base import Base
+from scf_db.models import User, Workspace
+from scf_db.models.marketplace import (
     MarketplaceInstallation,
     MarketplaceListing,
     MarketplaceRegistry,
 )
-from forge_marketplace.manifest import compute_manifest_hash
-from forge_marketplace.models import (
+from scf_marketplace.manifest import compute_manifest_hash
+from scf_marketplace.models import (
     ArtifactKind,
     InstallRequest,
     RegistryIndex,
     RegistryIndexEntry,
     RegistryIndexVersion,
 )
-from forge_marketplace.packaging import build_package
-from forge_worker.tasks.marketplace import (
+from scf_marketplace.packaging import build_package
+from scf_worker.tasks.marketplace import (
     _allowed_hosts,
     backfill_official,
     build_service,

@@ -22,8 +22,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-from forge_db.base import Base
-from forge_db.models.workflow_editor import (  # noqa: F401 - registers tables
+from scf_db.base import Base
+from scf_db.models.workflow_editor import (  # noqa: F401 - registers tables
     WorkflowDefinition,
     WorkflowDefinitionRevision,
 )

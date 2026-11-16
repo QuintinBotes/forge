@@ -19,11 +19,11 @@ describe("DevBanner", () => {
     render(<DevBanner storageKey="test.dev-banner" />);
     expect(screen.getByRole("link", { name: /repo/i })).toHaveAttribute(
       "href",
-      "https://github.com/QuintinBotes/forge",
+      "https://github.com/QuintinBotes/swarm-code-factory",
     );
     expect(screen.getByRole("link", { name: /release readiness/i })).toHaveAttribute(
       "href",
-      "https://github.com/QuintinBotes/forge/blob/main/RELEASE_READINESS.md",
+      "https://github.com/QuintinBotes/swarm-code-factory/blob/main/RELEASE_READINESS.md",
     );
   });
 

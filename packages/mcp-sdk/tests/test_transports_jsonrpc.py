@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_mcp.transports.jsonrpc import (
+from scf_mcp.transports.jsonrpc import (
     IdGenerator,
     JsonRpcError,
     build_notification,

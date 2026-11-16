@@ -6,8 +6,8 @@ import uuid
 
 from conftest import WS
 
-from forge_approval import ApprovalService, quorum_met
-from forge_approval.models import (
+from scf_approval import ApprovalService, quorum_met
+from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRequest,
     GateStatus,

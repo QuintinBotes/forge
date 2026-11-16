@@ -16,13 +16,13 @@ from conftest import (
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.deployments import get_deployment_service
-from forge_api.services.deployment_service import DeploymentService
-from forge_contracts import UserRole
-from forge_contracts.dtos import DeployRules
-from forge_deploy.freeze import FakeClock
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.deployments import get_deployment_service
+from scf_api.services.deployment_service import DeploymentService
+from scf_contracts import UserRole
+from scf_contracts.dtos import DeployRules
+from scf_deploy.freeze import FakeClock
 
 SATURDAY = FakeClock(datetime(2026, 6, 27, 12, 0, tzinfo=UTC))
 FREEZE = {

@@ -20,7 +20,7 @@ import {
 import { useRegisterCommands } from "@/components/command-palette";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useCancelDeployment,
   useDecideDeployment,
@@ -83,7 +83,7 @@ function actionErrorMessage(error: unknown, verb: string): string {
 
 export interface DeploymentsViewProps {
   projectId?: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

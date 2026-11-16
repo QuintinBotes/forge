@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import type { WorldTimeQuery } from "@/lib/api/types";
 import {
   useDecideWorldProposal,
@@ -62,7 +62,7 @@ function toIso(value: string): string | undefined {
 }
 
 export interface WorldViewProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 export function WorldView({ client = apiClient }: WorldViewProps) {
@@ -300,7 +300,7 @@ export function WorldView({ client = apiClient }: WorldViewProps) {
           Knowledge graph
         </h1>
         <p className="text-sm text-muted-foreground">
-          Forge&apos;s world model: entities, facts and their evidence, on two
+          SCF&apos;s world model: entities, facts and their evidence, on two
           clocks. Machines propose; people decide.
         </p>
       </div>
@@ -345,7 +345,7 @@ export function WorldView({ client = apiClient }: WorldViewProps) {
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          World time is when something was true; known-as-of is what forge had
+          World time is when something was true; known-as-of is what SCF had
           recorded by then. Leave both empty for now.
         </p>
       </section>

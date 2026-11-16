@@ -5,20 +5,20 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from forge_db.models.workflow_editor import RevisionValidationStatus, WorkflowDefinitionSource
-from forge_workflow.editor.errors import (
+from scf_db.models.workflow_editor import RevisionValidationStatus, WorkflowDefinitionSource
+from scf_workflow.editor.errors import (
     DefinitionManagedByMarketplaceError,
     DefinitionNameConflictError,
     PublishBlockedError,
 )
-from forge_workflow.editor.graph import WorkflowGraph, line_graph_from_yaml, yaml_to_graph
-from forge_workflow.editor.schemas import (
+from scf_workflow.editor.graph import WorkflowGraph, line_graph_from_yaml, yaml_to_graph
+from scf_workflow.editor.schemas import (
     CreateDefinition,
     ForkRequest,
     ImportRequest,
     SaveDraftRequest,
 )
-from forge_workflow.editor.service import RecordingAuditSink, WorkflowEditorService
+from scf_workflow.editor.service import RecordingAuditSink, WorkflowEditorService
 
 from .conftest import IMPLEMENTATION_LOOP, REVIEW_LINE
 from .test_service import ACTOR, WS, FakeRepo

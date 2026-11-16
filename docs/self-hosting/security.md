@@ -1,6 +1,6 @@
 # Security hardening
 
-Forge is built to run inside your own perimeter with bring-your-own-keys. This
+Swarm Code Factory is built to run inside your own perimeter with bring-your-own-keys. This
 guide covers the operator's responsibilities: secrets, credential rotation,
 network policy, and the platform's built-in guardrails. It complements the
 deployment hardening described in [docker-compose.md](docker-compose.md).
@@ -24,13 +24,13 @@ the encrypted BYOK vault in Postgres.
   same archive; see [backup.md](backup.md)).
 - **Never commit `.env`.** It is git-ignored by default. Restrict it on disk:
   `chmod 600 .env`.
-- **Secrets are redacted everywhere.** Forge redacts secret values from logs,
+- **Secrets are redacted everywhere.** SCF redacts secret values from logs,
   traces, and retrieval results by design. Do not defeat this by echoing secrets
   into application logs or by lowering `LOG_LEVEL` to debug in production.
 
 ### Envelope-vault key material (F37)
 
-The F37 envelope vault (`forge_auth`) uses AES-256-GCM with a **versioned**
+The F37 envelope vault (`scf_auth`) uses AES-256-GCM with a **versioned**
 32-byte master key (KEK) and an HKDF-derived per-workspace data key; the
 workspace id is bound into the GCM AAD, so a ciphertext copied across tenants
 fails authentication. Generate KEKs and peppers with:
@@ -75,7 +75,7 @@ Canonical config (12-factor; any key may instead be supplied as `<KEY>_FILE`):
 Preflight your config before every deploy (blocking CI `secrets-config` gate):
 
 ```bash
-python -m forge_api.cli_secrets check-config   # exits non-zero on any violation
+python -m scf_api.cli_secrets check-config   # exits non-zero on any violation
 ```
 
 **KEK rotation drill (zero-downtime).** Back up the database first.
@@ -85,7 +85,7 @@ python -m forge_api.cli_secrets check-config   # exits non-zero on any violation
    key, and `FORGE_SECRET_KEY_VERSION=2`.
 3. Re-wrap every stored DEK under the new KEK:
    ```bash
-   python -m forge_api.cli_secrets rotate-kek   # prints {"rewrapped": N, "skipped": M}
+   python -m scf_api.cli_secrets rotate-kek   # prints {"rewrapped": N, "skipped": M}
    ```
    Reads during the window transparently unwrap under whichever KEK version each
    row carries, so there is no downtime.
@@ -191,7 +191,7 @@ Notes:
 
 ## Enforcement matrix (what is verified, continuously)
 
-Every security control Forge claims is asserted on the **wired request path** by
+Every security control SCF claims is asserted on the **wired request path** by
 a regression suite (`uv run pytest -m security`) and re-run on every CI push by
 a blocking `security` job (SAST via bandit + custom semgrep rules, dependency
 CVE audit via pip-audit/osv, secret scan via gitleaks, and a CycloneDX SBOM).
@@ -207,25 +207,25 @@ the triage of every automated finding is in
 
 ## Browser storage on `localhost`
 
-Forge holds the API key you paste into the Connect dialog in browser storage.
+SCF holds the API key you paste into the Connect dialog in browser storage.
 Browser storage is scoped to an **origin** — scheme, host *and* port — and
 `http://localhost:8080` is not a private origin. It is the same origin as every
 other local application that has ever been served from that port on this
 machine, and those applications share one storage bucket.
 
-We saw this concretely during a self-host evaluation: Forge's `localStorage`
+We saw this concretely during a self-host evaluation: SCF's `localStorage`
 already held `app-a-state`, `app-b-lock` and `app-c-store` keys
 from unrelated local development. Nothing had gone wrong — that is simply what a
-shared origin means. Anything Forge persists client-side is readable by those
-apps, and theirs by Forge.
+shared origin means. Anything SCF persists client-side is readable by those
+apps, and theirs by SCF.
 
-What Forge does about it:
+What SCF does about it:
 
 - **The key is held per-tab by default.** The Connect dialog uses
   `sessionStorage`, so the credential dies when the tab closes. "Remember on
   this browser" opts into `localStorage`; the dialog says what that means.
-- **Every key Forge writes is namespaced** under `forge.` (`forge.api.token`,
-  `forge.board.savedViews`, …), so Forge cannot silently collide with another
+- **Every key SCF writes is namespaced** under `forge.` (`forge.api.token`,
+  `forge.board.savedViews`, …), so SCF cannot silently collide with another
   app's state on a shared origin. Namespacing prevents collisions; it does not
   and cannot prevent reads.
 
@@ -239,7 +239,7 @@ What you should do about it:
 - **Mint per-person, least-privilege keys** for anything beyond evaluation, and
   revoke the shared bootstrap key (`DELETE /auth/api-keys/{id}`).
 
-This is a property of browsers, not of Forge's deployment posture: the same
+This is a property of browsers, not of SCF's deployment posture: the same
 reasoning applies to any app you run on `localhost`.
 
 ## Network policy
@@ -258,7 +258,7 @@ unreachable from the edge. Preserve this posture:
 
 ## Built-in guardrails
 
-Forge ships safe-by-default controls. Operators should understand them rather
+SCF ships safe-by-default controls. Operators should understand them rather
 than weaken them:
 
 - **MCP is read-only by default.** Connections set `allow_write: false`; enabling
@@ -279,7 +279,7 @@ than weaken them:
 
 ## Container sandboxing (F19)
 
-By default Forge executes a task's verification/build commands as host
+By default SCF executes a task's verification/build commands as host
 subprocesses inside a git **worktree** (`FORGE_SANDBOX_KIND=worktree`). Worktrees
 are an isolation convenience, **not** a security boundary: untrusted repo code
 (tests, build scripts, transitive deps) runs with the worker's privileges. For
@@ -310,7 +310,7 @@ locked-down Docker container.
   credentials are never placed in the sandbox environment or any persisted
   `sandbox_instance` row.
 - **No silent downgrade.** If `container` is requested but the daemon/proxy is
-  unreachable, the run fails loudly — Forge never quietly executes untrusted code
+  unreachable, the run fails loudly — SCF never quietly executes untrusted code
   on the host when the operator asked for containment.
 - **Orphan reaping.** A `sandbox.reap_orphans` beat task and a worker-boot pass
   remove any `forge.sandbox=true` container whose run is terminal or older than
@@ -340,7 +340,7 @@ adds two **kernel-boundary** tiers behind the same `SandboxProvider` seam:
 - **No silent downgrade — ever.** If the resolved kind's runtime is not
   registered (or `/dev/kvm` is missing for `microvm`), worker boot and the run
   fail loudly with `SandboxRuntimeUnavailable`; `deploy/scripts/preflight.sh`
-  gates the same conditions before `up`. Forge never quietly executes untrusted
+  gates the same conditions before `up`. SCF never quietly executes untrusted
   code under a weaker runtime than the operator asked for.
 - **Enabling gVisor (no special hardware).** Run
   `deploy/scripts/install-runtimes.sh --gvisor` on the daemon host (installs
@@ -375,7 +375,7 @@ adds two **kernel-boundary** tiers behind the same `SandboxProvider` seam:
 
 ## Enterprise SSO — SAML + SCIM (F33)
 
-- **SAML 2.0 (Forge as SP).** Per-workspace federation with a corporate IdP
+- **SAML 2.0 (SCF as SP).** Per-workspace federation with a corporate IdP
   (Okta / Entra ID / Google Workspace / generic). Responses are validated with
   mandatory XML-DSig signature checks (toolkit-delegated to `signxml` — pure
   Python, no native `xmlsec1` needed), audience restriction, bounded clock

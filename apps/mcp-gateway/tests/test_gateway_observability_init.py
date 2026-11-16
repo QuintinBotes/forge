@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from forge_mcp_gateway.observability import (
+from scf_mcp_gateway.observability import (
     extract_trace_context,
     record_tool_call,
     setup_gateway_telemetry,
 )
-from forge_obs.metrics import RecordingMetrics, reset_metrics, set_metrics
-from forge_obs.settings import ObsSettings
-from forge_obs.telemetry import shutdown_telemetry
+from scf_obs.metrics import RecordingMetrics, reset_metrics, set_metrics
+from scf_obs.settings import ObsSettings
+from scf_obs.telemetry import shutdown_telemetry
 
 
 def teardown_function() -> None:

@@ -28,22 +28,22 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.approval_repository_db import SqlAlchemyApprovalRepository
-from forge_approval.models import (
+from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
+from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRecord,
     ApprovalRequest,
     GateStatus,
     GateType,
 )
-from forge_approval.repository import (
+from scf_approval.repository import (
     ApprovalNotFoundError,
     ApprovalRepository,
     DuplicateDecisionError,
     InMemoryApprovalRepository,
 )
-from forge_db.base import Base
-from forge_db.models import User, Workspace
+from scf_db.base import Base
+from scf_db.models import User, Workspace
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 

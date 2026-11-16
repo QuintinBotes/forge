@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type { InstallPlan, Listing } from "@/lib/api/types";
 
 import { InstallDialog } from "./install-dialog";
@@ -44,7 +44,7 @@ function plan(over: Partial<InstallPlan> = {}): InstallPlan {
   };
 }
 
-function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(over: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     previewInstall: vi.fn(() => Promise.resolve(plan())),
     installPackage: vi.fn(() =>
@@ -59,10 +59,10 @@ function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
       }),
     ),
     ...over,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderDialog(client: ForgeApiClient, onOpenChange = vi.fn()) {
+function renderDialog(client: ScfApiClient, onOpenChange = vi.fn()) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

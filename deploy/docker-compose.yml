@@ -1,4 +1,4 @@
-# Forge — production single-node Docker Compose (plan Task 0.6; HARD-07 pinned).
+# SCF — production single-node Docker Compose (plan Task 0.6; HARD-07 pinned).
 #
 # Hardened per the spec's "Production Docker Compose Requirements":
 #   - every pulled image pinned name:tag@sha256:<digest> (immutable; see
@@ -18,7 +18,7 @@
 
 # Durable persistence selection (composition root).
 #
-# Every one of these seams defaults to ``memory`` in ``forge_api.settings`` so
+# Every one of these seams defaults to ``memory`` in ``scf_api.settings`` so
 # the unit suite stays hermetic and Postgres-free. That default is a TEST
 # default, not a deployment one: a stack that leaves them unset keeps minted API
 # keys, board rows, audit entries, approvals, and BYOK ciphertext in the API
@@ -149,7 +149,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/api.Dockerfile
-    image: forge/api:${FORGE_VERSION:-0.1.0}
+    image: swarm-code-factory/api:${FORGE_VERSION:-0.1.0}
     restart: unless-stopped
     user: "1000:1000"
     # HARD-11: give the API time to drain in-flight requests on SIGTERM before
@@ -266,7 +266,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/worker.Dockerfile
-    image: forge/worker:${FORGE_VERSION:-0.1.0}
+    image: swarm-code-factory/worker:${FORGE_VERSION:-0.1.0}
     restart: unless-stopped
     user: "1000:1000"
     # HARD-11: warm (graceful) shutdown. Celery traps SIGTERM, stops prefetching,
@@ -278,7 +278,7 @@ services:
     # Consume the default queue plus the dedicated F17 `incident` queue, so
     # long-running incident diagnosis / recovery monitoring does not starve the
     # feature/verification/indexing work on the default queue.
-    command: ["celery", "-A", "forge_worker", "worker", "--loglevel=info", "-Q", "forge,incident"]
+    command: ["celery", "-A", "scf_worker", "worker", "--loglevel=info", "-Q", "forge,incident"]
     environment:
       <<: *persistence-env
       FORGE_ENVIRONMENT: production
@@ -319,7 +319,7 @@ services:
       FORGE_EMBEDDING_BASE_URL: ${FORGE_EMBEDDING_BASE_URL:-}
       FORGE_EMBEDDING_DIMENSION: ${FORGE_EMBEDDING_DIMENSION:-}
       FORGE_EMBEDDING_API_KEY: ${FORGE_EMBEDDING_API_KEY:-}
-      # F27 multi-agent coordinator (supervised runs). Read by forge_coordinator's
+      # F27 multi-agent coordinator (supervised runs). Read by scf_coordinator's
       # CoordinatorSettings (MULTI_AGENT_ENABLED); "false"/unset keeps supervised
       # runs single-agent (escalate with reason `multi_agent_disabled`).
       MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-false}
@@ -341,9 +341,9 @@ services:
       DOCKER_HOST: tcp://docker-proxy:2375
       FORGE_SANDBOX_DOCKER_HOST: tcp://docker-proxy:2375
       FORGE_SANDBOX_WORKTREE_VOLUME: ${FORGE_WORKTREE_VOLUME:-forge_repos}
-      FORGE_SANDBOX_IMAGE_PYTHON: ${FORGE_SANDBOX_IMAGE_PYTHON:-ghcr.io/forge-platform/forge-sandbox-python:0.1.0}
-      FORGE_SANDBOX_IMAGE_NODE: ${FORGE_SANDBOX_IMAGE_NODE:-ghcr.io/forge-platform/forge-sandbox-node:0.1.0}
-      FORGE_SANDBOX_IMAGE_GO: ${FORGE_SANDBOX_IMAGE_GO:-ghcr.io/forge-platform/forge-sandbox-go:0.1.0}
+      FORGE_SANDBOX_IMAGE_PYTHON: ${FORGE_SANDBOX_IMAGE_PYTHON:-ghcr.io/quintinbotes/swarm-code-factory/sandbox-python:0.1.0}
+      FORGE_SANDBOX_IMAGE_NODE: ${FORGE_SANDBOX_IMAGE_NODE:-ghcr.io/quintinbotes/swarm-code-factory/sandbox-node:0.1.0}
+      FORGE_SANDBOX_IMAGE_GO: ${FORGE_SANDBOX_IMAGE_GO:-ghcr.io/quintinbotes/swarm-code-factory/sandbox-go:0.1.0}
       FORGE_SANDBOX_ALLOWED_IMAGES: ${FORGE_SANDBOX_ALLOWED_IMAGES:-}
       FORGE_SANDBOX_NETWORK: ${FORGE_SANDBOX_NETWORK:-none}
       FORGE_SANDBOX_EGRESS_NETWORK: forge_sandbox_egress
@@ -382,7 +382,7 @@ services:
       - mcp
       - sandbox_ctl
     healthcheck:
-      test: ["CMD-SHELL", "celery -A forge_worker inspect ping || exit 1"]
+      test: ["CMD-SHELL", "celery -A scf_worker inspect ping || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -404,7 +404,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/mcp-gateway.Dockerfile
-    image: forge/mcp-gateway:${FORGE_VERSION:-0.1.0}
+    image: swarm-code-factory/mcp-gateway:${FORGE_VERSION:-0.1.0}
     restart: unless-stopped
     user: "1000:1000"
     environment:
@@ -432,7 +432,7 @@ services:
         condition: service_healthy
     networks:
       # `edge` is load-bearing: the Caddy edge proxy (and the drop-in nginx
-      # alternative, deploy/nginx/forge.conf) sits ONLY on `edge` and routes
+      # alternative, deploy/nginx/swarm-code-factory.conf) sits ONLY on `edge` and routes
       # /mcp/* -> mcp-gateway:8001. Without membership here the proxy and the
       # gateway share no network, so /mcp/* resolves nowhere and 502s. `mcp`
       # keeps the api/worker <-> gateway path; `backend` its other peers.
@@ -465,7 +465,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/web.Dockerfile
-    image: forge/web:${FORGE_VERSION:-0.1.0}
+    image: swarm-code-factory/web:${FORGE_VERSION:-0.1.0}
     restart: unless-stopped
     user: "1000:1000"
     environment:
@@ -735,11 +735,11 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/worker.Dockerfile
-    image: forge/worker:${FORGE_VERSION:-0.1.0}
+    image: swarm-code-factory/worker:${FORGE_VERSION:-0.1.0}
     profiles: [temporal]
     restart: unless-stopped
     user: "1000:1000"
-    command: ["python", "-m", "forge_worker.temporal_main"]
+    command: ["python", "-m", "scf_worker.temporal_main"]
     environment:
       <<: *persistence-env
       FORGE_ENVIRONMENT: production
@@ -765,7 +765,7 @@ services:
       - data
       - mcp
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import forge_worker.temporal_main' || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import scf_worker.temporal_main' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

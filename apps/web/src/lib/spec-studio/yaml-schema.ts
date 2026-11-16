@@ -3,11 +3,11 @@
  *
  * `manifest.yaml` is one of the two first-class, round-tripping
  * serializations of a `SpecManifest` (the other being `spec.md`; see
- * `forge_spec.markdown`/`forge_spec.manifest` on the backend). This module
+ * `scf_spec.markdown`/`scf_spec.manifest` on the backend). This module
  * gives the YAML editor *client-side* structural + shape validation with
  * line-anchored errors, so a mistyped or malformed manifest is caught before
  * it ever reaches `PUT /spec/specs/{id}/manifest` — the backend
- * (`forge_spec.FileSpecEngine.save_manifest_yaml`) remains the authoritative
+ * (`scf_spec.FileSpecEngine.save_manifest_yaml`) remains the authoritative
  * parser; this is a fast, offline first pass mirroring its shape.
  */
 
@@ -101,7 +101,7 @@ function checkStringList(
  * They gained an `{id, text}` form so they can be cited — "rejected because it
  * violates C2" needs something to point at — but every manifest written before
  * that is a list of bare strings, and those are still on disk and in version
- * history. Flagging them as invalid in the editor would make a document Forge
+ * history. Flagging them as invalid in the editor would make a document SCF
  * itself wrote look broken.
  */
 function checkConstraintList(

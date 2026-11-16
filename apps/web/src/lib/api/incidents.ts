@@ -18,7 +18,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { ApiError, apiClient, type ForgeApiClient } from "./client";
+import { ApiError, apiClient, type ScfApiClient } from "./client";
 import type {
   IncidentDeclareRequest,
   IncidentDetailView,
@@ -51,7 +51,7 @@ export type IncidentFilters = Record<
 /** The incident queue (optionally filtered by state / severity / project). */
 export function useIncidents(
   filters?: IncidentFilters,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<IncidentView[]> {
   return useQuery({
     queryKey: incidentKeys.list(filters),
@@ -62,7 +62,7 @@ export function useIncidents(
 /** One incident's detail (summary + latest remediation plan + event count). */
 export function useIncidentDetail(
   incidentId: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<IncidentDetailView> {
   return useQuery({
     queryKey: incidentKeys.detail(incidentId ?? ""),
@@ -74,7 +74,7 @@ export function useIncidentDetail(
 /** The ordered incident timeline. */
 export function useIncidentTimeline(
   incidentId: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<IncidentEventView[]> {
   return useQuery({
     queryKey: incidentKeys.timeline(incidentId ?? ""),
@@ -90,7 +90,7 @@ export function useIncidentTimeline(
  */
 export function useRemediationPlan(
   incidentId: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<RemediationPlanView | null> {
   return useQuery({
     queryKey: incidentKeys.remediation(incidentId ?? ""),
@@ -114,7 +114,7 @@ export function useRemediationPlan(
  */
 export function usePostmortem(
   incidentId: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<PostmortemView | null> {
   return useQuery({
     queryKey: incidentKeys.postmortem(incidentId ?? ""),
@@ -134,7 +134,7 @@ export function usePostmortem(
 
 /** Declare a manual incident; refreshes the queue on settle. */
 export function useDeclareIncident(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<IncidentView, Error, IncidentDeclareRequest> {
   const queryClient = useQueryClient();
   return useMutation<IncidentView, Error, IncidentDeclareRequest>({
@@ -156,7 +156,7 @@ export interface SendEventVariables {
  * the queue so the lifecycle badge and action bar advance immediately.
  */
 export function useSendIncidentEvent(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<IncidentDetailView, Error, SendEventVariables> {
   const queryClient = useQueryClient();
   return useMutation<IncidentDetailView, Error, SendEventVariables>({
@@ -182,7 +182,7 @@ export function useSendIncidentEvent(
 
 /** Publish an incident's postmortem; refreshes the postmortem cache on settle. */
 export function usePublishPostmortem(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<PostmortemView, Error, string> {
   const queryClient = useQueryClient();
   return useMutation<PostmortemView, Error, string>({

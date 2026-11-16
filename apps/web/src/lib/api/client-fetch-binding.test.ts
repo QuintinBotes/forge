@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ForgeApiClient } from "./client";
+import { ScfApiClient } from "./client";
 
 /**
- * `ForgeApiClient` keeps `fetch` on the instance and calls `this.fetchImpl(...)`.
+ * `ScfApiClient` keeps `fetch` on the instance and calls `this.fetchImpl(...)`.
  * Stored unbound, that invokes `fetch` with the *client* as its receiver, and a
  * real browser refuses:
  *
@@ -30,7 +30,7 @@ describe("fetch receiver", () => {
 
     // Constructed AFTER the stub is installed, mirroring the module singleton
     // that picks up whatever `globalThis.fetch` is at import time.
-    const client = new ForgeApiClient();
+    const client = new ScfApiClient();
     await client.health();
 
     expect(receivers).toHaveLength(1);
@@ -40,7 +40,7 @@ describe("fetch receiver", () => {
 
   it("still honours an explicitly injected fetch", async () => {
     let called = false;
-    const client = new ForgeApiClient({
+    const client = new ScfApiClient({
       fetch: (() => {
         called = true;
         return Promise.resolve(

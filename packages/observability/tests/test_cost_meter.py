@@ -8,11 +8,11 @@ from decimal import Decimal
 
 import pytest
 
-from forge_obs.cost.meter import NoopUsageMeter, UsageMeter
-from forge_obs.cost.models import ModelPrice, ModelUsage
-from forge_obs.cost.pricing import InMemoryPriceBook
-from forge_obs.cost.repository import InMemoryCostLedger
-from forge_obs.metrics import RecordingMetrics
+from scf_obs.cost.meter import NoopUsageMeter, UsageMeter
+from scf_obs.cost.models import ModelPrice, ModelUsage
+from scf_obs.cost.pricing import InMemoryPriceBook
+from scf_obs.cost.repository import InMemoryCostLedger
+from scf_obs.metrics import RecordingMetrics
 
 WS = uuid.uuid4()
 NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)

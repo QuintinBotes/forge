@@ -1,28 +1,30 @@
-# Forge
+# Swarm Code Factory
+
+**From specification to shipped software.** Swarm Code Factory (SCF) is an AI software factory where coordinated specialist agents plan, build, test, and deliver software under human control.
 
 > Self-hostable orchestration for AI engineering work — spec-driven development,
 > a sandboxed agent runtime, hybrid knowledge retrieval, and a native project
 > board, all on one Postgres-backed platform you run yourself.
 
-> ⚠️ **Under active development — pre-1.0, not production-ready.** Forge is shared
+> ⚠️ **Under active development — pre-1.0, not production-ready.** SCF is shared
 > openly for **evaluation and testing**, not for production use yet. Expect rough
 > edges, changing APIs, and features that are API/CLI-first with their UI or live
 > integrations pending. Read **[Status](#status)** for the honest per-area
 > state before you rely on it, and please contribute via pull request.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
-[![CI](https://github.com/QuintinBotes/forge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/QuintinBotes/forge/actions/workflows/ci.yml)
+[![CI](https://github.com/QuintinBotes/swarm-code-factory/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/QuintinBotes/swarm-code-factory/actions/workflows/ci.yml)
 [![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0%20(active)-orange.svg)](#status)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776AB.svg)](./.python-version)
 
-Forge turns a written spec into orchestrated engineering work: a spec engine
+SCF turns a written spec into orchestrated engineering work: a spec engine
 plans and validates the work, a LangGraph agent runtime executes it inside
 isolated sandboxes, a hybrid (semantic + keyword) knowledge pipeline grounds the
 agents in your codebase, and a native board tracks it all. It is designed to be
 **self-hosted first** — every component ships in a single, hardened Docker
 Compose stack (or a Helm chart) that you own end to end.
 
-![The Forge in-app walkthrough — the loop every change travels through: create a
+![The SCF in-app walkthrough — the loop every change travels through: create a
 spec, run an agent, review the PR, merge &
 ship.](./docs/assets/screenshots/walkthrough.png)
 
@@ -32,14 +34,14 @@ guides.
 
 ## Status
 
-Forge is **pre-1.0 and under active development** — usable for evaluation and
+SCF is **pre-1.0 and under active development** — usable for evaluation and
 self-host testing, **not yet for production**. The backend platform, HTTP API,
 CLI, workflow/agent runtime, and self-hosting substrate are the mature surface,
 exercised by a large test suite (~3,700 tests on real pgvector Postgres, green
 in CI). The **web UI ships 15 feature screens** — `approvals`, `audit`,
 `board`, `deployments`, `depth`, `incidents`, `leaderboard`, `marketplace`,
 `observability`, `runs`, `settings` (SSO/OIDC/SCIM, RBAC, PM integrations,
-model BYOK), `specs`, `sprints`, `walkthrough`, and `workflow` — on the Forge
+model BYOK), `specs`, `sprints`, `walkthrough`, and `workflow` — on the SCF
 design system. Some screens carry **honestly marked gaps** where a backend
 projection or live credential is pending (e.g. a couple of dashboard
 projections), and the
@@ -68,7 +70,7 @@ individual screens mark in-progress areas inline.
 - **Policy, skill, integration & MCP SDKs** — declarative `.forge/policy.yaml`,
   skill profiles, integration definitions, and an MCP gateway for tool sources.
 - **Integration marketplace** — browse, install, and publish integrations
-  from the in-app UI (the offline `forge marketplace package` CLI works too).
+  from the in-app UI (the offline `scf marketplace package` CLI works too).
 - **Enterprise SSO / SCIM** — SAML SSO and OIDC, plus SCIM provisioning, with
   an admin UI (live IdP verification needs your own IdP, like the third-party
   integrations above).
@@ -88,8 +90,8 @@ individual screens mark in-progress areas inline.
 Requires Docker Engine 24+ and the Docker Compose v2 plugin, plus `make`.
 
 ```bash
-git clone https://github.com/QuintinBotes/forge.git
-cd forge
+git clone https://github.com/QuintinBotes/swarm-code-factory.git
+cd swarm-code-factory
 cp .env.example .env     # then set FORGE_SECRET_KEY, POSTGRES_PASSWORD, DOMAIN, ...
 make dev                 # build + start the full stack, migrate, seed, wait healthy
 ```
@@ -98,7 +100,7 @@ make dev                 # build + start the full stack, migrate, seed, wait hea
 gateway, web UI, and the Caddy edge proxy, then runs migrations and seeds a demo
 workspace. When it reports healthy:
 
-- **Forge (the Caddy edge — use this):** <http://localhost:8080>
+- **SCF (the Caddy edge — use this):** <http://localhost:8080>
 - API health check: <http://localhost:8080/api/health>
 
 Caddy serves the UI and `/api/*` from one origin, so the browser needs no CORS
@@ -132,35 +134,35 @@ config, and Helm chart.
 ## Repository layout
 
 ```
-forge/
+swarm-code-factory/
 ├── apps/
-│   ├── api/                     # FastAPI backend + CLI (forge_api)
-│   ├── worker/                  # Celery and Temporal workers (forge_worker)
-│   ├── cli-bridge/              # Host-side local-CLI model bridge (forge_cli_bridge)
-│   ├── mcp-gateway/             # MCP client manager service (forge_mcp_gateway)
-│   └── web/                     # Next.js 16 frontend (@forge/web)
+│   ├── api/                     # FastAPI backend + CLI (scf_api)
+│   ├── worker/                  # Celery and Temporal workers (scf_worker)
+│   ├── cli-bridge/              # Host-side local-CLI model bridge (scf_cli_bridge)
+│   ├── mcp-gateway/             # MCP client manager service (scf_mcp_gateway)
+│   └── web/                     # Next.js 16 frontend (@scf/web)
 ├── packages/
-│   ├── contracts/               # Frozen Pydantic DTOs + Protocols (forge_contracts)
-│   ├── db/                      # SQLAlchemy models + Alembic (forge_db)
-│   ├── workflow-engine/         # forge_workflow
-│   ├── agent-runtime/           # forge_agent
-│   ├── multi-agent-coordinator/ # forge_coordinator
-│   ├── orchestration-policy/    # forge_orchestration_policy
-│   ├── spec-engine/             # forge_spec
-│   ├── board-core/              # forge_board
-│   ├── knowledge-core/          # forge_knowledge
-│   ├── integration-sdk/         # forge_integrations
-│   ├── mcp-sdk/                 # forge_mcp
-│   ├── policy-sdk/              # forge_policy
-│   ├── skill-sdk/               # forge_skill
-│   ├── evaluation/              # forge_eval
-│   ├── auth-sdk/                # forge_auth
-│   ├── authz-sdk/               # forge_authz
-│   ├── approval-sdk/            # forge_approval
-│   ├── marketplace-sdk/         # forge_marketplace
-│   ├── observability/           # forge_obs
-│   ├── world-model/             # forge_world
-│   └── deploy-core/             # forge_deploy
+│   ├── contracts/               # Frozen Pydantic DTOs + Protocols (scf_contracts)
+│   ├── db/                      # SQLAlchemy models + Alembic (scf_db)
+│   ├── workflow-engine/         # scf_workflow
+│   ├── agent-runtime/           # scf_agent
+│   ├── multi-agent-coordinator/ # scf_coordinator
+│   ├── orchestration-policy/    # scf_orchestration_policy
+│   ├── spec-engine/             # scf_spec
+│   ├── board-core/              # scf_board
+│   ├── knowledge-core/          # scf_knowledge
+│   ├── integration-sdk/         # scf_integrations
+│   ├── mcp-sdk/                 # scf_mcp
+│   ├── policy-sdk/              # scf_policy
+│   ├── skill-sdk/               # scf_skill
+│   ├── evaluation/              # scf_eval
+│   ├── auth-sdk/                # scf_auth
+│   ├── authz-sdk/               # scf_authz
+│   ├── approval-sdk/            # scf_approval
+│   ├── marketplace-sdk/         # scf_marketplace
+│   ├── observability/           # scf_obs
+│   ├── world-model/             # scf_world
+│   └── deploy-core/             # scf_deploy
 ├── deploy/                      # docker-compose, Caddy, Helm, scripts, SBOMs
 ├── examples/                    # policies, skills, workflows, mcp-connectors, specs (tested fixtures)
 └── docs/                        # spec, self-hosting, architecture, security
@@ -194,9 +196,9 @@ make lint       # ruff check + ruff format --check
 Web-app checks run through pnpm:
 
 ```bash
-pnpm --filter @forge/web lint
-pnpm --filter @forge/web build
-pnpm --filter @forge/web test
+pnpm --filter @scf/web lint
+pnpm --filter @scf/web build
+pnpm --filter @scf/web test
 ```
 
 TDD is the norm and CI is the source of truth: `ruff check`, `ruff format
@@ -224,7 +226,7 @@ Full docs index: **[`docs/`](./docs/README.md)**.
   (dev/self-host convenience only).
 - [Infrastructure as Code](./docs/self-hosting/iac.md) — OpenTofu apply runbook
   for Hetzner + Cloudflare + Fly.io (dev/staging/prod).
-- [Platform specification](./docs/FORGE_SPEC.md) — the full Forge spec.
+- [Platform specification](./docs/SCF_SPEC.md) — the full SCF spec.
 - [Security policy](./SECURITY.md) and the
   [threat model](./docs/security/threat-model.md).
 - [Examples](./examples/README.md) — copy-paste, schema-validated configuration.

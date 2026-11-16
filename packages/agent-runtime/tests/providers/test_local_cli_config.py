@@ -8,8 +8,8 @@ matching a real API model's pricing row.
 
 from __future__ import annotations
 
-from forge_agent.providers.config import ModelClientConfig, ProviderName
-from forge_agent.providers.local_cli.detect import CliName, DetectedCli
+from scf_agent.providers.config import ModelClientConfig, ProviderName
+from scf_agent.providers.local_cli.detect import CliName, DetectedCli
 
 __all__ = [
     "test_api_key_never_in_repr",

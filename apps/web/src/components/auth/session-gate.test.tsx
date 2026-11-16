@@ -5,12 +5,12 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionGate, SessionMenu } from "./session-gate";
-import { ForgeApiClient } from "@/lib/api/client";
+import { ScfApiClient } from "@/lib/api/client";
 import { API_TOKEN_STORAGE_KEY, writeApiToken } from "@/lib/api/session";
 
 /** A client whose transport is a stub, so no test touches the network. */
 function stubClient(fetchImpl: typeof fetch) {
-  return new ForgeApiClient({ fetch: fetchImpl });
+  return new ScfApiClient({ fetch: fetchImpl });
 }
 
 function wrap(ui: ReactNode) {
@@ -37,7 +37,7 @@ describe("SessionGate", () => {
 
     expect(await screen.findByTestId("session-gate")).toBeInTheDocument();
     expect(screen.queryByText("board contents")).not.toBeInTheDocument();
-    expect(screen.getByText(/Connect to this Forge instance/)).toBeInTheDocument();
+    expect(screen.getByText(/Connect to this SCF instance/)).toBeInTheDocument();
   });
 
   it("names the API URL it is trying to reach", async () => {
@@ -48,7 +48,7 @@ describe("SessionGate", () => {
     );
 
     const gate = await screen.findByTestId("session-gate");
-    expect(gate.textContent).toContain(new ForgeApiClient().baseUrl);
+    expect(gate.textContent).toContain(new ScfApiClient().baseUrl);
   });
 
   it("says so when the stored key has been revoked", async () => {
@@ -163,7 +163,7 @@ describe("SessionMenu", () => {
 
     await user.click(
       await screen.findByRole("button", {
-        name: "Disconnect from this Forge instance",
+        name: "Disconnect from this SCF instance",
       }),
     );
 

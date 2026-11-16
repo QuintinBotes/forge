@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_api.auth.rbac import (
+from scf_api.auth.rbac import (
     ROLE_PERMISSIONS,
     Permission,
     PermissionDeniedError,
@@ -15,7 +15,7 @@ from forge_api.auth.rbac import (
     ensure,
     permissions_for,
 )
-from forge_contracts.enums import UserRole
+from scf_contracts.enums import UserRole
 
 
 def test_every_role_has_a_permission_set() -> None:

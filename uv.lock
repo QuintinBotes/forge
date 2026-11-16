@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -8,32 +8,32 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "forge",
-    "forge-agent",
-    "forge-api",
-    "forge-approval",
-    "forge-auth",
-    "forge-authz",
-    "forge-board",
-    "forge-cli-bridge",
-    "forge-contracts",
-    "forge-coordinator",
-    "forge-db",
-    "forge-deploy",
-    "forge-eval",
-    "forge-integrations",
-    "forge-knowledge",
-    "forge-marketplace",
-    "forge-mcp",
-    "forge-mcp-gateway",
-    "forge-obs",
-    "forge-orchestration-policy",
-    "forge-policy",
-    "forge-skill",
-    "forge-spec",
-    "forge-worker",
-    "forge-workflow",
-    "forge-world",
+    "scf-agent",
+    "scf-api",
+    "scf-approval",
+    "scf-auth",
+    "scf-authz",
+    "scf-board",
+    "scf-cli-bridge",
+    "scf-contracts",
+    "scf-coordinator",
+    "scf-db",
+    "scf-deploy",
+    "scf-eval",
+    "scf-integrations",
+    "scf-knowledge",
+    "scf-marketplace",
+    "scf-mcp",
+    "scf-mcp-gateway",
+    "scf-obs",
+    "scf-orchestration-policy",
+    "scf-policy",
+    "scf-skill",
+    "scf-spec",
+    "scf-worker",
+    "scf-workflow",
+    "scf-world",
+    "swarm-code-factory",
 ]
 
 [[package]]
@@ -858,674 +858,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d5/98/771d8ca889f220d7d7e352addf500666368f0fd081c6080a83767580c6e4/filelock-4.2.1.tar.gz", hash = "sha256:c4c937ccac2a813cee448e662a56366cfb374c0f8702e75f295c412cc1c5d5a3", size = 650997, upload-time = "2026-10-17T16:48:14.435Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/28/00/db89d339bc4ecdc8087fa7b8607ba22ffc27bf96286f340c9620bea428b3/filelock-4.2.1-py3-none-any.whl", hash = "sha256:7be2662e9e826b9bba28afc0f843a123280d799a2ea44bb5d35ccec67905ae44", size = 162455, upload-time = "2026-10-17T16:48:12.937Z" },
-]
-
-[[package]]
-name = "forge"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "forge-agent" },
-    { name = "forge-api" },
-    { name = "forge-approval" },
-    { name = "forge-auth" },
-    { name = "forge-authz" },
-    { name = "forge-board" },
-    { name = "forge-cli-bridge" },
-    { name = "forge-contracts" },
-    { name = "forge-coordinator" },
-    { name = "forge-db" },
-    { name = "forge-deploy" },
-    { name = "forge-eval" },
-    { name = "forge-integrations" },
-    { name = "forge-knowledge" },
-    { name = "forge-marketplace" },
-    { name = "forge-mcp" },
-    { name = "forge-mcp-gateway" },
-    { name = "forge-obs" },
-    { name = "forge-orchestration-policy" },
-    { name = "forge-policy" },
-    { name = "forge-skill" },
-    { name = "forge-spec" },
-    { name = "forge-worker" },
-    { name = "forge-workflow" },
-    { name = "forge-world" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "bandit", extra = ["sarif"] },
-    { name = "commitizen" },
-    { name = "cyclonedx-bom" },
-    { name = "httpx" },
-    { name = "jsonschema" },
-    { name = "mypy" },
-    { name = "pip-audit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pyyaml" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-agent", editable = "packages/agent-runtime" },
-    { name = "forge-api", editable = "apps/api" },
-    { name = "forge-approval", editable = "packages/approval-sdk" },
-    { name = "forge-auth", editable = "packages/auth-sdk" },
-    { name = "forge-authz", editable = "packages/authz-sdk" },
-    { name = "forge-board", editable = "packages/board-core" },
-    { name = "forge-cli-bridge", editable = "apps/cli-bridge" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-coordinator", editable = "packages/multi-agent-coordinator" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "forge-deploy", editable = "packages/deploy-core" },
-    { name = "forge-eval", editable = "packages/evaluation" },
-    { name = "forge-integrations", editable = "packages/integration-sdk" },
-    { name = "forge-knowledge", editable = "packages/knowledge-core" },
-    { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
-    { name = "forge-mcp", editable = "packages/mcp-sdk" },
-    { name = "forge-mcp-gateway", editable = "apps/mcp-gateway" },
-    { name = "forge-obs", editable = "packages/observability" },
-    { name = "forge-orchestration-policy", editable = "packages/orchestration-policy" },
-    { name = "forge-policy", editable = "packages/policy-sdk" },
-    { name = "forge-skill", editable = "packages/skill-sdk" },
-    { name = "forge-spec", editable = "packages/spec-engine" },
-    { name = "forge-worker", editable = "apps/worker" },
-    { name = "forge-workflow", editable = "packages/workflow-engine" },
-    { name = "forge-world", editable = "packages/world-model" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "bandit", extras = ["sarif"], specifier = ">=1.9.4" },
-    { name = "commitizen", specifier = ">=3.29" },
-    { name = "cyclonedx-bom", specifier = ">=7.3.0" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "jsonschema", specifier = ">=4.0" },
-    { name = "mypy", specifier = ">=2.2.0" },
-    { name = "pip-audit", specifier = ">=2.10.1" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23" },
-    { name = "pytest-cov", specifier = ">=5.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "ruff", specifier = ">=0.15.21" },
-]
-
-[[package]]
-name = "forge-agent"
-version = "0.1.0"
-source = { editable = "packages/agent-runtime" }
-dependencies = [
-    { name = "docker" },
-    { name = "forge-contracts" },
-    { name = "forge-orchestration-policy" },
-    { name = "forge-policy" },
-    { name = "langgraph" },
-]
-
-[package.optional-dependencies]
-providers = [
-    { name = "anthropic" },
-    { name = "openai" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.49" },
-    { name = "docker", specifier = ">=7.2.0,<8" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-orchestration-policy", editable = "packages/orchestration-policy" },
-    { name = "forge-policy", editable = "packages/policy-sdk" },
-    { name = "langgraph", specifier = ">=1.2.9,<2" },
-    { name = "openai", marker = "extra == 'providers'", specifier = ">=2.45.0" },
-]
-provides-extras = ["providers"]
-
-[[package]]
-name = "forge-api"
-version = "0.1.0"
-source = { editable = "apps/api" }
-dependencies = [
-    { name = "celery" },
-    { name = "cryptography" },
-    { name = "fastapi" },
-    { name = "forge-agent" },
-    { name = "forge-approval" },
-    { name = "forge-auth" },
-    { name = "forge-board" },
-    { name = "forge-contracts" },
-    { name = "forge-db" },
-    { name = "forge-deploy" },
-    { name = "forge-eval" },
-    { name = "forge-integrations" },
-    { name = "forge-knowledge" },
-    { name = "forge-marketplace" },
-    { name = "forge-mcp" },
-    { name = "forge-obs" },
-    { name = "forge-orchestration-policy" },
-    { name = "forge-policy" },
-    { name = "forge-skill" },
-    { name = "forge-workflow" },
-    { name = "forge-world" },
-    { name = "httpx" },
-    { name = "lxml" },
-    { name = "pycrdt" },
-    { name = "pydantic-settings" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "python-multipart" },
-    { name = "redis" },
-    { name = "signxml" },
-    { name = "sqlalchemy" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "celery", specifier = ">=5.3" },
-    { name = "cryptography", specifier = ">=43" },
-    { name = "fastapi", specifier = ">=0.139.0" },
-    { name = "forge-agent", editable = "packages/agent-runtime" },
-    { name = "forge-approval", editable = "packages/approval-sdk" },
-    { name = "forge-auth", editable = "packages/auth-sdk" },
-    { name = "forge-board", editable = "packages/board-core" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "forge-deploy", editable = "packages/deploy-core" },
-    { name = "forge-eval", editable = "packages/evaluation" },
-    { name = "forge-integrations", editable = "packages/integration-sdk" },
-    { name = "forge-knowledge", editable = "packages/knowledge-core" },
-    { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
-    { name = "forge-mcp", editable = "packages/mcp-sdk" },
-    { name = "forge-obs", editable = "packages/observability" },
-    { name = "forge-orchestration-policy", editable = "packages/orchestration-policy" },
-    { name = "forge-policy", editable = "packages/policy-sdk" },
-    { name = "forge-skill", editable = "packages/skill-sdk" },
-    { name = "forge-workflow", editable = "packages/workflow-engine" },
-    { name = "forge-world", editable = "packages/world-model" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "lxml", specifier = ">=5.3" },
-    { name = "pycrdt", specifier = ">=0.14.1" },
-    { name = "pydantic-settings", specifier = ">=2.2" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
-    { name = "python-multipart", specifier = ">=0.0.9" },
-    { name = "redis", specifier = ">=5.0" },
-    { name = "signxml", specifier = ">=5.1.0" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
-]
-
-[[package]]
-name = "forge-approval"
-version = "0.1.0"
-source = { editable = "packages/approval-sdk" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "pydantic", specifier = ">=2.7" },
-]
-
-[[package]]
-name = "forge-auth"
-version = "0.1.0"
-source = { editable = "packages/auth-sdk" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "forge-contracts" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=43" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-]
-
-[[package]]
-name = "forge-authz"
-version = "0.1.0"
-source = { editable = "packages/authz-sdk" }
-dependencies = [
-    { name = "forge-contracts" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "forge-contracts", editable = "packages/contracts" }]
-
-[[package]]
-name = "forge-board"
-version = "0.1.0"
-source = { editable = "packages/board-core" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "forge-db" },
-    { name = "forge-policy" },
-    { name = "forge-skill" },
-    { name = "forge-workflow" },
-    { name = "sqlalchemy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "forge-policy", editable = "packages/policy-sdk" },
-    { name = "forge-skill", editable = "packages/skill-sdk" },
-    { name = "forge-workflow", editable = "packages/workflow-engine" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-]
-
-[[package]]
-name = "forge-cli-bridge"
-version = "0.1.0"
-source = { editable = "apps/cli-bridge" }
-dependencies = [
-    { name = "fastapi" },
-    { name = "forge-agent" },
-    { name = "forge-contracts" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = ">=0.139.0" },
-    { name = "forge-agent", editable = "packages/agent-runtime" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
-]
-
-[[package]]
-name = "forge-contracts"
-version = "0.1.0"
-source = { editable = "packages/contracts" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.7,<3" }]
-
-[[package]]
-name = "forge-coordinator"
-version = "0.1.0"
-source = { editable = "packages/multi-agent-coordinator" }
-dependencies = [
-    { name = "forge-agent" },
-    { name = "forge-contracts" },
-    { name = "forge-db" },
-    { name = "forge-knowledge" },
-    { name = "forge-policy" },
-    { name = "forge-skill" },
-    { name = "sqlalchemy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-agent", editable = "packages/agent-runtime" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "forge-knowledge", editable = "packages/knowledge-core" },
-    { name = "forge-policy", editable = "packages/policy-sdk" },
-    { name = "forge-skill", editable = "packages/skill-sdk" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-]
-
-[[package]]
-name = "forge-db"
-version = "0.1.0"
-source = { editable = "packages/db" }
-dependencies = [
-    { name = "alembic" },
-    { name = "forge-contracts" },
-    { name = "pgvector" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "sqlalchemy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.13" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "pgvector", specifier = ">=0.5.0" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.5" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-]
-
-[[package]]
-name = "forge-deploy"
-version = "0.1.0"
-source = { editable = "packages/deploy-core" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "forge-db" },
-    { name = "forge-policy" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "sqlalchemy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "forge-policy", editable = "packages/policy-sdk" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-]
-
-[[package]]
-name = "forge-eval"
-version = "0.1.0"
-source = { editable = "packages/evaluation" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "forge-db" },
-    { name = "forge-knowledge" },
-    { name = "pyyaml" },
-]
-
-[package.optional-dependencies]
-eval = [
-    { name = "sentence-transformers" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "forge-knowledge", editable = "packages/knowledge-core" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "sentence-transformers", marker = "extra == 'eval'", specifier = ">=3.0" },
-]
-provides-extras = ["eval"]
-
-[[package]]
-name = "forge-integrations"
-version = "0.1.0"
-source = { editable = "packages/integration-sdk" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "httpx" },
-    { name = "pyjwt", extra = ["crypto"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
-]
-
-[[package]]
-name = "forge-knowledge"
-version = "0.1.0"
-source = { editable = "packages/knowledge-core" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "forge-db" },
-    { name = "httpx" },
-    { name = "numpy" },
-    { name = "tree-sitter" },
-    { name = "tree-sitter-go" },
-    { name = "tree-sitter-javascript" },
-    { name = "tree-sitter-python" },
-    { name = "tree-sitter-typescript" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "numpy", specifier = ">=2.5.1" },
-    { name = "tree-sitter", specifier = ">=0.26.0" },
-    { name = "tree-sitter-go", specifier = ">=0.23" },
-    { name = "tree-sitter-javascript", specifier = ">=0.23" },
-    { name = "tree-sitter-python", specifier = ">=0.23" },
-    { name = "tree-sitter-typescript", specifier = ">=0.23" },
-]
-
-[[package]]
-name = "forge-marketplace"
-version = "0.1.0"
-source = { editable = "packages/marketplace-sdk" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "forge-contracts" },
-    { name = "forge-skill" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=43" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-skill", editable = "packages/skill-sdk" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "pyyaml", specifier = ">=6.0" },
-]
-
-[[package]]
-name = "forge-mcp"
-version = "0.1.0"
-source = { editable = "packages/mcp-sdk" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "httpx" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "httpx", specifier = ">=0.27" },
-]
-
-[[package]]
-name = "forge-mcp-gateway"
-version = "0.1.0"
-source = { editable = "apps/mcp-gateway" }
-dependencies = [
-    { name = "fastapi" },
-    { name = "forge-contracts" },
-    { name = "forge-mcp" },
-    { name = "forge-obs" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = ">=0.139.0" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-mcp", editable = "packages/mcp-sdk" },
-    { name = "forge-obs", editable = "packages/observability" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
-]
-
-[[package]]
-name = "forge-obs"
-version = "0.1.0"
-source = { editable = "packages/observability" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "forge-auth" },
-    { name = "forge-contracts" },
-    { name = "forge-db" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-sdk" },
-    { name = "pydantic" },
-    { name = "sqlalchemy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=43" },
-    { name = "forge-auth", editable = "packages/auth-sdk" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.29" },
-    { name = "opentelemetry-sdk", specifier = ">=1.29" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-]
-
-[[package]]
-name = "forge-orchestration-policy"
-version = "0.1.0"
-source = { editable = "packages/orchestration-policy" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "pydantic", specifier = ">=2.0" },
-]
-
-[[package]]
-name = "forge-policy"
-version = "0.1.0"
-source = { editable = "packages/policy-sdk" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "pyyaml", specifier = ">=6.0" },
-]
-
-[[package]]
-name = "forge-skill"
-version = "0.1.0"
-source = { editable = "packages/skill-sdk" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "pyyaml", specifier = ">=6.0" },
-]
-
-[[package]]
-name = "forge-spec"
-version = "0.1.0"
-source = { editable = "packages/spec-engine" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-]
-
-[[package]]
-name = "forge-worker"
-version = "0.1.0"
-source = { editable = "apps/worker" }
-dependencies = [
-    { name = "celery" },
-    { name = "forge-agent" },
-    { name = "forge-api" },
-    { name = "forge-approval" },
-    { name = "forge-board" },
-    { name = "forge-contracts" },
-    { name = "forge-coordinator" },
-    { name = "forge-db" },
-    { name = "forge-deploy" },
-    { name = "forge-eval" },
-    { name = "forge-integrations" },
-    { name = "forge-knowledge" },
-    { name = "forge-marketplace" },
-    { name = "forge-mcp" },
-    { name = "forge-obs" },
-    { name = "forge-skill" },
-    { name = "forge-workflow" },
-    { name = "redis" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "celery", specifier = ">=5.3" },
-    { name = "forge-agent", editable = "packages/agent-runtime" },
-    { name = "forge-api", editable = "apps/api" },
-    { name = "forge-approval", editable = "packages/approval-sdk" },
-    { name = "forge-board", editable = "packages/board-core" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-coordinator", editable = "packages/multi-agent-coordinator" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "forge-deploy", editable = "packages/deploy-core" },
-    { name = "forge-eval", editable = "packages/evaluation" },
-    { name = "forge-integrations", editable = "packages/integration-sdk" },
-    { name = "forge-knowledge", editable = "packages/knowledge-core" },
-    { name = "forge-marketplace", editable = "packages/marketplace-sdk" },
-    { name = "forge-mcp", editable = "packages/mcp-sdk" },
-    { name = "forge-obs", editable = "packages/observability" },
-    { name = "forge-skill", editable = "packages/skill-sdk" },
-    { name = "forge-workflow", editable = "packages/workflow-engine" },
-    { name = "redis", specifier = ">=5.0" },
-]
-
-[[package]]
-name = "forge-workflow"
-version = "0.1.0"
-source = { editable = "packages/workflow-engine" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "forge-contracts" },
-    { name = "forge-db" },
-    { name = "pyyaml" },
-    { name = "sqlalchemy" },
-    { name = "temporalio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=43" },
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "temporalio", specifier = "==1.33.0" },
-]
-
-[[package]]
-name = "forge-world"
-version = "0.1.0"
-source = { editable = "packages/world-model" }
-dependencies = [
-    { name = "forge-contracts" },
-    { name = "forge-db" },
-    { name = "forge-knowledge" },
-    { name = "pydantic" },
-    { name = "sqlalchemy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "forge-contracts", editable = "packages/contracts" },
-    { name = "forge-db", editable = "packages/db" },
-    { name = "forge-knowledge", editable = "packages/knowledge-core" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
 [[package]]
@@ -3572,6 +2904,581 @@ wheels = [
 ]
 
 [[package]]
+name = "scf-agent"
+version = "0.1.0"
+source = { editable = "packages/agent-runtime" }
+dependencies = [
+    { name = "docker" },
+    { name = "langgraph" },
+    { name = "scf-contracts" },
+    { name = "scf-orchestration-policy" },
+    { name = "scf-policy" },
+]
+
+[package.optional-dependencies]
+providers = [
+    { name = "anthropic" },
+    { name = "openai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.49" },
+    { name = "docker", specifier = ">=7.2.0,<8" },
+    { name = "langgraph", specifier = ">=1.2.9,<2" },
+    { name = "openai", marker = "extra == 'providers'", specifier = ">=2.45.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-orchestration-policy", editable = "packages/orchestration-policy" },
+    { name = "scf-policy", editable = "packages/policy-sdk" },
+]
+provides-extras = ["providers"]
+
+[[package]]
+name = "scf-api"
+version = "0.1.0"
+source = { editable = "apps/api" }
+dependencies = [
+    { name = "celery" },
+    { name = "cryptography" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "lxml" },
+    { name = "pycrdt" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "python-multipart" },
+    { name = "redis" },
+    { name = "scf-agent" },
+    { name = "scf-approval" },
+    { name = "scf-auth" },
+    { name = "scf-board" },
+    { name = "scf-contracts" },
+    { name = "scf-db" },
+    { name = "scf-deploy" },
+    { name = "scf-eval" },
+    { name = "scf-integrations" },
+    { name = "scf-knowledge" },
+    { name = "scf-marketplace" },
+    { name = "scf-mcp" },
+    { name = "scf-obs" },
+    { name = "scf-orchestration-policy" },
+    { name = "scf-policy" },
+    { name = "scf-skill" },
+    { name = "scf-workflow" },
+    { name = "scf-world" },
+    { name = "signxml" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "celery", specifier = ">=5.3" },
+    { name = "cryptography", specifier = ">=43" },
+    { name = "fastapi", specifier = ">=0.139.0" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "lxml", specifier = ">=5.3" },
+    { name = "pycrdt", specifier = ">=0.14.1" },
+    { name = "pydantic-settings", specifier = ">=2.2" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "redis", specifier = ">=5.0" },
+    { name = "scf-agent", editable = "packages/agent-runtime" },
+    { name = "scf-approval", editable = "packages/approval-sdk" },
+    { name = "scf-auth", editable = "packages/auth-sdk" },
+    { name = "scf-board", editable = "packages/board-core" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "scf-deploy", editable = "packages/deploy-core" },
+    { name = "scf-eval", editable = "packages/evaluation" },
+    { name = "scf-integrations", editable = "packages/integration-sdk" },
+    { name = "scf-knowledge", editable = "packages/knowledge-core" },
+    { name = "scf-marketplace", editable = "packages/marketplace-sdk" },
+    { name = "scf-mcp", editable = "packages/mcp-sdk" },
+    { name = "scf-obs", editable = "packages/observability" },
+    { name = "scf-orchestration-policy", editable = "packages/orchestration-policy" },
+    { name = "scf-policy", editable = "packages/policy-sdk" },
+    { name = "scf-skill", editable = "packages/skill-sdk" },
+    { name = "scf-workflow", editable = "packages/workflow-engine" },
+    { name = "scf-world", editable = "packages/world-model" },
+    { name = "signxml", specifier = ">=5.1.0" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
+]
+
+[[package]]
+name = "scf-approval"
+version = "0.1.0"
+source = { editable = "packages/approval-sdk" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
+name = "scf-auth"
+version = "0.1.0"
+source = { editable = "packages/auth-sdk" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
+name = "scf-authz"
+version = "0.1.0"
+source = { editable = "packages/authz-sdk" }
+dependencies = [
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "scf-contracts", editable = "packages/contracts" }]
+
+[[package]]
+name = "scf-board"
+version = "0.1.0"
+source = { editable = "packages/board-core" }
+dependencies = [
+    { name = "scf-contracts" },
+    { name = "scf-db" },
+    { name = "scf-policy" },
+    { name = "scf-skill" },
+    { name = "scf-workflow" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "scf-policy", editable = "packages/policy-sdk" },
+    { name = "scf-skill", editable = "packages/skill-sdk" },
+    { name = "scf-workflow", editable = "packages/workflow-engine" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+]
+
+[[package]]
+name = "scf-cli-bridge"
+version = "0.1.0"
+source = { editable = "apps/cli-bridge" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "scf-agent" },
+    { name = "scf-contracts" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.139.0" },
+    { name = "scf-agent", editable = "packages/agent-runtime" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
+]
+
+[[package]]
+name = "scf-contracts"
+version = "0.1.0"
+source = { editable = "packages/contracts" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.7,<3" }]
+
+[[package]]
+name = "scf-coordinator"
+version = "0.1.0"
+source = { editable = "packages/multi-agent-coordinator" }
+dependencies = [
+    { name = "scf-agent" },
+    { name = "scf-contracts" },
+    { name = "scf-db" },
+    { name = "scf-knowledge" },
+    { name = "scf-policy" },
+    { name = "scf-skill" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "scf-agent", editable = "packages/agent-runtime" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "scf-knowledge", editable = "packages/knowledge-core" },
+    { name = "scf-policy", editable = "packages/policy-sdk" },
+    { name = "scf-skill", editable = "packages/skill-sdk" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+]
+
+[[package]]
+name = "scf-db"
+version = "0.1.0"
+source = { editable = "packages/db" }
+dependencies = [
+    { name = "alembic" },
+    { name = "pgvector" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "scf-contracts" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.13" },
+    { name = "pgvector", specifier = ">=0.5.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.5" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+]
+
+[[package]]
+name = "scf-deploy"
+version = "0.1.0"
+source = { editable = "packages/deploy-core" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "scf-contracts" },
+    { name = "scf-db" },
+    { name = "scf-policy" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "scf-policy", editable = "packages/policy-sdk" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+]
+
+[[package]]
+name = "scf-eval"
+version = "0.1.0"
+source = { editable = "packages/evaluation" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "scf-contracts" },
+    { name = "scf-db" },
+    { name = "scf-knowledge" },
+]
+
+[package.optional-dependencies]
+eval = [
+    { name = "sentence-transformers" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "scf-knowledge", editable = "packages/knowledge-core" },
+    { name = "sentence-transformers", marker = "extra == 'eval'", specifier = ">=3.0" },
+]
+provides-extras = ["eval"]
+
+[[package]]
+name = "scf-integrations"
+version = "0.1.0"
+source = { editable = "packages/integration-sdk" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
+name = "scf-knowledge"
+version = "0.1.0"
+source = { editable = "packages/knowledge-core" }
+dependencies = [
+    { name = "httpx" },
+    { name = "numpy" },
+    { name = "scf-contracts" },
+    { name = "scf-db" },
+    { name = "tree-sitter" },
+    { name = "tree-sitter-go" },
+    { name = "tree-sitter-javascript" },
+    { name = "tree-sitter-python" },
+    { name = "tree-sitter-typescript" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "numpy", specifier = ">=2.5.1" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "tree-sitter", specifier = ">=0.26.0" },
+    { name = "tree-sitter-go", specifier = ">=0.23" },
+    { name = "tree-sitter-javascript", specifier = ">=0.23" },
+    { name = "tree-sitter-python", specifier = ">=0.23" },
+    { name = "tree-sitter-typescript", specifier = ">=0.23" },
+]
+
+[[package]]
+name = "scf-marketplace"
+version = "0.1.0"
+source = { editable = "packages/marketplace-sdk" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "scf-contracts" },
+    { name = "scf-skill" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-skill", editable = "packages/skill-sdk" },
+]
+
+[[package]]
+name = "scf-mcp"
+version = "0.1.0"
+source = { editable = "packages/mcp-sdk" }
+dependencies = [
+    { name = "httpx" },
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
+name = "scf-mcp-gateway"
+version = "0.1.0"
+source = { editable = "apps/mcp-gateway" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "scf-contracts" },
+    { name = "scf-mcp" },
+    { name = "scf-obs" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.139.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-mcp", editable = "packages/mcp-sdk" },
+    { name = "scf-obs", editable = "packages/observability" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
+]
+
+[[package]]
+name = "scf-obs"
+version = "0.1.0"
+source = { editable = "packages/observability" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "pydantic" },
+    { name = "scf-auth" },
+    { name = "scf-contracts" },
+    { name = "scf-db" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.29" },
+    { name = "opentelemetry-sdk", specifier = ">=1.29" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "scf-auth", editable = "packages/auth-sdk" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+]
+
+[[package]]
+name = "scf-orchestration-policy"
+version = "0.1.0"
+source = { editable = "packages/orchestration-policy" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
+name = "scf-policy"
+version = "0.1.0"
+source = { editable = "packages/policy-sdk" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
+name = "scf-skill"
+version = "0.1.0"
+source = { editable = "packages/skill-sdk" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
+name = "scf-spec"
+version = "0.1.0"
+source = { editable = "packages/spec-engine" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
+name = "scf-worker"
+version = "0.1.0"
+source = { editable = "apps/worker" }
+dependencies = [
+    { name = "celery" },
+    { name = "redis" },
+    { name = "scf-agent" },
+    { name = "scf-api" },
+    { name = "scf-approval" },
+    { name = "scf-board" },
+    { name = "scf-contracts" },
+    { name = "scf-coordinator" },
+    { name = "scf-db" },
+    { name = "scf-deploy" },
+    { name = "scf-eval" },
+    { name = "scf-integrations" },
+    { name = "scf-knowledge" },
+    { name = "scf-marketplace" },
+    { name = "scf-mcp" },
+    { name = "scf-obs" },
+    { name = "scf-skill" },
+    { name = "scf-workflow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "celery", specifier = ">=5.3" },
+    { name = "redis", specifier = ">=5.0" },
+    { name = "scf-agent", editable = "packages/agent-runtime" },
+    { name = "scf-api", editable = "apps/api" },
+    { name = "scf-approval", editable = "packages/approval-sdk" },
+    { name = "scf-board", editable = "packages/board-core" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-coordinator", editable = "packages/multi-agent-coordinator" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "scf-deploy", editable = "packages/deploy-core" },
+    { name = "scf-eval", editable = "packages/evaluation" },
+    { name = "scf-integrations", editable = "packages/integration-sdk" },
+    { name = "scf-knowledge", editable = "packages/knowledge-core" },
+    { name = "scf-marketplace", editable = "packages/marketplace-sdk" },
+    { name = "scf-mcp", editable = "packages/mcp-sdk" },
+    { name = "scf-obs", editable = "packages/observability" },
+    { name = "scf-skill", editable = "packages/skill-sdk" },
+    { name = "scf-workflow", editable = "packages/workflow-engine" },
+]
+
+[[package]]
+name = "scf-workflow"
+version = "0.1.0"
+source = { editable = "packages/workflow-engine" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pyyaml" },
+    { name = "scf-contracts" },
+    { name = "scf-db" },
+    { name = "sqlalchemy" },
+    { name = "temporalio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "temporalio", specifier = "==1.33.0" },
+]
+
+[[package]]
+name = "scf-world"
+version = "0.1.0"
+source = { editable = "packages/world-model" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "scf-contracts" },
+    { name = "scf-db" },
+    { name = "scf-knowledge" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "scf-knowledge", editable = "packages/knowledge-core" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+]
+
+[[package]]
 name = "scikit-learn"
 version = "1.9.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3786,6 +3693,99 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/db/a1/3b8ed9c1fc3aa6eebb57732d924ddaa0500ecc3b638d0454816320994383/stevedore-5.9.1.tar.gz", hash = "sha256:e97a2667923efda926e8713fde6a73616df68210a3cbc6f02b48967b676fd8bf", size = 518111, upload-time = "2026-08-20T15:25:14.754Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/97/bba6e7ec2f5498b9dcb7b1b6400086b80ae5a8ebaff4b25e8c8add75f439/stevedore-5.9.1-py3-none-any.whl", hash = "sha256:5c8ff3a9f336cc1a06ac0f597bc79d11a2f950bfd32e290ca56b5a301fafafbf", size = 54931, upload-time = "2026-08-20T15:25:13.602Z" },
+]
+
+[[package]]
+name = "swarm-code-factory"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "scf-agent" },
+    { name = "scf-api" },
+    { name = "scf-approval" },
+    { name = "scf-auth" },
+    { name = "scf-authz" },
+    { name = "scf-board" },
+    { name = "scf-cli-bridge" },
+    { name = "scf-contracts" },
+    { name = "scf-coordinator" },
+    { name = "scf-db" },
+    { name = "scf-deploy" },
+    { name = "scf-eval" },
+    { name = "scf-integrations" },
+    { name = "scf-knowledge" },
+    { name = "scf-marketplace" },
+    { name = "scf-mcp" },
+    { name = "scf-mcp-gateway" },
+    { name = "scf-obs" },
+    { name = "scf-orchestration-policy" },
+    { name = "scf-policy" },
+    { name = "scf-skill" },
+    { name = "scf-spec" },
+    { name = "scf-worker" },
+    { name = "scf-workflow" },
+    { name = "scf-world" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "bandit", extra = ["sarif"] },
+    { name = "commitizen" },
+    { name = "cyclonedx-bom" },
+    { name = "httpx" },
+    { name = "jsonschema" },
+    { name = "mypy" },
+    { name = "pip-audit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pyyaml" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "scf-agent", editable = "packages/agent-runtime" },
+    { name = "scf-api", editable = "apps/api" },
+    { name = "scf-approval", editable = "packages/approval-sdk" },
+    { name = "scf-auth", editable = "packages/auth-sdk" },
+    { name = "scf-authz", editable = "packages/authz-sdk" },
+    { name = "scf-board", editable = "packages/board-core" },
+    { name = "scf-cli-bridge", editable = "apps/cli-bridge" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+    { name = "scf-coordinator", editable = "packages/multi-agent-coordinator" },
+    { name = "scf-db", editable = "packages/db" },
+    { name = "scf-deploy", editable = "packages/deploy-core" },
+    { name = "scf-eval", editable = "packages/evaluation" },
+    { name = "scf-integrations", editable = "packages/integration-sdk" },
+    { name = "scf-knowledge", editable = "packages/knowledge-core" },
+    { name = "scf-marketplace", editable = "packages/marketplace-sdk" },
+    { name = "scf-mcp", editable = "packages/mcp-sdk" },
+    { name = "scf-mcp-gateway", editable = "apps/mcp-gateway" },
+    { name = "scf-obs", editable = "packages/observability" },
+    { name = "scf-orchestration-policy", editable = "packages/orchestration-policy" },
+    { name = "scf-policy", editable = "packages/policy-sdk" },
+    { name = "scf-skill", editable = "packages/skill-sdk" },
+    { name = "scf-spec", editable = "packages/spec-engine" },
+    { name = "scf-worker", editable = "apps/worker" },
+    { name = "scf-workflow", editable = "packages/workflow-engine" },
+    { name = "scf-world", editable = "packages/world-model" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "bandit", extras = ["sarif"], specifier = ">=1.9.4" },
+    { name = "commitizen", specifier = ">=3.29" },
+    { name = "cyclonedx-bom", specifier = ">=7.3.0" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "jsonschema", specifier = ">=4.0" },
+    { name = "mypy", specifier = ">=2.2.0" },
+    { name = "pip-audit", specifier = ">=2.10.1" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
+    { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "ruff", specifier = ">=0.15.21" },
 ]
 
 [[package]]

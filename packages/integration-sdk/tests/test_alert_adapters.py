@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from forge_contracts.enums import IncidentSeverity
-from forge_contracts.incident import AlertProvider
-from forge_integrations.alerts import (
+from scf_contracts.enums import IncidentSeverity
+from scf_contracts.incident import AlertProvider
+from scf_integrations.alerts import (
     DatadogAlertAdapter,
     GrafanaAlertAdapter,
     PagerDutyAlertAdapter,

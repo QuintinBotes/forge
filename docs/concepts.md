@@ -1,11 +1,11 @@
 # Concepts
 
-The mental model behind Forge. Read this once and the rest of the platform —
+The mental model behind Swarm Code Factory. Read this once and the rest of the platform —
 the API, the CLI, the board, the SDKs — falls into place. For how the pieces are
 wired together at runtime, see [Architecture](./architecture.md); to try them,
 see [Getting started](./getting-started.md).
 
-Forge turns a **written spec** into **orchestrated engineering work**: a spec
+SCF turns a **written spec** into **orchestrated engineering work**: a spec
 engine plans and validates, a workflow engine sequences the work, an agent
 runtime executes it inside a sandbox, a knowledge pipeline grounds the agents in
 your code, and a native board tracks it all — on one Postgres-backed platform
@@ -27,20 +27,20 @@ and every run, decision, and cost lands on the board and in the audit log.
 
 ## Spec & the spec engine
 
-A **spec** (`forge_spec`) is a `manifest.yaml` that describes *what* to build:
+A **spec** (`scf_spec`) is a `manifest.yaml` that describes *what* to build:
 `requirements`, `acceptance_criteria`, `open_questions`, `constraints`, target
 `repos`, an `execution_mode`, and a `skill_profile`. It is the unit of intent.
 
 The **spec engine** validates the manifest and enforces an **implementation
 gate**: while a spec has unresolved `open_questions` its status stays
 `clarifying` and no agent may run against it. Only an `approved` spec is
-executable. This is what makes Forge *spec-driven* rather than prompt-driven —
+executable. This is what makes SCF *spec-driven* rather than prompt-driven —
 ambiguity is resolved before code is written, not after. The
 **spec-validation dashboard** surfaces each spec's state.
 
 ## Workflow & the workflow engine
 
-A **workflow** (`forge_workflow`) is a **Postgres-backed finite-state machine**
+A **workflow** (`scf_workflow`) is a **Postgres-backed finite-state machine**
 that sequences a feature through its lifecycle — for example
 plan → execute → verify → PR → approval. Because state lives in Postgres,
 workflows are durable and inspectable; for long-running, durable orchestration
@@ -48,9 +48,9 @@ the production stack can run **Temporal** alongside the FSM.
 
 ## Agent runtime & sandboxes
 
-The **agent runtime** (`forge_agent`) is a **LangGraph** plan → execute → verify
+The **agent runtime** (`scf_agent`) is a **LangGraph** plan → execute → verify
 loop that carries out a workflow step. Each run executes inside a **sandbox** so
-agent actions are isolated from the host. Forge models a ladder of isolation
+agent actions are isolated from the host. SCF models a ladder of isolation
 classes:
 
 | Isolation | What it is | Status |
@@ -69,13 +69,13 @@ supports them.
 
 ## Multi-agent coordination
 
-For work that fans out, the **coordinator** (`forge_coordinator`) supervises
+For work that fans out, the **coordinator** (`scf_coordinator`) supervises
 multiple agents — dividing a spec across agents and reconciling their results —
 rather than driving a single execution agent.
 
 ## Adaptive Orchestration
 
-**Adaptive Orchestration** (`forge_orchestration_policy`) sizes a task or spec
+**Adaptive Orchestration** (`scf_orchestration_policy`) sizes a task or spec
 before an agent runs it. A **pure, deterministic** scoring function reads
 normalized signals — kind, priority, blast radius, file/repo counts, requirement
 and acceptance-criteria counts, whether it touches contracts or security,
@@ -97,14 +97,14 @@ audit trail for autonomous work.
 
 ## Board & work items
 
-The **board** (`forge_board`) is Forge's native project board: **work items**
-and runs tracked in one place. If you already live in another tool, Forge can
+The **board** (`scf_board`) is SCF's native project board: **work items**
+and runs tracked in one place. If you already live in another tool, SCF can
 sync to it instead — see *Integrations* below and
 [BYO board](./integrations/byok-and-boards.md).
 
 ## Knowledge & retrieval (RAG)
 
-The **knowledge pipeline** (`forge_knowledge`) grounds agents in your codebase
+The **knowledge pipeline** (`scf_knowledge`) grounds agents in your codebase
 with **hybrid retrieval**: pgvector **cosine** semantic search fused with
 Postgres **full-text** (BM25-style keyword) search via **Reciprocal Rank Fusion**
 (RRF, k=60), then an optional **reranker** for final ordering. Hybrid + RRF
@@ -112,7 +112,7 @@ beats either signal alone — semantic recall plus exact-term precision.
 
 ## Approvals
 
-The **approval system** (`forge_approval`) gates sensitive agent actions behind
+The **approval system** (`scf_approval`) gates sensitive agent actions behind
 a human decision. When an agent reaches a gated action it pauses and enqueues an
 approval; a human approves or rejects before the action proceeds. Human-in-the-
 loop where it matters, autonomous everywhere else.
@@ -141,7 +141,7 @@ layer without an injected runner) — each is stated plainly in
 
 ## Realtime co-editing
 
-Two WebSocket channels (`forge_api.routers.realtime`), both authenticated
+Two WebSocket channels (`scf_api.routers.realtime`), both authenticated
 per-workspace, back the live surfaces. `/ws` is a one-way, server→client **board
 push**: the server pushes JSON envelopes as board entities change and the web
 board hook maps them onto query keys to invalidate.
@@ -162,52 +162,52 @@ recent editor.
 
 ## Policies, skills, integrations & MCP
 
-Forge is configured declaratively through SDKs:
+SCF is configured declaratively through SDKs:
 
-- **Policy** (`forge_policy`) — a `.forge/policy.yaml` that constrains what
+- **Policy** (`scf_policy`) — a `.forge/policy.yaml` that constrains what
   agents may do (allowed actions, repos, guardrails).
-- **Skills** (`forge_skill`) — reusable **skill profiles** (e.g. `backend-tdd`)
+- **Skills** (`scf_skill`) — reusable **skill profiles** (e.g. `backend-tdd`)
   that shape how an agent works on a given spec.
-- **Integrations** (`forge_integrations`) — declarative integration definitions,
+- **Integrations** (`scf_integrations`) — declarative integration definitions,
   including the pluggable **project-management adapters** (Jira, Linear, Asana,
   Monday, GitHub Projects, ClickUp, Trello, GitLab, and a generic connector).
-- **MCP** (`forge_mcp`) — a **Model Context Protocol** gateway that exposes tool
+- **MCP** (`scf_mcp`) — a **Model Context Protocol** gateway that exposes tool
   sources to agents through a managed client.
 
 ## Secrets, vault & BYOK
 
 Secrets are **envelope-encrypted** and stored in a per-workspace **key vault**
-(`forge_auth`): a versioned KEK wraps per-workspace data-encryption keys, with
+(`scf_auth`): a versioned KEK wraps per-workspace data-encryption keys, with
 AAD binding so a blob for one workspace is cryptographically useless in another.
 **Bring-your-own-key (BYOK)** model-provider credentials are stored the same way.
 See [BYOK](./integrations/byok-and-boards.md).
 
 ## Observability, cost & audit
 
-- **Observability** (`forge_obs`) — structured, **redaction-aware** telemetry and
+- **Observability** (`scf_obs`) — structured, **redaction-aware** telemetry and
   per-run **cost metrics**, so token spend and latency are attributable.
 - **Audit log** — an append-only trail of who did what, when, surfaced in the
   audit view and retained for compliance.
 
 ## Access control: SSO, SCIM & RBAC
 
-For teams, Forge provides **SAML SSO** and **OIDC** single sign-on plus
-**SCIM** user provisioning (`forge_api`, on `forge_authz` roles) — configured
-from an admin UI — and **multi-team RBAC** (`forge_authz`) — role-based access
+For teams, SCF provides **SAML SSO** and **OIDC** single sign-on plus
+**SCIM** user provisioning (`scf_api`, on `scf_authz` roles) — configured
+from an admin UI — and **multi-team RBAC** (`scf_authz`) — role-based access
 scoped per team and workspace.
 
 ## Marketplace, benchmarks, orchestration policy & deployment gates
 
-- **Integration marketplace** (`forge_marketplace`) — publish and install
-  integrations, from the in-app UI or the offline `forge marketplace package`
+- **Integration marketplace** (`scf_marketplace`) — publish and install
+  integrations, from the in-app UI or the offline `scf marketplace package`
   CLI.
 - **Benchmark leaderboard** — submit, verify, and rank agent benchmark runs,
-  with a public leaderboard UI (backed by an offline `forge bench` CLI for
+  with a public leaderboard UI (backed by an offline `scf bench` CLI for
   submission).
-- **Adaptive Orchestration** (`forge_orchestration_policy`) — deterministic
+- **Adaptive Orchestration** (`scf_orchestration_policy`) — deterministic
   complexity sizing and per-role model/tier routing; see
   [Adaptive Orchestration](#adaptive-orchestration) above.
-- **Deployment gates** (`forge_deploy`) — policy-gated promotion of changes
+- **Deployment gates** (`scf_deploy`) — policy-gated promotion of changes
   through environments.
 
 ## Glossary

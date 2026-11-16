@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from forge_contracts import WorkflowDefinition
-from forge_workflow.default_workflow import DEFAULT_FEATURE_WORKFLOW_YAML
-from forge_workflow.dsl import load_definition, parse_definition
-from forge_workflow.exceptions import WorkflowDefinitionError
+from scf_contracts import WorkflowDefinition
+from scf_workflow.default_workflow import DEFAULT_FEATURE_WORKFLOW_YAML
+from scf_workflow.dsl import load_definition, parse_definition
+from scf_workflow.exceptions import WorkflowDefinitionError
 
 
 def test_parses_spec_dsl_top_level_fields() -> None:

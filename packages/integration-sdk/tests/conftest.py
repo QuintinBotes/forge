@@ -53,7 +53,7 @@ def signed_slack_request(
     """
     import time as _time
 
-    from forge_integrations import sign_slack_payload
+    from scf_integrations import sign_slack_payload
 
     raw = body.encode() if isinstance(body, str) else body
     base = int(_time.time()) if now is None else now

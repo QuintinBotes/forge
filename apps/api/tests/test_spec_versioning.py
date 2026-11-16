@@ -21,13 +21,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.spec import get_spec_engine
-from forge_db.base import Base
-from forge_db.models import Workspace
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_api.db import get_db
+from scf_api.deps import get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.spec import get_spec_engine
+from scf_db.base import Base
+from scf_db.models import Workspace
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 # Deterministic identities mirroring ``conftest.py``'s (tests mirror rather
 # than cross-import conftest constants, per repo convention).
@@ -198,8 +198,8 @@ def test_versions_are_workspace_scoped(
 
     # A different workspace never sees this spec's versions (empty, not 404 —
     # mirrors the F23 dashboard's "no linked specs" convention).
-    from forge_api.deps import Principal
-    from forge_contracts import UserRole
+    from scf_api.deps import Principal
+    from scf_contracts import UserRole
 
     other_principal = Principal(
         user_id=uuid.uuid4(),

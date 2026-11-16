@@ -96,7 +96,7 @@ class TestLiveDbRows:
     def factory(self, pg_engine):
         from sqlalchemy.orm import Session, sessionmaker
 
-        from forge_db.base import Base
+        from scf_db.base import Base
 
         Base.metadata.create_all(pg_engine)
         try:
@@ -106,7 +106,7 @@ class TestLiveDbRows:
 
     @pytest.fixture()
     def workspace_id(self, factory) -> uuid.UUID:
-        from forge_db.models import Workspace
+        from scf_db.models import Workspace
 
         ws_id = uuid.uuid4()
         with factory() as session:
@@ -119,9 +119,9 @@ class TestLiveDbRows:
         from sqlalchemy import delete, update
         from sqlalchemy.exc import DBAPIError
 
-        from forge_contracts.audit import AuditEvent
-        from forge_db.audit.writer import SqlAuditWriter
-        from forge_db.models import AuditLog
+        from scf_contracts.audit import AuditEvent
+        from scf_db.audit.writer import SqlAuditWriter
+        from scf_db.models import AuditLog
 
         with factory() as session:
             SqlAuditWriter(session).emit(AuditEvent(workspace_id=workspace_id, action="tool.call"))
@@ -147,9 +147,9 @@ class TestLiveDbRows:
         """Matrix row `pg-vault-roundtrip` (check_pg_vault_roundtrip)."""
         from sqlalchemy import select
 
-        from forge_api.auth.crypto import FernetCipher, generate_key
-        from forge_db.models import APIKey
-        from forge_db.models.enums import APIKeyKind
+        from scf_api.auth.crypto import FernetCipher, generate_key
+        from scf_db.models import APIKey
+        from scf_db.models.enums import APIKeyKind
 
         cipher = FernetCipher(generate_key())
         plaintext = "sk-live-roundtrip-under-real-cipher"

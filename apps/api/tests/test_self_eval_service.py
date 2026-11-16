@@ -9,8 +9,8 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.self_eval_service import SelfEvalService
-from forge_db.base import Base
+from scf_api.services.self_eval_service import SelfEvalService
+from scf_db.base import Base
 
 WS = uuid.uuid4()
 OTHER_WS = uuid.uuid4()

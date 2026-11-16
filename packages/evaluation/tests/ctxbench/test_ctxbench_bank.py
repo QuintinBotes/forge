@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from forge_eval.ctxbench.bank import (
+from scf_eval.ctxbench.bank import (
     SUITE_DIR,
     BankError,
     load_bank,
     subject_from_env,
     suite_hash,
 )
-from forge_eval.ctxbench.prompts import load_prompts, parse_agent_reply, render
+from scf_eval.ctxbench.prompts import load_prompts, parse_agent_reply, render
 
 SUBJECT = "acme-example/lore"
 

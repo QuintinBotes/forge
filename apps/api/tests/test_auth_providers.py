@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from forge_api.auth import providers
-from forge_api.auth.providers import (
+from scf_api.auth import providers
+from scf_api.auth.providers import (
     ChainSecretProvider,
     EnvSecretProvider,
     FileSecretProvider,
@@ -80,7 +80,7 @@ def test_resolve_secret_uses_the_default_provider() -> None:
 
 def test_resolve_secret_is_the_ingress_for_the_auth_service() -> None:
     """AC10: the auth service resolves the master key through resolve_secret."""
-    from forge_api.auth.service import _resolve_master_key
+    from scf_api.auth.service import _resolve_master_key
 
     seen: list[str] = []
 

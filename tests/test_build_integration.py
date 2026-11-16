@@ -64,7 +64,7 @@ def test_compose_build_all_images() -> None:
     result = _run(["docker", "compose", "-f", str(COMPOSE), "build"])
     assert result.returncode == 0, f"docker compose build failed:\n{result.stderr[-4000:]}"
     for svc in BUILT_SERVICES:
-        image = f"forge/{svc}:{FORGE_VERSION}"
+        image = f"swarm-code-factory/{svc}:{FORGE_VERSION}"
         inspect = _run(["docker", "image", "inspect", image], timeout=60)
         assert inspect.returncode == 0, f"built image missing after build: {image}"
 
@@ -105,7 +105,7 @@ def test_runtime_containers_nonroot_healthcheck_limits() -> None:
 
         # The web IMAGE itself must still default to the non-root `node` user
         # (defense in depth if the compose `user:` line is ever dropped).
-        web_image = f"forge/web:{FORGE_VERSION}"
+        web_image = f"swarm-code-factory/web:{FORGE_VERSION}"
         image_user = _run(
             ["docker", "image", "inspect", "--format", "{{.Config.User}}", web_image],
             timeout=60,

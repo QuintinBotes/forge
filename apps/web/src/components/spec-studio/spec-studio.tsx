@@ -4,7 +4,7 @@ import { Eye, FileCode2, FileText, History, ListTree } from "lucide-react";
 import { useState } from "react";
 
 import { toast } from "@/components/ui/toast";
-import { apiClient, ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, ApiError, type ScfApiClient } from "@/lib/api/client";
 import { useApproveSpec, useRejectSpec, useRequestSpecChanges } from "@/lib/api/spec";
 import {
   useSaveGuidedManifest,
@@ -66,7 +66,7 @@ const MODES: {
 
 export interface SpecStudioProps {
   specId: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
   /**
    * Live co-editing config. When `collab.enabled`, the Markdown and YAML modes
    * switch from whole-document PUT-on-save to CRDT-synced editing over
@@ -90,7 +90,7 @@ function errorMessage(error: unknown): string {
  * live validation), and **Read** (the rendered, read-only manifest).
  *
  * All three editable modes round-trip through the same `SpecManifest` on the
- * backend (`forge_spec.FileSpecEngine`): saving in any one re-renders the
+ * backend (`scf_spec.FileSpecEngine`): saving in any one re-renders the
  * other two to match. Each mode keeps its own uncommitted-edit "override" in
  * local state (not the query cache) so switching tabs never discards unsaved
  * work; a successful save clears that mode's override and invalidates the

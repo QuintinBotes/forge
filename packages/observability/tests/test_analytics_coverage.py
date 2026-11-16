@@ -9,9 +9,9 @@ from datetime import date
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import Project, Workspace
-from forge_obs.analytics.coverage import SqlCoverageRepository, compute_coverage_pct
+from scf_db.base import Base
+from scf_db.models import Project, Workspace
+from scf_obs.analytics.coverage import SqlCoverageRepository, compute_coverage_pct
 
 
 def test_compute_coverage_pct_handles_zero_total() -> None:
@@ -35,7 +35,7 @@ def seeded(factory) -> dict:
         ws = Workspace(name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}")
         session.add(ws)
         session.flush()
-        p1 = Project(workspace_id=ws.id, name="Forge", key=f"FRG{uuid.uuid4().hex[:4]}")
+        p1 = Project(workspace_id=ws.id, name="SCF", key=f"FRG{uuid.uuid4().hex[:4]}")
         p2 = Project(workspace_id=ws.id, name="Web", key=f"WEB{uuid.uuid4().hex[:4]}")
         session.add_all([p1, p2])
         session.commit()

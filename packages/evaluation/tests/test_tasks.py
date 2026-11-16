@@ -13,14 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from forge_eval.tasks import (
+from scf_eval.tasks import (
     GoldenRequirement,
     GoldenTask,
     load_golden_tasks,
     parse_golden_tasks,
 )
 
-V1_SET = Path(__file__).resolve().parent.parent / "forge_eval" / "golden" / "v1_task_set.yaml"
+V1_SET = Path(__file__).resolve().parent.parent / "scf_eval" / "golden" / "v1_task_set.yaml"
 
 
 # --------------------------------------------------------------------------- #
@@ -44,7 +44,7 @@ def test_v1_golden_set_ids_unique_and_well_formed() -> None:
 
 
 def test_v1_golden_set_kinds_match_frozen_contract() -> None:
-    from forge_contracts import TaskKind
+    from scf_contracts import TaskKind
 
     valid = {k.value for k in TaskKind}
     tasks = load_golden_tasks(V1_SET)

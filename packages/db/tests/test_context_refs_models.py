@@ -17,9 +17,9 @@ from sqlalchemy import Engine, StaticPool, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_db.models  # noqa: F401  (registers all models)
-from forge_db.base import Base
-from forge_db.models import AgentRun, Workspace, WorldEntity, WorldFact, WorldFactFeedback
+import scf_db.models  # noqa: F401  (registers all models)
+from scf_db.base import Base
+from scf_db.models import AgentRun, Workspace, WorldEntity, WorldFact, WorldFactFeedback
 
 DB_ROOT = Path(__file__).resolve().parent.parent
 

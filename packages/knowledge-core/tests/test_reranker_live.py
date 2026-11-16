@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from forge_knowledge.reranker import (
+from scf_knowledge.reranker import (
     GracefulReranker,
     RerankTelemetry,
     build_reranker,

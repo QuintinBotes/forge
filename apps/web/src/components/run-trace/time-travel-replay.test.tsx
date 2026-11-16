@@ -3,18 +3,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { ReplayRunResult } from "@/lib/api/types";
 
 import { TimeTravelReplay } from "./time-travel-replay";
 
 const RECORDING_ID = "22222222-2222-4222-8222-222222222222";
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
-  return { ...overrides } as unknown as ForgeApiClient;
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
+  return { ...overrides } as unknown as ScfApiClient;
 }
 
-function renderControl(client: ForgeApiClient) {
+function renderControl(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

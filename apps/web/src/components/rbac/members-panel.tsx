@@ -21,7 +21,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { type ForgeApiClient } from "@/lib/api/client";
+import { type ScfApiClient } from "@/lib/api/client";
 import {
   useCreateRoleGrant,
   useRevokeRoleGrant,
@@ -75,7 +75,7 @@ const PRINCIPAL_ICON: Record<PrincipalType, typeof User> = {
 export interface MembersPanelProps {
   /** Workspace UUID — the scope id new workspace grants are issued against. */
   workspaceId: string;
-  client: ForgeApiClient;
+  client: ScfApiClient;
 }
 
 export function MembersPanel({ workspaceId, client }: MembersPanelProps) {

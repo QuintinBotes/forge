@@ -28,7 +28,7 @@ import {
 } from "react";
 
 import { useRegisterCommands } from "@/components/command-palette";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useCurrentPrincipal } from "@/lib/api/rbac";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +45,7 @@ const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
 ];
 
 export interface RbacAdminViewProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
   /** Initial tab (defaults to Members). */
   initialTab?: TabId;
 }

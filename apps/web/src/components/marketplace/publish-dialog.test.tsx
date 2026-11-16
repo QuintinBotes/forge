@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import { toast } from "@/components/ui/toast";
 import type { ListingDetail, Registry } from "@/lib/api/types";
 
@@ -57,15 +57,15 @@ const PUBLISHED: ListingDetail = {
   ],
 };
 
-function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(over: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listRegistries: vi.fn(() => Promise.resolve(REGISTRIES)),
     publishListing: vi.fn(() => Promise.resolve(PUBLISHED)),
     ...over,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderDialog(client: ForgeApiClient, onOpenChange = vi.fn()) {
+function renderDialog(client: ScfApiClient, onOpenChange = vi.fn()) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

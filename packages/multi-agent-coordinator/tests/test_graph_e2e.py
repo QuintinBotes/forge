@@ -7,7 +7,7 @@ from pathlib import Path
 
 from _helpers import AgentScript, ScriptingHub, make_objective, obj_parent
 
-from forge_contracts import AcceptanceCriterion, RunStatus, SubAgentPolicy, SubagentRules
+from scf_contracts import AcceptanceCriterion, RunStatus, SubAgentPolicy, SubagentRules
 
 
 def test_maker_checker_happy_path(
@@ -112,7 +112,7 @@ def test_policy_disallowed_no_subagents(
 def test_feature_flag_off(
     tmp_git_repo: Path, hub: ScriptingHub, make_supervisor, allow_all_rules
 ) -> None:
-    from forge_coordinator import CoordinatorSettings
+    from scf_coordinator import CoordinatorSettings
 
     obj = make_objective(tmp_git_repo, rules=allow_all_rules, review_required=True)
     result = make_supervisor(settings=CoordinatorSettings(enabled=False)).run(obj)

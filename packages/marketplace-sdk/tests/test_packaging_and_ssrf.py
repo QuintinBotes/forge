@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from forge_marketplace.errors import SchemaInvalid, SsrfBlocked
-from forge_marketplace.manifest import dump_manifest, load_manifest
-from forge_marketplace.models import ArtifactKind
-from forge_marketplace.packaging import build_package
-from forge_marketplace.registry_client import guard_url
+from scf_marketplace.errors import SchemaInvalid, SsrfBlocked
+from scf_marketplace.manifest import dump_manifest, load_manifest
+from scf_marketplace.models import ArtifactKind
+from scf_marketplace.packaging import build_package
+from scf_marketplace.registry_client import guard_url
 
 
 def test_build_package_content_hash_reverifies() -> None:
-    """AC20: forge marketplace package emits a manifest whose hash re-verifies."""
+    """AC20: scf marketplace package emits a manifest whose hash re-verifies."""
     manifest = build_package(
         kind=ArtifactKind.skill_profile,
         artifact={"name": "backend-tdd-strict", "min_test_coverage": 95},

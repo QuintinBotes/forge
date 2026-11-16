@@ -7,21 +7,21 @@ from uuid import uuid4
 
 import pytest
 
-from forge_contracts.enums import Direction
-from forge_contracts.pm import (
+from scf_contracts.enums import Direction
+from scf_contracts.pm import (
     AdapterContext,
-    ForgePriority,
-    ForgeTask,
     HttpResponse,
     PMProvider,
+    ScfPriority,
+    ScfTask,
     StatusCategory,
 )
-from forge_integrations.pm import FixturePMTransport
-from forge_integrations.pm.errors import ProviderError, RateLimitError
-from forge_integrations.pm.jira.client import JiraClient
+from scf_integrations.pm import FixturePMTransport
+from scf_integrations.pm.errors import ProviderError, RateLimitError
+from scf_integrations.pm.jira.client import JiraClient
 
 
-def _forge_task(**overrides) -> ForgeTask:
+def _scf_task(**overrides) -> ScfTask:
     base = {
         "id": uuid4(),
         "key": "TASK-1",
@@ -29,12 +29,12 @@ def _forge_task(**overrides) -> ForgeTask:
         "title": "Add pagination",
         "description_md": "Add pagination to the list endpoint",
         "status_category": StatusCategory.started,
-        "priority": ForgePriority.high,
+        "priority": ScfPriority.high,
         "version": 1,
         "updated_at": datetime.now(UTC),
     }
     base.update(overrides)
-    return ForgeTask(**base)
+    return ScfTask(**base)
 
 
 # --- Jira ------------------------------------------------------------------- #
@@ -52,7 +52,7 @@ async def test_jira_fetch_external(jira_adapter) -> None:
 
 
 async def test_jira_create_external(jira_adapter, jira_transport) -> None:
-    ext = await jira_adapter.create_external(_forge_task())
+    ext = await jira_adapter.create_external(_scf_task())
     assert ext.external_id == "10001"
     # the POST /issue create call was actually made
     methods = {(c["method"], c["url"].split("atlassian.net")[-1]) for c in jira_transport.call_log}
@@ -60,7 +60,7 @@ async def test_jira_create_external(jira_adapter, jira_transport) -> None:
 
 
 async def test_jira_update_uses_transition_for_status(jira_adapter, jira_transport) -> None:
-    await jira_adapter.update_external("10001", _forge_task(status_category=StatusCategory.started))
+    await jira_adapter.update_external("10001", _scf_task(status_category=StatusCategory.started))
     paths = [c["url"] for c in jira_transport.call_log]
     assert any(
         p.endswith("/issue/10001/transitions") and m == "POST"
@@ -92,7 +92,7 @@ async def test_jira_health_error_on_auth_failure(jira_ctx) -> None:
     transport = FixturePMTransport(
         {("GET", "/rest/api/3/myself"): HttpResponse(status_code=401, json_body={})}
     )
-    from forge_integrations.pm.jira.adapter import JiraAdapter
+    from scf_integrations.pm.jira.adapter import JiraAdapter
 
     adapter = JiraAdapter(JiraClient(transport, base_url="https://x"), jira_ctx)
     health = await adapter.get_connection_health()
@@ -113,7 +113,7 @@ async def test_linear_fetch_external(linear_adapter) -> None:
 
 
 async def test_linear_create_external_resolves_state(linear_adapter, linear_transport) -> None:
-    ext = await linear_adapter.create_external(_forge_task())
+    ext = await linear_adapter.create_external(_scf_task())
     assert ext.external_id == "uuid-1"
     ops = [c["json"].get("query", "") for c in linear_transport.call_log if c.get("json")]
     assert any("IssueCreate" in q for q in ops)
@@ -121,7 +121,7 @@ async def test_linear_create_external_resolves_state(linear_adapter, linear_tran
 
 
 async def test_linear_update_external(linear_adapter) -> None:
-    ext = await linear_adapter.update_external("uuid-1", _forge_task())
+    ext = await linear_adapter.update_external("uuid-1", _scf_task())
     assert ext.external_id == "uuid-1"
 
 
@@ -163,7 +163,7 @@ async def test_clients_raise_on_rate_limit(jira_ctx) -> None:
             )
         }
     )
-    from forge_integrations.pm.jira.adapter import JiraAdapter
+    from scf_integrations.pm.jira.adapter import JiraAdapter
 
     adapter = JiraAdapter(JiraClient(transport, base_url="https://x"), jira_ctx)
     with pytest.raises(RateLimitError) as exc:
@@ -196,7 +196,7 @@ async def test_asana_fetch_external(asana_adapter) -> None:
 async def test_asana_create_external_moves_to_matching_section(
     asana_adapter, asana_transport
 ) -> None:
-    ext = await asana_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    ext = await asana_adapter.create_external(_scf_task(status_category=StatusCategory.started))
     assert ext.external_id == "10001"
     methods = {(c["method"], c["url"].split("asana.com")[-1]) for c in asana_transport.call_log}
     assert ("POST", "/api/1.0/tasks") in methods
@@ -205,7 +205,7 @@ async def test_asana_create_external_moves_to_matching_section(
 
 async def test_asana_update_external(asana_adapter) -> None:
     ext = await asana_adapter.update_external(
-        "10001", _forge_task(status_category=StatusCategory.started)
+        "10001", _scf_task(status_category=StatusCategory.started)
     )
     assert ext.external_id == "10001"
 
@@ -229,13 +229,13 @@ async def test_asana_register_unregister_webhook(asana_adapter) -> None:
 
 
 async def test_asana_no_matching_section_raises(asana_transport, asana_ctx) -> None:
-    from forge_integrations.pm.asana.adapter import AsanaAdapter
-    from forge_integrations.pm.asana.client import AsanaClient
-    from forge_integrations.pm.errors import ProviderError
+    from scf_integrations.pm.asana.adapter import AsanaAdapter
+    from scf_integrations.pm.asana.client import AsanaClient
+    from scf_integrations.pm.errors import ProviderError
 
     adapter = AsanaAdapter(AsanaClient(asana_transport), asana_ctx)
     with pytest.raises(ProviderError):
-        await adapter._section_gid_for(_forge_task(status_category=StatusCategory.canceled))
+        await adapter._section_gid_for(_scf_task(status_category=StatusCategory.canceled))
 
 
 # --- Monday.com --------------------------------------------------------- #
@@ -249,7 +249,7 @@ async def test_monday_fetch_external(monday_adapter) -> None:
 
 
 async def test_monday_create_external(monday_adapter, monday_transport) -> None:
-    ext = await monday_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    ext = await monday_adapter.create_external(_scf_task(status_category=StatusCategory.started))
     assert ext.external_id == "1002"
     ops = [c["json"].get("query", "") for c in monday_transport.call_log if c.get("json")]
     assert any("CreateItem" in q for q in ops)
@@ -258,7 +258,7 @@ async def test_monday_create_external(monday_adapter, monday_transport) -> None:
 
 async def test_monday_update_external(monday_adapter) -> None:
     ext = await monday_adapter.update_external(
-        "1001", _forge_task(status_category=StatusCategory.started)
+        "1001", _scf_task(status_category=StatusCategory.started)
     )
     assert ext.external_id == "1001"
 
@@ -295,7 +295,7 @@ async def test_github_projects_create_external_sets_fields(
     github_projects_adapter, github_projects_transport
 ) -> None:
     ext = await github_projects_adapter.create_external(
-        _forge_task(status_category=StatusCategory.started)
+        _scf_task(status_category=StatusCategory.started)
     )
     assert ext.external_id == "PVTI_1"
     ops = [c["json"].get("query", "") for c in github_projects_transport.call_log if c.get("json")]
@@ -305,7 +305,7 @@ async def test_github_projects_create_external_sets_fields(
 
 async def test_github_projects_update_external(github_projects_adapter) -> None:
     ext = await github_projects_adapter.update_external(
-        "PVTI_1", _forge_task(status_category=StatusCategory.started)
+        "PVTI_1", _scf_task(status_category=StatusCategory.started)
     )
     assert ext.external_id == "PVTI_1"
 
@@ -341,7 +341,7 @@ async def test_clickup_fetch_external(clickup_adapter) -> None:
 
 
 async def test_clickup_create_external(clickup_adapter, clickup_transport) -> None:
-    ext = await clickup_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    ext = await clickup_adapter.create_external(_scf_task(status_category=StatusCategory.started))
     assert ext.external_id == "9hz2"
     methods = {(c["method"], c["url"].split("clickup.com")[-1]) for c in clickup_transport.call_log}
     assert ("POST", "/api/v2/list/lst1/task") in methods
@@ -349,7 +349,7 @@ async def test_clickup_create_external(clickup_adapter, clickup_transport) -> No
 
 async def test_clickup_update_external(clickup_adapter) -> None:
     ext = await clickup_adapter.update_external(
-        "9hz", _forge_task(status_category=StatusCategory.started)
+        "9hz", _scf_task(status_category=StatusCategory.started)
     )
     assert ext.external_id == "9hz"
 
@@ -373,8 +373,8 @@ async def test_clickup_register_unregister_webhook(clickup_adapter) -> None:
 
 
 async def test_clickup_register_webhook_requires_team_id(clickup_transport) -> None:
-    from forge_integrations.pm.clickup.adapter import ClickUpAdapter
-    from forge_integrations.pm.clickup.client import ClickUpClient
+    from scf_integrations.pm.clickup.adapter import ClickUpAdapter
+    from scf_integrations.pm.clickup.client import ClickUpClient
 
     ctx = AdapterContext(
         connection_id=uuid4(),
@@ -401,7 +401,7 @@ async def test_trello_fetch_external(trello_adapter) -> None:
 async def test_trello_create_external_resolves_list_and_label(
     trello_adapter, trello_transport
 ) -> None:
-    ext = await trello_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    ext = await trello_adapter.create_external(_scf_task(status_category=StatusCategory.started))
     assert ext.external_id == "card2"
     methods = {(c["method"], c["url"].split("trello.com")[-1]) for c in trello_transport.call_log}
     assert ("POST", "/1/cards") in methods
@@ -410,7 +410,7 @@ async def test_trello_create_external_resolves_list_and_label(
 
 async def test_trello_update_external(trello_adapter) -> None:
     ext = await trello_adapter.update_external(
-        "card1", _forge_task(status_category=StatusCategory.started)
+        "card1", _scf_task(status_category=StatusCategory.started)
     )
     assert ext.external_id == "card1"
 
@@ -433,13 +433,13 @@ async def test_trello_register_unregister_webhook(trello_adapter) -> None:
 
 
 async def test_trello_no_matching_list_raises(trello_transport, trello_ctx) -> None:
-    from forge_integrations.pm.errors import ProviderError as TrelloProviderError
-    from forge_integrations.pm.trello.adapter import TrelloAdapter
-    from forge_integrations.pm.trello.client import TrelloClient
+    from scf_integrations.pm.errors import ProviderError as TrelloProviderError
+    from scf_integrations.pm.trello.adapter import TrelloAdapter
+    from scf_integrations.pm.trello.client import TrelloClient
 
     adapter = TrelloAdapter(TrelloClient(trello_transport), trello_ctx)
     with pytest.raises(TrelloProviderError):
-        await adapter._list_id_for(_forge_task(status_category=StatusCategory.canceled))
+        await adapter._list_id_for(_scf_task(status_category=StatusCategory.canceled))
 
 
 # --- GitLab issues ------------------------------------------------------------ #
@@ -454,7 +454,7 @@ async def test_gitlab_fetch_external(gitlab_adapter) -> None:
 
 
 async def test_gitlab_create_external(gitlab_adapter, gitlab_transport) -> None:
-    ext = await gitlab_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    ext = await gitlab_adapter.create_external(_scf_task(status_category=StatusCategory.started))
     assert ext.external_id == "43"
     methods = {(c["method"], c["url"].split("gitlab.com")[-1]) for c in gitlab_transport.call_log}
     assert ("POST", "/api/v4/projects/701/issues") in methods
@@ -462,7 +462,7 @@ async def test_gitlab_create_external(gitlab_adapter, gitlab_transport) -> None:
 
 async def test_gitlab_update_external_preserves_unrelated_labels(gitlab_adapter) -> None:
     ext = await gitlab_adapter.update_external(
-        "42", _forge_task(status_category=StatusCategory.started)
+        "42", _scf_task(status_category=StatusCategory.started)
     )
     assert ext.external_id == "42"
     assert "backend" in ext.labels
@@ -502,7 +502,7 @@ async def test_generic_fetch_external(generic_adapter) -> None:
 
 
 async def test_generic_create_external(generic_adapter, generic_transport) -> None:
-    ext = await generic_adapter.create_external(_forge_task(status_category=StatusCategory.started))
+    ext = await generic_adapter.create_external(_scf_task(status_category=StatusCategory.started))
     assert ext.external_id == "t-2"
     methods = {(c["method"], c["url"].split("byo.example")[-1]) for c in generic_transport.call_log}
     assert ("POST", "/projects/proj1/tickets") in methods
@@ -510,7 +510,7 @@ async def test_generic_create_external(generic_adapter, generic_transport) -> No
 
 async def test_generic_update_external(generic_adapter) -> None:
     ext = await generic_adapter.update_external(
-        "t-1", _forge_task(status_category=StatusCategory.started)
+        "t-1", _scf_task(status_category=StatusCategory.started)
     )
     assert ext.external_id == "t-1"
 

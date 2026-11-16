@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_auth.keys import (
+from scf_auth.keys import (
     KEY_ID_LENGTH,
     display_prefix,
     generate_api_key,
@@ -12,7 +12,7 @@ from forge_auth.keys import (
     parse_token,
     verify_api_key,
 )
-from forge_contracts.auth import PlatformKeyKind
+from scf_contracts.auth import PlatformKeyKind
 
 EXPECTED_PREFIX = {
     PlatformKeyKind.PERSONAL: "forge_pat",

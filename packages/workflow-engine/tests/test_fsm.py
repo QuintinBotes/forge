@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import WorkflowDefinition, WorkflowTransition
-from forge_workflow.default_workflow import default_feature_definition
-from forge_workflow.exceptions import (
+from scf_contracts import WorkflowDefinition, WorkflowTransition
+from scf_workflow.default_workflow import default_feature_definition
+from scf_workflow.exceptions import (
     AmbiguousTransitionError,
     InvalidTransitionError,
     WorkflowDefinitionError,
 )
-from forge_workflow.fsm import (
+from scf_workflow.fsm import (
     RETRY_BUDGET_EXHAUSTED,
     RETRY_BUDGET_REMAINING,
     TransitionGraph,

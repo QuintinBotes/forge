@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from _provider_fakes import FakeAnthropicSDK, FakeOpenAISDK, anthropic_message, openai_completion
 
-from forge_agent.providers import (
+from scf_agent.providers import (
     AnthropicModelClient,
     ModelClientConfig,
     ModelClientError,
@@ -17,7 +17,7 @@ from forge_agent.providers import (
     ProviderName,
     build_model_client,
 )
-from forge_contracts import ModelClient, ModelRequest
+from scf_contracts import ModelClient, ModelRequest
 
 
 def _anthropic() -> AnthropicModelClient:

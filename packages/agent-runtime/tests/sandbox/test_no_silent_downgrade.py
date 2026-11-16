@@ -11,15 +11,15 @@ from __future__ import annotations
 import pytest
 from _sandbox_fakes import FakeDockerClient
 
-from forge_agent.sandbox import (
+from scf_agent.sandbox import (
     GvisorSandboxProvider,
     MicroVMSandboxProvider,
     SandboxRuntimeUnavailable,
     SandboxSettings,
     build_sandbox_provider,
 )
-from forge_agent.sandbox import microvm as microvm_module
-from forge_contracts import SandboxKind
+from scf_agent.sandbox import microvm as microvm_module
+from scf_contracts import SandboxKind
 
 
 async def test_gvisor_create_raises_never_falls_back(fake_docker_client, gvisor_spec) -> None:

@@ -11,8 +11,8 @@ from __future__ import annotations
 from conftest import OTHER_WS_ID, WS_ID, make_oidc_config_in
 from sqlalchemy import select
 
-from forge_contracts import UserRole
-from forge_db.models import OidcConfiguration
+from scf_contracts import UserRole
+from scf_db.models import OidcConfiguration
 
 
 class TestOidcConfigCrud:

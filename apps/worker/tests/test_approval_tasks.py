@@ -17,8 +17,8 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import (
+from scf_db.base import Base
+from scf_db.models import (
     AgentRun,
     ApprovalGate,
     ApprovalRequest,
@@ -28,9 +28,9 @@ from forge_db.models import (
     User,
     Workspace,
 )
-from forge_worker.beat import APPROVAL_EXPIRE_TASK, BEAT_SCHEDULE
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks.approvals import (
+from scf_worker.beat import APPROVAL_EXPIRE_TASK, BEAT_SCHEDULE
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks.approvals import (
     CONSUME_OVERRIDE_GRANT_TASK,
     EXPIRE_APPROVALS_TASK,
     run_consume_grant,

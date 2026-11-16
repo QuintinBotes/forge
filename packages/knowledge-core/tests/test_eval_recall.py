@@ -2,7 +2,7 @@
 
 This is a compact, hermetic quality check for the hybrid-retrieval spine — the
 full golden retrieval set + RAGAS-style report is Task 1.4's deliverable in
-``forge_eval``. Here a small synthetic repo (code + docs) is indexed through the
+``scf_eval``. Here a small synthetic repo (code + docs) is indexed through the
 real :class:`KnowledgeService` (deterministic embedding + fixture reranker), and
 a set of >=15 ``query -> expected-path`` pairs is scored with:
 
@@ -20,11 +20,11 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import create_engine
 
-from forge_contracts.dtos import Chunk, KnowledgeScope
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, Workspace
-from forge_db.session import create_session_factory
-from forge_knowledge import (
+from scf_contracts.dtos import Chunk, KnowledgeScope
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, Workspace
+from scf_db.session import create_session_factory
+from scf_knowledge import (
     DeterministicEmbeddingClient,
     FixtureRerankerClient,
     KnowledgeService,

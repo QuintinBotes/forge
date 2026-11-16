@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { approvalKeys, useApprovals, useDecideApproval } from "./approvals";
-import type { ForgeApiClient } from "./client";
+import type { ScfApiClient } from "./client";
 import type { ApprovalResolution, ApprovalSummary } from "./types";
 
 function makeWrapper(client: QueryClient) {
@@ -25,7 +25,7 @@ describe("useApprovals", () => {
   it("fetches the pending queue via the client", async () => {
     const client = {
       listApprovals: vi.fn(() => Promise.resolve([gate])),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -53,7 +53,7 @@ describe("useDecideApproval (optimistic)", () => {
     });
     const client = {
       decideApproval: vi.fn(() => pending),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useDecideApproval(client), {
       wrapper: makeWrapper(queryClient),
@@ -84,7 +84,7 @@ describe("useDecideApproval (optimistic)", () => {
 
     const client = {
       decideApproval: vi.fn(() => Promise.reject(new Error("boom"))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useDecideApproval(client), {
       wrapper: makeWrapper(queryClient),

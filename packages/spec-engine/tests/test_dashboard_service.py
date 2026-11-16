@@ -8,16 +8,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from forge_contracts import (
+from scf_contracts import (
     AcceptanceCriterion,
     Requirement,
     RequirementTrace,
     SpecManifest,
     ValidationReport,
 )
-from forge_spec.dashboard_schemas import SpecHeader
-from forge_spec.dashboard_service import CSV_COLUMNS, DashboardService
-from forge_spec.projection import (
+from scf_spec.dashboard_schemas import SpecHeader
+from scf_spec.dashboard_service import CSV_COLUMNS, DashboardService
+from scf_spec.projection import (
     InMemoryProjectionRepository,
     NoOpEvidencePort,
     TraceabilityProjector,

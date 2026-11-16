@@ -43,7 +43,7 @@ start, sign in, and drive work through the UI and the API.
 ```
 uv run pytest apps/api/tests packages/spec-engine deploy/tests -q
 uv run ruff check . && uv run ruff format --check .
-uv run mypy -p forge_api -p forge_spec
+uv run mypy -p scf_api -p scf_spec
 pnpm --filter web test
 deploy/scripts/pin-digests.sh --check
 ```
@@ -60,7 +60,7 @@ independent and would have persisted with a valid key.
 | # | Severity | Finding |
 |---|----------|---------|
 | F8 | blocker | The CSP declares no `script-src`, so `default-src 'self'` blocks Next's inline `self.__next_r` bootstrap and **hydration never runs**. Fixed with a per-request nonce (`src/middleware.ts`) rather than `'unsafe-inline'`. |
-| F9 | blocker | `ForgeApiClient` stored `globalThis.fetch` unbound and called it as a method, so a browser rejected **every** request with `Illegal invocation`. jsdom does not enforce the receiver, so the suite could not see it. |
+| F9 | blocker | `ScfApiClient` stored `globalThis.fetch` unbound and called it as a method, so a browser rejected **every** request with `Illegal invocation`. jsdom does not enforce the receiver, so the suite could not see it. |
 | F10 | high | `task.project_id` is a required FK but the create path allows no project, and the seed created no project at all — so with the board on `db` (F3) every task create was a 500. The service now resolves the workspace's default project; the seed creates one; a workspace with none gets a 422, not a 500. |
 
 Also documented: `make dev` does **not** read the root `.env` (it passes
@@ -75,7 +75,7 @@ troubleshooting.
   tests) — diffed, no regressions.
 - Web: 790 passed, `tsc --noEmit` clean, eslint at the 12-warning baseline.
 - `ruff check` clean; `ruff format` clean on every file touched; `mypy -p
-  forge_api -p forge_spec -p forge_board` clean.
+  scf_api -p scf_spec -p scf_board` clean.
 - A real stack (isolated compose project) brought up end to end: MinIO pulled
   from quay.io, all eight services healthy, seed printed a key, that key
   authenticated through Caddy, survived an API restart, and drove the UI

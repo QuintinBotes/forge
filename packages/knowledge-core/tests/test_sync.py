@@ -1,4 +1,4 @@
-"""Tests for ``forge_knowledge.sync`` (plan Task 1.4, RAG spine).
+"""Tests for ``scf_knowledge.sync`` (plan Task 1.4, RAG spine).
 
 Task 1.4 adds the two *sync modes* on top of the Task 1.2 stores:
 
@@ -30,15 +30,15 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.dtos import Chunk, KnowledgeScope
-from forge_contracts.enums import ChunkType, SyncMode
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, RetrievalChunk, Workspace
-from forge_db.session import create_session_factory
-from forge_knowledge import sync as sync_module
-from forge_knowledge.embeddings import DeterministicEmbeddingClient
-from forge_knowledge.stores import PgVectorStore
-from forge_knowledge.sync import (
+from scf_contracts.dtos import Chunk, KnowledgeScope
+from scf_contracts.enums import ChunkType, SyncMode
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, RetrievalChunk, Workspace
+from scf_db.session import create_session_factory
+from scf_knowledge import sync as sync_module
+from scf_knowledge.embeddings import DeterministicEmbeddingClient
+from scf_knowledge.stores import PgVectorStore
+from scf_knowledge.sync import (
     DEFAULT_MAX_COMMITS,
     MAX_COMMITS,
     ChangeSet,
@@ -421,8 +421,8 @@ def git_repo(tmp_path: Path) -> Iterator[Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "forge@example.com")
-    _git(repo, "config", "user.name", "Forge Test")
+    _git(repo, "config", "user.email", "scf@example.com")
+    _git(repo, "config", "user.name", "SCF Test")
     _git(repo, "config", "commit.gpgsign", "false")
     yield repo
 

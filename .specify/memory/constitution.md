@@ -1,6 +1,6 @@
-# Forge Constitution
+# Swarm Code Factory Constitution
 
-Forge is a software factory: it takes an issue and ships a verified, attested change. These
+SCF is a software factory: it takes an issue and ships a verified, attested change. These
 principles bind every Spec Kit spec, plan and task list under `specs/`. Each one names the
 repository document it comes from and a test a reviewer can apply.
 
@@ -8,22 +8,22 @@ repository document it comes from and a test a reviewer can apply.
 
 ### I. Verifiable delivery comes before agent capability
 
-Forge competes on proof that a change is correct, not on a better coding agent. A feature that
+SCF competes on proof that a change is correct, not on a better coding agent. A feature that
 changes how work is produced MUST also state how the result is verified and what evidence is kept.
 
 - Test: every spec under `specs/` names the check, gate or evidence record that proves its outcome.
   A spec whose only claim is "the agent does more" fails review.
 - Source: `docs/superpowers/plans/2026-11-14-industry-standard-roadmap.md` section 1 (thesis);
-  `docs/FORGE_SPEC.md` Core Design Principles 2 and 10.
+  `docs/SCF_SPEC.md` Core Design Principles 2 and 10.
 
 ### II. Agent harnesses and models are swappable
 
-Forge does not build a harness and does not depend on one model vendor. Model access goes through
+SCF does not build a harness and does not depend on one model vendor. Model access goes through
 the `ModelClient` contract in `packages/contracts`, and executors are selected by configuration.
 
 - Test: no requirement names a single harness or model vendor as mandatory. A change that works
   with only one provider must say so and must refuse, not degrade silently, on the others.
-- Source: roadmap section 1, point 1; `docs/FORGE_SPEC.md` Core Design Principle 5 (bring your own
+- Source: roadmap section 1, point 1; `docs/SCF_SPEC.md` Core Design Principle 5 (bring your own
   model and key); `docs/architecture/adr/0012-two-executor-modes.md`.
 
 ### III. Every agent change is independently verified and attested (NON-NEGOTIABLE)
@@ -76,7 +76,7 @@ an agent can call during a run. Machine writes to shared knowledge are proposals
 This repository is public. No secret, token, personal path, username or email is committed.
 Vulnerabilities are reported privately and referred to by finding ID, without exploitation detail.
 Code, prompt text and documentation from other projects are not copied without the licence notices
-ADR-0010 requires. Private sibling repositories are described only by what forge's public documents
+ADR-0010 requires. Private sibling repositories are described only by what SCF's public documents
 already say.
 
 - Test: the `gitleaks` gate in CI passes; file paths in documents are repository-relative; a
@@ -98,15 +98,15 @@ enforced.
 
 Three kinds of spec live in or around this repository. They do not replace each other.
 
-- **Spec Kit specs** for new forge work live under `specs/NNN-slug/` (`spec.md`, then `plan.md` and
+- **Spec Kit specs** for new SCF work live under `specs/NNN-slug/` (`spec.md`, then `plan.md` and
   `tasks.md`). They follow the templates in `.specify/templates/`.
 - **Lettered design specs** (A to M) stay in `docs/superpowers/specs/`, with their decisions in
   `docs/architecture/adr/`. They are design input. A Spec Kit spec cites the lettered spec and ADRs
   it builds on. Lettered specs are not migrated to the Spec Kit layout.
-- **Runtime specs** are what forge's users author through forge's own spec engine. That engine uses
+- **Runtime specs** are what SCF's users author through SCF's own spec engine. That engine uses
   a different layout, `specs/SPEC-<n>-<slug>/` with a `manifest.yaml`, described in
-  `docs/FORGE_SPEC.md` ("Spec Folder Layout") and shown in `examples/specs/`. It is a product
-  feature and is not the format for forge's own roadmap work.
+  `docs/SCF_SPEC.md` ("Spec Folder Layout") and shown in `examples/specs/`. It is a product
+  feature and is not the format for SCF's own roadmap work.
 
 The directory prefix tells the two `specs/` layouts apart: three digits for Spec Kit, `SPEC-` for
 the runtime engine.

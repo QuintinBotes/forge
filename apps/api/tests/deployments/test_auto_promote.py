@@ -8,8 +8,8 @@ from collections.abc import Callable
 from conftest import REPO_ID, WS_ID, configure_pipeline
 from fastapi.testclient import TestClient
 
-from forge_contracts import UserRole
-from forge_deploy.states import DeploymentTrigger
+from scf_contracts import UserRole
+from scf_deploy.states import DeploymentTrigger
 
 
 def test_auto_promote_creates_deployment(

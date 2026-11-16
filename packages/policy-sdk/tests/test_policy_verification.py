@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forge_policy import STATIC_GATE_CHECK, collect_files, run_static_gate, static_gate_check
+from scf_policy import STATIC_GATE_CHECK, collect_files, run_static_gate, static_gate_check
 
 _FORBIDDEN = ["# type: ignore", "skip failing tests"]
 

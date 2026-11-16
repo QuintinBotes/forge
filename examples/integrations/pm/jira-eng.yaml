@@ -2,7 +2,7 @@
 # Security notes:
 #   * `api_token` is sent to POST /api/v1/integrations/pm/connections once and
 #     stored ENCRYPTED in the F37 vault; it is never returned or logged.
-#   * Jira REST webhooks are not HMAC-signed by Atlassian, so Forge binds a
+#   * Jira REST webhooks are not HMAC-signed by Atlassian, so SCF binds a
 #     per-connection secret to the registered webhook and ALWAYS re-fetches the
 #     authoritative issue before any board write (the payload is only a hint).
 pm_connection:
@@ -17,4 +17,4 @@ pm_connection:
   status_map: {}              # empty -> category-based default resolver
   priority_map: {}            # empty -> default resolver
   field_map: {}
-  on_external_delete: unlink  # unlink (default; keeps the Forge task) | archive
+  on_external_delete: unlink  # unlink (default; keeps the SCF task) | archive

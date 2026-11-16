@@ -1,6 +1,6 @@
 # Example single skill profile (standalone document form).
 #
-# Parsed by `forge_skill.load_profile`; a single-document profile must carry its
+# Parsed by `scf_skill.load_profile`; a single-document profile must carry its
 # own `name`. Use this shape when distributing one profile per file.
 name: performance-tuning
 description: Performance work that must prove a measurable improvement.

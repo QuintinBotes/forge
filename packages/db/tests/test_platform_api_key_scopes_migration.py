@@ -17,10 +17,10 @@ from alembic.operations import Operations
 from sqlalchemy import Engine, create_engine, inspect, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_db.models  # noqa: F401  (registers all models)
-from forge_db.base import Base
-from forge_db.models import PlatformAPIKey, Workspace
-from forge_db.models.enums import PlatformKeyKind, UserRole
+import scf_db.models  # noqa: F401  (registers all models)
+from scf_db.base import Base
+from scf_db.models import PlatformAPIKey, Workspace
+from scf_db.models.enums import PlatformKeyKind, UserRole
 
 DB_ROOT = Path(__file__).resolve().parent.parent
 TABLE = "platform_api_key"

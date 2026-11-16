@@ -14,9 +14,9 @@ from typing import Any
 
 import pytest
 
-from forge_eval.ctxbench.bank import SUITE_DIR, load_bank
-from forge_eval.ctxbench.report import build_summary, render_markdown
-from forge_eval.ctxbench.score import (
+from scf_eval.ctxbench.bank import SUITE_DIR, load_bank
+from scf_eval.ctxbench.report import build_summary, render_markdown
+from scf_eval.ctxbench.score import (
     GradedAsk,
     ask_score,
     hallucinated,

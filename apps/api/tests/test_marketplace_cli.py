@@ -1,4 +1,4 @@
-"""``forge marketplace package`` CLI round-trip (AC20)."""
+"""``scf marketplace package`` CLI round-trip (AC20)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from pathlib import Path
 
 import yaml
 
-from forge_api.cli_marketplace import main
-from forge_marketplace.manifest import load_manifest
+from scf_api.cli_marketplace import main
+from scf_marketplace.manifest import load_manifest
 
 
 def test_package_roundtrips_reverifiable_content_hash(tmp_path: Path) -> None:

@@ -4,23 +4,23 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from forge_marketplace.catalog import (
+from scf_marketplace.catalog import (
     compare_semver,
     has_newer_compatible,
     is_compatible,
     latest_compatible,
     parse_semver,
 )
-from forge_marketplace.models import RegistryIndexVersion
+from scf_marketplace.models import RegistryIndexVersion
 
 
-def _v(version: str, *, yanked: bool = False, min_forge: str | None = None) -> RegistryIndexVersion:
+def _v(version: str, *, yanked: bool = False, min_scf: str | None = None) -> RegistryIndexVersion:
     return RegistryIndexVersion(
         version=version,
         content_hash="sha256:" + "0" * 64,
         manifest_hash="sha256:" + "0" * 64,
         manifest_uri="x",
-        min_forge_version=min_forge,
+        min_forge_version=min_scf,
         published_at=datetime(2026, 1, 1, tzinfo=UTC),
         yanked=yanked,
     )
@@ -54,7 +54,7 @@ def test_latest_compatible_excludes_yanked_and_incompatible() -> None:
         _v("1.0.0"),
         _v("1.1.0"),
         _v("1.2.0", yanked=True),  # excluded
-        _v("2.0.0", min_forge="9.0.0"),  # excluded (incompatible)
+        _v("2.0.0", min_scf="9.0.0"),  # excluded (incompatible)
     ]
     latest = latest_compatible(versions, forge_version="3.0.0")
     assert latest is not None

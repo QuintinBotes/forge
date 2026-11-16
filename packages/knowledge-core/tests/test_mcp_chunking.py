@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from forge_contracts.enums import ChunkType
-from forge_knowledge.mcp_chunking import McpResourceChunker, McpResourceSnapshot, provenance_uri
+from scf_contracts.enums import ChunkType
+from scf_knowledge.mcp_chunking import McpResourceChunker, McpResourceSnapshot, provenance_uri
 
 SLUG = "confluence-engineering"
 

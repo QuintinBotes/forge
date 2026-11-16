@@ -1,4 +1,4 @@
-"""Shared fixtures for the forge_approval unit suite (slice F36 §7)."""
+"""Shared fixtures for the scf_approval unit suite (slice F36 §7)."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from typing import Any, ClassVar
 
 import pytest
 
-from forge_approval.audit import RecordingAuditSink
-from forge_approval.authorizer import ApprovalAuthorizer
-from forge_approval.events import InMemoryActivityBus
-from forge_approval.models import (
+from scf_approval.audit import RecordingAuditSink
+from scf_approval.authorizer import ApprovalAuthorizer
+from scf_approval.events import InMemoryActivityBus
+from scf_approval.models import (
     ApprovalAction,
     ApprovalContext,
     ApprovalDecisionRequest,
@@ -22,9 +22,9 @@ from forge_approval.models import (
     ResolutionOutcome,
     Role,
 )
-from forge_approval.registry import GateRegistry, default_actions
-from forge_approval.repository import InMemoryApprovalRepository
-from forge_approval.service import ApprovalService
+from scf_approval.registry import GateRegistry, default_actions
+from scf_approval.repository import InMemoryApprovalRepository
+from scf_approval.service import ApprovalService
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS = uuid.UUID("00000000-0000-0000-0000-0000000000a2")

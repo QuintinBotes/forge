@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Forge web (Next.js) — LOCAL DEV image.
+# SCF web (Next.js) — LOCAL DEV image.
 #
 # Unlike deploy/docker/web.Dockerfile (production: build + `next start`), this
 # image installs the workspace deps and runs the Next dev server, so the single

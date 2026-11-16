@@ -9,9 +9,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("AppShell", () => {
-  it("renders the Forge brand", () => {
+  it("renders the SCF brand", () => {
     render(<AppShell>content</AppShell>);
-    expect(screen.getByText("Forge")).toBeInTheDocument();
+    expect(screen.getByText("Swarm Code Factory")).toBeInTheDocument();
   });
 
   it("renders every primary board navigation item", () => {

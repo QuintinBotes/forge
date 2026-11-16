@@ -1,4 +1,4 @@
-"""Tests for the shared condition DSL (F29 — ``forge_contracts.conditions``)."""
+"""Tests for the shared condition DSL (F29 — ``scf_contracts.conditions``)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from forge_contracts.conditions import (
+from scf_contracts.conditions import (
     Condition,
     ConditionGroup,
     ConditionOp,

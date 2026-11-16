@@ -7,7 +7,7 @@ import json
 import pydantic
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     Condition,
     ConditionalRule,
     ConditionGroup,
@@ -16,7 +16,7 @@ from forge_contracts import (
     Policy,
     RuleEffect,
 )
-from forge_policy.schema import SCHEMA_PATH, policy_json_schema
+from scf_policy.schema import SCHEMA_PATH, policy_json_schema
 
 
 def _rule(rule_id: str = "r1", **kw: object) -> ConditionalRule:
@@ -69,7 +69,7 @@ def test_json_schema_v2_matches_committed() -> None:
     assert SCHEMA_PATH.is_file(), "policy.schema.json must be committed"
     committed = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     assert committed == policy_json_schema(), (
-        "policy.schema.json is stale — regenerate with forge_policy.schema.write_schema()"
+        "policy.schema.json is stale — regenerate with scf_policy.schema.write_schema()"
     )
     # The schema must describe the new conditional surface.
     assert "rules" in committed["properties"]

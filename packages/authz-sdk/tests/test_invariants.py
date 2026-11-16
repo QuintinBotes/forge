@@ -9,7 +9,7 @@ import uuid
 
 import pytest
 
-from forge_authz import (
+from scf_authz import (
     MAX_TEAM_DEPTH,
     EscalationError,
     LastAdminError,
@@ -19,7 +19,7 @@ from forge_authz import (
     ensure_not_last_admin,
     validate_team_parent,
 )
-from forge_contracts.authz import (
+from scf_contracts.authz import (
     PrincipalRef,
     PrincipalType,
     Role,

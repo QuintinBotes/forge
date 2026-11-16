@@ -22,23 +22,23 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_api.db
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.observability.redaction import redact_mapping
-from forge_api.services.approval_service import build_gate_registry, get_approval_service
-from forge_api.services.workflow_engine import select_workflow_engine
-from forge_approval import ApprovalAuthorizer, ApprovalService, InMemoryApprovalRepository
-from forge_approval.audit import RecordingAuditSink
-from forge_approval.authorizer import DefaultPolicyReader
-from forge_approval.events import APPROVAL_RESOLVED_TOPIC, InMemoryActivityBus
-from forge_approval.models import ApprovalRequest, GateStatus
-from forge_approval.providers import InMemoryGrantStore
-from forge_contracts import UserRole
-from forge_contracts.dtos import ReviewRules
-from forge_db.base import Base
-from forge_db.models import AgentRun, Attestation, Project, Task, Workspace
+import scf_api.db
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.observability.redaction import redact_mapping
+from scf_api.services.approval_service import build_gate_registry, get_approval_service
+from scf_api.services.workflow_engine import select_workflow_engine
+from scf_approval import ApprovalAuthorizer, ApprovalService, InMemoryApprovalRepository
+from scf_approval.audit import RecordingAuditSink
+from scf_approval.authorizer import DefaultPolicyReader
+from scf_approval.events import APPROVAL_RESOLVED_TOPIC, InMemoryActivityBus
+from scf_approval.models import ApprovalRequest, GateStatus
+from scf_approval.providers import InMemoryGrantStore
+from scf_contracts import UserRole
+from scf_contracts.dtos import ReviewRules
+from scf_db.base import Base
+from scf_db.models import AgentRun, Attestation, Project, Task, Workspace
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000c1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000c2")
@@ -188,7 +188,7 @@ def make_harness(factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
     # The pr gate's attestation hook opens its session from the process
     # factory; point it at this database. No signing key is configured, as on
     # a deployment without one (the signer falls back to an ephemeral key).
-    monkeypatch.setattr(forge_api.db, "get_session_factory", lambda: factory)
+    monkeypatch.setattr(scf_api.db, "get_session_factory", lambda: factory)
     monkeypatch.delenv("FORGE_ATTEST_SIGNING_KEY", raising=False)
 
     def _make(authorizer: ApprovalAuthorizer | None = None) -> Harness:
@@ -675,8 +675,8 @@ def test_an_incomplete_attestation_blocks_the_gate_like_a_failed_one(
 ) -> None:
     """An attestation hook that returns ``completed=False`` is no proof: the hook
     and sync both block the run, exactly as when it raises."""
-    from forge_api.services.attestation_service import PrAttestationResolutionHook
-    from forge_approval.models import ResolutionOutcome
+    from scf_api.services.attestation_service import PrAttestationResolutionHook
+    from scf_approval.models import ResolutionOutcome
 
     async def _incomplete(*_a: object, **_k: object) -> ResolutionOutcome:
         return ResolutionOutcome(completed=False, blocking_reasons=["no_session"])
@@ -706,7 +706,7 @@ def test_a_failed_attestation_keeps_the_decision_and_blocks_the_gate(
 ) -> None:
     """Spec K §4.11: a raising pr attestation hook never turns the recorded
     decision into a 500, and never lets the run merge (not even through sync)."""
-    from forge_api.services.attestation_service import AttestationService
+    from scf_api.services.attestation_service import AttestationService
 
     def _fail(*_a: object, **_k: object) -> None:
         raise RuntimeError("signing key unavailable")
@@ -778,7 +778,7 @@ def test_sync_never_merges_a_pr_approval_it_cannot_attest(
     decider_id: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from forge_api.services.attestation_service import AttestationService
+    from scf_api.services.attestation_service import AttestationService
 
     def _fail(*_a: object, **_k: object) -> None:
         raise RuntimeError("db unavailable")
@@ -874,7 +874,7 @@ def test_a_caller_made_request_cannot_take_over_a_runs_gate(
 
 
 def test_only_the_boolean_true_counts_as_a_merge_signal() -> None:
-    from forge_api.services.workflow_gate_hook import _merge_signals
+    from scf_api.services.workflow_gate_hook import _merge_signals
 
     request = ApprovalRequest.model_construct(
         gate_payload={"ci_status_green": "false", "spec_validated": True, "other": True}

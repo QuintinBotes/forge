@@ -2,7 +2,7 @@
  * Presentation metadata for the incident surface (pure + unit-testable).
  *
  * Maps the F17 domain vocabulary — severity, lifecycle state, blast radius and
- * FSM events — onto Forge design-token classes, labels and icons. No JSX here so
+ * FSM events — onto SCF design-token classes, labels and icons. No JSX here so
  * the maps stay trivially testable; the icon is carried as a component ref.
  */
 

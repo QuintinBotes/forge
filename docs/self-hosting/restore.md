@@ -1,6 +1,6 @@
 # Restore
 
-This guide restores a Forge instance from a backup produced by
+This guide restores a Swarm Code Factory instance from a backup produced by
 [backup.md](backup.md) and verifies that the restore actually worked. Read it
 end to end before you start: the Postgres restore is **destructive** and
 overwrites the target database.

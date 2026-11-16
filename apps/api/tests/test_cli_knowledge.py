@@ -1,4 +1,4 @@
-"""``forge-cli knowledge rebuild-bm25-stats`` tests (spec J correction pass).
+"""``scf-cli knowledge rebuild-bm25-stats`` tests (spec J correction pass).
 
 The operator repair command recomputes a workspace's BM25 statistics from
 chunk content. Exercised end-to-end through ``cli.main`` against an
@@ -12,17 +12,17 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api import cli as cli_mod
-from forge_contracts.dtos import Chunk
-from forge_db.base import Base
-from forge_db.models import (
+from scf_api import cli as cli_mod
+from scf_contracts.dtos import Chunk
+from scf_db.base import Base
+from scf_db.models import (
     KnowledgeSource,
     RetrievalTermStat,
     RetrievalWorkspaceStat,
     Workspace,
 )
-from forge_db.session import create_session_factory
-from forge_knowledge.stores import PgVectorStore
+from scf_db.session import create_session_factory
+from scf_knowledge.stores import PgVectorStore
 
 
 @pytest.fixture

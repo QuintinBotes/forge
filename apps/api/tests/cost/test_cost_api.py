@@ -21,7 +21,7 @@ from cost_support import (  # noqa: F401 - imported fixtures are pytest-discover
 )
 from fastapi.testclient import TestClient
 
-from forge_contracts import UserRole
+from scf_contracts import UserRole
 
 
 def test_task_cost_summary_by_phase(client_factory: Callable[..., TestClient]) -> None:
@@ -154,7 +154,7 @@ def test_reprice_applies_current_price_book_and_audits(
     import uuid as _uuid
     from datetime import timedelta
 
-    from forge_obs.cost.models import ModelPrice
+    from scf_obs.cost.models import ModelPrice
 
     price_book.add(
         ModelPrice(
@@ -190,7 +190,7 @@ def test_reprice_applies_current_price_book_and_audits(
 
 def test_observability_metrics_exposition(client_factory) -> None:
     """The internal scrape surface renders the recording registry, else empty."""
-    from forge_obs.metrics import RecordingMetrics, reset_metrics, set_metrics
+    from scf_obs.metrics import RecordingMetrics, reset_metrics, set_metrics
 
     client = client_factory(UserRole.VIEWER)
     try:

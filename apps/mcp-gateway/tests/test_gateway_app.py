@@ -11,9 +11,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from forge_mcp.testing import sample_connection, sample_transport
-from forge_mcp_gateway.app import create_gateway_app
-from forge_mcp_gateway.manager import MCPConnectionManager
+from scf_mcp.testing import sample_connection, sample_transport
+from scf_mcp_gateway.app import create_gateway_app
+from scf_mcp_gateway.manager import MCPConnectionManager
 
 
 @pytest.fixture

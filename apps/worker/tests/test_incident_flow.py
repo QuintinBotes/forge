@@ -7,9 +7,9 @@ import uuid
 
 import pytest
 
-from forge_board import InMemoryBoardService
-from forge_contracts.enums import IncidentSeverity, IncidentState
-from forge_contracts.incident import (
+from scf_board import InMemoryBoardService
+from scf_contracts.enums import IncidentSeverity, IncidentState
+from scf_contracts.incident import (
     BlastRadius,
     ContextFinding,
     ImpactAssessment,
@@ -18,7 +18,7 @@ from forge_contracts.incident import (
     RunbookStep,
     StepResult,
 )
-from forge_worker.tasks.incident import (
+from scf_worker.tasks.incident import (
     IncidentFlowState,
     execute_runbook,
     incident_directives,
@@ -73,7 +73,7 @@ class FakeMonitor:
         self._recovered = recovered
 
     async def check_recovery(self, *, incident_id, assessment):
-        from forge_contracts.incident import RecoveryStatus
+        from scf_contracts.incident import RecoveryStatus
 
         return RecoveryStatus(recovered=self._recovered)
 
@@ -99,7 +99,7 @@ def test_alert_to_postmortem_end_to_end() -> None:
     assert state.lifecycle_state == "awaiting_approval"
 
     # Human approval gate.
-    from forge_workflow import drive_incident
+    from scf_workflow import drive_incident
 
     state.context["approval_granted"] = True
     outcome = drive_incident(
@@ -171,14 +171,14 @@ def test_runbook_step_failure_reports_failure() -> None:
 
 
 def test_celery_incident_task_registered() -> None:
-    from forge_worker.celery_app import celery_app
+    from scf_worker.celery_app import celery_app
 
     assert "forge_worker.tasks.incident.run_incident_diagnosis" in celery_app.tasks
 
 
 @pytest.mark.parametrize("recovered", [True, False])
 def test_monitor_recovery_paths(recovered: bool) -> None:
-    from forge_worker.tasks.incident import monitor_recovery
+    from scf_worker.tasks.incident import monitor_recovery
 
     event, _status = asyncio.run(
         monitor_recovery(

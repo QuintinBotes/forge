@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts.enums import Direction
-from forge_contracts.pm import AdapterContext, PMProvider, StatusCategory
-from forge_integrations.pm.errors import MappingError
-from forge_integrations.pm.jira import mapping as jmap
-from forge_integrations.pm.jira.adapter import JiraAdapter
-from forge_integrations.pm.jira.client import JiraClient
-from forge_integrations.pm.linear.adapter import LinearAdapter
-from forge_integrations.pm.linear.client import LinearClient
-from forge_integrations.pm.transport import FixturePMTransport
+from scf_contracts.enums import Direction
+from scf_contracts.pm import AdapterContext, PMProvider, StatusCategory
+from scf_integrations.pm.errors import MappingError
+from scf_integrations.pm.jira import mapping as jmap
+from scf_integrations.pm.jira.adapter import JiraAdapter
+from scf_integrations.pm.jira.client import JiraClient
+from scf_integrations.pm.linear.adapter import LinearAdapter
+from scf_integrations.pm.linear.client import LinearClient
+from scf_integrations.pm.transport import FixturePMTransport
 
 
 def _jira(**overrides) -> JiraAdapter:
@@ -96,9 +96,9 @@ LINEAR_PRIORITY_OUT = [
 ]
 
 
-@pytest.mark.parametrize(("forge", "expected"), JIRA_PRIORITY_OUT)
-def test_priority_map_table_jira_out(forge: str, expected: str) -> None:
-    assert _jira().map_priority(forge, Direction.OUT) == expected
+@pytest.mark.parametrize(("scf", "expected"), JIRA_PRIORITY_OUT)
+def test_priority_map_table_jira_out(scf: str, expected: str) -> None:
+    assert _jira().map_priority(scf, Direction.OUT) == expected
 
 
 @pytest.mark.parametrize(
@@ -115,11 +115,11 @@ def test_priority_map_table_jira_in(name: str, expected: str) -> None:
     assert _jira().map_priority(name, Direction.IN) == expected
 
 
-@pytest.mark.parametrize(("forge", "expected"), LINEAR_PRIORITY_OUT)
-def test_priority_map_table_linear_both_directions(forge: str, expected: str) -> None:
+@pytest.mark.parametrize(("scf", "expected"), LINEAR_PRIORITY_OUT)
+def test_priority_map_table_linear_both_directions(scf: str, expected: str) -> None:
     a = _linear()
-    assert a.map_priority(forge, Direction.OUT) == expected
-    assert a.map_priority(expected, Direction.IN) == forge
+    assert a.map_priority(scf, Direction.OUT) == expected
+    assert a.map_priority(expected, Direction.IN) == scf
 
 
 # --- Overrides + errors ----------------------------------------------------- #
@@ -164,7 +164,7 @@ def test_jira_adf_roundtrip_basic() -> None:
 
 
 def test_linear_markdown_passthrough() -> None:
-    from forge_integrations.pm.linear import mapping as lmap
+    from scf_integrations.pm.linear import mapping as lmap
 
     assert lmap.markdown_passthrough("**bold**") == "**bold**"
     assert lmap.markdown_passthrough(None) == ""
@@ -182,8 +182,8 @@ ASANA_STATUS_IN = [
 
 
 def _asana(**overrides):
-    from forge_integrations.pm.asana.adapter import AsanaAdapter
-    from forge_integrations.pm.asana.client import AsanaClient
+    from scf_integrations.pm.asana.adapter import AsanaAdapter
+    from scf_integrations.pm.asana.client import AsanaClient
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -216,7 +216,7 @@ def test_status_map_table_asana_out(category: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("forge", "expected"),
+    ("scf", "expected"),
     [
         ("none", "Medium"),
         ("low", "Low"),
@@ -225,8 +225,8 @@ def test_status_map_table_asana_out(category: str, expected: str) -> None:
         ("urgent", "Urgent"),
     ],
 )
-def test_priority_map_table_asana_out(forge: str, expected: str) -> None:
-    assert _asana().map_priority(forge, Direction.OUT) == expected
+def test_priority_map_table_asana_out(scf: str, expected: str) -> None:
+    assert _asana().map_priority(scf, Direction.OUT) == expected
 
 
 def test_asana_status_override_precedence() -> None:
@@ -244,8 +244,8 @@ def test_asana_status_unmappable_raises() -> None:
 
 
 def _monday(**overrides):
-    from forge_integrations.pm.monday.adapter import MondayAdapter
-    from forge_integrations.pm.monday.client import MondayClient
+    from scf_integrations.pm.monday.adapter import MondayAdapter
+    from scf_integrations.pm.monday.client import MondayClient
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -273,11 +273,11 @@ def test_status_map_table_monday_in(label: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("forge", "expected"),
+    ("scf", "expected"),
     [("low", "Low"), ("medium", "Medium"), ("high", "High"), ("urgent", "Critical")],
 )
-def test_priority_map_table_monday_out(forge: str, expected: str) -> None:
-    assert _monday().map_priority(forge, Direction.OUT) == expected
+def test_priority_map_table_monday_out(scf: str, expected: str) -> None:
+    assert _monday().map_priority(scf, Direction.OUT) == expected
 
 
 def test_monday_priority_override_precedence() -> None:
@@ -290,8 +290,8 @@ def test_monday_priority_override_precedence() -> None:
 
 
 def _gh_projects(**overrides):
-    from forge_integrations.pm.github_projects.adapter import GitHubProjectsAdapter
-    from forge_integrations.pm.github_projects.client import GitHubProjectsClient
+    from scf_integrations.pm.github_projects.adapter import GitHubProjectsAdapter
+    from scf_integrations.pm.github_projects.client import GitHubProjectsClient
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -340,8 +340,8 @@ def test_github_projects_status_unmappable_raises() -> None:
 
 
 def _clickup(**overrides):
-    from forge_integrations.pm.clickup.adapter import ClickUpAdapter
-    from forge_integrations.pm.clickup.client import ClickUpClient
+    from scf_integrations.pm.clickup.adapter import ClickUpAdapter
+    from scf_integrations.pm.clickup.client import ClickUpClient
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -368,11 +368,11 @@ def test_status_map_table_clickup_in(label: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("forge", "expected"),
+    ("scf", "expected"),
     [("low", "low"), ("medium", "normal"), ("high", "high"), ("urgent", "urgent")],
 )
-def test_priority_map_table_clickup_out(forge: str, expected: str) -> None:
-    assert _clickup().map_priority(forge, Direction.OUT) == expected
+def test_priority_map_table_clickup_out(scf: str, expected: str) -> None:
+    assert _clickup().map_priority(scf, Direction.OUT) == expected
 
 
 def test_clickup_status_unmappable_raises() -> None:
@@ -384,8 +384,8 @@ def test_clickup_status_unmappable_raises() -> None:
 
 
 def _trello(**overrides):
-    from forge_integrations.pm.trello.adapter import TrelloAdapter
-    from forge_integrations.pm.trello.client import TrelloClient
+    from scf_integrations.pm.trello.adapter import TrelloAdapter
+    from scf_integrations.pm.trello.client import TrelloClient
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -421,8 +421,8 @@ def test_trello_status_override_precedence() -> None:
 
 
 def _gitlab(**overrides):
-    from forge_integrations.pm.gitlab.adapter import GitLabAdapter
-    from forge_integrations.pm.gitlab.client import GitLabClient
+    from scf_integrations.pm.gitlab.adapter import GitLabAdapter
+    from scf_integrations.pm.gitlab.client import GitLabClient
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -449,7 +449,7 @@ def test_status_map_table_gitlab_in(label: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("forge", "expected"),
+    ("scf", "expected"),
     [
         ("low", "Priority: Low"),
         ("medium", "Priority: Medium"),
@@ -457,13 +457,13 @@ def test_status_map_table_gitlab_in(label: str, expected: str) -> None:
         ("urgent", "Priority: Urgent"),
     ],
 )
-def test_priority_map_table_gitlab_out(forge: str, expected: str) -> None:
-    assert _gitlab().map_priority(forge, Direction.OUT) == expected
+def test_priority_map_table_gitlab_out(scf: str, expected: str) -> None:
+    assert _gitlab().map_priority(scf, Direction.OUT) == expected
 
 
 def test_gitlab_status_and_priority_label_pools_do_not_collide() -> None:
-    from forge_integrations.pm import gitlab as gitlab_pkg  # noqa: F401
-    from forge_integrations.pm.gitlab import mapping as glmap
+    from scf_integrations.pm import gitlab as gitlab_pkg  # noqa: F401
+    from scf_integrations.pm.gitlab import mapping as glmap
 
     status_names = {v.lower() for v in glmap.STATUS_OUT.values()}
     priority_names = {v.lower() for v in glmap.PRIORITY_OUT.values()}
@@ -474,7 +474,7 @@ def test_gitlab_status_and_priority_label_pools_do_not_collide() -> None:
 
 
 def test_generic_status_and_priority_out_use_config_map(generic_config) -> None:
-    from forge_integrations.pm.generic.adapter import GenericAdapter
+    from scf_integrations.pm.generic.adapter import GenericAdapter
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -490,7 +490,7 @@ def test_generic_status_and_priority_out_use_config_map(generic_config) -> None:
 
 
 def test_generic_status_map_override_precedence(generic_config) -> None:
-    from forge_integrations.pm.generic.adapter import GenericAdapter
+    from scf_integrations.pm.generic.adapter import GenericAdapter
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -506,7 +506,7 @@ def test_generic_status_map_override_precedence(generic_config) -> None:
 
 
 def test_generic_field_mapping_reads_dotted_paths(generic_config) -> None:
-    from forge_integrations.pm.generic.adapter import GenericAdapter
+    from scf_integrations.pm.generic.adapter import GenericAdapter
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -539,7 +539,7 @@ def test_generic_field_mapping_reads_dotted_paths(generic_config) -> None:
 
 
 def test_generic_build_body_writes_dotted_paths(generic_config) -> None:
-    from forge_integrations.pm.generic.adapter import GenericAdapter
+    from scf_integrations.pm.generic.adapter import GenericAdapter
 
     ctx = AdapterContext(
         connection_id=__import__("uuid").uuid4(),
@@ -549,7 +549,7 @@ def test_generic_build_body_writes_dotted_paths(generic_config) -> None:
         external_project_id="proj1",
     )
     adapter = GenericAdapter(FixturePMTransport({}), ctx, generic_config)
-    task = _forge_task_for_generic(status_category="started")
+    task = _scf_task_for_generic(status_category="started")
     body = adapter._build_body(task)
     assert body["subject"] == task.title
     assert body["state"] == "in_progress"
@@ -563,7 +563,7 @@ async def test_generic_transition_endpoint_used_for_status_instead_of_update_bod
     there (Jira-shaped workflow-transition call) rather than folded into the
     plain ``update`` PUT body, and the adapter re-fetches via ``get`` after.
     """
-    from forge_integrations.pm.generic.adapter import GenericAdapter
+    from scf_integrations.pm.generic.adapter import GenericAdapter
 
     cfg = generic_config.model_copy(
         update={
@@ -613,7 +613,7 @@ async def test_generic_transition_endpoint_used_for_status_instead_of_update_bod
         }
     )
     adapter = GenericAdapter(transport, ctx, cfg)
-    task = _forge_task_for_generic(status_category="completed")
+    task = _scf_task_for_generic(status_category="completed")
     result = await adapter.update_external("t-1", task)
 
     put_calls = [c for c in transport.call_log if c["method"] == "PUT"]
@@ -628,15 +628,15 @@ async def test_generic_transition_endpoint_used_for_status_instead_of_update_bod
 
 
 def _ok_response(body):
-    from forge_contracts.pm import HttpResponse
+    from scf_contracts.pm import HttpResponse
 
     return HttpResponse(status_code=200, json_body=body)
 
 
-def _forge_task_for_generic(**overrides):
+def _scf_task_for_generic(**overrides):
     from uuid import uuid4
 
-    from forge_contracts.pm import ForgePriority, ForgeTask
+    from scf_contracts.pm import ScfPriority, ScfTask
 
     base: dict = {
         "id": uuid4(),
@@ -645,14 +645,14 @@ def _forge_task_for_generic(**overrides):
         "title": "Generic task",
         "description_md": "body",
         "status_category": StatusCategory.started,
-        "priority": ForgePriority.high,
+        "priority": ScfPriority.high,
         "version": 1,
         "updated_at": __import__("datetime").datetime.now(__import__("datetime").UTC),
     }
     base.update(overrides)
     if isinstance(base.get("status_category"), str):
         base["status_category"] = StatusCategory(base["status_category"])
-    return ForgeTask(**base)
+    return ScfTask(**base)
 
 
 # --- GenericAdapterConfig validation (bad-config rejection) ------------------ #
@@ -662,7 +662,7 @@ def test_generic_config_rejects_non_http_base_url() -> None:
     import pytest as _pytest
     from pydantic import ValidationError
 
-    from forge_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
+    from scf_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
 
     with _pytest.raises(ValidationError):
         GenericAdapterConfig(
@@ -683,7 +683,7 @@ def test_generic_config_rejects_missing_required_field_mapping() -> None:
     import pytest as _pytest
     from pydantic import ValidationError
 
-    from forge_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
+    from scf_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
 
     with _pytest.raises(ValidationError):
         GenericAdapterConfig(
@@ -704,7 +704,7 @@ def test_generic_config_rejects_incomplete_status_map() -> None:
     import pytest as _pytest
     from pydantic import ValidationError
 
-    from forge_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
+    from scf_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
 
     with _pytest.raises(ValidationError):
         GenericAdapterConfig(
@@ -724,7 +724,7 @@ def test_generic_config_rejects_incomplete_priority_map_when_priority_field_mapp
     import pytest as _pytest
     from pydantic import ValidationError
 
-    from forge_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
+    from scf_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
 
     with _pytest.raises(ValidationError):
         GenericAdapterConfig(
@@ -743,7 +743,7 @@ def test_generic_config_rejects_incomplete_priority_map_when_priority_field_mapp
 
 
 def test_generic_config_allows_omitted_priority_map_when_priority_field_not_mapped() -> None:
-    from forge_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
+    from scf_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
 
     cfg = GenericAdapterConfig(
         base_url="https://example.com",
@@ -764,7 +764,7 @@ def test_generic_config_rejects_empty_endpoint_template() -> None:
     import pytest as _pytest
     from pydantic import ValidationError
 
-    from forge_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
+    from scf_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
 
     with _pytest.raises(ValidationError):
         GenericAdapterConfig(
@@ -785,7 +785,7 @@ def test_generic_config_rejects_unknown_field_name() -> None:
     import pytest as _pytest
     from pydantic import ValidationError
 
-    from forge_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
+    from scf_contracts.pm import GenericAdapterConfig, GenericEndpointConfig
 
     with _pytest.raises(ValidationError):
         GenericAdapterConfig(

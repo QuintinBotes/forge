@@ -1,6 +1,6 @@
 """API tests for the F36 unified approvals router (``/approvals``).
 
-Exercises the real handlers against a fresh ``forge_approval.ApprovalService``
+Exercises the real handlers against a fresh ``scf_approval.ApprovalService``
 (in-memory repository, real deploy + policy_override providers, real
 authorizer, recording bus) injected via DI — the same composition the
 process-wide singleton performs.
@@ -16,21 +16,21 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal
-from forge_api.main import create_app
-from forge_api.observability.redaction import redact_mapping
-from forge_api.services.approval_service import (
+from scf_api.deps import Principal
+from scf_api.main import create_app
+from scf_api.observability.redaction import redact_mapping
+from scf_api.services.approval_service import (
     build_gate_registry,
     get_approval_service,
 )
-from forge_approval import (
+from scf_approval import (
     ApprovalAuthorizer,
     ApprovalService,
     InMemoryActivityBus,
     InMemoryApprovalRepository,
 )
-from forge_approval.providers import InMemoryGrantStore, action_fingerprint
-from forge_contracts import UserRole
+from scf_approval.providers import InMemoryGrantStore, action_fingerprint
+from scf_contracts import UserRole
 
 OTHER_WORKSPACE = uuid.UUID("00000000-0000-0000-0000-0000000000f9")
 
@@ -240,10 +240,10 @@ def test_approve_blocked_returns_reasons(
 ) -> None:
     """AC#11 (F08 approve-but-CI-red regression lock): status approved,
     completed False, blocking_reasons surfaced — no advance."""
-    from forge_approval.models import (
+    from scf_approval.models import (
         ApprovalDecisionRequest as _Dec,  # noqa: F401 (type reference)
     )
-    from forge_approval.models import GateType, ResolutionOutcome
+    from scf_approval.models import GateType, ResolutionOutcome
 
     class BlockedPrHook:
         gate_type = GateType.PR

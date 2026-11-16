@@ -6,14 +6,14 @@ import uuid
 
 import pytest
 
-from forge_agent.sandbox import (
+from scf_agent.sandbox import (
     SandboxImageNotAllowed,
     SandboxSettings,
     parse_memory_mb,
     resolve_sandbox_kind,
     resolve_sandbox_settings,
 )
-from forge_contracts import PolicySandboxBlock, SandboxKind, SandboxNetwork
+from scf_contracts import PolicySandboxBlock, SandboxKind, SandboxNetwork
 
 C = SandboxKind.CONTAINER
 W = SandboxKind.WORKTREE

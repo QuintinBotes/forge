@@ -6,9 +6,9 @@ import os
 import subprocess
 import tempfile
 
-from forge_agent.providers.local_cli.client import LocalCliModelClient
-from forge_agent.providers.local_cli.detect import CliName
-from forge_contracts import ModelMessage, ModelRequest
+from scf_agent.providers.local_cli.client import LocalCliModelClient
+from scf_agent.providers.local_cli.detect import CliName
+from scf_contracts import ModelMessage, ModelRequest
 
 ENVELOPE = '{"content": "ok", "tool_calls": [], "stop_reason": "end_turn"}'
 
@@ -120,7 +120,7 @@ def test_stderr_passes_through_redactor(caplog):
         runner=_runner("", returncode=2, stderr="key sk-abc123"),
         redactor=redactor,
     )
-    with caplog.at_level(logging.WARNING, logger="forge_agent.providers.local_cli"):
+    with caplog.at_level(logging.WARNING, logger="scf_agent.providers.local_cli"):
         client.complete(_request())
 
     assert seen == ["key sk-abc123"], "redactor must be consulted with the raw stderr"
@@ -311,7 +311,7 @@ def test_raising_redactor_degrades_to_placeholder_without_leaking_stderr(caplog)
         runner=_runner("", returncode=2, stderr="key sk-abc123"),
         redactor=bad_redactor,
     )
-    with caplog.at_level(logging.WARNING, logger="forge_agent.providers.local_cli"):
+    with caplog.at_level(logging.WARNING, logger="scf_agent.providers.local_cli"):
         response = client.complete(_request())
 
     assert response.stop_reason == "provider_error"

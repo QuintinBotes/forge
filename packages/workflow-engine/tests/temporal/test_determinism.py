@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import WorkflowDefinition, WorkflowState
-from forge_workflow.default_workflow import default_feature_definition
-from forge_workflow.exceptions import (
+from scf_contracts import WorkflowDefinition, WorkflowState
+from scf_workflow.default_workflow import default_feature_definition
+from scf_workflow.exceptions import (
     GuardFailedError,
     InvalidTransitionError,
     PreconditionError,
 )
-from forge_workflow.temporal.determinism import PureGuardContext, TransitionEvaluator
+from scf_workflow.temporal.determinism import PureGuardContext, TransitionEvaluator
 
 
 @pytest.fixture
@@ -140,7 +140,7 @@ def test_determinism_module_is_io_free() -> None:
     """The evaluator's module must import no clock/random/DB/network module."""
     from pathlib import Path
 
-    import forge_workflow.temporal.determinism as mod
+    import scf_workflow.temporal.determinism as mod
 
     source = mod.__file__
     assert source is not None

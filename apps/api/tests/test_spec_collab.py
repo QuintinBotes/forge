@@ -41,20 +41,20 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from forge_api.auth.service import AuthService, get_auth_service
-from forge_api.main import create_app
-from forge_api.realtime.spec_room import (
+from scf_api.auth.service import AuthService, get_auth_service
+from scf_api.main import create_app
+from scf_api.realtime.spec_room import (
     SPEC_MD_KEY,
     SpecCollabRoom,
     SpecRoomRegistry,
     get_spec_room_registry,
     message_mutates,
 )
-from forge_api.routers.realtime import get_api_key_socket_lifetime
-from forge_contracts import Requirement, UserRole
-from forge_db.base import Base
-from forge_db.models import SpecVersion, Workspace
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_api.routers.realtime import get_api_key_socket_lifetime
+from scf_contracts import Requirement, UserRole
+from scf_db.base import Base
+from scf_db.models import SpecVersion, Workspace
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 EDITOR_A = uuid.UUID("00000000-0000-0000-0000-0000000000c1")

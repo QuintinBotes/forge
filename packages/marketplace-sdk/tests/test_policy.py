@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_marketplace.models import ArtifactKind, VerificationStatus
-from forge_marketplace.policy import kind_policy_violation
+from scf_marketplace.models import ArtifactKind, VerificationStatus
+from scf_marketplace.policy import kind_policy_violation
 
 _NOT_VERIFIED = [s for s in VerificationStatus if s is not VerificationStatus.verified]
 

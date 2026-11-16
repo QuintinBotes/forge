@@ -4,7 +4,7 @@ import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 
 import { useRedTeamVerdict } from "@/lib/api/approvals";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import type { RedTeamRecordOut } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +17,7 @@ export interface RedTeamBadgeProps {
    * Absent -> nothing renders.
    */
   workflowRunId?: string | null;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 function scalar(value: unknown): string {

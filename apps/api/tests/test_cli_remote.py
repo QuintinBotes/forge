@@ -1,4 +1,4 @@
-"""forge-cli remote reads for desktop clients (spec L §2 seam 2, §3, §4)."""
+"""scf-cli remote reads for desktop clients (spec L §2 seam 2, §3, §4)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 import pytest
 
-from forge_api import cli, cli_remote
+from scf_api import cli, cli_remote
 
 TOKEN = "fgk_" + "s" * 32
 SERVER = "https://forge.test/api"

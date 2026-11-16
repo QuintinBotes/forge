@@ -7,7 +7,7 @@ so it is exercised directly here as the shared primitive.
 
 from __future__ import annotations
 
-from forge_api.observability.redaction import (
+from scf_api.observability.redaction import (
     REDACTED,
     redact_mapping,
     redact_text,

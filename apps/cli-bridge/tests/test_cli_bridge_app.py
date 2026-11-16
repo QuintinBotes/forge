@@ -7,9 +7,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from forge_agent.providers.local_cli.detect import CliName
-from forge_cli_bridge.app import create_app
-from forge_cli_bridge.settings import BridgeSettings
+from scf_agent.providers.local_cli.detect import CliName
+from scf_cli_bridge.app import create_app
+from scf_cli_bridge.settings import BridgeSettings
 
 ENVELOPE = '{"content": "ok", "tool_calls": [], "stop_reason": "end_turn"}'
 
@@ -45,7 +45,7 @@ def test_health_reports_detected_clis():
 def test_health_reports_non_loopback_override_when_set():
     """Fix round 2, IMPORTANT: /health no longer claims a "loopback_only"
     property it cannot verify (main.py's bind can bypass BridgeSettings
-    entirely via `uvicorn forge_cli_bridge.main:app --host 0.0.0.0`). It now
+    entirely via `uvicorn scf_cli_bridge.main:app --host 0.0.0.0`). It now
     reports only the one thing genuinely known in-process: whether this
     settings object's override was set.
     """
@@ -150,7 +150,7 @@ def test_complete_redacts_secrets_from_failure_logs(caplog):
     app_client = _client()
     app_client.app.state.runner = runner
     app_client.app.state.which = _which_only_claude
-    with caplog.at_level(logging.WARNING, logger="forge_agent.providers.local_cli"):
+    with caplog.at_level(logging.WARNING, logger="scf_agent.providers.local_cli"):
         response = app_client.post(
             "/v1/complete", json=_body(), headers={"Authorization": "Bearer t0ken"}
         )
@@ -163,19 +163,19 @@ def test_complete_redacts_secrets_from_failure_logs(caplog):
     assert "sk-abcdef0123456789" not in caplog.text, "raw stderr secret must never reach the log"
 
 
-def test_default_redactor_warns_when_forge_api_is_unavailable(monkeypatch, caplog):
+def test_default_redactor_warns_when_scf_api_is_unavailable(monkeypatch, caplog):
     """Fix round 2, minor: a standalone self-host install (the deployment
-    this bridge targets) will not have forge_api installed -- that is the
+    this bridge targets) will not have scf_api installed -- that is the
     COMMON case for an external user, not an edge case. Degrading to
     identity silently would mean "no redaction, no warning, raw CLI stderr
     in the host log" by default; the downgrade must be visible.
     """
     import sys
 
-    from forge_cli_bridge.app import _default_redactor
+    from scf_cli_bridge.app import _default_redactor
 
-    monkeypatch.setitem(sys.modules, "forge_api.observability.redaction", None)
-    with caplog.at_level(logging.WARNING, logger="forge_cli_bridge"):
+    monkeypatch.setitem(sys.modules, "scf_api.observability.redaction", None)
+    with caplog.at_level(logging.WARNING, logger="scf_cli_bridge"):
         redactor = _default_redactor()
 
     assert redactor("key sk-abcdef0123456789") == "key sk-abcdef0123456789", (
@@ -190,7 +190,7 @@ def test_startup_banner_is_logged_unconditionally(caplog):
     default-settings client below never sets allow_non_loopback, so this only
     passes if the banner is unconditional.
     """
-    with caplog.at_level(logging.WARNING, logger="forge_cli_bridge"):
+    with caplog.at_level(logging.WARNING, logger="scf_cli_bridge"):
         _client()
     assert "DEVELOPMENT / SELF-HOST CONVENIENCE ONLY" in caplog.text
     assert "NOT for a shared or production deployment" in caplog.text
@@ -242,14 +242,14 @@ async def test_completion_concurrency_is_bounded():
 
 def test_bind_guard_allows_loopback(monkeypatch):
     monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
-    from forge_cli_bridge.main import _guard_non_loopback_bind
+    from scf_cli_bridge.main import _guard_non_loopback_bind
 
     _guard_non_loopback_bind(is_loopback=True, allow_non_loopback=False)  # must not raise
 
 
 def test_bind_guard_allows_explicit_override(monkeypatch):
     monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
-    from forge_cli_bridge.main import _guard_non_loopback_bind
+    from scf_cli_bridge.main import _guard_non_loopback_bind
 
     _guard_non_loopback_bind(is_loopback=False, allow_non_loopback=True)  # must not raise
 
@@ -264,7 +264,7 @@ def test_bind_guard_raises_for_non_loopback_without_override(monkeypatch):
     pytest.raises does not depend on assertions being enabled at all.
     """
     monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
-    from forge_cli_bridge.main import _guard_non_loopback_bind
+    from scf_cli_bridge.main import _guard_non_loopback_bind
 
     with pytest.raises(RuntimeError):
         _guard_non_loopback_bind(is_loopback=False, allow_non_loopback=False)
@@ -275,7 +275,7 @@ def test_main_module_refuses_to_build_without_a_token(monkeypatch):
 
     monkeypatch.delenv("FORGE_CLI_BRIDGE_TOKEN", raising=False)
     with pytest.raises(ValueError):
-        importlib.reload(importlib.import_module("forge_cli_bridge.main"))
+        importlib.reload(importlib.import_module("scf_cli_bridge.main"))
 
 
 # -- FORGE_LOCAL_CLI_PREFERENCE (final review, I3) -------------------------- #
@@ -358,7 +358,7 @@ def test_health_reports_clis_in_the_configured_preference_order():
 def test_settings_from_env_reads_the_preference(monkeypatch):
     monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
     monkeypatch.setenv("FORGE_LOCAL_CLI_PREFERENCE", "codex,claude")
-    from forge_cli_bridge.main import _settings_from_env
+    from scf_cli_bridge.main import _settings_from_env
 
     assert _settings_from_env().preference == (CliName.codex, CliName.claude)
 
@@ -366,6 +366,6 @@ def test_settings_from_env_reads_the_preference(monkeypatch):
 def test_settings_from_env_without_a_preference_is_none(monkeypatch):
     monkeypatch.setenv("FORGE_CLI_BRIDGE_TOKEN", "t0ken")
     monkeypatch.delenv("FORGE_LOCAL_CLI_PREFERENCE", raising=False)
-    from forge_cli_bridge.main import _settings_from_env
+    from scf_cli_bridge.main import _settings_from_env
 
     assert _settings_from_env().preference is None

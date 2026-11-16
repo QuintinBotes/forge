@@ -1,4 +1,4 @@
-"""F26 ``forge-cli sprint`` subcommand tests (reconcile + velocity)."""
+"""F26 ``scf-cli sprint`` subcommand tests (reconcile + velocity)."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_api.cli as cli
-from forge_board.sprint_service import SprintService
-from forge_contracts.enums import TaskStatus
-from forge_db.base import Base
-from forge_db.models import Project, Sprint, Task, Workspace
+import scf_api.cli as cli
+from scf_board.sprint_service import SprintService
+from scf_contracts.enums import TaskStatus
+from scf_db.base import Base
+from scf_db.models import Project, Sprint, Task, Workspace
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 PROJECT = uuid.UUID("00000000-0000-0000-0000-0000000000d4")

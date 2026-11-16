@@ -24,10 +24,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from forge_api.deps import Principal
-from forge_api.main import create_app
-from forge_api.observability.audit import AuditCategory, AuditLog
-from forge_api.routers.integration import (
+from scf_api.deps import Principal
+from scf_api.main import create_app
+from scf_api.observability.audit import AuditCategory, AuditLog
+from scf_api.routers.integration import (
     ApprovalStore,
     SlackApprovalRefStore,
     get_approval_store,
@@ -36,9 +36,9 @@ from forge_api.routers.integration import (
     get_slack_ref_store,
     get_slack_signing_secret,
 )
-from forge_contracts import ApprovalGate, ApprovalRequest, SlackDeliveryResult, UserRole
-from forge_contracts.enums import ApprovalStatus
-from forge_integrations import sign_slack_payload
+from scf_contracts import ApprovalGate, ApprovalRequest, SlackDeliveryResult, UserRole
+from scf_contracts.enums import ApprovalStatus
+from scf_integrations import sign_slack_payload
 
 SIGNING_SECRET = "test-slack-signing-secret-0123456789abcdef"
 # Self-contained principal (avoids importing the shadowed bare ``conftest`` name
@@ -346,7 +346,7 @@ def test_interaction_unrecognised_action_is_ignored_200(
 # --------------------------------------------------------------------------- #
 # /forge status <run> — wired to the live agent-run store (Task 12)            #
 #                                                                             #
-# The slash command is unauthenticated untrusted intake (no Forge principal),  #
+# The slash command is unauthenticated untrusted intake (no SCF principal),  #
 # so — mirroring the interactivity handler's ``owner_of`` resolution — it       #
 # resolves the owning workspace from the run id, then reads the run back        #
 # through the normal workspace-scoped ``AgentRunStore.get`` path. Seeds via the #
@@ -363,9 +363,9 @@ def _seeded_run_store(
 ) -> tuple[object, object]:
     """A run store seeded with one ``workspace_id``-owned run (defaults to
     WS_ID; mirrors test_agent_router)."""
-    from forge_api.routers.agent import AgentRunStore
-    from forge_contracts import AgentRunResult, Step
-    from forge_contracts.enums import RunStatus
+    from scf_api.routers.agent import AgentRunStore
+    from scf_contracts import AgentRunResult, Step
+    from scf_contracts.enums import RunStatus
 
     store = AgentRunStore(session)
     result = AgentRunResult(
@@ -385,7 +385,7 @@ def test_status_command_returns_live_run_status(
     authenticate_app: Callable[..., FastAPI],
     agent_session: Session,
 ) -> None:
-    from forge_api.routers.agent import get_agent_store
+    from scf_api.routers.agent import get_agent_store
 
     store, result = _seeded_run_store(agent_session, n_steps=2)
     app = _build_app(authenticate_app)
@@ -407,7 +407,7 @@ def test_status_command_unknown_run_returns_not_found(
     authenticate_app: Callable[..., FastAPI],
     agent_session: Session,
 ) -> None:
-    from forge_api.routers.agent import get_agent_store
+    from scf_api.routers.agent import get_agent_store
 
     store, _ = _seeded_run_store(
         agent_session,
@@ -437,7 +437,7 @@ def test_status_command_run_without_steps_omits_step_detail(
     back a single workspace's own run, so it never exercised a second tenant;
     see ``test_status_command_cross_tenant_run_is_found_by_uuid`` below for the
     genuine cross-tenant case.)"""
-    from forge_api.routers.agent import get_agent_store
+    from scf_api.routers.agent import get_agent_store
 
     store, result = _seeded_run_store(agent_session, n_steps=0)
     app = _build_app(authenticate_app)
@@ -457,7 +457,7 @@ def test_status_command_cross_tenant_run_is_found_by_uuid(
     authenticate_app: Callable[..., FastAPI],
     agent_session: Session,
 ) -> None:
-    """The slash command carries no Forge tenant principal, so a run seeded
+    """The slash command carries no SCF tenant principal, so a run seeded
     under a different workspace (WS_ID_OTHER — never the authenticated test
     principal's own WS_ID) is still resolved and returned by UUID: ``owner_of``
     finds the true owning workspace and ``get`` reads the run back through
@@ -466,7 +466,7 @@ def test_status_command_cross_tenant_run_is_found_by_uuid(
     (docs/security/threat-model.md, S5): after signature verification,
     object-UUID unguessability — not tenant matching — is the sole
     cross-tenant secrecy control on this surface."""
-    from forge_api.routers.agent import get_agent_store
+    from scf_api.routers.agent import get_agent_store
 
     store, result = _seeded_run_store(agent_session, n_steps=1, workspace_id=WS_ID_OTHER)
     app = _build_app(authenticate_app)
@@ -486,7 +486,7 @@ def test_status_command_malformed_id_returns_not_found(
     authenticate_app: Callable[..., FastAPI],
     agent_session: Session,
 ) -> None:
-    from forge_api.routers.agent import get_agent_store
+    from scf_api.routers.agent import get_agent_store
 
     store, _ = _seeded_run_store(
         agent_session,

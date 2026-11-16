@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent.tools import agent_tool_belt
-from forge_contracts import CommandOutput
+from scf_agent.tools import agent_tool_belt
+from scf_contracts import CommandOutput
 
 
 def _git(repo: Path, *args: str) -> str:

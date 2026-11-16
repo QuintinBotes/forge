@@ -1,10 +1,10 @@
-# Contributing to Forge
+# Contributing to Swarm Code Factory
 
-Thanks for helping build Forge! This guide covers local setup, the development
+Thanks for helping build SCF! This guide covers local setup, the development
 workflow, and the conventions we hold PRs to. By participating you agree to
 follow our [Code of Conduct](./CODE_OF_CONDUCT.md).
 
-Forge is licensed under [Apache-2.0](./LICENSE). Contributions are accepted
+SCF is licensed under [Apache-2.0](./LICENSE). Contributions are accepted
 under the same license, and each commit must carry a
 [Developer Certificate of Origin](#developer-certificate-of-origin-dco)
 sign-off.
@@ -45,13 +45,13 @@ first so we can agree on the approach before you invest the time.
 ## Development setup
 
 ```bash
-git clone https://github.com/<org>/forge.git
-cd forge
+git clone https://github.com/<org>/swarm-code-factory.git
+cd swarm-code-factory
 cp .env.example .env     # fill in local secrets; see the inline docs in .env.example
 make setup               # uv sync + pnpm install
 ```
 
-`make setup` installs the Python workspace (all `forge_*` packages, editable)
+`make setup` installs the Python workspace (all `scf_*` packages, editable)
 and the Node dependencies for `apps/web`. The Python workspace is defined in the
 root [`pyproject.toml`](./pyproject.toml); the web app is a separate `pnpm`
 workspace ([`pnpm-workspace.yaml`](./pnpm-workspace.yaml)).
@@ -66,7 +66,7 @@ health:
 make dev        # docker compose -f deploy/docker-compose.dev.yml, migrate + seed + healthcheck
 ```
 
-- **Forge (the Caddy edge — use this):** <http://localhost:8080>
+- **SCF (the Caddy edge — use this):** <http://localhost:8080>
 - API health check: <http://localhost:8080/api/health>
 
 Caddy serves the UI and `/api/*` from one origin, so the browser needs no CORS
@@ -123,9 +123,9 @@ service). Tests are marked (`postgres`, `integration`, `docker`, `security`,
 **Web** (`apps/web`):
 
 ```bash
-pnpm --filter @forge/web lint
-pnpm --filter @forge/web build
-pnpm --filter @forge/web test
+pnpm --filter @scf/web lint
+pnpm --filter @scf/web build
+pnpm --filter @scf/web test
 ```
 
 **Before opening a PR**, make sure:
@@ -141,7 +141,7 @@ the green gate. New behaviour should ship with tests.
 
 ## Development workflow (trunk-based)
 
-Forge uses **trunk-based development** against a single long-lived branch,
+SCF uses **trunk-based development** against a single long-lived branch,
 `main`. `main` is always releasable and protected.
 
 1. **Branch short-lived** off up-to-date `main`. Keep branches small and merge
@@ -197,7 +197,7 @@ regenerates [`CHANGELOG.md`](./CHANGELOG.md). See `release/` and
 
 ## Developer Certificate of Origin (DCO)
 
-Forge uses the [Developer Certificate of Origin](https://developercertificate.org/)
+SCF uses the [Developer Certificate of Origin](https://developercertificate.org/)
 instead of a CLA. It is a lightweight statement that you wrote the patch or
 otherwise have the right to submit it under the project's license.
 
@@ -226,4 +226,4 @@ range), then force-push your branch.
 - **Security vulnerabilities:** please do **not** open a public issue. Follow
   the private reporting process in [SECURITY.md](./SECURITY.md).
 
-Thanks again for contributing to Forge.
+Thanks again for contributing to SCF.

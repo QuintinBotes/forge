@@ -1,10 +1,10 @@
 # BYOK & bring-your-own board
 
-Forge is designed to plug into the tools and model providers you already use.
+Swarm Code Factory is designed to plug into the tools and model providers you already use.
 This page covers two connection points:
 
 1. **BYOK** — bring your own model-provider (and reranker) keys.
-2. **Bring-your-own board** — sync Forge's work to your existing project-management
+2. **Bring-your-own board** — sync SCF's work to your existing project-management
    tool instead of (or alongside) the native board.
 
 > Live third-party integrations are **code-complete with tests and runbooks but
@@ -58,9 +58,9 @@ RRF-only ordering).
 
 ## Bring your own board
 
-Forge ships a native board, but if your team lives in Jira, Linear, or another
-tool, Forge can **sync work to it** through a pluggable **project-management
-adapter** seam (`forge_integrations.pm`). Every adapter implements the same
+SCF ships a native board, but if your team lives in Jira, Linear, or another
+tool, SCF can **sync work to it** through a pluggable **project-management
+adapter** seam (`scf_integrations.pm`). Every adapter implements the same
 `PMAdapter` contract, so the sync engine, change-hashing, and conflict handling
 are identical across providers.
 
@@ -86,16 +86,16 @@ up a tool that doesn't have a dedicated adapter without writing code.
 1. Open **Settings → Integrations** in the web UI.
 2. Choose your provider and supply its API credentials (stored encrypted in the
    vault).
-3. Map your workspace/project and status columns to Forge's states.
+3. Map your workspace/project and status columns to SCF's states.
 4. The **sync engine** reconciles work items in both directions, using content
    hashing to detect changes and a deterministic conflict policy so a two-sided
    edit never silently clobbers one side.
 
-### Adding a provider Forge doesn't ship
+### Adding a provider SCF doesn't ship
 
 Because adapters are a registered seam, adding a new one is: implement a
 `PMAdapter`, register it in
-[`forge_integrations/pm/registry.py`](../../packages/integration-sdk/forge_integrations/pm/registry.py),
+[`scf_integrations/pm/registry.py`](../../packages/integration-sdk/scf_integrations/pm/registry.py),
 and the sync engine, hashing, and conflict logic come for free. Contributions
 are welcome — see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 

@@ -1,7 +1,7 @@
-"""Protocol-conformance + determinism tests for ``forge_spec``.
+"""Protocol-conformance + determinism tests for ``scf_spec``.
 
 The engine must structurally satisfy the FROZEN ``SpecEngine`` Protocol
-(forge_contracts) so the API/worker layer can depend on the interface, and its
+(scf_contracts) so the API/worker layer can depend on the interface, and its
 id derivation must be deterministic so a re-instantiated engine resolves the
 same specs/tasks from disk.
 """
@@ -11,8 +11,8 @@ from __future__ import annotations
 import inspect
 import uuid
 
-from forge_contracts import SpecEngine
-from forge_spec import FileSpecEngine, spec_id_for_key, task_id_for
+from scf_contracts import SpecEngine
+from scf_spec import FileSpecEngine, spec_id_for_key, task_id_for
 
 
 def test_file_spec_engine_satisfies_spec_engine_protocol(tmp_path) -> None:
@@ -63,7 +63,7 @@ def test_task_id_for_is_deterministic(tmp_path) -> None:
 
 
 def test_generated_task_ids_are_stable_across_engines(tmp_path) -> None:
-    from forge_contracts import Requirement
+    from scf_contracts import Requirement
 
     eng1 = FileSpecEngine(tmp_path)
     manifest = eng1.spec_create(uuid.uuid4(), "Stable", [Requirement(id="R1", text="do a thing")])

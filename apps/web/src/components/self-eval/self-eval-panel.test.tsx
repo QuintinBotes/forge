@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type { SelfEvalRunAccepted, SelfEvalStatusOut } from "@/lib/api/types";
 
 import { SelfEvalPanel } from "./self-eval-panel";
@@ -41,15 +41,15 @@ function makeAccepted(): SelfEvalRunAccepted {
   };
 }
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     getSelfEvalStatus: vi.fn(() => Promise.resolve(makeStatus())),
     runSelfEval: vi.fn(() => Promise.resolve(makeAccepted())),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderPanel(client: ForgeApiClient) {
+function renderPanel(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

@@ -66,7 +66,7 @@ export function composeGivenWhenThen({ given, when, then }: GivenWhenThen): stri
  * The three first-class acceptance-criterion authoring styles. Every style is
  * encoded losslessly inside the criterion's single `text` field, so switching
  * style never touches its `req_refs` (R#) links. Mirrors
- * `forge_spec.criteria.classify_criterion` on the backend.
+ * `scf_spec.criteria.classify_criterion` on the backend.
  */
 export type CriterionStyle = "gherkin" | "assertion" | "checklist";
 

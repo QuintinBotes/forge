@@ -18,18 +18,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from forge_api.main import create_app
-from forge_api.services import workflow_engine
-from forge_db.models.runs import WorkflowRun as DbWorkflowRun
-from forge_db.models.workflow_editor import (
+from scf_api.main import create_app
+from scf_api.services import workflow_engine
+from scf_db.models.runs import WorkflowRun as DbWorkflowRun
+from scf_db.models.workflow_editor import (
     RevisionValidationStatus,
     WorkflowDefinitionSource,
 )
-from forge_workflow.editor.errors import UnknownDefinitionError
-from forge_workflow.editor.repository import DbWorkflowDefinitionRepository
-from forge_workflow.editor.schemas import ImportRequest
-from forge_workflow.editor.service import WorkflowEditorService
-from forge_workflow.editor.store import ResolvingDefinitionProvider
+from scf_workflow.editor.errors import UnknownDefinitionError
+from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
+from scf_workflow.editor.schemas import ImportRequest
+from scf_workflow.editor.service import WorkflowEditorService
+from scf_workflow.editor.store import ResolvingDefinitionProvider
 
 #: The authenticated principal's workspace (conftest's ``TEST_WORKSPACE_ID``).
 TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")

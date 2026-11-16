@@ -26,18 +26,18 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.auth.crypto import HmacAeadCipher, generate_key
-from forge_api.auth.vault import (
+from scf_api.auth.crypto import HmacAeadCipher, generate_key
+from scf_api.auth.vault import (
     SecretExpiredError,
     SecretNotFoundError,
     SecretStore,
     SecretVault,
     StoredSecret,
 )
-from forge_api.auth.vault_db import DbSecretStore
-from forge_contracts.enums import APIKeyKind
-from forge_db.base import Base
-from forge_db.models import Secret, Workspace
+from scf_api.auth.vault_db import DbSecretStore
+from scf_contracts.enums import APIKeyKind
+from scf_db.base import Base
+from scf_db.models import Secret, Workspace
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 
@@ -375,7 +375,7 @@ def test_vault_put_list_delete_round_trip_through_db_store(
 def test_matches_in_memory_store_behaviour(
     store: DbSecretStore, make_workspace: Callable[[], uuid.UUID]
 ) -> None:
-    from forge_api.auth.vault import InMemorySecretStore
+    from scf_api.auth.vault import InMemorySecretStore
 
     ws = make_workspace()
     mem = InMemorySecretStore()

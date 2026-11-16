@@ -17,9 +17,9 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from forge_contracts import MCPConnection, MCPTransport
-from forge_mcp.reference_server import PLANTED_SECRET, start_http_server
-from forge_mcp_gateway.app import create_gateway_app
+from scf_contracts import MCPConnection, MCPTransport
+from scf_mcp.reference_server import PLANTED_SECRET, start_http_server
+from scf_mcp_gateway.app import create_gateway_app
 
 pytestmark = [pytest.mark.integration, pytest.mark.live_mcp]
 

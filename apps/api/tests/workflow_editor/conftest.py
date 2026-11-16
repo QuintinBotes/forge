@@ -11,15 +11,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.workflow_editor import get_editor_service
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import User, Workspace
-from forge_workflow.editor.catalog import RegistryCatalog
-from forge_workflow.editor.repository import DbWorkflowDefinitionRepository
-from forge_workflow.editor.service import RecordingAuditSink, WorkflowEditorService
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.workflow_editor import get_editor_service
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import User, Workspace
+from scf_workflow.editor.catalog import RegistryCatalog
+from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
+from scf_workflow.editor.service import RecordingAuditSink, WorkflowEditorService
 
 WS_A = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 WS_B = uuid.UUID("00000000-0000-0000-0000-0000000000a2")

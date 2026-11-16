@@ -3,7 +3,7 @@
 Two structural guarantees, both from the 2026-09-17 self-host evaluation:
 
 * **Persistence selection.** Every ``FORGE_*_BACKEND`` seam defaults to
-  ``memory`` in ``forge_api.settings`` so the unit suite stays Postgres-free.
+  ``memory`` in ``scf_api.settings`` so the unit suite stays Postgres-free.
   That default is a *test* default. A deployment that leaves it unset keeps
   minted API keys, board rows, audit entries, approvals and BYOK ciphertext in
   the API process and loses them on restart — which is how an evaluator lost an

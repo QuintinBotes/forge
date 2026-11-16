@@ -20,11 +20,11 @@ import os
 import pytest
 from sqlalchemy import create_engine
 
-from forge_contracts.dtos import KnowledgeScope
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, Workspace
-from forge_db.session import create_session_factory
-from forge_eval.corpus_eval import (
+from scf_contracts.dtos import KnowledgeScope
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, Workspace
+from scf_db.session import create_session_factory
+from scf_eval.corpus_eval import (
     DEFAULT_NDCG_FLOOR,
     DEFAULT_RECALL_FLOOR,
     GOLDEN_REAL_PATH,
@@ -37,15 +37,15 @@ from forge_eval.corpus_eval import (
     run_ablation,
     run_real_retrieval_eval,
 )
-from forge_eval.golden import load_golden_set
-from forge_eval.real_corpus import (
+from scf_eval.golden import load_golden_set
+from scf_eval.real_corpus import (
     build_real_indexed_service,
     build_repo_corpus,
     repo_root,
 )
-from forge_eval.runner import CaseResult, Scorecard
-from forge_knowledge import DeterministicEmbeddingClient, FixtureRerankerClient
-from forge_knowledge.redaction import REDACTED
+from scf_eval.runner import CaseResult, Scorecard
+from scf_knowledge import DeterministicEmbeddingClient, FixtureRerankerClient
+from scf_knowledge.redaction import REDACTED
 
 MIN_REAL_CASES = 30
 _FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"
@@ -166,7 +166,7 @@ def _two_tenant_service(embedder):
             session.flush()
             ids[slug] = (str(ws.id), str(src.id))
             session.commit()
-    from forge_knowledge import KnowledgeService, chunk_file
+    from scf_knowledge import KnowledgeService, chunk_file
 
     service = KnowledgeService.from_session_factory(factory, embedder, FixtureRerankerClient())
     shared = (
@@ -294,7 +294,7 @@ def test_regression_gate_from_real_baseline(real_context) -> None:
     card.assert_threshold()
 
     # A deliberately broken retrieve_fn (returns nothing) must trip the gate.
-    from forge_eval.runner import evaluate_retrieval
+    from scf_eval.runner import evaluate_retrieval
 
     broken = evaluate_retrieval(
         real_context.cases,
@@ -377,7 +377,7 @@ def test_real_eval_on_pgvector_dim_matched(pg_session_factory) -> None:
     pgvector and its ranking matches the hermetic SQLite run (within tolerance)."""
     import uuid
 
-    from forge_db.models.knowledge import EMBEDDING_DIM
+    from scf_db.models.knowledge import EMBEDDING_DIM
 
     embedder = DeterministicEmbeddingClient(dimension=EMBEDDING_DIM)
     query = "reciprocal rank fusion combine rankings"
@@ -413,7 +413,7 @@ def test_pgvector_rejects_dim_mismatch_never_coerces(pg_session_factory) -> None
 
     from sqlalchemy.exc import SQLAlchemyError
 
-    from forge_db.models.knowledge import EMBEDDING_DIM
+    from scf_db.models.knowledge import EMBEDDING_DIM
 
     learned_dim = 384  # all-MiniLM-L6-v2
     assert learned_dim != EMBEDDING_DIM, "this guard only matters when dims differ"

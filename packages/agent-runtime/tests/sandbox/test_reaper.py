@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from _sandbox_fakes import FakeContainer, FakeDockerClient
 
-from forge_agent.sandbox import (
+from scf_agent.sandbox import (
     ContainerSandboxProvider,
     LocalSandboxProvider,
     reap_orphans,

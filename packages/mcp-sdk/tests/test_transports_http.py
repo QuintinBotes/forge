@@ -13,11 +13,11 @@ from typing import Any
 import httpx
 import pytest
 
-from forge_contracts import MCPResource, MCPResourceContent
-from forge_mcp.exceptions import MCPSecurityError, MCPTransportUnavailableError
-from forge_mcp.transport import ToolSpec, Transport
-from forge_mcp.transports.http import HttpMcpTransport
-from forge_mcp.transports.jsonrpc import JsonRpcError
+from scf_contracts import MCPResource, MCPResourceContent
+from scf_mcp.exceptions import MCPSecurityError, MCPTransportUnavailableError
+from scf_mcp.transport import ToolSpec, Transport
+from scf_mcp.transports.http import HttpMcpTransport
+from scf_mcp.transports.jsonrpc import JsonRpcError
 
 ENDPOINT = "https://mcp.test/confluence"
 

@@ -1,9 +1,9 @@
-"""Unit tests for the deterministic test doubles (``forge_agent.testing``)."""
+"""Unit tests for the deterministic test doubles (``scf_agent.testing``)."""
 
 from __future__ import annotations
 
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_contracts import ModelRequest, ModelResponse
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_contracts import ModelRequest, ModelResponse
 
 
 def test_finish_response_includes_all_optional_fields() -> None:

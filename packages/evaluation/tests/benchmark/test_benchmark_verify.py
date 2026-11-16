@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from forge_eval.benchmark import (
+from scf_eval.benchmark import (
     BenchmarkScoring,
     ReplayBundle,
     compute_benchmark_score,
@@ -15,7 +15,7 @@ from forge_eval.benchmark import (
     replay_bundles,
     verify_submission,
 )
-from forge_eval.golden import GoldenCase
+from scf_eval.golden import GoldenCase
 
 EPSILON = 0.005
 

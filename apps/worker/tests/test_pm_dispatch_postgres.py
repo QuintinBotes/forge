@@ -20,22 +20,22 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.auth.crypto import HmacAeadCipher
-from forge_api.auth.vault import SecretVault
-from forge_api.observability.audit import AuditLog
-from forge_api.services import pm_service as pm_service_module
-from forge_api.services.pm_service import PMConnectionService
-from forge_contracts import AgentObjective
-from forge_contracts.enums import Direction
-from forge_contracts.pm import ExternalTask, StatusCategory
-from forge_contracts.pm import PMProvider as ContractsProvider
-from forge_db.base import Base
-from forge_db.models import AgentRun, Project, RepositoryConnection, Workspace
-from forge_db.models.enums import PMConnectionStatus, PMDeliveryStatus
-from forge_db.models.enums import PMProvider as DbPMProvider
-from forge_db.models.enums import RunStatus as DbRunStatus
-from forge_db.models.pm import PMConnection, PMWebhookDelivery
-from forge_worker.tasks.pm_dispatch import DispatchOutcome, maybe_dispatch
+from scf_api.auth.crypto import HmacAeadCipher
+from scf_api.auth.vault import SecretVault
+from scf_api.observability.audit import AuditLog
+from scf_api.services import pm_service as pm_service_module
+from scf_api.services.pm_service import PMConnectionService
+from scf_contracts import AgentObjective
+from scf_contracts.enums import Direction
+from scf_contracts.pm import ExternalTask, StatusCategory
+from scf_contracts.pm import PMProvider as ContractsProvider
+from scf_db.base import Base
+from scf_db.models import AgentRun, Project, RepositoryConnection, Workspace
+from scf_db.models.enums import PMConnectionStatus, PMDeliveryStatus
+from scf_db.models.enums import PMProvider as DbPMProvider
+from scf_db.models.enums import RunStatus as DbRunStatus
+from scf_db.models.pm import PMConnection, PMWebhookDelivery
+from scf_worker.tasks.pm_dispatch import DispatchOutcome, maybe_dispatch
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 
@@ -102,7 +102,7 @@ def fake_adapter(monkeypatch: pytest.MonkeyPatch) -> _SlowFakeAdapter:
     ) -> _SlowFakeAdapter:
         return adapter
 
-    monkeypatch.setattr("forge_integrations.pm.registry.build_adapter", _fake_build_adapter)
+    monkeypatch.setattr("scf_integrations.pm.registry.build_adapter", _fake_build_adapter)
     monkeypatch.setattr(pm_service_module, "build_adapter", _fake_build_adapter)
     return adapter
 
@@ -300,7 +300,7 @@ def test_concurrent_dispatch_same_delivery_and_issue_and_cap(
 
 def test_concurrent_writeback_claims_admit_exactly_one(factory: sessionmaker[Session]) -> None:
     """The claim locks the run row, so two finishing executions cannot both post."""
-    from forge_worker.tasks.pm_dispatch import _claim_writeback
+    from scf_worker.tasks.pm_dispatch import _claim_writeback
 
     _seed(factory)
     with factory() as session:

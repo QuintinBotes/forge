@@ -6,23 +6,23 @@ from collections.abc import Callable
 
 import pytest
 
-from forge_workflow.dsl import load_definition
-from forge_workflow.editor.catalog import Vocabulary
-from forge_workflow.editor.graph import (
+from scf_workflow.dsl import load_definition
+from scf_workflow.editor.catalog import Vocabulary
+from scf_workflow.editor.graph import (
     NodeLayout,
     StateNode,
     TransitionEdge,
     WorkflowGraph,
     graph_to_yaml,
 )
-from forge_workflow.editor.validation import (
+from scf_workflow.editor.validation import (
     FEATURE_INVARIANTS,
     IssueCode,
     Severity,
     collect_validation_issues,
     error_count,
 )
-from forge_workflow.exceptions import WorkflowDefinitionError
+from scf_workflow.exceptions import WorkflowDefinitionError
 
 
 def _node(state: str) -> StateNode:

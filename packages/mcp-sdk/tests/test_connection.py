@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from forge_contracts import MCPConnection, MCPIndexStrategy, MCPTransport, SyncMode
-from forge_mcp.connection import load_connection, load_connection_file
+from scf_contracts import MCPConnection, MCPIndexStrategy, MCPTransport, SyncMode
+from scf_mcp.connection import load_connection, load_connection_file
 
 SPEC_EXAMPLE = {
     "id": "confluence-engineering",

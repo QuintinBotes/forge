@@ -1,5 +1,5 @@
 # ruff: noqa: RUF001, RUF002, RUF003 - the breadcrumb separator is "›" (spec J §2.4.1)
-"""Tests for ``forge_knowledge.chunking`` (plan Task 1.1, RAG spine).
+"""Tests for ``scf_knowledge.chunking`` (plan Task 1.1, RAG spine).
 
 TDD coverage for the chunking layer of the Knowledge/RAG pipeline:
 
@@ -22,10 +22,10 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts.constants import CHUNK_TYPE_WEIGHTS
-from forge_contracts.dtos import Chunk
-from forge_contracts.enums import ChunkType
-from forge_knowledge.chunking import (
+from scf_contracts.constants import CHUNK_TYPE_WEIGHTS
+from scf_contracts.dtos import Chunk
+from scf_contracts.enums import ChunkType
+from scf_knowledge.chunking import (
     chunk_code,
     chunk_file,
     chunk_markdown,

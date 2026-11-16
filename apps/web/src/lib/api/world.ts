@@ -26,7 +26,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   ChangesOut,
   ConflictsOut,
@@ -60,7 +60,7 @@ export const worldKeys = {
 /** Entity search (name/label, optionally typed) on both clocks. */
 export function useWorldEntities(
   query?: WorldEntityQuery,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<EntityListOut> {
   return useQuery({
     queryKey: worldKeys.entityList(query),
@@ -72,7 +72,7 @@ export function useWorldEntities(
 export function useWorldEntityProfile(
   entityId: string | null,
   time?: WorldTimeQuery,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<EntityProfileOut> {
   return useQuery({
     queryKey: worldKeys.profile(entityId ?? "", time),
@@ -96,7 +96,7 @@ export interface WorldNeighbourEntities {
 export function useWorldNeighbourEntities(
   entityIds: string[],
   time?: WorldTimeQuery,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): WorldNeighbourEntities {
   const results = useQueries({
     queries: entityIds.map((entityId) => ({
@@ -120,7 +120,7 @@ export function useWorldNeighbourEntities(
 export function useWorldEntityChanges(
   entityId: string | null,
   query?: WorldChangeQuery,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ChangesOut> {
   return useQuery({
     queryKey: worldKeys.changes(entityId ?? "", query),
@@ -132,7 +132,7 @@ export function useWorldEntityChanges(
 /** Conflicts at a world time (the endpoint takes `at` only, never `as_of`). */
 export function useWorldConflicts(
   at?: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ConflictsOut> {
   return useQuery({
     queryKey: worldKeys.conflicts(at),
@@ -143,7 +143,7 @@ export function useWorldConflicts(
 /** The proposal review queue, newest first, optionally filtered by status. */
 export function useWorldProposals(
   query?: WorldProposalQuery,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ProposalListOut> {
   return useQuery({
     queryKey: worldKeys.proposalList(query),
@@ -163,7 +163,7 @@ export interface DecideWorldProposalVariables {
  * may create entities) that each of those surfaces shows.
  */
 export function useDecideWorldProposal(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<ProposalDecisionOut, Error, DecideWorldProposalVariables> {
   const queryClient = useQueryClient();
   return useMutation<ProposalDecisionOut, Error, DecideWorldProposalVariables>({

@@ -3,7 +3,7 @@
  *
  * Framework-free (no React, no client) so the loop-stage roll-up is unit
  * testable in isolation and can be reused by both the typed API client
- * ({@link ForgeApiClient.getOnboardingProgress}) and the query hook.
+ * ({@link ScfApiClient.getOnboardingProgress}) and the query hook.
  *
  * Each stage of the "create a spec -> run an agent -> review the PR -> merge"
  * loop is grounded in a real router read:

@@ -9,11 +9,8 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Forge",
-  description: "Forge — OSS engineering orchestration platform.",
-  icons: {
-    icon: [{ url: "/forge-icon.svg", type: "image/svg+xml" }],
-  },
+  title: "Swarm Code Factory",
+  description: "Swarm Code Factory — From specification to shipped software.",
 };
 
 export default async function RootLayout({

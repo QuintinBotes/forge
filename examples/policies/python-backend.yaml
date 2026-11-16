@@ -1,7 +1,7 @@
 # Example .forge/policy.yaml — Python backend REST API service.
 #
 # Drop this at `.forge/policy.yaml` in a Python service repo. It is parsed by
-# `forge_policy.load_policy` and enforced by `RepoPolicyEvaluator.evaluate`
+# `scf_policy.load_policy` and enforced by `RepoPolicyEvaluator.evaluate`
 # (deny-by-default; deny globs beat allow globs; restricted actions are blocked).
 repo_id: github.com/acme/payments-api
 name: Payments API

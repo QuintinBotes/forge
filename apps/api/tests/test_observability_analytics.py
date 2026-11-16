@@ -16,17 +16,17 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.incidents import IncidentServiceRegistry, get_incident_registry
-from forge_api.routers.observability import get_observability_analytics_service
-from forge_api.services.observability_analytics_service import ObservabilityAnalyticsService
-from forge_contracts import UserRole
-from forge_contracts.enums import IncidentSeverity
-from forge_obs.analytics.budgets import Budget, SqlBudgetReader
-from forge_obs.analytics.coverage import CoverageSnapshotDTO, CoverageTrendPoint
-from forge_obs.analytics.dora import DoraMetrics
-from forge_obs.analytics.incidents import IncidentReliabilityMetrics
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.incidents import IncidentServiceRegistry, get_incident_registry
+from scf_api.routers.observability import get_observability_analytics_service
+from scf_api.services.observability_analytics_service import ObservabilityAnalyticsService
+from scf_contracts import UserRole
+from scf_contracts.enums import IncidentSeverity
+from scf_obs.analytics.budgets import Budget, SqlBudgetReader
+from scf_obs.analytics.coverage import CoverageSnapshotDTO, CoverageTrendPoint
+from scf_obs.analytics.dora import DoraMetrics
+from scf_obs.analytics.incidents import IncidentReliabilityMetrics
 
 WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a2")

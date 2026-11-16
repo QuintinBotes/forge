@@ -1,6 +1,6 @@
-# Forge — Infrastructure as Code (OpenTofu)
+# Swarm Code Factory — Infrastructure as Code (OpenTofu)
 
-Production infrastructure for Forge, authored as **OpenTofu** (Apache-2.0 /
+Production infrastructure for SCF, authored as **OpenTofu** (Apache-2.0 /
 MPL — the open-source successor to Terraform after its BSL relicense). The
 HCL is byte-for-byte Terraform-compatible; `terraform` v1.15.5 is used for
 the local `fmt`/`validate` gate, and `tofu` is used for `init`/`plan`/`apply`.

@@ -12,7 +12,7 @@ pipeline end to end against a real on-disk source tree (``examples/sample-repo``
       -> attributed top-k (path / source_id / source_uri / line span)
 
 and then prints the golden-retrieval eval numbers (recall@k / MRR) produced by
-``packages/evaluation`` over the genuine :class:`~forge_knowledge.KnowledgeService`.
+``packages/evaluation`` over the genuine :class:`~scf_knowledge.KnowledgeService`.
 
 Provider posture (plan Global Constraints: "no real external API calls"):
 the *pipeline and metrics are real*; only the learned models and the database
@@ -22,8 +22,8 @@ and an in-memory SQLite backend whose dialect-aware stores compute cosine / BM25
 in Python.
 
 # PARKED: the live path is not exercised here.
-#   * Embeddings: ``forge_knowledge.HttpEmbeddingClient`` (OpenAI-compatible BYOK)
-#     and reranker ``forge_knowledge.JinaRerankerClient`` need a network endpoint
+#   * Embeddings: ``scf_knowledge.HttpEmbeddingClient`` (OpenAI-compatible BYOK)
+#     and reranker ``scf_knowledge.JinaRerankerClient`` need a network endpoint
 #     + API key -> forbidden overnight (no real external calls).
 #   * Postgres pgvector ``cosine_distance`` + ``ts_rank`` BM25 need a live
 #     pgvector database; none is configured (no FORGE_TEST_DATABASE_URL, the
@@ -45,19 +45,19 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from forge_contracts.constants import RRF_K
-from forge_contracts.dtos import KnowledgeScope, RetrievedChunk
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, Workspace
-from forge_db.session import create_session_factory
-from forge_eval.report import format_scorecard
-from forge_eval.retrieval_eval import (
+from scf_contracts.constants import RRF_K
+from scf_contracts.dtos import KnowledgeScope, RetrievedChunk
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, Workspace
+from scf_db.session import create_session_factory
+from scf_eval.report import format_scorecard
+from scf_eval.retrieval_eval import (
     DEFAULT_K,
     DEFAULT_RECALL_THRESHOLD,
     run_retrieval_eval,
 )
-from forge_eval.runner import Scorecard
-from forge_knowledge import (
+from scf_eval.runner import Scorecard
+from scf_knowledge import (
     DeterministicEmbeddingClient,
     FixtureRerankerClient,
     KnowledgeService,
@@ -107,7 +107,7 @@ def build_service_from_directory(
     """Index a real on-disk source tree through the genuine pipeline.
 
     Reads every indexable file from ``root``, chunks + embeds + persists them via
-    :func:`forge_knowledge.full_sync` (the real ingestion path), and returns a
+    :func:`scf_knowledge.full_sync` (the real ingestion path), and returns a
     ready :class:`KnowledgeService`, the scope to search it under, and the indexed
     source id.
     """
@@ -176,7 +176,7 @@ def run_spine_smoke() -> tuple[str, Scorecard]:
 
     blocks: list[str] = []
     blocks.append("=" * 72)
-    blocks.append("Forge Knowledge/RAG spine smoke (Task 2.4)")
+    blocks.append("SCF Knowledge/RAG spine smoke (Task 2.4)")
     blocks.append(f"indexed: {SAMPLE_REPO_DIR}  (source: {SAMPLE_SOURCE_URI})")
     blocks.append(f"pipeline: semantic + BM25 -> RRF (k={RRF_K}) -> rerank -> top-{SEARCH_K}")
     blocks.append("backends: DeterministicEmbeddingClient + FixtureRerankerClient + SQLite")

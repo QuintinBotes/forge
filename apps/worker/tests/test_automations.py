@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_board.automation import (
+from scf_board.automation import (
     AutomationRuleSpec,
     CloseLinkedSpecTasksAction,
     Condition,
@@ -25,16 +25,16 @@ from forge_board.automation import (
     SetStatusAction,
     TriggerSpec,
 )
-from forge_contracts.automation import (
+from scf_contracts.automation import (
     AutomationExecutionStatus,
     AutomationTriggerEnvelope,
     AutomationTriggerSource,
     AutomationTriggerType,
     ConditionOp,
 )
-from forge_contracts.enums import Priority, TaskStatus
-from forge_db.base import Base
-from forge_db.models import (
+from scf_contracts.enums import Priority, TaskStatus
+from scf_db.base import Base
+from scf_db.models import (
     AutomationExecution,
     AutomationRule,
     Project,
@@ -43,7 +43,7 @@ from forge_db.models import (
     TaskDependency,
     Workspace,
 )
-from forge_worker.tasks.automations import (
+from scf_worker.tasks.automations import (
     cron_matches,
     dispatch_due_scheduled_automations,
     evaluate_envelope,

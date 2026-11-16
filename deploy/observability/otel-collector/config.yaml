@@ -1,4 +1,4 @@
-# Forge OpenTelemetry Collector (HARD-10, observability profile).
+# SCF OpenTelemetry Collector (HARD-10, observability profile).
 #
 # Single ingress for traces/metrics/logs over OTLP (gRPC :4317 + HTTP :4318),
 # fanned out to the self-hosted Grafana stack:

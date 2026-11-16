@@ -1,4 +1,4 @@
-"""``spec.md`` dual-format (de)serialization tests for ``forge_spec`` (ss-parser).
+"""``spec.md`` dual-format (de)serialization tests for ``scf_spec`` (ss-parser).
 
 ``spec.md`` (prose) and ``manifest.yaml`` (machine) are BOTH canonical, non-lossy
 serializations of the one :class:`SpecManifest`. These tests pin:
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     ADR,
     AcceptanceCriterion,
     ExecutionMode,
@@ -24,7 +24,7 @@ from forge_contracts import (
     SpecManifest,
     SpecStatus,
 )
-from forge_spec import (
+from scf_spec import (
     SpecParseError,
     dump_manifest,
     load_manifest,
@@ -289,10 +289,10 @@ def test_spec_parse_error_str_includes_line() -> None:
     assert err.line == 7
 
 
-def test_spec_parse_error_is_forge_error_and_value_error() -> None:
-    from forge_contracts import ForgeError
+def test_spec_parse_error_is_scf_error_and_value_error() -> None:
+    from scf_contracts import ScfError
 
     err = SpecParseError("boom")
-    assert isinstance(err, ForgeError)
+    assert isinstance(err, ScfError)
     assert isinstance(err, ValueError)
     assert err.line is None

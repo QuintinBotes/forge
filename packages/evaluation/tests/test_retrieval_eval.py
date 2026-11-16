@@ -1,9 +1,9 @@
 """Golden retrieval eval over the real hybrid pipeline (plan Task 1.4, spine).
 
-These tests are the spine's quality proof in ``forge_eval``: they index the fixed
-sample corpus through the genuine :class:`~forge_knowledge.KnowledgeService`
+These tests are the spine's quality proof in ``scf_eval``: they index the fixed
+sample corpus through the genuine :class:`~scf_knowledge.KnowledgeService`
 (semantic + keyword -> RRF -> rerank) and score the golden retrieval set with the
-:mod:`forge_eval.runner`, asserting a recall@k / MRR regression threshold and
+:mod:`scf_eval.runner`, asserting a recall@k / MRR regression threshold and
 printing the scorecard for the morning report.
 
 Hermetic: in-memory SQLite, deterministic embedding, fixture reranker. No network.
@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-import forge_eval.retrieval_eval as retrieval_eval
-from forge_eval.report import format_scorecard
-from forge_eval.retrieval_eval import (
+import scf_eval.retrieval_eval as retrieval_eval
+from scf_eval.report import format_scorecard
+from scf_eval.retrieval_eval import (
     DEFAULT_K,
     DEFAULT_RECALL_THRESHOLD,
     SAMPLE_CORPUS,

@@ -13,13 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from forge_eval.golden import GoldenCase, load_golden_set
-from forge_eval.report import format_scorecard
-from forge_eval.runner import Scorecard, evaluate_retrieval, run_golden_eval
+from scf_eval.golden import GoldenCase, load_golden_set
+from scf_eval.report import format_scorecard
+from scf_eval.runner import Scorecard, evaluate_retrieval, run_golden_eval
 
-EXAMPLE = (
-    Path(__file__).resolve().parent.parent / "forge_eval" / "golden" / "example_retrieval.yaml"
-)
+EXAMPLE = Path(__file__).resolve().parent.parent / "scf_eval" / "golden" / "example_retrieval.yaml"
 
 
 def _perfect_retriever(case: GoldenCase) -> Sequence[str]:

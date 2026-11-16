@@ -1,6 +1,6 @@
 """HARD-01 live GitHub App integration lane (creds-gated, opt-in).
 
-These tests drive the REAL api.github.com using the real Forge GitHub App. They
+These tests drive the REAL api.github.com using the real SCF GitHub App. They
 are marked ``live_github`` + ``integration`` and **skip cleanly** when the
 ``FORGE_GITHUB_*`` credentials are absent, so the default ``uv run pytest -q``
 run stays hermetic and network-free.
@@ -29,8 +29,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from forge_contracts import PullRequestRequest
-from forge_integrations import GitHubClient, load_private_key
+from scf_contracts import PullRequestRequest
+from scf_integrations import GitHubClient, load_private_key
 
 pytestmark = [pytest.mark.integration, pytest.mark.live_github]
 
@@ -117,7 +117,7 @@ def test_live_push_open_pr_and_read_reviews(client: GitHubClient, creds: _LiveCr
         client.push_files(
             creds.test_repo,
             branch=branch,
-            files={f"forge-smoke/{run_id}.md": f"forge hardening smoke {run_id}\n"},
+            files={f"forge-smoke/{run_id}.md": f"SCF hardening smoke {run_id}\n"},
             message=f"[forge-hardening] smoke {run_id}",
         )
         pr = client.open_pr(

@@ -1,10 +1,10 @@
-"""Tests for ``forge_knowledge.text.strip_uri_credentials``: no token leaves in a uri."""
+"""Tests for ``scf_knowledge.text.strip_uri_credentials``: no token leaves in a uri."""
 
 from __future__ import annotations
 
 import pytest
 
-from forge_knowledge.text import strip_uri_credentials
+from scf_knowledge.text import strip_uri_credentials
 
 
 @pytest.mark.parametrize(

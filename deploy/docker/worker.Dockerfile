@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Forge Celery worker image (plan Task 0.6 substrate; built + verified in Phase 2 Task 2.1).
+# SCF Celery worker image (plan Task 0.6 substrate; built + verified in Phase 2 Task 2.1).
 FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim@sha256:7cf77f594be8042dab6daa9fe326f90962252268b4f120a7f5dccce4d947e6c1
 
 ENV UV_COMPILE_BYTECODE=1 \
@@ -22,4 +22,4 @@ RUN groupadd -g 1000 forge && useradd -u 1000 -g forge -m forge \
 RUN mkdir -p /srv/forge/specs && chown -R forge:forge /srv/forge
 USER forge
 
-CMD ["celery", "-A", "forge_worker", "worker", "--loglevel=info"]
+CMD ["celery", "-A", "scf_worker", "worker", "--loglevel=info"]

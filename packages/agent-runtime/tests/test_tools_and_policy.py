@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forge_agent.policy_gate import ActionPolicyGate, PolicyEvaluatorGate
-from forge_agent.tools import Tool, ToolRegistry, ToolResult, default_tool_registry
-from forge_contracts import (
+from scf_agent.policy_gate import ActionPolicyGate, PolicyEvaluatorGate
+from scf_agent.tools import Tool, ToolRegistry, ToolResult, default_tool_registry
+from scf_contracts import (
     AgentObjective,
     Decision,
     DecisionEffect,

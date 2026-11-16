@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from forge_board.velocity import (
+from scf_board.velocity import (
     ScopeEvent,
     SprintWindow,
     WorkCalendar,
     compute_burndown,
     ideal_line,
 )
-from forge_contracts.enums import SprintScopeEventType as ET
+from scf_contracts.enums import SprintScopeEventType as ET
 
 START = date(2026, 6, 1)
 END = date(2026, 6, 5)

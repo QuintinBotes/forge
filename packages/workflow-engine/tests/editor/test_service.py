@@ -7,22 +7,22 @@ from typing import Any
 
 import pytest
 
-from forge_db.models.workflow_editor import (
+from scf_db.models.workflow_editor import (
     RevisionStatus,
     RevisionValidationStatus,
     WorkflowDefinition,
     WorkflowDefinitionRevision,
 )
-from forge_workflow.editor.errors import (
+from scf_workflow.editor.errors import (
     BundledReadOnlyError,
     PublishBlockedError,
 )
-from forge_workflow.editor.schemas import (
+from scf_workflow.editor.schemas import (
     CreateDefinition,
     ImportRequest,
     SaveDraftRequest,
 )
-from forge_workflow.editor.service import RecordingAuditSink, WorkflowEditorService
+from scf_workflow.editor.service import RecordingAuditSink, WorkflowEditorService
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 ACTOR = uuid.UUID("00000000-0000-0000-0000-0000000000b2")
@@ -189,8 +189,8 @@ def test_fork_creates_editable_draft(service: WorkflowEditorService) -> None:
     assert detail.draft.revision == 1
     assert detail.draft.status == "draft"
     # the draft graph equals the bundled graph
-    from forge_workflow.default_workflow import default_feature_definition
-    from forge_workflow.editor.graph import definition_to_graph
+    from scf_workflow.default_workflow import default_feature_definition
+    from scf_workflow.editor.graph import definition_to_graph
 
     expected = definition_to_graph(default_feature_definition(), title="Default Feature")
     assert detail.draft.graph.edges == expected.edges

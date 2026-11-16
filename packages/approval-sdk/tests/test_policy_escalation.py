@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from forge_approval import (
+from scf_approval import (
     DelegationDirectory,
     DelegationEntry,
     EscalationOutcome,
@@ -13,7 +13,7 @@ from forge_approval import (
     SlaPolicy,
     route_escalation,
 )
-from forge_approval.models import ApprovalRequest, GateType
+from scf_approval.models import ApprovalRequest, GateType
 
 ALICE = uuid.UUID("00000000-0000-0000-0000-0000000000e1")
 BOB = uuid.UUID("00000000-0000-0000-0000-0000000000e2")

@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from forge_contracts import (
+from scf_contracts import (
     AcceptanceCriterion,
     AgentObjective,
     AgentRunResult,

@@ -1,8 +1,8 @@
-# Forge sandbox image — Python (F19). cpython + uv on top of the locked-down base.
+# SCF sandbox image — Python (F19). cpython + uv on top of the locked-down base.
 # Built FROM the curated base so the hardening (non-root 10001, tini, timeout) is
 # inherited. Pinned in env as FORGE_SANDBOX_IMAGE_PYTHON and on the workspace
 # FORGE_SANDBOX_ALLOWED_IMAGES allowlist.
-ARG FORGE_SANDBOX_BASE=forge-sandbox-base:latest
+ARG FORGE_SANDBOX_BASE=swarm-code-factory/sandbox-base:latest
 FROM ${FORGE_SANDBOX_BASE}
 
 USER root

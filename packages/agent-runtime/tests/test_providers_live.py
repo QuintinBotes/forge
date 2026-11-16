@@ -23,9 +23,9 @@ import os
 
 import pytest
 
-from forge_agent import AgentRunner
-from forge_agent.providers import ModelClientConfig, ProviderName, build_model_client
-from forge_contracts import AgentObjective, RunStatus
+from scf_agent import AgentRunner
+from scf_agent.providers import ModelClientConfig, ProviderName, build_model_client
+from scf_contracts import AgentObjective, RunStatus
 
 pytestmark = [pytest.mark.integration, pytest.mark.live_model]
 
@@ -75,7 +75,7 @@ def _skip_unless(provider: ProviderName | None) -> ModelClientConfig:
     if config is None:
         pytest.skip(
             f"live model creds/SDK absent for provider={provider.value!r}: set the BYOK key "
-            f"and install forge-agent[providers]; see docs/runbooks/live-model.md"
+            f"and install scf-agent[providers]; see docs/runbooks/live-model.md"
         )
     return config
 

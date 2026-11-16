@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { type ForgeApiClient } from "./client";
+import { type ScfApiClient } from "./client";
 import {
   rbacKeys,
   useAddTeamMember,
@@ -47,7 +47,7 @@ describe("useRoleGrants", () => {
   it("passes the scope filter through to the client", async () => {
     const client = {
       listRoleGrants: vi.fn(() => Promise.resolve([grant()])),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(
       () => useRoleGrants({ scope_type: "workspace" }, client),
@@ -64,7 +64,7 @@ describe("useCreateRoleGrant", () => {
   it("creates a grant then revalidates every grant list", async () => {
     const client = {
       createRoleGrant: vi.fn(() => Promise.resolve(grant({ role: "admin" }))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = newClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -94,7 +94,7 @@ describe("useSetMemberRole", () => {
         order.push(`revoke:${id}`);
         return Promise.resolve();
       }),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useSetMemberRole(client), {
       wrapper: makeWrapper(newClient()),
@@ -113,7 +113,7 @@ describe("useRevokeRoleGrant", () => {
   it("revokes then revalidates grants", async () => {
     const client = {
       revokeRoleGrant: vi.fn(() => Promise.resolve()),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = newClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -134,7 +134,7 @@ describe("useCreateTeam", () => {
       createTeam: vi.fn(() =>
         Promise.resolve({ id: "t1", key: "plat", name: "Platform", created_at: "x" }),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = newClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -152,7 +152,7 @@ describe("useTeamMembers", () => {
   it("is disabled until a team id is supplied", () => {
     const client = {
       listTeamMembers: vi.fn(() => Promise.resolve([])),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useTeamMembers("", client), {
       wrapper: makeWrapper(newClient()),
@@ -169,7 +169,7 @@ describe("useAddTeamMember", () => {
       addTeamMember: vi.fn(() =>
         Promise.resolve({ user_id: "u1", team_role: "member", created_at: "x" }),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = newClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -187,7 +187,7 @@ describe("useProjectAccess", () => {
   it("is disabled until a project id is supplied", () => {
     const client = {
       getProjectAccess: vi.fn(),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useProjectAccess("", client), {
       wrapper: makeWrapper(newClient()),
@@ -208,7 +208,7 @@ describe("useSetProjectVisibility", () => {
     };
     const client = {
       setProjectVisibility: vi.fn(() => Promise.resolve(access)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = newClient();
 
     const { result } = renderHook(() => useSetProjectVisibility(client), {

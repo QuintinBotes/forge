@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
+from scf_api.main import create_app
 
 
 @pytest.fixture

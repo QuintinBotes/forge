@@ -8,8 +8,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from forge_agent.tools import ToolRegistry, agent_tool_belt
-from forge_integrations import GitHubClient
+from scf_agent.tools import ToolRegistry, agent_tool_belt
+from scf_integrations import GitHubClient
 
 CI_TOOLS = {"ci_failures", "ci_job_log", "pr_status"}
 SHA = "a" * 40

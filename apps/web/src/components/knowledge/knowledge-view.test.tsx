@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import { useCurrentUser } from "@/lib/api/hooks";
 import type {
   KnowledgeDocumentResponse,
@@ -104,7 +104,7 @@ const documentResponse: KnowledgeDocumentResponse = {
   truncated: true,
 };
 
-function makeClient(over: Record<string, unknown> = {}): ForgeApiClient {
+function makeClient(over: Record<string, unknown> = {}): ScfApiClient {
   return {
     me: vi.fn(() => Promise.resolve({ user_id: "u", workspace_id: "w", role: "member" })),
     listKnowledgeSources: vi.fn(() => Promise.resolve([source(), tracker])),
@@ -112,10 +112,10 @@ function makeClient(over: Record<string, unknown> = {}): ForgeApiClient {
     searchKnowledge: vi.fn(() => Promise.resolve(searchResponse)),
     getKnowledgeDocument: vi.fn(() => Promise.resolve(documentResponse)),
     ...over,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient, extra?: ReactNode) {
+function renderView(client: ScfApiClient, extra?: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -132,7 +132,7 @@ function renderView(client: ForgeApiClient, extra?: ReactNode) {
 }
 
 /** Shows the role once the shared `/auth/me` query resolves: the table re-renders with it. */
-function RoleProbe({ client }: { client: ForgeApiClient }) {
+function RoleProbe({ client }: { client: ScfApiClient }) {
   return <span data-testid="role-probe">{useCurrentUser(client).data?.role ?? ""}</span>;
 }
 

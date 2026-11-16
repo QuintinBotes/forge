@@ -16,16 +16,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
-from forge_agent.runtime import AgentRunner
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_agent.tools import ToolRegistry
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_contracts import AgentObjective, UserRole
-from forge_db.base import Base
-from forge_db.models import RunRecording, Workspace
+from scf_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
+from scf_agent.runtime import AgentRunner
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_agent.tools import ToolRegistry
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_contracts import AgentObjective, UserRole
+from scf_db.base import Base
+from scf_db.models import RunRecording, Workspace
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000c1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000c2")
@@ -38,7 +38,7 @@ def _objective(text: str = "edit main") -> AgentObjective:
 def _record() -> RunCassette:
     """Tape a run through the *same* wrappers/wiring the worker uses today.
 
-    ``build_agent_runner`` (``apps/worker/forge_worker/agent_runner.py``) wraps
+    ``build_agent_runner`` (``apps/worker/scf_worker/agent_runner.py``) wraps
     an *empty* ``ToolRegistry`` when recording (no real tools wired into the
     worker's recording path yet) — mirrored here so the replay endpoint's
     default (also an empty registry — see ``replay_service.replay_recording``)

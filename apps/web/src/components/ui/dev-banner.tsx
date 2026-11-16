@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  */
 export const DEV_BANNER_DISMISSED_KEY = "forge.dev-banner.dismissed.v1";
 
-const REPO_URL = "https://github.com/QuintinBotes/forge";
+const REPO_URL = "https://github.com/QuintinBotes/swarm-code-factory";
 const RELEASE_READINESS_URL = `${REPO_URL}/blob/main/RELEASE_READINESS.md`;
 
 function readDismissed(storageKey: string): boolean {
@@ -39,7 +39,7 @@ export interface DevBannerProps {
 }
 
 /**
- * A persistent, dismissible notice that this Forge instance is pre-1.0 and
+ * A persistent, dismissible notice that this SCF instance is pre-1.0 and
  * under active development — the in-app mirror of the README's status badge,
  * so nobody mistakes a self-hosted install for production-ready. Dismissal
  * is remembered per-browser via `localStorage`.

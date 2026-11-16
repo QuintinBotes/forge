@@ -20,7 +20,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   Installation,
   InstallPlan,
@@ -46,7 +46,7 @@ export const marketplaceKeys = {
 /** The catalog. Passing `kind` narrows on the server; text search is client-side. */
 export function useListings(
   query?: MarketplaceListingQuery,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<Listing[]> {
   return useQuery({
     queryKey: marketplaceKeys.listings(query),
@@ -59,7 +59,7 @@ export function useListings(
 export function useListingDetail(
   registrySlug: string | null,
   slug: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<ListingDetail> {
   return useQuery({
     queryKey: marketplaceKeys.listing(registrySlug ?? "", slug ?? ""),
@@ -70,7 +70,7 @@ export function useListingDetail(
 
 /** The installed set (with any available update surfaced per row). */
 export function useInstallations(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<Installation[]> {
   return useQuery({
     queryKey: marketplaceKeys.installations(),
@@ -80,7 +80,7 @@ export function useInstallations(
 
 /** Registry sources the workspace can publish into (the publish form's picker). */
 export function useRegistries(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<Registry[]> {
   return useQuery({
     queryKey: marketplaceKeys.registries(),
@@ -94,7 +94,7 @@ export function useRegistries(
  * hard block as a 422 which the caller renders from the {@link ApiError} body.
  */
 export function usePreviewInstall(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<InstallPlan, Error, InstallRequest> {
   return useMutation({
     mutationFn: (request: InstallRequest) => client.previewInstall(request),
@@ -103,7 +103,7 @@ export function usePreviewInstall(
 
 /** Install a package, then revalidate the installed set + catalog. */
 export function useInstallPackage(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<InstallResult, Error, InstallRequest> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -121,7 +121,7 @@ export interface UpdateInstallationVariables {
 
 /** Update an installation, then revalidate the installed set. */
 export function useUpdateInstallation(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<InstallResult, Error, UpdateInstallationVariables> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -135,7 +135,7 @@ export function useUpdateInstallation(
 
 /** Publish a package into the catalog, then revalidate the listings. */
 export function usePublishListing(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<ListingDetail, Error, ListingPublishRequest> {
   const queryClient = useQueryClient();
   return useMutation({

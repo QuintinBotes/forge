@@ -17,9 +17,9 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-import forge_db.models  # noqa: F401  (registers all models)
-from forge_db.base import Base
-from forge_db.models.world import WorldFact
+import scf_db.models  # noqa: F401  (registers all models)
+from scf_db.base import Base
+from scf_db.models.world import WorldFact
 
 
 def test_world_ddl_compiles_for_postgres() -> None:

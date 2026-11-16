@@ -1,16 +1,16 @@
-"""ForgeMetrics facade + cardinality contract tests (F38 AC11)."""
+"""ScfMetrics facade + cardinality contract tests (F38 AC11)."""
 
 from __future__ import annotations
 
 import pytest
 
-from forge_obs.metrics import (
+from scf_obs.metrics import (
     CARDINALITY_CAP,
     FORBIDDEN_LABELS,
     INSTRUMENT_CATALOG,
-    ForgeMetrics,
     NoopMetrics,
     RecordingMetrics,
+    ScfMetrics,
     get_metrics,
     render_prometheus,
     reset_metrics,
@@ -115,7 +115,7 @@ def test_cardinality_cap_buckets_overflow_to_other() -> None:
 
 def test_noop_metrics_accepts_every_facade_call() -> None:
     noop = NoopMetrics()
-    assert isinstance(noop, ForgeMetrics)
+    assert isinstance(noop, ScfMetrics)
     noop.record_model_cost(
         provider="p",
         model="m",

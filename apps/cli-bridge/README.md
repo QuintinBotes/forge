@@ -1,7 +1,7 @@
-# forge-cli-bridge
+# scf-cli-bridge
 
 Loopback HTTP bridge exposing the host's locally installed agent CLIs (`claude`,
-`codex`) to the containerised Forge worker.
+`codex`) to the containerised Swarm Code Factory worker.
 
 > **Development and self-host convenience only. This is not for a shared or
 > production deployment.** It executes host binaries on behalf of whatever can
@@ -9,7 +9,7 @@ Loopback HTTP bridge exposing the host's locally installed agent CLIs (`claude`,
 
 ## Why this exists
 
-The Forge worker runs inside a Linux container and cannot execute the host's
+The SCF worker runs inside a Linux container and cannot execute the host's
 `claude`/`codex` CLI binaries (Mach-O/arm64 on macOS). This bridge runs on the
 host, listens on loopback, and forwards `ModelRequest`/`ModelResponse` traffic
 to `LocalCliModelClient`, which drives the CLI as a subprocess. The container
@@ -22,7 +22,7 @@ of needing its own copy of the CLI.
   explicitly set. Setting that variable is a loud, deliberate opt-out — the
   bridge executes host binaries, so exposing it beyond loopback widens the
   attack surface to anything that can reach the host. Run it with
-  `python -m forge_cli_bridge.main` (see "Running it" below) so the address it
+  `python -m scf_cli_bridge.main` (see "Running it" below) so the address it
   actually binds is the SAME validated value the guard checked — not a second,
   independently-typed `--host` flag on an ASGI server's own command line that
   the guard never sees.
@@ -41,7 +41,7 @@ of needing its own copy of the CLI.
   to `timeout_s` (default 600s) and spends real subscription quota, so an
   unbounded burst is a plausible accident, not just an attack.
 * Raw CLI stderr is passed through a redactor before it ever reaches the host
-  log (the shared `forge_api` secret redactor when available, else identity).
+  log (the shared `scf_api` secret redactor when available, else identity).
 
 ## Configuration
 
@@ -61,7 +61,7 @@ of needing its own copy of the CLI.
 * `GET /health` — returns detected CLIs and `non_loopback_override_set`: whether
   `FORGE_CLI_BRIDGE_ALLOW_NON_LOOPBACK` was set on THIS process's config. This
   is not a report of the actual bound socket — the process cannot see that
-  when launched via `uvicorn forge_cli_bridge.main:app --host ...` (see
+  when launched via `uvicorn scf_cli_bridge.main:app --host ...` (see
   "Running it" below); check the real listening socket (e.g. `lsof -i :8099`)
   if you need to confirm actual exposure. No authentication required.
 * `POST /v1/complete` — accepts a `ModelRequest` body, returns a `ModelResponse`.
@@ -71,17 +71,17 @@ of needing its own copy of the CLI.
 
 ```bash
 FORGE_CLI_BRIDGE_TOKEN=$(openssl rand -hex 32) \
-  uv run python -m forge_cli_bridge.main
+  uv run python -m scf_cli_bridge.main
 ```
 
 This is the supported way to run the bridge: `main.py` binds `uvicorn` itself
 from the same validated `BridgeSettings` object it built (host/port/loopback
 guard all come from one place). An ASGI-managed deployment that instead
-imports `forge_cli_bridge.main:app` directly (e.g. `uvicorn
-forge_cli_bridge.main:app --host ... --port ...`) is bound by whatever
+imports `scf_cli_bridge.main:app` directly (e.g. `uvicorn
+scf_cli_bridge.main:app --host ... --port ...`) is bound by whatever
 `--host`/`--port` that server is given, same as any other ASGI app — that
 path is for process managers that own their own bind configuration, not a
-substitute for `python -m forge_cli_bridge.main` as the default way to run
+substitute for `python -m scf_cli_bridge.main` as the default way to run
 this locally.
 
-Part of the [Forge](../../README.md) monorepo. Apache-2.0 licensed.
+Part of the [SCF](../../README.md) monorepo. Apache-2.0 licensed.

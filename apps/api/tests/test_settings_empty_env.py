@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_api.settings import Settings
+from scf_api.settings import Settings
 
 
 @pytest.mark.parametrize(

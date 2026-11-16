@@ -1,4 +1,4 @@
-from forge_agent.providers.local_cli.detect import CliName, detect_clis
+from scf_agent.providers.local_cli.detect import CliName, detect_clis
 
 
 def _which(found: dict[str, str]):

@@ -7,15 +7,15 @@ import uuid
 
 import pytest
 
-from forge_auth.errors import InvalidToken, KeyMaterialError, TokenExpired
-from forge_auth.tokens import (
+from scf_auth.errors import InvalidToken, KeyMaterialError, TokenExpired
+from scf_auth.tokens import (
     decode_session_jwt,
     encode_session_jwt,
     looks_like_jwt,
     make_service_token,
     verify_service_token,
 )
-from forge_contracts.auth import SessionClaims, UserRole
+from scf_contracts.auth import SessionClaims, UserRole
 
 SECRET = "test-auth-secret"
 

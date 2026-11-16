@@ -7,19 +7,19 @@ import uuid
 import pytest
 from sqlalchemy.orm import Session
 
-from forge_workflow.editor.repository import DbWorkflowDefinitionRepository
-from forge_workflow.editor.schemas import SaveDraftRequest
-from forge_workflow.editor.service import WorkflowEditorService
-from forge_workflow.editor.store import (
+from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
+from scf_workflow.editor.schemas import SaveDraftRequest
+from scf_workflow.editor.service import WorkflowEditorService
+from scf_workflow.editor.store import (
     DbWorkflowDefinitionStore,
     ResolvingDefinitionProvider,
 )
-from forge_workflow.engine import (
+from scf_workflow.engine import (
     DEFINITION_REVISION_KEY,
     DEFINITION_VERSION_KEY,
     WorkflowEngineImpl,
 )
-from forge_workflow.store import InMemoryWorkflowStore
+from scf_workflow.store import InMemoryWorkflowStore
 
 from .conftest import make_user, make_workspace
 

@@ -1,4 +1,4 @@
-"""``forge-cli marketplace sign``: prints manifest_hash + a verifying signature."""
+"""``scf-cli marketplace sign``: prints manifest_hash + a verifying signature."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from forge_api.cli import build_parser, main
-from forge_marketplace.manifest import compute_manifest_hash, dump_manifest
-from forge_marketplace.models import ArtifactKind
-from forge_marketplace.packaging import build_package
-from forge_marketplace.verifier import Ed25519SignatureVerifier
+from scf_api.cli import build_parser, main
+from scf_marketplace.manifest import compute_manifest_hash, dump_manifest
+from scf_marketplace.models import ArtifactKind
+from scf_marketplace.packaging import build_package
+from scf_marketplace.verifier import Ed25519SignatureVerifier
 
 
 def _manifest():

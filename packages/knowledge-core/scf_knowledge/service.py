@@ -1,0 +1,205 @@
+"""The Knowledge service: end-to-end hybrid search (plan Task 1.3, RAG spine).
+
+:class:`KnowledgeService` is the public face of the retrieval pipeline and the
+proof that the spine works end-to-end. It structurally satisfies the frozen
+:class:`scf_contracts.protocols.KnowledgeStore` Protocol (``index`` + ``search``)
+and orchestrates, per the spec's *Knowledge and Retrieval Architecture* diagram::
+
+    query
+      ├─ semantic search (pgvector, cosine)  → top-N
+      ├─ keyword search   (Postgres BM25)    → top-N
+      │            │
+      │            ▼
+      │   RRF fusion (k = 60)
+      │            │
+      │            ▼
+      │   cross-encoder rerank (+ chunk-type weight boost)
+      │            │
+      │            ▼
+      └─ attributed top-k  (source_id / source_uri carried through)
+
+``index`` delegates to the pgvector store, which persists the rows both legs read
+(on Postgres it also populates the ``tsvector`` the BM25 leg ranks over), so a
+single index call feeds the whole hybrid pipeline.
+
+With no embedder configured the service runs **BM25-only** and says so
+(ADR-0018): :attr:`legs` is ``["bm25"]`` and :attr:`vector_leg` is
+``"unconfigured"``; indexing stores chunks without embeddings. It never
+substitutes a fake semantic leg. Likewise an unconfigured reranker is
+reported as :attr:`rerank_status` ``"off"`` (weighted-RRF order).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Collection, Iterable, Mapping
+
+from scf_contracts.dtos import Chunk, IndexResult, KnowledgeScope, RetrievedChunk
+from scf_contracts.protocols import EmbeddingClient, RerankerClient
+from scf_knowledge.retriever import HybridRetriever
+from scf_knowledge.stores import Bm25Store, PgVectorStore, SessionFactory
+
+__all__ = ["KnowledgeService"]
+
+#: How many results each leg (semantic / keyword) contributes before fusion
+#: (spec pipeline: "top-50" per leg).
+DEFAULT_CANDIDATE_K: int = 50
+
+#: How many fused candidates are sent to the (more expensive) reranker.
+DEFAULT_RERANK_CANDIDATES: int = 50
+
+#: Default per-call reranker latency budget (ms) — matches
+#: :data:`scf_knowledge.reranker.DEFAULT_RERANK_TIMEOUT_MS`.
+DEFAULT_RERANK_BUDGET_MS: int = 800
+
+
+class KnowledgeService:
+    """Hybrid retrieval service. Implements ``KnowledgeStore``."""
+
+    def __init__(
+        self,
+        retriever: HybridRetriever,
+        *,
+        vector_store: PgVectorStore | None = None,
+        vector_configured: bool | None = None,
+        candidate_k: int = DEFAULT_CANDIDATE_K,
+        rerank_candidates: int = DEFAULT_RERANK_CANDIDATES,
+        rerank_enabled: bool = True,
+        rerank_budget_ms: int = DEFAULT_RERANK_BUDGET_MS,
+    ) -> None:
+        self._retriever = retriever
+        self._vector_store = vector_store
+        if vector_configured is None:
+            vector_configured = (
+                vector_store.has_embedder
+                if vector_store is not None
+                else retriever.vector_configured
+            )
+        self._vector_configured = vector_configured
+        self._candidate_k = candidate_k
+        self._rerank_candidates = rerank_candidates
+        self._rerank_enabled = rerank_enabled
+        self._rerank_budget_ms = rerank_budget_ms
+
+    @classmethod
+    def from_session_factory(
+        cls,
+        session_factory: SessionFactory,
+        embedding_client: EmbeddingClient | None,
+        reranker: RerankerClient | None,
+        *,
+        candidate_k: int = DEFAULT_CANDIDATE_K,
+        rerank_candidates: int = DEFAULT_RERANK_CANDIDATES,
+        rerank_enabled: bool = True,
+        rerank_budget_ms: int = DEFAULT_RERANK_BUDGET_MS,
+    ) -> KnowledgeService:
+        """Build a service from a DB session factory and BYOK clients.
+
+        ``embedding_client=None`` selects honest BM25-only mode (ADR-0018);
+        ``reranker=None`` selects rerank-off (weighted-RRF order).
+        """
+        vector_store = PgVectorStore(session_factory, embedding_client)
+        keyword_store = Bm25Store(session_factory)
+        retriever = HybridRetriever(
+            vector_store if embedding_client is not None else None,
+            keyword_store,
+            reranker,
+            rerank_enabled=rerank_enabled,
+        )
+        return cls(
+            retriever,
+            vector_store=vector_store,
+            vector_configured=embedding_client is not None,
+            candidate_k=candidate_k,
+            rerank_candidates=rerank_candidates,
+            rerank_enabled=rerank_enabled,
+            rerank_budget_ms=rerank_budget_ms,
+        )
+
+    @property
+    def last_rerank(self) -> object | None:
+        """Server-side telemetry for the most recent ``search`` rerank step.
+
+        A :class:`scf_knowledge.retriever.RerankDebug` (provider, latency,
+        ``fallback_used``, rank delta) — redacted, for the debug payload and the
+        observability "reranker delta" metric.
+        """
+        return self._retriever.last_rerank
+
+    @property
+    def retriever(self) -> HybridRetriever:
+        """The underlying hybrid retriever (used by the eval ablation to score a
+        single leg — ``semantic`` / ``keyword`` — against the full pipeline)."""
+        return self._retriever
+
+    @property
+    def vector_configured(self) -> bool:
+        """Whether a real embedder backs the vector leg (ADR-0018)."""
+        return self._vector_configured
+
+    @property
+    def legs(self) -> list[str]:
+        """Retrieval legs a search runs: ``["bm25"]`` or ``["bm25", "vector"]``."""
+        return ["bm25", "vector"] if self._vector_configured else ["bm25"]
+
+    @property
+    def vector_leg(self) -> str:
+        """Vector-leg state for search responses: configured | unconfigured."""
+        return "configured" if self._vector_configured else "unconfigured"
+
+    @property
+    def rerank_status(self) -> str:
+        """Rerank state for search responses: ``"off"`` or the provider name."""
+        return self._retriever.rerank_status
+
+    def index(
+        self, source_id: str, chunks: list[Chunk], *, defer_embedding: bool = False
+    ) -> IndexResult:
+        """Embed and persist ``chunks`` for ``source_id`` (idempotent by hash)."""
+        return self._require_store().index(source_id, chunks, defer_embedding=defer_embedding)
+
+    def embed_missing(self, source_id: str) -> tuple[int, list[str]]:
+        """Embed rows indexed before an embedder was configured (see the store)."""
+        return self._require_store().embed_missing(source_id)
+
+    # -- sync surface (Task 1.4): makes the service a ``sync.SyncStore``) ---- #
+
+    def source_paths(self, source_id: str) -> set[str]:
+        """Distinct file paths currently indexed for ``source_id``."""
+        return self._require_store().source_paths(source_id)
+
+    def delete_source_paths(self, source_id: str, paths: Iterable[str]) -> int:
+        """Delete every indexed chunk of ``source_id`` whose path is in ``paths``."""
+        return self._require_store().delete_source_paths(source_id, paths)
+
+    def delete_stale(self, source_id: str, current: Mapping[str, Collection[str]]) -> int:
+        """Delete chunks at ``current``'s paths whose hash is no longer listed there."""
+        return self._require_store().delete_stale(source_id, current)
+
+    @property
+    def session_factory(self) -> SessionFactory:
+        """The session factory behind this service's store (sync reads a source's row)."""
+        return self._require_store()._session_factory
+
+    def _require_store(self) -> PgVectorStore:
+        if self._vector_store is None:
+            raise RuntimeError(
+                "KnowledgeService has no vector store; build it with "
+                "KnowledgeService.from_session_factory to enable indexing/sync."
+            )
+        return self._vector_store
+
+    def search(self, query: str, scope: KnowledgeScope, k: int = 10) -> list[RetrievedChunk]:
+        """Hybrid search: semantic + keyword -> RRF -> rerank -> attributed top-k.
+
+        In BM25-only mode (no embedder) only the keyword leg runs; callers
+        surface that via :attr:`legs` / :attr:`vector_leg` (ADR-0018).
+        """
+        keyword = self._retriever.keyword(query, scope, self._candidate_k)
+        rankings = [keyword]
+        if self._vector_configured:
+            # Semantic first: RRF ties break by leg order, and the eval
+            # "fused" ablation (corpus_eval) fuses [semantic, keyword].
+            rankings.insert(0, self._retriever.semantic(query, scope, self._candidate_k))
+        fused = self._retriever.fuse(rankings)
+        candidates = fused[: self._rerank_candidates]
+        return self._retriever.rerank(query, candidates, k)

@@ -3,13 +3,13 @@
 import { FlaskConical, Play, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useRunSelfEval, useSelfEvalStatus } from "@/lib/api/ao-settings";
 import type { SelfEvalStatusOut } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 export interface SelfEvalPanelProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

@@ -1,6 +1,6 @@
-# Forge sandbox image — Node (F19). Node.js + corepack (pnpm) on the locked-down
+# SCF sandbox image — Node (F19). Node.js + corepack (pnpm) on the locked-down
 # base. Pinned in env as FORGE_SANDBOX_IMAGE_NODE.
-ARG FORGE_SANDBOX_BASE=forge-sandbox-base:latest
+ARG FORGE_SANDBOX_BASE=swarm-code-factory/sandbox-base:latest
 FROM ${FORGE_SANDBOX_BASE}
 
 USER root

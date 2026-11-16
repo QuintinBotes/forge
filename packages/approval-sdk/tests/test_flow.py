@@ -9,14 +9,14 @@ import uuid
 
 from conftest import ADMIN_ID, WS, ScriptedHook, make_principal
 
-from forge_approval.audit import RecordingAuditSink
-from forge_approval.authorizer import ApprovalAuthorizer
-from forge_approval.events import (
+from scf_approval.audit import RecordingAuditSink
+from scf_approval.authorizer import ApprovalAuthorizer
+from scf_approval.events import (
     APPROVAL_REQUESTED_TOPIC,
     APPROVAL_RESOLVED_TOPIC,
     InMemoryActivityBus,
 )
-from forge_approval.models import (
+from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRequest,
     GateStatus,
@@ -24,16 +24,16 @@ from forge_approval.models import (
     ResolutionOutcome,
     Role,
 )
-from forge_approval.providers.deploy import DeployGateProvider, DeployResolutionHook
-from forge_approval.providers.policy_override import (
+from scf_approval.providers.deploy import DeployGateProvider, DeployResolutionHook
+from scf_approval.providers.policy_override import (
     InMemoryGrantStore,
     PolicyOverrideGateProvider,
     PolicyOverrideResolutionHook,
     action_fingerprint,
 )
-from forge_approval.registry import GateRegistry
-from forge_approval.repository import InMemoryApprovalRepository
-from forge_approval.service import ApprovalService
+from scf_approval.registry import GateRegistry
+from scf_approval.repository import InMemoryApprovalRepository
+from scf_approval.service import ApprovalService
 
 ADMIN = make_principal(role=Role.ADMIN, principal_id=ADMIN_ID)
 APPROVE = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)

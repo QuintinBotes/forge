@@ -6,9 +6,9 @@ import uuid
 
 import pytest
 
-from forge_coordinator import CoordinatorSettings, HumanResumeInput
-from forge_coordinator.deps import CoordinatorDeps
-from forge_coordinator.supervisor import Supervisor
+from scf_coordinator import CoordinatorSettings, HumanResumeInput
+from scf_coordinator.deps import CoordinatorDeps
+from scf_coordinator.supervisor import Supervisor
 
 
 def test_from_env_parses(monkeypatch: pytest.MonkeyPatch) -> None:

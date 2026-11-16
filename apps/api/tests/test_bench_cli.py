@@ -1,4 +1,4 @@
-"""F35 CLI tests — `forge bench` freeze/hash/verify exit codes (AC21/AC24)."""
+"""F35 CLI tests — `scf bench` freeze/hash/verify exit codes (AC21/AC24)."""
 
 from __future__ import annotations
 
@@ -7,15 +7,15 @@ from pathlib import Path
 
 import yaml
 
-from forge_api.cli_bench import main
-from forge_eval.benchmark import (
+from scf_api.cli_bench import main
+from scf_eval.benchmark import (
     BenchmarkScoring,
     compute_benchmark_score,
     load_manifest,
     make_bundle,
     replay_bundles,
 )
-from forge_eval.golden import GoldenCase
+from scf_eval.golden import GoldenCase
 
 SCORING = {
     "primary_metric": "benchmark.composite",

@@ -9,9 +9,9 @@ import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-import forge_db.models  # noqa: F401 - registers all tables on Base.metadata
-from forge_db.base import Base
-from forge_db.models.workspace import User, Workspace
+import scf_db.models  # noqa: F401 - registers all tables on Base.metadata
+from scf_db.base import Base
+from scf_db.models.workspace import User, Workspace
 
 
 @pytest.fixture

@@ -26,7 +26,7 @@ import {
 
 import { useRegisterCommands } from "@/components/command-palette";
 import { toast } from "@/components/ui/toast";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useDiscoverSso,
   useOidcConfig,
@@ -215,13 +215,13 @@ function configToOidcForm(config: OidcConfig | null): OidcForm {
 
 export interface SsoSettingsViewProps {
   workspaceId?: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**
  * SSO / SCIM settings (F33) — the workspace's identity-federation control plane.
  * The screen is organised around the trust link between the customer's identity
- * provider and Forge (the service provider): a signature header renders that link
+ * provider and SCF (the service provider): a signature header renders that link
  * and its live/paused/unlinked state, the master switch flips it, and the cards
  * below configure the IdP, expose the SP details to hand back, verify login
  * domains, probe home-realm discovery, and manage SCIM provisioning tokens.
@@ -485,7 +485,7 @@ export function SsoSettingsView({
       data-testid="sso-view"
       className="mx-auto flex w-full max-w-4xl flex-col gap-6"
     >
-      {/* Signature: the IdP <-> Forge trust link + master switch */}
+      {/* Signature: the IdP <-> SCF trust link + master switch */}
       <header className="flex flex-col gap-5 rounded-xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -531,8 +531,8 @@ export function SsoSettingsView({
         title="Identity provider"
         description={
           protocol === "oidc"
-            ? "The OpenID Connect details Forge uses to trust and validate your IdP."
-            : "The SAML details Forge uses to trust and validate your IdP."
+            ? "The OpenID Connect details SCF uses to trust and validate your IdP."
+            : "The SAML details SCF uses to trust and validate your IdP."
         }
       >
         {protocol === "saml" && !config ? (
@@ -608,7 +608,7 @@ export function SsoSettingsView({
                   id="idp-slo-help"
                   className="text-xs text-muted-foreground"
                 >
-                  Single Logout is not yet supported. Forge keeps any saved
+                  Single Logout is not yet supported. SCF keeps any saved
                   value but can&apos;t yet act on it during sign-out.
                 </p>
               </div>
@@ -674,7 +674,7 @@ export function SsoSettingsView({
                 checked={form.signAuthnRequests}
                 onCheckedChange={(v) => patch("signAuthnRequests", v)}
                 label="Sign authentication requests"
-                description="Forge signs the AuthnRequest it sends to your IdP."
+                description="SCF signs the AuthnRequest it sends to your IdP."
               />
               <SsoSwitch
                 checked={form.wantAssertionsSigned}
@@ -692,7 +692,7 @@ export function SsoSettingsView({
                 checked={form.jitProvisioning}
                 onCheckedChange={(v) => patch("jitProvisioning", v)}
                 label="Just-in-time provisioning"
-                description="Create a Forge account on a user's first SSO login."
+                description="Create an SCF account on a user's first SSO login."
               />
             </div>
   
@@ -843,7 +843,7 @@ export function SsoSettingsView({
                 checked={oidcForm.jitProvisioning}
                 onCheckedChange={(v) => patchOidc("jitProvisioning", v)}
                 label="Just-in-time provisioning"
-                description="Create a Forge account on a user's first OIDC login."
+                description="Create an SCF account on a user's first OIDC login."
               />
             </div>
   
@@ -953,14 +953,14 @@ export function SsoSettingsView({
         )}
       </Card>
 
-      {/* Service provider (Forge) — what the admin pastes back into the IdP */}
+      {/* Service provider (SCF) — what the admin pastes back into the IdP */}
       <Card
         icon={<ServerCog className="h-5 w-5" aria-hidden />}
         title="Service provider"
         description={
           protocol === "oidc"
-            ? "Forge's OIDC details. Hand these back to your IdP to complete the trust."
-            : "Forge's SAML details. Hand these back to your IdP to complete the trust."
+            ? "SCF's OIDC details. Hand these back to your IdP to complete the trust."
+            : "SCF's SAML details. Hand these back to your IdP to complete the trust."
         }
       >
         {protocol === "oidc" ? (
@@ -974,7 +974,7 @@ export function SsoSettingsView({
               data-testid="oidc-sp-pending"
               className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-6 text-center text-sm text-muted-foreground"
             >
-              Forge generates its redirect URI once you save your first OIDC
+              SCF generates its redirect URI once you save your first OIDC
               configuration.
             </p>
           )
@@ -994,7 +994,7 @@ export function SsoSettingsView({
             data-testid="sp-pending"
             className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-6 text-center text-sm text-muted-foreground"
           >
-            Forge generates its SP entity ID, ACS URL and signing certificate when
+            SCF generates its SP entity ID, ACS URL and signing certificate when
             you save your first configuration.
           </p>
         )}
@@ -1088,7 +1088,7 @@ export function SsoSettingsView({
 
 // --- Home-realm discovery probe ------------------------------------------- //
 
-function HrdProbe({ client }: { client: ForgeApiClient }) {
+function HrdProbe({ client }: { client: ScfApiClient }) {
   const discover = useDiscoverSso(client);
   const [email, setEmail] = useState("");
   const result = discover.data;
@@ -1178,7 +1178,7 @@ interface TrustLinkProps {
 
 function TrustLink({ state, config, idpEntityId }: TrustLinkProps) {
   const idpLabel = hostLabel(idpEntityId) || "Identity provider";
-  const spLabel = config ? hostLabel(config.sp_entity_id) : "Forge";
+  const spLabel = config ? hostLabel(config.sp_entity_id) : "SCF";
   const linked = state !== "unlinked";
 
   const stateStyle =
@@ -1240,7 +1240,7 @@ function TrustLink({ state, config, idpEntityId }: TrustLinkProps) {
         testid="trust-sp"
         icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
         title={spLabel}
-        subtitle="Forge (service provider)"
+        subtitle="SCF (service provider)"
         muted={!config}
       />
     </div>

@@ -11,9 +11,9 @@ import uuid
 
 import pytest
 
-from forge_board import InMemoryBoardService
-from forge_board.exceptions import EntityNotFoundError, InvalidStatusTransitionError
-from forge_contracts import (
+from scf_board import InMemoryBoardService
+from scf_board.exceptions import EntityNotFoundError, InvalidStatusTransitionError
+from scf_contracts import (
     BoardFilter,
     BoardService,
     BulkUpdate,

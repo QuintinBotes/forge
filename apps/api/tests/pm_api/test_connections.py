@@ -64,7 +64,7 @@ def test_list_and_get_connection(client: TestClient, project_id) -> None:
 def test_get_cross_workspace_404(client_factory, project_id) -> None:
     admin = client_factory()
     created = admin.post("/integrations/pm/connections", json=_payload(project_id)).json()
-    from forge_contracts import UserRole
+    from scf_contracts import UserRole
 
     from .conftest import OTHER_WORKSPACE_ID
 

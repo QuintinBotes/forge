@@ -1,4 +1,4 @@
-# Forge Alertmanager config (HARD-10 §3.5). Routes Prometheus alerts; the
+# SCF Alertmanager config (HARD-10 §3.5). Routes Prometheus alerts; the
 # default receiver is a webhook that can reuse the existing
 # FORGE_GRAFANA_WEBHOOK_SECRET seam. Critical alerts page faster and repeat more
 # often than warnings. No host port — internal `observability` network only.

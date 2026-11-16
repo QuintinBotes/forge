@@ -1,4 +1,4 @@
-# Dependabot configuration for the Forge monorepo.
+# Dependabot configuration for the SCF monorepo.
 #
 # Ecosystems in this repo:
 #   * uv             — the Python uv workspace. A single root uv.lock +
@@ -7,7 +7,7 @@
 #                      resolves the whole workspace from the root.
 #   * npm            — the pnpm workspace. A single root pnpm-lock.yaml +
 #                      pnpm-workspace.yaml drive the one JS member,
-#                      apps/web (@forge/web); Dependabot updates workspace
+#                      apps/web (@scf/web); Dependabot updates workspace
 #                      members from the pnpm root, so the entry lives at "/".
 #   * github-actions — the first-party workflows under .github/workflows.
 #
@@ -36,7 +36,7 @@ updates:
           - "patch"
 
   # ---------------------------------------------------------------- #
-  # JavaScript — pnpm workspace root (covers apps/web / @forge/web)   #
+  # JavaScript — pnpm workspace root (covers apps/web / @scf/web)   #
   # ---------------------------------------------------------------- #
   - package-ecosystem: "npm"
     directory: "/"

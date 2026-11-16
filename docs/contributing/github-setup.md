@@ -1,8 +1,8 @@
 # GitHub repository hardening
 
-Forge ships `scripts/setup-github.sh`, an **idempotent** helper that applies a
+Swarm Code Factory ships `scripts/setup-github.sh`, an **idempotent** helper that applies a
 safe baseline of GitHub repository configuration to the canonical repo
-(`service-hive/forge`) via `gh api`. It codifies the branch-protection, code
+(`QuintinBotes/swarm-code-factory`) via `gh api`. It codifies the branch-protection, code
 review, secret-scanning, Dependabot, and merge-policy settings so they are
 reviewable, reproducible, and easy to re-apply after any manual drift.
 
@@ -20,7 +20,7 @@ configured".
   gh auth status         # confirm you are logged in
   ```
 
-  You must have the **admin** role on `service-hive/forge` (org owner or a repo
+  You must have the **admin** role on `QuintinBotes/swarm-code-factory` (org owner or a repo
   admin). The script verifies this up front and refuses to continue otherwise.
 
 - The protected branch (`main`) must already **exist with at least one commit**,
@@ -39,9 +39,9 @@ scripts/setup-github.sh
 Optional overrides (defaults shown):
 
 ```bash
-scripts/setup-github.sh service-hive/forge main
+scripts/setup-github.sh QuintinBotes/swarm-code-factory main
 # or, equivalently:
-REPO=service-hive/forge BRANCH=main scripts/setup-github.sh
+REPO=QuintinBotes/swarm-code-factory BRANCH=main scripts/setup-github.sh
 ```
 
 The script prints each change as it applies it and finishes with a read-back of
@@ -114,6 +114,6 @@ someone changes a setting by hand in the GitHub UI.
 
 ## Notes
 
-- Forge is Apache-2.0 licensed. All settings applied here are non-destructive
+- SCF is Apache-2.0 licensed. All settings applied here are non-destructive
   repository configuration; the script never touches code, history, or secrets.
 - No secrets are read or written. Authentication is delegated entirely to `gh`.

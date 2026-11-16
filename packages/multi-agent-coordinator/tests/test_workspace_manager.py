@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forge_coordinator import SubAgentWorkspaceManager
-from forge_coordinator.gitutil import git, rev_parse
+from scf_coordinator import SubAgentWorkspaceManager
+from scf_coordinator.gitutil import git, rev_parse
 
 
 def test_integration_branch_created_off_base(tmp_git_repo: Path) -> None:

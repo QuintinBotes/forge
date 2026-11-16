@@ -12,8 +12,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from forge_api.auth.service import AuthService
-from forge_contracts.enums import UserRole
+from scf_api.auth.service import AuthService
+from scf_contracts.enums import UserRole
 
 
 def _service() -> AuthService:

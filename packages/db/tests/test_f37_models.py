@@ -18,8 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import (
+from scf_db.base import Base
+from scf_db.models import (
     OAuthAccount,
     OAuthProvider,
     PlatformAPIKey,
@@ -108,7 +108,7 @@ def test_agent_runner_requires_expiry_check(factory: sessionmaker[Session]) -> N
 
 
 def test_oauth_account_global_identity_unique(factory: sessionmaker[Session]) -> None:
-    """One external identity → one Forge user, globally (across workspaces)."""
+    """One external identity → one SCF user, globally (across workspaces)."""
     with factory() as session:
         ws1, user1 = _seed(session)
         ws2, user2 = _seed(session)
@@ -135,7 +135,7 @@ def test_oauth_account_global_identity_unique(factory: sessionmaker[Session]) ->
 
 
 def test_multi_provider_linking_same_user(factory: sessionmaker[Session]) -> None:
-    """AC10 substrate: two providers may point at the same Forge user."""
+    """AC10 substrate: two providers may point at the same SCF user."""
     with factory() as session:
         ws_id, user_id = _seed(session)
         session.add_all(

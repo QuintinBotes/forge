@@ -29,29 +29,29 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.auth.crypto import HmacAeadCipher
-from forge_api.auth.vault import SecretVault
-from forge_api.observability.audit import AuditLog
-from forge_api.services import pm_service as pm_service_module
-from forge_api.services.pm_service import PMConnectionService
-from forge_contracts.enums import Direction
-from forge_contracts.pm import (
+from scf_api.auth.crypto import HmacAeadCipher
+from scf_api.auth.vault import SecretVault
+from scf_api.observability.audit import AuditLog
+from scf_api.services import pm_service as pm_service_module
+from scf_api.services.pm_service import PMConnectionService
+from scf_contracts.enums import Direction
+from scf_contracts.pm import (
     ExternalTask,
     PMConnectionConfig,
     PMProvider,
     StatusCategory,
 )
-from forge_db.base import Base
-from forge_db.models import Project, Task, Workspace
-from forge_db.models.enums import PMDeliveryStatus
-from forge_db.models.enums import PMProvider as DbPMProvider
-from forge_db.models.pm import PMTaskLink, PMWebhookDelivery
-from forge_integrations.pm.errors import ExternalNotFound, RateLimitError
-from forge_worker.celery_app import celery_app
-from forge_worker.reliability import ForgeTask as ForgeReliableTask
-from forge_worker.reliability import TransientError
-from forge_worker.tasks import pm_sync as pm_sync_module
-from forge_worker.tasks.pm_sync import PM_SYNC_TASK, process_webhook
+from scf_db.base import Base
+from scf_db.models import Project, Task, Workspace
+from scf_db.models.enums import PMDeliveryStatus
+from scf_db.models.enums import PMProvider as DbPMProvider
+from scf_db.models.pm import PMTaskLink, PMWebhookDelivery
+from scf_integrations.pm.errors import ExternalNotFound, RateLimitError
+from scf_worker.celery_app import celery_app
+from scf_worker.reliability import ScfTask as ScfReliableTask
+from scf_worker.reliability import TransientError
+from scf_worker.tasks import pm_sync as pm_sync_module
+from scf_worker.tasks.pm_sync import PM_SYNC_TASK, process_webhook
 
 WS_ID = uuid.uuid4()
 OTHER_WS_ID = uuid.uuid4()
@@ -127,7 +127,7 @@ def fake_adapter(monkeypatch: pytest.MonkeyPatch) -> FakeAdapter:
 
     # ``pm_service`` binds ``build_adapter`` at import time, so patch both the
     # registry function and the already-bound name.
-    monkeypatch.setattr("forge_integrations.pm.registry.build_adapter", _fake_build_adapter)
+    monkeypatch.setattr("scf_integrations.pm.registry.build_adapter", _fake_build_adapter)
     monkeypatch.setattr(pm_service_module, "build_adapter", _fake_build_adapter)
     return adapter
 
@@ -440,7 +440,7 @@ def test_transient_fetch_failure_is_retried_by_reliability_base(
     fake_adapter: FakeAdapter,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A *transient* provider fault (rate-limit): the ForgeTask base auto-retries.
+    # A *transient* provider fault (rate-limit): the ScfTask base auto-retries.
     # Drive the real registered task in eager mode and assert the authoritative
     # re-fetch is attempted more than once (initial + backoff retries).
     fake_adapter.raise_on_fetch = RateLimitError("rate limited")
@@ -455,8 +455,8 @@ def test_transient_fetch_failure_is_retried_by_reliability_base(
     result = celery_app.tasks[PM_SYNC_TASK].apply(args=[str(row_id)])
 
     assert result.failed()  # retry budget spent -> terminal failure
-    # A retry *was* attempted: initial call + ForgeTask.max_retries re-fetches.
-    assert len(fake_adapter.fetch_calls) == ForgeReliableTask.max_retries + 1
+    # A retry *was* attempted: initial call + ScfTask.max_retries re-fetches.
+    assert len(fake_adapter.fetch_calls) == ScfReliableTask.max_retries + 1
     assert len(fake_adapter.fetch_calls) > 1
     assert _delivery(factory, row_id).status == PMDeliveryStatus.ERROR
 
@@ -485,8 +485,8 @@ def test_transport_error_fetch_failure_is_retried_by_reliability_base(
     result = celery_app.tasks[PM_SYNC_TASK].apply(args=[str(row_id)])
 
     assert result.failed()  # retry budget spent -> terminal failure
-    # A retry *was* attempted: initial call + ForgeTask.max_retries re-fetches.
-    assert len(fake_adapter.fetch_calls) == ForgeReliableTask.max_retries + 1
+    # A retry *was* attempted: initial call + ScfTask.max_retries re-fetches.
+    assert len(fake_adapter.fetch_calls) == ScfReliableTask.max_retries + 1
     assert len(fake_adapter.fetch_calls) > 1
     assert _delivery(factory, row_id).status == PMDeliveryStatus.ERROR
 
@@ -494,10 +494,10 @@ def test_transport_error_fetch_failure_is_retried_by_reliability_base(
 def test_task_registered_in_celery_app() -> None:
     assert PM_SYNC_TASK == "forge.pm.process_webhook"
     assert PM_SYNC_TASK in celery_app.tasks
-    assert "forge_worker.tasks.pm_sync" in celery_app.conf.include
+    assert "scf_worker.tasks.pm_sync" in celery_app.conf.include
     # Registered on the reliability base: acks_late + auto-retry of TransientError
     # (so transient provider blips retry with backoff instead of being dropped).
     task = celery_app.tasks[PM_SYNC_TASK]
-    assert isinstance(task, ForgeReliableTask)
+    assert isinstance(task, ScfReliableTask)
     assert TransientError in task.autoretry_for
     assert task.acks_late is True

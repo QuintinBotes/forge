@@ -10,9 +10,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from forge_api.db import get_db
-from forge_api.main import create_app
-from forge_api.routers.agent import _scripted_fallback_runner, get_agent_enqueue, get_agent_runner
+from scf_api.db import get_db
+from scf_api.main import create_app
+from scf_api.routers.agent import _scripted_fallback_runner, get_agent_enqueue, get_agent_runner
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ import type { ScimTokenInfo, SsoConfig } from "@/lib/api/types";
 export type FederationState = "established" | "paused" | "unlinked";
 
 /**
- * The state of the IdP <-> Forge trust link: `unlinked` when nothing is
+ * The state of the IdP <-> SCF trust link: `unlinked` when nothing is
  * configured, `established` when a config exists and SSO is on, `paused` when a
  * config exists but SSO is switched off.
  */

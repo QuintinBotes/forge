@@ -1,6 +1,6 @@
 """V1/V2 parity for Red-Team Gate verdict building (Task 20).
 
-``forge_workflow.red_team_gate`` is the single source of the gate's verdict
+``scf_workflow.red_team_gate`` is the single source of the gate's verdict
 shape for BOTH spines: the Temporal activity's default parked-pass delegates to
 it (byte-identical), and the V1 (FSM) path evaluates + persists through
 ``ensure_red_team_verdict`` / ``run_and_record_red_team`` against the
@@ -17,11 +17,11 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from forge_db.base import Base
-from forge_db.models import Project, Task, WorkflowRun, Workspace
-from forge_db.models.audit import AuditLog
-from forge_db.redteam import REDTEAM_SURVIVED_ACTION, RedTeamRepository
-from forge_workflow.red_team_gate import (
+from scf_db.base import Base
+from scf_db.models import Project, Task, WorkflowRun, Workspace
+from scf_db.models.audit import AuditLog
+from scf_db.redteam import REDTEAM_SURVIVED_ACTION, RedTeamRepository
+from scf_workflow.red_team_gate import (
     REDTEAM_BLOCKED,
     REDTEAM_SURVIVED,
     RedTeamInput,
@@ -84,7 +84,7 @@ def _inp(ws: uuid.UUID, task: uuid.UUID, run: uuid.UUID) -> RedTeamInput:
 
 def test_parked_pass_shape_matches_temporal_default() -> None:
     """The shared parked-pass IS the Temporal activity's default verdict."""
-    from forge_workflow.temporal.activities import _default_red_team
+    from scf_workflow.temporal.activities import _default_red_team
 
     inp = _inp(uuid.uuid4(), uuid.uuid4(), uuid.uuid4())
     shared = evaluate_red_team(inp)
@@ -102,8 +102,8 @@ def test_parked_pass_shape_matches_temporal_default() -> None:
 def test_payloads_reexport_the_same_objects() -> None:
     """`temporal/payloads` re-exports the extracted types unchanged (same objects),
     so every existing Temporal import path keeps working byte-identically."""
-    from forge_workflow import red_team_gate
-    from forge_workflow.temporal import payloads
+    from scf_workflow import red_team_gate
+    from scf_workflow.temporal import payloads
 
     assert payloads.RedTeamInput is red_team_gate.RedTeamInput
     assert payloads.RedTeamResult is red_team_gate.RedTeamResult

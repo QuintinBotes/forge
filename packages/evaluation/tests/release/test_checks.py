@@ -8,13 +8,13 @@ import sys
 import time
 from pathlib import Path
 
-from forge_eval.release.checks import (
+from scf_eval.release.checks import (
     redact,
     run_command_check,
     run_evidence_check,
     run_manual_check,
 )
-from forge_eval.release.model import Status
+from scf_eval.release.model import Status
 
 
 # --------------------------- command runner ---------------------------- #

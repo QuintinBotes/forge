@@ -1,8 +1,8 @@
-"""Shared fixtures for the Forge API test-suite.
+"""Shared fixtures for the SCF API test-suite.
 
 Phase-2 bug fix (Task 2.3): real authentication is now enforced on every feature
 router — ``get_current_principal`` verifies an API key instead of returning a
-hardcoded admin (see ``forge_api.deps``). Feature-router tests do not mint real
+hardcoded admin (see ``scf_api.deps``). Feature-router tests do not mint real
 keys; they inject a deterministic authenticated :class:`Principal` via
 ``app.dependency_overrides`` using the :func:`authenticate_app` helper, which is
 the idiomatic FastAPI way to bypass authentication in handler-focused tests.
@@ -25,11 +25,11 @@ from sqlalchemy.orm import Session, sessionmaker
 # missing-key / dev-insecure paths override this via ``monkeypatch``.
 os.environ.setdefault("FORGE_SECRET_KEY", "test-forge-master-secret-0123456789")
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import Project, Task, Workspace
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import Project, Task, Workspace
 
 #: Deterministic identities used by tests (the knowledge tests seed a workspace
 #: with this id so the principal-scoped search returns the seeded source).

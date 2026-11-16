@@ -21,10 +21,10 @@ dockerfiles() {
   find "$REPO_ROOT/deploy/docker" -maxdepth 1 -name '*.Dockerfile' | sort
 }
 
-# Every pulled `image:` ref in the compose files (first-party forge/* excluded).
+# Every pulled `image:` ref in the compose files (first-party swarm-code-factory/* excluded).
 compose_refs() {
   grep -hE '^[[:space:]]+image:[[:space:]]' "${COMPOSE_FILES[@]}" \
-    | awk '{print $2}' | grep -v '^forge/' | sort -u
+    | awk '{print $2}' | grep -v '^swarm-code-factory/' | sort -u
 }
 
 # Every `FROM <ref>` in the Dockerfiles (multi-stage: ref is the 2nd token).
@@ -135,7 +135,7 @@ for ref in os.environ["DOCKERFILE_REFS"].split():
 # Locally built first-party images: record the content-addressed image ID
 # (local builds have no registry digest until pushed) + the SBOM path.
 for svc in ("api", "worker", "mcp-gateway", "web"):
-    tag = f"forge/{svc}:{version}"
+    tag = f"swarm-code-factory/{svc}:{version}"
     proc = subprocess.run(
         ["docker", "image", "inspect", "--format", "{{.Id}}", tag],
         capture_output=True,

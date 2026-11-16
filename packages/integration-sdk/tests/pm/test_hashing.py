@@ -5,17 +5,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from forge_contracts.pm import (
+from scf_contracts.pm import (
     ExternalTask,
-    ForgePriority,
-    ForgeTask,
     PMProvider,
+    ScfPriority,
+    ScfTask,
     StatusCategory,
 )
-from forge_integrations.pm.hashing import external_content_hash, forge_content_hash
+from scf_integrations.pm.hashing import external_content_hash, scf_content_hash
 
 
-def _forge(**overrides) -> ForgeTask:
+def _scf(**overrides) -> ScfTask:
     base = {
         "id": uuid4(),
         "key": "TASK-1",
@@ -23,14 +23,14 @@ def _forge(**overrides) -> ForgeTask:
         "title": "Title",
         "description_md": "Body",
         "status_category": StatusCategory.started,
-        "priority": ForgePriority.high,
+        "priority": ScfPriority.high,
         "assignee_email": "a@acme.test",
         "label_names": ["b", "a"],
         "version": 3,
         "updated_at": datetime.now(UTC),
     }
     base.update(overrides)
-    return ForgeTask(**base)
+    return ScfTask(**base)
 
 
 def _external(**overrides) -> ExternalTask:
@@ -52,17 +52,17 @@ def _external(**overrides) -> ExternalTask:
     return ExternalTask(**base)
 
 
-def test_forge_content_hash_stable_and_field_scoped() -> None:
-    t1 = _forge(version=1, updated_at=datetime(2020, 1, 1, tzinfo=UTC))
-    t2 = _forge(version=99, updated_at=datetime(2030, 1, 1, tzinfo=UTC))
+def test_scf_content_hash_stable_and_field_scoped() -> None:
+    t1 = _scf(version=1, updated_at=datetime(2020, 1, 1, tzinfo=UTC))
+    t2 = _scf(version=99, updated_at=datetime(2030, 1, 1, tzinfo=UTC))
     # version/updated_at must NOT affect the hash.
-    assert forge_content_hash(t1) == forge_content_hash(t2)
+    assert scf_content_hash(t1) == scf_content_hash(t2)
     # label order must NOT matter.
-    assert forge_content_hash(_forge(label_names=["a", "b"])) == forge_content_hash(
-        _forge(label_names=["b", "a"])
+    assert scf_content_hash(_scf(label_names=["a", "b"])) == scf_content_hash(
+        _scf(label_names=["b", "a"])
     )
     # a real field change DOES change the hash.
-    assert forge_content_hash(_forge(title="Other")) != forge_content_hash(_forge())
+    assert scf_content_hash(_scf(title="Other")) != scf_content_hash(_scf())
 
 
 def test_external_content_hash_stable() -> None:
@@ -80,7 +80,7 @@ def test_hash_excludes_secrets_and_raw() -> None:
 
 
 def test_hash_is_hex_sha256() -> None:
-    h = forge_content_hash(_forge())
+    h = scf_content_hash(_scf())
     assert len(h) == 64
     int(h, 16)  # raises if not hex
 

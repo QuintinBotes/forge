@@ -2,7 +2,7 @@
 
 Exercises the real Postgres code paths the SQLite unit tests (``test_models.py``)
 cannot: the F39 immutability trigger that blocks UPDATE/DELETE on the append-only
-``attestation`` table, and the :class:`~forge_db.attest.repository.AttestationRepository`
+``attestation`` table, and the :class:`~scf_db.attest.repository.AttestationRepository`
 insert/get-by-run/list surface. Uses the shared ``pg_engine`` fixture; skips
 (parked) without Postgres.
 """
@@ -17,9 +17,9 @@ from sqlalchemy import text, update
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.attest.repository import AttestationRepository
-from forge_db.base import Base
-from forge_db.models import AgentRun, Attestation, Project, Task, WorkflowRun, Workspace
+from scf_db.attest.repository import AttestationRepository
+from scf_db.base import Base
+from scf_db.models import AgentRun, Attestation, Project, Task, WorkflowRun, Workspace
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

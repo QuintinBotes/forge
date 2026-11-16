@@ -108,8 +108,8 @@ jobs:
       - name: Web build + test
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @forge/web build
-          pnpm --filter @forge/web test
+          pnpm --filter @scf/web build
+          pnpm --filter @scf/web test
 
       # --- The automated PRODUCTION readiness meta-gate (blocking) --- #
       # May legitimately exit 1 until every production gate is green/attested
@@ -120,7 +120,7 @@ jobs:
             | sudo sh -s -- -b /usr/local/bin
           make source-sbom
       - name: Release readiness (production, blocking)
-        run: uv run forge-release-readiness --bar production --check --out RELEASE_READINESS.md
+        run: uv run scf-release-readiness --bar production --check --out RELEASE_READINESS.md
 
       # --- Build + digest-pin the 4 first-party images (HARD-07) --- #
       - name: Set up Docker Buildx
@@ -148,7 +148,7 @@ jobs:
       - name: Attest build provenance (api image)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: forge/api
+          subject-name: swarm-code-factory/api
           subject-digest: ${{ steps.digests.outputs.api }}
           push-to-registry: false
         continue-on-error: true

@@ -50,10 +50,10 @@ def test_no_shipped_code_mentions_a_fabricated_pr_url() -> None:
 # stays guarded; a whole-tree exemption would hide fakes there.
 _FAKE_CONSTRUCTIONS = ("DeterministicEmbeddingClient(", "FixtureRerankerClient(")
 _FAKE_EXEMPT_FILES = {
-    Path("packages/knowledge-core/forge_knowledge/embeddings.py"),
-    Path("packages/knowledge-core/forge_knowledge/reranker.py"),
-    Path("packages/evaluation/forge_eval/retrieval_eval.py"),
-    Path("packages/evaluation/forge_eval/corpus_eval.py"),
+    Path("packages/knowledge-core/scf_knowledge/embeddings.py"),
+    Path("packages/knowledge-core/scf_knowledge/reranker.py"),
+    Path("packages/evaluation/scf_eval/retrieval_eval.py"),
+    Path("packages/evaluation/scf_eval/corpus_eval.py"),
 }
 
 

@@ -13,7 +13,7 @@
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type { SpecVersionDetail, SpecVersionDiff, SpecVersionSummary } from "./types";
 
 export const specVersionKeys = {
@@ -27,7 +27,7 @@ export const specVersionKeys = {
 /** A spec's version history, newest first. */
 export function useSpecVersions(
   specId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<SpecVersionSummary[]> {
   return useQuery({
     queryKey: specVersionKeys.list(specId),
@@ -40,7 +40,7 @@ export function useSpecVersions(
 export function useSpecVersion(
   specId: string,
   versionNumber: number | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<SpecVersionDetail> {
   return useQuery({
     queryKey: specVersionKeys.detail(specId, versionNumber ?? -1),
@@ -54,7 +54,7 @@ export function useSpecVersionDiff(
   specId: string,
   fromVersion: number | null,
   toVersion: number | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<SpecVersionDiff> {
   return useQuery({
     queryKey: specVersionKeys.diff(specId, fromVersion ?? -1, toVersion ?? -1),

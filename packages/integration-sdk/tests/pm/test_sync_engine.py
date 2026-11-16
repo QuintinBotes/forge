@@ -10,22 +10,22 @@ from uuid import uuid4
 
 import pytest
 
-from forge_contracts.enums import Direction
-from forge_contracts.pm import (
+from scf_contracts.enums import Direction
+from scf_contracts.pm import (
     ConflictPolicy,
     ExternalTask,
-    ForgePriority,
-    ForgeTask,
     HealthResult,
     PMProvider,
     PMSyncState,
+    ScfPriority,
+    ScfTask,
     StatusCategory,
     SyncDirection,
     WebhookEvent,
 )
-from forge_integrations.pm.errors import SyncConflict
-from forge_integrations.pm.hashing import external_content_hash, forge_content_hash
-from forge_integrations.pm.sync_engine import (
+from scf_integrations.pm.errors import SyncConflict
+from scf_integrations.pm.hashing import external_content_hash, scf_content_hash
+from scf_integrations.pm.sync_engine import (
     InMemoryAuditSink,
     InMemoryBoardWriter,
     InMemoryLinkRepository,
@@ -42,7 +42,7 @@ def _now() -> datetime:
     return datetime(2026, 1, 2, 10, 0, 0, tzinfo=UTC)
 
 
-def _forge(**overrides) -> ForgeTask:
+def _scf(**overrides) -> ScfTask:
     base = {
         "id": uuid4(),
         "key": "TASK-1",
@@ -50,14 +50,14 @@ def _forge(**overrides) -> ForgeTask:
         "title": "Add pagination",
         "description_md": "body",
         "status_category": StatusCategory.started,
-        "priority": ForgePriority.high,
+        "priority": ScfPriority.high,
         "assignee_email": "a@acme.test",
         "label_names": ["backend"],
         "version": 1,
         "updated_at": _now(),
     }
     base.update(overrides)
-    return ForgeTask(**base)
+    return ScfTask(**base)
 
 
 def _external(**overrides) -> ExternalTask:
@@ -86,8 +86,8 @@ class FakeAdapter:
 
     def __init__(self, *, clock=None) -> None:
         self.externals: dict[str, ExternalTask] = {}
-        self.create_calls: list[ForgeTask] = []
-        self.update_calls: list[tuple[str, ForgeTask]] = []
+        self.create_calls: list[ScfTask] = []
+        self.update_calls: list[tuple[str, ScfTask]] = []
         self.fetch_calls: list[str] = []
         self._counter = 0
         self._clock = clock or _now
@@ -105,19 +105,19 @@ class FakeAdapter:
     def map_fields(self, fields: dict, direction: Direction) -> dict:
         return dict(fields)
 
-    def _from_forge(self, forge_task: ForgeTask, external_id: str) -> ExternalTask:
+    def _from_scf(self, scf_task: ScfTask, external_id: str) -> ExternalTask:
         return ExternalTask(
             provider=self.provider,
             external_id=external_id,
             external_key=f"ENG-{external_id}",
             url=f"https://x/{external_id}",
-            title=forge_task.title,
-            description_md=forge_task.description_md,
-            status_name=forge_task.status_category.value,
-            status_category=forge_task.status_category,
-            priority_token=self.map_priority(forge_task.priority.value, Direction.OUT),
-            assignee_email=forge_task.assignee_email,
-            labels=list(forge_task.label_names),
+            title=scf_task.title,
+            description_md=scf_task.description_md,
+            status_name=scf_task.status_category.value,
+            status_category=scf_task.status_category,
+            priority_token=self.map_priority(scf_task.priority.value, Direction.OUT),
+            assignee_email=scf_task.assignee_email,
+            labels=list(scf_task.label_names),
             external_updated_at=self._clock(),
         )
 
@@ -125,16 +125,16 @@ class FakeAdapter:
         self.fetch_calls.append(external_id)
         return self.externals[external_id]
 
-    async def create_external(self, forge_task: ForgeTask) -> ExternalTask:
-        self.create_calls.append(forge_task)
+    async def create_external(self, scf_task: ScfTask) -> ExternalTask:
+        self.create_calls.append(scf_task)
         self._counter += 1
-        ext = self._from_forge(forge_task, f"ext-{self._counter}")
+        ext = self._from_scf(scf_task, f"ext-{self._counter}")
         self.externals[ext.external_id] = ext
         return ext
 
-    async def update_external(self, external_id: str, forge_task: ForgeTask) -> ExternalTask:
-        self.update_calls.append((external_id, forge_task))
-        ext = self._from_forge(forge_task, external_id)
+    async def update_external(self, external_id: str, scf_task: ScfTask) -> ExternalTask:
+        self.update_calls.append((external_id, scf_task))
+        ext = self._from_scf(scf_task, external_id)
         self.externals[external_id] = ext
         return ext
 
@@ -173,7 +173,7 @@ def _engine(
         audit=audit or InMemoryAuditSink(),
         connection_id=CONN,
         workspace_id=WS,
-        forge_project_id=PROJ,
+        scf_project_id=PROJ,
         conflict_policy=policy,
         sync_direction=direction,
         clock=_now,
@@ -188,17 +188,17 @@ async def test_sync_out_create_links_and_sets_watermarks() -> None:
     links = InMemoryLinkRepository()
     audit = InMemoryAuditSink()
     engine = _engine(adapter, links=links, audit=audit)
-    task = _forge()
+    task = _scf()
 
     outcome = await engine.sync_out(task)
 
     assert outcome.action == "created"
     assert len(adapter.create_calls) == 1
-    link = links.get_by_forge_task(CONN, task.id)
+    link = links.get_by_scf_task(CONN, task.id)
     assert link is not None
     assert link.external_id == "ext-1"
     assert link.sync_state is PMSyncState.synced
-    assert link.last_outbound_hash == forge_content_hash(task)
+    assert link.last_outbound_hash == scf_content_hash(task)
     assert link.last_inbound_hash is not None
     assert link.forge_version_at_sync == task.version
     assert len(audit.entries) == 1  # one outbound provider call audited (AC22)
@@ -208,7 +208,7 @@ async def test_sync_out_update_calls_update_external() -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
     engine = _engine(adapter, links=links)
-    task = _forge()
+    task = _scf()
     await engine.sync_out(task)
 
     changed = task.model_copy(update={"title": "New title", "version": 2})
@@ -222,7 +222,7 @@ async def test_sync_out_update_calls_update_external() -> None:
 async def test_sync_out_no_change_makes_no_external_call() -> None:
     adapter = FakeAdapter()
     engine = _engine(adapter)
-    task = _forge()
+    task = _scf()
     await engine.sync_out(task)
     adapter.create_calls.clear()
 
@@ -291,7 +291,7 @@ async def test_echo_suppression_in_after_out_write() -> None:
     links = InMemoryLinkRepository()
     board = InMemoryBoardWriter(clock=_now)
     engine = _engine(adapter, links=links, board=board)
-    task = _forge()
+    task = _scf()
     await engine.sync_out(task)  # creates external "ext-1" + link
     ext = adapter.externals["ext-1"]
 
@@ -303,12 +303,12 @@ async def test_echo_suppression_in_after_out_write() -> None:
 # --- Conflict resolution — AC13 / AC14 ------------------------------------- #
 
 
-def _seed_conflict_link(links: InMemoryLinkRepository, forge_task: ForgeTask) -> LinkRecord:
+def _seed_conflict_link(links: InMemoryLinkRepository, scf_task: ScfTask) -> LinkRecord:
     """A synced link whose stored hashes are 'stale' so both sides look changed."""
     link = LinkRecord(
         connection_id=CONN,
         workspace_id=WS,
-        forge_task_id=forge_task.id,
+        forge_task_id=scf_task.id,
         provider=PMProvider.linear,
         external_id="ext-1",
         external_key="ENG-1",
@@ -320,10 +320,10 @@ def _seed_conflict_link(links: InMemoryLinkRepository, forge_task: ForgeTask) ->
     return links.upsert(link)
 
 
-async def test_conflict_newest_wins_picks_forge() -> None:
+async def test_conflict_newest_wins_picks_scf() -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
-    task = _forge(version=2, updated_at=_now() + timedelta(hours=1))
+    task = _scf(version=2, updated_at=_now() + timedelta(hours=1))
     _seed_conflict_link(links, task)
     adapter.externals["ext-1"] = _external(title="external edit", external_updated_at=_now())
     engine = _engine(adapter, links=links, policy=ConflictPolicy.newest_wins)
@@ -332,14 +332,14 @@ async def test_conflict_newest_wins_picks_forge() -> None:
 
     assert outcome.action == "updated"
     assert outcome.winner == "forge"
-    assert len(adapter.update_calls) == 1  # pushed forge OUT
+    assert len(adapter.update_calls) == 1  # pushed SCF OUT
 
 
 async def test_conflict_newest_wins_picks_external() -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
     board = InMemoryBoardWriter(clock=_now)
-    task = _forge(version=2, updated_at=_now())
+    task = _scf(version=2, updated_at=_now())
     board.put(task)
     _seed_conflict_link(links, task)
     adapter.externals["ext-1"] = _external(
@@ -358,7 +358,7 @@ async def test_conflict_newest_wins_picks_external() -> None:
 async def test_conflict_forge_wins_is_deterministic() -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
-    task = _forge(updated_at=_now() - timedelta(days=1))  # older than external
+    task = _scf(updated_at=_now() - timedelta(days=1))  # older than external
     _seed_conflict_link(links, task)
     adapter.externals["ext-1"] = _external(external_updated_at=_now())
     engine = _engine(adapter, links=links, policy=ConflictPolicy.forge_wins)
@@ -372,7 +372,7 @@ async def test_conflict_external_wins_is_deterministic() -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
     board = InMemoryBoardWriter(clock=_now)
-    task = _forge(updated_at=_now() + timedelta(days=1))  # newer than external
+    task = _scf(updated_at=_now() + timedelta(days=1))  # newer than external
     board.put(task)
     _seed_conflict_link(links, task)
     adapter.externals["ext-1"] = _external(external_updated_at=_now())
@@ -386,7 +386,7 @@ async def test_conflict_external_wins_is_deterministic() -> None:
 async def test_conflict_manual_no_write_sets_conflict_state() -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
-    task = _forge()
+    task = _scf()
     seeded = _seed_conflict_link(links, task)
     adapter.externals["ext-1"] = _external(title="external edit")
     engine = _engine(adapter, links=links, policy=ConflictPolicy.manual)
@@ -404,7 +404,7 @@ async def test_conflict_manual_no_write_sets_conflict_state() -> None:
 async def test_resolve_conflict_applies_winner_forge() -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
-    task = _forge()
+    task = _scf()
     seeded = _seed_conflict_link(links, task)
     adapter.externals["ext-1"] = _external(title="external edit")
     engine = _engine(adapter, links=links, policy=ConflictPolicy.manual)
@@ -421,7 +421,7 @@ async def test_resolve_conflict_applies_winner_external() -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
     board = InMemoryBoardWriter(clock=_now)
-    task = _forge()
+    task = _scf()
     board.put(task)
     seeded = _seed_conflict_link(links, task)
     adapter.externals["ext-1"] = _external(title="external edit")
@@ -438,7 +438,7 @@ async def test_resolve_conflict_forge_winner_refused_under_external_wins() -> No
     """ADR-0019: even a manual resolve cannot push tracker-owned fields."""
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
-    task = _forge()
+    task = _scf()
     seeded = _seed_conflict_link(links, task)
     adapter.externals["ext-1"] = _external(title="external edit")
     # Create the conflict under manual, then resolve under external_wins
@@ -458,7 +458,7 @@ async def test_resolve_conflict_forge_winner_refused_under_external_wins() -> No
 async def test_sync_direction_inbound_only_skips_out() -> None:
     adapter = FakeAdapter()
     engine = _engine(adapter, direction=SyncDirection.inbound_only)
-    outcome = await engine.sync_out(_forge())
+    outcome = await engine.sync_out(_scf())
     assert outcome.action == "no_change"
     assert outcome.detail.get("reason") == "inbound_only"
     assert adapter.create_calls == []
@@ -479,7 +479,7 @@ async def test_all_conflict_policies_smoke(policy: ConflictPolicy) -> None:
     adapter = FakeAdapter()
     links = InMemoryLinkRepository()
     board = InMemoryBoardWriter(clock=_now)
-    task = _forge()
+    task = _scf()
     board.put(task)
     _seed_conflict_link(links, task)
     adapter.externals["ext-1"] = _external(title="x edit")
@@ -491,11 +491,11 @@ async def test_all_conflict_policies_smoke(policy: ConflictPolicy) -> None:
 # --- Spec M M2: tracker wins (acceptance 3) -------------------------------- #
 
 
-async def test_external_wins_forge_only_edit_never_writes_outbound() -> None:
+async def test_external_wins_scf_only_edit_never_writes_outbound() -> None:
     """A forge-side edit with no external disagreement is still not pushed.
 
     Under ``external_wins`` the tracker owns title/description/status/etc., so
-    a one-sided forge change produces *no* outbound write for that field and
+    a one-sided SCF change produces *no* outbound write for that field and
     the board resolves back to the tracker's value.
     """
     adapter = FakeAdapter()
@@ -509,7 +509,7 @@ async def test_external_wins_forge_only_edit_never_writes_outbound() -> None:
     assert board_task is not None
     adapter.externals["ext-1"] = _external(title="Tracker title")
 
-    edited = board_task.model_copy(update={"title": "Forge edit", "version": 99})
+    edited = board_task.model_copy(update={"title": "SCF edit", "version": 99})
     board.put(edited)
     outcome = await engine.sync_out(edited)
 
@@ -526,7 +526,7 @@ async def test_external_wins_unlinked_task_is_not_created_in_tracker() -> None:
     links = InMemoryLinkRepository()
     engine = _engine(adapter, links=links, policy=ConflictPolicy.external_wins)
 
-    outcome = await engine.sync_out(_forge())
+    outcome = await engine.sync_out(_scf())
 
     assert outcome.action == "no_change"
     assert outcome.detail.get("reason") == "external_wins"
@@ -536,7 +536,7 @@ async def test_external_wins_unlinked_task_is_not_created_in_tracker() -> None:
 
 
 def test_run_comment_marker_round_trip() -> None:
-    from forge_integrations.pm.sync_engine import extract_run_marker, run_comment_marker
+    from scf_integrations.pm.sync_engine import extract_run_marker, run_comment_marker
 
     run_id = uuid4()
     marker = run_comment_marker(run_id)

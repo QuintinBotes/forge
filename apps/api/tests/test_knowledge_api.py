@@ -27,16 +27,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.main import create_app
-from forge_api.routers.knowledge import (
+from scf_api.main import create_app
+from scf_api.routers.knowledge import (
     get_knowledge_service,
     get_knowledge_session_factory,
 )
-from forge_contracts import Chunk
-from forge_db.base import Base
-from forge_db.models import KnowledgeSource, RetrievalChunk, Workspace
-from forge_db.session import create_session_factory
-from forge_knowledge import (
+from scf_contracts import Chunk
+from scf_db.base import Base
+from scf_db.models import KnowledgeSource, RetrievalChunk, Workspace
+from scf_db.session import create_session_factory
+from scf_knowledge import (
     DeterministicEmbeddingClient,
     FixtureRerankerClient,
     GracefulReranker,
@@ -473,7 +473,7 @@ def test_sync_of_a_tracker_source_enqueues_the_worker_sync(
     source_id: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from forge_api.routers import knowledge as knowledge_router
+    from scf_api.routers import knowledge as knowledge_router
 
     enqueued: list[str] = []
     monkeypatch.setattr(knowledge_router, "enqueue_source_sync", enqueued.append)
@@ -515,8 +515,8 @@ def test_sync_of_a_repo_source_indexes_commits_only_when_its_config_enables_them
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
-    _git(repo, "config", "user.email", "forge@example.com")
-    _git(repo, "config", "user.name", "Forge Test")
+    _git(repo, "config", "user.email", "scf@example.com")
+    _git(repo, "config", "user.name", "SCF Test")
     _git(repo, "config", "commit.gpgsign", "false")
     for i in range(2):
         (repo / "a.py").write_text(f"a = {i}\n", encoding="utf-8")
@@ -633,8 +633,8 @@ def test_sources_flag_a_sync_older_than_the_freshness_sla(
 def test_the_mcp_index_status_and_the_sources_list_share_one_staleness_rule() -> None:
     from datetime import UTC, datetime, timedelta
 
-    from forge_api.services import mcp_index_service
-    from forge_knowledge import sync
+    from scf_api.services import mcp_index_service
+    from scf_knowledge import sync
 
     assert mcp_index_service.is_stale is sync.is_stale
     assert not hasattr(mcp_index_service, "_is_stale")
@@ -699,8 +699,8 @@ def test_sources_need_only_read_and_refuse_the_unauthenticated(
     source_id: uuid.UUID,
     authenticate_app: Callable[..., FastAPI],
 ) -> None:
-    from forge_api.deps import Principal
-    from forge_contracts import UserRole
+    from scf_api.deps import Principal
+    from scf_contracts import UserRole
 
     viewer_principal = Principal(
         user_id=uuid.uuid4(),
@@ -767,7 +767,7 @@ def test_a_successful_sync_records_freshness_and_a_failed_one_never_does(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from forge_api.routers import knowledge as knowledge_router
+    from scf_api.routers import knowledge as knowledge_router
 
     # Refused (422) and failed (a bad ref raises mid-sync) syncs leave it never-synced.
     assert client.post("/knowledge/sync", json={"source_id": str(source_id)}).status_code == 422
@@ -810,8 +810,8 @@ def test_a_sync_that_reports_errors_does_not_record_freshness(
     source_id: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from forge_api.routers import knowledge as knowledge_router
-    from forge_contracts import IndexResult
+    from scf_api.routers import knowledge as knowledge_router
+    from scf_contracts import IndexResult
 
     monkeypatch.setattr(
         knowledge_router,

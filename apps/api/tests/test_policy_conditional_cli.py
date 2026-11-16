@@ -1,4 +1,4 @@
-"""F29 — ``forge-cli policy simulate`` / ``policy test`` (AC19)."""
+"""F29 — ``scf-cli policy simulate`` / ``policy test`` (AC19)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from forge_api.cli import main
+from scf_api.cli import main
 
 _EXAMPLES = Path(__file__).resolve().parents[3] / "examples" / "policies" / "conditional"
 DEPLOY_GATED = _EXAMPLES / "deploy-time-gated.yaml"

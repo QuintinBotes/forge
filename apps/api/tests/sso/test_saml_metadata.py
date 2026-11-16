@@ -14,8 +14,8 @@ from conftest import (
 )
 from lxml import etree
 
-from forge_api.sso.errors import SamlValidationError, SsoConfigError
-from forge_api.sso.saml_metadata import (
+from scf_api.sso.errors import SamlValidationError, SsoConfigError
+from scf_api.sso.saml_metadata import (
     normalize_cert_pem,
     parse_idp_metadata,
     render_sp_metadata,
@@ -82,7 +82,7 @@ class TestRenderSpMetadata:
             slo_url="https://x/slo",
             sp_cert_pem=sp.cert_pem,
         )
-        from forge_api.sso.saml_metadata import parse_xml_hardened
+        from scf_api.sso.saml_metadata import parse_xml_hardened
 
         assert parse_xml_hardened(xml) is not None
 

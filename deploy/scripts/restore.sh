@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Forge restore — restore Postgres + MinIO from a backup directory (Task 0.6).
+# SCF restore — restore Postgres + MinIO from a backup directory (Task 0.6).
 #
 # Usage: deploy/scripts/restore.sh <backup_dir>
 # The backup_dir is one produced by backup.sh (contains postgres.dump [+ minio/]).

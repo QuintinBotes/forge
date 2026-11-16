@@ -24,13 +24,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_api.main import create_app
-from forge_api.realtime.broadcaster import RedisBroadcaster
-from forge_api.realtime.manager import ConnectionManager, get_connection_manager
-from forge_api.routers.board import get_board_service
-from forge_api.settings import get_settings
-from forge_board import InMemoryBoardService
-from forge_contracts import RealtimeEvent, RealtimeEventType
+from scf_api.main import create_app
+from scf_api.realtime.broadcaster import RedisBroadcaster
+from scf_api.realtime.manager import ConnectionManager, get_connection_manager
+from scf_api.routers.board import get_board_service
+from scf_api.settings import get_settings
+from scf_board import InMemoryBoardService
+from scf_contracts import RealtimeEvent, RealtimeEventType
 
 # Matches the workspace the ``authenticate_app`` fixture's admin principal carries
 # (``tests/conftest.py``), so a socket registered here shares the caller's room.

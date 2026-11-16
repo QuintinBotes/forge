@@ -25,20 +25,20 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.policy_override_grant_store_db import (
+from scf_api.services.policy_override_grant_store_db import (
     DbGrantStore,
     UnknownAgentRunError,
 )
-from forge_approval.models import PolicyOverrideGrant
-from forge_approval.providers.policy_override import (
+from scf_approval.models import PolicyOverrideGrant
+from scf_approval.providers.policy_override import (
     GrantStore,
     InMemoryGrantStore,
     PolicyOverrideGate,
     action_fingerprint,
 )
-from forge_db.base import Base
-from forge_db.models import AgentRun, ApprovalRequest, User, Workspace
-from forge_db.models.enums import ApprovalGate
+from scf_db.base import Base
+from scf_db.models import AgentRun, ApprovalRequest, User, Workspace
+from scf_db.models.enums import ApprovalGate
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 
@@ -139,7 +139,7 @@ def test_mint_derives_workspace_from_agent_run(
 ) -> None:
     from sqlalchemy import select
 
-    from forge_db.models import PolicyOverrideGrant as Row
+    from scf_db.models import PolicyOverrideGrant as Row
 
     store.mint(_grant(seed))
     with factory() as session:

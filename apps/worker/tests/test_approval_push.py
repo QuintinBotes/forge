@@ -18,11 +18,11 @@ import redis
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_worker.approval_activity as approval_activity
-from forge_approval.delegation import DelegationDirectory, DelegationEntry
-from forge_contracts import RealtimeEvent, RealtimeEventType
-from forge_db.base import Base
-from forge_db.models import (
+import scf_worker.approval_activity as approval_activity
+from scf_approval.delegation import DelegationDirectory, DelegationEntry
+from scf_contracts import RealtimeEvent, RealtimeEventType
+from scf_db.base import Base
+from scf_db.models import (
     ApprovalGate,
     ApprovalRequest,
     ApprovalStatus,
@@ -31,9 +31,9 @@ from forge_db.models import (
     Task,
     Workspace,
 )
-from forge_worker.approval_activity import make_create_approval_fn
-from forge_worker.tasks import approvals as approvals_tasks
-from forge_workflow.temporal.payloads import ApprovalInput
+from scf_worker.approval_activity import make_create_approval_fn
+from scf_worker.tasks import approvals as approvals_tasks
+from scf_workflow.temporal.payloads import ApprovalInput
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000f1")
 AWAY = uuid.UUID("00000000-0000-0000-0000-0000000000f2")

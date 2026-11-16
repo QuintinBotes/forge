@@ -5,8 +5,8 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from forge_approval.models import PolicyOverrideGrant
-from forge_approval.providers.policy_override import (
+from scf_approval.models import PolicyOverrideGrant
+from scf_approval.providers.policy_override import (
     InMemoryGrantStore,
     action_fingerprint,
 )

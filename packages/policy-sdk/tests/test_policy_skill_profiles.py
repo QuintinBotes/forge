@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import Policy
-from forge_policy import (
+from scf_contracts import Policy
+from scf_policy import (
     SkillProfileNotAllowedError,
     allowed_skill_profiles,
     enforce_skill_profile_allowed,

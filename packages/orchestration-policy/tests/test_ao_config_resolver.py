@@ -1,7 +1,7 @@
-"""Tests for the ao-config resolver (forge_orchestration_policy.role_config).
+"""Tests for the ao-config resolver (scf_orchestration_policy.role_config).
 
 Pure unit tests against a fake in-memory :class:`RoleConfigStore` -- no
-database. The real, SQL-backed store (``forge_db.role_config.SqlRoleConfigStore``)
+database. The real, SQL-backed store (``scf_db.role_config.SqlRoleConfigStore``)
 is exercised against pgvector Postgres in ``packages/db/tests/test_role_config.py``,
 which also drives this same resolver through the real store to prove the two
 sides conform to the same Protocol.
@@ -12,13 +12,13 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
-from forge_contracts.orchestration_config import (
+from scf_contracts.orchestration_config import (
     DEFAULT_ROLE_CONFIG,
     AgentRole,
     Effort,
     RoleConfigOverride,
 )
-from forge_orchestration_policy import resolve_effective_config
+from scf_orchestration_policy import resolve_effective_config
 
 WORKSPACE = uuid.uuid4()
 PROJECT = uuid.uuid4()

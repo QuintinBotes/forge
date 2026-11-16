@@ -16,7 +16,7 @@ import type { ReactNode } from "react";
 import { AttestationPanel } from "@/components/attestations/attestation-panel";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import type {
   ApprovalContext,
   ApprovalSummary,
@@ -58,7 +58,7 @@ export interface ReviewPanelProps {
   isError: boolean;
   onRetry?: () => void;
   /** Threaded to the Red-Team Gate badge (item 8's own fetch). */
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**
@@ -546,7 +546,7 @@ function RunTrace({
 }: {
   runTrace: Record<string, unknown>;
   approvalId: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }) {
   const entries = Object.entries(runTrace).filter(([, v]) => scalar(v) !== null);
   const workflowRunId = asString(runTrace.workflow_run_id);

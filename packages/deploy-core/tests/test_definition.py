@@ -4,16 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forge_deploy.effects import KNOWN_EFFECTS
-from forge_deploy.engine import load_deployment_definition
-from forge_deploy.guards import default_guard_registry
+from scf_deploy.effects import KNOWN_EFFECTS
+from scf_deploy.engine import load_deployment_definition
+from scf_deploy.guards import default_guard_registry
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _BUNDLED = (
-    Path(__file__).resolve().parents[1]
-    / "forge_deploy"
-    / "definitions"
-    / "deployment_promotion.yaml"
+    Path(__file__).resolve().parents[1] / "scf_deploy" / "definitions" / "deployment_promotion.yaml"
 )
 _EXAMPLE = _REPO_ROOT / "examples" / "deployments" / "deployment_promotion.yaml"
 

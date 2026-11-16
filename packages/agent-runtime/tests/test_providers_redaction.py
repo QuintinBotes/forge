@@ -1,6 +1,6 @@
 """HARD-02 AC7: a provider exception carrying a secret is redacted on re-raise.
 
-Uses the real ``forge_api.observability.redaction.redact_text`` as the injected
+Uses the real ``scf_api.observability.redaction.redact_text`` as the injected
 redactor (the same filter the worker/API wire), so an SDK error that echoes a
 ``sk-…`` / ``Bearer …`` token surfaces as ``[REDACTED]`` in the ``ModelClientError``
 — never the raw secret, and never a request/response body in the logs.
@@ -13,13 +13,13 @@ import logging
 import pytest
 from _provider_fakes import FakeAnthropicSDK, FakeOpenAISDK
 
-from forge_agent.providers import (
+from scf_agent.providers import (
     AnthropicModelClient,
     ModelClientError,
     OpenAIModelClient,
 )
-from forge_api.observability.redaction import redact_text
-from forge_contracts import ModelRequest
+from scf_api.observability.redaction import redact_text
+from scf_contracts import ModelRequest
 
 # Obviously-fake, secret-shaped values used only to prove redaction (allowlisted
 # in .gitleaks.toml). Never a real credential.
@@ -55,7 +55,7 @@ def test_adapter_logs_no_secret_on_error(caplog: pytest.LogCaptureFixture) -> No
         model="claude-opus-4-8", api_key="k", redactor=redact_text, client=sdk
     )
     with (
-        caplog.at_level(logging.DEBUG, logger="forge_agent.providers.anthropic"),
+        caplog.at_level(logging.DEBUG, logger="scf_agent.providers.anthropic"),
         pytest.raises(ModelClientError),
     ):
         client.complete(ModelRequest(model="claude-opus-4-8"))

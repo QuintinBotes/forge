@@ -16,17 +16,17 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from forge_agent.providers import cost_usd
-from forge_api.deps import Principal
-from forge_api.main import create_app
-from forge_api.routers.spec import DraftModelBinding, get_draft_binding, get_spec_engine
-from forge_api.services.spec_draft_service import (
+from scf_agent.providers import cost_usd
+from scf_api.deps import Principal
+from scf_api.main import create_app
+from scf_api.routers.spec import DraftModelBinding, get_draft_binding, get_spec_engine
+from scf_api.services.spec_draft_service import (
     DRAFT_PLACEHOLDER_ID,
     build_system_prompt,
     draft_spec,
     estimate_tokens,
 )
-from forge_contracts import (
+from scf_contracts import (
     AcceptanceCriterion,
     Constitution,
     ModelRequest,
@@ -36,8 +36,8 @@ from forge_contracts import (
     SpecManifest,
     TokenUsage,
 )
-from forge_contracts.enums import SpecStatus, UserRole
-from forge_spec import FileSpecEngine, render_spec_md, spec_id_for_key
+from scf_contracts.enums import SpecStatus, UserRole
+from scf_spec import FileSpecEngine, render_spec_md, spec_id_for_key
 
 _MODEL = "claude-opus-4-8"
 

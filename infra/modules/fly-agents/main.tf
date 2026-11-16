@@ -1,6 +1,6 @@
 # main.tf — fly-agents module.
 #
-# Models the Forge agent-execution layer (the Firecracker-microVM,
+# Models the SCF agent-execution layer (the Firecracker-microVM,
 # scale-to-zero "one Fly Machine per task" tier) as data, NOT as Tofu-managed
 # cloud resources.
 #

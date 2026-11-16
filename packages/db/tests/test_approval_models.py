@@ -17,8 +17,8 @@ from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import (
+from scf_db.base import Base
+from scf_db.models import (
     ApprovalDecision,
     ApprovalGate,
     ApprovalRequest,
@@ -30,7 +30,7 @@ from forge_db.models import (
     WorkflowRun,
     Workspace,
 )
-from forge_db.models.enums import TaskKind, TaskStatus
+from scf_db.models.enums import TaskKind, TaskStatus
 
 WS = uuid.uuid4()
 USER = uuid.uuid4()
@@ -49,7 +49,7 @@ def session() -> Iterator[Session]:
     with factory() as s:
         s.add(Workspace(id=WS, name="Acme", slug="acme"))
         s.add(User(id=USER, workspace_id=WS, email="reviewer@acme.dev", name="Rev"))
-        s.add(Project(id=PROJECT, workspace_id=WS, name="Forge", key="FRG"))
+        s.add(Project(id=PROJECT, workspace_id=WS, name="SCF", key="FRG"))
         s.commit()
         yield s
 
@@ -199,7 +199,7 @@ def test_decisions_cascade_with_request(session: Session) -> None:
 
 def test_uq_active_override_single_active_grant(session: Session) -> None:
     """AC#14 (DB layer): one ACTIVE grant per (agent_run, fingerprint)."""
-    from forge_db.models import AgentRun
+    from scf_db.models import AgentRun
 
     agent_run = AgentRun(workspace_id=WS)
     session.add(agent_run)

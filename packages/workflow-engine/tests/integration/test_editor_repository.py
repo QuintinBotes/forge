@@ -8,17 +8,17 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from forge_db.models.workflow_editor import (
+from scf_db.models.workflow_editor import (
     RevisionStatus,
     RevisionValidationStatus,
     WorkflowDefinition,
     WorkflowDefinitionRevision,
     WorkflowDefinitionSource,
 )
-from forge_workflow.editor.repository import DbWorkflowDefinitionRepository
-from forge_workflow.editor.schemas import SaveDraftRequest
-from forge_workflow.editor.service import WorkflowEditorService
-from forge_workflow.editor.store import (
+from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
+from scf_workflow.editor.schemas import SaveDraftRequest
+from scf_workflow.editor.service import WorkflowEditorService
+from scf_workflow.editor.store import (
     DbWorkflowDefinitionStore,
     ResolvingDefinitionProvider,
 )

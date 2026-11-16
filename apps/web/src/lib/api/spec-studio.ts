@@ -20,7 +20,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import { specVersionKeys } from "./spec-versions";
 import type { SpecDraft, SpecImport, SpecManifest } from "./types";
 
@@ -32,7 +32,7 @@ export const specStudioKeys = {
 
 export function useSpecStudioManifest(
   specId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<SpecManifest> {
   return useQuery({
     queryKey: specStudioKeys.manifest(specId),
@@ -44,7 +44,7 @@ export function useSpecStudioManifest(
 export function useSpecStudioMarkdown(
   specId: string,
   enabled: boolean,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<string> {
   return useQuery({
     queryKey: specStudioKeys.markdown(specId),
@@ -56,7 +56,7 @@ export function useSpecStudioMarkdown(
 export function useSpecStudioYaml(
   specId: string,
   enabled: boolean,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<string> {
   return useQuery({
     queryKey: specStudioKeys.yaml(specId),
@@ -83,7 +83,7 @@ function useSyncAfterSave(specId: string) {
 
 export function useSaveGuidedManifest(
   specId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecManifest, Error, SpecManifest> {
   const sync = useSyncAfterSave(specId);
   return useMutation({
@@ -94,7 +94,7 @@ export function useSaveGuidedManifest(
 
 export function useSaveSpecMarkdown(
   specId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecManifest, Error, string> {
   const sync = useSyncAfterSave(specId);
   return useMutation({
@@ -105,7 +105,7 @@ export function useSaveSpecMarkdown(
 
 export function useSaveSpecManifestYaml(
   specId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecManifest, Error, string> {
   const sync = useSyncAfterSave(specId);
   return useMutation({
@@ -126,7 +126,7 @@ export interface DraftSpecVariables {
  * owns streaming the result into the Guided/Markdown editor.
  */
 export function useDraftSpec(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecDraft, Error, DraftSpecVariables> {
   return useMutation({
     mutationFn: (body: DraftSpecVariables) => client.draftSpec(body),
@@ -140,12 +140,12 @@ export interface ImportSpecVariables {
 
 /**
  * `ss-import`: import an existing markdown or YAML spec (pasted/uploaded from
- * outside Forge) as a `spec.md` draft (`POST /spec/import`). Draft-only —
+ * outside SCF) as a `spec.md` draft (`POST /spec/import`). Draft-only —
  * nothing is persisted or cached; the caller reviews/refines the result in the
  * Markdown or Guided editor before saving, mirroring `useDraftSpec`.
  */
 export function useImportSpec(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecImport, Error, ImportSpecVariables> {
   return useMutation({
     mutationFn: (body: ImportSpecVariables) => client.importSpec(body),

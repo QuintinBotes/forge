@@ -13,7 +13,7 @@ import {
 import { useRegisterCommands } from "@/components/command-palette";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import {
   useApprovalContext,
   useApprovalDecisions,
@@ -60,7 +60,7 @@ function decisionErrorMessage(error: unknown): string {
 }
 
 export interface ApprovalInboxProps {
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

@@ -22,15 +22,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.deps import get_db
-from forge_api.main import create_app
-from forge_api.routers.board import get_board_service
-from forge_api.routers.spec import get_spec_engine
-from forge_board import InMemoryBoardService
-from forge_contracts import EpicDTO
-from forge_db.base import Base
-from forge_db.models import Project, Workspace
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_api.deps import get_db
+from scf_api.main import create_app
+from scf_api.routers.board import get_board_service
+from scf_api.routers.spec import get_spec_engine
+from scf_board import InMemoryBoardService
+from scf_contracts import EpicDTO
+from scf_db.base import Base
+from scf_db.models import Project, Workspace
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 

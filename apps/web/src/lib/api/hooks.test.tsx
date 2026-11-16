@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "./client";
+import type { ScfApiClient } from "./client";
 import { queryKeys, useCreateEpic, useSetTaskStatus } from "./hooks";
 import type { EpicDTO, TaskDTO } from "./types";
 
@@ -33,7 +33,7 @@ describe("useSetTaskStatus (optimistic)", () => {
     });
     const client = {
       setTaskStatus: vi.fn(() => pending),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useSetTaskStatus(client), {
       wrapper: makeWrapper(queryClient),
@@ -63,7 +63,7 @@ describe("useSetTaskStatus (optimistic)", () => {
 
     const client = {
       setTaskStatus: vi.fn(() => Promise.reject(new Error("boom"))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useSetTaskStatus(client), {
       wrapper: makeWrapper(queryClient),
@@ -88,7 +88,7 @@ describe("useCreateEpic", () => {
     const created: EpicDTO = { id: "e-new", title: "New epic" };
     const client = {
       createEpic: vi.fn(() => Promise.resolve(created)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useCreateEpic(client), {

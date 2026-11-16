@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from temporalio.api.common.v1 import Payload
 
-from forge_workflow.temporal.converter import REDACTED, RedactingEncryptionCodec
+from scf_workflow.temporal.converter import REDACTED, RedactingEncryptionCodec
 
 KEY = "unit-test-codec-key"
 FAKE_AWS = "AKIAIOSFODNN7EXAMPLE"

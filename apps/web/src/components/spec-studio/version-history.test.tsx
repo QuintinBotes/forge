@@ -3,12 +3,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { SpecVersionDiff, SpecVersionSummary } from "@/lib/api/types";
 
 import { VersionHistory } from "./version-history";
 
-function renderHistory(client: ForgeApiClient, specId = "spec-uuid-1") {
+function renderHistory(client: ScfApiClient, specId = "spec-uuid-1") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -56,12 +56,12 @@ const diff: SpecVersionDiff = {
   },
 };
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     listSpecVersions: vi.fn(() => Promise.resolve(versions)),
     diffSpecVersions: vi.fn(() => Promise.resolve(diff)),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
 describe("VersionHistory", () => {

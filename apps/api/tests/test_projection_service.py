@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-import forge_api.db as db
-from forge_api.services.projection_repository_db import SqlAlchemyProjectionRepository
-from forge_api.services.projection_service import build_projection_repository
-from forge_api.settings import get_settings
-from forge_spec import InMemoryProjectionRepository
+import scf_api.db as db
+from scf_api.services.projection_repository_db import SqlAlchemyProjectionRepository
+from scf_api.services.projection_service import build_projection_repository
+from scf_api.settings import get_settings
+from scf_spec import InMemoryProjectionRepository
 
 
 @pytest.fixture(autouse=True)

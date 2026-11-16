@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type {
   OidcConfig,
   ScimTokenCreated,
@@ -95,7 +95,7 @@ const TOKENS: ScimTokenInfo[] = [
   },
 ];
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     baseUrl: "http://localhost:8000",
     getSsoConfig: vi.fn(() => Promise.resolve(makeConfig())),
@@ -127,10 +127,10 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
       Promise.resolve(makeOidcConfig(body as Partial<OidcConfig>)),
     ),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

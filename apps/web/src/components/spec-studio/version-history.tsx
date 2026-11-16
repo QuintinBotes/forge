@@ -4,14 +4,14 @@ import { GitCompare, History, Minus, Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
 import { useSpecVersionDiff, useSpecVersions } from "@/lib/api/spec-versions";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import { apiClient } from "@/lib/api/client";
 import type { ListItemChange } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 export interface VersionHistoryProps {
   specId: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 const FIELD_LABELS: Record<string, string> = {

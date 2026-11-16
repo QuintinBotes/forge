@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import pytest
 
-from forge_api.observability.otel import (
+from scf_api.observability.otel import (
     OTEL_AVAILABLE,
     SpanRecorder,
     span,
     traced,
 )
-from forge_api.observability.redaction import REDACTED
+from scf_api.observability.redaction import REDACTED
 
 
 def test_otel_available_is_a_bool() -> None:

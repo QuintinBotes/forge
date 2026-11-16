@@ -1,13 +1,13 @@
 # Runbook — Live BYOK cross-encoder reranker (HARD-03)
 
-Forge's hybrid retrieval pipeline (`/knowledge/search`, agent task-scoped
+Swarm Code Factory's hybrid retrieval pipeline (`/knowledge/search`, agent task-scoped
 retrieval) fuses the pgvector semantic leg and the BM25 keyword leg with RRF,
 then re-scores the survivors with a **cross-encoder reranker** — the last and
-highest-leverage quality lever (`docs/FORGE_SPEC.md`: *Jina Reranker v2,
+highest-leverage quality lever (`docs/SCF_SPEC.md`: *Jina Reranker v2,
 self-hosted, open-weight, 15-30% quality improvement*).
 
 The reranker is a swappable implementation of the frozen
-`forge_contracts.protocols.RerankerClient` (note: **synchronous**). Three ship:
+`scf_contracts.protocols.RerankerClient` (note: **synchronous**). Three ship:
 
 - `FixtureRerankerClient` — the offline, deterministic, network-free
   **test-only** client (token-overlap). Used by the whole hermetic test
@@ -35,7 +35,7 @@ self-hosted URL) and the API/worker build a live, budgeted, SSRF-guarded
 reranker on next boot:
 
 ```
-build_reranker_from_settings(get_settings(), api_key=…)   # forge_knowledge
+build_reranker_from_settings(get_settings(), api_key=…)   # scf_knowledge
   provider none / disabled     -> None  (rerank "off", weighted-RRF order)
   provider fixture             -> ValueError (test-only, refused)
   provider jina|cohere         -> GracefulReranker(JinaRerankerClient(...))
@@ -124,10 +124,10 @@ uv run pytest -q -m "not live_rerank and not integration"
 
 ## 4. Optional: self-hosted, open-weight reranker
 
-For a deterministic-latency, no-BYOK-cost path (FORGE_SPEC's *self-hosted,
+For a deterministic-latency, no-BYOK-cost path (SCF_SPEC's *self-hosted,
 open-weight*), run `jinaai/jina-reranker-v2-base-multilingual` on an internal
 network reachable only by `api`/`worker` (the Helm chart already ships a gated
-`reranker` service — `reranker.enabled=true`), and point Forge at it:
+`reranker` service — `reranker.enabled=true`), and point SCF at it:
 
 ```bash
 export FORGE_RERANK_PROVIDER=selfhosted
@@ -146,13 +146,13 @@ networked gate, not this slice.
   host (`api.jina.ai` / `api.cohere.com`) and restricts `selfhosted` to
   loopback/RFC1918/private-DNS unless `FORGE_RERANK_ALLOW_INSECURE_URL=true`. The
   cloud metadata endpoint (`169.254.169.254`) is always rejected. The api/worker
-  additionally inject `forge_api.security.ssrf.assert_safe_url` as the
+  additionally inject `scf_api.security.ssrf.assert_safe_url` as the
   DNS-resolving authoritative control (defense-in-depth). (AC7)
 - **DoS bounds.** `FORGE_RERANK_CANDIDATES=50` caps documents per call, the hard
   `FORGE_RERANK_TIMEOUT_MS` budget bounds latency, and the reranker is never
   called at index time, so a slow/hostile reranker cannot amplify ingest load.
 - **Redaction.** A non-2xx / transport error becomes `RerankerUnavailableError`
-  whose message is run through `forge_knowledge.redaction.redact_secrets`;
+  whose message is run through `scf_knowledge.redaction.redact_secrets`;
   `RerankTelemetry.reason` is likewise redacted and never carries the raw query
   or a secret. (AC6, AC12)
 

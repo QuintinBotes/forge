@@ -35,15 +35,15 @@ from pycrdt import (
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.realtime.spec_room import (
+from scf_api.realtime.spec_room import (
     SpecCollabRoom,
     color_for_user,
     display_name_for,
 )
-from forge_contracts import Requirement
-from forge_db.base import Base
-from forge_db.models import Workspace
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_contracts import Requirement
+from scf_db.base import Base
+from scf_db.models import Workspace
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 EDITOR_A = uuid.UUID("00000000-0000-0000-0000-0000000000c1")

@@ -16,11 +16,11 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.audit import AuditEvent
-from forge_db.audit.chain import verify_chain
-from forge_db.audit.writer import SqlAuditWriter
-from forge_db.base import Base
-from forge_db.models import AuditLog, Workspace
+from scf_contracts.audit import AuditEvent
+from scf_db.audit.chain import verify_chain
+from scf_db.audit.writer import SqlAuditWriter
+from scf_db.base import Base
+from scf_db.models import AuditLog, Workspace
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

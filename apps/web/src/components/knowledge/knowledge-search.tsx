@@ -24,7 +24,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type {
   KnowledgePassage,
   KnowledgeSearchResponse,
@@ -90,7 +90,7 @@ function LegsLine({ data }: { data: KnowledgeSearchResponse }) {
 }
 
 export interface KnowledgeSearchProps {
-  client: ForgeApiClient;
+  client: ScfApiClient;
   sources?: KnowledgeSourceSummary[];
 }
 

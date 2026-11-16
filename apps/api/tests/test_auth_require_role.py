@@ -15,14 +15,14 @@ import httpx
 import pytest
 from fastapi import Depends, FastAPI
 
-from forge_api.auth.service import (
+from scf_api.auth.service import (
     AuthService,
     get_auth_service,
     require_admin,
     require_role,
 )
-from forge_api.deps import Principal
-from forge_contracts.enums import UserRole
+from scf_api.deps import Principal
+from scf_contracts.enums import UserRole
 
 WS = uuid.uuid4()
 

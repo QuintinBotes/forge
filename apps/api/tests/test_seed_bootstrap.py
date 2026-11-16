@@ -19,10 +19,10 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.auth.service import AuthenticationError, AuthService
-from forge_api.scripts import seed as seed_module
-from forge_db.base import Base
-from forge_db.models import PlatformAPIKey, Project, User, Workspace
+from scf_api.auth.service import AuthenticationError, AuthService
+from scf_api.scripts import seed as seed_module
+from scf_db.base import Base
+from scf_db.models import PlatformAPIKey, Project, User, Workspace
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def factory(monkeypatch: pytest.MonkeyPatch) -> Iterator[sessionmaker[Session]]:
     # The seed opens its own session; the DB API-key backend resolves the
     # process-wide factory. Point both at this database.
     monkeypatch.setattr(seed_module, "create_session_factory", lambda: session_factory)
-    monkeypatch.setattr("forge_api.db.get_session_factory", lambda: session_factory)
+    monkeypatch.setattr("scf_api.db.get_session_factory", lambda: session_factory)
     yield session_factory
     Base.metadata.drop_all(engine)
 
@@ -46,7 +46,7 @@ def factory(monkeypatch: pytest.MonkeyPatch) -> Iterator[sessionmaker[Session]]:
 def durable_keys(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Select the Postgres-backed key store, as the compose files now do."""
     monkeypatch.setenv("FORGE_APIKEY_BACKEND", "db")
-    from forge_api.settings import get_settings
+    from scf_api.settings import get_settings
 
     get_settings.cache_clear()
     yield
@@ -212,7 +212,7 @@ def test_reseeding_retires_the_previous_key(
 
 def test_an_inmemory_backend_is_called_out(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FORGE_APIKEY_BACKEND", "memory")
-    from forge_api.settings import get_settings
+    from scf_api.settings import get_settings
 
     get_settings.cache_clear()
     try:
@@ -225,7 +225,7 @@ def test_an_inmemory_backend_is_called_out(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_a_db_backend_warns_about_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FORGE_APIKEY_BACKEND", "db")
-    from forge_api.settings import get_settings
+    from scf_api.settings import get_settings
 
     get_settings.cache_clear()
     try:

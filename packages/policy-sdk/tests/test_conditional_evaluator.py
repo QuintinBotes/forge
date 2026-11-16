@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     Condition,
     ConditionalRule,
     ConditionGroup,
@@ -19,7 +19,7 @@ from forge_contracts import (
     ToolCall,
     WriteRules,
 )
-from forge_policy import (
+from scf_policy import (
     ConditionalPolicyEvaluator,
     PolicyContext,
     RepoPolicyEvaluator,

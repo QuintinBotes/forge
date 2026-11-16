@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from forge_api.sso.attribute_mapping import map_assertion, resolve_role
-from forge_contracts.sso import AttributeMapping, SamlAssertion
+from scf_api.sso.attribute_mapping import map_assertion, resolve_role
+from scf_contracts.sso import AttributeMapping, SamlAssertion
 
 
 def _assertion(attributes: dict[str, list[str]] | None = None) -> SamlAssertion:

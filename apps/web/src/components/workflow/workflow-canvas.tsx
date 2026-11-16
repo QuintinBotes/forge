@@ -28,7 +28,7 @@ export interface WorkflowCanvasProps {
 }
 
 /**
- * The signature surface: a hand-rolled SVG state-machine canvas on a forge
+ * The signature surface: a hand-rolled SVG state-machine canvas on an SCF
  * blueprint grid. States are boxes tinted by kind (initial = spark, human gate =
  * warning, terminal = steel); transitions are curved, arrow-headed paths labelled
  * with their trigger. Selection ember-highlights the node/edge; a validation

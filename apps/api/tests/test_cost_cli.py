@@ -1,4 +1,4 @@
-"""``forge cost`` CLI round-trip (F38 Journey G) against a file-backed SQLite DB."""
+"""``scf cost`` CLI round-trip (F38 Journey G) against a file-backed SQLite DB."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.cli_cost import main
-from forge_db.base import Base
-from forge_db.models import AuditLog, Workspace
-from forge_db.models.cost import CostEvent, ModelPrice
-from forge_obs.cost.models import ModelUsage
-from forge_obs.cost.repository import SqlCostLedger
+from scf_api.cli_cost import main
+from scf_db.base import Base
+from scf_db.models import AuditLog, Workspace
+from scf_db.models.cost import CostEvent, ModelPrice
+from scf_obs.cost.models import ModelUsage
+from scf_obs.cost.repository import SqlCostLedger
 
 NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
 

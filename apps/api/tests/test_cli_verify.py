@@ -1,4 +1,4 @@
-"""``forge-verify`` CLI tests — attestation + audit-chain verify exit codes.
+"""``scf-verify`` CLI tests — attestation + audit-chain verify exit codes.
 
 Offline-first: the DSSE-envelope and audit-chain-export modes need no live
 services (a fixed Ed25519 seed makes the signer deterministic + silent, and the
@@ -18,20 +18,20 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from forge_api.cli_verify import main
-from forge_contracts.attestation import (
+from scf_api.cli_verify import main
+from scf_contracts.attestation import (
     DSSE_PAYLOAD_TYPE_INTOTO,
     DigestSet,
     DsseEnvelope,
     Statement,
     Subject,
 )
-from forge_contracts.audit import AuditEvent, canonical_json
-from forge_db.attest.repository import AttestationRepository
-from forge_db.audit.writer import SqlAuditWriter
-from forge_db.models.attestation import Attestation
-from forge_db.models.audit import AuditChainHead, AuditLog
-from forge_obs.attest.signing import DsseSigner, EnvSigningKeyProvider, pae
+from scf_contracts.audit import AuditEvent, canonical_json
+from scf_db.attest.repository import AttestationRepository
+from scf_db.audit.writer import SqlAuditWriter
+from scf_db.models.attestation import Attestation
+from scf_db.models.audit import AuditChainHead, AuditLog
+from scf_obs.attest.signing import DsseSigner, EnvSigningKeyProvider, pae
 
 #: A fixed 32-byte Ed25519 seed → deterministic, silent signer (an unset key
 #: would fail open to a warned, process-ephemeral key).
@@ -102,7 +102,7 @@ def test_attestation_wrong_key_rejected(tmp_path: Path, signer: DsseSigner) -> N
 
 def _export_lines(workspace_id: uuid.UUID) -> list[str]:
     """Emit a two-event chain on in-memory SQLite and return the NDJSON export."""
-    from forge_api.services.audit import AuditService
+    from scf_api.services.audit import AuditService
 
     engine = create_engine("sqlite://")
     AuditChainHead.__table__.create(bind=engine)

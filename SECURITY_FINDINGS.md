@@ -6,7 +6,7 @@ a reason and, where it gates CI, a dated entry in
 [`security/waivers.yaml`](security/waivers.yaml)).
 
 Scanners run: `bandit` (SAST), `pip-audit` (Python CVE), `semgrep` with custom
-Forge rules (`.semgrep/forge.yml`), `gitleaks` (secret scan over full history),
+Swarm Code Factory rules (`.semgrep/swarm-code-factory.yml`), `gitleaks` (secret scan over full history),
 and `cyclonedx-py` (SBOM). Baseline date: **2026-07-04**. Reproduce with
 `make security` (or run the individual scanners listed above).
 
@@ -32,7 +32,7 @@ No real secret appears in source, tests, fixtures, logs, `uv.lock`, or
 
 ### FIXED
 
-- **B324 (HIGH) — weak SHA-1 hash**, `packages/knowledge-core/forge_knowledge/embeddings.py:62`.
+- **B324 (HIGH) — weak SHA-1 hash**, `packages/knowledge-core/scf_knowledge/embeddings.py:62`.
   The deterministic embedding uses SHA-1 to bucket tokens (feature hashing), not
   for security. **Fixed** by passing `usedforsecurity=False`, which both states
   the intent and clears the finding. This is behaviour-preserving (same bucket
@@ -40,19 +40,19 @@ No real secret appears in source, tests, fixtures, logs, `uv.lock`, or
 
 ### ACCEPTED (triaged, not security issues)
 
-- **B108 (MEDIUM) — "/tmp" literal**, `forge_agent/sandbox/container.py:84`
+- **B108 (MEDIUM) — "/tmp" literal**, `scf_agent/sandbox/container.py:84`
   (waiver W-001). The string is a tmpfs **mount target** inside a container
   spec, not host temp-file usage. No host path is created or raced.
 - **B608 (MEDIUM) ×2 — SQL string construction**, migrations `0019` and `0022`
   (waivers W-002, W-003). Both interpolate a module-level table-name constant in
   one-shot Alembic DDL/data migrations; no runtime/user input can reach them.
 - **B310 (MEDIUM) — urlopen scheme audit**,
-  `forge_marketplace/registry_client.py:110` (waiver W-004). The registry
+  `scf_marketplace/registry_client.py:110` (waiver W-004). The registry
   client already resolves and validates every host against its own SSRF
   blocklist + operator allowlist before fetching; the residual redirect-to-
   internal concern is tracked as punch-list item **PT-07**.
 - **B101 (LOW) — assert_used**, 26 sites in first-party source (waiver W-006,
-  globally skipped in `[tool.bandit]`). Forge's production images run CPython
+  globally skipped in `[tool.bandit]`). SCF's production images run CPython
   **without** `-O`, so asserts are not stripped; the flagged asserts are
   internal state-machine invariants, not auth/authz checks. Test-tree asserts
   are excluded from the scan entirely.
@@ -67,7 +67,7 @@ No real secret appears in source, tests, fixtures, logs, `uv.lock`, or
   design; no shell injection surface.
 - **B311 (LOW) — non-crypto `random`**. Used for jitter/backoff and test data,
   never for tokens or keys (those use `secrets` / `os.urandom` via
-  `forge_api.auth.crypto`). Accepted.
+  `scf_api.auth.crypto`). Accepted.
 
 ---
 
@@ -81,9 +81,9 @@ there is no accepted-CVE waiver at baseline. A newly disclosed CVE will fail the
 
 ---
 
-## semgrep (custom Forge rules)
+## semgrep (custom SCF rules)
 
-`.semgrep/forge.yml` encodes eight Forge invariants as SAST so they cannot
+`.semgrep/swarm-code-factory.yml` encodes eight SCF invariants as SAST so they cannot
 regress: no `subprocess(shell=True)`, no `verify=False`, no unsafe `yaml.load`,
 no `MCPConnection(allow_write=True)` literal, no `eval`/`exec`, no
 literal-keyed cipher, no logging of secret-named values. The rules fire on the
@@ -100,7 +100,7 @@ allowlisted narrowly in [`.gitleaks.toml`](.gitleaks.toml):
 
 - 11 are **deliberately-fake fixture secrets** that exist to exercise the
   redaction layer (e.g. `test_obs_redaction.py`, `test_mcp_redaction.py`,
-  `forge_mcp/testing.py`) — redaction tests are worthless without a realistic
+  `scf_mcp/testing.py`) — redaction tests are worthless without a realistic
   fake secret to redact.
 - 2 are **spec/prose** in earlier-commit docs (`docs/implementation-slices/**`,
   since removed from the working tree) that pattern-match the generic-api-key

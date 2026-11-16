@@ -1,4 +1,4 @@
-"""Pure tests for forge_world.time (spec §3.1: two clocks, precisions)."""
+"""Pure tests for scf_world.time (spec §3.1: two clocks, precisions)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 import pytest
 from conftest import T0, make_fact
 
-from forge_world import Precision, held_at, holds_at, parse_bound
-from forge_world.time import bucket_end, bucket_start
+from scf_world import Precision, held_at, holds_at, parse_bound
+from scf_world.time import bucket_end, bucket_start
 
 
 def _dt(

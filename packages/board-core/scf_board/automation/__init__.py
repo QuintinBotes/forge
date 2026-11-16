@@ -1,0 +1,134 @@
+"""Pure automation rule engine (F21).
+
+Extends ``scf_board`` (the board domain layer) with the declarative
+``WHEN trigger IF condition THEN actions`` rule engine described in the F21
+slice. The engine is side-effect-free except through an injected
+:class:`ActionExecutor`; persistence + the concrete board/workflow executor live
+in the API / worker layers.
+
+This lives under ``scf_board`` (rather than a separate ``scf_automation``
+package) to honor the repo's "extend existing packages, do not add parallel
+packages" rule. The public symbols match the slice's documented surface.
+"""
+
+from __future__ import annotations
+
+from scf_board.automation.conditions import (
+    CONDITION_FIELDS,
+    UnknownConditionFieldError,
+    evaluate_condition,
+)
+from scf_board.automation.engine import AutomationEngine
+from scf_board.automation.errors import (
+    ActionForbiddenError,
+    LoopAbortedError,
+    RuleValidationError,
+    UnknownTriggerError,
+)
+from scf_board.automation.executor import (
+    ActionContext,
+    ActionExecutor,
+    AutomationAuditSink,
+    DeployDispatcher,
+    ExternalActionExecutor,
+    ExternalIssueCreator,
+    IncidentDeclarer,
+    MergeDispatcher,
+    RecordingActionExecutor,
+    SprintStarter,
+    WebhookSender,
+)
+from scf_board.automation.loop_guard import (
+    DEFAULT_MAX_DEPTH,
+    LoopGuard,
+    resolve_max_depth,
+)
+from scf_board.automation.schemas import (
+    ActionResult,
+    ActionSpec,
+    AddCommentAction,
+    AutomationRuleSpec,
+    AutomationRuleSpecWithMeta,
+    AutoMergeAction,
+    CloseLinkedSpecTasksAction,
+    Condition,
+    ConditionGroup,
+    CreateExternalIssueAction,
+    CreateTaskAction,
+    DeclareIncidentAction,
+    EntitySnapshot,
+    ExecutionResult,
+    SendNotificationAction,
+    SendWorkflowEventAction,
+    SetAssigneeAction,
+    SetFieldAction,
+    SetPriorityAction,
+    SetStatusAction,
+    StartSprintAction,
+    TriggerDeployAction,
+    TriggerSpec,
+    WebhookPostAction,
+)
+from scf_board.automation.snapshot import snapshot_for_sprint, snapshot_for_task
+from scf_board.automation.triggers import trigger_matches, trigger_type_for
+from scf_board.automation.validators import (
+    RuleRefContext,
+    RuleWarning,
+    validate_rule,
+)
+
+__all__ = [
+    "CONDITION_FIELDS",
+    "DEFAULT_MAX_DEPTH",
+    "ActionContext",
+    "ActionExecutor",
+    "ActionForbiddenError",
+    "ActionResult",
+    "ActionSpec",
+    "AddCommentAction",
+    "AutoMergeAction",
+    "AutomationAuditSink",
+    "AutomationEngine",
+    "AutomationRuleSpec",
+    "AutomationRuleSpecWithMeta",
+    "CloseLinkedSpecTasksAction",
+    "Condition",
+    "ConditionGroup",
+    "CreateExternalIssueAction",
+    "CreateTaskAction",
+    "DeclareIncidentAction",
+    "DeployDispatcher",
+    "EntitySnapshot",
+    "ExecutionResult",
+    "ExternalActionExecutor",
+    "ExternalIssueCreator",
+    "IncidentDeclarer",
+    "LoopAbortedError",
+    "LoopGuard",
+    "MergeDispatcher",
+    "RecordingActionExecutor",
+    "RuleRefContext",
+    "RuleValidationError",
+    "RuleWarning",
+    "SendNotificationAction",
+    "SendWorkflowEventAction",
+    "SetAssigneeAction",
+    "SetFieldAction",
+    "SetPriorityAction",
+    "SetStatusAction",
+    "SprintStarter",
+    "StartSprintAction",
+    "TriggerDeployAction",
+    "TriggerSpec",
+    "UnknownConditionFieldError",
+    "UnknownTriggerError",
+    "WebhookPostAction",
+    "WebhookSender",
+    "evaluate_condition",
+    "resolve_max_depth",
+    "snapshot_for_sprint",
+    "snapshot_for_task",
+    "trigger_matches",
+    "trigger_type_for",
+    "validate_rule",
+]

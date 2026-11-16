@@ -7,8 +7,8 @@ import json
 import httpx
 from conftest import RequestRecorder, load_fixture, make_transport
 
-from forge_contracts import PRState, PullRequest
-from forge_integrations import GitHubClient
+from scf_contracts import PRState, PullRequest
+from scf_integrations import GitHubClient
 
 
 def _client(handler) -> GitHubClient:

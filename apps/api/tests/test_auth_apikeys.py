@@ -1,6 +1,6 @@
-"""Tests for Forge API-key authentication (Task 1.15 — auth & secrets).
+"""Tests for SCF API-key authentication (Task 1.15 — auth & secrets).
 
-Forge-issued API keys authenticate clients to the Forge API. Only a one-way hash
+SCF-issued API keys authenticate clients to the SCF API. Only a one-way hash
 is stored; the plaintext token is shown exactly once at mint time.
 """
 
@@ -10,8 +10,8 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from forge_api.auth.apikeys import APIKeyInfo, APIKeyStore, generate_api_token
-from forge_contracts.enums import APIKeyKind, UserRole
+from scf_api.auth.apikeys import APIKeyInfo, APIKeyStore, generate_api_token
+from scf_contracts.enums import APIKeyKind, UserRole
 
 
 def _store() -> APIKeyStore:

@@ -27,9 +27,9 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-import forge_db.models  # noqa: F401  (registers all models on Base.metadata)
-from forge_contracts.audit import GENESIS_HASH, compute_entry_hash, compute_payload_hash
-from forge_db.base import Base, json_type
+import scf_db.models  # noqa: F401  (registers all models on Base.metadata)
+from scf_contracts.audit import GENESIS_HASH, compute_entry_hash, compute_payload_hash
+from scf_db.base import Base, json_type
 
 # revision identifiers, used by Alembic.
 revision: str = "0022_f39_audit_chain"

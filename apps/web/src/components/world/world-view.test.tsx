@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type {
   ConflictOut,
   EntityOut,
@@ -173,7 +173,7 @@ const conflict: ConflictOut = {
 
 type MockClient = Record<string, ReturnType<typeof vi.fn>>;
 
-function makeClient(overrides: MockClient = {}): ForgeApiClient {
+function makeClient(overrides: MockClient = {}): ScfApiClient {
   return {
     listWorldEntities: vi.fn(() =>
       Promise.resolve({ items: [ada, engine, babbage], limit: 50, offset: 0 }),
@@ -206,10 +206,10 @@ function makeClient(overrides: MockClient = {}): ForgeApiClient {
       }),
     ),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -219,7 +219,7 @@ function renderView(client: ForgeApiClient) {
   return render(<WorldView client={client} />, { wrapper });
 }
 
-async function selectAda(client: ForgeApiClient) {
+async function selectAda(client: ScfApiClient) {
   const utils = renderView(client);
   fireEvent.click(await screen.findByRole("button", { name: /Ada Lovelace/ }));
   await screen.findByRole("heading", { name: "Ada Lovelace" });

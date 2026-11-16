@@ -21,8 +21,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import (
+from scf_db.base import Base
+from scf_db.models import (
     CostEvent,
     CostEventKind,
     ModelPrice,
@@ -49,7 +49,7 @@ def _seed(session: Session) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
     ws = Workspace(name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}")
     session.add(ws)
     session.flush()
-    project = Project(workspace_id=ws.id, name="Forge", key=f"F{uuid.uuid4().hex[:5]}")
+    project = Project(workspace_id=ws.id, name="SCF", key=f"F{uuid.uuid4().hex[:5]}")
     session.add(project)
     session.flush()
     task = Task(

@@ -15,12 +15,12 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, delete, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.audit import AuditEvent
-from forge_db.audit.chain import verify_chain
-from forge_db.audit.repository import AuditQueryRepository
-from forge_db.audit.writer import SqlAuditWriter
-from forge_db.base import Base
-from forge_db.models import AuditLog, AuditLogImmutableError, Workspace
+from scf_contracts.audit import AuditEvent
+from scf_db.audit.chain import verify_chain
+from scf_db.audit.repository import AuditQueryRepository
+from scf_db.audit.writer import SqlAuditWriter
+from scf_db.base import Base
+from scf_db.models import AuditLog, AuditLogImmutableError, Workspace
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 
@@ -135,7 +135,7 @@ def test_immutability_trigger_ddl_compiles_for_postgres_and_skips_sqlite() -> No
     """The reusable helper (F07/F09 hand-off) is dialect-guarded (AC17)."""
     from sqlalchemy import Column, Integer, MetaData, Table
 
-    from forge_db.base import attach_immutability_trigger
+    from scf_db.base import attach_immutability_trigger
 
     md = MetaData()
     fake = Table("fake_transition", md, Column("id", Integer, primary_key=True))

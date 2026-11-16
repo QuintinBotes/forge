@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from forge_agent.graph import END, GraphError, StateGraph
+from scf_agent.graph import END, GraphError, StateGraph
 
 
 @dataclass

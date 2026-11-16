@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_auth.rbac import ROLE_RANK, has_at_least, max_grantable_role
-from forge_contracts.enums import UserRole
+from scf_auth.rbac import ROLE_RANK, has_at_least, max_grantable_role
+from scf_contracts.enums import UserRole
 
 
 def test_rank_ordering() -> None:

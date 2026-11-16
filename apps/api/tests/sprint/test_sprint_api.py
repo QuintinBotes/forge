@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 from fastapi.testclient import TestClient
 
-from forge_contracts import UserRole
+from scf_contracts import UserRole
 
 API = ""
 

@@ -16,11 +16,11 @@ from conftest import (
 )
 from sqlalchemy.orm import Session
 
-from forge_contracts.dtos import DeployRules
-from forge_deploy.freeze import FakeClock
-from forge_deploy.gate import DeploymentGateEvaluator
-from forge_deploy.repository import DeploymentRepository
-from forge_deploy.states import (
+from scf_contracts.dtos import DeployRules
+from scf_deploy.freeze import FakeClock
+from scf_deploy.gate import DeploymentGateEvaluator
+from scf_deploy.repository import DeploymentRepository
+from scf_deploy.states import (
     DeploymentState,
     DeploymentTrigger,
     GateCheckName,

@@ -1,14 +1,14 @@
 [project]
-name = "forge-knowledge"
+name = "scf-knowledge"
 version = "0.1.0"
 description = "Chunking, embeddings, hybrid retrieval, RRF fusion, and reranking."
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
-authors = [{ name = "The Forge Authors" }]
+authors = [{ name = "The Swarm Code Factory Authors" }]
 dependencies = [
-    "forge-contracts",
-    "forge-db",
+    "scf-contracts",
+    "scf-db",
     "numpy>=2.5.1",
     "httpx>=0.27",
     # Tree-sitter multi-language code chunking backend (Task H2). The stdlib
@@ -25,4 +25,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["forge_knowledge"]
+packages = ["scf_knowledge"]

@@ -1,4 +1,4 @@
-# Forge Prometheus alerting rules (HARD-10 §1.4 — new vs F38, which deferred
+# SCF Prometheus alerting rules (HARD-10 §1.4 — new vs F38, which deferred
 # alerting to V2). Each alert covers a production-maturity signal and carries a
 # runbook annotation that links to docs/self-hosting/observability.md. Every
 # expression references only instruments from the frozen §4 catalog + the

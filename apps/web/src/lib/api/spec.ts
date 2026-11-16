@@ -20,7 +20,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import { specStudioKeys } from "./spec-studio";
 import type {
   ADR,
@@ -44,7 +44,7 @@ export const specKeys = {
 /** The spec-validation dashboard payload for a project. */
 export function useSpecOverview(
   projectId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<SpecDashboard> {
   return useQuery({
     queryKey: specKeys.overview(projectId),
@@ -96,7 +96,7 @@ function hasExtraGuidedFields(body: CreateSpecVariables): boolean {
  * the author drafted is lost.
  */
 export function useCreateSpec(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecManifest, Error, CreateSpecVariables> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -149,7 +149,7 @@ interface ApproveSpecContext {
  * restores the snapshots; `onSettled` revalidates from the engine.
  */
 export function useApproveSpec(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<
   SpecManifest,
   Error,
@@ -217,7 +217,7 @@ interface ReviewSpecContext {
  * persisted note win).
  */
 function useReviewSpecDecision(
-  client: ForgeApiClient,
+  client: ScfApiClient,
   status: "rejected" | "changes_requested",
   send: (specId: string, note: string) => Promise<SpecManifest>,
 ): UseMutationResult<SpecManifest, Error, ReviewSpecVariables, ReviewSpecContext> {
@@ -252,7 +252,7 @@ function useReviewSpecDecision(
 
 /** Reject a spec at the human gate (`POST /spec/specs/{id}/reject`). */
 export function useRejectSpec(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecManifest, Error, ReviewSpecVariables, ReviewSpecContext> {
   return useReviewSpecDecision(client, "rejected", (specId, note) =>
     client.rejectSpec(specId, note),
@@ -261,7 +261,7 @@ export function useRejectSpec(
 
 /** Request changes on a spec at the human gate (`POST /spec/specs/{id}/request-changes`). */
 export function useRequestSpecChanges(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecManifest, Error, ReviewSpecVariables, ReviewSpecContext> {
   return useReviewSpecDecision(client, "changes_requested", (specId, note) =>
     client.requestSpecChanges(specId, note),
@@ -332,7 +332,7 @@ function invalidateSpecCaches(queryClient: ReturnType<typeof useQueryClient>, sp
  * Optimistic — flips the spec to `clarifying` immediately, like `useApproveSpec`.
  */
 export function useClarifySpec(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecManifest, Error, SpecIdVariables, OptimisticStatusContext> {
   const queryClient = useQueryClient();
   return useMutation<SpecManifest, Error, SpecIdVariables, OptimisticStatusContext>({
@@ -352,7 +352,7 @@ export function useClarifySpec(
  * flip, so the UI waits for the engine's response.
  */
 export function usePlanSpec(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SpecManifest, Error, SpecIdVariables> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -367,7 +367,7 @@ export function usePlanSpec(
  * response is the task list, not the manifest, and the action is gated.
  */
 export function useGenerateTasks(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<TaskDTO[], Error, SpecIdVariables> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -383,7 +383,7 @@ export function useGenerateTasks(
  * Build step to have run first in this session.
  */
 export function useValidateSpec(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<ValidationReport, Error, SpecIdVariables> {
   const queryClient = useQueryClient();
   return useMutation({

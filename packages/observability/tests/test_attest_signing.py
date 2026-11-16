@@ -8,9 +8,9 @@ import hashlib
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from forge_auth.errors import KeyMaterialError
-from forge_contracts.attestation import DSSE_PAYLOAD_TYPE_INTOTO, DsseEnvelope, DsseSignature
-from forge_obs.attest.signing import (
+from scf_auth.errors import KeyMaterialError
+from scf_contracts.attestation import DSSE_PAYLOAD_TYPE_INTOTO, DsseEnvelope, DsseSignature
+from scf_obs.attest.signing import (
     SIGNING_KEY_ENV,
     DsseSigner,
     DsseVerifier,

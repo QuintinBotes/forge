@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent.sandbox import LocalSandboxProvider
-from forge_eval.golden import GoldenCase
-from forge_eval.sweval import run_self_eval
+from scf_agent.sandbox import LocalSandboxProvider
+from scf_eval.golden import GoldenCase
+from scf_eval.sweval import run_self_eval
 
 _BROKEN = "def add(a, b):\n    return a - b\n"
 _FIXED = "def add(a, b):\n    return a + b\n"

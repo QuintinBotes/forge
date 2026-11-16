@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent.providers import ModelClientUnavailable
-from forge_agent.sandbox.settings import SandboxSettings
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_contracts import AgentObjective, RunStatus, SandboxKind, StepKind
-from forge_worker import agent_runner as agent_runner_module
-from forge_worker.agent_runner import build_agent_runner, run_agent_task, run_objective
-from forge_worker.run_workspace import prepared_workspace
+from scf_agent.providers import ModelClientUnavailable
+from scf_agent.sandbox.settings import SandboxSettings
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_contracts import AgentObjective, RunStatus, SandboxKind, StepKind
+from scf_worker import agent_runner as agent_runner_module
+from scf_worker.agent_runner import build_agent_runner, run_agent_task, run_objective
+from scf_worker.run_workspace import prepared_workspace
 
 POLICY = """\
 repo_id: sample
@@ -162,8 +162,8 @@ def test_celery_task_runs_in_a_workspace_and_reports_the_branch(
 def test_remove_run_worktrees_removes_only_that_runs_worktree_once(repo: Path) -> None:
     """``forge.cleanup_worktree`` (spec K §4.11): a worktree a cancelled run
     left behind is removed, its branch kept; a second call is a no-op."""
-    from forge_agent.sandbox import WorktreeSandbox
-    from forge_worker.run_workspace import remove_run_worktrees, run_branch
+    from scf_agent.sandbox import WorktreeSandbox
+    from scf_worker.run_workspace import remove_run_worktrees, run_branch
 
     gone, kept = uuid.uuid4(), uuid.uuid4()
     leftover = WorktreeSandbox(repo).create(branch=run_branch("forge", gone))

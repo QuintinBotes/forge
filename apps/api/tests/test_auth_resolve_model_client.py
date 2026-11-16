@@ -12,10 +12,10 @@ from typing import Any
 
 import pytest
 
-import forge_agent.providers as providers
-from forge_agent.providers import ModelClientError
-from forge_api.auth.service import AuthService
-from forge_contracts.enums import APIKeyKind
+import scf_agent.providers as providers
+from scf_agent.providers import ModelClientError
+from scf_api.auth.service import AuthService
+from scf_contracts.enums import APIKeyKind
 
 _VAULT_KEY = "vault-model-key-0001"
 

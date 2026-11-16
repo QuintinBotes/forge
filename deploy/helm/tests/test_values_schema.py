@@ -17,7 +17,7 @@ import pytest
 jsonschema = pytest.importorskip("jsonschema")
 yaml = pytest.importorskip("yaml")
 
-CHART_DIR = Path(__file__).resolve().parents[1] / "forge"
+CHART_DIR = Path(__file__).resolve().parents[1] / "swarm-code-factory"
 SCHEMA_PATH = CHART_DIR / "values.schema.json"
 BASE_VALUES = CHART_DIR / "values.yaml"
 EXAMPLE_VALUES = CHART_DIR / "values.example.yaml"

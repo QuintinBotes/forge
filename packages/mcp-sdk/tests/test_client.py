@@ -1,18 +1,18 @@
-"""Tests for :class:`forge_mcp.MCPGatewayClient` (plan Task 1.12).
+"""Tests for :class:`scf_mcp.MCPGatewayClient` (plan Task 1.12).
 
 Required behaviours from the plan:
 - a read-only connection rejects a write tool call,
 - an audit entry is recorded with redacted secrets,
 - namespace scoping filters resources.
 
-Live transport is mocked via :class:`forge_mcp.testing.FakeTransport`.
+Live transport is mocked via :class:`scf_mcp.testing.FakeTransport`.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     Decision,
     DecisionEffect,
     MCPAuth,
@@ -26,9 +26,9 @@ from forge_contracts import (
     PolicyViolationError,
     ToolCall,
 )
-from forge_mcp import MCPGatewayClient
-from forge_mcp.exceptions import MCPInputError, MCPNamespaceError, MCPSecurityError
-from forge_mcp.testing import FakeTransport, sample_connection, sample_transport
+from scf_mcp import MCPGatewayClient
+from scf_mcp.exceptions import MCPInputError, MCPNamespaceError, MCPSecurityError
+from scf_mcp.testing import FakeTransport, sample_connection, sample_transport
 
 
 def _connect(

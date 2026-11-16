@@ -11,8 +11,8 @@ from __future__ import annotations
 import httpx
 from conftest import make_transport
 
-from forge_integrations import GitHubAuditEvent, GitHubClient, RetryPolicy
-from forge_integrations.github import _hash_body
+from scf_integrations import GitHubAuditEvent, GitHubClient, RetryPolicy
+from scf_integrations.github import _hash_body
 
 TOKEN = "ghs_supersecret_installation_token_deadbeef00"
 
@@ -89,7 +89,7 @@ def test_network_error_detail_has_no_token() -> None:
 
     import pytest
 
-    from forge_integrations import GitHubError
+    from scf_integrations import GitHubError
 
     client = _app_client(handler, events)
     with pytest.raises(GitHubError) as exc:

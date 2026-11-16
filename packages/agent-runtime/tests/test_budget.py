@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from forge_agent import AgentRunner
-from forge_agent.budget import BudgetedModelClient
-from forge_agent.providers.base import ModelClientError
-from forge_agent.testing import ScriptedModelClient, tool_response
-from forge_agent.tools import ToolRegistry, ToolResult
-from forge_contracts import AgentObjective, ModelRequest, ModelResponse, RunStatus, TokenUsage
+from scf_agent import AgentRunner
+from scf_agent.budget import BudgetedModelClient
+from scf_agent.providers.base import ModelClientError
+from scf_agent.testing import ScriptedModelClient, tool_response
+from scf_agent.tools import ToolRegistry, ToolResult
+from scf_contracts import AgentObjective, ModelRequest, ModelResponse, RunStatus, TokenUsage
 
 
 class Metered:

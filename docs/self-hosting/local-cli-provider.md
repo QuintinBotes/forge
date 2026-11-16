@@ -8,34 +8,34 @@
 
 ## What it is
 
-Forge's model client is provider-agnostic BYOK (`FORGE_MODEL_PROVIDER=anthropic|openai`
+Swarm Code Factory's model client is provider-agnostic BYOK (`FORGE_MODEL_PROVIDER=anthropic|openai`
 plus an API key). This provider is a third option for local development and
-self-hosting: instead of an API key, Forge drives a locally installed `claude`
+self-hosting: instead of an API key, SCF drives a locally installed `claude`
 or `codex` CLI as a **text oracle** — it sends a prompt, parses a structured
 JSON envelope back, and treats that exactly like an API response. The CLI's
 own tool use (Bash, Edit, Write, file access, web fetch, ...) is configured
 off on every invocation: these CLIs are themselves autonomous coding agents,
-and running one unconstrained *while Forge's own agent loop also acts* would
+and running one unconstrained *while SCF's own agent loop also acts* would
 mean two agent loops mutating one working tree with no sandbox boundary
-between them. All tool execution is meant to stay inside Forge's own audited
+between them. All tool execution is meant to stay inside SCF's own audited
 sandbox; the local CLI is meant to only ever propose text and (optionally)
-which Forge tool to call next, via the JSON envelope. **What is proven vs.
+which SCF tool to call next, via the JSON envelope. **What is proven vs.
 what is configured differs by CLI — see "Verification status" below before
 you pick one.**
 
 This is meant for people who already pay for a `claude`/`codex` subscription
-and want to try or run Forge without also provisioning a separate BYOK API
+and want to try or run SCF without also provisioning a separate BYOK API
 key.
 
 ## Why a bridge exists (the architecture constraint)
 
-The Forge worker (and API) run inside Linux containers. The `claude`/`codex`
+The SCF worker (and API) run inside Linux containers. The `claude`/`codex`
 CLIs you have installed are host binaries (e.g. Mach-O/arm64 on macOS) — a
 Linux container cannot execute them, and shipping a Linux build of each CLI
-into the image is not something Forge controls or wants to depend on.
+into the image is not something SCF controls or wants to depend on.
 
 So when the container needs the local CLI, it does not spawn it directly.
-Instead, you run a small HTTP bridge (`forge-cli-bridge`) **on the host**,
+Instead, you run a small HTTP bridge (`scf-cli-bridge`) **on the host**,
 listening on loopback. The bridge spawns the CLI as a subprocess on your
 behalf and returns the same request/response envelope
 (`ModelRequest`/`ModelResponse`) the container would otherwise build itself.
@@ -68,8 +68,8 @@ credentials.
    make cli-bridge
    ```
 
-   `make cli-bridge` runs `uv run python -m forge_cli_bridge.main` —
-   **not** `uvicorn forge_cli_bridge.main:app --host ... --port ...`. This
+   `make cli-bridge` runs `uv run python -m scf_cli_bridge.main` —
+   **not** `uvicorn scf_cli_bridge.main:app --host ... --port ...`. This
    matters: `main.py` binds the socket itself, from the same validated
    `BridgeSettings` object it built the app from, so the address it actually
    binds is the address its own loopback guard checked. Invoking the module
@@ -79,7 +79,7 @@ credentials.
    `--host` an external ASGI runner is given, so a typo'd `--host 0.0.0.0`
    binds every interface while `/health` still reports the process as
    loopback-only). If you need an ASGI-managed deployment that owns its own
-   bind configuration, `uvicorn forge_cli_bridge.main:app` still works as a
+   bind configuration, `uvicorn scf_cli_bridge.main:app` still works as a
    plain ASGI import — that is not the default or the path this guide covers,
    and it is not an endorsement: on that path `main.py`'s bind guard never
    runs at all, so **you** are solely responsible for guaranteeing the
@@ -148,14 +148,14 @@ environment, but at all.** Watch its first response carefully. This is not a
 reason to avoid `codex`; the implementation is not known to be broken, only
 unexercised. It is a reason to know which one you are trusting.
 
-See `packages/agent-runtime/forge_agent/providers/local_cli/backends.py` —
+See `packages/agent-runtime/scf_agent/providers/local_cli/backends.py` —
 `CodexCliBackend`'s docstring spells out exactly what is inferred-from-docs
 vs. verified, and the module-level `TODO(local_cli behavioural verification)`
 covers both backends' tool-suppression enforcement gap.
 
 ## Resolution order
 
-`ModelClientConfig.from_env()` (`packages/agent-runtime/forge_agent/providers/config.py`)
+`ModelClientConfig.from_env()` (`packages/agent-runtime/scf_agent/providers/config.py`)
 resolves, in order:
 
 1. `FORGE_MODEL_PROVIDER` explicitly set to `anthropic` or `openai` with a key
@@ -207,12 +207,12 @@ which CLI is preferred when more than one is detected; it defaults to
 | CLI credentials | Never read or forwarded by the bridge. They stay in the host's keychain/CLI config and are used directly by the `claude`/`codex` subprocess the bridge spawns; the bridge itself only ever sees the request/response envelope text. |
 | Startup banner | An unconditional warning-level log line restates "DEVELOPMENT / SELF-HOST CONVENIENCE ONLY" every time the process starts, not only when the non-loopback override is set. |
 | Concurrency bound | At most `FORGE_CLI_BRIDGE_MAX_CONCURRENCY` (default 4) `/v1/complete` calls may spawn a CLI subprocess at once — each can run for up to `FORGE_LOCAL_CLI_TIMEOUT_S` (default 600s) and spends real subscription quota, so an unbounded burst is a plausible accident, not only an attack. |
-| CLI tool use | **Configured** off on every invocation (empty `--allowedTools` plus an explicit `--disallowedTools` deny-list, `--permission-mode plan`, `--permission-prompts none` for `claude`; `--sandbox read-only` for `codex`) — the CLI is meant to be a text oracle only. Configuration has been verified to be *accepted* by the real `claude` CLI (it doesn't error on it); the `codex` flags have never been sent to the live binary at all (see "Verification status" above), so for `codex` even acceptance is unverified. **Enforcement has not yet been exercised end to end**: no test sends a prompt engineered to provoke a tool call and asserts none occurs (see the `TODO(local_cli behavioural verification)` in `packages/agent-runtime/forge_agent/providers/local_cli/backends.py`). Treat suppression as the intended, configured design, not as independently proven. |
-| Stderr redaction | Raw CLI stderr is passed through the shared `forge_api` secret redactor before it ever reaches the host log, when that package is installed; otherwise the bridge logs a loud warning that redaction is unavailable rather than silently skipping it. |
+| CLI tool use | **Configured** off on every invocation (empty `--allowedTools` plus an explicit `--disallowedTools` deny-list, `--permission-mode plan`, `--permission-prompts none` for `claude`; `--sandbox read-only` for `codex`) — the CLI is meant to be a text oracle only. Configuration has been verified to be *accepted* by the real `claude` CLI (it doesn't error on it); the `codex` flags have never been sent to the live binary at all (see "Verification status" above), so for `codex` even acceptance is unverified. **Enforcement has not yet been exercised end to end**: no test sends a prompt engineered to provoke a tool call and asserts none occurs (see the `TODO(local_cli behavioural verification)` in `packages/agent-runtime/scf_agent/providers/local_cli/backends.py`). Treat suppression as the intended, configured design, not as independently proven. |
+| Stderr redaction | Raw CLI stderr is passed through the shared `scf_api` secret redactor before it ever reaches the host log, when that package is installed; otherwise the bridge logs a loud warning that redaction is unavailable rather than silently skipping it. |
 | `/health` semantics | Reports detected CLIs and whether *this process's own* `FORGE_CLI_BRIDGE_ALLOW_NON_LOOPBACK` was set — it is not, and cannot be, a report of the actual bound socket (that depends on how the process was launched; see "Setup" above). Confirm real exposure with `lsof -i :8099` if you need to. |
 
 Full detail: [`apps/cli-bridge/README.md`](../../apps/cli-bridge/README.md) and
-the module docstrings in `apps/cli-bridge/forge_cli_bridge/{main,app,settings}.py`.
+the module docstrings in `apps/cli-bridge/scf_cli_bridge/{main,app,settings}.py`.
 
 ## Cost accounting
 

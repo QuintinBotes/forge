@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import {
   useInstallPackage,
   usePreviewInstall,
@@ -36,7 +36,7 @@ export interface InstallDialogProps {
   listing: Listing;
   /** Install a specific version; defaults to the listing's latest. */
   version?: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
   onInstalled?: (result: InstallResult) => void;
 }
 

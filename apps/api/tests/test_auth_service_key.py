@@ -14,9 +14,9 @@ import uuid
 
 import pytest
 
-from forge_api.auth.crypto import FernetCipher
-from forge_api.auth.service import AuthService, _resolve_master_key
-from forge_contracts.enums import APIKeyKind
+from scf_api.auth.crypto import FernetCipher
+from scf_api.auth.service import AuthService, _resolve_master_key
+from scf_contracts.enums import APIKeyKind
 
 
 def test_explicit_secret_key_is_used(monkeypatch: pytest.MonkeyPatch) -> None:

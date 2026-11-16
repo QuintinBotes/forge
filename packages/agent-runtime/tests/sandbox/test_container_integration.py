@@ -15,8 +15,8 @@ import uuid
 
 import pytest
 
-from forge_agent.sandbox import ContainerSandboxProvider, SandboxStartupError
-from forge_contracts import SandboxKind, SandboxSpec
+from scf_agent.sandbox import ContainerSandboxProvider, SandboxStartupError
+from scf_contracts import SandboxKind, SandboxSpec
 
 pytestmark = pytest.mark.docker
 

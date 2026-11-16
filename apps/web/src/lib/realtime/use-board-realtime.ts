@@ -3,7 +3,7 @@
 /**
  * Board realtime hook.
  *
- * Subscribes to the Forge realtime WebSocket and invalidates the relevant
+ * Subscribes to the SCF realtime WebSocket and invalidates the relevant
  * TanStack Query caches when server events arrive (spec: "Live task updates,
  * run traces, approvals"). The socket is created through an injectable factory
  * so the hook is testable under jsdom (which has no `WebSocket`).
@@ -41,7 +41,7 @@ export interface UseBoardRealtimeOptions {
   /**
    * Bearer token forwarded as the `?token=` WS auth query param (mirrors the
    * spec-collab hook). Defaults to the same token source `apiClient` uses
-   * (`ForgeApiClient#token`), so board and REST auth never drift apart.
+   * (`ScfApiClient#token`), so board and REST auth never drift apart.
    */
   token?: string;
   /** Inject a socket (tests); defaults to the global `WebSocket`. */

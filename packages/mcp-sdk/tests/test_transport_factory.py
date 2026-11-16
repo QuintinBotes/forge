@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     MCPAuth,
     MCPAuthType,
     MCPConnection,
     MCPTransport,
 )
-from forge_mcp.exceptions import MCPSecurityError
-from forge_mcp.transports import live_transport_factory
-from forge_mcp.transports.http import HttpMcpTransport
-from forge_mcp.transports.stdio import StdioMcpTransport
+from scf_mcp.exceptions import MCPSecurityError
+from scf_mcp.transports import live_transport_factory
+from scf_mcp.transports.http import HttpMcpTransport
+from scf_mcp.transports.stdio import StdioMcpTransport
 
 
 def _factory(**kw):

@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from forge_eval.ctxbench.bank import SUITE_DIR, load_bank
-from forge_eval.ctxbench.claude import (
+from scf_eval.ctxbench.bank import SUITE_DIR, load_bank
+from scf_eval.ctxbench.claude import (
     AGENT_EFFORT,
     AGENT_MODEL,
     JUDGE_MODEL,
@@ -28,8 +28,8 @@ from forge_eval.ctxbench.claude import (
     parse_stream,
     run_claude,
 )
-from forge_eval.ctxbench.judge import JudgeError, judge, judge_prompt, parse_verdict
-from forge_eval.ctxbench.prompts import load_prompts
+from scf_eval.ctxbench.judge import JudgeError, judge, judge_prompt, parse_verdict
+from scf_eval.ctxbench.prompts import load_prompts
 
 FAKE = str(Path(__file__).resolve().parent / "fake_claude.py")
 SUBJECT = "acme-example/lore"
@@ -52,7 +52,7 @@ def _init(result: ClaudeResult) -> dict:
     return json.loads(lines[0])["fake"]
 
 
-def _forge(prompt: str) -> ClaudeCall:
+def _scf(prompt: str) -> ClaudeCall:
     servers = mcp_config("http://forge.invalid/mcp", "t")
     return ClaudeCall(model=AGENT_MODEL, prompt=prompt, mcp_servers=servers, claude_bin=FAKE)
 
@@ -122,7 +122,7 @@ def test_mcp_failure_or_missing_server_makes_an_ask_invalid(tmp_path: Path) -> N
 
 
 def test_a_forge_tool_error_makes_an_ask_invalid(tmp_path: Path) -> None:
-    result = _run(tmp_path, _forge("Question: TOOLERROR"))
+    result = _run(tmp_path, _scf("Question: TOOLERROR"))
     assert result.error is None  # the run itself ended well: only the tool failed
     assert ask_problems(result, expect_forge=True) == [
         "forge tool error: mcp__forge__assemble_context: Error: HTTP 502 Bad Gateway"
@@ -146,7 +146,7 @@ def test_a_forge_tool_error_makes_an_ask_invalid(tmp_path: Path) -> None:
 
 
 def test_the_none_arm_with_a_server_and_a_rerank_mismatch_are_invalid(tmp_path: Path) -> None:
-    result = _run(tmp_path, _forge("Question: q"))
+    result = _run(tmp_path, _scf("Question: q"))
     assert ask_problems(result, expect_forge=False) == [
         "unexpected tools ['mcp__forge__assemble_context']",
         "unexpected mcp servers ['forge']",
@@ -156,7 +156,7 @@ def test_the_none_arm_with_a_server_and_a_rerank_mismatch_are_invalid(tmp_path: 
 
 
 def test_only_forge_tools_may_be_listed(tmp_path: Path) -> None:
-    stray = _run(tmp_path, _forge("Question: STRAYTOOL"))
+    stray = _run(tmp_path, _scf("Question: STRAYTOOL"))
     assert ask_problems(stray, expect_forge=True) == ["unexpected tools ['Bash']"]
     assert ask_problems(_run(tmp_path, _none("Question: STRAYTOOL")), expect_forge=False) == [
         "unexpected tools ['Bash']"

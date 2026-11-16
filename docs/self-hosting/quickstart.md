@@ -1,6 +1,6 @@
-# Forge self-hosting quickstart
+# Swarm Code Factory self-hosting quickstart
 
-Stand up a complete Forge instance on a single machine with Docker Compose. This
+Stand up a complete SCF instance on a single machine with Docker Compose. This
 is the fastest path from a clone to a running board, knowledge pipeline, and
 API. For the production hardening details see
 [docker-compose.md](docker-compose.md); for the edge proxy (Caddy by default,
@@ -20,8 +20,8 @@ operations see [backup.md](backup.md), [restore.md](restore.md),
 ## 1. Clone and configure
 
 ```bash
-git clone https://github.com/QuintinBotes/forge.git
-cd forge
+git clone https://github.com/QuintinBotes/swarm-code-factory.git
+cd swarm-code-factory
 cp .env.example .env
 ```
 
@@ -29,11 +29,11 @@ Edit `.env` and set, at minimum:
 
 - `FORGE_SECRET_KEY` and `AUTH_SECRET` — long random strings (e.g.
   `openssl rand -hex 32`). (`SECRET_KEY` is a deprecated alias that is
-  detected and warned about — see `apps/api/forge_api/cli_secrets.py`.)
+  detected and warned about — see `apps/api/scf_api/cli_secrets.py`.)
 - `POSTGRES_PASSWORD` and `MINIO_ROOT_PASSWORD` — strong unique secrets.
 - `DOMAIN` — the hostname Caddy will serve (use `localhost` for a local trial).
 - `FORGE_MODEL_PROVIDER` (`anthropic`|`openai`) plus a BYOK key
-  (`FORGE_MODEL_API_KEY`, or `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) — Forge is
+  (`FORGE_MODEL_API_KEY`, or `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) — SCF is
   provider agnostic; leave `FORGE_MODEL_PROVIDER` unset to run the platform on the
   offline scripted model (no live model calls).
 
@@ -69,7 +69,7 @@ docker compose -f deploy/docker-compose.yml exec api \
 curl -fsS http://localhost:8000/health
 ```
 
-A `200` response means the API is up. Open Forge at `https://$DOMAIN` — the
+A `200` response means the API is up. Open SCF at `https://$DOMAIN` — the
 Caddy edge, which serves the UI and `/api/*` from one origin. The web
 container's own port is an implementation detail; a browser sent there has no
 `/api` to talk to.
@@ -79,7 +79,7 @@ API key to get past the Connect screen. Mint one against the running stack:
 
 ```bash
 docker compose -f deploy/docker-compose.yml exec -e FORGE_SEED_ADMIN_KEY=1 api \
-  python -m forge_api.scripts.seed
+  python -m scf_api.scripts.seed
 ```
 
 The token is printed once. It is a full workspace admin credential and it lands

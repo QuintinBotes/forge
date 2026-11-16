@@ -4,7 +4,7 @@ import { GitCompareArrows } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useReplayRun } from "@/lib/api/observability";
 import type { ReplayRunResult } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -13,11 +13,11 @@ export interface TimeTravelReplayProps {
   /**
    * The `RunRecording` id to replay — a separate id space from the
    * `AgentRunResult.run_id` this viewer otherwise shows (see
-   * `forge_api.routers.agent.replay_run`); only populated for runs taped
+   * `scf_api.routers.agent.replay_run`); only populated for runs taped
    * under `FORGE_RECORD_RUNS=1`.
    */
   runId: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
 }
 
 /**

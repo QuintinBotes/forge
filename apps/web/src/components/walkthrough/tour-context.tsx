@@ -2,7 +2,7 @@
 
 /**
  * Guided-walkthrough tour engine — a custom, design-token-native tour (no
- * third-party dependency) so it renders in the Forge system and stays fully
+ * third-party dependency) so it renders in the SCF system and stays fully
  * keyboard-accessible.
  *
  * The tour is dismissible, resumable and restartable: its status + position are

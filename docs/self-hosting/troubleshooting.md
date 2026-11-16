@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common failures when self-hosting Forge and how to fix them. Start with the
+Common failures when self-hosting Swarm Code Factory and how to fix them. Start with the
 triage commands, then jump to the matching section.
 
 ## Triage
@@ -147,7 +147,7 @@ Back up first if the data matters — see [backup.md](backup.md).
 Collect a redacted log bundle and the output of
 `docker compose -f deploy/docker-compose.yml ps` and
 `... config` before opening an issue. Confirm secrets are not present in the
-logs you share — Forge redacts known secret fields, but double-check.
+logs you share — SCF redacts known secret fields, but double-check.
 
 ## Related
 

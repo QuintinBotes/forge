@@ -1,15 +1,15 @@
 """Tests for MCP query-through retrieval (plan Task 1.12; spec: MCP query-through).
 
 Query-through calls the MCP server live at retrieval time and normalises the
-returned resources into attributed :class:`~forge_contracts.RetrievedChunk`
+returned resources into attributed :class:`~scf_contracts.RetrievedChunk`
 objects tagged ``mcp_resource`` (chunk-type weight 1.0x per the spec table).
 """
 
 from __future__ import annotations
 
-from forge_contracts import ChunkType, RetrievedChunk
-from forge_mcp import MCPGatewayClient, query_through
-from forge_mcp.testing import sample_connection, sample_transport
+from scf_contracts import ChunkType, RetrievedChunk
+from scf_mcp import MCPGatewayClient, query_through
+from scf_mcp.testing import sample_connection, sample_transport
 
 
 def _client() -> MCPGatewayClient:

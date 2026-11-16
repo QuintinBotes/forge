@@ -6,29 +6,29 @@
 
 **Status**: Draft
 
-**Input**: Roadmap milestone M6 (`docs/superpowers/plans/2026-11-14-industry-standard-roadmap.md`, issues R28 to R33) and roadmap decisions D1 and D2 as decided on 2026-11-15. D1: both shapes, in order. First, forge runs appear in tervin as ACP sessions that can be watched and approved there. Then tervin as forge's local runner is built as real roadmap work, not a prototype. D2: the target is tervin's unreleased v3 line.
+**Input**: Roadmap milestone M6 (`docs/superpowers/plans/2026-11-14-industry-standard-roadmap.md`, issues R28 to R33) and roadmap decisions D1 and D2 as decided on 2026-11-15. D1: both shapes, in order. First, SCF runs appear in tervin as ACP sessions that can be watched and approved there. Then tervin as SCF's local runner is built as real roadmap work, not a prototype. D2: the target is tervin's unreleased v3 line.
 
-**Builds on**: lettered spec L (`docs/superpowers/specs/2026-11-07-tervin-bridge-design.md`), ADR-0002 (forge is the system of record, tervin its desktop face), ADR-0013 (one run-event vocabulary), ADR-0015 (desktop integration contract), ADR-0012 (two executor modes, Proposed), ADR-0007 (production paths fail closed).
+**Builds on**: lettered spec L (`docs/superpowers/specs/2026-11-07-tervin-bridge-design.md`), ADR-0002 (SCF is the system of record, tervin its desktop face), ADR-0013 (one run-event vocabulary), ADR-0015 (desktop integration contract), ADR-0012 (two executor modes, Proposed), ADR-0007 (production paths fail closed).
 
 ## Why this exists
 
-The roadmap's goal says forge "runs with tervin". Forge's side of spec L seams 1 to 3 is built: MCP tools, `forge-cli --json` and the run event stream. Three things stand between that and a developer watching and approving a forge run from tervin.
+The roadmap's goal says SCF "runs with tervin". Swarm Code Factory's side of spec L seams 1 to 3 is built: MCP tools, `scf-cli --json` and the run event stream. Three things stand between that and a developer watching and approving an SCF run from tervin.
 
-First, the two projects disagree. Forge's ADR-0002 makes forge the system of record and tervin its client. The roadmap records that tervin's spec 023 contradicts ADR-0002, ADR-0013 and ADR-0015. Spec L also claims that seam 1 needs only one `mcp.json` entry on tervin's side, while the roadmap records that tervin's MCP configuration is stdio-only and forge's MCP server speaks HTTP. The owner settled this on 2026-11-15 (roadmap section 3a, decisions 1, 2 and 15): tervin gains HTTP MCP support on its v3 line, and forge ships no stdio proxy. The ADR of User Story 1 records it.
+First, the two projects disagree. SCF's ADR-0002 makes SCF the system of record and tervin its client. The roadmap records that tervin's spec 023 contradicts ADR-0002, ADR-0013 and ADR-0015. Spec L also claims that seam 1 needs only one `mcp.json` entry on tervin's side, while the roadmap records that tervin's MCP configuration is stdio-only and SCF's MCP server speaks HTTP. The owner settled this on 2026-11-15 (roadmap section 3a, decisions 1, 2 and 15): tervin gains HTTP MCP support on its v3 line, and SCF ships no stdio proxy. The ADR of User Story 1 records it.
 
-Second, the one integration that needs no change in tervin does not exist. Tervin accepts any agent that speaks the Agent Client Protocol (ACP) over stdio. Forge has no ACP code.
+Second, the one integration that needs no change in tervin does not exist. Tervin accepts any agent that speaks the Agent Client Protocol (ACP) over stdio. SCF has no ACP code.
 
-Third, the supporting pieces of spec L are missing: a token narrowed to what a desktop client needs, a way to obtain it without pasting a secret, a forge small enough to run beside tervin on one machine, and a record of which surface decided an approval.
+Third, the supporting pieces of spec L are missing: a token narrowed to what a desktop client needs, a way to obtain it without pasting a secret, an SCF small enough to run beside tervin on one machine, and a record of which surface decided an approval.
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - One written position on how forge and tervin fit (Priority: P1)
+### User Story 1 - One written position on how SCF and tervin fit (Priority: P1)
 
-The owner reads one ADR that lists the ways the two projects can fit together, records the decision of 2026-11-15 (first forge runs appear in tervin as ACP sessions that can be watched and approved there, then tervin is built as forge's local runner; the target is tervin's v3 line; tervin gains HTTP MCP support), says what happens to each contradicted statement, and corrects spec L's seam 1 claim.
+The owner reads one ADR that lists the ways the two projects can fit together, records the decision of 2026-11-15 (first SCF runs appear in tervin as ACP sessions that can be watched and approved there, then tervin is built as SCF's local runner; the target is tervin's v3 line; tervin gains HTTP MCP support), says what happens to each contradicted statement, and corrects spec L's seam 1 claim.
 
 **Why this priority**: Every other story in this spec assumes the outcome. Building first and deciding later risks code that the other repository will not consume.
 
-**Independent Test**: A reviewer can read the ADR and answer, without other sources: which project owns the record, how a forge run reaches tervin, how forge's MCP tools reach an agent inside tervin, and which earlier statements are superseded.
+**Independent Test**: A reviewer can read the ADR and answer, without other sources: which project owns the record, how an SCF run reaches tervin, how SCF's MCP tools reach an agent inside tervin, and which earlier statements are superseded.
 
 **Acceptance Scenarios**:
 
@@ -38,28 +38,28 @@ The owner reads one ADR that lists the ways the two projects can fit together, r
 
 ---
 
-### User Story 2 - Watch and approve a forge run from an ACP client (Priority: P1)
+### User Story 2 - Watch and approve an SCF run from an ACP client (Priority: P1)
 
-A developer adds `forge acp` as an agent in tervin, or in any other ACP client. They type a request. A forge run starts on the forge server. The run's messages and tool activity appear in the client as the session progresses, each marked as gated by forge or only observed. When the run reaches an approval that the developer is allowed to decide, the client asks them, and their answer is recorded in forge.
+A developer adds `forge acp` as an agent in tervin, or in any other ACP client. They type a request. An SCF run starts on the SCF server. The run's messages and tool activity appear in the client as the session progresses, each marked as gated by SCF or only observed. When the run reaches an approval that the developer is allowed to decide, the client asks them, and their answer is recorded in SCF.
 
 **Why this priority**: This is the first of the two shapes in the owner's definition of "runs with tervin" (D1), and it is the only shape in which one side already has everything it needs.
 
-**Independent Test**: Drive `forge acp` over stdio with a scripted ACP client against a stubbed forge server: initialise, open a session, send a prompt, and observe session updates, one permission request, the decision posted to forge, and the end of the turn.
+**Independent Test**: Drive `forge acp` over stdio with a scripted ACP client against a stubbed SCF server: initialise, open a session, send a prompt, and observe session updates, one permission request, the decision posted to SCF, and the end of the turn.
 
 **Acceptance Scenarios**:
 
-1. **Given** a configured server and token, **When** the client sends a prompt, **Then** exactly one forge run is created and its events arrive in the client in order.
-2. **Given** a run with a pending approval tied to it, **When** the shim sees it, **Then** the client receives a permission request, and the client's answer is posted to forge as that approval's decision.
-3. **Given** a tool call that forge's policy already allowed or denied, **When** it reaches the client, **Then** it is shown as an update marked gated by forge, and the client is never asked to permit it.
-4. **Given** the connection to forge drops mid-run, **When** the shim reconnects, **Then** the session continues with no missing and no repeated event.
-5. **Given** the client cancels the session, **When** the shim receives the cancellation, **Then** it stops following the run and reports that the run continues on the server unless forge exposes cancellation.
+1. **Given** a configured server and token, **When** the client sends a prompt, **Then** exactly one SCF run is created and its events arrive in the client in order.
+2. **Given** a run with a pending approval tied to it, **When** the shim sees it, **Then** the client receives a permission request, and the client's answer is posted to SCF as that approval's decision.
+3. **Given** a tool call that SCF's policy already allowed or denied, **When** it reaches the client, **Then** it is shown as an update marked gated by SCF, and the client is never asked to permit it.
+4. **Given** the connection to SCF drops mid-run, **When** the shim reconnects, **Then** the session continues with no missing and no repeated event.
+5. **Given** the client cancels the session, **When** the shim receives the cancellation, **Then** it stops following the run and reports that the run continues on the server unless SCF exposes cancellation.
 6. **Given** no token in the named environment variable, **When** the shim starts, **Then** it reports a configuration error and never prompts for or prints a secret.
 
 ---
 
 ### User Story 3 - The record says who gated what and where it was decided (Priority: P2)
 
-A security reviewer reads a run's events and its approval audit entries. Each event states who observed it. Each approval decision states the surface it came from (forge's web app, the API, an ACP client such as tervin). An event can name a gate other than forge without forge claiming that it enforced the action.
+A security reviewer reads a run's events and its approval audit entries. Each event states who observed it. Each approval decision states the surface it came from (SCF's web app, the API, an ACP client such as tervin). An event can name a gate other than SCF without SCF claiming that it enforced the action.
 
 **Why this priority**: ADR-0013 promises that enforcement is "set by whichever side actually gated each action", and spec L's acceptance criterion 3 requires the audit entry to name tervin as the surface. The current contract cannot express either.
 
@@ -70,14 +70,14 @@ A security reviewer reads a run's events and its approval audit entries. Each ev
 1. **Given** an approval decided through the ACP shim, **When** the audit entry is read, **Then** it names the deciding surface and the authenticated principal, and the audit chain still verifies.
 2. **Given** a decision that names no surface, **When** it is recorded, **Then** the surface is recorded as the API, never as a desktop client.
 3. **Given** an approval opened by any producer, **When** it is created and when it is decided, **Then** one event for each reaches every `/ws` connection of that workspace and no connection of another workspace.
-4. **Given** an event whose gate was not forge, **When** it is stored or streamed, **Then** `observed_by` names that gate and forge does not mark the event as enforced by forge.
-5. **Given** an event that claims an observer forge does not know, **When** it is validated, **Then** it is rejected.
+4. **Given** an event whose gate was not SCF, **When** it is stored or streamed, **Then** `observed_by` names that gate and SCF does not mark the event as enforced by SCF.
+5. **Given** an event that claims an observer SCF does not know, **When** it is validated, **Then** it is rejected.
 
 ---
 
-### User Story 4 - Run forge beside tervin on one machine with a narrow token (Priority: P2)
+### User Story 4 - Run SCF beside tervin on one machine with a narrow token (Priority: P2)
 
-A developer starts a small forge (API, worker and database only) with one command, signs a desktop client in by confirming a short code in the browser, and ends up with a token that can read the board, specs, approvals and runs, start runs and decide approvals, and nothing else.
+A developer starts a small SCF (API, worker and database only) with one command, signs a desktop client in by confirming a short code in the browser, and ends up with a token that can read the board, specs, approvals and runs, start runs and decide approvals, and nothing else.
 
 **Why this priority**: Without this, trying the bridge means running the full stack and handing a desktop client an API key that carries a whole role's permissions.
 
@@ -93,9 +93,9 @@ A developer starts a small forge (API, worker and database only) with one comman
 
 ---
 
-### User Story 5 - Tervin as forge's local runner (Priority: P3)
+### User Story 5 - Tervin as SCF's local runner (Priority: P3)
 
-A forge run executes on a developer's machine behind tervin's rules (spec L seam 5). Forge parks the run for a runner, a registered runner leases it, streams its events back and submits a result. Decided 2026-11-15: this is built as real roadmap work, not a prototype, after the ACP shape of User Story 2.
+An SCF run executes on a developer's machine behind tervin's rules (spec L seam 5). SCF parks the run for a runner, a registered runner leases it, streams its events back and submits a result. Decided 2026-11-15: this is built as real roadmap work, not a prototype, after the ACP shape of User Story 2.
 
 **Why this priority**: D1 puts this shape second. It needs new work in both repositories and is tied to a single-user desktop app.
 
@@ -112,7 +112,7 @@ A forge run executes on a developer's machine behind tervin's rules (spec L seam
 
 ### User Story 6 - Prove it on a Mac with both apps (Priority: P2)
 
-A tester runs forge's single-user profile and a build of tervin's v3 line on one macOS machine, adds `forge acp` as an agent, starts a run, sees it progress, approves a gate in tervin, and finds the decision in forge's audit chain naming tervin as the surface.
+A tester runs SCF's single-user profile and a build of tervin's v3 line on one macOS machine, adds `forge acp` as an agent, starts a run, sees it progress, approves a gate in tervin, and finds the decision in SCF's audit chain naming tervin as the surface.
 
 **Why this priority**: Stories 2 to 4 are tested against stubs. Only a paired run shows that the two real programs agree.
 
@@ -121,7 +121,7 @@ A tester runs forge's single-user profile and a build of tervin's v3 line on one
 **Acceptance Scenarios**:
 
 1. **Given** the test script, **When** a tester follows it on a clean macOS account, **Then** each step has an expected observation and the record states pass or fail for each.
-2. **Given** a completed test, **When** the record is read, **Then** it states the forge commit, the tervin version, the macOS version, the date, and the evidence for each step.
+2. **Given** a completed test, **When** the record is read, **Then** it states the SCF commit, the tervin version, the macOS version, the date, and the evidence for each step.
 3. **Given** a step that fails, **When** the record is filed, **Then** an issue is linked for it.
 
 ---
@@ -130,7 +130,7 @@ A tester runs forge's single-user profile and a build of tervin's v3 line on one
 
 - The developer who prompts is not allowed to decide the approval that the run opens. The client is not asked. The run's update says an approval is pending for someone else.
 - An approval tied to the run is decided on another surface while the client is showing the request. The shim withdraws or completes the request with the recorded outcome and does not post a second decision.
-- Forge's native loop treats a "requires approval" policy result as a denial and does not pause the run. Such an event is shown as denied, never as a question.
+- SCF's native loop treats a "requires approval" policy result as a denial and does not pause the run. Such an event is shown as denied, never as a question.
 - The run ends while a permission request is open. The request is closed and the turn ends with the run's terminal state.
 - The event stream closes at its lifetime limit during a long turn. The shim reconnects from its last event id.
 - An ACP client offers a protocol version the shim does not support. The shim answers with the version it supports and the client decides.
@@ -138,7 +138,7 @@ A tester runs forge's single-user profile and a build of tervin's v3 line on one
 - A scoped token is used on `/ws`. It receives approval events only for its own workspace.
 - A device code is guessed. Codes are single-use, short-lived and rate-limited.
 - The single-user profile is started on a machine where the full stack is already running. Project names and ports do not collide.
-- Tervin is absent. Every forge feature in this spec still works with any other ACP client and with `forge-cli`.
+- Tervin is absent. Every SCF feature in this spec still works with any other ACP client and with `scf-cli`.
 
 ## Requirements *(mandatory)*
 
@@ -146,18 +146,18 @@ A tester runs forge's single-user profile and a build of tervin's v3 line on one
 
 **Decision record (R28)**
 
-- **FR-001**: An ADR MUST list the integration options (forge as an ACP agent that the desktop client gates; the desktop client as a reader of forge's record through seams 1 to 4; the desktop client as forge's local runner; each project keeping its own core), state for each what it needs from forge and from tervin and its main risk, and record roadmap decision D1 as decided on 2026-11-15: the ACP shape first, then the desktop client as forge's local runner, built as real roadmap work.
+- **FR-001**: An ADR MUST list the integration options (SCF as an ACP agent that the desktop client gates; the desktop client as a reader of SCF's record through seams 1 to 4; the desktop client as SCF's local runner; each project keeping its own core), state for each what it needs from SCF and from tervin and its main risk, and record roadmap decision D1 as decided on 2026-11-15: the ACP shape first, then the desktop client as SCF's local runner, built as real roadmap work.
 - **FR-002**: The ADR MUST state, for ADR-0002, ADR-0013 and ADR-0015, whether each stands, is amended or is superseded, and MUST state that the bridge targets tervin's unreleased v3 line (D2, decided 2026-11-15).
-- **FR-003**: Spec L MUST be corrected: seam 1 no longer claims that one `mcp.json` entry and no code change are enough, and states how an HTTP MCP server reaches a client whose MCP configuration is stdio-only. Decided 2026-11-15: tervin is changed. HTTP MCP support is added on tervin's v3 line and is tracked in tervin's repository. Forge corrects the claim in spec L and ships no stdio proxy.
-- **FR-004**: The ADR and spec L MUST describe tervin only from forge's public documents and the roadmap. They MUST NOT quote tervin's source, paths or internals.
+- **FR-003**: Spec L MUST be corrected: seam 1 no longer claims that one `mcp.json` entry and no code change are enough, and states how an HTTP MCP server reaches a client whose MCP configuration is stdio-only. Decided 2026-11-15: tervin is changed. HTTP MCP support is added on tervin's v3 line and is tracked in tervin's repository. SCF corrects the claim in spec L and ships no stdio proxy.
+- **FR-004**: The ADR and spec L MUST describe tervin only from SCF's public documents and the roadmap. They MUST NOT quote tervin's source, paths or internals.
 
 **ACP shim (R29, seam 6)**
 
-- **FR-005**: `forge-cli` MUST offer an `acp` command that speaks the Agent Client Protocol as an agent over stdio, at one pinned protocol version stated in the documentation.
-- **FR-006**: A prompt MUST create exactly one forge run through the same route every other client uses, and the session MUST follow that run's event stream.
+- **FR-005**: `scf-cli` MUST offer an `acp` command that speaks the Agent Client Protocol as an agent over stdio, at one pinned protocol version stated in the documentation.
+- **FR-006**: A prompt MUST create exactly one SCF run through the same route every other client uses, and the session MUST follow that run's event stream.
 - **FR-007**: Each run event MUST reach the client as a session update that carries the event's enforcement (gated or observed) and its observer.
-- **FR-008**: The shim MUST ask the client for permission only for an approval that exists in forge, is pending, is tied to the session's run, and that the token's principal may decide. It MUST post the client's answer as that approval's decision and MUST treat a conflict (already decided) as the recorded outcome.
-- **FR-009**: The shim MUST NOT ask the client to permit an action that forge's policy has already decided.
+- **FR-008**: The shim MUST ask the client for permission only for an approval that exists in SCF, is pending, is tied to the session's run, and that the token's principal may decide. It MUST post the client's answer as that approval's decision and MUST treat a conflict (already decided) as the recorded outcome.
+- **FR-009**: The shim MUST NOT ask the client to permit an action that SCF's policy has already decided.
 - **FR-010**: The shim MUST resume the event stream after a disconnect with no gap and no duplicate.
 - **FR-011**: The server address and the name of the environment variable that holds the token MUST be configurable. The token MUST never be printed, logged or accepted on the command line.
 - **FR-012**: Standard output MUST carry protocol messages only. Diagnostics go to standard error.
@@ -165,8 +165,8 @@ A tester runs forge's single-user profile and a build of tervin's v3 line on one
 
 **Provenance and approval record (R30, seam 4)**
 
-- **FR-014**: `RunEvent.observed_by` MUST be able to name an observer other than forge, from a closed, validated set of forms defined by the R28 ADR. An event not observed by forge MUST NOT be marked as enforced by forge.
-- **FR-015**: Events that forge emits itself MUST keep the ADR-0013 mapping unchanged.
+- **FR-014**: `RunEvent.observed_by` MUST be able to name an observer other than SCF, from a closed, validated set of forms defined by the R28 ADR. An event not observed by SCF MUST NOT be marked as enforced by SCF.
+- **FR-015**: Events that SCF emits itself MUST keep the ADR-0013 mapping unchanged.
 - **FR-016**: Every approval creation and every approval decision MUST produce one event on `/ws` for the approval's workspace, whichever producer opened the gate.
 - **FR-017**: An approval decision MUST record its deciding surface in the audit chain together with the authenticated principal. An undeclared surface MUST be recorded as the API. [NEEDS CLARIFICATION: whether the surface is taken from the credential (a token registered for a named client) or declared by the client and recorded as a declaration. A declared value can be forged by any client holding a valid token. The owner decides in R28.]
 - **FR-018**: The `/ws` approval events MUST carry the provenance fields of ADR-0015.
@@ -176,12 +176,12 @@ A tester runs forge's single-user profile and a build of tervin's v3 line on one
 - **FR-019**: A single-user profile MUST start the API, the worker and the database, with no object store, no reverse proxy and no workflow server, and MUST be startable with one command.
 - **FR-020**: A person MUST be able to create a personal access token whose permissions are a stated subset: read the board, specs, approvals and runs; start runs; decide approvals. A scoped token MUST be refused on every route outside its scope and MUST never exceed its creator's role.
 - **FR-021**: Existing API keys MUST keep their current behaviour.
-- **FR-022**: Forge MUST offer a device-code flow: a client requests a code, the person confirms it in a signed-in browser session, and the client receives a scoped token once. Codes MUST be single-use, short-lived and rate-limited.
+- **FR-022**: SCF MUST offer a device-code flow: a client requests a code, the person confirms it in a signed-in browser session, and the client receives a scoped token once. Codes MUST be single-use, short-lived and rate-limited.
 - **FR-023**: The single-user profile MUST fail closed like any other profile. It MUST NOT enable a development-only bypass in a production configuration (ADR-0007).
 
 **Runner protocol (R32, seam 5)**
 
-- **FR-024**: Forge MUST let a registered runner lease a run, stream run events and submit a result. Decided 2026-11-15: this is real roadmap work, not a prototype. Open: the decision does not say whether the runner protocol is on by default or whether it is allowed in production. Until the owner answers, the earlier guard stays: it sits behind a switch that is off by default and refused in production.
+- **FR-024**: SCF MUST let a registered runner lease a run, stream run events and submit a result. Decided 2026-11-15: this is real roadmap work, not a prototype. Open: the decision does not say whether the runner protocol is on by default or whether it is allowed in production. Until the owner answers, the earlier guard stays: it sits behind a switch that is off by default and refused in production.
 - **FR-025**: A leased run MUST have one leaseholder. An expired lease MUST end the run as failed with a reason.
 - **FR-026**: The runner protocol MUST be documented: what was built, and what is still needed before a runner-executed change can be delivered and attested. The earlier requirement for a finding that recommends building, changing or dropping seam 5 is withdrawn, because the owner decided to build it.
 
@@ -193,7 +193,7 @@ A tester runs forge's single-user profile and a build of tervin's v3 line on one
 ### Key Entities
 
 - **Integration decision**: The ADR that fixes how the two projects fit and what earlier statements it changes.
-- **ACP session**: One conversation between an ACP client and the shim. Holds at most one active forge run.
+- **ACP session**: One conversation between an ACP client and the shim. Holds at most one active SCF run.
 - **Run event**: One event of a run, with its enforcement and its observer (ADR-0013).
 - **Approval decision**: One person's decision on a gate, with the principal and the deciding surface.
 - **Scoped token**: A personal access token limited to a stated subset of permissions.
@@ -206,7 +206,7 @@ A tester runs forge's single-user profile and a build of tervin's v3 line on one
 ### Measurable Outcomes
 
 - **SC-001**: The ADR records the owner decisions of 2026-11-15 and lands before any issue that depends on it starts.
-- **SC-002**: A scripted ACP client completes initialise, new session, prompt, at least one update, one permission round trip and end of turn against a stubbed forge, with no forge-side change to tervin required.
+- **SC-002**: A scripted ACP client completes initialise, new session, prompt, at least one update, one permission round trip and end of turn against a stubbed SCF, with no forge-side change to tervin required.
 - **SC-003**: After a forced disconnect in the middle of a run, the client has received every event exactly once.
 - **SC-004**: For an approval decided through the shim, the audit chain verifies and the entry names the surface and the principal.
 - **SC-005**: A scoped token is refused on every route outside its scope in the route inventory test.
@@ -217,9 +217,9 @@ A tester runs forge's single-user profile and a build of tervin's v3 line on one
 ## Assumptions
 
 - Roadmap decisions D1 and D2 were decided by the owner on 2026-11-15 (roadmap section 3a). R28 records them.
-- Tervin is a private repository. This spec relies only on forge's public statements about it: it is a macOS desktop terminal, it holds no secrets and reads tokens from named environment variables, it opens no listening port, it admits tools as a process, a JSON CLI, MCP or repository data, and it accepts ACP agents over stdio with no code change.
+- Tervin is a private repository. This spec relies only on SCF's public statements about it: it is a macOS desktop terminal, it holds no secrets and reads tokens from named environment variables, it opens no listening port, it admits tools as a process, a JSON CLI, MCP or repository data, and it accepts ACP agents over stdio with no code change.
 - No code moves between the repositories in either direction (ADR-0010, ADR-0015).
-- In forge's acting path today, a policy result of "requires approval" ends the tool call as denied and flags the run for a person. It does not open an approval or pause the run. Approvals that a client can decide therefore come from gates opened by the governed pipeline (M1, M2, R12, R19). The shim is built to handle both.
+- In SCF's acting path today, a policy result of "requires approval" ends the tool call as denied and flags the run for a person. It does not open an approval or pause the run. Approvals that a client can decide therefore come from gates opened by the governed pipeline (M1, M2, R12, R19). The shim is built to handle both.
 - ACP is treated as an external standard pinned to one version, in the manner of ADR-0016.
 - Changes inside tervin are tracked in tervin's repository and are out of scope here.
 - The paired test needs a Mac, a build of tervin's v3 line and a person. It cannot run in CI. The v3 line is unreleased, so the test record states the exact build it used.

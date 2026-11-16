@@ -36,7 +36,7 @@ NEXT_CONFIG = REPO_ROOT / "apps" / "web" / "next.config.mjs"
 BUILD_MANIFEST = DEPLOY / "build-manifest.json"
 
 # HARD-07 §4 image-reference contract: every *pulled* image is pinned by tag AND
-# immutable digest; first-party built images keep `build:` + a `forge/<svc>` tag.
+# immutable digest; first-party built images keep `build:` + a `swarm-code-factory/<svc>` tag.
 PINNED_IMAGE_RE = re.compile(r"^[^:@\s]+:[^@\s]+@sha256:[0-9a-f]{64}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -262,8 +262,8 @@ def _pulled_images(compose_path: Path) -> dict[str, str]:
     pulled: dict[str, str] = {}
     for name, svc in services.items():
         image = svc.get("image")
-        if image is None or image.startswith("forge/"):
-            # First-party images are built locally (build: + forge/<svc> tag) —
+        if image is None or image.startswith("swarm-code-factory/"):
+            # First-party images are built locally (build: + swarm-code-factory/<svc> tag) —
             # their digests are recorded in deploy/build-manifest.json instead.
             continue
         pulled[name] = image
@@ -365,8 +365,8 @@ def test_build_manifest_covers_every_image() -> None:
             bare = image.split("@", 1)[0]
             assert bare in recorded, f"manifest missing base image {bare} ({dockerfile})"
     for svc in ("api", "worker", "mcp-gateway", "web"):
-        matches = [r for r in recorded if r.startswith(f"forge/{svc}:")]
-        assert matches, f"manifest missing built image forge/{svc}:<version>"
+        matches = [r for r in recorded if r.startswith(f"swarm-code-factory/{svc}:")]
+        assert matches, f"manifest missing built image swarm-code-factory/{svc}:<version>"
         assert all(images[m]["kind"] == "built" for m in matches)
 
 

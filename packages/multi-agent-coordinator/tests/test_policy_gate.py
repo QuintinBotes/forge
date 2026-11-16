@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from forge_contracts import (
+from scf_contracts import (
     CoordinationPattern,
     SubAgentAssignment,
     SubAgentPolicy,
@@ -10,7 +10,7 @@ from forge_contracts import (
     SubagentRules,
     SupervisionPlan,
 )
-from forge_coordinator import CoordinatorSettings, evaluate_gate
+from scf_coordinator import CoordinatorSettings, evaluate_gate
 
 
 def _plan(*roles_optional: tuple[SubAgentRole, bool]) -> SupervisionPlan:

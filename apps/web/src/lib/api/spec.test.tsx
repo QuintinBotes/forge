@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "./client";
+import type { ScfApiClient } from "./client";
 import {
   specKeys,
   useApproveSpec,
@@ -37,7 +37,7 @@ describe("useSpecOverview", () => {
   it("fetches the project's spec dashboard via the client", async () => {
     const client = {
       getProjectSpecOverview: vi.fn(() => Promise.resolve(dashboard)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -65,7 +65,7 @@ describe("useApproveSpec (optimistic)", () => {
     });
     const client = {
       approveSpec: vi.fn(() => pending),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useApproveSpec(client), {
       wrapper: makeWrapper(queryClient),
@@ -94,7 +94,7 @@ describe("useApproveSpec (optimistic)", () => {
 
     const client = {
       approveSpec: vi.fn(() => Promise.reject(new Error("gate error"))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useApproveSpec(client), {
       wrapper: makeWrapper(queryClient),
@@ -123,7 +123,7 @@ describe("useRejectSpec (optimistic review decision)", () => {
     });
     const client = {
       rejectSpec: vi.fn(() => pending),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useRejectSpec(client), {
       wrapper: makeWrapper(queryClient),
@@ -157,7 +157,7 @@ describe("useRejectSpec (optimistic review decision)", () => {
     queryClient.setQueryData(specKeys.overview("p1"), dashboard);
     const client = {
       rejectSpec: vi.fn(() => Promise.reject(new Error("409 conflict"))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useRejectSpec(client), {
       wrapper: makeWrapper(queryClient),
@@ -189,7 +189,7 @@ describe("useRequestSpecChanges (optimistic review decision)", () => {
           review_note: "Please add a rate limit",
         } satisfies SpecManifest),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useRequestSpecChanges(client), {
       wrapper: makeWrapper(queryClient),
@@ -222,7 +222,7 @@ describe("useClarifySpec (optimistic, Describe step)", () => {
     });
     const client = {
       clarifySpec: vi.fn(() => pending),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useClarifySpec(client), {
       wrapper: makeWrapper(queryClient),
@@ -251,7 +251,7 @@ describe("useClarifySpec (optimistic, Describe step)", () => {
     queryClient.setQueryData(specKeys.overview("p1"), dashboard);
     const client = {
       clarifySpec: vi.fn(() => Promise.reject(new Error("boom"))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useClarifySpec(client), {
       wrapper: makeWrapper(queryClient),
@@ -277,7 +277,7 @@ describe("usePlanSpec (Refine step, not optimistic)", () => {
     };
     const client = {
       planSpec: vi.fn(() => Promise.resolve(planned)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });
@@ -303,7 +303,7 @@ describe("useGenerateTasks (Build step, not optimistic)", () => {
     const tasks: TaskDTO[] = [{ id: "t1", title: "Implement R1" }];
     const client = {
       generateTasks: vi.fn(() => Promise.resolve(tasks)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });
@@ -329,7 +329,7 @@ describe("useValidateSpec (Verify step, not optimistic)", () => {
     const client = {
       generateTasks: vi.fn(() => Promise.resolve(tasks)),
       validateTask: vi.fn(() => Promise.resolve(report)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });
@@ -352,7 +352,7 @@ describe("useValidateSpec (Verify step, not optimistic)", () => {
     const client = {
       generateTasks: vi.fn(() => Promise.resolve([])),
       validateTask: vi.fn(),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });
@@ -375,7 +375,7 @@ describe("useCreateSpec", () => {
     const created: SpecManifest = { id: "s3", name: "New spec", status: "draft" };
     const client = {
       createSpec: vi.fn(() => Promise.resolve(created)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });
@@ -404,7 +404,7 @@ describe("useCreateSpec", () => {
     const client = {
       createSpec: vi.fn(() => Promise.resolve(created)),
       putSpecManifest: vi.fn(() => Promise.resolve(saved)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });

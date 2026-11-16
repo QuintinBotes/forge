@@ -20,7 +20,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   BurndownSeries,
   CapacityReport,
@@ -58,7 +58,7 @@ export const sprintKeys = {
 /** Every sprint for a project (planned / active / completed / cancelled). */
 export function useProjectSprints(
   projectId: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<Sprint[]> {
   return useQuery({
     queryKey: sprintKeys.list(projectId),
@@ -71,7 +71,7 @@ export function useProjectSprints(
 export function useVelocityDashboard(
   projectId: string,
   last = 6,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<VelocityDashboard> {
   return useQuery({
     queryKey: sprintKeys.velocity(projectId, last),
@@ -87,7 +87,7 @@ export function useVelocityDashboard(
  */
 export function useSprintBurndown(
   sprintId: string | null | undefined,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<BurndownSeries> {
   return useQuery({
     queryKey: sprintKeys.burndown(sprintId ?? ""),
@@ -100,7 +100,7 @@ export function useSprintBurndown(
 /** Each member's declared capacity vs. their assigned committed-task points. */
 export function useSprintCapacity(
   sprintId: string | null | undefined,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<CapacityReport> {
   return useQuery({
     queryKey: sprintKeys.capacity(sprintId ?? ""),
@@ -113,7 +113,7 @@ export function useSprintCapacity(
 /** The sprint goal's keyword coverage across its current tasks. */
 export function useGoalAlignment(
   sprintId: string | null | undefined,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<GoalAlignment> {
   return useQuery({
     queryKey: sprintKeys.goalAlignment(sprintId ?? ""),
@@ -128,7 +128,7 @@ export function useProjectCfd(
   projectId: string | null | undefined,
   start: string,
   end: string,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<CFDSeries> {
   return useQuery({
     queryKey: sprintKeys.cfd(projectId ?? "", start, end),
@@ -141,7 +141,7 @@ export function useProjectCfd(
 /** A project's per-task cycle/lead time + averages. */
 export function useProjectCycleLeadTime(
   projectId: string | null | undefined,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<CycleLeadTimeReport> {
   return useQuery({
     queryKey: sprintKeys.cycleLeadTime(projectId ?? ""),
@@ -155,7 +155,7 @@ export function useProjectCycleLeadTime(
 export function usePortfolioVelocity(
   projectIds: string[],
   last = 6,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<PortfolioVelocity> {
   return useQuery({
     queryKey: sprintKeys.portfolioVelocity(projectIds, last),
@@ -167,7 +167,7 @@ export function usePortfolioVelocity(
 
 /** Start a planned sprint; revalidates the sprint reads + the board. */
 export function useStartSprint(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<Sprint, Error, string> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -186,7 +186,7 @@ export interface CompleteSprintVariables {
 
 /** Complete an active sprint (routes carryover); revalidates reads + board. */
 export function useCompleteSprint(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<SprintReport, Error, CompleteSprintVariables> {
   const queryClient = useQueryClient();
   return useMutation({

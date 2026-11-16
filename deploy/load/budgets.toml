@@ -4,7 +4,7 @@
 # promote them to a blocking CI gate only once a stable runner class is fixed.
 
 [retrieval]
-# Retrieval micro-bench (forge_eval.perf.retrieval_latency), milliseconds.
+# Retrieval micro-bench (scf_eval.perf.retrieval_latency), milliseconds.
 embed_p95_ms = 50.0
 total_p95_ms = 400.0
 

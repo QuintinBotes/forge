@@ -1,7 +1,7 @@
 /**
  * Board status + priority metadata and grouping helpers.
  *
- * The status order mirrors `forge_contracts.enums.TaskStatus` (Phase-0 frozen
+ * The status order mirrors `scf_contracts.enums.TaskStatus` (Phase-0 frozen
  * contract) and drives both the kanban column order and the
  * forward/back ("move") controls on cards.
  */
@@ -77,7 +77,7 @@ export const PRIORITIES = TASK_PRIORITIES;
 
 /**
  * Default task-status workflow transitions — a verbatim TypeScript mirror of
- * `forge_board.workflow.TASK_STATUS_TRANSITIONS` (the backend's authoritative
+ * `scf_board.workflow.TASK_STATUS_TRANSITIONS` (the backend's authoritative
  * policy). The Kanban consults it so a drag can only *land* on a column the
  * server would accept, and so the move buttons only ever produce legal edges.
  * Keep in lockstep with the Python table.

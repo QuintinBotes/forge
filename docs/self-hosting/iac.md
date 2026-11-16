@@ -1,6 +1,6 @@
 # Infrastructure as Code (OpenTofu) — apply runbook
 
-Forge's cloud infrastructure lives under [`infra/`](../../infra/) as
+Swarm Code Factory's cloud infrastructure lives under [`infra/`](../../infra/) as
 **OpenTofu** (Apache-2.0/MPL — the open-source successor to Terraform after
 its BSL relicense). The HCL is byte-for-byte Terraform-compatible.
 

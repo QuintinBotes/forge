@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { type ForgeApiClient } from "./client";
+import { type ScfApiClient } from "./client";
 import {
   pmKeys,
   useCreatePmConnection,
@@ -60,7 +60,7 @@ describe("usePmConnection", () => {
   it("is disabled until a connection id is provided", async () => {
     const client = {
       getPmConnection: vi.fn(() => Promise.resolve(makeDetail())),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => usePmConnection(null, client), {
       wrapper: makeWrapper(newClient()),
@@ -73,7 +73,7 @@ describe("usePmConnection", () => {
   it("fetches the detail once an id is provided", async () => {
     const client = {
       getPmConnection: vi.fn(() => Promise.resolve(makeDetail())),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => usePmConnection("conn-1", client), {
       wrapper: makeWrapper(newClient()),
@@ -89,7 +89,7 @@ describe("usePmLinks", () => {
   it("passes the state filter through to the client", async () => {
     const client = {
       listPmLinks: vi.fn(() => Promise.resolve([])),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(
       () => usePmLinks("conn-1", "conflict", client),
@@ -109,7 +109,7 @@ describe("usePatchPmConnection", () => {
       patchPmConnection: vi.fn(() =>
         Promise.resolve(makeDetail({ conflict_policy: "manual" }) as PmConnection),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => usePatchPmConnection(client), {
@@ -139,7 +139,7 @@ describe("usePatchPmConnection", () => {
     queryClient.setQueryData(pmKeys.connection("conn-1"), makeDetail());
     const client = {
       patchPmConnection: vi.fn(() => Promise.reject(new Error("nope"))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => usePatchPmConnection(client), {
       wrapper: makeWrapper(queryClient),
@@ -163,7 +163,7 @@ describe("useCreatePmConnection", () => {
     const queryClient = newClient();
     const client = {
       createPmConnection: vi.fn(() => Promise.resolve(makeDetail() as PmConnection)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => useCreatePmConnection(client), {
@@ -189,7 +189,7 @@ describe("useDisconnectPmConnection / useTestPmConnection", () => {
       disconnectPmConnection: vi.fn(() =>
         Promise.resolve(makeDetail({ status: "disabled" }) as PmConnection),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => useDisconnectPmConnection(client), {
@@ -214,7 +214,7 @@ describe("useDisconnectPmConnection / useTestPmConnection", () => {
           error: null,
         }),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useTestPmConnection(client), {
       wrapper: makeWrapper(newClient()),

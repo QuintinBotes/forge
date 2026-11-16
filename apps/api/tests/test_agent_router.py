@@ -11,15 +11,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from forge_agent import AgentRunner
-from forge_agent.testing import ScriptedModelClient, finish_response
-from forge_api.db import get_db
-from forge_api.deps import get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.agent import get_agent_enqueue, get_agent_runner
-from forge_contracts import AgentObjective
-from forge_db.models import AgentRun
-from forge_db.models.enums import RunStatus
+from scf_agent import AgentRunner
+from scf_agent.testing import ScriptedModelClient, finish_response
+from scf_api.db import get_db
+from scf_api.deps import get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.agent import get_agent_enqueue, get_agent_runner
+from scf_contracts import AgentObjective
+from scf_db.models import AgentRun
+from scf_db.models.enums import RunStatus
 
 
 @pytest.fixture
@@ -156,7 +156,7 @@ def test_agent_supervisor_uses_the_admitted_run_as_parent(
 def test_agent_enqueue_uses_worker_task_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     from unittest.mock import Mock
 
-    from forge_api.routers import agent
+    from scf_api.routers import agent
 
     celery = Mock()
     monkeypatch.setattr(agent, "_celery_app", lambda: celery)
@@ -214,7 +214,7 @@ def test_unconnected_repository_is_refused_before_anything_is_stored(
 def test_connected_repository_is_named_server_side(
     client: TestClient, agent_session: Session, enqueued: list[AgentObjective]
 ) -> None:
-    from forge_db.models import RepositoryConnection
+    from scf_db.models import RepositoryConnection
 
     workspace_id = uuid.UUID("00000000-0000-0000-0000-0000000000a1")  # conftest's test workspace
     agent_session.add(

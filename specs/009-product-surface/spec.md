@@ -11,7 +11,7 @@ section 4): "OIDC sign-in in the web app. Remove sign-in by pasted API key. Web 
 from an issue, with browser end-to-end tests. Ten-minute self-host quickstart, verified from a
 clean machine."
 
-**Builds on**: `docs/FORGE_SPEC.md` Core Design Principle 9 (self-hosting is first-class) and
+**Builds on**: `docs/SCF_SPEC.md` Core Design Principle 9 (self-hosting is first-class) and
 feature F33 (SSO); lettered spec M (`docs/superpowers/specs/2026-11-07-bring-your-own-tracker-design.md`,
 part M3, run dispatch from a tracker item); lettered spec G
 (`docs/superpowers/specs/2026-11-07-agents-that-act-design.md`); ADR-0007 (production paths fail
@@ -21,19 +21,19 @@ closed); ADR-0019 (bring your own tracker). Roadmap issues: R42, R43, R44.
 
 What exists today, verified in the code:
 
-- The API already implements OpenID Connect sign-in. `apps/api/forge_api/routers/oidc.py` serves
+- The API already implements OpenID Connect sign-in. `apps/api/scf_api/routers/oidc.py` serves
   `GET /auth/oidc/{slug}/login` and `/callback`, validates the ID token, provisions the user and
   sets an HTTP-only `forge_session` cookie. Workspace OIDC settings are managed through
-  `apps/api/forge_api/routers/sso_admin.py` and the web settings page
+  `apps/api/scf_api/routers/sso_admin.py` and the web settings page
   `apps/web/src/app/(board)/settings/sso/page.tsx`.
 - Nothing reads that cookie. Request authentication accepts only an `Authorization: Bearer` or
-  `X-API-Key` header (`apps/api/forge_api/auth/service.py`, `get_authenticated_principal`), and the
-  WebSocket accepts only a `?token=` value (`apps/api/forge_api/routers/realtime.py`). So a person
+  `X-API-Key` header (`apps/api/scf_api/auth/service.py`, `get_authenticated_principal`), and the
+  WebSocket accepts only a `?token=` value (`apps/api/scf_api/routers/realtime.py`). So a person
   who completes the OIDC flow is still not signed in to the web app.
 - The web app signs in by a pasted API key (`apps/web/src/components/auth/connect-dialog.tsx`,
   `apps/web/src/lib/api/session.ts`). The key is held in browser storage.
 - The API can start a run from a tracker item (`POST /agent/runs` with `tracker_ref`,
-  `apps/api/forge_api/routers/agent.py`). The web app calls `agent/runs` only for replay. There is
+  `apps/api/scf_api/routers/agent.py`). The web app calls `agent/runs` only for replay. There is
   no route that lists runs, and the `/runs` screen opens a run only by a typed run id.
 - The web tests run in jsdom. There is no browser test harness in the repository.
 - A quickstart exists (`docs/self-hosting/quickstart.md`). No test or record shows how long it
@@ -43,7 +43,7 @@ What exists today, verified in the code:
 
 ### User Story 1 - Sign in with the organisation's identity provider (Priority: P1)
 
-A team member opens forge in a browser, chooses to sign in, authenticates with the identity
+A team member opens Swarm Code Factory in a browser, chooses to sign in, authenticates with the identity
 provider their workspace has configured, and lands on the board as themselves. They never see,
 copy or store an API key. Signing out ends the session on the server.
 
@@ -60,14 +60,14 @@ complete the sign-in flow in a browser and load the board. Fully testable withou
    opens any screen, **Then** they see a sign-in screen that offers sign-in through the identity
    provider and no field for an API key.
 2. **Given** a visitor who completes the identity provider flow, **When** they are returned to
-   forge, **Then** the board loads, the top bar shows their own identity, and live updates
+   SCF, **Then** the board loads, the top bar shows their own identity, and live updates
    (WebSocket and run event stream) work without any token in a URL or in browser storage.
 3. **Given** a signed-in person, **When** they sign out, **Then** the session no longer
    authenticates any request, including a replay of the old cookie.
 4. **Given** a signed-in person whose session has expired, **When** they make a request, **Then**
    they are returned to the sign-in screen and, after signing in, to the page they were on.
-5. **Given** a page on another origin, **When** it makes a state-changing request to forge using
-   the visitor's session cookie, **Then** forge refuses the request.
+5. **Given** a page on another origin, **When** it makes a state-changing request to SCF using
+   the visitor's session cookie, **Then** SCF refuses the request.
 6. **Given** a script, CLI or CI job, **When** it calls the API with an API key in a header,
    **Then** it authenticates exactly as it does today.
 7. **Given** a fresh installation with no identity provider, **When** an operator runs the CLI
@@ -112,15 +112,15 @@ Story 1 is not yet present.
 
 ---
 
-### User Story 3 - Self-host forge in ten minutes (Priority: P3)
+### User Story 3 - Self-host SCF in ten minutes (Priority: P3)
 
 An engineer with Docker and nothing else follows one page and, within ten minutes of the first
-command, is signed in to a working forge that can accept a run.
+command, is signed in to a working SCF that can accept a run.
 
 **Why this priority**: Adoption of a self-hosted tool is decided in the first session. It ranks
 third because it documents and verifies what Stories 1 and 2 and milestones M3 and M6 deliver.
 
-**Independent Test**: On a machine with no forge images, volumes or checkout, run the quickstart
+**Independent Test**: On a machine with no SCF images, volumes or checkout, run the quickstart
 commands exactly as written and time them.
 
 **Acceptance Scenarios**:
@@ -177,7 +177,7 @@ commands exactly as written and time them.
 - **FR-006**: The web app MUST present a sign-in screen to a visitor without a session and MUST
   start the identity provider flow for the visitor's workspace from it.
 - **FR-007**: The web app MUST NOT offer, in a production build, any way to sign in by typing or
-  pasting an API key, and MUST NOT keep a forge credential in browser storage.
+  pasting an API key, and MUST NOT keep an SCF credential in browser storage.
 - **FR-008**: The web app MUST return the visitor to the page they asked for after sign-in, limited
   to same-origin paths.
 - **FR-009**: The sign-in screen MUST state plainly when the workspace has no identity provider
@@ -238,7 +238,7 @@ commands exactly as written and time them.
 
 - **SC-001**: A new user signs in through their identity provider and reaches the board without
   handling an API key, in under one minute from the sign-in screen.
-- **SC-002**: A production build of the web app contains no API-key input and writes no forge
+- **SC-002**: A production build of the web app contains no API-key input and writes no SCF
   credential to browser storage, shown by a test.
 - **SC-003**: A signed-in member starts a run from an issue in five or fewer interactions from the
   runs screen and sees its first event without reloading.
@@ -254,7 +254,7 @@ commands exactly as written and time them.
   the browser. It does not add a password login or a new identity protocol.
 - The browser reaches the API through the same origin as the web app (the Caddy edge), as the
   deployment documents describe. Cross-origin browser deployments are out of scope.
-- "Clean machine" means Docker Engine and the Compose plugin installed, no forge images, volumes or
+- "Clean machine" means Docker Engine and the Compose plugin installed, no SCF images, volumes or
   checkout. [NEEDS CLARIFICATION: the reference machine class and network speed for the ten-minute
   bar, and whether pulling images counts. The spec assumes 4 cores, 8 GB, a broadband connection,
   and that image pulls count.]
@@ -265,4 +265,4 @@ commands exactly as written and time them.
 - R44 follows R14 (container sandbox by default) and R31 (single-user profile, scoped tokens,
   device-code auth). The quickstart describes those as delivered and does not re-implement them.
 - Picking an issue means entering or selecting a reference in a connected tracker. Browsing and
-  searching a tracker's full backlog inside forge is out of scope.
+  searching a tracker's full backlog inside SCF is out of scope.

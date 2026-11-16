@@ -10,15 +10,15 @@ from typing import Any
 import pytest
 import yaml
 
-from forge_marketplace.errors import SchemaInvalid
-from forge_marketplace.installer import (
+from scf_marketplace.errors import SchemaInvalid
+from scf_marketplace.installer import (
     INSTALLERS,
     RESERVED_LINE_NAMES,
     WorkflowTemplateInstaller,
     default_secret_like,
 )
-from forge_marketplace.models import ArtifactKind
-from forge_marketplace.packaging import build_package
+from scf_marketplace.models import ArtifactKind
+from scf_marketplace.packaging import build_package
 
 LOOP = (
     Path(__file__).parents[2] / "contracts" / "tests" / "fixtures" / "implementation_loop.yaml"
@@ -277,9 +277,9 @@ def test_refuses_reserved_names(name: str) -> None:
 
 
 def test_reserved_names_are_the_bundled_definitions() -> None:
-    store = pytest.importorskip("forge_workflow.editor.store")
-    from forge_workflow.default_workflow import DEFAULT_WORKFLOW_NAME
-    from forge_workflow.incident.definition import INCIDENT_DEFINITION_NAME
+    store = pytest.importorskip("scf_workflow.editor.store")
+    from scf_workflow.default_workflow import DEFAULT_WORKFLOW_NAME
+    from scf_workflow.incident.definition import INCIDENT_DEFINITION_NAME
 
     assert {DEFAULT_WORKFLOW_NAME, INCIDENT_DEFINITION_NAME} == RESERVED_LINE_NAMES
     assert all(store.default_bundled_loader(n) is not None for n in RESERVED_LINE_NAMES)

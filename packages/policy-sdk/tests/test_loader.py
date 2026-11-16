@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from forge_contracts import Policy, PolicyEvaluator
-from forge_policy import RepoPolicyEvaluator, load_policy
+from scf_contracts import Policy, PolicyEvaluator
+from scf_policy import RepoPolicyEvaluator, load_policy
 
 
 def test_load_policy_from_repo_root(repo_root: Path) -> None:
@@ -41,9 +41,9 @@ def test_load_policy_missing_file_raises(tmp_path: Path) -> None:
 
 
 def test_load_policy_empty_file_raises(tmp_path: Path) -> None:
-    forge_dir = tmp_path / ".forge"
-    forge_dir.mkdir()
-    (forge_dir / "policy.yaml").write_text("", encoding="utf-8")
+    scf_dir = tmp_path / ".forge"
+    scf_dir.mkdir()
+    (scf_dir / "policy.yaml").write_text("", encoding="utf-8")
     with pytest.raises(ValueError):
         load_policy(tmp_path)
 

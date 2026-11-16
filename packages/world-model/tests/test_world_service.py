@@ -11,8 +11,8 @@ from conftest import WS, WS2, FakeClock, FakeModelClient
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from forge_db.models.world import WorldEntityMerge, WorldFact, WorldProposal
-from forge_world import (
+from scf_db.models.world import WorldEntityMerge, WorldFact, WorldProposal
+from scf_world import (
     ConflictError,
     ForbiddenError,
     InvalidatedReason,

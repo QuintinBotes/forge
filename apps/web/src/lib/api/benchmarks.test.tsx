@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "./client";
+import type { ScfApiClient } from "./client";
 import { benchmarkKeys, usePublicBenchmarks, usePublicLeaderboard } from "./benchmarks";
 import type { PublicBenchmark, PublicLeaderboard } from "./types";
 
@@ -59,7 +59,7 @@ describe("usePublicBenchmarks", () => {
   it("lists the published suites", async () => {
     const client = {
       listPublicBenchmarks: vi.fn(() => Promise.resolve([SUITE])),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => usePublicBenchmarks(client), {
       wrapper: makeWrapper(newClient()),
@@ -73,7 +73,7 @@ describe("usePublicBenchmarks", () => {
   it("propagates errors (e.g. the leaderboard being disabled → 404)", async () => {
     const client = {
       listPublicBenchmarks: vi.fn(() => Promise.reject(new Error("disabled"))),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => usePublicBenchmarks(client), {
       wrapper: makeWrapper(newClient()),
@@ -87,7 +87,7 @@ describe("usePublicLeaderboard", () => {
   it("is disabled until both slug and version are known", () => {
     const client = {
       getPublicLeaderboard: vi.fn(),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => usePublicLeaderboard(null, null, client), {
       wrapper: makeWrapper(newClient()),
@@ -100,7 +100,7 @@ describe("usePublicLeaderboard", () => {
   it("fetches the ranked leaderboard once a suite is selected", async () => {
     const client = {
       getPublicLeaderboard: vi.fn(() => Promise.resolve(LEADERBOARD)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(
       () => usePublicLeaderboard("swe-tasks", "1.0.0", client),

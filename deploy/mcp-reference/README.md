@@ -1,18 +1,18 @@
-# Forge reference MCP server (HARD-05 integration substrate)
+# Swarm Code Factory reference MCP server (HARD-05 integration substrate)
 
 A self-hosted, dependency-free MCP server that speaks the **real** JSON-RPC 2.0
 wire protocol (MCP revision `2025-06-18`) over both real transports:
 
-- **Streamable-HTTP** — `python -m forge_mcp.reference_server --http --port 8901`
-- **stdio** — `python -m forge_mcp.reference_server --stdio`
+- **Streamable-HTTP** — `python -m scf_mcp.reference_server --http --port 8901`
+- **stdio** — `python -m scf_mcp.reference_server --stdio`
 
-It is the integration substrate for HARD-05: the live `forge_mcp` transports
+It is the integration substrate for HARD-05: the live `scf_mcp` transports
 (`HttpMcpTransport` / `StdioMcpTransport`) drive it over a real socket / real
 subprocess, so **"live MCP" is proven end-to-end without any external SaaS or
 credential** — the only "cred" is a local URL.
 
-The server is implemented in the `forge_mcp` SDK
-(`packages/mcp-sdk/forge_mcp/reference_server.py`) so tests can also self-host it
+The server is implemented in the `scf_mcp` SDK
+(`packages/mcp-sdk/scf_mcp/reference_server.py`) so tests can also self-host it
 in-process on a loopback socket. It serves the same fixture corpus the security
 tests trust:
 
@@ -33,7 +33,7 @@ assert token-binding was sent over the wire.
 
 ```bash
 # In-repo (no Docker):
-python -m forge_mcp.reference_server --http --host 127.0.0.1 --port 8901
+python -m scf_mcp.reference_server --http --host 127.0.0.1 --port 8901
 
 # Via the integration compose overlay (built from this Dockerfile):
 docker compose -f deploy/docker-compose.integration.yml up -d mcp-reference

@@ -3,10 +3,10 @@
 These exercise the SHARED SUBSTRATE every later package builds against:
 
 - every Protocol and DTO listed in plan Task 0.3 is importable from
-  ``forge_contracts`` (the frozen public surface),
+  ``scf_contracts`` (the frozen public surface),
 - DTOs round-trip through ``model_validate`` / ``model_dump`` (including JSON
   mode where enums serialise to their string values),
-- enum values match ``docs/FORGE_SPEC.md`` exactly (statuses, kinds, roles,
+- enum values match ``docs/SCF_SPEC.md`` exactly (statuses, kinds, roles,
   workflow/incident states, approval gates),
 - the frozen retrieval constants (RRF k=60, chunk-type weights, confidence
   threshold) match the spec, and
@@ -22,7 +22,7 @@ from typing import Protocol, get_type_hints
 
 import pytest
 
-import forge_contracts as fc
+import scf_contracts as fc
 
 # --------------------------------------------------------------------------- #
 # Importability of the full frozen surface                                    #
@@ -152,7 +152,7 @@ ENUMS = [
 ]
 
 EXCEPTIONS = [
-    "ForgeError",
+    "ScfError",
     "CycleError",
     "UnknownSkillProfileError",
     "SpecGateError",
@@ -544,8 +544,8 @@ def test_mcp_connection_defaults_read_only() -> None:
     assert fc.MCPConnection.model_validate(conn.model_dump()) == conn
 
 
-def test_pmadapter_aliases_forge_task_to_task_dto() -> None:
-    assert fc.ForgeTask is fc.TaskDTO
+def test_pmadapter_aliases_scf_task_to_task_dto() -> None:
+    assert fc.ScfTask is fc.TaskDTO
 
 
 # --------------------------------------------------------------------------- #

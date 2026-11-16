@@ -20,12 +20,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.main import create_app
-from forge_api.routers.spec import get_spec_engine
-from forge_db.base import Base
-from forge_db.models import Workspace
-from forge_spec import FileSpecEngine, spec_id_for_key
+from scf_api.db import get_db
+from scf_api.main import create_app
+from scf_api.routers.spec import get_spec_engine
+from scf_db.base import Base
+from scf_db.models import Workspace
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 #: Mirrors ``conftest.py``'s deterministic test workspace.
 _TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
@@ -136,9 +136,9 @@ def test_create_accepts_a_client_supplied_key(client: TestClient) -> None:
     assert fetched.json()["name"] == "Customer search"
 
 
-def test_an_imported_key_does_not_shift_forge_numbering(client: TestClient) -> None:
+def test_an_imported_key_does_not_shift_scf_numbering(client: TestClient) -> None:
     _create(client, key="MOD-893")
-    assert _create(client, name="Forge-numbered")["id"] == "SPEC-1"
+    assert _create(client, name="SCF-numbered")["id"] == "SPEC-1"
 
 
 def test_a_duplicate_key_is_409(client: TestClient) -> None:

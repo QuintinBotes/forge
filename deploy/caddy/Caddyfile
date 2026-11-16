@@ -1,4 +1,4 @@
-# Forge — Caddy reverse proxy (plan Task 0.6).
+# SCF — Caddy reverse proxy (plan Task 0.6).
 #
 # Routes the public site through a single TLS-terminating edge. Caddy obtains and
 # renews certificates automatically for a real DOMAIN; for local use the default
@@ -58,10 +58,10 @@
 		reverse_proxy api:8000
 	}
 
-	# Realtime WebSockets (forge_api.routers.realtime): board push (`/ws`) and
+	# Realtime WebSockets (scf_api.routers.realtime): board push (`/ws`) and
 	# CRDT spec co-editing (`/ws/spec/{spec_id}`). These mount at the API app
 	# ROOT — `app.include_router(realtime_router)` with no prefix (see
-	# apps/api/forge_api/main.py) — so their path is a bare `/ws`, NOT `/api/ws`.
+	# apps/api/scf_api/main.py) — so their path is a bare `/ws`, NOT `/api/ws`.
 	# The web client builds the URL from NEXT_PUBLIC_WS_URL (default
 	# `ws://localhost:8000/ws`, apps/web/src/lib/realtime/use-board-realtime.ts),
 	# a same-origin `/ws` path with no `/api` prefix and no window.location
@@ -72,7 +72,7 @@
 	# `handle_path`) preserves the `/ws` prefix, which is where the API serves
 	# them. Caddy's reverse_proxy auto-detects the `Upgrade` header, so
 	# websockets need no extra directives here; the nginx equivalent
-	# (deploy/nginx/forge.conf `location = /ws` + `location /ws/spec/`) has to
+	# (deploy/nginx/swarm-code-factory.conf `location = /ws` + `location /ws/spec/`) has to
 	# spell the upgrade + long-idle timeouts out by hand. These two are the
 	# canonical realtime routes for BOTH proxies (edge routing parity).
 	handle /ws {

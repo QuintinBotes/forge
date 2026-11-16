@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_eval.release.model import (
+from scf_eval.release.model import (
     MET_STATUSES,
     Bar,
     Gate,

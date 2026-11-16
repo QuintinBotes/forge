@@ -1,7 +1,7 @@
 # main.tf — hetzner-control-plane module.
 #
-# Stands up the always-on Forge control plane on Hetzner Cloud: a private
-# network + subnet, one (or more) servers running the Forge compose stack
+# Stands up the always-on SCF control plane on Hetzner Cloud: a private
+# network + subnet, one (or more) servers running the SCF compose stack
 # (API / worker / Postgres+pgvector / Redis / MinIO), persistent data
 # volumes for Postgres and MinIO, a locked-down firewall, an optional
 # floating IP, and a cloud-init bootstrap that installs Docker and can

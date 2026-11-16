@@ -8,15 +8,15 @@ from collections.abc import Callable
 import pytest
 from _mp_helpers import Package
 
-from forge_marketplace import installer as installer_mod
-from forge_marketplace.errors import SchemaInvalid, UnknownArtifactKind
-from forge_marketplace.installer import (
+from scf_marketplace import installer as installer_mod
+from scf_marketplace.errors import SchemaInvalid, UnknownArtifactKind
+from scf_marketplace.installer import (
     McpConnectorInstaller,
     SkillProfileInstaller,
     build_install_plan,
     get_installer,
 )
-from forge_marketplace.models import ArtifactKind, VerificationResult, VerificationStatus
+from scf_marketplace.models import ArtifactKind, VerificationResult, VerificationStatus
 
 _VERIFIED = VerificationResult(
     status=VerificationStatus.verified, content_hash_ok=True, signature_ok=True
@@ -115,10 +115,10 @@ def test_build_install_plan_blocks_on_verification(
     assert plan.block_reason
 
 
-def test_build_install_plan_forge_incompatible(
+def test_build_install_plan_scf_incompatible(
     make_skill_package: Callable[..., Package],
 ) -> None:
-    """AC14: a min_forge_version above the running Forge blocks the plan."""
+    """AC14: a min_forge_version above the running SCF blocks the plan."""
     pkg = make_skill_package(min_forge_version="9.9.9")
     plan = build_install_plan(
         manifest=pkg.manifest,
@@ -144,7 +144,7 @@ def test_build_install_plan_override_name(make_skill_package: Callable[..., Pack
 
 @pytest.mark.parametrize("version", ["1.0.0-" + "a" * 64, "1.0.0-a\x00b", "1.0.0-a b"])
 def test_a_manifest_version_must_fit_the_version_columns(version: str) -> None:
-    from forge_marketplace.models import SEMVER_RE
+    from scf_marketplace.models import SEMVER_RE
 
     assert SEMVER_RE.match(version) is None
     assert SEMVER_RE.match("1.0.0-" + "a" * 58) is not None

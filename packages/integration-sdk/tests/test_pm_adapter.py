@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from forge_contracts import (
+from scf_contracts import (
     Direction,
     ExternalTask,
     HealthResult,
@@ -10,7 +10,7 @@ from forge_contracts import (
     TaskDTO,
     TaskStatus,
 )
-from forge_integrations import BasePMAdapter, GenericPMAdapter
+from scf_integrations import BasePMAdapter, GenericPMAdapter
 
 
 def test_map_status_in_and_out() -> None:
@@ -18,7 +18,7 @@ def test_map_status_in_and_out() -> None:
     assert a.map_status("In Progress", Direction.IN) == TaskStatus.IN_PROGRESS.value
     assert a.map_status("Done", Direction.IN) == TaskStatus.DONE.value
     assert a.map_status("closed", Direction.IN) == TaskStatus.DONE.value
-    # OUT maps a forge status back to the external vocabulary.
+    # OUT maps an SCF status back to the external vocabulary.
     assert a.map_status(TaskStatus.IN_PROGRESS.value, Direction.OUT) == "In Progress"
     assert a.map_status(TaskStatus.DONE.value, Direction.OUT) == "Done"
 
@@ -39,11 +39,11 @@ def test_map_priority_both_directions() -> None:
 def test_map_fields_renames_in_and_out() -> None:
     a = GenericPMAdapter()
     external = {"summary": "Title here", "assignee": "alice"}
-    forge_fields = a.map_fields(external, Direction.IN)
-    assert forge_fields["title"] == "Title here"
-    assert forge_fields["assignee_name"] == "alice"
+    scf_fields = a.map_fields(external, Direction.IN)
+    assert scf_fields["title"] == "Title here"
+    assert scf_fields["assignee_name"] == "alice"
     # Round-trip back out.
-    back = a.map_fields(forge_fields, Direction.OUT)
+    back = a.map_fields(scf_fields, Direction.OUT)
     assert back["summary"] == "Title here"
     assert back["assignee"] == "alice"
 
@@ -53,7 +53,7 @@ def test_map_fields_passes_unknown_keys_through() -> None:
     assert a.map_fields({"custom_x": 1}, Direction.IN) == {"custom_x": 1}
 
 
-def test_sync_in_produces_forge_task() -> None:
+def test_sync_in_produces_scf_task() -> None:
     a = GenericPMAdapter()
     ext = ExternalTask(
         external_id="JIRA-101",
@@ -107,7 +107,7 @@ def test_sync_roundtrip_preserves_core_fields() -> None:
 
 def test_subscribe_records_event() -> None:
     a = GenericPMAdapter()
-    from forge_contracts import WebhookEvent
+    from scf_contracts import WebhookEvent
 
     event = WebhookEvent(source="generic", event_type="issue.updated", payload={"id": 1})
     assert a.subscribe(event) is None

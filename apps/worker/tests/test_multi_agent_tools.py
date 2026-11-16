@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_contracts import ROLE_TOOLS, AgentObjective, RepoTarget, SubAgentRole
-from forge_worker.multi_agent import _agent_factory
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_contracts import ROLE_TOOLS, AgentObjective, RepoTarget, SubAgentRole
+from scf_worker.multi_agent import _agent_factory
 
 
 def _objective(root: Path, role: SubAgentRole, actions: list[str]) -> AgentObjective:

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from conftest import make_fact
 
-from forge_world import Layer, Mood, RelationDef, RelationKind, derive
+from scf_world import Layer, Mood, RelationDef, RelationKind, derive
 
 A = uuid.uuid4()
 B = uuid.uuid4()

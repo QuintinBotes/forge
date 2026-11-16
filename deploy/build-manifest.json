@@ -10,22 +10,22 @@
       "digest": "sha256:a528be9d4779833156f611086b00ce3e6c3663983e6ee4b53038cd50b0346fbb",
       "kind": "pulled"
     },
-    "forge/api:0.1.0": {
+    "swarm-code-factory/api:0.1.0": {
       "digest": "sha256:ebfd594e3e34e44153591cf73e81235f1329fe588e42ef0a63ca85fdac96f9ac",
       "kind": "built",
       "sbom": "deploy/sbom/api.cdx.json"
     },
-    "forge/mcp-gateway:0.1.0": {
+    "swarm-code-factory/mcp-gateway:0.1.0": {
       "digest": "sha256:8a21b9a3d1b391a0da336cfcc907ae5483ddca60aaaa6f180fadb141e5003b0a",
       "kind": "built",
       "sbom": "deploy/sbom/mcp-gateway.cdx.json"
     },
-    "forge/web:0.1.0": {
+    "swarm-code-factory/web:0.1.0": {
       "digest": "sha256:27ea06d748dbbcf0ce4267d89547bc3f33a10443e96bcd99b23d0844b73a9d68",
       "kind": "built",
       "sbom": "deploy/sbom/web.cdx.json"
     },
-    "forge/worker:0.1.0": {
+    "swarm-code-factory/worker:0.1.0": {
       "digest": "sha256:dd3a8e0e46fe1cd7598f6d3e2dd0fb97d02342362d9ac3c010cc34b11a6f8e98",
       "kind": "built",
       "sbom": "deploy/sbom/worker.cdx.json"

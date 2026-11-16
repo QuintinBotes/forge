@@ -5,11 +5,11 @@ import subprocess
 import httpx
 import pytest
 
-from forge_agent.providers.base import ModelClientError
-from forge_agent.providers.bridge_client import LocalCliBridgeClient
-from forge_agent.providers.local_cli.client import LocalCliModelClient
-from forge_agent.providers.local_cli.detect import CliName
-from forge_contracts import ModelMessage, ModelRequest
+from scf_agent.providers.base import ModelClientError
+from scf_agent.providers.bridge_client import LocalCliBridgeClient
+from scf_agent.providers.local_cli.client import LocalCliModelClient
+from scf_agent.providers.local_cli.detect import CliName
+from scf_contracts import ModelMessage, ModelRequest
 
 ENVELOPE = '{"content": "ok", "tool_calls": [], "stop_reason": "end_turn"}'
 
@@ -35,7 +35,7 @@ def _authorizes(raw_header: bytes, *, configured_token: str) -> bool:
     Starlette decodes a raw ASGI header value as latin-1 before a route ever
     sees it; ``_authorize`` then re-encodes that decoded string as UTF-8
     (``surrogateescape``) and compares it to the configured token, encoded
-    the same way. See ``apps/cli-bridge/forge_cli_bridge/app.py``.
+    the same way. See ``apps/cli-bridge/scf_cli_bridge/app.py``.
     """
     decoded = raw_header.decode("latin-1")
     provided = decoded.encode("utf-8", "surrogateescape")

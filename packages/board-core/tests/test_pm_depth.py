@@ -9,21 +9,21 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from forge_board.capacity import (
+from scf_board.capacity import (
     MemberAssignment,
     MemberCapacityInput,
     compute_capacity_report,
 )
-from forge_board.estimation import EstimationScale, is_valid_estimate, nearest_scale_value
-from forge_board.goal_alignment import TaskAlignmentInput, compute_goal_alignment
-from forge_board.portfolio import (
+from scf_board.estimation import EstimationScale, is_valid_estimate, nearest_scale_value
+from scf_board.goal_alignment import TaskAlignmentInput, compute_goal_alignment
+from scf_board.portfolio import (
     TaskStatusEventInput,
     average_cycle_lead_time,
     compute_cfd,
     compute_cycle_lead_time,
     compute_portfolio_velocity,
 )
-from forge_board.velocity import VelocitySummary
+from scf_board.velocity import VelocitySummary
 
 # --------------------------------------------------------------------------- #
 # capacity                                                                     #

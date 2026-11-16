@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from conftest import make_fact
 
-from forge_world import (
+from scf_world import (
     InvalidatedReason,
     RelationDef,
     RelationKind,

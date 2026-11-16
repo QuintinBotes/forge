@@ -6,7 +6,7 @@ via the shared ``pg_engine`` fixture (root ``conftest.py``): the
 (every field, including the ``conflict_detail`` JSONB, the sync watermarks/hashes
 and the timezone-aware ``last_synced_at`` / ``external_updated_at_at_sync``),
 ``upsert`` insert-vs-update keyed by id, connection-scoped
-``get_by_forge_task`` / ``get_by_external``, ``list_by_state`` filtering +
+``get_by_scf_task`` / ``get_by_external``, ``list_by_state`` filtering +
 connection scoping, ``delete`` (idempotent), the ``uq_pm_task_link_conn_task`` /
 ``uq_pm_task_link_conn_extid`` storage-boundary constraints, returned-copy
 isolation, durability across repository instances, and structural conformance to
@@ -28,19 +28,19 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.services.pm_link_repository_db import DbLinkRepository
-from forge_contracts.pm import PMProvider as ContractsProvider
-from forge_contracts.pm import PMSyncState as ContractsSyncState
-from forge_db.base import Base
-from forge_db.models import PMConnection, Project, Task, Workspace
-from forge_db.models.enums import PMProvider as DbProvider
-from forge_integrations.pm.sync_engine import InMemoryLinkRepository, LinkRecord
+from scf_api.services.pm_link_repository_db import DbLinkRepository
+from scf_contracts.pm import PMProvider as ContractsProvider
+from scf_contracts.pm import PMSyncState as ContractsSyncState
+from scf_db.base import Base
+from scf_db.models import PMConnection, Project, Task, Workspace
+from scf_db.models.enums import PMProvider as DbProvider
+from scf_integrations.pm.sync_engine import InMemoryLinkRepository, LinkRecord
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("pg_engine")]
 
 _PROTOCOL_METHODS = (
     "get",
-    "get_by_forge_task",
+    "get_by_scf_task",
     "get_by_external",
     "upsert",
     "delete",
@@ -260,22 +260,22 @@ def test_returned_records_are_isolated_copies(
 
 
 # --------------------------------------------------------------------------- #
-# get_by_forge_task / get_by_external: connection-scoped                       #
+# get_by_scf_task / get_by_external: connection-scoped                       #
 # --------------------------------------------------------------------------- #
 
 
-def test_get_by_forge_task_scoped_by_connection(
+def test_get_by_scf_task_scoped_by_connection(
     repo: DbLinkRepository, seed: dict[str, object]
 ) -> None:
     tasks: list[UUID] = seed["tasks"]  # type: ignore[assignment]
     link = _link(seed, task_index=0, connection=seed["conn"], external_id="E1")  # type: ignore[arg-type]
     repo.upsert(link)
 
-    found = repo.get_by_forge_task(seed["conn"], tasks[0])  # type: ignore[arg-type]
+    found = repo.get_by_scf_task(seed["conn"], tasks[0])  # type: ignore[arg-type]
     assert found is not None and found.id == link.id
     # Foreign connection / different task -> absent.
-    assert repo.get_by_forge_task(seed["conn2"], tasks[0]) is None  # type: ignore[arg-type]
-    assert repo.get_by_forge_task(seed["conn"], tasks[1]) is None  # type: ignore[arg-type]
+    assert repo.get_by_scf_task(seed["conn2"], tasks[0]) is None  # type: ignore[arg-type]
+    assert repo.get_by_scf_task(seed["conn"], tasks[1]) is None  # type: ignore[arg-type]
 
 
 def test_get_by_external_scoped_by_connection(
@@ -351,7 +351,7 @@ def test_delete_removes_link_and_is_idempotent(
 # --------------------------------------------------------------------------- #
 
 
-def test_duplicate_forge_task_link_raises(repo: DbLinkRepository, seed: dict[str, object]) -> None:
+def test_duplicate_scf_task_link_raises(repo: DbLinkRepository, seed: dict[str, object]) -> None:
     """``uq_pm_task_link_conn_task`` blocks a second link for the same task."""
     repo.upsert(_link(seed, task_index=0, connection=seed["conn"], external_id="X1"))  # type: ignore[arg-type]
     with pytest.raises(IntegrityError):
@@ -416,12 +416,12 @@ def test_matches_in_memory_store_behaviour(repo: DbLinkRepository, seed: dict[st
         r.id for r in mem.list_by_state(conn, ContractsSyncState.synced)
     }
 
-    # get_by_external + get_by_forge_task agree.
+    # get_by_external + get_by_scf_task agree.
     db_ext = repo.get_by_external(conn, "p1")
     mem_ext = mem.get_by_external(conn, "p1")
     assert db_ext is not None and mem_ext is not None and db_ext.id == mem_ext.id
 
-    db_task = repo.get_by_forge_task(conn, tasks[0])
-    mem_task = mem.get_by_forge_task(conn, tasks[0])
+    db_task = repo.get_by_scf_task(conn, tasks[0])
+    mem_task = mem.get_by_scf_task(conn, tasks[0])
     assert db_task is not None and mem_task is not None
     assert db_task.id == mem_task.id == links[0].id

@@ -1,4 +1,4 @@
-"""Tests for the ao-config contract surface (forge_contracts.orchestration_config)."""
+"""Tests for the ao-config contract surface (scf_contracts.orchestration_config)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-import forge_contracts.orchestration_config as oc
+import scf_contracts.orchestration_config as oc
 
 
 def test_module_exports_resolve() -> None:

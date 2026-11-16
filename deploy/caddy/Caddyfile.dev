@@ -1,4 +1,4 @@
-# Forge — Caddy reverse proxy for the LOCAL DEV stack.
+# SCF — Caddy reverse proxy for the LOCAL DEV stack.
 #
 # Plain HTTP on :80 inside the container (published to the host as
 # ${CADDY_PORT:-8080}). No TLS / ACME for local use. Routes:

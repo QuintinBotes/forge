@@ -3,12 +3,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { SpecManifest } from "@/lib/api/types";
 
 import { SpecStudio } from "./spec-studio";
 
-function renderStudio(client: ForgeApiClient, specId = "SPEC-1") {
+function renderStudio(client: ScfApiClient, specId = "SPEC-1") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -29,7 +29,7 @@ const manifest: SpecManifest = {
 const specMd = "---\nid: SPEC-1\n---\n\n## Goal\n\nPasswordless auth\n";
 const manifestYaml = "id: SPEC-1\nname: Passwordless auth\nstatus: draft\n";
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     getSpecManifest: vi.fn(() => Promise.resolve(manifest)),
     getSpecMarkdown: vi.fn(() => Promise.resolve(specMd)),
@@ -38,7 +38,7 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
     putSpecMarkdown: vi.fn(() => Promise.resolve(manifest)),
     putSpecManifestYaml: vi.fn(() => Promise.resolve(manifest)),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
 describe("SpecStudio", () => {

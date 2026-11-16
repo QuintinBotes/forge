@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import uuid
 
-from forge_deploy.health import (
+from scf_deploy.health import (
     CommandHealthChecker,
     HttpHealthChecker,
     NullHealthChecker,
 )
-from forge_deploy.schemas import HealthCheckSpec
-from forge_deploy.states import HealthStatus
+from scf_deploy.schemas import HealthCheckSpec
+from scf_deploy.states import HealthStatus
 
 DID = uuid.uuid4()
 

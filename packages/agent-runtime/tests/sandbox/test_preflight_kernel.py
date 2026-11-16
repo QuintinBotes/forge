@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 from _sandbox_fakes import FakeDockerClient
 
-from forge_agent.sandbox import (
+from scf_agent.sandbox import (
     GvisorSandboxProvider,
     MicroVMSandboxProvider,
     SandboxRuntimeUnavailable,
     SandboxStartupError,
 )
-from forge_agent.sandbox import microvm as microvm_module
+from scf_agent.sandbox import microvm as microvm_module
 
 
 async def test_gvisor_preflight_raises_when_runsc_unregistered() -> None:
@@ -67,7 +67,7 @@ async def test_runtime_unavailable_is_a_startup_error() -> None:
 
 
 async def test_f19_providers_preflight_is_noop() -> None:
-    from forge_agent.sandbox import ContainerSandboxProvider, LocalSandboxProvider
+    from scf_agent.sandbox import ContainerSandboxProvider, LocalSandboxProvider
 
     await LocalSandboxProvider().preflight()
     await ContainerSandboxProvider(client=FakeDockerClient()).preflight()

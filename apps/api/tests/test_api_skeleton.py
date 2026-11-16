@@ -1,4 +1,4 @@
-"""Tests for the Forge API skeleton (plan Task 0.4).
+"""Tests for the SCF API skeleton (plan Task 0.4).
 
 The API skeleton is the SHARED SUBSTRATE every Phase-1 feature task wires its
 handlers into. These tests pin the substrate's guarantees:
@@ -26,9 +26,9 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from forge_api.deps import get_current_principal
-from forge_api.main import app, create_app
-from forge_api.settings import Settings, get_settings
+from scf_api.deps import get_current_principal
+from scf_api.main import app, create_app
+from scf_api.settings import Settings, get_settings
 
 # Routers the plan requires to be pre-registered (Task 0.4).
 FEATURE_ROUTER_PREFIXES = [

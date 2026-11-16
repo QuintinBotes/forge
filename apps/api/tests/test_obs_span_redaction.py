@@ -15,7 +15,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 
-from forge_api.observability.otel import RedactingSpanProcessor
+from scf_api.observability.otel import RedactingSpanProcessor
 
 
 def test_span_processor_redacts_secret_attribute_before_export() -> None:

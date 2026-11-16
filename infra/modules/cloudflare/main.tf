@@ -1,6 +1,6 @@
 # main.tf — cloudflare module.
 #
-# Provisions the Cloudflare-side footprint for the Forge control plane:
+# Provisions the Cloudflare-side footprint for the SCF control plane:
 #
 #   - R2 object storage: the shared Tofu state bucket (gated, see
 #     create_state_bucket) plus per-purpose buckets — audit-log archive

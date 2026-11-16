@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from forge_integrations.pm.jira.webhooks import (
+from scf_integrations.pm.jira.webhooks import (
     parse_jira,
     synthesize_delivery_id,
     verify_jira,
 )
-from forge_integrations.pm.linear.webhooks import (
+from scf_integrations.pm.linear.webhooks import (
     parse_linear,
     sign_linear,
     verify_linear,
@@ -136,7 +136,7 @@ def test_parse_linear_actions() -> None:
 
 
 def test_verify_asana_valid_and_tampered() -> None:
-    from forge_integrations.pm.asana.webhooks import sign_asana, verify_asana
+    from scf_integrations.pm.asana.webhooks import sign_asana, verify_asana
 
     body = json.dumps(
         {"events": [{"action": "changed", "resource": {"gid": "10001", "resource_type": "task"}}]}
@@ -149,7 +149,7 @@ def test_verify_asana_valid_and_tampered() -> None:
 
 
 def test_parse_asana_events() -> None:
-    from forge_integrations.pm.asana.webhooks import parse_asana
+    from scf_integrations.pm.asana.webhooks import parse_asana
 
     for action, expected in [
         ("added", "issue.created"),
@@ -163,7 +163,7 @@ def test_parse_asana_events() -> None:
 
 
 def test_parse_asana_empty_events_defaults_to_updated() -> None:
-    from forge_integrations.pm.asana.webhooks import parse_asana
+    from scf_integrations.pm.asana.webhooks import parse_asana
 
     ev = parse_asana({"events": []}, delivery_id="a2", signature_valid=False)
     assert ev.event_type == "issue.updated"
@@ -174,7 +174,7 @@ def test_parse_asana_empty_events_defaults_to_updated() -> None:
 
 
 def test_verify_monday_secret_match_mismatch() -> None:
-    from forge_integrations.pm.monday.webhooks import verify_monday
+    from scf_integrations.pm.monday.webhooks import verify_monday
 
     assert verify_monday(SECRET, SECRET) is True
     assert verify_monday(SECRET, "wrong") is False
@@ -182,7 +182,7 @@ def test_verify_monday_secret_match_mismatch() -> None:
 
 
 def test_monday_challenge_handshake() -> None:
-    from forge_integrations.pm.monday.webhooks import challenge_response, is_challenge
+    from scf_integrations.pm.monday.webhooks import challenge_response, is_challenge
 
     body = {"challenge": "abc123"}
     assert is_challenge(body) is True
@@ -191,7 +191,7 @@ def test_monday_challenge_handshake() -> None:
 
 
 def test_parse_monday_events() -> None:
-    from forge_integrations.pm.monday.webhooks import parse_monday
+    from scf_integrations.pm.monday.webhooks import parse_monday
 
     for event_type, expected in [
         ("create_pulse", "issue.created"),
@@ -208,12 +208,12 @@ def test_parse_monday_events() -> None:
 
 
 def test_verify_github_projects_reuses_shared_hmac_helper() -> None:
-    from forge_integrations.pm.github_projects.webhooks import (
+    from scf_integrations.pm.github_projects.webhooks import (
         sign_github_payload,
         verify_github_projects,
     )
-    from forge_integrations.webhooks import sign_github_payload as shared_sign
-    from forge_integrations.webhooks import verify_github_signature as shared_verify
+    from scf_integrations.webhooks import sign_github_payload as shared_sign
+    from scf_integrations.webhooks import verify_github_signature as shared_verify
 
     body = json.dumps({"action": "created", "projects_v2_item": {"node_id": "PVTI_1"}}).encode()
     sig = sign_github_payload(SECRET, body)
@@ -224,7 +224,7 @@ def test_verify_github_projects_reuses_shared_hmac_helper() -> None:
 
 
 def test_parse_github_projects_actions() -> None:
-    from forge_integrations.pm.github_projects.webhooks import parse_github_projects
+    from scf_integrations.pm.github_projects.webhooks import parse_github_projects
 
     for action, expected in [
         ("created", "issue.created"),
@@ -244,7 +244,7 @@ def test_parse_github_projects_actions() -> None:
 
 
 def test_verify_clickup_valid_and_tampered() -> None:
-    from forge_integrations.pm.clickup.webhooks import sign_clickup, verify_clickup
+    from scf_integrations.pm.clickup.webhooks import sign_clickup, verify_clickup
 
     body = json.dumps({"event": "taskUpdated", "task_id": "9hz"}).encode()
     sig = sign_clickup(SECRET, body)
@@ -255,7 +255,7 @@ def test_verify_clickup_valid_and_tampered() -> None:
 
 
 def test_parse_clickup_events() -> None:
-    from forge_integrations.pm.clickup.webhooks import parse_clickup
+    from scf_integrations.pm.clickup.webhooks import parse_clickup
 
     for event, expected in [
         ("taskCreated", "issue.created"),
@@ -269,7 +269,7 @@ def test_parse_clickup_events() -> None:
 
 
 def test_parse_clickup_falls_back_to_history_item_parent_id() -> None:
-    from forge_integrations.pm.clickup.webhooks import parse_clickup
+    from scf_integrations.pm.clickup.webhooks import parse_clickup
 
     body = {
         "event": "taskPriorityUpdated",
@@ -284,7 +284,7 @@ def test_parse_clickup_falls_back_to_history_item_parent_id() -> None:
 
 
 def test_verify_trello_valid_and_tampered() -> None:
-    from forge_integrations.pm.trello.webhooks import sign_trello, verify_trello
+    from scf_integrations.pm.trello.webhooks import sign_trello, verify_trello
 
     callback_url = "https://forge.example/webhook"
     body = json.dumps(
@@ -299,7 +299,7 @@ def test_verify_trello_valid_and_tampered() -> None:
 
 
 def test_parse_trello_actions() -> None:
-    from forge_integrations.pm.trello.webhooks import parse_trello
+    from scf_integrations.pm.trello.webhooks import parse_trello
 
     for action_type, expected in [
         ("createCard", "issue.created"),
@@ -316,7 +316,7 @@ def test_parse_trello_actions() -> None:
 
 
 def test_verify_gitlab_secret_match_mismatch() -> None:
-    from forge_integrations.pm.gitlab.webhooks import verify_gitlab
+    from scf_integrations.pm.gitlab.webhooks import verify_gitlab
 
     assert verify_gitlab(SECRET, SECRET) is True
     assert verify_gitlab(SECRET, "wrong") is False
@@ -324,7 +324,7 @@ def test_verify_gitlab_secret_match_mismatch() -> None:
 
 
 def test_parse_gitlab_actions() -> None:
-    from forge_integrations.pm.gitlab.webhooks import parse_gitlab
+    from scf_integrations.pm.gitlab.webhooks import parse_gitlab
 
     for action, expected in [
         ("open", "issue.created"),
@@ -345,16 +345,16 @@ def test_parse_gitlab_actions() -> None:
 
 
 def test_verify_generic_none_algo_always_true() -> None:
-    from forge_contracts.pm import GenericWebhookConfig
-    from forge_integrations.pm.generic.webhooks import verify_generic
+    from scf_contracts.pm import GenericWebhookConfig
+    from scf_integrations.pm.generic.webhooks import verify_generic
 
     config = GenericWebhookConfig()
     assert verify_generic(config, "", b"{}", {}) is True
 
 
 def test_verify_generic_shared_secret_header() -> None:
-    from forge_contracts.pm import GenericWebhookConfig, GenericWebhookSignatureAlgo
-    from forge_integrations.pm.generic.webhooks import verify_generic
+    from scf_contracts.pm import GenericWebhookConfig, GenericWebhookSignatureAlgo
+    from scf_integrations.pm.generic.webhooks import verify_generic
 
     config = GenericWebhookConfig(
         signature_header="X-Byo-Secret",
@@ -369,8 +369,8 @@ def test_verify_generic_hmac_sha256_hex() -> None:
     import hashlib
     import hmac
 
-    from forge_contracts.pm import GenericWebhookConfig, GenericWebhookSignatureAlgo
-    from forge_integrations.pm.generic.webhooks import verify_generic
+    from scf_contracts.pm import GenericWebhookConfig, GenericWebhookSignatureAlgo
+    from scf_integrations.pm.generic.webhooks import verify_generic
 
     body = b'{"type":"ticket_updated"}'
     sig = hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
@@ -387,8 +387,8 @@ def test_verify_generic_hmac_sha1_base64() -> None:
     import hashlib
     import hmac
 
-    from forge_contracts.pm import GenericWebhookConfig, GenericWebhookSignatureAlgo
-    from forge_integrations.pm.generic.webhooks import verify_generic
+    from scf_contracts.pm import GenericWebhookConfig, GenericWebhookSignatureAlgo
+    from scf_integrations.pm.generic.webhooks import verify_generic
 
     body = b'{"type":"ticket_updated"}'
     digest = hmac.new(SECRET.encode(), body, hashlib.sha1).digest()
@@ -402,8 +402,8 @@ def test_verify_generic_hmac_sha1_base64() -> None:
 
 
 def test_parse_generic_maps_configured_event_types() -> None:
-    from forge_contracts.pm import GenericWebhookConfig
-    from forge_integrations.pm.generic.webhooks import parse_generic
+    from scf_contracts.pm import GenericWebhookConfig
+    from scf_integrations.pm.generic.webhooks import parse_generic
 
     config = GenericWebhookConfig(
         event_type_path="type",
@@ -422,8 +422,8 @@ def test_parse_generic_maps_configured_event_types() -> None:
 
 
 def test_parse_generic_falls_back_to_default_event_type() -> None:
-    from forge_contracts.pm import GenericWebhookConfig
-    from forge_integrations.pm.generic.webhooks import parse_generic
+    from scf_contracts.pm import GenericWebhookConfig
+    from scf_integrations.pm.generic.webhooks import parse_generic
 
     config = GenericWebhookConfig(event_type_path="type", external_id_path="ticket.id")
     body = {"type": "something_unrecognized", "ticket": {"id": "t-1"}}

@@ -15,14 +15,14 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.audit import AuditEvent
-from forge_db.audit.writer import SqlAuditWriter
-from forge_db.base import Base
-from forge_db.models import AuditLog, Workspace
-from forge_worker.beat import AUDIT_VERIFY_TASK as BEAT_AUDIT_VERIFY_TASK
-from forge_worker.beat import BEAT_SCHEDULE
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks.audit import (
+from scf_contracts.audit import AuditEvent
+from scf_db.audit.writer import SqlAuditWriter
+from scf_db.base import Base
+from scf_db.models import AuditLog, Workspace
+from scf_worker.beat import AUDIT_VERIFY_TASK as BEAT_AUDIT_VERIFY_TASK
+from scf_worker.beat import BEAT_SCHEDULE
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks.audit import (
     AUDIT_RECORD_TASK,
     AUDIT_VERIFY_TASK,
     run_record,
@@ -130,8 +130,8 @@ def _memory_factory() -> sessionmaker[Session]:
 
 
 def test_record_audit_event_seam_persists(monkeypatch) -> None:
-    import forge_worker.tasks.audit as audit_mod
-    from forge_worker.tasks.audit import record_audit_event
+    import scf_worker.tasks.audit as audit_mod
+    from scf_worker.tasks.audit import record_audit_event
 
     factory = _memory_factory()
     monkeypatch.setattr(audit_mod, "create_session_factory", lambda: factory)
@@ -145,8 +145,8 @@ def test_record_audit_event_seam_persists(monkeypatch) -> None:
 
 
 def test_record_audit_event_drops_after_max_retries(monkeypatch) -> None:
-    import forge_worker.tasks.audit as audit_mod
-    from forge_worker.tasks.audit import record_audit_event
+    import scf_worker.tasks.audit as audit_mod
+    from scf_worker.tasks.audit import record_audit_event
 
     factory = _memory_factory()
     monkeypatch.setattr(audit_mod, "create_session_factory", lambda: factory)
@@ -165,8 +165,8 @@ def test_record_audit_event_drops_after_max_retries(monkeypatch) -> None:
 
 
 def test_verify_chain_all_seam(monkeypatch) -> None:
-    import forge_worker.tasks.audit as audit_mod
-    from forge_worker.tasks.audit import verify_chain_all
+    import scf_worker.tasks.audit as audit_mod
+    from scf_worker.tasks.audit import verify_chain_all
 
     factory = _memory_factory()
     with factory() as s:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from forge_agent import AgentRunner
-from forge_contracts import (
+from scf_agent import AgentRunner
+from scf_contracts import (
     AgentObjective,
     ModelRequest,
     ModelResponse,

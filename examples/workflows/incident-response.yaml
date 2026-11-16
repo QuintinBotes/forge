@@ -1,6 +1,6 @@
 # Example workflow DSL — incident response.
 #
-# Mirrors docs/FORGE_SPEC.md ("Incident Workflow States"). Remediation is always
+# Mirrors docs/SCF_SPEC.md ("Incident Workflow States"). Remediation is always
 # human-approved before any runbook executes; monitoring can loop back to a new
 # remediation proposal if metrics regress.
 workflow: incident_response

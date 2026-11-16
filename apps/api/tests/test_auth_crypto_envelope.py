@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_api.auth.crypto import (
+from scf_api.auth.crypto import (
     ENVELOPE_VERSION,
     EnvelopeCipher,
     HmacAeadCipher,
@@ -17,7 +17,7 @@ from forge_api.auth.crypto import (
     default_cipher,
     envelope_cipher,
 )
-from forge_api.auth.keyring import KeyRing
+from scf_api.auth.keyring import KeyRing
 
 _KEK_V1 = b"k" * 32
 _KEK_V2 = b"z" * 32

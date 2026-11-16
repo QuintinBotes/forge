@@ -21,24 +21,24 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers.marketplace import get_marketplace_service
-from forge_api.services.marketplace_service import MarketplaceService, seed_official_registry
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import User, Workspace
-from forge_db.models.marketplace import MarketplaceRegistry
-from forge_marketplace.manifest import compute_manifest_hash
-from forge_marketplace.models import (
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers.marketplace import get_marketplace_service
+from scf_api.services.marketplace_service import MarketplaceService, seed_official_registry
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import User, Workspace
+from scf_db.models.marketplace import MarketplaceRegistry
+from scf_marketplace.manifest import compute_manifest_hash
+from scf_marketplace.models import (
     ArtifactKind,
     RegistryIndex,
     RegistryIndexEntry,
     RegistryIndexVersion,
 )
-from forge_marketplace.packaging import build_package
-from forge_marketplace.signing import sign_manifest_hash
+from scf_marketplace.packaging import build_package
+from scf_marketplace.signing import sign_manifest_hash
 
 WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
 OTHER_WS_ID = uuid.UUID("00000000-0000-0000-0000-0000000000c3")
@@ -74,7 +74,7 @@ def make_skill_version(
     version: str = "1.2.0",
     sign: bool = True,
     yanked: bool = False,
-    min_forge: str | None = None,
+    min_scf: str | None = None,
     artifact: dict | None = None,
 ):
     body = artifact or {
@@ -90,7 +90,7 @@ def make_skill_version(
         name=name,
         version=version,
         summary="hardened backend-tdd",
-        min_forge_version=min_forge,
+        min_forge_version=min_scf,
         validate_artifact=False,
     )
     mh = compute_manifest_hash(manifest)
@@ -101,7 +101,7 @@ def make_skill_version(
         manifest_hash=mh,
         signature=sig,
         manifest_uri=f"skill_profile/{slug}/{version}/forge-package.yaml",
-        min_forge_version=min_forge,
+        min_forge_version=min_scf,
         published_at=datetime(2026, 6, 20, tzinfo=UTC),
         yanked=yanked,
         yanked_reason="security" if yanked else None,

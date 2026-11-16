@@ -1,6 +1,6 @@
-"""Tests for ``forge_knowledge.stores`` (plan Task 1.2, RAG spine).
+"""Tests for ``scf_knowledge.stores`` (plan Task 1.2, RAG spine).
 
-Covers the two indexed stores that sit on top of the ``forge_db`` data model:
+Covers the two indexed stores that sit on top of the ``scf_db`` data model:
 
 * :class:`PgVectorStore` — ``index``/``search`` with cosine similarity. On
   Postgres it uses pgvector's ``cosine_distance``; on SQLite (the hermetic
@@ -30,20 +30,20 @@ import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.dtos import Chunk, KnowledgeScope
-from forge_contracts.enums import ChunkType
-from forge_contracts.protocols import KnowledgeStore
-from forge_db.base import Base
-from forge_db.models import (
+from scf_contracts.dtos import Chunk, KnowledgeScope
+from scf_contracts.enums import ChunkType
+from scf_contracts.protocols import KnowledgeStore
+from scf_db.base import Base
+from scf_db.models import (
     KnowledgeSource,
     RetrievalChunk,
     RetrievalTermStat,
     RetrievalWorkspaceStat,
     Workspace,
 )
-from forge_db.session import create_session_factory
-from forge_knowledge.embeddings import DeterministicEmbeddingClient
-from forge_knowledge.stores import (
+from scf_db.session import create_session_factory
+from scf_knowledge.embeddings import DeterministicEmbeddingClient
+from scf_knowledge.stores import (
     Bm25Store,
     KnowledgeSourceNotFoundError,
     PgVectorStore,
@@ -51,7 +51,7 @@ from forge_knowledge.stores import (
     bm25_score,
     rebuild_bm25_stats,
 )
-from forge_knowledge.text import tokenize
+from scf_knowledge.text import tokenize
 
 
 @pytest.fixture
@@ -784,7 +784,7 @@ def test_new_chunks_are_embedded_in_bounded_batches(
 def test_a_backlog_failure_never_undoes_new_chunks_and_skips_only_bad_rows(
     session_factory: sessionmaker[Session], workspace_id: uuid.UUID
 ) -> None:
-    from forge_knowledge.sync import full_sync
+    from scf_knowledge.sync import full_sync
 
     source_id = str(_make_source(session_factory, workspace_id))
     old = {"a.py": "def alpha(): pass", "b.py": "poison pill", "c.py": "def gamma(): pass"}
@@ -808,7 +808,7 @@ def test_a_backlog_failure_never_undoes_new_chunks_and_skips_only_bad_rows(
 def test_full_sync_never_sends_a_vanished_files_text_to_the_embedder(
     session_factory: sessionmaker[Session], workspace_id: uuid.UUID
 ) -> None:
-    from forge_knowledge.sync import full_sync
+    from scf_knowledge.sync import full_sync
 
     source_id = str(_make_source(session_factory, workspace_id))
     full_sync(

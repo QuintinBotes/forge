@@ -34,9 +34,9 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-import forge_db.models  # noqa: F401  (registers all models on Base.metadata)
-from forge_db.base import Base
-from forge_db.models.enums import WorkflowState
+import scf_db.models  # noqa: F401  (registers all models on Base.metadata)
+from scf_db.base import Base
+from scf_db.models.enums import WorkflowState
 
 # revision identifiers, used by Alembic.
 revision: str = "0045_workflow_lines"

@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import { ApiError, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, type ScfApiClient } from "@/lib/api/client";
 import type {
   DeploymentDetail,
   DeploymentRead,
@@ -143,7 +143,7 @@ function detailFor(id: string): DeploymentDetail {
   };
 }
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     getDeploymentPipeline: vi.fn(() => Promise.resolve(pipeline)),
     listProjectDeployments: vi.fn(() => Promise.resolve(deployments)),
@@ -161,10 +161,10 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
       Promise.resolve(dep(id, { state: "rolling_back" })),
     ),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

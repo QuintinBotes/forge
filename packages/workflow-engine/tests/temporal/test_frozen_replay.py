@@ -18,9 +18,9 @@ from temporalio.client import WorkflowHistory
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Replayer
 
-from forge_workflow.temporal.payloads import WorkflowParams, WorkflowResult
-from forge_workflow.temporal.worker import feature_workflow_runner
-from forge_workflow.temporal.workflows import FeatureWorkflow
+from scf_workflow.temporal.payloads import WorkflowParams, WorkflowResult
+from scf_workflow.temporal.worker import feature_workflow_runner
+from scf_workflow.temporal.workflows import FeatureWorkflow
 
 pytestmark = pytest.mark.asyncio
 
@@ -59,7 +59,7 @@ class _ReorderedWorkflow:
     async def run(self, params: WorkflowParams) -> WorkflowResult:  # pragma: no cover
         from datetime import timedelta
 
-        from forge_contracts import WorkflowState
+        from scf_contracts import WorkflowState
 
         await workflow.execute_activity(
             "forge.pause_and_notify", arg=None, start_to_close_timeout=timedelta(seconds=5)

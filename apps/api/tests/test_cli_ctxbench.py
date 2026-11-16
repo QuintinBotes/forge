@@ -1,4 +1,4 @@
-"""``forge-cli ctxbench`` end to end, hermetically (spec J §2.4.1).
+"""``scf-cli ctxbench`` end to end, hermetically (spec J §2.4.1).
 
 A tiny synthetic corpus (invented content: a few files, two issues, one PR,
 three commits, and an issue, two PRs and two comments that the cut-off must
@@ -26,10 +26,10 @@ from sqlalchemy import StaticPool, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api import cli, cli_ctxbench
-from forge_db.base import Base
-from forge_db.session import create_session_factory
-from forge_eval.ctxbench.bank import SUITE_DIR, suite_hash
+from scf_api import cli, cli_ctxbench
+from scf_db.base import Base
+from scf_db.session import create_session_factory
+from scf_eval.ctxbench.bank import SUITE_DIR, suite_hash
 
 ROOT = Path(__file__).resolve().parents[3]
 FAKE_CLAUDE = str(ROOT / "packages" / "evaluation" / "tests" / "ctxbench" / "fake_claude.py")
@@ -527,14 +527,14 @@ def test_proxy_is_byte_identical_on_fresh_postgres_databases(
 def test_build_ingests_at_the_cutoff_and_mints_a_viewer_key(
     corpus: dict[str, Any], env: None, monkeypatch: pytest.MonkeyPatch, capsys: Any
 ) -> None:
-    from forge_api.auth import service as auth_service
-    from forge_db.models import RetrievalChunk
+    from scf_api.auth import service as auth_service
+    from scf_db.models import RetrievalChunk
 
     factory = _sqlite()
     monkeypatch.setattr(cli_ctxbench, "_session_factory", lambda: factory)
     monkeypatch.setattr(auth_service, "_default_service", None)
     argv = ["ctxbench", "build", "--bundle", str(corpus["bundle"]), "--suite", str(corpus["suite"])]
-    monkeypatch.setattr("forge_api.routers.knowledge.get_configured_embedder", lambda: None)
+    monkeypatch.setattr("scf_api.routers.knowledge.get_configured_embedder", lambda: None)
     assert cli.main(argv) == 2  # no embedder and no --bm25-only
     assert cli.main([*argv, "--bm25-only"]) == 0
     out = capsys.readouterr().out
@@ -738,7 +738,7 @@ def test_run_refuses_without_its_inputs(
 def test_a_forge_tool_error_makes_the_run_invalid(
     corpus: dict[str, Any], env: None, tmp_path: Path
 ) -> None:
-    """Forge answering the handshake and then failing a call is not a wrong answer."""
+    """SCF answering the handshake and then failing a call is not a wrong answer."""
     suite = _suite(tmp_path, corpus, "What is plain?", "TOOLERROR what broke?")
     run_dir = tmp_path / "run"
     assert _run_once(corpus, suite, run_dir, "forge") == 2
@@ -789,7 +789,7 @@ class _Interrupt(BaseException):
 def test_an_ask_that_raises_is_an_invalid_row_and_finished_asks_are_kept(
     corpus: dict[str, Any], env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from forge_eval.ctxbench import claude
+    from scf_eval.ctxbench import claude
 
     real = claude.run_claude
 

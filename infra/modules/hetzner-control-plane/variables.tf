@@ -93,7 +93,7 @@ variable "private_ip_offset" {
 # --------------------------------------------------------------------- #
 
 variable "server_count" {
-  description = "Number of control-plane servers. Defaults to 1 (the single-node Forge compose stack); >1 stands up additional nodes on the same private network."
+  description = "Number of control-plane servers. Defaults to 1 (the single-node SCF compose stack); >1 stands up additional nodes on the same private network."
   type        = number
   default     = 1
 
@@ -225,7 +225,7 @@ variable "enable_floating_ip" {
 # --------------------------------------------------------------------- #
 
 variable "enable_bootstrap" {
-  description = "Render the cloud-init user_data that installs Docker and (optionally) brings up the Forge compose stack. Disable to provision bare servers you configure out-of-band."
+  description = "Render the cloud-init user_data that installs Docker and (optionally) brings up the SCF compose stack. Disable to provision bare servers you configure out-of-band."
   type        = bool
   default     = true
 }

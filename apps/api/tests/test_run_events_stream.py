@@ -14,13 +14,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_api.routers import run_events as run_events_router
-from forge_contracts import UserRole
-from forge_db.base import Base
-from forge_db.models import AgentRun, AgentRunEvent, Workspace
-from forge_db.models.enums import RunStatus
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_api.routers import run_events as run_events_router
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import AgentRun, AgentRunEvent, Workspace
+from scf_db.models.enums import RunStatus
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000e1")
 OTHER = uuid.UUID("00000000-0000-0000-0000-0000000000e2")

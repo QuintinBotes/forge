@@ -3,7 +3,7 @@
 Hermetic: no DB, no network — every side-effecting port is a fake. Covers the
 dispatch + audit contract, the auto-merge default-off gate, the deploy policy
 gate, and the SLA-breach -> declare-incident wiring end to end through the pure
-:class:`~forge_board.automation.engine.AutomationEngine`.
+:class:`~scf_board.automation.engine.AutomationEngine`.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from forge_board.automation import (
+from scf_board.automation import (
     ActionContext,
     AutomationEngine,
     AutomationRuleSpec,
@@ -31,8 +31,8 @@ from forge_board.automation import (
     TriggerSpec,
     WebhookPostAction,
 )
-from forge_contracts import DeployRules, Policy, ReviewRules
-from forge_contracts.automation import (
+from scf_contracts import DeployRules, Policy, ReviewRules
+from scf_contracts.automation import (
     AutomationActionType,
     AutomationEntityType,
     AutomationExecutionStatus,
@@ -40,7 +40,7 @@ from forge_contracts.automation import (
     AutomationTriggerSource,
     AutomationTriggerType,
 )
-from forge_contracts.enums import IncidentSeverity, Priority, TaskStatus
+from scf_contracts.enums import IncidentSeverity, Priority, TaskStatus
 
 WS_ID = uuid.uuid4()
 
@@ -374,7 +374,7 @@ def test_unhandled_action_delegates_to_fallback() -> None:
 
         def execute(self, action: Any, ctx: ActionContext) -> Any:
             self.seen.append(action)
-            from forge_board.automation import ActionResult
+            from scf_board.automation import ActionResult
 
             return ActionResult(type=action.type, status="ok", detail={})
 

@@ -1,8 +1,8 @@
 # Community copy of the canonical incident workflow (F17).
 #
 # This MUST parse to the same WorkflowDefinition as the wheel-bundled
-# `forge_workflow/definitions/incident.yaml` (a drift test enforces equality).
-# See docs/FORGE_SPEC.md ("Incident Workflow States").
+# `scf_workflow/definitions/incident.yaml` (a drift test enforces equality).
+# See docs/SCF_SPEC.md ("Incident Workflow States").
 workflow: incident
 version: "1"
 modes:

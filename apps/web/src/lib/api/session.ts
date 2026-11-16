@@ -1,5 +1,5 @@
 /**
- * Client-side storage for the Forge API key the browser authenticates with.
+ * Client-side storage for the SCF API key the browser authenticates with.
  *
  * A fresh self-host has no other way in: the UI has no password login, and
  * `POST /auth/login` begins an OAuth handshake against an IdP that nobody has

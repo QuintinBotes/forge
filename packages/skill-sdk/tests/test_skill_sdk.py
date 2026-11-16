@@ -6,7 +6,7 @@ Covers the three behaviours the plan names explicitly:
 - ``incident-response`` forbids ``deploy_prod``,
 - an unknown profile raises ``UnknownSkillProfileError``,
 
-plus the full built-in profile set (matching ``docs/FORGE_SPEC.md`` verbatim),
+plus the full built-in profile set (matching ``docs/SCF_SPEC.md`` verbatim),
 the YAML loader, registry behaviour, structural Protocol conformance, and the
 non-mutating semantics of behaviour injection into an ``AgentObjective``.
 
@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import pytest
 
-import forge_skill as fs
-from forge_contracts import AgentObjective, ApprovalPolicy, SkillProfile
-from forge_contracts import SkillProfileRegistry as SkillProfileRegistryProtocol
-from forge_contracts.exceptions import UnknownSkillProfileError
-from forge_skill import (
+import scf_skill as fs
+from scf_contracts import AgentObjective, ApprovalPolicy, SkillProfile
+from scf_contracts import SkillProfileRegistry as SkillProfileRegistryProtocol
+from scf_contracts.exceptions import UnknownSkillProfileError
+from scf_skill import (
     BUILTIN_PROFILE_NAMES,
     SkillProfileRegistry,
     builtin_profiles,
@@ -30,7 +30,7 @@ from forge_skill import (
     load_profiles,
 )
 
-# The seven profiles named in plan Task 1.11 and FORGE_SPEC.md "Skill Profiles".
+# The seven profiles named in plan Task 1.11 and SCF_SPEC.md "Skill Profiles".
 EXPECTED_NAMES = (
     "backend-tdd",
     "backend-fast",

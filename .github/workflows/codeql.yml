@@ -2,7 +2,7 @@ name: CodeQL
 
 # Static analysis (code scanning) for the two source languages in this repo:
 #   * python                 — the uv workspace (packages/*, apps/{api,worker,mcp-gateway})
-#   * javascript-typescript  — the pnpm workspace (apps/web / @forge/web)
+#   * javascript-typescript  — the pnpm workspace (apps/web / @scf/web)
 #
 # Runs on pushes to main, on every PR, and on a weekly schedule so the baseline
 # keeps re-scanning even when the tree is quiet.

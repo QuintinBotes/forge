@@ -1,6 +1,6 @@
 # Example spec manifest (machine-readable spec metadata).
 #
-# Loaded by `forge_spec.load_manifest`. Acceptance criteria reference declared
+# Loaded by `scf_spec.load_manifest`. Acceptance criteria reference declared
 # requirements via `req_refs`, giving the requirement -> acceptance -> task ->
 # test traceability the spec engine validates and the approval UI renders.
 id: SPEC-17

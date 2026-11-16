@@ -1,4 +1,4 @@
-# Forge Prometheus config (HARD-10, observability profile).
+# SCF Prometheus config (HARD-10, observability profile).
 #
 # Scrapes the OTel collector's Prometheus exposition (the app metrics fan in
 # through the collector over OTLP) plus each app's internal /metrics endpoint

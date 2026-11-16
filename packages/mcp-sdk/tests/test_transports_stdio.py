@@ -11,13 +11,13 @@ import sys
 
 import pytest
 
-from forge_contracts import MCPResourceContent
-from forge_mcp.exceptions import MCPSecurityError, MCPTransportUnavailableError
-from forge_mcp.reference_server import PLANTED_SECRET
-from forge_mcp.transport import ToolSpec, Transport
-from forge_mcp.transports.stdio import StdioMcpTransport
+from scf_contracts import MCPResourceContent
+from scf_mcp.exceptions import MCPSecurityError, MCPTransportUnavailableError
+from scf_mcp.reference_server import PLANTED_SECRET
+from scf_mcp.transport import ToolSpec, Transport
+from scf_mcp.transports.stdio import StdioMcpTransport
 
-REFERENCE_CMD = [sys.executable, "-m", "forge_mcp.reference_server", "--stdio"]
+REFERENCE_CMD = [sys.executable, "-m", "scf_mcp.reference_server", "--stdio"]
 
 
 @pytest.fixture

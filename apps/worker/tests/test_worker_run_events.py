@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-import forge_worker.agent_runner as agent_runner_module
-from forge_contracts import (
+import scf_worker.agent_runner as agent_runner_module
+from scf_contracts import (
     ENFORCEMENT,
     AgentRunResult,
     Decision,
@@ -20,11 +20,11 @@ from forge_contracts import (
     StepKind,
     ToolCall,
 )
-from forge_db.base import Base
-from forge_db.models import AgentRun, AgentRunEvent, Workspace
-from forge_worker.agent_runner import run_agent_task
-from forge_worker.reliability import InMemoryDedupBackend, set_dedup_backend
-from forge_worker.run_events import MAX_TEXT, RunEventSink, terminal_drafts
+from scf_db.base import Base
+from scf_db.models import AgentRun, AgentRunEvent, Workspace
+from scf_worker.agent_runner import run_agent_task
+from scf_worker.reliability import InMemoryDedupBackend, set_dedup_backend
+from scf_worker.run_events import MAX_TEXT, RunEventSink, terminal_drafts
 
 
 @pytest.fixture

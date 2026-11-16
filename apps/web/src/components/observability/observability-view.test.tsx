@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { CostSummary, CostTimeseries } from "@/lib/api/types";
 
 import { ObservabilityView } from "./observability-view";
@@ -59,16 +59,16 @@ forge_retrieval_latency_seconds_count{stage="total"} 50
 forge_retrieval_latency_seconds_sum{stage="total"} 6
 `;
 
-function makeClient(over: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(over: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     getCostSummary: vi.fn(() => Promise.resolve(SUMMARY)),
     getCostTimeseries: vi.fn(() => Promise.resolve(TIMESERIES)),
     getMetricsExposition: vi.fn(() => Promise.resolve(METRICS)),
     ...over,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderView(client: ForgeApiClient) {
+function renderView(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

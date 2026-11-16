@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     ApprovalGate,
     Decision,
     DecisionEffect,
@@ -20,7 +20,7 @@ from forge_contracts import (
     ToolCall,
     WriteRules,
 )
-from forge_policy import RepoPolicyEvaluator, evaluate
+from scf_policy import RepoPolicyEvaluator, evaluate
 
 
 @pytest.fixture

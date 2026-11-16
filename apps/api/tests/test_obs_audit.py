@@ -11,7 +11,7 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from forge_api.observability.audit import (
+from scf_api.observability.audit import (
     AuditCategory,
     AuditEntry,
     AuditLog,
@@ -19,7 +19,7 @@ from forge_api.observability.audit import (
     compute_payload_hash,
     verify_chain,
 )
-from forge_contracts import MCPAuditEntry
+from scf_contracts import MCPAuditEntry
 
 
 def test_record_assigns_monotonic_sequence_numbers() -> None:

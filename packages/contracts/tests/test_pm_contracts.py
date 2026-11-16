@@ -1,12 +1,12 @@
-"""Tests for the F18 PM-adapter contract surface (forge_contracts.pm)."""
+"""Tests for the F18 PM-adapter contract surface (scf_contracts.pm)."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from uuid import uuid4
 
-import forge_contracts.pm as pm
-from forge_contracts import Direction
+import scf_contracts.pm as pm
+from scf_contracts import Direction
 
 
 def test_module_exports_resolve() -> None:
@@ -45,8 +45,8 @@ def test_status_categories_match_spec() -> None:
     }
 
 
-def test_forge_priority_values() -> None:
-    assert {p.value for p in pm.ForgePriority} == {
+def test_scf_priority_values() -> None:
+    assert {p.value for p in pm.ScfPriority} == {
         "none",
         "low",
         "medium",
@@ -70,14 +70,14 @@ def test_external_task_roundtrip() -> None:
     assert pm.ExternalTask.model_validate(t.model_dump()) == t
 
 
-def test_forge_task_requires_category_and_priority() -> None:
-    t = pm.ForgeTask(
+def test_scf_task_requires_category_and_priority() -> None:
+    t = pm.ScfTask(
         id=uuid4(),
         key="TASK-1",
         project_id=uuid4(),
         title="Title",
         status_category=pm.StatusCategory.started,
-        priority=pm.ForgePriority.high,
+        priority=pm.ScfPriority.high,
         updated_at=datetime.now(UTC),
     )
     assert t.version == 0

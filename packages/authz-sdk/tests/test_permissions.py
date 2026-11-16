@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from forge_authz.permissions import (
+from scf_authz.permissions import (
     ACCESS_LEVEL_ROLE,
     ROLE_PERMISSIONS,
     ROLE_RANK,
     WORKSPACE_ONLY_PERMISSIONS,
     scope_narrow,
 )
-from forge_contracts.authz import AccessLevel, Permission, Role, ScopeType
+from scf_contracts.authz import AccessLevel, Permission, Role, ScopeType
 
 P = Permission
 

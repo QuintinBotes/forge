@@ -1,4 +1,4 @@
-# Forge Loki config (HARD-10, observability profile). Single-binary, filesystem
+# SCF Loki config (HARD-10, observability profile). Single-binary, filesystem
 # store — the self-hoster's log sink. OTLP-native ingest is enabled so the OTel
 # collector ships logs straight in. No auth (internal `observability` network,
 # reached only through Grafana behind Caddy).

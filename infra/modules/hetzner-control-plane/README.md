@@ -1,7 +1,7 @@
 # Module: `hetzner-control-plane`
 
-Stands up the **always-on Forge control plane** on Hetzner Cloud — the node(s)
-that run the Forge Docker Compose stack (API · worker · Postgres+pgvector ·
+Stands up the **always-on Swarm Code Factory control plane** on Hetzner Cloud — the node(s)
+that run the SCF Docker Compose stack (API · worker · Postgres+pgvector ·
 Redis · MinIO) referenced by [`deploy/docker-compose.yml`](../../../deploy/docker-compose.yml).
 
 What it creates:
@@ -35,7 +35,7 @@ module "control_plane" {
   server_count = 1
   server_type  = "cpx41"                     # 8 vCPU / 16 GB
   ssh_public_keys = {
-    ops = file("~/.ssh/forge_ops.pub")
+    ops = file("~/.ssh/scf_ops.pub")
   }
 
   admin_ssh_cidrs = ["203.0.113.10/32"]      # bastion / admin only
@@ -50,7 +50,7 @@ module "control_plane" {
 
   # Bootstrap: install Docker + clone the stack, but DON'T auto-start
   # (inject secrets first, then `docker compose up -d`).
-  forge_repo_url    = "https://github.com/your-org/forge.git"
+  forge_repo_url    = "https://github.com/your-org/swarm-code-factory.git"
   forge_repo_ref    = "main"
   compose_autostart = false
 }

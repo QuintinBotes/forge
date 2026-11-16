@@ -7,11 +7,11 @@ import logging
 
 import pytest
 
-from forge_obs.logging import JsonLogFormatter, bind_context, clear_context, configure_logging
-from forge_obs.metrics import NoopMetrics, RecordingMetrics, get_metrics, reset_metrics
-from forge_obs.settings import ObsSettings
-from forge_obs.telemetry import setup_telemetry, shutdown_telemetry
-from forge_obs.tracing import traced
+from scf_obs.logging import JsonLogFormatter, bind_context, clear_context, configure_logging
+from scf_obs.metrics import NoopMetrics, RecordingMetrics, get_metrics, reset_metrics
+from scf_obs.settings import ObsSettings
+from scf_obs.telemetry import setup_telemetry, shutdown_telemetry
+from scf_obs.tracing import traced
 
 
 @pytest.fixture(autouse=True)
@@ -102,8 +102,8 @@ def test_structural_trace_fields_survive_redaction(monkeypatch: pytest.MonkeyPat
     sink verbatim so an operator can pivot Grafana panel -> Tempo trace -> Loki
     logs. User content in the same record is still redacted.
     """
-    from forge_obs import logging as obs_logging
-    from forge_obs.redaction import redact_text
+    from scf_obs import logging as obs_logging
+    from scf_obs.redaction import redact_text
 
     redactable = "5b9b4f4ffda7d63cce99145c08c243e0"
     assert redact_text(redactable) != redactable  # confirms the heuristic scrubs it bare

@@ -14,9 +14,9 @@ from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from forge_marketplace.manifest import canonical_artifact_bytes, compute_manifest_hash
-from forge_marketplace.models import ArtifactKind, PackageManifest, RegistryIndexVersion
-from forge_marketplace.packaging import build_package
+from scf_marketplace.manifest import canonical_artifact_bytes, compute_manifest_hash
+from scf_marketplace.models import ArtifactKind, PackageManifest, RegistryIndexVersion
+from scf_marketplace.packaging import build_package
 
 
 @dataclass

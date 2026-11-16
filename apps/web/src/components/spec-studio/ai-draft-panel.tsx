@@ -4,14 +4,14 @@ import { Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { ApiError, apiClient, type ForgeApiClient } from "@/lib/api/client";
+import { ApiError, apiClient, type ScfApiClient } from "@/lib/api/client";
 import { useDraftSpec } from "@/lib/api/spec-studio";
 import type { SpecDraft } from "@/lib/api/types";
 
 export interface AiDraftPanelProps {
   epicId?: string;
   projectId?: string;
-  client?: ForgeApiClient;
+  client?: ScfApiClient;
   /**
    * Called once the drafted `spec_md` has fully streamed in, handing the
    * caller the raw prose plus its parsed `SpecManifest` preview so it can

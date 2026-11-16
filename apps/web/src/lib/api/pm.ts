@@ -23,7 +23,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   PmConnection,
   PmConnectionConfigInput,
@@ -45,7 +45,7 @@ export const pmKeys = {
 
 /** Every external PM connection in the workspace. */
 export function usePmConnections(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<PmConnection[]> {
   return useQuery({
     queryKey: pmKeys.connections(),
@@ -56,7 +56,7 @@ export function usePmConnections(
 /** One connection's detail (config + per-state link tallies). */
 export function usePmConnection(
   connectionId: string | null,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<PmConnectionDetail> {
   return useQuery({
     queryKey: pmKeys.connection(connectionId ?? ""),
@@ -69,7 +69,7 @@ export function usePmConnection(
 export function usePmLinks(
   connectionId: string | null,
   state: PmSyncState | undefined,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<PmLink[]> {
   return useQuery({
     queryKey: pmKeys.links(connectionId ?? "", state),
@@ -80,7 +80,7 @@ export function usePmLinks(
 
 /** Connect a new PM adapter; seeds the list + selects the new connection. */
 export function useCreatePmConnection(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<PmConnection, Error, PmConnectionConfigInput> {
   const queryClient = useQueryClient();
   return useMutation<PmConnection, Error, PmConnectionConfigInput>({
@@ -102,7 +102,7 @@ export interface PatchPmConnectionVariables {
  * a failure rolls back and a settle re-reads authoritative state.
  */
 export function usePatchPmConnection(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<
   PmConnection,
   Error,
@@ -159,7 +159,7 @@ export function usePatchPmConnection(
 
 /** Disconnect a connection; revalidates the list + that connection's detail. */
 export function useDisconnectPmConnection(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<PmConnection, Error, string> {
   const queryClient = useQueryClient();
   return useMutation<PmConnection, Error, string>({
@@ -186,7 +186,7 @@ export function useDisconnectPmConnection(
  * timestamp reflect the probe.
  */
 export function useTestPmConnection(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<PmHealthResult, Error, string> {
   const queryClient = useQueryClient();
   return useMutation<PmHealthResult, Error, string>({

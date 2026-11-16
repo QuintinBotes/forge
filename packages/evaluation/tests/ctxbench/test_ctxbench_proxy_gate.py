@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from forge_eval.ctxbench.bank import load_bank
-from forge_eval.ctxbench.gate import ACCEPTANCE, FLOOR, Bar, gate_live, gate_proxy
-from forge_eval.ctxbench.proxy import evidence_matches, proxy_json, run_proxy
+from scf_eval.ctxbench.bank import load_bank
+from scf_eval.ctxbench.gate import ACCEPTANCE, FLOOR, Bar, gate_live, gate_proxy
+from scf_eval.ctxbench.proxy import evidence_matches, proxy_json, run_proxy
 
 BANK = load_bank(subject="acme-example/lore")
 URI = "https://github.com/acme-example/lore"

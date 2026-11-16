@@ -17,22 +17,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # (workspace directory, import package name) for every Python member.
 PYTHON_MEMBERS: list[tuple[str, str]] = [
-    ("packages/contracts", "forge_contracts"),
-    ("packages/db", "forge_db"),
-    ("packages/workflow-engine", "forge_workflow"),
-    ("packages/agent-runtime", "forge_agent"),
-    ("packages/multi-agent-coordinator", "forge_coordinator"),
-    ("packages/spec-engine", "forge_spec"),
-    ("packages/board-core", "forge_board"),
-    ("packages/knowledge-core", "forge_knowledge"),
-    ("packages/integration-sdk", "forge_integrations"),
-    ("packages/mcp-sdk", "forge_mcp"),
-    ("packages/policy-sdk", "forge_policy"),
-    ("packages/skill-sdk", "forge_skill"),
-    ("packages/evaluation", "forge_eval"),
-    ("apps/api", "forge_api"),
-    ("apps/worker", "forge_worker"),
-    ("apps/mcp-gateway", "forge_mcp_gateway"),
+    ("packages/contracts", "scf_contracts"),
+    ("packages/db", "scf_db"),
+    ("packages/workflow-engine", "scf_workflow"),
+    ("packages/agent-runtime", "scf_agent"),
+    ("packages/multi-agent-coordinator", "scf_coordinator"),
+    ("packages/spec-engine", "scf_spec"),
+    ("packages/board-core", "scf_board"),
+    ("packages/knowledge-core", "scf_knowledge"),
+    ("packages/integration-sdk", "scf_integrations"),
+    ("packages/mcp-sdk", "scf_mcp"),
+    ("packages/policy-sdk", "scf_policy"),
+    ("packages/skill-sdk", "scf_skill"),
+    ("packages/evaluation", "scf_eval"),
+    ("apps/api", "scf_api"),
+    ("apps/worker", "scf_worker"),
+    ("apps/mcp-gateway", "scf_mcp_gateway"),
 ]
 
 IMPORT_NAMES = [pkg for _, pkg in PYTHON_MEMBERS]

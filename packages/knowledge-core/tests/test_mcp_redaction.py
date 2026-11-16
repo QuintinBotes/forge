@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from forge_knowledge.mcp_chunking import McpResourceChunker, McpResourceSnapshot
-from forge_knowledge.redaction import REDACTED, redact_secrets
+from scf_knowledge.mcp_chunking import McpResourceChunker, McpResourceSnapshot
+from scf_knowledge.redaction import REDACTED, redact_secrets
 
 AWS_KEY = "AKIAIOSFODNN7EXAMPLE"
 PEM = (

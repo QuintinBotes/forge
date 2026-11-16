@@ -1,15 +1,15 @@
 [project]
-name = "forge-deploy"
+name = "scf-deploy"
 version = "0.1.0"
-description = "Deployment gates, environment promotion, and the deployment state machine for Forge (F31)."
+description = "Deployment gates, environment promotion, and the deployment state machine for Swarm Code Factory (F31)."
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "Apache-2.0" }
-authors = [{ name = "The Forge Authors" }]
+authors = [{ name = "The Swarm Code Factory Authors" }]
 dependencies = [
-    "forge-contracts",
-    "forge-db",
-    "forge-policy",
+    "scf-contracts",
+    "scf-db",
+    "scf-policy",
     "sqlalchemy>=2.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
@@ -20,10 +20,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["forge_deploy"]
-# `packages` already ships everything under forge_deploy/ (including the
+packages = ["scf_deploy"]
+# `packages` already ships everything under scf_deploy/ (including the
 # definitions/*.yaml); `artifacts` keeps the YAML included even if a VCS-ignore
 # rule would otherwise drop it. A `force-include` of the same directory is
 # redundant and makes the wheel build fail ("a second file is being added to the
 # wheel archive at the same path"), so it is intentionally omitted.
-artifacts = ["forge_deploy/definitions/*.yaml"]
+artifacts = ["scf_deploy/definitions/*.yaml"]

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Forge local dev stack helper.
+# SCF local dev stack helper.
 #
 #   scripts/dev.sh up     Build + start the whole stack, run migrations + seed,
 #                         wait until every service is healthy, print URLs.
@@ -45,10 +45,10 @@ print_urls() {
 
   cat <<EOF
 
-Forge dev stack is up. Open the edge — it serves the UI and /api/* on ONE
+SCF dev stack is up. Open the edge — it serves the UI and /api/* on ONE
 origin, so the browser needs no CORS and no separate API host:
 
-  Forge    ->  http://localhost:${CADDY_PORT}
+  SCF    ->  http://localhost:${CADDY_PORT}
 
   (direct, bypasses the proxy: web http://localhost:${WEB_PORT} ·
    API http://localhost:${API_PORT} · docs http://localhost:${API_PORT}/docs)

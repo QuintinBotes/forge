@@ -16,13 +16,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_api.db import get_db
-from forge_api.deps import Principal, get_current_principal
-from forge_api.main import create_app
-from forge_contracts.authz import AccessLevel, PrincipalType, ProjectVisibility, ScopeType
-from forge_contracts.enums import UserRole
-from forge_db.base import Base
-from forge_db.models import (
+from scf_api.db import get_db
+from scf_api.deps import Principal, get_current_principal
+from scf_api.main import create_app
+from scf_contracts.authz import AccessLevel, PrincipalType, ProjectVisibility, ScopeType
+from scf_contracts.enums import UserRole
+from scf_db.base import Base
+from scf_db.models import (
     AuditLog,
     Project,
     RoleGrant,
@@ -147,7 +147,7 @@ def _client(factory: sessionmaker[Session], principal: Principal | None) -> Test
 
 def _seed_project_team_access(factory: sessionmaker[Session]) -> None:
     """BE gets write on SECRET (so BE members see it)."""
-    from forge_db.models import ProjectTeamAccess
+    from scf_db.models import ProjectTeamAccess
 
     with factory() as s:
         s.add(
@@ -376,8 +376,8 @@ def test_team_create_writes_audit(factory: sessionmaker[Session]) -> None:
 
 
 def test_visible_project_ids_filter(factory: sessionmaker[Session]) -> None:
-    from forge_api.authz import ALL, visible_project_ids
-    from forge_api.services.authz_service import AuthzService
+    from scf_api.authz import ALL, visible_project_ids
+    from scf_api.services.authz_service import AuthzService
 
     _seed_project_team_access(factory)
     with factory() as s:
@@ -401,8 +401,8 @@ def test_visible_project_ids_filter(factory: sessionmaker[Session]) -> None:
 
 
 def test_require_role_shim_maps_to_permission(factory: sessionmaker[Session]) -> None:
-    from forge_api.authz import require_role
-    from forge_api.services.authz_service import AuthzService
+    from scf_api.authz import require_role
+    from scf_api.services.authz_service import AuthzService
 
     with factory() as s:
         svc = AuthzService(s)

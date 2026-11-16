@@ -18,16 +18,16 @@ import pytest
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session
 
-from forge_agent import AgentRunner
-from forge_agent.testing import ScriptedModelClient, finish_response
-from forge_contracts import AgentObjective
-from forge_contracts.enums import RunStatus
-from forge_db.base import Base
-from forge_db.models import AgentRun, RunRecording, SubAgentRun, Workspace
-from forge_db.models.enums import RunStatus as DbRunStatus
-from forge_worker import agent_runner as agent_runner_module
-from forge_worker import multi_agent
-from forge_worker.agent_runner import build_agent_runner, run_agent_task, run_objective
+from scf_agent import AgentRunner
+from scf_agent.testing import ScriptedModelClient, finish_response
+from scf_contracts import AgentObjective
+from scf_contracts.enums import RunStatus
+from scf_db.base import Base
+from scf_db.models import AgentRun, RunRecording, SubAgentRun, Workspace
+from scf_db.models.enums import RunStatus as DbRunStatus
+from scf_worker import agent_runner as agent_runner_module
+from scf_worker import multi_agent
+from scf_worker.agent_runner import build_agent_runner, run_agent_task, run_objective
 
 
 def test_run_objective_completes_offline() -> None:
@@ -133,7 +133,7 @@ def test_build_agent_runner_blank_bridge_token_really_raises_from_the_factory(
     (not ``ModelClientUnavailable``) for this config, so catching only the
     subclass would leave it unhandled.
     """
-    from forge_agent.providers import (
+    from scf_agent.providers import (
         ModelClientConfig,
         ModelClientError,
         ModelClientUnavailable,
@@ -154,7 +154,7 @@ def test_build_agent_runner_blank_bridge_token_really_raises_from_the_factory(
 
 
 def test_celery_task_is_registered() -> None:
-    from forge_worker.celery_app import celery_app
+    from scf_worker.celery_app import celery_app
 
     assert "forge.agent.run" in celery_app.tasks
     assert run_agent_task.name == "forge.agent.run"
@@ -225,7 +225,7 @@ def _use_sqlite(monkeypatch: pytest.MonkeyPatch, engine: Engine) -> None:
 def test_supervised_mode_dispatches_coordinator_and_persists_rows(
     monkeypatch: pytest.MonkeyPatch, sqlite_engine: Engine, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The supervised branch drives forge_coordinator end-to-end, offline.
+    """The supervised branch drives scf_coordinator end-to-end, offline.
 
     Asserts the full Task-17 contract: the run completes through the Celery task
     with the single-path observable contract (a JSON-serialisable AgentRunResult

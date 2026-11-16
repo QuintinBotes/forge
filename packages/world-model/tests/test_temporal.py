@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 
 from conftest import make_fact
 
-from forge_world import Mood, Precision, compute_ends
-from forge_world.ledger import InvalidatedReason
+from scf_world import Mood, Precision, compute_ends
+from scf_world.ledger import InvalidatedReason
 
 SUBJECT = uuid.uuid4()
 OTHER = uuid.uuid4()

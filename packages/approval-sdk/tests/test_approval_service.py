@@ -15,16 +15,16 @@ from conftest import (
     make_principal,
 )
 
-from forge_approval.audit import RecordingAuditSink
-from forge_approval.authorizer import ApprovalAuthorizer
-from forge_approval.events import (
+from scf_approval.audit import RecordingAuditSink
+from scf_approval.authorizer import ApprovalAuthorizer
+from scf_approval.events import (
     APPROVAL_REQUESTED_TOPIC,
     APPROVAL_RESOLVED_TOPIC,
     ApprovalRequestedEvent,
     ApprovalResolvedEvent,
     InMemoryActivityBus,
 )
-from forge_approval.models import (
+from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRequest,
     GateStatus,
@@ -32,14 +32,14 @@ from forge_approval.models import (
     ResolutionOutcome,
     Role,
 )
-from forge_approval.registry import GateRegistry
-from forge_approval.repository import (
+from scf_approval.registry import GateRegistry
+from scf_approval.repository import (
     AlreadyResolvedError,
     ApprovalNotFoundError,
     DuplicateDecisionError,
     InMemoryApprovalRepository,
 )
-from forge_approval.service import ApprovalService
+from scf_approval.service import ApprovalService
 
 APPROVE = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
 
@@ -360,7 +360,7 @@ async def test_escalate_raises_role_and_risk(
     assert stored.escalated is True
     assert fake_bus.by_topic(APPROVAL_RESOLVED_TOPIC) == []  # still pending
 
-    from forge_approval.authorizer import AuthorizationError
+    from scf_approval.authorizer import AuthorizationError
 
     other_member = make_principal(principal_id=uuid.uuid4())
     with pytest.raises(AuthorizationError):

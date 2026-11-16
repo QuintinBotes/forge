@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ForgeApiClient } from "./client";
+import { ApiError, type ScfApiClient } from "./client";
 import {
   incidentKeys,
   usePostmortem,
@@ -30,7 +30,7 @@ describe("useRemediationPlan", () => {
       getRemediationPlan: vi.fn(() =>
         Promise.reject(new ApiError(404, "no remediation plan", null)),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useRemediationPlan("i1", client), {
       wrapper: makeWrapper(newClient()),
@@ -46,7 +46,7 @@ describe("useRemediationPlan", () => {
       getRemediationPlan: vi.fn(() =>
         Promise.reject(new ApiError(500, "boom", null)),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => useRemediationPlan("i1", client), {
       wrapper: makeWrapper(newClient()),
@@ -62,7 +62,7 @@ describe("usePostmortem", () => {
       getPostmortem: vi.fn(() =>
         Promise.reject(new ApiError(404, "no postmortem", null)),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
 
     const { result } = renderHook(() => usePostmortem("i1", client), {
       wrapper: makeWrapper(newClient()),
@@ -90,7 +90,7 @@ describe("useSendIncidentEvent", () => {
     };
     const client = {
       sendIncidentEvent: vi.fn(() => Promise.resolve(detail)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = newClient();
 
     const { result } = renderHook(() => useSendIncidentEvent(client), {

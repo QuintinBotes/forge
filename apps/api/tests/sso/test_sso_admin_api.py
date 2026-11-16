@@ -14,8 +14,8 @@ from conftest import (
 )
 from sqlalchemy import select
 
-from forge_contracts import UserRole
-from forge_db.models import AuditLog, User
+from scf_contracts import UserRole
+from scf_db.models import AuditLog, User
 
 
 class TestConfigCrud:

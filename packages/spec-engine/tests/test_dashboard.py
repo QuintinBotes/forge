@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import (
+from scf_contracts import (
     AcceptanceCriterion,
     Requirement,
     RequirementTrace,
     SpecManifest,
     ValidationReport,
 )
-from forge_spec.dashboard import (
+from scf_spec.dashboard import (
     build_criterion_links,
     build_requirement_rows,
     classify_cell,
@@ -24,7 +24,7 @@ from forge_spec.dashboard import (
     summarize_project,
     verdicts_from_report,
 )
-from forge_spec.dashboard_schemas import (
+from scf_spec.dashboard_schemas import (
     CellStatus,
     CriterionVerdict,
     EvidenceIndex,
@@ -99,7 +99,7 @@ def test_classify_cell_satisfied_current_when_no_report_version() -> None:
 
 
 def _cell(cid: str, status: CellStatus, reqs: list[str]) -> object:
-    from forge_spec.dashboard_schemas import TraceCell
+    from scf_spec.dashboard_schemas import TraceCell
 
     return TraceCell(criterion_id=cid, criterion_text=cid, requirement_ids=reqs, status=status)
 

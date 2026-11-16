@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CommandPaletteProvider } from "@/components/command-palette";
-import type { ForgeApiClient } from "@/lib/api/client";
+import type { ScfApiClient } from "@/lib/api/client";
 import type { SpecDashboard as SpecDashboardData } from "@/lib/api/types";
 
 import { SpecDashboard } from "./spec-dashboard";
@@ -59,7 +59,7 @@ const dashboard: SpecDashboardData = {
   ],
 };
 
-function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
+function makeClient(overrides: Partial<ScfApiClient> = {}): ScfApiClient {
   return {
     getProjectSpecOverview: vi.fn(() => Promise.resolve(dashboard)),
     approveSpec: vi.fn((id: string) =>
@@ -69,10 +69,10 @@ function makeClient(overrides: Partial<ForgeApiClient> = {}): ForgeApiClient {
       Promise.resolve(dashboard.specs.find((s) => s.id === id) ?? dashboard.specs[0]),
     ),
     ...overrides,
-  } as unknown as ForgeApiClient;
+  } as unknown as ScfApiClient;
 }
 
-function renderDashboard(client: ForgeApiClient) {
+function renderDashboard(client: ScfApiClient) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

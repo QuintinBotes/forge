@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from forge_eval.harness import (
+from scf_eval.harness import (
     TaskEval,
     TaskOutput,
     TaskScorecard,
@@ -21,10 +21,10 @@ from forge_eval.harness import (
     reference_solver,
     run_task_harness,
 )
-from forge_eval.report import format_task_scorecard
-from forge_eval.tasks import GoldenRequirement, GoldenTask, load_golden_tasks
+from scf_eval.report import format_task_scorecard
+from scf_eval.tasks import GoldenRequirement, GoldenTask, load_golden_tasks
 
-V1_SET = Path(__file__).resolve().parent.parent / "forge_eval" / "golden" / "v1_task_set.yaml"
+V1_SET = Path(__file__).resolve().parent.parent / "scf_eval" / "golden" / "v1_task_set.yaml"
 
 
 # --------------------------------------------------------------------------- #

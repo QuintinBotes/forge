@@ -14,9 +14,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from forge_contracts.dtos import Chunk, IndexResult
-from forge_knowledge.mcp_chunking import McpResourceSnapshot
-from forge_knowledge.mcp_indexer import LedgerRow, ResourceRef, SyncDirection, SyncReport
+from scf_contracts.dtos import Chunk, IndexResult
+from scf_knowledge.mcp_chunking import McpResourceSnapshot
+from scf_knowledge.mcp_indexer import LedgerRow, ResourceRef, SyncDirection, SyncReport
 
 SLUG = "confluence-engineering"
 

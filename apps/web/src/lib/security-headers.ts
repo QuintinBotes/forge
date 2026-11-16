@@ -1,5 +1,5 @@
 // HARD-09: security response headers for the Next.js app, mirroring the API
-// edge (forge_api.security.headers). Factored out so next.config.mjs, the
+// edge (scf_api.security.headers). Factored out so next.config.mjs, the
 // middleware, and the unit test consume one source of truth.
 
 export interface SecurityHeader {

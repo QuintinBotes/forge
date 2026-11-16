@@ -5,9 +5,9 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from forge_board.incidents import TemplatePostmortemComposer, content_hash, render_postmortem_md
-from forge_contracts.enums import IncidentSeverity, IncidentState
-from forge_contracts.incident import (
+from scf_board.incidents import TemplatePostmortemComposer, content_hash, render_postmortem_md
+from scf_contracts.enums import IncidentSeverity, IncidentState
+from scf_contracts.incident import (
     BlastRadius,
     IncidentEventDTO,
     IncidentSnapshot,

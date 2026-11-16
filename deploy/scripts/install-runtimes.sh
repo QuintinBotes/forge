@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Forge sandbox runtime installer (F34) — registers kernel-boundary OCI runtimes.
+# SCF sandbox runtime installer (F34) — registers kernel-boundary OCI runtimes.
 #
 #   install-runtimes.sh --gvisor        install gVisor (runsc) + register `runsc`
 #   install-runtimes.sh --firecracker   install Kata Containers + Firecracker +

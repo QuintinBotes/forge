@@ -10,14 +10,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import Project, Workspace
-from forge_db.models.deployment import (
+from scf_db.base import Base
+from scf_db.models import Project, Workspace
+from scf_db.models.deployment import (
     Deployment,
     Environment,
     EnvironmentPipeline,
 )
-from forge_obs.analytics.dora import SqlDoraReader, compute_dora_metrics
+from scf_obs.analytics.dora import SqlDoraReader, compute_dora_metrics
 
 NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
 
@@ -97,7 +97,7 @@ def test_sql_reader_scopes_by_workspace_and_window(factory) -> None:
         ws = Workspace(name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}")
         session.add(ws)
         session.flush()
-        project = Project(workspace_id=ws.id, name="Forge", key=f"FRG{uuid.uuid4().hex[:4]}")
+        project = Project(workspace_id=ws.id, name="SCF", key=f"FRG{uuid.uuid4().hex[:4]}")
         session.add(project)
         session.flush()
         pipeline = EnvironmentPipeline(

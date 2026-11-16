@@ -1,6 +1,6 @@
-# Forge sandbox image — Go (F19). Go toolchain on the locked-down base.
+# SCF sandbox image — Go (F19). Go toolchain on the locked-down base.
 # Pinned in env as FORGE_SANDBOX_IMAGE_GO.
-ARG FORGE_SANDBOX_BASE=forge-sandbox-base:latest
+ARG FORGE_SANDBOX_BASE=swarm-code-factory/sandbox-base:latest
 FROM ${FORGE_SANDBOX_BASE}
 
 USER root

@@ -21,15 +21,15 @@ import pytest
 from sqlalchemy.exc import IntegrityError, InternalError, ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import (
+from scf_db.base import Base
+from scf_db.models import (
     Project,
     Sprint,
     SprintBurndownSnapshot,
     SprintScopeEvent,
     Workspace,
 )
-from forge_db.models.enums import ScopeActorKind, SprintScopeEventType, SprintState
+from scf_db.models.enums import ScopeActorKind, SprintScopeEventType, SprintState
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 

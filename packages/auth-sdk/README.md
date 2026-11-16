@@ -1,6 +1,6 @@
-# forge-auth
+# scf-auth
 
-Pure auth & secrets crypto core for Forge (`cross-cutting/F37-auth-secrets-byok`).
+Pure auth & secrets crypto core for Swarm Code Factory (`cross-cutting/F37-auth-secrets-byok`).
 
 No FastAPI / SQLAlchemy imports — mirrors the `policy-sdk` / `authz-sdk` discipline.
 

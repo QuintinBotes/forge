@@ -15,11 +15,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from forge_agent.sandbox import LocalSandboxProvider
-from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-from forge_eval.golden import GoldenCase
-from forge_eval.sweval import SelfEvalScorecard
-from forge_worker.self_eval_run import (
+from scf_agent.sandbox import LocalSandboxProvider
+from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_eval.golden import GoldenCase
+from scf_eval.sweval import SelfEvalScorecard
+from scf_worker.self_eval_run import (
     ProductionEvalRunner,
     SelfEvalSuiteHandle,
     agent_solve,
@@ -302,7 +302,7 @@ async def test_execute_records_nothing_when_runner_returns_none() -> None:
 
 def test_self_eval_run_task_is_noop_without_infra(monkeypatch: pytest.MonkeyPatch) -> None:
     """The Celery task is an honest no-op until an operator provisions the clone."""
-    from forge_worker.tasks.self_eval_run import _resolve_private_suite, self_eval_run_task
+    from scf_worker.tasks.self_eval_run import _resolve_private_suite, self_eval_run_task
 
     monkeypatch.delenv("FORGE_SELF_EVAL_REPO_ROOT", raising=False)
     monkeypatch.delenv("FORGE_BENCHMARK_DIR", raising=False)
@@ -319,8 +319,8 @@ async def test_execute_records_via_real_service() -> None:
     from sqlalchemy import StaticPool, create_engine
     from sqlalchemy.orm import Session, sessionmaker
 
-    from forge_api.services.self_eval_service import SelfEvalService
-    from forge_db.base import Base
+    from scf_api.services.self_eval_service import SelfEvalService
+    from scf_db.base import Base
 
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool

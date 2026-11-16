@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ForgeApiClient } from "./client";
+import type { ScfApiClient } from "./client";
 import { useDraftSpec, useImportSpec } from "./spec-studio";
 import type { SpecDraft, SpecImport } from "./types";
 
@@ -22,7 +22,7 @@ describe("useDraftSpec", () => {
       manifest: { id: "SPEC-DRAFT", name: "Search orders by name" },
       usage: { cost_usd: 0.01 },
     };
-    const client = { draftSpec: vi.fn(() => Promise.resolve(result)) } as unknown as ForgeApiClient;
+    const client = { draftSpec: vi.fn(() => Promise.resolve(result)) } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });
@@ -51,7 +51,7 @@ describe("useDraftSpec", () => {
           spec_md: "---\nid: SPEC-DRAFT\n---\n\n## Goal\n\ng\n",
         } as SpecDraft),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });
@@ -76,7 +76,7 @@ describe("useImportSpec", () => {
     };
     const client = {
       importSpec: vi.fn(() => Promise.resolve(result)),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });
@@ -104,7 +104,7 @@ describe("useImportSpec", () => {
           normalized: false,
         } as SpecImport),
       ),
-    } as unknown as ForgeApiClient;
+    } as unknown as ScfApiClient;
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });

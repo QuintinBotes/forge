@@ -1,6 +1,6 @@
 """CLI ``check-config`` preflight tests (HARD-13 AC17).
 
-``python -m forge_api.cli.secrets check-config`` exits non-zero on a missing key,
+``python -m scf_api.cli.secrets check-config`` exits non-zero on a missing key,
 a deprecated alias, or envelope-off-in-prod, and zero on a valid prod config.
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge_api.cli_secrets import main
+from scf_api.cli_secrets import main
 
 
 @pytest.fixture(autouse=True)

@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from forge_contracts import ExecutionMode
-from forge_db.models import Task
-from forge_worker import dispatch as dispatch_module
-from forge_worker.dispatch import ensure_mirror, objective_for_task
+from scf_contracts import ExecutionMode
+from scf_db.models import Task
+from scf_worker import dispatch as dispatch_module
+from scf_worker.dispatch import ensure_mirror, objective_for_task
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -110,11 +110,11 @@ def test_task_maps_onto_an_objective(tmp_path: Path) -> None:
 
 
 def test_agent_runs_from_a_bare_mirror(upstream: Path, tmp_path: Path) -> None:
-    from forge_agent.sandbox.settings import SandboxSettings
-    from forge_agent.testing import ScriptedModelClient, finish_response, tool_response
-    from forge_contracts import RunStatus, SandboxKind
-    from forge_worker.agent_runner import build_agent_runner, run_objective
-    from forge_worker.run_workspace import prepared_workspace
+    from scf_agent.sandbox.settings import SandboxSettings
+    from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+    from scf_contracts import RunStatus, SandboxKind
+    from scf_worker.agent_runner import build_agent_runner, run_objective
+    from scf_worker.run_workspace import prepared_workspace
 
     mirror = ensure_mirror("acme/widgets", root=tmp_path / "m", remote_url=str(upstream))
     task = Task(

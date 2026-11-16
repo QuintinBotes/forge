@@ -17,9 +17,9 @@ from sqlalchemy import inspect, text, update
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_db.base import Base
-from forge_db.models import Workspace
-from forge_db.models.marketplace import (
+from scf_db.base import Base
+from scf_db.models import Workspace
+from scf_db.models.marketplace import (
     MarketplaceAuditLog,
     MarketplaceListing,
     MarketplaceRegistry,

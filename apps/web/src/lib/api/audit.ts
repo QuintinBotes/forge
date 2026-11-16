@@ -25,7 +25,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import { apiClient, type ForgeApiClient } from "./client";
+import { apiClient, type ScfApiClient } from "./client";
 import type {
   AuditListResponse,
   AuditQuery,
@@ -50,7 +50,7 @@ export const auditKeys = {
  */
 export function useAuditLog(
   filters?: AuditFilters,
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseInfiniteQueryResult<
   { pages: AuditListResponse[]; pageParams: unknown[] },
   Error
@@ -71,7 +71,7 @@ export function useAuditLog(
  * failure simply leaves the selects to fall back to values seen in the rows.
  */
 export function useAuditVocabulary(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseQueryResult<AuditVocabulary> {
   return useQuery({
     queryKey: auditKeys.vocabulary(),
@@ -83,7 +83,7 @@ export function useAuditVocabulary(
 
 /** Re-walk the workspace's audit hash chain (integrity verification). */
 export function useVerifyAuditChain(
-  client: ForgeApiClient = apiClient,
+  client: ScfApiClient = apiClient,
 ): UseMutationResult<ChainVerifyResult, Error, void> {
   return useMutation<ChainVerifyResult, Error, void>({
     mutationFn: () => client.verifyAuditChain(),

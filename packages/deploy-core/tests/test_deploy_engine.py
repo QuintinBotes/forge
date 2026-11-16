@@ -18,15 +18,15 @@ from conftest import (
 )
 from sqlalchemy.orm import Session
 
-from forge_deploy.engine import DeploymentStateMachine
-from forge_deploy.errors import InvalidTransitionError
-from forge_deploy.freeze import FakeClock
-from forge_deploy.health import NullHealthChecker, ScriptedHealthChecker
-from forge_deploy.orchestrator import DeploymentOrchestrator
-from forge_deploy.providers import NullDeployProvider
-from forge_deploy.repository import DeploymentRepository
-from forge_deploy.schemas import DeployStatus
-from forge_deploy.states import (
+from scf_deploy.engine import DeploymentStateMachine
+from scf_deploy.errors import InvalidTransitionError
+from scf_deploy.freeze import FakeClock
+from scf_deploy.health import NullHealthChecker, ScriptedHealthChecker
+from scf_deploy.orchestrator import DeploymentOrchestrator
+from scf_deploy.providers import NullDeployProvider
+from scf_deploy.repository import DeploymentRepository
+from scf_deploy.schemas import DeployStatus
+from scf_deploy.states import (
     DeploymentEvent,
     DeploymentEventType,
     DeploymentKind,

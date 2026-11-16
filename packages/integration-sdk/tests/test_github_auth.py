@@ -16,8 +16,8 @@ from conftest import load_fixture, make_transport
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from forge_integrations import InstallationTokenProvider, build_app_jwt
-from forge_integrations.github_auth import load_private_key
+from scf_integrations import InstallationTokenProvider, build_app_jwt
+from scf_integrations.github_auth import load_private_key
 
 APP_ID = "123456"
 INSTALL_ID = "987654"
@@ -150,7 +150,7 @@ def test_token_refresh_near_expiry(keypair: tuple[str, str]) -> None:
     assert len(counter) == 1
 
     # Fast-forward to 30s before expiry (inside the 60s margin) -> re-mint.
-    from forge_integrations.github_auth import _parse_expiry
+    from scf_integrations.github_auth import _parse_expiry
 
     expiry = _parse_expiry("2099-01-01T00:00:00Z", clock.now)
     clock.now = expiry - 30
@@ -171,7 +171,7 @@ def test_invalidate_forces_remint(keypair: tuple[str, str]) -> None:
 
 
 def test_token_request_error_raises_githuberror(keypair: tuple[str, str]) -> None:
-    from forge_integrations import GitHubError
+    from scf_integrations import GitHubError
 
     private_pem, _ = keypair
 
@@ -202,7 +202,7 @@ def test_load_private_key_reads_file(tmp_path, keypair: tuple[str, str]) -> None
 
 
 def test_load_private_key_missing_file_mentions_only_path(tmp_path) -> None:
-    from forge_integrations import GitHubError
+    from scf_integrations import GitHubError
 
     missing = tmp_path / "nope.pem"
     with pytest.raises(GitHubError) as exc:

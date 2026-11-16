@@ -21,10 +21,10 @@ import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from forge_api.auth.service import AuthService, get_auth_service
-from forge_api.main import create_app
-from forge_api.realtime.manager import ConnectionManager, get_connection_manager
-from forge_contracts import UserRole
+from scf_api.auth.service import AuthService, get_auth_service
+from scf_api.main import create_app
+from scf_api.realtime.manager import ConnectionManager, get_connection_manager
+from scf_contracts import UserRole
 
 WS_A = uuid.uuid4()
 WS_B = uuid.uuid4()

@@ -12,7 +12,7 @@
 
 ## Why this exists
 
-Forge treats every change alike. The deploy gate keys off the target environment, never off how
+Swarm Code Factory treats every change alike. The deploy gate keys off the target environment, never off how
 dangerous the change is, so a documentation fix and a change to an authentication path take the
 same route at the same speed. There is no risk class anywhere in the code, and the automation
 action that integrates a change automatically is a documented mock that records what it would have
@@ -23,7 +23,7 @@ while holding a dangerous one for more scrutiny.
 
 ### User Story 1 - Every change gets a derived risk class (Priority: P1)
 
-A repository owner writes risk rules in the repository policy. For any change, forge derives a risk
+A repository owner writes risk rules in the repository policy. For any change, SCF derives a risk
 class from the diff: which paths it touches, whether it contains a migration or a contract change,
 how large it is. A change may declare a higher class. It may declare a lower one only with a named
 approver and a reason.
@@ -65,7 +65,7 @@ no decision changes; then in enforcing mode assert every changed decision is str
 2. **Given** enforcing mode and a high-risk change, **When** the approval gate evaluates it, **Then** it requires at least the approvals the class demands.
 3. **Given** enforcing mode and any combination of existing decision and class requirement, **When** a gate evaluates, **Then** the outcome is never more permissive than the existing decision.
 4. **Given** shadow mode, **When** the risk subsystem itself fails, **Then** the gate decision is unaffected and the failure is logged.
-5. **Given** recorded observations, **When** the operator asks for the agreement rate per gate over a period, **Then** forge returns a rate computed from those observations.
+5. **Given** recorded observations, **When** the operator asks for the agreement rate per gate over a period, **Then** SCF returns a rate computed from those observations.
 6. **Given** a classification or observation record, **When** anything attempts to change or delete it, **Then** the attempt is rejected.
 
 ---
@@ -75,7 +75,7 @@ no decision changes; then in enforcing mode assert every changed decision is str
 A repository owner opts in to automatic integration. Opting a repository in is a standing
 authorisation, recorded with who gave it. A change whose final class is at or below the
 policy's automatic threshold (`minimal` or `low`), with all required checks green, the independent review passed and an
-attestation present, enters a queue. Forge takes one queued change at a time per target branch,
+attestation present, enters a queue. SCF takes one queued change at a time per target branch,
 confirms it is still green against the current head of that branch, and integrates it. Anything
 above the threshold, or anything that fails a precondition, waits for a person.
 
@@ -89,14 +89,14 @@ branch head, and that the high-risk change is never integrated automatically.
 **Acceptance Scenarios**:
 
 1. **Given** automatic integration is off (the default), **When** any change becomes eligible, **Then** nothing is integrated automatically.
-2. **Given** it is on and a change's final class is within the threshold with every precondition met, **When** it reaches the head of the queue, **Then** forge integrates it and records the result with the change's classification.
+2. **Given** it is on and a change's final class is within the threshold with every precondition met, **When** it reaches the head of the queue, **Then** SCF integrates it and records the result with the change's classification.
 3. **Given** a change above the threshold, **When** it becomes otherwise eligible, **Then** it is not queued and waits for a person.
 4. **Given** two queued changes for the same branch, **When** the first integrates, **Then** the second is re-verified against the new head before it integrates.
 5. **Given** a queued change whose checks turn red or whose branch conflicts with the head, **When** it reaches the head of the queue, **Then** it leaves the queue with a recorded reason and the next change proceeds.
 6. **Given** risk rules are absent, in shadow mode, or the classification used the fallback class, **When** a change becomes eligible, **Then** it is not integrated automatically.
-7. **Given** the repository host refuses the integration, **When** forge attempts it, **Then** the action reports an error and never reports success.
+7. **Given** the repository host refuses the integration, **When** SCF attempts it, **Then** the action reports an error and never reports success.
 8. **Given** a repository that is opted in, **When** the record of the opt-in is read, **Then** it names the person who gave the standing authorisation.
-9. **Given** a repository host that has a native queue, **When** a change is eligible, **Then** forge uses the host's queue. **Given** a host without one, **Then** forge uses its own queue. Both are reached through one interface.
+9. **Given** a repository host that has a native queue, **When** a change is eligible, **Then** SCF uses the host's queue. **Given** a host without one, **Then** SCF uses its own queue. Both are reached through one interface.
 
 ---
 
@@ -142,7 +142,7 @@ branch head, and that the high-risk change is never integrated automatically.
 - **FR-016**: The system MUST replace the mock integration dispatcher with one that performs the real integration on the repository host.
 - **FR-017**: Automatic integration MUST be off by default and MUST require both the automation rule's opt-in and the policy's allowance, as today. The opt-in of a repository MUST be recorded as a standing authorisation that names who gave it (Decided 2026-11-15).
 - **FR-018**: The system MUST integrate a change automatically only when its final class is at or below the policy's automatic threshold, risk rules are enforcing, the classification did not use the fallback, required checks are green on the change's current head, the independent review passed and an attestation exists. Decided 2026-11-15: the threshold is `low`. Changes classed `minimal` or `low` integrate automatically, and everything else waits for a person.
-- **FR-019**: The system MUST integrate at most one change at a time per repository and target branch, in queue order, and each change MUST be re-verified against the branch's current head before it is integrated. Decided 2026-11-15: the queue sits behind one interface with two implementations, the repository host's native queue where the host has one and forge's own queue otherwise. Open: the decision does not say how forge determines that a host has a native queue.
+- **FR-019**: The system MUST integrate at most one change at a time per repository and target branch, in queue order, and each change MUST be re-verified against the branch's current head before it is integrated. Decided 2026-11-15: the queue sits behind one interface with two implementations, the repository host's native queue where the host has one and SCF's own queue otherwise. Open: the decision does not say how SCF determines that a host has a native queue.
 - **FR-020**: A change that fails a precondition at the head of the queue MUST leave the queue with a recorded reason and MUST NOT block the changes behind it.
 - **FR-021**: Each automatic integration and each refusal MUST be recorded in the audit chain with the classification it relied on.
 - **FR-022**: A failed or refused integration MUST be reported as an error, never as success.

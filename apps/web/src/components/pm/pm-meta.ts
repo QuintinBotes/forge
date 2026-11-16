@@ -44,9 +44,9 @@ export function syncDirectionLabel(direction: PmSyncDirection): string {
 }
 
 const SYNC_DIRECTION_HINTS: Record<PmSyncDirection, string> = {
-  bidirectional: "Changes flow both ways between Forge and the provider.",
-  inbound_only: "Provider changes update Forge; Forge edits stay local.",
-  outbound_only: "Forge changes push out; provider edits are ignored.",
+  bidirectional: "Changes flow both ways between SCF and the provider.",
+  inbound_only: "Provider changes update SCF; SCF edits stay local.",
+  outbound_only: "SCF changes push out; provider edits are ignored.",
 };
 
 export function syncDirectionHint(direction: PmSyncDirection): string {
@@ -54,7 +54,7 @@ export function syncDirectionHint(direction: PmSyncDirection): string {
 }
 
 const CONFLICT_POLICY_LABELS: Record<PmConflictPolicy, string> = {
-  forge_wins: "Forge wins",
+  forge_wins: "SCF wins",
   external_wins: "Provider wins",
   newest_wins: "Newest wins",
   manual: "Resolve manually",
@@ -65,8 +65,8 @@ export function conflictPolicyLabel(policy: PmConflictPolicy): string {
 }
 
 const CONFLICT_POLICY_HINTS: Record<PmConflictPolicy, string> = {
-  forge_wins: "Forge's value overwrites the provider on a clash.",
-  external_wins: "The provider's value overwrites Forge on a clash.",
+  forge_wins: "SCF's value overwrites the provider on a clash.",
+  external_wins: "The provider's value overwrites SCF on a clash.",
   newest_wins: "The most recently edited side wins automatically.",
   manual: "Clashes pause in the conflict inbox for a human call.",
 };
@@ -153,7 +153,7 @@ export function summarizeLinks(
 export interface StatusMapRow {
   /** The external workflow-state / status name (e.g. "In Review"). */
   external: string;
-  /** The normalized Forge category it maps onto. */
+  /** The normalized SCF category it maps onto. */
   category: string;
 }
 

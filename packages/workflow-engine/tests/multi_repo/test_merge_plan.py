@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from forge_contracts import RepoTarget
-from forge_workflow.multi_repo import (
+from scf_contracts import RepoTarget
+from scf_workflow.multi_repo import (
     CyclicRepoDependencyError,
     MergePlanBuilder,
     MultipleOrNoPrimaryError,

@@ -15,8 +15,8 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from forge_db.base import Base
-from forge_db.models import BenchmarkSubmission, BenchmarkSuite, Workspace
+from scf_db.base import Base
+from scf_db.models import BenchmarkSubmission, BenchmarkSuite, Workspace
 
 
 @pytest.fixture

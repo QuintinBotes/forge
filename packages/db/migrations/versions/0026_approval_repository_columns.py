@@ -35,7 +35,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-import forge_db.models  # noqa: F401  (registers all models on Base.metadata)
+import scf_db.models  # noqa: F401  (registers all models on Base.metadata)
 
 # revision identifiers, used by Alembic.
 revision: str = "0026_approval_repository_columns"

@@ -14,9 +14,9 @@ from conftest import (
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from forge_db.models.connections import MCPConnection
-from forge_db.models.marketplace import MarketplaceAuditLog, MarketplaceInstallation
-from forge_db.models.profiles import SkillProfile
+from scf_db.models.connections import MCPConnection
+from scf_db.models.marketplace import MarketplaceAuditLog, MarketplaceInstallation
+from scf_db.models.profiles import SkillProfile
 
 
 def _install_body(
@@ -226,10 +226,10 @@ def test_official_registry_always_strict(
     assert resp.json()["detail"]["error_code"] == "signature_required"
 
 
-def test_forge_version_incompatible_blocked(
+def test_scf_version_incompatible_blocked(
     admin_client: TestClient, registry, gateway: FakeGateway, keypair: Keypair
 ) -> None:
-    manifest, version = make_skill_version(keypair, slug="future", name="future", min_forge="9.9.9")
+    manifest, version = make_skill_version(keypair, slug="future", name="future", min_scf="9.9.9")
     gateway.add(manifest, version)
     resp = admin_client.post(
         "/marketplace/install",

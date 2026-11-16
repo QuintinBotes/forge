@@ -8,17 +8,17 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from forge_contracts.deployment import DeploymentRequest, DeploymentState
-from forge_contracts.dtos import DeployRules
-from forge_db.base import Base
-from forge_db.models import Project, User, Workspace
-from forge_db.models.deployment import Environment, EnvironmentPipeline
-from forge_deploy.orchestrator import DeploymentOrchestrator
-from forge_deploy.repository import DeploymentRepository
-from forge_deploy.schemas import GateConfig
-from forge_worker.celery_app import celery_app
-from forge_worker.tasks import deployments as deployments_task
-from forge_worker.tasks.deployments import (
+from scf_contracts.deployment import DeploymentRequest, DeploymentState
+from scf_contracts.dtos import DeployRules
+from scf_db.base import Base
+from scf_db.models import Project, User, Workspace
+from scf_db.models.deployment import Environment, EnvironmentPipeline
+from scf_deploy.orchestrator import DeploymentOrchestrator
+from scf_deploy.repository import DeploymentRepository
+from scf_deploy.schemas import GateConfig
+from scf_worker.celery_app import celery_app
+from scf_worker.tasks import deployments as deployments_task
+from scf_worker.tasks.deployments import (
     CeleryDeploymentRequester,
     request_deployment_sync,
 )
@@ -121,7 +121,7 @@ def test_deployment_tasks_registered_with_celery() -> None:
     ``loader.import_default_modules()`` is exactly what a real worker calls on
     startup to import ``conf.include``; asserting through it proves the tasks
     resolve from the include list rather than from this file's own import."""
-    assert "forge_worker.tasks.deployments" in (celery_app.conf.include or [])
+    assert "scf_worker.tasks.deployments" in (celery_app.conf.include or [])
     celery_app.loader.import_default_modules()
     assert "forge.deployments.advance" in celery_app.tasks
     assert "forge.deployments.request" in celery_app.tasks
