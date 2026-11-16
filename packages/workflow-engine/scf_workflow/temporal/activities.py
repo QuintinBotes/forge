@@ -40,6 +40,8 @@ from scf_workflow.temporal.payloads import (
     ApprovalInput,
     ChecksResult,
     CleanupInput,
+    DraftScenariosInput,
+    DraftScenariosResult,
     GuardInputs,
     GuardInputsRequest,
     NotifyInput,
@@ -87,6 +89,7 @@ CleanupFn = Callable[[CleanupInput], bool]
 #: (the activity awaits an awaitable result).
 ApprovalFn = Callable[[ApprovalInput], uuid.UUID | Awaitable[uuid.UUID]]
 RedTeamFn = Callable[[RedTeamInput], RedTeamResult]
+DraftScenariosFn = Callable[[DraftScenariosInput], DraftScenariosResult]
 
 
 def _now() -> datetime:
@@ -149,6 +152,11 @@ def _default_approval(_: ApprovalInput) -> uuid.UUID:
     return uuid.uuid4()
 
 
+def _default_draft_scenarios(_: DraftScenariosInput) -> DraftScenariosResult:
+    # No verifier wired: nothing is drafted, and the result says why (#258).
+    return DraftScenariosResult(reason="verifier_not_configured")
+
+
 def _default_red_team(inp: RedTeamInput) -> RedTeamResult:
     # No adversary model / sandbox wired: the verdict is ``not_run``, never
     # ``survived`` (#174), and the human gate is reached unchanged. A real
@@ -193,6 +201,7 @@ class WorkflowActivities:
         cleanup_fn: CleanupFn | None = None,
         approval_fn: ApprovalFn | None = None,
         red_team_fn: RedTeamFn | None = None,
+        draft_scenarios_fn: DraftScenariosFn | None = None,
         allow_fakes: bool = False,
     ) -> None:
         def pick[I, O](
@@ -216,6 +225,9 @@ class WorkflowActivities:
         self._cleanup_fn = pick(cleanup_fn, _default_cleanup, "forge.cleanup_worktree")
         self._approval_fn = pick(approval_fn, _default_approval, "forge.create_approval")
         self._red_team_fn = pick(red_team_fn, _default_red_team, "forge.run_red_team_scan")
+        self._draft_scenarios_fn = pick(
+            draft_scenarios_fn, _default_draft_scenarios, "forge.draft_held_out_scenarios"
+        )
 
     @property
     def store(self) -> WorkflowStore:
@@ -234,6 +246,7 @@ class WorkflowActivities:
             self.cleanup_worktree,
             self.create_approval,
             self.run_red_team_scan,
+            self.draft_held_out_scenarios,
         ]
 
     # -- projection writer (idempotent) ----------------------------------- #
@@ -335,6 +348,15 @@ class WorkflowActivities:
         return str(await _heartbeating(self._approval_fn, inp, {"phase": "approval"}))
 
     # -- red-team gate (heterogeneous adversary, sandboxed) --------------- #
+
+    @activity.defn(name="forge.draft_held_out_scenarios")
+    async def draft_held_out_scenarios(self, inp: DraftScenariosInput) -> DraftScenariosResult:
+        """A verifier on another model family drafts held-out scenarios (#258).
+
+        Runs an agent, so it heartbeats on the agents' pool.
+        """
+        details = {"phase": "draft_held_out_scenarios", "workflow_run_id": str(inp.workflow_run_id)}
+        return await _heartbeating(self._draft_scenarios_fn, inp, details, executor=_AGENT_THREADS)
 
     @activity.defn(name="forge.run_red_team_scan")
     async def run_red_team_scan(self, inp: RedTeamInput) -> RedTeamResult:

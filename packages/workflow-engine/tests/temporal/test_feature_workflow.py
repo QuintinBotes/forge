@@ -356,3 +356,34 @@ async def test_a_change_no_reviewer_can_judge_pauses_for_a_person_without_a_pr(
     paused = [t for t in h.transitions(run) if t["to_state"] == "needs_human_input"]
     assert [t["payload"]["reason"] for t in paused] == ["reviewer_not_configured"]
     assert opened == []
+
+
+async def test_held_out_scenarios_are_drafted_before_the_spec_gate_opens(harness: Any) -> None:
+    """#258 criterion 1: after the spec is submitted for review and before the `spec`
+    approval request is created, the drafting step runs once."""
+    import uuid as _uuid
+
+    from scf_workflow.temporal.payloads import (
+        ApprovalInput,
+        DraftScenariosInput,
+        DraftScenariosResult,
+    )
+
+    calls: list[str] = []
+
+    def draft(inp: DraftScenariosInput) -> DraftScenariosResult:
+        calls.append("draft")
+        return DraftScenariosResult(scenario_ids=["s-1"])
+
+    def approval(inp: ApprovalInput) -> _uuid.UUID:
+        calls.append(f"approval:{inp.gate}")
+        return _uuid.uuid4()
+
+    h = harness(draft_scenarios_fn=draft, approval_fn=approval)
+    async with h.worker():
+        run = await h.start()
+        await h.wait_awaiting(run, {"spec_approved_by_human"})
+
+    assert calls == ["draft", "approval:spec"]
+    states = [t["to_state"] for t in h.transitions(run)]
+    assert states[-1] == "spec_review"

@@ -6,6 +6,7 @@ bare mirror, the worktree sandbox and the offline scripted model (tests only).
 
 from __future__ import annotations
 
+import json
 import subprocess
 import uuid
 from collections.abc import Iterator
@@ -442,3 +443,41 @@ async def test_the_builders_model_is_recorded_on_its_run(
         row = s.get(AgentRun, result.agent_run_id)
         assert row is not None
         assert (row.model, row.role) == ("claude-opus-5-5", "primary")
+
+
+async def test_the_builder_never_sees_a_held_out_scenario(
+    factory: sessionmaker[Session], mirror: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#258 criterion 6 (the builder's side): a scenario drafted for the task reaches
+    no model prompt, tool result or record of the builder's run."""
+    from scf_agent.testing import ScriptedModelClient, finish_response
+    from scf_db.models import AgentRunEvent
+    from scf_db.models.held_out import HeldOutScenario
+
+    marker = "HELD-OUT-MARKER-builder-31c"
+    run_id, task_id = _seed(factory)
+    with factory() as s:
+        s.add(
+            HeldOutScenario(
+                workspace_id=WS,
+                task_id=task_id,
+                title="hidden",
+                files=[{"path": "tests/held_out.py", "content": marker}],
+                command=f"echo {marker}",
+                drafted_by="agent:verifier/gpt-6-astra",
+            )
+        )
+        s.commit()
+    builder = ScriptedModelClient([], default=finish_response("Done", confidence=0.9))
+    monkeypatch.setattr(agent_runner_module, "_scripted_client", lambda: builder)
+
+    result = await _run(factory, _input(run_id, task_id))
+
+    assert builder.requests, "the builder ran"
+    seen = [r.model_dump_json() for r in builder.requests]
+    with factory() as s:
+        row = s.get(AgentRun, result.agent_run_id)
+        assert row is not None
+        seen.append(json.dumps([row.inputs, row.output, row.steps], default=str))
+        seen.extend(json.dumps(e.payload, default=str) for e in s.scalars(select(AgentRunEvent)))
+    assert not any(marker in record for record in seen)

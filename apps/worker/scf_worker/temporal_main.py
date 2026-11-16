@@ -32,6 +32,7 @@ from scf_db.models import AgentRun
 from scf_db.models.runs import WorkflowRun as DbWorkflowRun
 from scf_worker.approval_activity import expire_open_gates
 from scf_worker.dispatch import workspace_mirrors
+from scf_worker.held_out_drafting import draft_scenarios_service
 from scf_worker.run_workspace import remove_run_worktrees
 from scf_worker.temporal_services import (
     agent_run_service,
@@ -167,6 +168,7 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
         open_pr_fn=open_pr_service(factory),
         approval_fn=approval_service(factory),
         red_team_fn=red_team_service(factory),
+        draft_scenarios_fn=draft_scenarios_service(factory),
         cleanup_fn=make_cleanup_fn(factory),
         allow_fakes=os.environ.get("FORGE_ALLOW_FAKE_ACTIVITIES") == "1",
     )
