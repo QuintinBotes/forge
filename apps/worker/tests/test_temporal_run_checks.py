@@ -321,3 +321,28 @@ async def test_checks_run_on_a_clean_checkout_with_no_network(
 
     assert result.results == {"clean": True}
     assert [str(n) for n in networks] == ["none"]
+
+
+async def test_a_long_output_keeps_the_last_lines_of_each_stream(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A suite's verdict comes last: neither the sandbox's output cap nor a noisy stderr
+    may push it out of the recorded tail."""
+    monkeypatch.setenv("FORGE_SANDBOX_OUTPUT_CAP_BYTES", "2000")
+    work, mirror = repo
+    _set_policy(
+        work,
+        mirror,
+        "repo_id: app\ncommands:\n"
+        '  suite: "for i in $(seq 1 900); do echo out$i; echo err$i >&2; done; '
+        'echo 3 failed; exit 1"\n',
+    )
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+
+    await _checks(factory, run_id)
+
+    [attempt] = _recorded(factory, run_id)
+    [suite] = attempt["checks"]
+    assert suite["exit_code"] == 1
+    lines = suite["output_tail"].splitlines()
+    assert "3 failed" in lines and "out900" in lines and "err900" in lines

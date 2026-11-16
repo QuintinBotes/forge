@@ -305,6 +305,10 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
                     }
                 )
             objective.context["workflow_run_id"] = str(inp.workflow_run_id)
+            source = (workflow_run.context.get("trigger") or {}).get("source_label")
+            if kept is not None and source:
+                # Issue text is untrusted (ADR-0014): the prompt fences it under its source.
+                objective.context["source"] = source
             failing = _failing_checks(workflow_run.context, inp.attempt)
             if failing:
                 # The builder's next attempt sees what failed last time (#172).

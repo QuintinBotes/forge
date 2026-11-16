@@ -207,6 +207,34 @@ def test_ownership_is_read_from_the_row_after_the_registry_is_emptied(
     assert moved.json()["current_state"] == "spec_drafting"
 
 
+def test_the_run_read_returns_each_recorded_check(
+    factory: sessionmaker[Session], client_as: Callable[[uuid.UUID], TestClient]
+) -> None:
+    """#172 criterion 4: the evidence forge.run_checks records is on GET /workflow/runs/{id}."""
+    client = client_as(WS)
+    run_id = _start(client)
+    check = {
+        "id": "tests",
+        "exit_code": 1,
+        "timed_out": False,
+        "passed": False,
+        "started_at": "2026-11-16T10:00:00+00:00",
+        "duration_ms": 1200,
+        "output_tail": "E assert 1 == 2",
+    }
+    attempt = {"attempt": 0, "head_commit": "abc", "no_checks_declared": False, "checks": [check]}
+    with factory() as session:
+        row = session.get(DbWorkflowRun, run_id)
+        assert row is not None
+        row.context = {**row.context, "checks": [attempt]}
+        session.commit()
+
+    fetched = client.get(f"/workflow/runs/{run_id}")
+
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["context"]["checks"] == [attempt]
+
+
 @pytest.mark.parametrize(
     ("caller", "task_id"),
     [(WS2, TASK), (WS, uuid.UUID("00000000-0000-0000-0000-0000000001bf"))],

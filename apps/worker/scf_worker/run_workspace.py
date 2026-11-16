@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -190,7 +191,7 @@ def _sandbox_commands(
 #: reason (spec 001, verification scenario 3), never an empty pass.
 NO_DECLARED_CHECKS = {"no_checks_declared": False}
 
-#: The most output a recorded check keeps: its last lines (#172).
+#: The most output a recorded check keeps: the last lines of each stream (#172).
 CHECK_OUTPUT_TAIL_LINES = 400
 
 
@@ -210,6 +211,12 @@ class CheckRun:
         return self.exit_code == 0 and not self.timed_out
 
 
+def _tail(*streams: str) -> str:
+    """The last lines of each stream, so a noisy stderr cannot push out stdout's verdict."""
+    tails = ("\n".join(s.splitlines()[-CHECK_OUTPUT_TAIL_LINES:]) for s in streams if s)
+    return "\n".join(tails)
+
+
 def run_declared_checks(
     repo_path: Path,
     commit: str,
@@ -222,9 +229,11 @@ def run_declared_checks(
     """Run ``policy.commands`` in a sandbox on a fresh, detached worktree of ``commit``.
 
     One run per command, passing when it exited 0 within its time limit. The sandbox
-    has no network, whatever the policy asks for, and the worktree holds only the
-    commit (nothing from the agent's session); it is removed afterwards, so running
-    again checks the same commit afresh. No declared command returns no runs.
+    is asked for no network, whatever the policy asks for; the container tiers
+    enforce that, the worktree tier cannot (it is not a sandbox, #184). The worktree
+    holds only the commit (nothing from the agent's session) and is removed
+    afterwards, so running again checks the same commit afresh. No declared command
+    returns no runs.
     """
     commands = policy.commands if policy else {}
     if not commands:
@@ -238,14 +247,17 @@ def run_declared_checks(
             policy,
             run_id=run_id,
             workspace_id=workspace_id,
-            settings=settings,
+            # A check's verdict comes last, and the sandbox keeps only the start of an
+            # output over its cap; the whole output is in memory already, so keep it all.
+            settings=(settings or SandboxSettings.from_env()).model_copy(
+                update={"output_cap_bytes": sys.maxsize}
+            ),
             network=SandboxNetwork.NONE,
         ) as run_command:
             runs: list[CheckRun] = []
             for name, command in commands.items():
                 started_at = datetime.now(UTC)
                 output = run_command(command)
-                text = "\n".join(part for part in (output.stdout, output.stderr) if part)
                 runs.append(
                     CheckRun(
                         id=name,
@@ -253,7 +265,7 @@ def run_declared_checks(
                         timed_out=output.timed_out,
                         started_at=started_at,
                         duration_ms=output.duration_ms,
-                        output_tail="\n".join(text.splitlines()[-CHECK_OUTPUT_TAIL_LINES:]),
+                        output_tail=_tail(output.stdout, output.stderr),
                     )
                 )
             return runs

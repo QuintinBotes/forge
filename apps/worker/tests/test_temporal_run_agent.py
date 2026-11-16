@@ -166,7 +166,10 @@ async def test_the_agent_runs_the_objective_kept_on_the_run(
     with factory() as s:
         run = s.get(WorkflowRun, run_id)
         assert run is not None
-        run.context = {**run.context, "trigger": {"source": "issue", "objective": kept}}
+        run.context = {
+            **run.context,
+            "trigger": {"source": "issue", "source_label": "github:a/b#1", "objective": kept},
+        }
         task = s.get(Task, task_id)
         assert task is not None
         task.allowed_actions = ["read_repo", "write_code"]
@@ -190,6 +193,8 @@ async def test_the_agent_runs_the_objective_kept_on_the_run(
         assert context["agent_run_id"] == str(result.agent_run_id)
         assert context["workflow_run_id"] == str(run_id)
         assert context["repo_full_name"] == REPO
+        # The issue's text is untrusted (ADR-0014): the prompt fences it under its source.
+        assert context["source"] == "github:a/b#1"
 
 
 async def test_the_next_attempt_sees_the_checks_that_failed(
@@ -375,3 +380,49 @@ async def test_a_pause_for_a_run_outside_the_workspace_is_refused(
         )
 
     assert caught.value.type == "WorkflowRunNotFound"
+
+
+async def test_the_failures_come_from_the_latest_earlier_attempt(
+    factory: sessionmaker[Session], mirror: Path
+) -> None:
+    run_id, task_id = _seed(factory)
+
+    def attempt(n: int, check_id: str) -> dict[str, object]:
+        check = {"id": check_id, "exit_code": 1, "passed": False, "output_tail": check_id}
+        return {"attempt": n, "head_commit": "abc", "no_checks_declared": False, "checks": [check]}
+
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        run.context = {**run.context, "checks": [attempt(1, "lint"), attempt(0, "tests")]}
+        s.commit()
+
+    result = await _run(
+        factory, RunAgentInput(run_id, task_id, WS, attempt=2, idempotency_key="k-2")
+    )
+
+    with factory() as s:
+        row = s.get(AgentRun, result.agent_run_id)
+        assert row is not None
+        assert [c["id"] for c in row.inputs["context"]["failing_checks"]] == ["lint"]
+
+
+async def test_a_retry_after_no_declared_checks_is_told_so(
+    factory: sessionmaker[Session], mirror: Path
+) -> None:
+    run_id, task_id = _seed(factory)
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        none_declared = {"attempt": 0, "head_commit": "abc", "no_checks_declared": True}
+        run.context = {**run.context, "checks": [none_declared]}
+        s.commit()
+
+    result = await _run(
+        factory, RunAgentInput(run_id, task_id, WS, attempt=1, idempotency_key="k-1")
+    )
+
+    with factory() as s:
+        row = s.get(AgentRun, result.agent_run_id)
+        assert row is not None
+        assert [c["id"] for c in row.inputs["context"]["failing_checks"]] == ["no_checks_declared"]

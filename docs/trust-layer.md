@@ -36,12 +36,13 @@ binds every activity except `forge.resume_agent`:
 - **The agent** runs the task's objective in a per-run worktree, on one
   `agent_run` row per attempt, and records the run branch and its head commit.
 - **The checks** run the repository's declared `policy.commands`, from the
-  default branch, in a sandbox with no network on a fresh worktree of that head
-  commit. A repository that declares none fails with `no_checks_declared`. Each
-  check is recorded on the run's context under `checks` (command id, exit
-  status, commit, start time, duration and a redacted tail of at most 400 lines
-  of output), and the agent's next attempt gets the failing ones. The check
-  stage's time limit is `CHECKS_ACTIVITY_TIMEOUT` (30 minutes by default).
+  default branch, on a fresh worktree of that head commit, in a sandbox asked for
+  no network (see the limitations below). A repository that declares none fails
+  with `no_checks_declared`. Each check is recorded on the run's context under
+  `checks` (command id, exit status, commit, start time, duration and a redacted
+  tail of at most 400 lines of each output stream), and the agent's next attempt
+  sees the failing ones in its prompt, as data. The check stage's time limit is
+  `CHECKS_ACTIVITY_TIMEOUT` (30 minutes by default).
 - **The pull request** is opened once: a retry finds the one already opened. A
   branch with no commits is not delivered, and without GitHub App credentials
   the step refuses.
@@ -79,6 +80,9 @@ binds every activity except `forge.resume_agent`:
   decision; nothing retries it when CI turns green.
 - **A repository with no declared checks spends the agent's retries** before it
   pauses (#272, an owner decision).
+- **The checks have network on the worktree tier (#184).** Only the container
+  tiers enforce the no-network sandbox; the default `worktree` tier runs the
+  commands on the worker's host with its network and environment.
 
 ---
 

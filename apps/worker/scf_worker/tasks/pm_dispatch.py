@@ -472,6 +472,8 @@ def _dispatch_governed(
         "source": "issue",
         "started_by": starter,
         "tracker": server_context["tracker"],
+        # The agent renders the issue's text as untrusted data under this label.
+        "source_label": server_context.get("source"),
         "objective": objective.model_copy(update={"task_id": task_id}).model_dump(mode="json"),
     }
     with session_factory() as session:
