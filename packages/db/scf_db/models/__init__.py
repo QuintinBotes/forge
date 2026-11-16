@@ -87,6 +87,7 @@ from scf_db.models.enums import (
     UserRole,
     WorkflowState,
 )
+from scf_db.models.held_out import HeldOutScenario
 from scf_db.models.idempotency import IdempotencyKey
 from scf_db.models.incidents import (
     IncidentAlert,
@@ -259,6 +260,7 @@ __all__ = [
     "GateCheckName",
     "GateCheckStatus",
     "HealthStatus",
+    "HeldOutScenario",
     "IdempotencyKey",
     "Incident",
     "IncidentAlert",
