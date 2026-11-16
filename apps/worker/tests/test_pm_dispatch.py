@@ -42,7 +42,7 @@ from scf_contracts.enums import Direction
 from scf_contracts.pm import ExternalTask, StatusCategory
 from scf_contracts.pm import PMProvider as ContractsProvider
 from scf_db.base import Base
-from scf_db.models import AgentRun, Project, RepositoryConnection, Workspace
+from scf_db.models import AgentRun, Project, RepositoryConnection, Task, Workspace
 from scf_db.models.enums import PMConnectionStatus, PMDeliveryStatus, PMSyncDirection
 from scf_db.models.enums import PMProvider as DbPMProvider
 from scf_db.models.enums import RunStatus as DbRunStatus
@@ -1046,6 +1046,11 @@ def test_a_governed_dispatch_starts_one_workflow_run_and_enqueues_no_agent(
     [run] = _workflow_runs(factory)
     assert result["run_id"] == str(run.id)
     assert run.task_id is not None  # the board task the sync half linked
+    # Every step of the run reads the task's repository: it now names the one dispatched.
+    with factory() as session:
+        task = session.get(Task, run.task_id)
+        assert task is not None
+        assert [t["repo"] for t in task.repo_targets] == ["acme/widgets"]
     [params] = temporal.started
     assert params.workflow_run_id == run.id
     assert params.started_by == "github:octocat"
@@ -1121,3 +1126,55 @@ def test_a_governed_dispatch_without_a_linked_task_creates_it(
         assert link.external_id == "42"
     [run] = _workflow_runs(factory)
     assert run.task_id == link.forge_task_id
+
+
+def test_a_governed_dispatch_for_a_task_on_another_repository_is_skipped(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    temporal: _FakeTemporalClient,
+) -> None:
+    """A linked task that already names another repository is refused, not run against two."""
+    from scf_db.models.pm import PMTaskLink
+
+    connection_id = _seed_connection(factory, project_id)
+    with factory() as session:
+        task = Task(
+            workspace_id=WS_ID,
+            project_id=project_id,
+            key="CORE-77",
+            title="elsewhere",
+            repo_targets=[{"repo": "acme/other", "base_branch": "main"}],
+        )
+        session.add(task)
+        session.flush()
+        session.add(
+            PMTaskLink(
+                workspace_id=WS_ID,
+                connection_id=connection_id,
+                forge_task_id=task.id,
+                provider=DbPMProvider.GITHUB_ISSUES,
+                external_id="42",
+                external_key="acme/widgets#42",
+                external_url="https://github.com/acme/widgets/issues/42",
+            )
+        )
+        session.commit()
+    row_id = _seed_delivery(factory, connection_id)
+    with factory() as session:
+        connection = session.get(PMConnection, connection_id)
+        delivery = session.get(PMWebhookDelivery, row_id)
+        assert connection is not None and delivery is not None
+        session.expunge_all()
+
+    outcome = maybe_dispatch(
+        factory,
+        connection=connection,
+        delivery=delivery,
+        payload=_payload(),
+        connections=connections,
+    )
+
+    assert (outcome.action, outcome.reason) == ("skipped", "task_repository_mismatch")
+    assert temporal.started == [] and _workflow_runs(factory) == []

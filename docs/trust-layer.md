@@ -54,7 +54,10 @@ binds every activity except `forge.resume_agent`:
   transition, never as an approver. The agent works from the objective built from
   the re-fetched issue, kept on the run. `POST /agent/runs` (#276), the refusal
   of ungoverned runs outside development (#277) and tracker write-back for
-  governed runs (#278) follow.
+  governed runs (#278) follow. The backend is read per process: the API, the
+  Celery worker and the Temporal worker must all see the same
+  `WORKFLOW_ENGINE_BACKEND` and `TEMPORAL_*` settings. A Celery worker without
+  them still sends issues down the direct, ungoverned path.
 - **A cancel** at a gate expires that gate's open request with the reason
   `run_cancelled`, recorded as whoever cancelled the run. The workflow's own
   cancel path does it again, for a request it opened after the cancel arrived.

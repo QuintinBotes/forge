@@ -403,6 +403,34 @@ def _workflow_run_guard(
     return None
 
 
+def _give_task_the_repository(
+    session_factory: sessionmaker[Session], task_id: uuid.UUID, objective: AgentObjective
+) -> str | None:
+    """Make the run's board task name the repository dispatch acts on.
+
+    Every step of a governed run (the guard, the agent, the checks, the pull
+    request) reads the task's repository, and a task the board sync created from
+    the issue names none: it gets the one the dispatch config names. A task that
+    already names another repository is refused rather than run against two.
+    """
+    from scf_db.models import Task
+
+    target = objective.primary_repo_target
+    if target is None:
+        return None
+    with session_factory() as session:
+        task = session.get(Task, task_id)
+        if task is None:
+            return "no_board_task"
+        current = AgentObjective(objective="dispatch", repo_targets=task.repo_targets)
+        if current.primary_repo_target is None:
+            task.repo_targets = [target.model_dump(mode="json")]
+            session.commit()
+        elif current.primary_repo_target.repo.lower() != target.repo.lower():
+            return "task_repository_mismatch"
+    return None
+
+
 def _dispatch_governed(
     session_factory: sessionmaker[Session],
     *,
@@ -436,6 +464,9 @@ def _dispatch_governed(
         task_id = sync_external_task(session_factory, connections, connection, external, audit)
         if task_id is None:
             return skipped("no_board_task")
+    mismatch = _give_task_the_repository(session_factory, task_id, objective)
+    if mismatch is not None:
+        return skipped(mismatch)
     starter = f"github:{sender_login}" if sender_login else f"pm:{connection.id}"
     trigger: dict[str, object] = {
         "source": "issue",

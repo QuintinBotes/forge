@@ -160,12 +160,17 @@ async def test_the_agent_runs_the_objective_kept_on_the_run(
         "task_id": str(task_id),
         "repo_targets": [{"repo": REPO, "base_branch": "main", "branch_prefix": "scf"}],
         "acceptance_criteria": [{"id": "AC-1", "text": "Widget renders"}],
-        "context": {},
+        # Server-owned keys never come from a kept objective; its own keys do.
+        "context": {"repo_path": "/etc", "tracker": {"connection_id": "x"}, "note": "kept"},
     }
     with factory() as s:
         run = s.get(WorkflowRun, run_id)
         assert run is not None
         run.context = {**run.context, "trigger": {"source": "issue", "objective": kept}}
+        task = s.get(Task, task_id)
+        assert task is not None
+        task.allowed_actions = ["read_repo", "write_code"]
+        task.restricted_actions = ["run_command"]
         s.commit()
 
     result = await _run(factory, _input(run_id, task_id))
@@ -176,7 +181,12 @@ async def test_the_agent_runs_the_objective_kept_on_the_run(
         assert row.inputs["objective"] == "Make widgets accessible"
         assert row.inputs["description"] == "Fix the widget."
         assert [c["text"] for c in row.inputs["acceptance_criteria"]] == ["Widget renders"]
+        # The task still sets what the agent may do.
+        assert row.inputs["allowed_actions"] == ["read_repo", "write_code"]
+        assert row.inputs["restricted_actions"] == ["run_command"]
         context = row.inputs["context"]
+        assert "repo_path" not in context and "tracker" not in context
+        assert context["note"] == "kept"
         assert context["agent_run_id"] == str(result.agent_run_id)
         assert context["workflow_run_id"] == str(run_id)
         assert context["repo_full_name"] == REPO

@@ -154,7 +154,7 @@ class TemporalWorkflowEngine:
             # start_workflow. Start it under its own id: Temporal refuses a second one.
             run_id, definition_name = active.id, active.workflow_name
             wf_id = workflow_id(run_id)
-            started_by = str(active.context.get("started_by", started_by))
+            started_by = str(active.context.get("started_by", "system"))  # absent: system
         else:
             run_id = uuid.uuid4()
             wf_id = workflow_id(run_id)

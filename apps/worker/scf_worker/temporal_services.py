@@ -271,8 +271,8 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
             task = session.get(Task, workflow_run.task_id)
             assert task is not None  # workflow_run.task_id is a non-null foreign key
             kept = _kept_objective(workflow_run.context)
-            target = (
-                kept or AgentObjective(objective=task.title, repo_targets=task.repo_targets)
+            target = AgentObjective(
+                objective=task.title, repo_targets=task.repo_targets
             ).primary_repo_target
             if task.execution_mode == ExecutionMode.SUPERVISED_MULTI_AGENT:
                 # The supervisor runs only on the Celery path; refuse rather than run one agent.
@@ -292,9 +292,17 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
                 task, agent_run_id=agent_run_id, repo_full_name=target.repo if target else None
             )
             if kept is not None:
-                # The run keeps the objective built from the re-fetched issue (#171).
-                objective = kept.model_copy(
-                    update={"task_id": task.id, "context": {**kept.context, **objective.context}}
+                # The run keeps the text built from the re-fetched issue (#171). The
+                # task still sets what the agent may do and where: its allowed and
+                # restricted actions and its repository.
+                objective = objective.model_copy(
+                    update={
+                        "key": kept.key or objective.key,
+                        "objective": kept.objective,
+                        "description": kept.description,
+                        "acceptance_criteria": kept.acceptance_criteria,
+                        "context": {**kept.context, **objective.context},
+                    }
                 )
             objective.context["workflow_run_id"] = str(inp.workflow_run_id)
             session.add(
