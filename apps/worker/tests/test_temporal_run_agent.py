@@ -148,6 +148,40 @@ async def test_the_agent_runs_the_tasks_objective_in_a_worktree_of_the_run_branc
     assert len(_git(mirror, "worktree", "list").splitlines()) == 1, "the run's worktree is gone"
 
 
+async def test_the_agent_runs_the_objective_kept_on_the_run(
+    factory: sessionmaker[Session], mirror: Path
+) -> None:
+    """#171: an issue-triggered run keeps the objective built from the re-fetched
+    issue; the agent runs that, not one rebuilt from the task title."""
+    run_id, task_id = _seed(factory)
+    kept = {
+        "objective": "Make widgets accessible",
+        "description": "Fix the widget.",
+        "task_id": str(task_id),
+        "repo_targets": [{"repo": REPO, "base_branch": "main", "branch_prefix": "scf"}],
+        "acceptance_criteria": [{"id": "AC-1", "text": "Widget renders"}],
+        "context": {},
+    }
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        run.context = {**run.context, "trigger": {"source": "issue", "objective": kept}}
+        s.commit()
+
+    result = await _run(factory, _input(run_id, task_id))
+
+    with factory() as s:
+        row = s.get(AgentRun, result.agent_run_id)
+        assert row is not None
+        assert row.inputs["objective"] == "Make widgets accessible"
+        assert row.inputs["description"] == "Fix the widget."
+        assert [c["text"] for c in row.inputs["acceptance_criteria"]] == ["Widget renders"]
+        context = row.inputs["context"]
+        assert context["agent_run_id"] == str(result.agent_run_id)
+        assert context["workflow_run_id"] == str(run_id)
+        assert context["repo_full_name"] == REPO
+
+
 async def test_a_repeated_idempotency_key_finds_the_same_agent_run(
     factory: sessionmaker[Session], mirror: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

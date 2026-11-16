@@ -966,3 +966,158 @@ def test_writeback_claim_survives_outcome_rewrite(
         == "already_recorded"
     )
     assert len(fake_adapter.comments) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Governed dispatch: the Temporal backend starts a workflow run (#171)        #
+# --------------------------------------------------------------------------- #
+
+
+class _FakeTemporalHandle:
+    result_run_id = "fake-temporal-run"
+
+
+class _FakeTemporalClient:
+    """Records the workflows started; nothing runs (the workflow's own tests do).
+
+    Like Temporal under ``REJECT_DUPLICATE``, it refuses a workflow id it started.
+    """
+
+    def __init__(self) -> None:
+        self.started: list[Any] = []
+        self._ids: set[str] = set()
+
+    async def start_workflow(self, _workflow: Any, params: Any, **kw: Any) -> _FakeTemporalHandle:
+        from temporalio.exceptions import WorkflowAlreadyStartedError
+
+        if kw["id"] in self._ids:
+            raise WorkflowAlreadyStartedError(kw["id"], "FeatureWorkflow")
+        self._ids.add(kw["id"])
+        self.started.append(params)
+        return _FakeTemporalHandle()
+
+    def get_workflow_handle(self, _wf_id: str) -> _FakeTemporalHandle:
+        return _FakeTemporalHandle()
+
+
+@pytest.fixture
+def temporal(monkeypatch: pytest.MonkeyPatch) -> _FakeTemporalClient:
+    from scf_api.services import workflow_engine as workflow_engine_module
+
+    fake = _FakeTemporalClient()
+
+    async def _get_client(_settings: object = None) -> _FakeTemporalClient:
+        return fake
+
+    monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "temporal")
+    monkeypatch.setattr(workflow_engine_module, "get_temporal_client", _get_client)
+    return fake
+
+
+def _workflow_runs(factory: sessionmaker[Session]) -> list[Any]:
+    from scf_db.models.runs import WorkflowRun as DbWorkflowRun
+
+    with factory() as session:
+        rows = session.execute(select(DbWorkflowRun)).scalars().all()
+        for row in rows:
+            session.expunge(row)
+        return list(rows)
+
+
+def test_a_governed_dispatch_starts_one_workflow_run_and_enqueues_no_agent(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    temporal: _FakeTemporalClient,
+) -> None:
+    """#171 criterion 1 (and 3's record): the label starts a workflow run for the
+    issue's task, named for its sender; no Celery agent run is enqueued."""
+    connection_id = _seed_connection(factory, project_id)
+    row_id = _seed_delivery(factory, connection_id)
+    enqueued: list[AgentObjective] = []
+
+    result = process_webhook(
+        factory, row_id, connections=connections, payload=_payload(), enqueue_run=enqueued.append
+    )
+
+    assert result["dispatch_action"] == "dispatched"
+    assert enqueued == [] and _runs(factory) == [], "no agent runs before the gates"
+    [run] = _workflow_runs(factory)
+    assert result["run_id"] == str(run.id)
+    assert run.task_id is not None  # the board task the sync half linked
+    [params] = temporal.started
+    assert params.workflow_run_id == run.id
+    assert params.started_by == "github:octocat"
+    trigger = run.context["trigger"]
+    assert trigger["started_by"] == "github:octocat"
+    assert trigger["tracker"]["delivery_id"] == "gh-1"
+    assert trigger["tracker"]["connection_id"] == str(connection_id)
+    # The objective comes from the re-fetched issue, kept for forge.run_agent.
+    assert trigger["objective"]["objective"] == "Make widgets accessible"
+    assert trigger["objective"]["description"] == BODY
+
+    # Another delivery for the same issue while the run is active is skipped.
+    again = _seed_delivery(factory, connection_id, delivery_id="gh-2", payload_hash="cafe")
+    second = process_webhook(
+        factory, again, connections=connections, payload=_payload(), enqueue_run=enqueued.append
+    )
+    assert (second["dispatch_action"], second["dispatch_reason"]) == ("skipped", "issue_run_active")
+    assert len(_workflow_runs(factory)) == 1 and len(temporal.started) == 1
+
+
+def test_a_replayed_governed_delivery_starts_nothing(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    temporal: _FakeTemporalClient,
+) -> None:
+    connection_id = _seed_connection(factory, project_id)
+    first = _seed_delivery(factory, connection_id)
+    process_webhook(factory, first, connections=connections, payload=_payload())
+    # The same signed body arriving again under another delivery id.
+    replay = _seed_delivery(factory, connection_id, delivery_id="gh-9")
+
+    result = process_webhook(factory, replay, connections=connections, payload=_payload())
+
+    assert (result["dispatch_action"], result["dispatch_reason"]) == (
+        "skipped",
+        "already_dispatched",
+    )
+    assert len(temporal.started) == 1
+
+
+def test_a_governed_dispatch_without_a_linked_task_creates_it(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    temporal: _FakeTemporalClient,
+) -> None:
+    """#171 criterion 2: no board task linked yet, so dispatch creates the task and
+    its PMTaskLink before the run, and the run is for that task."""
+    from scf_db.models.pm import PMTaskLink
+
+    connection_id = _seed_connection(factory, project_id)
+    row_id = _seed_delivery(factory, connection_id)
+    with factory() as session:
+        connection = session.get(PMConnection, connection_id)
+        delivery = session.get(PMWebhookDelivery, row_id)
+        assert connection is not None and delivery is not None
+        session.expunge_all()
+
+    outcome = maybe_dispatch(
+        factory,
+        connection=connection,
+        delivery=delivery,
+        payload=_payload(),
+        connections=connections,
+    )
+
+    assert outcome.action == "dispatched"
+    with factory() as session:
+        [link] = session.execute(select(PMTaskLink)).scalars().all()
+        assert link.external_id == "42"
+    [run] = _workflow_runs(factory)
+    assert run.task_id == link.forge_task_id

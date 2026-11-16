@@ -63,6 +63,9 @@ class WorkflowParams:
     execution_mode: str = "single_agent"
     retry_policy: RetryPolicyDTO = field(default_factory=RetryPolicyDTO)
     escalation_policy: EscalationPolicyDTO = field(default_factory=EscalationPolicyDTO)
+    # Who started the run (an issue's label sender, say); the run's first transition
+    # names them. Defaulted, so histories recorded before it replay unchanged.
+    started_by: str = "system"
 
 
 @dataclass

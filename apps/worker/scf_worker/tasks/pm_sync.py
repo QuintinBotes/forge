@@ -420,6 +420,33 @@ def _sync_delivery(
     row: PMWebhookDelivery,
     audit: AuditLog,
 ) -> SyncOutcome:
+    adapter, engine = _sync_engine(session_factory, connections, connection, audit)
+    assert row.external_id is not None  # guarded by the caller
+    return asyncio.run(_fetch_and_sync(adapter, engine, row.external_id))
+
+
+def sync_external_task(
+    session_factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    connection: PMConnection,
+    external: ExternalTask,
+    audit: AuditLog | None = None,
+) -> uuid.UUID | None:
+    """Upsert an already-fetched tracker item onto the board; return its task id.
+
+    Issue dispatch uses it when the item has no linked board task yet, so a
+    governed run always has the task a workflow run needs (#171).
+    """
+    _, engine = _sync_engine(session_factory, connections, connection, audit or AuditLog())
+    return asyncio.run(engine.sync_in(external)).forge_task_id
+
+
+def _sync_engine(
+    session_factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    connection: PMConnection,
+    audit: AuditLog,
+) -> tuple[PMAdapter, PMSyncEngine]:
     # Resolved through the registry seam (``build_adapter``) and scoped to the
     # connection's workspace + project — never a cross-tenant adapter.
     adapter = connections.get_adapter_for_project(
@@ -436,8 +463,7 @@ def _sync_delivery(
         conflict_policy=ConflictPolicy(connection.conflict_policy.value),
         sync_direction=SyncDirection(connection.sync_direction.value),
     )
-    assert row.external_id is not None  # guarded by the caller
-    return asyncio.run(_fetch_and_sync(adapter, engine, row.external_id))
+    return adapter, engine
 
 
 # --------------------------------------------------------------------------- #

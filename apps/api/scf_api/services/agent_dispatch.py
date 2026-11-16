@@ -66,7 +66,9 @@ TRACKER_CONTEXT_KEYS = frozenset(
     {"tracker", "source", "actor", "tracker_ref", "pm_connection_id", "sender_login"}
 )
 
-_STRIPPED_CONTEXT = SERVER_OWNED_CONTEXT | TRACKER_CONTEXT_KEYS
+#: Every context key a caller may not set: SCF sets these itself.
+STRIPPED_CONTEXT = SERVER_OWNED_CONTEXT | TRACKER_CONTEXT_KEYS
+_STRIPPED_CONTEXT = STRIPPED_CONTEXT
 
 #: Tracker issue bodies are untrusted and unbounded; the objective carries at
 #: most this many characters of one.

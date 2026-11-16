@@ -127,7 +127,7 @@ class FeatureWorkflow:
         self._evaluator = TransitionEvaluator(_DEFINITIONS[params.definition_name])
         try:
             # created → spec_drafting → clarification → spec_review
-            await self._auto("generate_spec_draft")
+            await self._auto("generate_spec_draft", actor=params.started_by)
             await self._auto("gather_clarifications")
             await self._auto("submit_spec_for_review")
 
@@ -398,10 +398,10 @@ class FeatureWorkflow:
     # ------------------------------------------------------------------ #
     # Transition application                                              #
     # ------------------------------------------------------------------ #
-    async def _auto(self, event: str) -> None:
-        """Apply a non-gated action transition (system-driven)."""
+    async def _auto(self, event: str, *, actor: str = "system") -> None:
+        """Apply a non-gated action transition (system-driven, or its starter's)."""
         self._check_cancel()
-        await self._advance(event)
+        await self._advance(event, actor=actor)
 
     async def _advance(
         self,
