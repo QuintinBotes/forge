@@ -332,3 +332,27 @@ async def test_the_check_activity_takes_its_configured_limit_and_heartbeats(
     ]
     assert scheduled.start_to_close_timeout.seconds == 2400
     assert scheduled.heartbeat_timeout.seconds > 0
+
+
+async def test_a_change_no_reviewer_can_judge_pauses_for_a_person_without_a_pr(
+    harness: Any,
+) -> None:
+    """#173 criterion 4: with no usable independent reviewer, the run moves to
+    needs_human_input with the reason, and no pull request is opened."""
+    opened: list[Any] = []
+
+    def no_reviewer(_: RunChecksInput) -> ChecksResult:
+        return ChecksResult(results={"tests": True}, pause_reason="reviewer_not_configured")
+
+    h = harness(run_checks_fn=no_reviewer, open_pr_fn=opened.append)
+    async with h.worker():
+        run = await h.start()
+        await h.wait_awaiting(run, {"spec_approved_by_human"})
+        await h.engine.atransition(run.id, "spec_approved_by_human")
+        result = await h.handle(run).result()
+
+    assert result.final_state == WorkflowState.NEEDS_HUMAN_INPUT
+    assert result.failure_reason == "reviewer_not_configured"
+    paused = [t for t in h.transitions(run) if t["to_state"] == "needs_human_input"]
+    assert [t["payload"]["reason"] for t in paused] == ["reviewer_not_configured"]
+    assert opened == []

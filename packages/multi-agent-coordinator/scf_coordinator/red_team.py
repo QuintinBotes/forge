@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from scf_agent import AgentRunner, ProviderName, ToolRegistry
-from scf_agent.providers.router import DEFAULT_TIER_MODELS
+from scf_agent.providers.family import UnknownModelFamily, provider_family, same_family
 from scf_agent.tools import ToolResult
 from scf_contracts import (
     AcceptanceCriterion,
@@ -115,24 +115,13 @@ class RedTeamResult:
 # Provider inference (heterogeneity enforcement)                                #
 # --------------------------------------------------------------------------- #
 
-#: Exact ``model -> provider`` map derived from the router's default tier tables.
-_MODEL_PROVIDER: dict[str, ProviderName] = {
-    model: provider for provider, tiers in DEFAULT_TIER_MODELS.items() for model in tiers.values()
-}
-
 
 def _provider_of(model: str) -> ProviderName:
-    """Infer the BYOK provider for a concrete model id (deterministic, offline)."""
-    key = (model or "").strip().lower()
-    if not key:
-        raise RedTeamError("cannot determine provider: empty model id")
-    if key in _MODEL_PROVIDER:
-        return _MODEL_PROVIDER[key]
-    if any(tok in key for tok in ("claude", "opus", "sonnet", "haiku", "fable", "anthropic")):
-        return ProviderName.anthropic
-    if "gpt" in key or "openai" in key or key.startswith(("o1", "o3", "o4")):
-        return ProviderName.openai
-    raise RedTeamError(f"cannot determine provider for model {model!r}")
+    """The model's provider family, shared with the independent reviewer (#173)."""
+    try:
+        return provider_family(model)
+    except UnknownModelFamily as exc:
+        raise RedTeamError(str(exc)) from exc
 
 
 # --------------------------------------------------------------------------- #
@@ -275,9 +264,9 @@ async def run_red_team(
             "adversary model id is required to verify heterogeneity "
             "(pass adversary_model= or expose .model on the client)"
         )
-    coder_provider = _provider_of(coder_model)
+    _provider_of(coder_model)  # an unknown family is refused as a RedTeamError
     adv_provider = _provider_of(adv_model)
-    if adv_provider == coder_provider:
+    if same_family(adv_model, coder_model):
         raise HomogeneousAdversaryError(
             f"adversary provider {adv_provider.value!r} matches the coder's "
             f"({coder_model!r}); a homogeneous adversary is not allowed"

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +20,9 @@ from temporalio.exceptions import ApplicationError
 
 from scf_api.observability.redaction import redact_text
 from scf_api.services.agent_dispatch import STRIPPED_CONTEXT, repo_connected
-from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode
+from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
 from scf_contracts import RunStatus as ResultStatus
+from scf_contracts.review import ReviewVerdict
 from scf_contracts.run_events import RunEventDraft, RunEventType
 from scf_db.models import (
     AgentRun,
@@ -31,7 +33,7 @@ from scf_db.models import (
     WorkflowRun,
 )
 from scf_db.models.enums import RunStatus
-from scf_worker.agent_runner import _commits_ahead, run_agent_objective
+from scf_worker.agent_runner import _commits_ahead, configured_model, run_agent_objective
 from scf_worker.approval_activity import make_create_approval_fn
 from scf_worker.dispatch import (
     RepositoryUnavailable,
@@ -41,6 +43,14 @@ from scf_worker.dispatch import (
     workspace_mirrors,
 )
 from scf_worker.finalizer import GitHubAppCredentials, Pusher, git_push, push_and_open_pr
+from scf_worker.review import (
+    REVIEWER_ROLE,
+    ReviewerRefused,
+    ensure_heterogeneous,
+    review_change,
+    reviewer_client,
+    reviewer_model,
+)
 from scf_worker.review_rules import default_branch_policy
 from scf_worker.run_events import RunEventSink
 from scf_worker.run_workspace import NO_DECLARED_CHECKS, CheckRun, run_declared_checks
@@ -322,6 +332,8 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
                     skill_profile=task.skill_profile,
                     inputs=objective.model_dump(mode="json"),
                     status=RunStatus.PENDING,
+                    # The independent reviewer must be of another family (#173).
+                    model=configured_model(),
                 )
             )
             session.commit()
@@ -383,21 +395,32 @@ def notify_service(factory: sessionmaker[Session]) -> NotifyFn:
 def _latest_agent_run(
     session: Session, workflow_run_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> AgentRun | None:
+    """The builder's latest run: a reviewer's run (#173) holds no branch or commit."""
     return session.scalars(
         select(AgentRun)
-        .where(AgentRun.workflow_run_id == workflow_run_id, AgentRun.workspace_id == workspace_id)
+        .where(
+            AgentRun.workflow_run_id == workflow_run_id,
+            AgentRun.workspace_id == workspace_id,
+            AgentRun.role != REVIEWER_ROLE,
+        )
         .order_by(AgentRun.created_at.desc())
         .limit(1)
     ).first()
 
 
-def run_checks_service(factory: sessionmaker[Session]) -> RunChecksFn:
+def run_checks_service(
+    factory: sessionmaker[Session], *, reviewer: Callable[[str], ModelClient] = reviewer_client
+) -> RunChecksFn:
     """Run the repository's declared checks on the agent's commit (#251).
 
     The commit is the head the latest agent run recorded, so a retry checks the same
     code even if the run branch moved. The commands come from the default branch's
     ``.forge/policy.yaml``, as the pull-request gate's review rules do, so an agent
     cannot change its own checks. A repository that declares none fails.
+
+    When every check passes, an independent reviewer judges the change (#173): its
+    verdict is the check ``independent_review``. With no reviewer it can use, the
+    result asks the workflow to pause for a person instead.
     """
 
     def run(inp: RunChecksInput) -> ChecksResult:
@@ -407,7 +430,8 @@ def run_checks_service(factory: sessionmaker[Session]) -> RunChecksFn:
             artifacts = ((agent_run.output or {}).get("artifacts") or {}) if agent_run else {}
             head = artifacts.get("head_commit")
             task = session.get(Task, workflow_run.task_id)
-            targets = task.repo_targets if task is not None else []
+            assert task is not None  # workflow_run.task_id is a non-null foreign key
+            targets = task.repo_targets
         if agent_run is None or not head:
             raise ApplicationError(
                 f"workflow run {inp.workflow_run_id} has no agent run with a commit to check",
@@ -428,12 +452,126 @@ def run_checks_service(factory: sessionmaker[Session]) -> RunChecksFn:
         runs = run_declared_checks(
             mirror, str(head), policy, run_id=agent_run.id, workspace_id=inp.workspace_id
         )
+        if not runs or not all(r.passed for r in runs):
+            _record_checks(factory, inp, head=str(head), runs=runs)
+            results = {r.id: r.passed for r in runs} or dict(NO_DECLARED_CHECKS)
+            return ChecksResult(results=results)
+        try:
+            review = _independent_review(
+                factory,
+                inp,
+                mirror=mirror,
+                base=target.base_branch,
+                head=str(head),
+                builder=agent_run,
+                project_id=task.project_id,
+                reviewer=reviewer,
+            )
+        except ReviewerRefused as refused:
+            _record_checks(factory, inp, head=str(head), runs=runs)
+            _record_review(factory, inp, {"refused": refused.reason, "detail": str(refused)})
+            return ChecksResult(results={r.id: r.passed for r in runs}, pause_reason=refused.reason)
+        runs = [*runs, review]
         _record_checks(factory, inp, head=str(head), runs=runs)
-        if not runs:
-            return ChecksResult(results=dict(NO_DECLARED_CHECKS))
-        return ChecksResult(results={run.id: run.passed for run in runs})
+        return ChecksResult(results={r.id: r.passed for r in runs})
 
     return run
+
+
+#: The run-context key holding each independent review (#173).
+REVIEWS_KEY = "reviews"
+
+
+def _independent_review(
+    factory: sessionmaker[Session],
+    inp: RunChecksInput,
+    *,
+    mirror: Path,
+    base: str,
+    head: str,
+    builder: AgentRun,
+    project_id: uuid.UUID,
+    reviewer: Callable[[str], ModelClient],
+) -> CheckRun:
+    """Judge the change with a reviewer of another model family, as one check (#173).
+
+    The reviewer's run is an ``agent_run`` with role ``reviewer`` on the workflow run,
+    its verdict in ``output``; a retry of the same attempt reuses a recorded verdict.
+    """
+    review_id = uuid.uuid5(inp.workflow_run_id, f"{inp.idempotency_key}:review")
+    with factory() as session:
+        row = session.get(AgentRun, review_id)
+        recorded = (row.output or {}).get("verdict") if row is not None else None
+        model = reviewer_model(session, workspace_id=inp.workspace_id, project_id=project_id)
+    ensure_heterogeneous(builder.model, model)
+    started_at = datetime.now(UTC)
+    if recorded is not None:
+        assert row is not None
+        verdict = ReviewVerdict.model_validate(row.output)
+    else:
+        criteria = [
+            f"{c.get('id')}: {c.get('text')}"
+            for c in (builder.inputs or {}).get("acceptance_criteria") or []
+        ]
+        verdict, objective = review_change(
+            mirror,
+            base=base,
+            head=head,
+            criteria=criteria,
+            client=reviewer(model),
+            reviewer=model,
+            builder_model=str(builder.model),
+        )
+        with factory() as session:
+            session.merge(
+                AgentRun(
+                    id=review_id,
+                    workspace_id=inp.workspace_id,
+                    workflow_run_id=inp.workflow_run_id,
+                    task_id=builder.task_id,
+                    role=REVIEWER_ROLE,
+                    model=model,
+                    inputs=objective.model_dump(mode="json"),
+                    output=verdict.model_dump(mode="json"),
+                    status=RunStatus.SUCCEEDED,
+                )
+            )
+            session.commit()
+    _record_review(
+        factory, inp, {**verdict.model_dump(mode="json"), "agent_run_id": str(review_id)}
+    )
+    approved = verdict.verdict == "approve"
+    return CheckRun(
+        id="independent_review",
+        exit_code=0 if approved else 1,
+        timed_out=False,
+        started_at=started_at,
+        duration_ms=int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+        output_tail=_findings_text(verdict),
+    )
+
+
+def _findings_text(verdict: ReviewVerdict) -> str:
+    """The verdict as the builder's next attempt reads it."""
+    head = verdict.verdict + (f" ({verdict.reason})" if verdict.reason else "")
+    if verdict.truncated:
+        head += "; the reviewer saw only the start of the diff"
+    lines = [f"- {f.file}:{f.line} [{f.severity}] {f.statement}" for f in verdict.findings]
+    return "\n".join([head, *lines])
+
+
+def _record_review(
+    factory: sessionmaker[Session], inp: RunChecksInput, review: dict[str, Any]
+) -> None:
+    """Record one attempt's review on the run, replacing a retry of the same one."""
+    entry = {"attempt": inp.attempt, **review}
+    with factory() as session:
+        workflow_run = _owned_run(session, inp.workflow_run_id, inp.workspace_id)
+        earlier = [
+            r for r in workflow_run.context.get(REVIEWS_KEY, []) if r.get("attempt") != inp.attempt
+        ]
+        workflow_run.context = {**workflow_run.context, REVIEWS_KEY: [*earlier, entry]}
+        session.commit()
 
 
 #: The run-context key holding each check attempt's evidence (#172).
@@ -510,6 +648,7 @@ def open_pr_service(
             task = session.get(Task, workflow_run.task_id)
             agent_run = _latest_agent_run(session, inp.workflow_run_id, inp.workspace_id)
             artifacts = ((agent_run.output or {}).get("artifacts") or {}) if agent_run else {}
+            reviews = [r for r in workflow_run.context.get(REVIEWS_KEY, []) if r.get("verdict")]
         creds = credentials()
         if creds is None:
             raise ApplicationError(
@@ -542,6 +681,13 @@ def open_pr_service(
             f"Opened by SCF workflow run `{inp.workflow_run_id}` for task {task.key or task.id}."
             "\n\nMerging requires human approval through the SCF `pr` gate."
         )
+        if reviews:  # the verdict that let the change through (#173)
+            review = max(reviews, key=lambda r: r.get("attempt", 0))
+            body += (
+                f"\n\nIndependent review: `{review['verdict']}` by "
+                f"`{review.get('reviewer_model')}`; the builder ran on "
+                f"`{review.get('builder_model')}`."
+            )
         pr = push_and_open_pr(
             repo_path=mirror,
             branch=str(branch),

@@ -7,6 +7,7 @@ bare mirror and the worktree sandbox (tests only). The agent run is seeded as
 
 from __future__ import annotations
 
+import functools
 import subprocess
 import uuid
 from collections.abc import Iterator
@@ -19,10 +20,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
+from scf_agent.testing import ScriptedModelClient, finish_response
+from scf_contracts.orchestration_config import AgentRole, Effort
 from scf_db.base import Base
 from scf_db.models import AgentRun, Project, RepositoryConnection, Task, WorkflowRun, Workspace
 from scf_db.models.enums import RunStatus
+from scf_db.models.role_config import AgentRoleConfig
+from scf_worker import temporal_main
 from scf_worker.temporal_main import build_activities
+from scf_worker.temporal_services import _failing_checks, run_checks_service
 from scf_workflow.temporal.payloads import ChecksResult, RunChecksInput
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000a7")
@@ -346,3 +352,167 @@ async def test_a_long_output_keeps_the_last_lines_of_each_stream(
     assert suite["exit_code"] == 1
     lines = suite["output_tail"].splitlines()
     assert "3 failed" in lines and "out900" in lines and "err900" in lines
+
+
+# --------------------------------------------------------------------------- #
+# The independent reviewer (#173)                                              #
+# --------------------------------------------------------------------------- #
+
+APPROVE = '{"verdict": "approve", "findings": []}'
+CHANGES = (
+    '{"verdict": "request_changes", "findings": [{"file": "MARKER", "line": 1, '
+    '"severity": "blocking", "statement": "MARKER must name the issue"}]}'
+)
+
+
+class Reviewer:
+    """The reviewer's model clients, one per review, each replying ``reply``."""
+
+    def __init__(self) -> None:
+        self.reply = APPROVE
+        self.models: list[str] = []
+        self.clients: list[ScriptedModelClient] = []
+
+    def __call__(self, model: str) -> ScriptedModelClient:
+        self.models.append(model)
+        self.clients.append(ScriptedModelClient([finish_response(self.reply, confidence=0.9)]))
+        return self.clients[-1]
+
+
+@pytest.fixture
+def reviewer(monkeypatch: pytest.MonkeyPatch) -> Reviewer:
+    scripted = Reviewer()
+    monkeypatch.setattr(
+        temporal_main,
+        "run_checks_service",
+        functools.partial(run_checks_service, reviewer=scripted),
+    )
+    return scripted
+
+
+def _configure_review(
+    factory: sessionmaker[Session], run_id: uuid.UUID, reviewer_model: str | None = "gpt-6-astra"
+) -> None:
+    """The builder ran on Anthropic's model; the workspace names ``reviewer_model``."""
+    with factory() as s:
+        [builder] = s.query(AgentRun).filter(AgentRun.workflow_run_id == run_id).all()
+        builder.model = "claude-opus-5-5"
+        builder.inputs = {"acceptance_criteria": [{"id": "AC-1", "text": "MARKER exists"}]}
+        if reviewer_model is not None:
+            s.add(
+                AgentRoleConfig(
+                    workspace_id=WS,
+                    role=AgentRole.REVIEWER,
+                    model_or_tier=reviewer_model,
+                    effort=Effort.HIGH,
+                )
+            )
+        s.commit()
+
+
+def _reviewer_runs(factory: sessionmaker[Session], run_id: uuid.UUID) -> list[AgentRun]:
+    with factory() as s:
+        return (
+            s.query(AgentRun)
+            .filter(AgentRun.workflow_run_id == run_id, AgentRun.role == "reviewer")
+            .all()
+        )
+
+
+def _context(factory: sessionmaker[Session], run_id: uuid.UUID) -> dict[str, Any]:
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        return dict(run.context)
+
+
+async def test_a_change_that_passes_its_checks_is_reviewed_before_its_pull_request(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], reviewer: Reviewer
+) -> None:
+    """Criteria 1, 7 and 8: a reviewer run of another family reads the diff and the
+    criteria with read-only tools; its verdict and both model ids are on the run."""
+    _, mirror = repo
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+    _configure_review(factory, run_id)
+
+    result = await _checks(factory, run_id)
+
+    assert result.results == {"marker": True, "lint": True, "independent_review": True}
+    assert result.pause_reason is None
+    assert reviewer.models == ["gpt-6-astra"]
+    [request] = reviewer.clients[0].requests
+    assert request.system is not None
+    assert "# Change under review" in request.system
+    assert "+made by the agent" in request.system and "AC-1: MARKER exists" in request.system
+    assert {t["name"] for t in request.tools} <= {"read_file", "list_dir", "search_code", "finish"}
+    [review] = _context(factory, run_id)["reviews"]
+    assert review["verdict"] == "approve" and review["truncated"] is False
+    assert (review["reviewer_model"], review["builder_model"]) == ("gpt-6-astra", "claude-opus-5-5")
+    [row] = _reviewer_runs(factory, run_id)
+    assert str(row.id) == review["agent_run_id"]
+    assert (row.model, row.output["verdict"]) == ("gpt-6-astra", "approve")
+
+
+async def test_a_request_for_changes_fails_the_checks_and_reaches_the_builder(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], reviewer: Reviewer
+) -> None:
+    """Criterion 5: the verdict routes as a failed check, and the builder's next
+    attempt gets the findings."""
+    _, mirror = repo
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+    _configure_review(factory, run_id)
+    reviewer.reply = CHANGES
+
+    result = await _checks(factory, run_id)
+
+    assert result.results["independent_review"] is False and not result.all_passed
+    [review] = _failing_checks(_context(factory, run_id), 1)
+    assert review["id"] == "independent_review"
+    assert "MARKER:1 [blocking] MARKER must name the issue" in review["output_tail"]
+
+
+async def test_without_a_reviewer_the_run_pauses_for_a_person(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], reviewer: Reviewer
+) -> None:
+    """Criterion 4: nothing is approved without a reviewer."""
+    _, mirror = repo
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+    _configure_review(factory, run_id, reviewer_model=None)
+
+    result = await _checks(factory, run_id)
+
+    assert result.pause_reason == "reviewer_not_configured"
+    assert "independent_review" not in result.results
+    assert reviewer.models == [] and _reviewer_runs(factory, run_id) == []
+    [review] = _context(factory, run_id)["reviews"]
+    assert review["refused"] == "reviewer_not_configured" and "verdict" not in review
+
+
+async def test_a_reviewer_of_the_builders_family_is_refused_before_any_model_call(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], reviewer: Reviewer
+) -> None:
+    """Criterion 3."""
+    _, mirror = repo
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+    _configure_review(factory, run_id, reviewer_model="claude-sonnet-5-5")
+
+    result = await _checks(factory, run_id)
+
+    assert result.pause_reason == "reviewer_same_family"
+    assert reviewer.models == []
+
+
+async def test_a_retried_check_attempt_reuses_its_review(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], reviewer: Reviewer
+) -> None:
+    """The reviewer's run is recorded once per attempt; it does not hide the builder's."""
+    _, mirror = repo
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+    _configure_review(factory, run_id)
+
+    first = await _checks(factory, run_id)
+    again = await _checks(factory, run_id)
+
+    assert first.results == again.results
+    assert reviewer.models == ["gpt-6-astra"]
+    assert len(_reviewer_runs(factory, run_id)) == 1

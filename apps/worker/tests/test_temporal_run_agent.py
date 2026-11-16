@@ -19,6 +19,7 @@ from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
 import scf_worker.agent_runner as agent_runner_module
+import scf_worker.temporal_services as temporal_services_module
 from scf_db.base import Base
 from scf_db.models import (
     AgentRun,
@@ -426,3 +427,18 @@ async def test_a_retry_after_no_declared_checks_is_told_so(
         row = s.get(AgentRun, result.agent_run_id)
         assert row is not None
         assert [c["id"] for c in row.inputs["context"]["failing_checks"]] == ["no_checks_declared"]
+
+
+async def test_the_builders_model_is_recorded_on_its_run(
+    factory: sessionmaker[Session], mirror: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#173: the independent reviewer is checked against the builder's model family."""
+    monkeypatch.setattr(temporal_services_module, "configured_model", lambda: "claude-opus-5-5")
+    run_id, task_id = _seed(factory)
+
+    result = await _run(factory, _input(run_id, task_id))
+
+    with factory() as s:
+        row = s.get(AgentRun, result.agent_run_id)
+        assert row is not None
+        assert (row.model, row.role) == ("claude-opus-5-5", "primary")

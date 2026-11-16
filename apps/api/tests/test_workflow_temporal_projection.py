@@ -235,6 +235,33 @@ def test_the_run_read_returns_each_recorded_check(
     assert fetched.json()["context"]["checks"] == [attempt]
 
 
+def test_the_run_read_returns_its_independent_reviews(
+    factory: sessionmaker[Session], client_as: Callable[[uuid.UUID], TestClient]
+) -> None:
+    """#173 criterion 8: the verdict, its findings and both model ids."""
+    client = client_as(WS)
+    run_id = _start(client)
+    finding = {"file": "app.py", "line": 3, "severity": "blocking", "statement": "returns None"}
+    review = {
+        "attempt": 0,
+        "verdict": "request_changes",
+        "findings": [finding],
+        "reviewer_model": "gpt-6-astra",
+        "builder_model": "claude-opus-5-5",
+        "agent_run_id": str(uuid.uuid4()),
+    }
+    with factory() as session:
+        row = session.get(DbWorkflowRun, run_id)
+        assert row is not None
+        row.context = {**row.context, "reviews": [review]}
+        session.commit()
+
+    fetched = client.get(f"/workflow/runs/{run_id}")
+
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["context"]["reviews"] == [review]
+
+
 @pytest.mark.parametrize(
     ("caller", "task_id"),
     [(WS2, TASK), (WS, uuid.UUID("00000000-0000-0000-0000-0000000001bf"))],

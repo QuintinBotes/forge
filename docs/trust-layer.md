@@ -43,6 +43,27 @@ binds every activity except `forge.resume_agent`:
   tail of at most 400 lines of each output stream), and the agent's next attempt
   sees the failing ones in its prompt, as data. The check stage's time limit is
   `CHECKS_ACTIVITY_TIMEOUT` (30 minutes by default).
+- **The independent reviewer** (#173) judges a change whose checks all pass,
+  before its pull request. It is an agent run with role `reviewer` on the
+  workflow run, with read-only tools (`read_file`, `list_dir`, `search_code`).
+  It is given the diff against the base branch and the acceptance criteria as
+  untrusted data, cut at 60,000 characters (the verdict then says `truncated`).
+  - **Its model** is the `reviewer` role's model in the workspace's or project's
+    role configuration. The built-in default and a tier name count as not
+    configured, and the provider's key comes from the worker's environment
+    (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`).
+  - **Its family** must differ from the builder's model, which the builder's run
+    records; the red-team harness uses the same family comparison
+    (`scf_agent.providers.family`).
+  - **Its verdict** is the check `independent_review`. `approve` lets the pull
+    request open and is named in its body. `request_changes` (also any output
+    that does not parse, as `unparseable_verdict`) fails the checks, so the
+    builder's next attempt sees the findings within the retry budget.
+  - **Without a usable reviewer**, the run moves to `needs_human_input` with
+    the reason: `reviewer_not_configured`, `reviewer_same_family` or
+    `reviewer_family_unknown`.
+  - **Each verdict**, its findings and both model ids are on the run's context
+    under `reviews`.
 - **The pull request** is opened once: a retry finds the one already opened. A
   branch with no commits is not delivered, and without GitHub App credentials
   the step refuses.
@@ -80,6 +101,9 @@ binds every activity except `forge.resume_agent`:
   decision; nothing retries it when CI turns green.
 - **A repository with no declared checks spends the agent's retries** before it
   pauses (#272, an owner decision).
+- **A scripted or local builder cannot be reviewed.** Its model names no
+  family the reviewer can be shown to differ from, so its runs pause with
+  `reviewer_family_unknown` once their checks pass.
 - **The checks have network on the worktree tier (#184).** Only the container
   tiers enforce the no-network sandbox; the default `worktree` tier runs the
   commands on the worker's host with its network and environment.

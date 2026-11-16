@@ -211,6 +211,25 @@ class CheckRun:
         return self.exit_code == 0 and not self.timed_out
 
 
+@contextmanager
+def detached_worktree(repo_path: Path, commit: str) -> Iterator[Path]:
+    """A fresh, detached worktree of ``commit``, removed afterwards (#172, #173).
+
+    It holds only the commit: nothing from the agent's session.
+    """
+    holder = Path(tempfile.mkdtemp(prefix="scf-checkout-"))
+    worktree = holder / "tree"
+    try:
+        _git_out(repo_path, "worktree", "add", "--detach", str(worktree), commit)
+        yield worktree
+    finally:
+        with suppress(subprocess.SubprocessError):
+            _git_out(repo_path, "worktree", "remove", "--force", str(worktree))
+        shutil.rmtree(holder, ignore_errors=True)
+        with suppress(subprocess.SubprocessError):
+            _git_out(repo_path, "worktree", "prune")
+
+
 def _tail(*streams: str) -> str:
     """The last lines of each stream, so a noisy stderr cannot push out stdout's verdict."""
     tails = ("\n".join(s.splitlines()[-CHECK_OUTPUT_TAIL_LINES:]) for s in streams if s)
@@ -238,11 +257,9 @@ def run_declared_checks(
     commands = policy.commands if policy else {}
     if not commands:
         return []
-    holder = Path(tempfile.mkdtemp(prefix="scf-checks-"))
-    worktree = holder / "tree"
-    try:
-        _git_out(repo_path, "worktree", "add", "--detach", str(worktree), commit)
-        with _sandbox_commands(
+    with (
+        detached_worktree(repo_path, commit) as worktree,
+        _sandbox_commands(
             worktree,
             policy,
             run_id=run_id,
@@ -253,28 +270,23 @@ def run_declared_checks(
                 update={"output_cap_bytes": sys.maxsize}
             ),
             network=SandboxNetwork.NONE,
-        ) as run_command:
-            runs: list[CheckRun] = []
-            for name, command in commands.items():
-                started_at = datetime.now(UTC)
-                output = run_command(command)
-                runs.append(
-                    CheckRun(
-                        id=name,
-                        exit_code=output.exit_code,
-                        timed_out=output.timed_out,
-                        started_at=started_at,
-                        duration_ms=output.duration_ms,
-                        output_tail=_tail(output.stdout, output.stderr),
-                    )
+        ) as run_command,
+    ):
+        runs: list[CheckRun] = []
+        for name, command in commands.items():
+            started_at = datetime.now(UTC)
+            output = run_command(command)
+            runs.append(
+                CheckRun(
+                    id=name,
+                    exit_code=output.exit_code,
+                    timed_out=output.timed_out,
+                    started_at=started_at,
+                    duration_ms=output.duration_ms,
+                    output_tail=_tail(output.stdout, output.stderr),
                 )
-            return runs
-    finally:
-        with suppress(subprocess.SubprocessError):
-            _git_out(repo_path, "worktree", "remove", "--force", str(worktree))
-        shutil.rmtree(holder, ignore_errors=True)
-        with suppress(subprocess.SubprocessError):
-            _git_out(repo_path, "worktree", "prune")
+            )
+        return runs
 
 
 __all__ = [
@@ -282,6 +294,7 @@ __all__ = [
     "NO_DECLARED_CHECKS",
     "CheckRun",
     "RunWorkspace",
+    "detached_worktree",
     "prepared_workspace",
     "remove_run_worktrees",
     "run_branch",
