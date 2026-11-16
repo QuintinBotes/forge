@@ -18,6 +18,7 @@ import uuid
 import pytest
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, configure_mappers
 
 import scf_db.models as models
@@ -392,3 +393,39 @@ def test_apikey_repr_redacts_secret() -> None:
     rendered = repr(key)
     assert "super-secret-ciphertext" not in rendered
     assert "ciphertext" not in rendered
+
+
+@pytest.mark.parametrize("first_status", ["pending", "running", "escalated"])
+def test_a_task_cannot_have_two_non_terminal_temporal_runs(sqlite_engine, first_status) -> None:
+    with Session(sqlite_engine) as session:
+        ws = Workspace(name="Acme", slug="acme")
+        session.add(ws)
+        session.flush()
+        project = models.Project(workspace_id=ws.id, name="Core", key="CORE")
+        session.add(project)
+        session.flush()
+        task = models.Task(workspace_id=ws.id, project_id=project.id, key="CORE-1", title="T")
+        session.add(task)
+        session.flush()
+
+        def _run(run_status: str, backend: str = "temporal") -> models.WorkflowRun:
+            return models.WorkflowRun(
+                workspace_id=ws.id, task_id=task.id, status=run_status, engine_backend=backend
+            )
+
+        # Finished runs sit beside one active run; V1 (postgres_fsm) runs are not counted.
+        session.add_all(
+            [
+                _run("succeeded"),
+                _run("failed"),
+                _run("cancelled"),
+                _run(first_status),
+                _run("running", "postgres_fsm"),
+                _run("running", "postgres_fsm"),
+            ]
+        )
+        session.flush()
+
+        session.add(_run("running"))
+        with pytest.raises(IntegrityError):
+            session.flush()

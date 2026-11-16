@@ -40,14 +40,27 @@ if TYPE_CHECKING:
     from scf_db.models.sandbox import SandboxInstance
 
 
+#: Predicate of ``uq_workflow_run_active_task``: a Temporal run that is not terminal.
+_ACTIVE_TEMPORAL_RUN = (
+    "engine_backend = 'temporal' AND status NOT IN ('succeeded', 'failed', 'cancelled')"
+)
+
+
 class WorkflowRun(WorkspaceScopedModel):
     """A durable FSM run for a task (spec: Default Feature Workflow States).
 
     F25 adds three engine-attribution columns so a run can be driven either by
     the V1 Postgres FSM or the V2 Temporal durable workflow engine. The Temporal
     engine writes ``temporal_workflow_id = wf-<run_id>``; a partial-unique index
-    on it (where not null) gives the same single-active-run guarantee the FSM
-    enforces, complementing Temporal's ``WorkflowIdReusePolicy.REJECT_DUPLICATE``.
+    on it (where not null) keeps one row per Temporal workflow. That id is fresh
+    for every run, so it does not limit how many runs a task has.
+
+    The single-active-run guarantee is ``uq_workflow_run_active_task`` (#235): a
+    partial-unique index on ``task_id`` over Temporal rows whose ``status`` is not
+    terminal (``succeeded``, ``failed``, ``cancelled``), so the database refuses a
+    second pending, running or escalated Temporal run for a task. With Temporal's
+    ``REJECT_DUPLICATE`` on ``wf-<run_id>``, a task has at most one live workflow.
+    V1 runs are outside the index: the FSM does not limit runs per task.
     """
 
     __tablename__ = "workflow_run"
@@ -59,6 +72,13 @@ class WorkflowRun(WorkspaceScopedModel):
             unique=True,
             postgresql_where=text("temporal_workflow_id IS NOT NULL"),
             sqlite_where=text("temporal_workflow_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_workflow_run_active_task",
+            "task_id",
+            unique=True,
+            postgresql_where=text(_ACTIVE_TEMPORAL_RUN),
+            sqlite_where=text(_ACTIVE_TEMPORAL_RUN),
         ),
     )
 

@@ -47,6 +47,7 @@ _TABLE = "workflow_run"
 _CHECK_NAME = "ck_workflow_run_engine_backend"
 _LOOKUP_INDEX = "ix_workflow_run_temporal_wfid"
 _UNIQUE_INDEX = "uq_workflow_run_temporal_workflow_id"
+_ACTIVE_TASK_INDEX = "uq_workflow_run_active_task"
 _PARTIAL_WHERE = "temporal_workflow_id IS NOT NULL"
 _COLUMNS = ("temporal_run_id", "temporal_workflow_id", "engine_backend")
 
@@ -115,6 +116,10 @@ def downgrade() -> None:
         op.drop_index(_UNIQUE_INDEX, table_name=_TABLE)
     if _LOOKUP_INDEX in indexes:
         op.drop_index(_LOOKUP_INDEX, table_name=_TABLE)
+    # 0047's index reads engine_backend, and the metadata-driven baseline provisions
+    # it on a fresh chain; SQLite cannot drop a column an index still reads.
+    if _ACTIVE_TASK_INDEX in indexes:
+        op.drop_index(_ACTIVE_TASK_INDEX, table_name=_TABLE)
 
     columns = _existing_columns()
     for name in _COLUMNS:

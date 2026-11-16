@@ -15,7 +15,7 @@ import uuid
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from scf_contracts import ExecutionMode, RunStatus, WorkflowRun
-from scf_workflow.exceptions import WorkflowRunNotFoundError
+from scf_workflow.exceptions import DuplicateRunError, WorkflowRunNotFoundError
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -117,6 +117,8 @@ class SqlAlchemyWorkflowStore:
         )
 
     def create(self, run: WorkflowRun) -> WorkflowRun:
+        from sqlalchemy.exc import IntegrityError
+
         from scf_db.models.enums import EngineBackend as DbEngineBackend
         from scf_db.models.enums import ExecutionMode as DbExecutionMode
         from scf_db.models.enums import RunStatus as DbRunStatus
@@ -143,7 +145,16 @@ class SqlAlchemyWorkflowStore:
         if run.id is not None:
             model.id = run.id
         self._session.add(model)
-        self._session.flush()
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            if engine_backend != "temporal" or run.task_id is None:
+                raise
+            self._session.rollback()
+            # ``uq_workflow_run_active_task``: a concurrent start already holds the task.
+            if self.find_active_by_task(run.task_id) is not None:
+                raise DuplicateRunError(run.task_id) from exc
+            raise
         return self._to_dto(model)
 
     @staticmethod
