@@ -259,6 +259,15 @@ class FeatureWorkflow:
             # executing → verifying
             checks = await self._run_checks(retries_done)
             self._last_checks = checks.results
+            if checks.pause_reason:
+                # #173: the change passed its checks but cannot be reviewed without a
+                # person (no independent reviewer, or one of the builder's family).
+                await self._advance(
+                    "low_confidence", confidence=0.0, payload={"reason": checks.pause_reason}
+                )
+                await self._notify("pause_and_notify", checks.pause_reason)
+                self._failure_reason = checks.pause_reason
+                return
             await self._advance("run_checks")
 
             if checks.all_passed:

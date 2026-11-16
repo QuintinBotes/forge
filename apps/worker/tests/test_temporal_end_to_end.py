@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session, sessionmaker
 import scf_api.db
 import scf_worker.agent_runner as agent_runner_module
 import scf_worker.temporal_main as tm
+import scf_worker.temporal_services as temporal_services_module
 from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
 from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from scf_api.services.approval_service import build_gate_registry
@@ -43,10 +44,12 @@ from scf_approval.models import (
     Role,
 )
 from scf_approval.providers import InMemoryGrantStore
+from scf_contracts.orchestration_config import AgentRole, Effort
 from scf_db.base import Base
 from scf_db.models import Attestation, Project, RepositoryConnection, Task, Workspace
+from scf_db.models.role_config import AgentRoleConfig
 from scf_worker.finalizer import GitHubAppCredentials
-from scf_worker.temporal_services import open_pr_service
+from scf_worker.temporal_services import open_pr_service, run_checks_service
 from scf_workflow.store import SqlAlchemyWorkflowStore
 from scf_workflow.temporal.engine import TemporalWorkflowEngine
 from scf_workflow.temporal.worker import build_temporal_worker
@@ -201,10 +204,33 @@ def github(remotes: Path, monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     return fake
 
 
+@pytest.fixture
+def independent_reviewer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The builder runs on Anthropic's model; the reviewer, of OpenAI's family, approves."""
+    monkeypatch.setattr(temporal_services_module, "configured_model", lambda: "claude-opus-5-5")
+
+    def reviewer(_model: str) -> ScriptedModelClient:
+        return ScriptedModelClient(
+            [finish_response('{"verdict": "approve", "findings": []}', confidence=0.9)]
+        )
+
+    monkeypatch.setattr(
+        tm, "run_checks_service", functools.partial(run_checks_service, reviewer=reviewer)
+    )
+
+
 def _seed(factory: sessionmaker[Session]) -> uuid.UUID:
     with factory() as s:
         s.add(Workspace(id=WS, name="Acme", slug="acme"))
         s.add(RepositoryConnection(workspace_id=WS, repo_id=REPO, name=REPO))
+        s.add(
+            AgentRoleConfig(
+                workspace_id=WS,
+                role=AgentRole.REVIEWER,
+                model_or_tier="gpt-6-astra",
+                effort=Effort.HIGH,
+            )
+        )
         s.flush()
         project = Project(workspace_id=WS, name="Core", key="CORE")
         s.add(project)
@@ -270,6 +296,7 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
     remotes: Path,
     github: FakeGitHub,
     committing_agent: None,
+    independent_reviewer: None,
 ) -> None:
     """Criteria 2 and 3: start to ``awaiting_review`` with one pull request and one
     pending ``pr`` request; approving it attests at once, and the run is synced to
@@ -314,6 +341,11 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
             # Criterion 2: one pull request, one pending pr request, the run at its gate.
             assert len(github.created) == 1
             assert github.created[0]["head"].startswith("scf/")
+            # #173: an independent reviewer of another family approved it first.
+            assert (
+                "Independent review: `approve` by `gpt-6-astra`; the builder ran on "
+                "`claude-opus-5-5`." in github.created[0]["body"]
+            )
             [pr] = await _pending(factory, GateType.PR)
             assert pr.workflow_run_id == run.id
             with factory() as fresh:

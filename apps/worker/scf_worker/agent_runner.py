@@ -143,6 +143,12 @@ def _run_token_budget() -> int:
     return int(raw) if raw else DEFAULT_RUN_TOKEN_BUDGET
 
 
+def configured_model() -> str | None:
+    """The model the environment names for agent runs; ``None`` when none is (#173)."""
+    config = ModelClientConfig.from_env()
+    return config.model if config is not None else None
+
+
 def _scripted_agent_allowed() -> bool:
     """``FORGE_ALLOW_SCRIPTED_AGENT`` — the same opt-in the API's agent router honours."""
     return os.environ.get("FORGE_ALLOW_SCRIPTED_AGENT", "").strip().lower() in {

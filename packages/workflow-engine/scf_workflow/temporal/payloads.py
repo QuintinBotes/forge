@@ -186,6 +186,9 @@ class RunChecksInput:
 @dataclass
 class ChecksResult:
     results: dict[str, bool] = field(default_factory=dict)
+    #: Set when the change cannot be judged without a person, such as
+    #: ``reviewer_not_configured`` (#173). Absent from older histories.
+    pause_reason: str | None = None
 
     @property
     def all_passed(self) -> bool:
