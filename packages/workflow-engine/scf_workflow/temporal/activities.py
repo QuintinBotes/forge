@@ -65,6 +65,8 @@ AGENT_HEARTBEAT_EVERY = 30.0
 #: the short services (persist, guards, approvals) keep the loop's default one. Sized
 #: to Temporal's default of 100 concurrent activities per worker.
 _AGENT_THREADS = ThreadPoolExecutor(max_workers=100, thread_name_prefix="scf-agent")
+#: Declared checks run whole test suites, so they too stay off the short services' pool.
+_CHECK_THREADS = ThreadPoolExecutor(max_workers=100, thread_name_prefix="scf-checks")
 
 _SUCCESS_STATES = {WorkflowState.MERGED.value, WorkflowState.CLOSED.value}
 _STATUS_BY_STATE = {
@@ -314,7 +316,9 @@ class WorkflowActivities:
 
     @activity.defn(name="forge.run_checks")
     async def run_checks(self, inp: RunChecksInput) -> ChecksResult:
-        return await _heartbeating(self._run_checks_fn, inp, {"phase": "checks"})
+        return await _heartbeating(
+            self._run_checks_fn, inp, {"phase": "checks"}, executor=_CHECK_THREADS
+        )
 
     @activity.defn(name="forge.open_pr_with_spec_traceability")
     async def open_pr_with_spec_traceability(self, inp: OpenPrInput) -> OpenPrResult:

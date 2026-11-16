@@ -33,6 +33,7 @@ from scf_worker.approval_activity import make_create_approval_fn
 from scf_worker.dispatch import RepositoryUnavailable, objective_for_task, resolve_run_repository
 from scf_worker.review_rules import default_branch_policy
 from scf_worker.run_events import RunEventSink
+from scf_worker.run_workspace import run_declared_checks
 from scf_workflow.red_team_gate import ensure_red_team_verdict
 from scf_workflow.temporal.activities import (
     ApprovalFn,
@@ -40,16 +41,19 @@ from scf_workflow.temporal.activities import (
     NotifyFn,
     RedTeamFn,
     RunAgentFn,
+    RunChecksFn,
 )
 from scf_workflow.temporal.payloads import (
     AgentRunResultDTO,
     ApprovalInput,
+    ChecksResult,
     GuardInputs,
     GuardInputsRequest,
     NotifyInput,
     RedTeamInput,
     RedTeamResult,
     RunAgentInput,
+    RunChecksInput,
 )
 
 __all__ = [
@@ -58,6 +62,7 @@ __all__ = [
     "guard_inputs_service",
     "notify_service",
     "red_team_service",
+    "run_checks_service",
 ]
 
 #: The run-context key naming the optional preconditions a workspace has not configured.
@@ -323,3 +328,56 @@ def notify_service(factory: sessionmaker[Session]) -> NotifyFn:
         )
 
     return notify
+
+
+def _latest_agent_run(
+    session: Session, workflow_run_id: uuid.UUID, workspace_id: uuid.UUID
+) -> AgentRun | None:
+    return session.scalars(
+        select(AgentRun)
+        .where(AgentRun.workflow_run_id == workflow_run_id, AgentRun.workspace_id == workspace_id)
+        .order_by(AgentRun.created_at.desc())
+        .limit(1)
+    ).first()
+
+
+def run_checks_service(factory: sessionmaker[Session]) -> RunChecksFn:
+    """Run the repository's declared checks on the agent's commit (#251).
+
+    The commit is the head the latest agent run recorded, so a retry checks the same
+    code even if the run branch moved. The commands come from the default branch's
+    ``.forge/policy.yaml``, as the pull-request gate's review rules do, so an agent
+    cannot change its own checks. A repository that declares none fails.
+    """
+
+    def run(inp: RunChecksInput) -> ChecksResult:
+        with factory() as session:
+            workflow_run = _owned_run(session, inp.workflow_run_id, inp.workspace_id)
+            agent_run = _latest_agent_run(session, inp.workflow_run_id, inp.workspace_id)
+            artifacts = ((agent_run.output or {}).get("artifacts") or {}) if agent_run else {}
+            head = artifacts.get("head_commit")
+            task = session.get(Task, workflow_run.task_id)
+            targets = task.repo_targets if task is not None else []
+        if agent_run is None or not head:
+            raise ApplicationError(
+                f"workflow run {inp.workflow_run_id} has no agent run with a commit to check",
+                type="AgentRunNotFound",
+                non_retryable=True,
+            )
+        target = AgentObjective(objective="checks", repo_targets=targets).primary_repo_target
+        assert target is not None  # the agent run resolved this repository
+        objective = AgentObjective(
+            objective="checks",
+            context={"repo_full_name": target.repo, "workspace_id": str(inp.workspace_id)},
+        )
+        mirror = Path(str(resolve_run_repository(objective).context["repo_path"]))
+        try:
+            policy = default_branch_policy(mirror)
+        except (ValueError, yaml.YAMLError):
+            policy = None  # an unreadable policy declares no command: the checks fail
+        results = run_declared_checks(
+            mirror, str(head), policy, run_id=agent_run.id, workspace_id=inp.workspace_id
+        )
+        return ChecksResult(results=results)
+
+    return run
