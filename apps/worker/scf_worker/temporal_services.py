@@ -43,7 +43,7 @@ from scf_worker.dispatch import (
 from scf_worker.finalizer import GitHubAppCredentials, Pusher, git_push, push_and_open_pr
 from scf_worker.review_rules import default_branch_policy
 from scf_worker.run_events import RunEventSink
-from scf_worker.run_workspace import run_declared_checks
+from scf_worker.run_workspace import NO_DECLARED_CHECKS, CheckRun, run_declared_checks
 from scf_workflow.red_team_gate import ensure_red_team_verdict
 from scf_workflow.temporal.activities import (
     ApprovalFn,
@@ -305,6 +305,10 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
                     }
                 )
             objective.context["workflow_run_id"] = str(inp.workflow_run_id)
+            failing = _failing_checks(workflow_run.context, inp.attempt)
+            if failing:
+                # The builder's next attempt sees what failed last time (#172).
+                objective.context["failing_checks"] = failing
             session.add(
                 AgentRun(
                     id=agent_run_id,
@@ -417,12 +421,69 @@ def run_checks_service(factory: sessionmaker[Session]) -> RunChecksFn:
             policy = default_branch_policy(mirror)
         except (ValueError, yaml.YAMLError):
             policy = None  # an unreadable policy declares no command: the checks fail
-        results = run_declared_checks(
+        runs = run_declared_checks(
             mirror, str(head), policy, run_id=agent_run.id, workspace_id=inp.workspace_id
         )
-        return ChecksResult(results=results)
+        _record_checks(factory, inp, head=str(head), runs=runs)
+        if not runs:
+            return ChecksResult(results=dict(NO_DECLARED_CHECKS))
+        return ChecksResult(results={run.id: run.passed for run in runs})
 
     return run
+
+
+#: The run-context key holding each check attempt's evidence (#172).
+CHECKS_KEY = "checks"
+
+
+def _record_checks(
+    factory: sessionmaker[Session], inp: RunChecksInput, *, head: str, runs: list[CheckRun]
+) -> None:
+    """Record one check attempt on the workflow run, replacing a retry of the same one.
+
+    Each check keeps its command id, exit status, start time, duration and a redacted
+    tail of its output; the attempt keeps the commit it checked. ``GET
+    /workflow/runs/{id}`` returns them with the run's context.
+    """
+    attempt = {
+        "attempt": inp.attempt,
+        "head_commit": head,
+        "no_checks_declared": not runs,
+        "checks": [
+            {
+                "id": run.id,
+                "exit_code": run.exit_code,
+                "timed_out": run.timed_out,
+                "passed": run.passed,
+                "started_at": run.started_at.isoformat(),
+                "duration_ms": run.duration_ms,
+                "output_tail": redact_text(run.output_tail),
+            }
+            for run in runs
+        ],
+    }
+    with factory() as session:
+        workflow_run = _owned_run(session, inp.workflow_run_id, inp.workspace_id)
+        earlier = [
+            a for a in workflow_run.context.get(CHECKS_KEY, []) if a.get("attempt") != inp.attempt
+        ]
+        workflow_run.context = {**workflow_run.context, CHECKS_KEY: [*earlier, attempt]}
+        session.commit()
+
+
+def _failing_checks(context: dict[str, Any], before_attempt: int) -> list[dict[str, Any]]:
+    """The checks that failed in the attempt just before ``before_attempt`` (#172)."""
+    attempts = [a for a in context.get(CHECKS_KEY, []) if a.get("attempt", 0) < before_attempt]
+    if not attempts:
+        return []
+    last = max(attempts, key=lambda a: a.get("attempt", 0))
+    if last.get("no_checks_declared"):
+        return [{"id": "no_checks_declared", "exit_code": None, "output_tail": ""}]
+    return [
+        {"id": c["id"], "exit_code": c["exit_code"], "output_tail": c["output_tail"]}
+        for c in last.get("checks", [])
+        if not c.get("passed")
+    ]
 
 
 def open_pr_service(

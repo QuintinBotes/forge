@@ -36,8 +36,12 @@ binds every activity except `forge.resume_agent`:
 - **The agent** runs the task's objective in a per-run worktree, on one
   `agent_run` row per attempt, and records the run branch and its head commit.
 - **The checks** run the repository's declared `policy.commands`, from the
-  default branch, in a sandbox on a fresh worktree of that head commit. A
-  repository that declares none fails with `no_checks_declared`.
+  default branch, in a sandbox with no network on a fresh worktree of that head
+  commit. A repository that declares none fails with `no_checks_declared`. Each
+  check is recorded on the run's context under `checks` (command id, exit
+  status, commit, start time, duration and a redacted tail of at most 400 lines
+  of output), and the agent's next attempt gets the failing ones. The check
+  stage's time limit is `CHECKS_ACTIVITY_TIMEOUT` (30 minutes by default).
 - **The pull request** is opened once: a retry finds the one already opened. A
   branch with no commits is not delivered, and without GitHub App credentials
   the step refuses.
@@ -64,9 +68,8 @@ binds every activity except `forge.resume_agent`:
 
 ### Current limitations
 
-- **CI is not read back (#172).** The merge guard's `ci_status_green` comes from
-  the `pr` request's payload, which nothing fills yet; check suites longer than
-  the activity's 120 s timeout cannot pass.
+- **CI is not read back (#280).** The merge guard's `ci_status_green` comes from
+  the `pr` request's payload, which nothing fills yet.
 - **The red-team scan is parked (#174)**, as described under
   [Red-Team Gate](#red-team-gate).
 - **The pull request carries no attestation (#175).** The attestation is made

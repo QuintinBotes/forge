@@ -51,6 +51,8 @@ class TemporalSettings(BaseSettings):
 
     temporal_workflow_exec_timeout: int = 2_592_000  # 30d
     agent_activity_timeout: int = 7_200  # 2h
+    #: Seconds a run's declared checks may take (a whole test suite, #172).
+    checks_activity_timeout: int = 1_800  # 30 min
     temporal_retention_days: int = 30
 
     @property

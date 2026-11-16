@@ -192,6 +192,39 @@ async def test_the_agent_runs_the_objective_kept_on_the_run(
         assert context["repo_full_name"] == REPO
 
 
+async def test_the_next_attempt_sees_the_checks_that_failed(
+    factory: sessionmaker[Session], mirror: Path
+) -> None:
+    """#172 criterion 5: the builder's next attempt gets the failing command ids and
+    their output tails in its objective context."""
+    run_id, task_id = _seed(factory)
+    failed = {
+        "attempt": 0,
+        "head_commit": "abc",
+        "no_checks_declared": False,
+        "checks": [
+            {"id": "tests", "exit_code": 1, "passed": False, "output_tail": "E assert 1 == 2"},
+            {"id": "lint", "exit_code": 0, "passed": True, "output_tail": ""},
+        ],
+    }
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        run.context = {**run.context, "checks": [failed]}
+        s.commit()
+
+    result = await _run(
+        factory, RunAgentInput(run_id, task_id, WS, attempt=1, idempotency_key="k-1")
+    )
+
+    with factory() as s:
+        row = s.get(AgentRun, result.agent_run_id)
+        assert row is not None
+        assert row.inputs["context"]["failing_checks"] == [
+            {"id": "tests", "exit_code": 1, "output_tail": "E assert 1 == 2"}
+        ]
+
+
 async def test_a_repeated_idempotency_key_finds_the_same_agent_run(
     factory: sessionmaker[Session], mirror: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

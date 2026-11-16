@@ -68,7 +68,6 @@ _DEFINITIONS = {default_feature_definition().name: default_feature_definition()}
 # Activity-call timeouts (deterministic constants).
 _PERSIST_TIMEOUT = timedelta(seconds=30)
 _GUARD_TIMEOUT = timedelta(seconds=30)
-_CHECKS_TIMEOUT = timedelta(seconds=120)
 _PR_TIMEOUT = timedelta(seconds=120)
 _NOTIFY_TIMEOUT = timedelta(seconds=30)
 _APPROVAL_TIMEOUT = timedelta(seconds=30)
@@ -591,7 +590,10 @@ class FeatureWorkflow:
                 attempt=attempt,
                 idempotency_key=f"{self._params.workflow_run_id}:run_checks:{attempt}",
             ),
-            start_to_close_timeout=_CHECKS_TIMEOUT,
+            # A whole test suite: the limit is configured (#172), and the activity
+            # heartbeats so a lost worker is noticed long before it.
+            start_to_close_timeout=timedelta(seconds=self._params.checks_timeout_seconds),
+            heartbeat_timeout=_AGENT_HEARTBEAT,
             retry_policy=_THRICE,
             result_type=ChecksResult,
         )

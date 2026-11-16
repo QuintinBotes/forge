@@ -298,3 +298,37 @@ async def test_a_run_started_for_someone_names_them_once_and_waits_at_the_spec_g
         assert all(t["actor"] != "github:octocat" for t in transitions[1:])
         assert h.engine.get_run(run.id).current_state == "spec_review"
         assert agent_calls == [], "no agent before a person decides the spec gate"
+
+
+async def test_the_check_activity_takes_its_configured_limit_and_heartbeats(
+    harness: Any,
+) -> None:
+    """#172 criterion 8: a whole test suite needs more than two minutes; the limit is
+    configured (30 minutes by default) and the activity heartbeats."""
+    from scf_workflow.temporal.config import TemporalSettings
+    from scf_workflow.temporal.engine import TemporalWorkflowEngine
+
+    assert TemporalSettings().checks_activity_timeout >= 1800
+    h = harness()
+    engine = TemporalWorkflowEngine(
+        workspace_id=h.workspace_id,
+        store=h.store,
+        client=h.env.client,
+        task_queue=h.engine._task_queue,
+        checks_timeout_seconds=2400,
+    )
+    async with h.worker():
+        run = await engine.astart(uuid.uuid4())
+        await h.wait_awaiting(run, {"spec_approved_by_human"})
+        await engine.atransition(run.id, "spec_approved_by_human")
+        await h.wait_awaiting(run, {"review_approved_by_human"})
+        history = await engine.workflow_handle(run.id).fetch_history()  # type: ignore[union-attr]
+
+    [scheduled] = [
+        e.activity_task_scheduled_event_attributes
+        for e in history.events
+        if e.HasField("activity_task_scheduled_event_attributes")
+        and e.activity_task_scheduled_event_attributes.activity_type.name == "forge.run_checks"
+    ]
+    assert scheduled.start_to_close_timeout.seconds == 2400
+    assert scheduled.heartbeat_timeout.seconds > 0

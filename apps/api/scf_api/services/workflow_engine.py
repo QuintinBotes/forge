@@ -93,6 +93,7 @@ def select_workflow_engine(
         client_factory=lambda: get_temporal_client(settings),
         task_queue=settings.temporal_task_queue,
         commit=session.commit,
+        checks_timeout_seconds=settings.checks_activity_timeout,
     )
 
 

@@ -23,6 +23,7 @@ import uuid
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -34,7 +35,7 @@ from scf_agent.sandbox import (
 )
 from scf_agent.sandbox.settings import SandboxSettings
 from scf_agent.tools import ToolRegistry, agent_tool_belt
-from scf_contracts import AgentObjective, CommandOutput, Policy, SandboxSession
+from scf_contracts import AgentObjective, CommandOutput, Policy, SandboxNetwork, SandboxSession
 from scf_policy.loader import load_policy
 
 
@@ -145,6 +146,7 @@ def _sandbox_commands(
     run_id: uuid.UUID,
     workspace_id: uuid.UUID,
     settings: SandboxSettings | None,
+    network: SandboxNetwork | None = None,
 ) -> Iterator[Callable[[str], CommandOutput]]:
     """One sandbox session over ``worktree`` for the whole block, as a command runner.
 
@@ -162,17 +164,18 @@ def _sandbox_commands(
             workspace_id=workspace_id,
             host_worktree_path=str(worktree),
         )
+        if network is not None:  # the caller's posture wins over the policy's (checks: none)
+            spec = spec.model_copy(update={"network": network})
         provider = build_sandbox_provider(resolved_settings.model_copy(update={"kind": spec.kind}))
         loop.run_until_complete(provider.preflight())
         # The provider union widens the coroutine's result; every provider returns a session.
         live_session = cast(SandboxSession, loop.run_until_complete(provider.create(spec)))
         session = live_session
+        exec_timeout = spec.exec_timeout_seconds
 
         def run_command(command: str) -> CommandOutput:
             return loop.run_until_complete(
-                live_session.run(
-                    command, cwd=live_session.workspace_dir, timeout_s=spec.exec_timeout_seconds
-                )
+                live_session.run(command, cwd=live_session.workspace_dir, timeout_s=exec_timeout)
             )
 
         yield run_command
@@ -187,6 +190,25 @@ def _sandbox_commands(
 #: reason (spec 001, verification scenario 3), never an empty pass.
 NO_DECLARED_CHECKS = {"no_checks_declared": False}
 
+#: The most output a recorded check keeps: its last lines (#172).
+CHECK_OUTPUT_TAIL_LINES = 400
+
+
+@dataclass(frozen=True)
+class CheckRun:
+    """One declared command's run on the checked commit."""
+
+    id: str
+    exit_code: int
+    timed_out: bool
+    started_at: datetime
+    duration_ms: int
+    output_tail: str
+
+    @property
+    def passed(self) -> bool:
+        return self.exit_code == 0 and not self.timed_out
+
 
 def run_declared_checks(
     repo_path: Path,
@@ -196,27 +218,45 @@ def run_declared_checks(
     run_id: uuid.UUID,
     workspace_id: uuid.UUID,
     settings: SandboxSettings | None = None,
-) -> dict[str, bool]:
+) -> list[CheckRun]:
     """Run ``policy.commands`` in a sandbox on a fresh, detached worktree of ``commit``.
 
-    One result per command, ``True`` when it exited 0 within its time limit. The
-    worktree is removed afterwards, so running again checks the same commit afresh.
+    One run per command, passing when it exited 0 within its time limit. The sandbox
+    has no network, whatever the policy asks for, and the worktree holds only the
+    commit (nothing from the agent's session); it is removed afterwards, so running
+    again checks the same commit afresh. No declared command returns no runs.
     """
     commands = policy.commands if policy else {}
     if not commands:
-        return dict(NO_DECLARED_CHECKS)
+        return []
     holder = Path(tempfile.mkdtemp(prefix="scf-checks-"))
     worktree = holder / "tree"
     try:
         _git_out(repo_path, "worktree", "add", "--detach", str(worktree), commit)
         with _sandbox_commands(
-            worktree, policy, run_id=run_id, workspace_id=workspace_id, settings=settings
+            worktree,
+            policy,
+            run_id=run_id,
+            workspace_id=workspace_id,
+            settings=settings,
+            network=SandboxNetwork.NONE,
         ) as run_command:
-            results: dict[str, bool] = {}
+            runs: list[CheckRun] = []
             for name, command in commands.items():
+                started_at = datetime.now(UTC)
                 output = run_command(command)
-                results[name] = output.exit_code == 0 and not output.timed_out
-            return results
+                text = "\n".join(part for part in (output.stdout, output.stderr) if part)
+                runs.append(
+                    CheckRun(
+                        id=name,
+                        exit_code=output.exit_code,
+                        timed_out=output.timed_out,
+                        started_at=started_at,
+                        duration_ms=output.duration_ms,
+                        output_tail="\n".join(text.splitlines()[-CHECK_OUTPUT_TAIL_LINES:]),
+                    )
+                )
+            return runs
     finally:
         with suppress(subprocess.SubprocessError):
             _git_out(repo_path, "worktree", "remove", "--force", str(worktree))
@@ -226,7 +266,9 @@ def run_declared_checks(
 
 
 __all__ = [
+    "CHECK_OUTPUT_TAIL_LINES",
     "NO_DECLARED_CHECKS",
+    "CheckRun",
     "RunWorkspace",
     "prepared_workspace",
     "remove_run_worktrees",

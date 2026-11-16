@@ -88,8 +88,10 @@ class TemporalWorkflowEngine:
         definitions: list[WorkflowDefinition] | None = None,
         runner: Callable[[Awaitable[Any]], Any] | None = None,
         commit: Callable[[], None] | None = None,
+        checks_timeout_seconds: int = 1_800,
     ) -> None:
         self._workspace_id = workspace_id
+        self._checks_timeout_seconds = checks_timeout_seconds
         self._store: WorkflowStore = store or InMemoryWorkflowStore()
         #: Commits the store's transaction (the API passes ``session.commit``).
         self._commit = commit or (lambda: None)
@@ -190,6 +192,7 @@ class TemporalWorkflowEngine:
             retry_policy=self._retry_policy(definition_name),
             escalation_policy=self._escalation_policy(definition_name),
             started_by=started_by,
+            checks_timeout_seconds=self._checks_timeout_seconds,
         )
         try:
             handle = await client.start_workflow(
