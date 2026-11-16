@@ -113,6 +113,35 @@ binds every activity except `forge.resume_agent`:
 - **The checks have network on the worktree tier (#184).** Only the container
   tiers enforce the no-network sandbox; the default `worktree` tier runs the
   commands on the worker's host with its network and environment.
+- **Held-out scenarios are stored but not run yet (#286).** See below.
+
+### Held-out acceptance scenarios (#176)
+
+A task can carry executable acceptance scenarios that the builder never sees:
+files to overlay on the change's checkout and a command to run there. They are
+stored in `held_out_scenario` (migration `0049`). No agent-facing surface reads
+that table: not the context assembler, the MCP tools, the agent-run routes or
+the builder's objective.
+
+- **Who may manage them:** `POST`, `GET` and `DELETE
+  /tasks/{task_id}/held-out-scenarios` need write access, so a reader gets `403`
+  and a task in another workspace reads as `404`.
+- **Drafts:** a scenario is created as a draft, recording the identity that
+  drafted it. A file path that could leave the checkout is refused with `422`:
+  an absolute path, a `..` segment, or a `.git` segment.
+- **Approval:** `POST .../{id}/approve` is a person's decision, recorded with who
+  and when. A credential that is not a person (an agent, or an API key that does
+  not decide approvals) is refused, and so is the user who drafted the scenario,
+  through any credential.
+- **Audit:** creating, approving and deleting a scenario are chained into the
+  audit log with who did it, never the files or the command.
+- **Who drafts them:** per the owner decision of 2026-11-15 (spec FR-022), a
+  verifier agent on another model family drafts scenarios from the spec, and a
+  person approves them at the spec gate. That agent and that step are a
+  follow-up.
+- **Running them (#286):** running the approved scenarios against the change
+  after the checks pass, and returning only a count of failures to the builder,
+  is still to come.
 
 ---
 

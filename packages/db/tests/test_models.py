@@ -187,6 +187,8 @@ EXPECTED_MODELS = [
     "RedTeamRecord",
     # #175: the deployment's stored attestation signing key (one row).
     "AttestationSigningKey",
+    # #176: held-out acceptance scenarios, read by no agent-facing surface.
+    "HeldOutScenario",
     # J retrieval (ADR-0017): incrementally maintained BM25 corpus statistics —
     # per-workspace document frequencies + per-workspace corpus totals.
     "RetrievalTermStat",
