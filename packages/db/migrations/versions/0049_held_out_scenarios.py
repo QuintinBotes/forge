@@ -12,7 +12,7 @@ Revises: 0048_attestation_signing_key
 Create Date: 2026-11-16
 """
 
-from __future import annotations
+from __future__ import annotations
 
 from collections.abc import Sequence
 

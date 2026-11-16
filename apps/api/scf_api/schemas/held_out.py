@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 __all__ = ["HeldOutScenarioCreate", "HeldOutScenarioOut", "ScenarioFile"]
 
@@ -38,6 +38,18 @@ class HeldOutScenarioCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     files: list[ScenarioFile] = Field(min_length=1)
     command: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _one_content_per_path(self) -> HeldOutScenarioCreate:
+        """Two files may not name one checkout path, however it is spelled."""
+        seen = set()
+        for file in self.files:
+            parts = [p for p in file.path.replace("\\", "/").split("/") if p not in {"", "."}]
+            key = "/".join(parts)
+            if key in seen:
+                raise ValueError(f"two files name the path {key}")
+            seen.add(key)
+        return self
 
 
 class HeldOutScenarioOut(BaseModel):

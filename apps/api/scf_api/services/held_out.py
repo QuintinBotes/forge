@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from scf_api.deps import Principal
 from scf_api.schemas.held_out import HeldOutScenarioCreate
+from scf_api.services.approval_service import to_decider
 from scf_contracts import UserRole
 from scf_contracts.audit import AuditEvent
 from scf_db.audit.writer import SqlAuditWriter
@@ -71,7 +72,13 @@ def _audit(session: Session, principal: Principal, action: str, row: HeldOutScen
             scope_id=row.task_id,
             severity="notice",
             detail_ref={"table": "held_out_scenario", "id": str(row.id)},
-            details={"scenario_id": str(row.id), "task_id": str(row.task_id)},
+            details={
+                "scenario_id": str(row.id),
+                "task_id": str(row.task_id),
+                # Which credential and surface acted, as approval decisions record.
+                "key_id": str(principal.credential_id) if principal.credential_id else None,
+                "surface": principal.surface,
+            },
         )
     )
 
@@ -117,10 +124,19 @@ def list_scenarios(
 def approve_scenario(
     session: Session, principal: Principal, task_id: uuid.UUID, scenario_id: uuid.UUID
 ) -> HeldOutScenario:
-    """Approve a draft. Refused for an agent or any non-person credential, and for its drafter."""
+    """Approve a draft. Refused for an agent or any non-person credential, and for its drafter.
+
+    The caller is resolved as approval decisions are (``to_decider``): a key decides
+    with the lower of its own role and its owner's current role.
+    """
     row = _scenario(session, principal, task_id, scenario_id)
-    if not principal.decides or principal.role is UserRole.AGENT_RUNNER:
-        raise ApprovalRefused("only a person can approve a held-out scenario")
+    decider = to_decider(principal, session)
+    if (
+        not principal.decides
+        or decider.kind != "user"
+        or decider.role not in {UserRole.MEMBER, UserRole.ADMIN}
+    ):
+        raise ApprovalRefused("only a person with write access can approve a held-out scenario")
     if principal.user_id == row.drafted_by_user_id or _identity(principal) == row.drafted_by:
         raise ApprovalRefused("the identity that drafted a scenario cannot approve it")
     if row.state != SCENARIO_APPROVED:

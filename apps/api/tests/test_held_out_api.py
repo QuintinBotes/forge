@@ -15,8 +15,9 @@ from scf_api.deps import Principal, get_current_principal
 from scf_api.main import create_app
 from scf_contracts import UserRole
 from scf_db.base import Base
-from scf_db.models import Project, Task, Workspace
+from scf_db.models import Project, Task, User, Workspace
 from scf_db.models.audit import AuditLog
+from scf_db.models.enums import UserRole as DbUserRole
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000001b6")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000002b6")
@@ -173,6 +174,60 @@ def test_the_drafters_own_key_cannot_approve_it(
     same_person = same_person.model_copy(update={"user_id": key.user_id})
 
     assert client_as(same_person).post(_url(task_id, f"/{scenario_id}/approve")).status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("owner_role", "status_code"), [("viewer", 403), ("member", 200)], ids=["demoted", "member"]
+)
+def test_a_persons_key_approves_with_its_owners_current_role(
+    factory: sessionmaker[Session],
+    client_as: Callable[[Principal], TestClient],
+    owner_role: str,
+    status_code: int,
+) -> None:
+    """A key minted while its owner was a member cannot approve after the owner is
+    demoted, as on every approval decision."""
+    task_id = _task(factory)
+    scenario_id = client_as(_person()).post(_url(task_id), json=SCENARIO).json()["id"]
+    key = Principal(
+        user_id=uuid.uuid4(),
+        workspace_id=WS,
+        role=UserRole.MEMBER,
+        auth_method="api_key",
+        scopes=["*"],
+        decides=True,
+        credential_id=uuid.uuid4(),
+        surface="api",
+    )
+    with factory() as s:
+        s.add(
+            User(id=key.user_id, workspace_id=WS, email="o@acme.test", role=DbUserRole(owner_role))
+        )
+        s.commit()
+
+    resp = client_as(key).post(_url(task_id, f"/{scenario_id}/approve"))
+
+    assert resp.status_code == status_code, resp.text
+    if status_code == 200:
+        with factory() as s:
+            [audit] = s.scalars(select(AuditLog).where(AuditLog.action == "held_out.approved"))
+            assert audit.details["key_id"] == str(key.credential_id)
+            assert audit.details["surface"] == "api"
+
+
+def test_two_files_for_one_path_are_refused(
+    factory: sessionmaker[Session], client_as: Callable[[Principal], TestClient]
+) -> None:
+    """One target file with two contents would leave the approver unsure which runs."""
+    task_id = _task(factory)
+    files = [
+        {"path": "tests/x.py", "content": "one"},
+        {"path": "./tests//x.py", "content": "two"},
+    ]
+
+    resp = client_as(_person()).post(_url(task_id), json={**SCENARIO, "files": files})
+
+    assert resp.status_code == 422
 
 
 @pytest.mark.parametrize(
