@@ -69,13 +69,15 @@ class RunEventSink:
         for draft in events_for_step(step):
             self.emit(draft)
 
-    def emit(self, draft: RunEventDraft) -> None:
+    def emit(self, draft: RunEventDraft) -> bool:
+        """Store one event; ``False`` (logged, never raised) when it was not stored."""
         try:
-            self._write(draft)
+            return self._write(draft)
         except Exception:
             logger.exception("could not record %s for run %s", draft.type.value, self._run_id)
+            return False
 
-    def _write(self, draft: RunEventDraft) -> None:
+    def _write(self, draft: RunEventDraft) -> bool:
         for _attempt in range(2):
             with self._factory() as session:
                 if self._next is None:
@@ -114,7 +116,8 @@ class RunEventSink:
                     self._next = None
                     continue
                 self._next += 1
-                return
+                return True
+        return False
 
 
 def terminal_drafts(result: AgentRunResult) -> list[RunEventDraft]:

@@ -30,6 +30,7 @@ cannot tell an action forge enforced from one it merely recorded.
    | `artifact.created` | the finalizer opened a pull request | gated |
    | `cost.updated` | token usage and derived cost at the end of a run | observed |
    | `thread.completed` / `thread.failed` | the run's terminal status is recorded (`failed` carries the stop reason, e.g. `budget_exhausted`) | observed |
+   | `thread.state` | the workflow paused the run for a person (`forge.pause_and_notify`); the payload's `state` is tervin's `awaiting_input`. Added 2026-11-16 (#250) | gated |
 
    `gated` means forge's control plane decided or performed the action before it took effect (the
    policy gate, the declared tool belt in a sandbox, the finalizer's scoped token). `observed` means

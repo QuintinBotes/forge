@@ -26,7 +26,7 @@ from typing import Any
 import yaml
 from sqlalchemy.orm import Session, sessionmaker
 
-from scf_contracts import AgentObjective
+from scf_contracts import AgentObjective, Policy
 from scf_db.models import Task
 from scf_policy.loader import POLICY_RELATIVE_PATH, load_policy
 from scf_worker.dispatch import split_repo_name, workspace_mirrors
@@ -70,32 +70,42 @@ def _default_branch_policy(mirror: Path) -> bytes | None:
     return _git(mirror, "show", f"HEAD:{path}")
 
 
+def default_branch_policy(mirror: Path) -> Policy | None:
+    """The policy at the default branch's HEAD; ``None`` when HEAD has none.
+
+    Raises ``ValueError`` or ``yaml.YAMLError`` when the file does not parse or
+    validate (pydantic's ``ValidationError`` and ``UnicodeDecodeError`` are ``ValueError``s).
+    """
+    raw = _default_branch_policy(mirror)
+    if raw is None:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "policy.yaml"
+        path.write_bytes(raw)
+        return load_policy(path)
+
+
 def review_rules_stamp(
     factory: sessionmaker[Session], *, workspace_id: uuid.UUID, task_id: uuid.UUID
 ) -> dict[str, Any]:
     """The ``gate_payload`` keys a ``pr`` gate for ``task_id`` carries."""
     mirror = _mirror_for(factory, workspace_id, task_id)
-    raw = _default_branch_policy(mirror) if mirror is not None else None
-    if raw is None:
+    try:
+        policy = default_branch_policy(mirror) if mirror is not None else None
+    except (ValueError, yaml.YAMLError):
+        logger.warning(
+            "invalid repo policy for task %s; the pr gate keeps the default rules",
+            task_id,
+            exc_info=True,
+        )
+        return dict(DEFAULT_RULES_STAMP)
+    if policy is None:
         logger.info("task %s has no repo policy; the pr gate keeps the default rules", task_id)
         return dict(DEFAULT_RULES_STAMP)
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "policy.yaml"
-        path.write_bytes(raw)
-        try:
-            policy = load_policy(path)
-        # pydantic's ValidationError and an undecodable file's UnicodeDecodeError are ValueErrors
-        except (ValueError, yaml.YAMLError):
-            logger.warning(
-                "invalid repo policy for task %s; the pr gate keeps the default rules",
-                task_id,
-                exc_info=True,
-            )
-            return dict(DEFAULT_RULES_STAMP)
     return {
         "review_rules": policy.review_rules.model_dump(mode="json"),
         "review_rules_source": "repo",
     }
 
 
-__all__ = ["DEFAULT_RULES_STAMP", "review_rules_stamp"]
+__all__ = ["DEFAULT_RULES_STAMP", "default_branch_policy", "review_rules_stamp"]

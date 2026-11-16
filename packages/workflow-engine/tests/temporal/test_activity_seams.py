@@ -20,9 +20,20 @@ from scf_contracts import RunStatus, WorkflowRun
 from scf_workflow.store import InMemoryWorkflowStore
 from scf_workflow.temporal.activities import WorkflowActivities
 from scf_workflow.temporal.payloads import (
+    REDTEAM_SURVIVED,
     AgentRunResultDTO,
+    ApprovalInput,
+    ChecksResult,
+    GuardInputs,
+    GuardInputsRequest,
+    NotifyInput,
+    OpenPrInput,
+    OpenPrResult,
+    RedTeamInput,
+    RedTeamResult,
     ResumeAgentInput,
     RunAgentInput,
+    RunChecksInput,
     TransitionRecord,
 )
 
@@ -177,6 +188,89 @@ async def test_a_long_agent_body_heartbeats_until_it_completes(fast_heartbeat: f
 
     assert result == expected
     assert len(beats) >= 5  # not just the one beat before the body
+
+
+def _blocking_services(wait: float) -> dict[str, tuple[dict[str, Any], object, object]]:
+    """Per activity: the constructor kwargs of a service that blocks for ``wait``
+    seconds, the activity's input, and the result the service returns."""
+    run_id, task_id = uuid.uuid4(), uuid.uuid4()
+
+    def blocking(result: object) -> Any:
+        def service(_: object) -> object:
+            time.sleep(wait)
+            return result
+
+        return service
+
+    async def blocking_async_approval(_: ApprovalInput) -> uuid.UUID:
+        time.sleep(wait)  # the real approval body runs sync DB work inside a coroutine
+        return approval_id
+
+    class _SlowStore(InMemoryWorkflowStore):
+        def get(self, run_id: uuid.UUID) -> WorkflowRun:
+            time.sleep(wait)
+            return super().get(run_id)
+
+    store = _SlowStore()
+    run = store.create(
+        WorkflowRun(task_id=task_id, current_state="implement", status=RunStatus.RUNNING)
+    )
+    assert run.id is not None
+    approval_id = uuid.uuid4()
+    guard = GuardInputs(preconditions={"repo_target_set": True})
+    checks = ChecksResult(results={"tests": True})
+    pr = OpenPrResult(pr_number=7, pr_url="https://example.invalid/pr/7")
+    verdict = RedTeamResult(verdict=REDTEAM_SURVIVED)
+    return {
+        "persist_transition": ({"store": store}, _rec(run.id, "verify"), 1),
+        "load_guard_inputs": (
+            {"guard_inputs_fn": blocking(guard)},
+            GuardInputsRequest(workflow_run_id=run_id, workspace_id=WS, phase="execute"),
+            guard,
+        ),
+        "run_checks": (
+            {"run_checks_fn": blocking(checks)},
+            RunChecksInput(run_id, WS, attempt=0, idempotency_key="k"),
+            checks,
+        ),
+        "open_pr_with_spec_traceability": (
+            {"open_pr_fn": blocking(pr)},
+            OpenPrInput(run_id, WS, "forge/run", idempotency_key="k"),
+            pr,
+        ),
+        "pause_and_notify": (
+            {"notify_fn": blocking(True)},
+            NotifyInput(run_id, WS, reason="needs a person"),
+            True,
+        ),
+        "create_approval": (
+            {"approval_fn": blocking_async_approval},
+            ApprovalInput(run_id, WS, task_id, gate="spec"),
+            str(approval_id),
+        ),
+        "run_red_team_scan": (
+            {"red_team_fn": blocking(verdict)},
+            RedTeamInput(run_id, WS, task_id),
+            verdict,
+        ),
+    }
+
+
+@pytest.mark.parametrize("name", list(_blocking_services(0)))
+async def test_an_activity_whose_service_blocks_still_heartbeats(
+    name: str, fast_heartbeat: float
+) -> None:
+    """Issue #250 criterion 1: the service runs off the event loop that heartbeats."""
+    kwargs, inp, expected = _blocking_services(fast_heartbeat * 12)[name]
+    acts = WorkflowActivities(allow_fakes=True, **kwargs)
+    env = ActivityEnvironment()
+    beats: list[object] = []
+    env.on_heartbeat = lambda *details: beats.append(details)
+
+    result = await env.run(getattr(acts, name), inp)
+
+    assert result == expected
+    assert len(beats) >= 4  # beats while the service blocked, not one before it
 
 
 async def test_resume_agent_heartbeats_too(fast_heartbeat: float) -> None:

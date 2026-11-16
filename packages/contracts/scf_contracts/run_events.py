@@ -47,6 +47,7 @@ class RunEventType(StrEnum):
     COST_UPDATED = "cost.updated"
     THREAD_COMPLETED = "thread.completed"
     THREAD_FAILED = "thread.failed"
+    THREAD_STATE = "thread.state"
 
 
 #: ADR-0013's table: who actually did each kind of event.
@@ -64,6 +65,7 @@ ENFORCEMENT: MappingProxyType[RunEventType, Enforcement] = MappingProxyType(
         RunEventType.COST_UPDATED: "observed",
         RunEventType.THREAD_COMPLETED: "observed",
         RunEventType.THREAD_FAILED: "observed",
+        RunEventType.THREAD_STATE: "gated",
     }
 )
 

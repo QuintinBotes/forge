@@ -33,12 +33,9 @@ from scf_worker.temporal_main import build_activities
 from scf_workflow.temporal.activities import WorkflowActivities
 from scf_workflow.temporal.payloads import (
     ApprovalInput,
-    GuardInputsRequest,
-    NotifyInput,
     OpenPrInput,
     RedTeamInput,
     ResumeAgentInput,
-    RunAgentInput,
     RunChecksInput,
 )
 
@@ -232,12 +229,11 @@ RUN, WS, TASK = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
 @pytest.mark.parametrize(
     ("method", "payload"),
     [
-        ("load_guard_inputs", GuardInputsRequest(workflow_run_id=RUN, workspace_id=WS, phase="x")),
-        ("run_agent", RunAgentInput(RUN, TASK, WS, attempt=0, idempotency_key="k")),
+        # load_guard_inputs, run_agent and pause_and_notify are bound by #250 and
+        # tested in test_temporal_guard_inputs.py and test_temporal_run_agent.py.
         ("resume_agent", ResumeAgentInput(RUN, TASK, WS, None, attempt=0, idempotency_key="k")),
         ("run_checks", RunChecksInput(RUN, WS, attempt=0, idempotency_key="k")),
         ("open_pr_with_spec_traceability", OpenPrInput(RUN, WS, "b", idempotency_key="k")),
-        ("pause_and_notify", NotifyInput(RUN, WS, reason="r")),
     ],
 )
 async def test_activities_this_slice_does_not_bind_still_refuse(

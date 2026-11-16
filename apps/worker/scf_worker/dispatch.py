@@ -166,11 +166,23 @@ def ensure_mirror(
 def objective_for_task(
     task: Task,
     *,
-    repo_path: Path,
     agent_run_id: uuid.UUID,
-    repo_full_name: str,
+    repo_full_name: str | None,
+    repo_path: Path | None = None,
 ) -> AgentObjective:
-    """The objective for one board task, acting on ``repo_path``."""
+    """The objective for one board task, acting on ``repo_path`` when given.
+
+    Without ``repo_path`` the run resolves it from ``repo_full_name`` through
+    :func:`resolve_run_repository`.
+    """
+    context: dict[str, Any] = {
+        "workspace_id": str(task.workspace_id),
+        "agent_run_id": str(agent_run_id),
+    }
+    if repo_full_name:
+        context["repo_full_name"] = repo_full_name
+    if repo_path is not None:
+        context["repo_path"] = str(repo_path)
     raw: dict[str, Any] = {
         "task_id": task.id,
         "key": task.key,
@@ -181,12 +193,7 @@ def objective_for_task(
         "acceptance_criteria": task.acceptance_criteria,
         "allowed_actions": task.allowed_actions,
         "restricted_actions": task.restricted_actions,
-        "context": {
-            "repo_path": str(repo_path),
-            "repo_full_name": repo_full_name,
-            "workspace_id": str(task.workspace_id),
-            "agent_run_id": str(agent_run_id),
-        },
+        "context": context,
     }
     return AgentObjective.model_validate(raw)
 
