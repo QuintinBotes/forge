@@ -95,8 +95,13 @@ def push_and_open_pr(
     credentials: GitHubAppCredentials,
     transport: httpx.BaseTransport | None = None,
     push: Pusher = git_push,
+    reuse_existing: bool = False,
 ) -> PullRequest:
-    """Push the run branch and open a PR with a token scoped to this repository."""
+    """Push the run branch and open a PR with a token scoped to this repository.
+
+    ``reuse_existing`` first looks up a pull request for the branch and returns it
+    instead of opening a second one, so a retried caller opens exactly one.
+    """
     owner, _, name = repo_full_name.partition("/")
     if not owner or not name:
         raise ValueError(f"repo must be 'owner/name', got {repo_full_name!r}")
@@ -114,6 +119,9 @@ def push_and_open_pr(
         push(repo_path, branch, f"{credentials.git_base_url}/{owner}/{name}.git", token)
         client = GitHubClient(token=token, base_url=credentials.api_base_url, transport=transport)
         try:
+            existing = client.find_pr_for_head(repo_full_name, branch) if reuse_existing else None
+            if existing is not None:
+                return existing
             return client.open_pr(
                 PullRequestRequest(
                     repo=repo_full_name, title=title, body=body, head=branch, base=base_branch

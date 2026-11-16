@@ -7,8 +7,10 @@ activity. An activity with no service here keeps refusing (ADR-0007).
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
+import httpx
 import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -28,9 +30,16 @@ from scf_db.models import (
     WorkflowRun,
 )
 from scf_db.models.enums import RunStatus
-from scf_worker.agent_runner import run_agent_objective
+from scf_worker.agent_runner import _commits_ahead, run_agent_objective
 from scf_worker.approval_activity import make_create_approval_fn
-from scf_worker.dispatch import RepositoryUnavailable, objective_for_task, resolve_run_repository
+from scf_worker.dispatch import (
+    RepositoryUnavailable,
+    objective_for_task,
+    resolve_run_repository,
+    split_repo_name,
+    workspace_mirrors,
+)
+from scf_worker.finalizer import GitHubAppCredentials, Pusher, git_push, push_and_open_pr
 from scf_worker.review_rules import default_branch_policy
 from scf_worker.run_events import RunEventSink
 from scf_worker.run_workspace import run_declared_checks
@@ -39,6 +48,7 @@ from scf_workflow.temporal.activities import (
     ApprovalFn,
     GuardInputsFn,
     NotifyFn,
+    OpenPrFn,
     RedTeamFn,
     RunAgentFn,
     RunChecksFn,
@@ -50,6 +60,8 @@ from scf_workflow.temporal.payloads import (
     GuardInputs,
     GuardInputsRequest,
     NotifyInput,
+    OpenPrInput,
+    OpenPrResult,
     RedTeamInput,
     RedTeamResult,
     RunAgentInput,
@@ -61,6 +73,7 @@ __all__ = [
     "approval_service",
     "guard_inputs_service",
     "notify_service",
+    "open_pr_service",
     "red_team_service",
     "run_checks_service",
 ]
@@ -381,3 +394,72 @@ def run_checks_service(factory: sessionmaker[Session]) -> RunChecksFn:
         return ChecksResult(results=results)
 
     return run
+
+
+def open_pr_service(
+    factory: sessionmaker[Session],
+    *,
+    credentials: Callable[[], GitHubAppCredentials | None] = GitHubAppCredentials.from_env,
+    transport: httpx.BaseTransport | None = None,
+    push: Pusher = git_push,
+) -> OpenPrFn:
+    """Push the run branch and open its pull request, exactly once (#252).
+
+    The branch comes from the workspace's mirror, where the agent committed it. A
+    retry finds the pull request the first attempt opened and returns it. Without
+    GitHub App credentials the activity refuses: nothing can be delivered.
+    """
+
+    def open_pr(inp: OpenPrInput) -> OpenPrResult:
+        with factory() as session:
+            workflow_run = _owned_run(session, inp.workflow_run_id, inp.workspace_id)
+            task = session.get(Task, workflow_run.task_id)
+            agent_run = _latest_agent_run(session, inp.workflow_run_id, inp.workspace_id)
+            artifacts = ((agent_run.output or {}).get("artifacts") or {}) if agent_run else {}
+        creds = credentials()
+        if creds is None:
+            raise ApplicationError(
+                "no GitHub App credentials on this worker: the pull request cannot be opened",
+                type="GitHubAppNotConfigured",
+                non_retryable=True,
+            )
+        branch = inp.branch_name or artifacts.get("branch")
+        assert task is not None  # workflow_run.task_id is a non-null foreign key
+        target = AgentObjective(
+            objective=task.title, repo_targets=task.repo_targets
+        ).primary_repo_target
+        if not branch or target is None:
+            raise ApplicationError(
+                f"workflow run {inp.workflow_run_id} has no run branch to deliver",
+                type="AgentRunNotFound",
+                non_retryable=True,
+            )
+        owner, name = split_repo_name(target.repo)
+        mirror = workspace_mirrors(inp.workspace_id) / owner / name
+        if _commits_ahead(mirror, target.base_branch, str(branch)) == 0:
+            # The Celery finalizer's ``no_changes``: GitHub refuses an empty pull request.
+            raise ApplicationError(
+                f"{branch} has no commits ahead of {target.base_branch}: nothing to deliver",
+                type="NoChangesToDeliver",
+                non_retryable=True,
+            )
+        title = f"{task.key + ': ' if task.key else ''}{task.title}"[:120]
+        body = (
+            f"Opened by SCF workflow run `{inp.workflow_run_id}` for task {task.key or task.id}."
+            "\n\nMerging requires human approval through the SCF `pr` gate."
+        )
+        pr = push_and_open_pr(
+            repo_path=mirror,
+            branch=str(branch),
+            repo_full_name=target.repo,
+            base_branch=target.base_branch,
+            title=title,
+            body=body,
+            credentials=creds,
+            transport=transport,
+            push=push,
+            reuse_existing=True,
+        )
+        return OpenPrResult(pr_number=pr.number, pr_url=pr.url)
+
+    return open_pr

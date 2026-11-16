@@ -37,6 +37,7 @@ from scf_worker.temporal_services import (
     approval_service,
     guard_inputs_service,
     notify_service,
+    open_pr_service,
     red_team_service,
     run_checks_service,
 )
@@ -137,8 +138,8 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
     records the run's verdict (issue #170). ``forge.cleanup_worktree`` is bound
     too, so cancelling a run reaches ``cancelled`` (spec K §4.11). Issue #250 binds
     ``forge.load_guard_inputs``, ``forge.run_agent`` and ``forge.pause_and_notify``;
-    #251 binds ``forge.run_checks``. ``forge.resume_agent`` and the pull request
-    still refuse.
+    #251 binds ``forge.run_checks`` and #252 the pull request (opened once).
+    ``forge.resume_agent`` still refuses.
     """
     factory = factory or create_session_factory()
     return WorkflowActivities(
@@ -147,6 +148,7 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
         run_agent_fn=agent_run_service(factory),
         notify_fn=notify_service(factory),
         run_checks_fn=run_checks_service(factory),
+        open_pr_fn=open_pr_service(factory),
         approval_fn=approval_service(factory),
         red_team_fn=red_team_service(factory),
         cleanup_fn=make_cleanup_fn(factory),
