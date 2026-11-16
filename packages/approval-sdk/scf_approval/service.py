@@ -485,8 +485,30 @@ class ApprovalService:
         return applied
 
     async def _apply_expiry(self, request: ApprovalRequest, now: datetime) -> None:
+        await self.expire(request, actor="system", now=now)
+
+    async def expire(
+        self,
+        request: ApprovalRequest,
+        *,
+        actor: str,
+        reason: str | None = None,
+        now: datetime | None = None,
+    ) -> ApprovalResolution:
+        """Expire a pending gate on ``actor``'s behalf; ``reason`` is kept on its payload.
+
+        The SLA sweep expires a gate past its deadline as ``system``; a run that
+        leaves a gate any other way (spec K §4.11: a cancel) expires its open
+        request as whoever moved the run, with the reason ``run_cancelled``.
+        """
+        now = now or datetime.now(UTC)
         request.status = GateStatus.EXPIRED
         request.resolved_at = now
+        if reason is not None:
+            request.gate_payload = {
+                **request.gate_payload,
+                "expired": {"reason": reason, "actor": actor},
+            }
         await self._repo.update(request)
         outcome = ResolutionOutcome(
             completed=False,
@@ -496,7 +518,7 @@ class ApprovalService:
         self._audit.record_approval(
             request.gate_type.value,
             status=GateStatus.EXPIRED.value,
-            actor="system",
+            actor=actor,
             run_id=request.workflow_run_id or request.agent_run_id,
             request_id=request.id,
             workspace_id=request.workspace_id,
@@ -512,6 +534,9 @@ class ApprovalService:
                 outcome=outcome,
                 resolved_at=now,
             ),
+        )
+        return ApprovalResolution(
+            approval_id=request.id, status=GateStatus.EXPIRED, outcome=outcome
         )
 
     async def _apply_route(self, request: ApprovalRequest, decision: EscalationDecision) -> None:

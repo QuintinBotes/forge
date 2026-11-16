@@ -60,6 +60,9 @@ class _FakeHandle:
         await self._client.activities.persist_transition(record)
         return record.to_state.value
 
+    async def signal(self, _signal: Any, args: list[Any]) -> None:
+        self._client.signals.append((self._wf_id, list(args)))
+
 
 class _FakeTemporalClient:
     """Records started workflows; an Update runs the worker's projection activity."""
@@ -67,6 +70,7 @@ class _FakeTemporalClient:
     def __init__(self, factory: sessionmaker[Session]) -> None:
         self.activities = build_activities(factory)
         self.started: dict[str, WorkflowParams] = {}
+        self.signals: list[tuple[str, list[Any]]] = []
 
     async def start_workflow(self, _workflow: Any, params: WorkflowParams, **kwargs: Any) -> Any:
         self.started[kwargs["id"]] = params
@@ -283,3 +287,64 @@ def test_a_run_whose_workflow_never_started_is_started_by_the_next_start(
         f"wf-{stale}": stale
     }
     assert [r.id for r in _active_rows(factory)] == [stale]
+
+
+def test_cancelling_a_run_at_its_gate_expires_the_open_request(
+    factory: sessionmaker[Session], temporal: _FakeTemporalClient
+) -> None:
+    """Spec K §4.11 (#253): a run that leaves a gate by a cancel, not through the
+    gate's approval, expires the gate's open request with reason ``run_cancelled``,
+    recorded as whoever cancelled it."""
+    from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
+    from scf_api.services.approval_service import get_approval_service
+    from scf_approval import ApprovalAuthorizer, ApprovalService, GateRegistry
+    from scf_approval.models import GateStatus, GateType
+
+    approvals = ApprovalService(
+        SqlAlchemyApprovalRepository(factory), GateRegistry(), ApprovalAuthorizer()
+    )
+    app = create_app()
+
+    def _get_db() -> Iterator[Session]:
+        with factory() as session:
+            yield session
+
+    mover = uuid.uuid4()
+    app.dependency_overrides[get_db] = _get_db
+    app.dependency_overrides[get_approval_service] = lambda: approvals
+    app.dependency_overrides[get_current_principal] = lambda: Principal(
+        user_id=mover,
+        workspace_id=WS,
+        role=UserRole.MEMBER,
+        email="member@acme.test",
+        auth_method="test",
+        scopes=["*"],
+    )
+    client = TestClient(app)
+    run_id = _start(client)
+    # The run waits at its spec gate, with the request forge.create_approval opened.
+    with factory() as session:
+        row = session.get(DbWorkflowRun, run_id)
+        assert row is not None
+        row.current_state = "spec_review"
+        session.commit()
+    request = asyncio.run(
+        approvals.create(
+            workspace_id=WS,
+            gate_type=GateType.SPEC,
+            subject_type="workflow_run",
+            subject_id=run_id,
+            workflow_run_id=run_id,
+            task_id=TASK,
+            title="T",
+            requested_actor=f"agent:{run_id}",
+        )
+    )
+
+    resp = client.post(f"/workflow/runs/{run_id}/transition", json={"event": "cancel"})
+
+    assert resp.status_code == 200, resp.text
+    assert [args[0] for _, args in temporal.signals] == ["cancelled"], "the workflow was told"
+    stored = asyncio.run(approvals.get(request.id, workspace_id=WS))
+    assert stored.status is GateStatus.EXPIRED
+    assert stored.gate_payload["expired"] == {"reason": "run_cancelled", "actor": f"user:{mover}"}

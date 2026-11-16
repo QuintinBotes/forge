@@ -176,6 +176,61 @@ async def attested_or_blocked(
     return True
 
 
+def mark_submitted(request: ApprovalRequest, *, event: str, actor_ref: str, new_state: str) -> None:
+    """Record on ``request`` that its run passed the gate: the event was applied."""
+    submitted: dict[str, Any] = {
+        "status": "submitted",
+        "event": event,
+        "actor": actor_ref,
+        "to_state": new_state,
+    }
+    if event == EVENT_CANCEL:
+        submitted["reason"] = cancel_reason(request)
+    request.gate_payload = {**request.gate_payload, "workflow_event": submitted}
+
+
+class GateBlocked(Exception):
+    """An approved ``pr`` gate with no attestation to prove it: the run must not merge."""
+
+
+async def sync_gate_event(
+    engine: Any,
+    approvals: ApprovalService,
+    session: Session,
+    request: ApprovalRequest,
+    *,
+    run_state: str,
+    fallback_user_id: uuid.UUID,
+) -> str | None:
+    """Apply a resolved gate's event to a run still waiting there, and record it.
+
+    The core of ``POST /workflow/runs/{id}/gates/{gate}/sync`` (the recovery for a
+    hook whose submit failed). Returns the run's new state, or ``None`` when there
+    was nothing to apply: the gate is pending, or the run already left it. An
+    approved ``pr`` gate merges only on proof of attestation; without one it raises
+    :class:`GateBlocked`. Once applied, the request's ``workflow_event`` reads
+    ``submitted``, so it no longer shows the gate as unsynced.
+    """
+    gate = request.gate_type
+    event = event_for_resolution(gate, request.status)
+    if (
+        request.status is GateStatus.PENDING
+        or run_state != WAITING_STATE_BY_GATE.get(gate)
+        or event is None
+    ):
+        return None
+    resolver = request.resolver_user_id or fallback_user_id
+    actor_ref = f"user:{resolver}"
+    if gate is GateType.PR and request.status is GateStatus.APPROVED:
+        decider = Principal(kind="user", id=resolver, workspace_id=request.workspace_id)
+        if not await attested_or_blocked(approvals, session, request, decider):
+            raise GateBlocked(f"pr gate {request.id} has no attestation")
+    new_state = await submit_gate_event(engine, request=request, actor_ref=actor_ref)
+    mark_submitted(request, event=event, actor_ref=actor_ref, new_state=new_state)
+    await approvals.save_gate_payload(request)
+    return new_state
+
+
 def _merge_signals(request: ApprovalRequest) -> dict[str, bool]:
     # Only the boolean true counts: bool() would read the string "false" as true.
     return {
@@ -333,15 +388,7 @@ class _WorkflowRunGateHook:
                 ]
             return outcome
 
-        submitted: dict[str, Any] = {
-            "status": "submitted",
-            "event": event,
-            "actor": actor.actor_ref,
-            "to_state": new_state,
-        }
-        if event == EVENT_CANCEL:
-            submitted["reason"] = cancel_reason(request)
-        request.gate_payload = {**request.gate_payload, "workflow_event": submitted}
+        mark_submitted(request, event=event, actor_ref=actor.actor_ref, new_state=new_state)
         outcome.details = {
             **outcome.details,
             "workflow_event": event,
@@ -373,6 +420,7 @@ __all__ = [
     "WAITING_STATE_BY_GATE",
     "WORKFLOW_RUN_SUBJECT",
     "EngineFactory",
+    "GateBlocked",
     "PlanWorkflowGateHook",
     "PrWorkflowGateHook",
     "SpecWorkflowGateHook",
@@ -381,5 +429,7 @@ __all__ = [
     "cancel_reason",
     "event_for_resolution",
     "mark_blocked",
+    "mark_submitted",
     "submit_gate_event",
+    "sync_gate_event",
 ]
