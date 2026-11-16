@@ -22,6 +22,50 @@ the mental model, see [Concepts](./concepts.md).
 | [Red-Team Gate](#red-team-gate) | A heterogeneous adversary must fail to break the change before the human gate | `red_team_record` | `0038` |
 | [Self-Eval Gate](#self-eval-gate) | Block a config change that regresses a workspace's private per-repo suite | `benchmark_suite` (+cols), `self_eval_baseline` | `0039`, `0040` |
 
+## The governed pipeline on Temporal
+
+A feature run on the Temporal engine (`FeatureWorkflow`) now runs on real
+activities from start to the `pr` gate (#170, split into #250 to #253). The
+worker (`apps/worker/scf_worker/temporal_main.py` and `temporal_services.py`)
+binds every activity except `forge.resume_agent`:
+
+- **Guard inputs** read the execute preconditions from stored data. A connected
+  repository target is always required, and so is a policy that parses, or none.
+  A skill profile and a knowledge sync are required once the workspace has
+  configured one.
+- **The agent** runs the task's objective in a per-run worktree, on one
+  `agent_run` row per attempt, and records the run branch and its head commit.
+- **The checks** run the repository's declared `policy.commands`, from the
+  default branch, in a sandbox on a fresh worktree of that head commit. A
+  repository that declares none fails with `no_checks_declared`.
+- **The pull request** is opened once: a retry finds the one already opened. A
+  branch with no commits is not delivered, and without GitHub App credentials
+  the step refuses.
+- **The gates** (`spec`, `plan`, `pr`) open approval requests, and only an
+  approval moves the run past one. Approving a `pr` request records its
+  attestation when the decision is made. When the merge guard refuses the event
+  (CI has not reported yet), the request's `gate_payload.workflow_event.status`
+  reads `failed` until `POST /workflow/runs/{id}/gates/pr/sync` applies the event
+  with the same attestation; then it reads `submitted`.
+- **A cancel** at a gate expires that gate's open request with the reason
+  `run_cancelled`, recorded as whoever cancelled the run. The workflow's own
+  cancel path does it again, for a request it opened after the cancel arrived.
+
+### Current limitations
+
+- **CI is not read back (#172).** The merge guard's `ci_status_green` comes from
+  the `pr` request's payload, which nothing fills yet; check suites longer than
+  the activity's 120 s timeout cannot pass.
+- **The red-team scan is parked (#174)**, as described under
+  [Red-Team Gate](#red-team-gate).
+- **The pull request carries no attestation (#175).** The attestation is made
+  when the `pr` gate is approved, not when the pull request is opened.
+- **A failed gate submission is not audited (#182).** It is logged and recorded
+  on the request (`workflow_event` `failed`), but the audit log records only the
+  decision; nothing retries it when CI turns green.
+- **A repository with no declared checks spends the agent's retries** before it
+  pauses (#272, an owner decision).
+
 ---
 
 ## Attested Changesets

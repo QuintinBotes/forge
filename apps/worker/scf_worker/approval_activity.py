@@ -19,6 +19,7 @@ API relays (spec L §6a), when the Redis realtime backend is selected.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -33,7 +34,7 @@ from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from scf_api.services.workflow_gate_hook import WORKFLOW_RUN_SUBJECT, agent_actor_for_run
 from scf_approval import ApprovalAuthorizer, ApprovalService, GateRegistry
 from scf_approval.models import GateType
-from scf_db.models import ApprovalRequest, Task
+from scf_db.models import ApprovalRequest, ApprovalStatus, Task
 from scf_worker.review_rules import review_rules_stamp
 from scf_workflow.temporal.payloads import ApprovalInput
 
@@ -72,6 +73,42 @@ def _existing_request(session: Session, inp: ApprovalInput) -> uuid.UUID | None:
         if row.payload.get("idempotency_key") == inp.idempotency_key:
             return row.id
     return None
+
+
+def expire_open_gates(
+    factory: sessionmaker[Session],
+    *,
+    workflow_run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    actor: str,
+) -> int:
+    """Expire every gate request still pending for a cancelled run (spec K §4.11).
+
+    The API expires the open gate when it cancels, but a Temporal workflow can open
+    a gate request after that, before it acts on the cancel; its cancel path runs
+    this to catch it. Returns how many requests it expired.
+    """
+    with factory() as session:
+        ids = list(
+            session.scalars(
+                select(ApprovalRequest.id).where(
+                    ApprovalRequest.workspace_id == workspace_id,
+                    ApprovalRequest.workflow_run_id == workflow_run_id,
+                    ApprovalRequest.status == ApprovalStatus.PENDING,
+                )
+            )
+        )
+    if not ids:
+        return 0
+    service = build_approval_service(factory)
+
+    async def _expire_all() -> None:
+        for approval_id in ids:
+            request = await service.get(approval_id, workspace_id=workspace_id)
+            await service.expire(request, actor=actor, reason="run_cancelled")
+
+    asyncio.run(_expire_all())
+    return len(ids)
 
 
 def make_create_approval_fn(
@@ -116,4 +153,4 @@ def make_create_approval_fn(
     return _create_approval
 
 
-__all__ = ["build_approval_service", "make_create_approval_fn"]
+__all__ = ["build_approval_service", "expire_open_gates", "make_create_approval_fn"]

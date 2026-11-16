@@ -54,18 +54,17 @@ from scf_api.routers._rbac import require_permission
 from scf_api.schemas.red_team import RedTeamGateOut, RedTeamRecordOut, RedTeamTriggerOut
 from scf_api.services.approval_service import get_approval_service
 from scf_api.services.workflow_gate_hook import (
+    EVENT_CANCEL,
     GATE_BY_STATE,
     GATE_EVENTS,
     WAITING_STATE_BY_GATE,
     WORKFLOW_RUN_SUBJECT,
+    GateBlocked,
     agent_actor_for_run,
-    attested_or_blocked,
-    event_for_resolution,
-    submit_gate_event,
+    sync_gate_event,
 )
 from scf_approval import ApprovalService
 from scf_approval.models import GateStatus, GateType
-from scf_approval.models import Principal as ApprovalPrincipal
 from scf_contracts import LineDefinition, WorkflowRun, WorkflowState
 from scf_db.models import Task
 from scf_db.redteam import RedTeamRepository
@@ -483,9 +482,18 @@ def transition(
             detail="gate_events_come_from_approvals",
         )
     with _workflow_errors():
-        engine.transition(run_id, request.event)
+        left_gate = GATE_BY_STATE.get(engine.get_run(run_id).current_state)
+        # The mover is the actor, so a Temporal run's cancel (and the gate it
+        # expires there, which this route cannot see open yet) records them too.
+        engine.transition(run_id, request.event, actor=f"user:{principal.user_id}")
         run = engine.get_run(run_id)
     session.commit()
+    if left_gate is not None and (
+        request.event == EVENT_CANCEL or run.current_state != WAITING_STATE_BY_GATE[left_gate]
+    ):
+        _expire_open_gate(
+            approvals, run_id, gate=left_gate, principal=principal, event=request.event
+        )
     if (
         isinstance(engine, WorkflowEngineImpl)
         and run.current_state == WorkflowState.SPEC_REVIEW.value
@@ -544,24 +552,54 @@ def sync_gate(
             gate_type=gate,
         )
     )
-    if (
-        request is not None
-        and request.workflow_run_id == run_id
-        and request.status is not GateStatus.PENDING
-        and run.current_state == WAITING_STATE_BY_GATE[gate]
-        and event_for_resolution(gate, request.status) is not None
-    ):
-        resolver = request.resolver_user_id or principal.user_id
-        actor_ref = f"user:{resolver}"
-        if gate is GateType.PR and request.status is GateStatus.APPROVED:
-            decider = ApprovalPrincipal(kind="user", id=resolver, workspace_id=request.workspace_id)
-            if not asyncio.run(attested_or_blocked(approvals, session, request, decider)):
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="gate_blocked")
-        with _workflow_errors():
-            asyncio.run(submit_gate_event(engine, request=request, actor_ref=actor_ref))
-        session.commit()
+    if request is not None and request.workflow_run_id == run_id:
+        try:
+            with _workflow_errors():
+                applied = asyncio.run(
+                    sync_gate_event(
+                        engine,
+                        approvals,
+                        session,
+                        request,
+                        run_state=run.current_state,
+                        fallback_user_id=principal.user_id,
+                    )
+                )
+        except GateBlocked as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="gate_blocked"
+            ) from exc
+        if applied is not None:
+            session.commit()
     with _workflow_errors():
         return engine.get_run(run_id)
+
+
+def _expire_open_gate(
+    approvals: ApprovalService,
+    run_id: uuid.UUID,
+    *,
+    gate: GateType,
+    principal: Principal,
+    event: str,
+) -> None:
+    """Expire the request a run left open at ``gate`` (spec K §4.11), as its mover.
+
+    A run leaves a gate through its approval, or by another event such as
+    ``cancel``; then the gate's pending request would be decided by no one.
+    """
+    request = asyncio.run(
+        approvals.latest_for_gate(
+            workspace_id=principal.workspace_id,
+            subject_type=WORKFLOW_RUN_SUBJECT,
+            subject_id=run_id,
+            gate_type=gate,
+        )
+    )
+    if request is None or request.status is not GateStatus.PENDING:
+        return
+    reason = "run_cancelled" if event == EVENT_CANCEL else f"run_left_gate_on_{event}"
+    asyncio.run(approvals.expire(request, actor=f"user:{principal.user_id}", reason=reason))
 
 
 @router.get("/runs/{run_id}/red-team", response_model=RedTeamGateOut)

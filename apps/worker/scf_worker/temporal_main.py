@@ -30,6 +30,7 @@ from scf_contracts import WorkflowRun
 from scf_db import create_session_factory
 from scf_db.models import AgentRun
 from scf_db.models.runs import WorkflowRun as DbWorkflowRun
+from scf_worker.approval_activity import expire_open_gates
 from scf_worker.dispatch import workspace_mirrors
 from scf_worker.run_workspace import remove_run_worktrees
 from scf_worker.temporal_services import (
@@ -99,11 +100,14 @@ CLEANUP_BUDGET_SECONDS = 45.0
 
 
 def make_cleanup_fn(factory: sessionmaker[Session]) -> Callable[[CleanupInput], bool]:
-    """The ``forge.cleanup_worktree`` body: remove worktrees the run's agents left.
+    """The ``forge.cleanup_worktree`` body, run when a run is cancelled.
 
+    It removes the worktrees the run's agents left and expires the gate requests
+    still pending for the run, as whoever cancelled it (spec K §4.11): a request
+    the workflow opened after the API's own expiry would otherwise stay open.
     Idempotent (nothing left is a no-op). Any failure (database, git, disk) is
     logged and reported as ``False``, never raised: a cleanup problem must not
-    turn a cancel into a failed run (spec K §4.11).
+    turn a cancel into a failed run.
     """
 
     def _cleanup(inp: CleanupInput) -> bool:
@@ -123,8 +127,20 @@ def make_cleanup_fn(factory: sessionmaker[Session]) -> Callable[[CleanupInput], 
             remove_run_worktrees(mirrors, agent_runs, deadline=deadline)
         except Exception:
             logger.exception("cleanup_worktree for run %s failed", inp.workflow_run_id)
+            cleaned = False
+        else:
+            cleaned = True
+        try:
+            expire_open_gates(
+                factory,
+                workflow_run_id=inp.workflow_run_id,
+                workspace_id=inp.workspace_id,
+                actor=inp.actor,
+            )
+        except Exception:
+            logger.exception("expiring the open gates of run %s failed", inp.workflow_run_id)
             return False
-        return True
+        return cleaned
 
     return _cleanup
 

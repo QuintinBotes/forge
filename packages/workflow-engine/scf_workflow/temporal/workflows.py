@@ -667,6 +667,7 @@ class FeatureWorkflow:
                 workspace_id=self._params.workspace_id,
                 reason=self._cancel_reason,
                 idempotency_key=f"{self._params.workflow_run_id}:cleanup",
+                actor=self._cancel_actor,
             ),
             start_to_close_timeout=_CLEANUP_TIMEOUT,
             retry_policy=_THRICE,

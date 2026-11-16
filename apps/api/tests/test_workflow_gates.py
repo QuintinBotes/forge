@@ -829,6 +829,9 @@ def test_pr_approval_without_merge_signals_is_recorded_and_synced_later(
     assert resp.status_code == 200, resp.text
     assert resp.json()["current_state"] == "merged"
     assert _attestations(h, run_id) == 1  # the existing attestation is the proof: not redone
+    # Synced: the record no longer shows the gate as unsynced (#253).
+    synced = h.request(request.id).gate_payload["workflow_event"]
+    assert (synced["status"], synced["event"]) == ("submitted", "review_approved_by_human")
 
 
 # --------------------------------------------------------------------------- #
