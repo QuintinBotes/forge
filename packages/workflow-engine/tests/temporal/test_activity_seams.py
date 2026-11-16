@@ -286,16 +286,24 @@ async def test_agent_bodies_run_on_their_own_threads_and_services_do_not() -> No
         threads["guard"] = threading.current_thread().name
         return GuardInputs()
 
-    acts = WorkflowActivities(run_agent_fn=agent, guard_inputs_fn=guard, allow_fakes=True)
+    def checks(_: RunChecksInput) -> ChecksResult:
+        threads["checks"] = threading.current_thread().name
+        return ChecksResult(results={"tests": True})
+
+    acts = WorkflowActivities(
+        run_agent_fn=agent, guard_inputs_fn=guard, run_checks_fn=checks, allow_fakes=True
+    )
     env = ActivityEnvironment()
     await env.run(acts.run_agent, _agent_input())
+    await env.run(acts.run_checks, RunChecksInput(uuid.uuid4(), WS, attempt=0, idempotency_key="k"))
     await env.run(
         acts.load_guard_inputs,
         GuardInputsRequest(workflow_run_id=uuid.uuid4(), workspace_id=WS, phase="execute"),
     )
 
     assert threads["agent"].startswith("scf-agent")
-    assert not threads["guard"].startswith("scf-agent")
+    assert threads["checks"].startswith("scf-checks")  # whole test suites: off the short pool
+    assert not threads["guard"].startswith(("scf-agent", "scf-checks"))
 
 
 async def test_resume_agent_heartbeats_too(fast_heartbeat: float) -> None:

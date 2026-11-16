@@ -179,7 +179,7 @@ async def test_a_repository_that_declares_no_command_fails(
 
     result = await _checks(factory, run_id)
 
-    assert result.results == {"declared_checks": False}
+    assert result.results == {"no_checks_declared": False}
     assert not result.all_passed
 
 

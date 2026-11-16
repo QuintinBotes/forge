@@ -183,8 +183,9 @@ def _sandbox_commands(
         loop.close()
 
 
-#: The result a repository that declares no command gets: a failing check, never an empty pass.
-NO_DECLARED_CHECKS = {"declared_checks": False}
+#: The result a repository that declares no command gets: a failure named for its
+#: reason (spec 001, verification scenario 3), never an empty pass.
+NO_DECLARED_CHECKS = {"no_checks_declared": False}
 
 
 def run_declared_checks(
