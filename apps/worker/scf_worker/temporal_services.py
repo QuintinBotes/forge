@@ -20,6 +20,7 @@ from temporalio.exceptions import ApplicationError
 
 from scf_api.observability.redaction import redact_text
 from scf_api.services.agent_dispatch import STRIPPED_CONTEXT, repo_connected
+from scf_api.services.attestation_service import AttestationService
 from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.review import ReviewVerdict
@@ -654,11 +655,12 @@ def open_pr_service(
                 non_retryable=True,
             )
         branch = inp.branch_name or artifacts.get("branch")
+        head = artifacts.get("head_commit")
         assert task is not None  # workflow_run.task_id is a non-null foreign key
         target = AgentObjective(
             objective=task.title, repo_targets=task.repo_targets
         ).primary_repo_target
-        if not branch or target is None:
+        if not branch or not head or target is None:
             raise ApplicationError(
                 f"workflow run {inp.workflow_run_id} has no run branch to deliver",
                 type="AgentRunNotFound",
@@ -684,6 +686,17 @@ def open_pr_service(
                 f"\n\nIndependent review: `{review['verdict']}` by "
                 f"`{review.get('reviewer_model')}`; the builder ran on "
                 f"`{review.get('builder_model')}`."
+            )
+        with factory() as session:
+            # Signed before a person sees the pull request, once per head commit (#175).
+            attestation = AttestationService(session).attest_pull_request(
+                inp.workflow_run_id, repository=target.repo, head_commit=str(head)
+            )
+            session.commit()
+            body += (
+                f"\n\nAttestation `{attestation.id}`: payload sha256 "
+                f"`{attestation.payload_hash}`, key `{attestation.keyid}`. Verify it with "
+                f"`scf-verify --run {inp.workflow_run_id}`."
             )
         pr = push_and_open_pr(
             repo_path=mirror,

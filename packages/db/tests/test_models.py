@@ -185,6 +185,8 @@ EXPECTED_MODELS = [
     # red-team-gate: append-only adversarial-review verdict (blocked|survived)
     # recorded before the human implementation gate, feeding the attestation.
     "RedTeamRecord",
+    # #175: the deployment's stored attestation signing key (one row).
+    "AttestationSigningKey",
     # J retrieval (ADR-0017): incrementally maintained BM25 corpus statistics —
     # per-workspace document frequencies + per-workspace corpus totals.
     "RetrievalTermStat",
@@ -216,6 +218,8 @@ EXPECTED_MODELS = [
 # IdP already; the guard is consulted before any workspace is resolved).
 NON_WORKSPACE_SCOPED = {
     "workspace",
+    # #175: one signing key for the whole deployment, so every process verifies.
+    "attestation_signing_key",
     "pm_webhook_delivery",
     "marketplace_listing_version",
     "saml_replay",

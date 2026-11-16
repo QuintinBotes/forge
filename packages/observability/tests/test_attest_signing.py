@@ -89,17 +89,24 @@ def test_provider_rejects_wrong_seed_size() -> None:
         EnvSigningKeyProvider({SIGNING_KEY_ENV: base64.b64encode(b"too-short").decode("ascii")})
 
 
-def test_provider_generates_ephemeral_key_with_warning_when_unset() -> None:
-    with pytest.warns(UserWarning, match=SIGNING_KEY_ENV):
-        provider = EnvSigningKeyProvider({})
+def test_provider_refuses_an_ephemeral_key_without_the_development_opt_in() -> None:
+    """#175: no process-ephemeral key outside an explicit development opt-in; the API
+    and the worker sign with the deployment's stored key instead."""
+    with pytest.raises(KeyMaterialError, match=SIGNING_KEY_ENV):
+        EnvSigningKeyProvider({})
+
+
+def test_provider_generates_ephemeral_key_with_warning_under_the_opt_in() -> None:
+    with pytest.warns(UserWarning, match="FORGE_DEV_INSECURE"):
+        provider = EnvSigningKeyProvider({"FORGE_DEV_INSECURE": "1"})
     assert len(provider.keyid) == 64  # sha256 hex digest
 
 
 def test_provider_ephemeral_keys_differ_per_instance() -> None:
     with pytest.warns(UserWarning):
-        first = EnvSigningKeyProvider({})
+        first = EnvSigningKeyProvider({"FORGE_DEV_INSECURE": "1"})
     with pytest.warns(UserWarning):
-        second = EnvSigningKeyProvider({})
+        second = EnvSigningKeyProvider({"FORGE_DEV_INSECURE": "1"})
     assert first.keyid != second.keyid
 
 

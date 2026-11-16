@@ -346,6 +346,9 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
                 "Independent review: `approve` by `gpt-6-astra`; the builder ran on "
                 "`claude-opus-5-5`." in github.created[0]["body"]
             )
+            # #175: the pull request was attested before anyone reviewed it.
+            assert _attestations(factory, run.id) == 1
+            assert "Attestation `" in github.created[0]["body"]
             [pr] = await _pending(factory, GateType.PR)
             assert pr.workflow_run_id == run.id
             with factory() as fresh:
@@ -357,7 +360,8 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
             await approvals.resolve(pr.id, approve, decider, workspace_id=WS)
             unsynced = await approvals.get(pr.id, workspace_id=WS)
             assert unsynced.gate_payload["workflow_event"]["status"] == "failed"
-            assert _attestations(factory, run.id) == 1
+            # Approving records a further attestation naming the approver (#175 criterion 8).
+            assert _attestations(factory, run.id) == 2
 
             # CI reports green; sync applies the approval with the same attestation.
             unsynced.gate_payload = {
@@ -379,7 +383,7 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
             synced = await approvals.get(pr.id, workspace_id=WS)
             assert synced.gate_payload["workflow_event"]["status"] == "submitted"
             assert synced.gate_payload["workflow_event"]["actor"] == f"user:{decider.id}"
-            assert _attestations(factory, run.id) == 1, "the attestation is reused, not redone"
+            assert _attestations(factory, run.id) == 2, "the attestation is reused, not redone"
             result = await engine.workflow_handle(run.id).result()  # type: ignore[union-attr]
 
     assert result.final_state.value == "closed"

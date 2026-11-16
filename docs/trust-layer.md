@@ -97,8 +97,6 @@ binds every activity except `forge.resume_agent`:
   the `pr` request's payload, which nothing fills yet.
 - **No adversary attacks the change yet (#283).** Every scan records `not_run`,
   as described under [Red-Team Gate](#red-team-gate).
-- **The pull request carries no attestation (#175).** The attestation is made
-  when the `pr` gate is approved, not when the pull request is opened.
 - **A failed gate submission is not audited (#182).** It is logged and recorded
   on the request (`workflow_event` `failed`), but the audit log records only the
   decision; nothing retries it when CI turns green.
@@ -143,13 +141,48 @@ and signs over the DSSE **PAE** (Pre-Authentication Encoding) of
 signature. Signing and verifying are pure and total — malformed input is "not
 verified", never an exception.
 
-The signing key comes from `FORGE_ATTEST_SIGNING_KEY` (a base64 32-byte Ed25519
-seed). Signing an attestation is a provenance convenience, not a confidentiality
-boundary, so an **unset** key fails *open* to a loudly-warned, process-ephemeral
-key (a real deployment must set a stable key or verification fails after a
-restart); a key that *is* set but malformed fails *closed*. The `keyid` is the
-sha256 of the raw public key bytes — a content-derived id a verifier looks up
-rather than trusting a signer-asserted one.
+**The signing key (#175).** `FORGE_ATTEST_SIGNING_KEY` (a base64 32-byte Ed25519
+seed) wins when it is set, and a set but malformed key fails *closed*. When it is
+unset, the API and the worker use the deployment's **stored key**
+(`apps/api/scf_api/services/attestation_keys.py`):
+
+- **Where it lives:** the one-row table `attestation_signing_key` (migration
+  `0048`). The private seed is encrypted under a subkey of the instance master
+  key `FORGE_SECRET_KEY` and is never stored in the clear.
+- **How it is made:** the first process that signs generates the key and inserts
+  it. A process that loses the insert race reads the winner's key, so the API,
+  the worker and a restarted process all sign and verify with one key.
+- **If it cannot be read:** a stored key that cannot be decrypted with the
+  current `FORGE_SECRET_KEY` fails closed instead of being replaced.
+- **Development:** a process-ephemeral key is used only under the explicit
+  `FORGE_DEV_INSECURE` opt-in.
+
+The `keyid` is the sha256 of the raw public key bytes: a content-derived id that
+a verifier looks up, rather than trusting one the signer asserts.
+
+**Rotating the key.** Set `FORGE_ATTEST_SIGNING_KEY` to a new seed on every
+process: it takes precedence over the stored key, which is kept. Verification
+uses the current key, so keep the old public key for the attestations it signed
+and verify those with `scf-verify --public-key`. Changing `FORGE_SECRET_KEY`
+makes the stored key unreadable: set `FORGE_ATTEST_SIGNING_KEY` first, or delete
+the `attestation_signing_key` row to let a new key be stored.
+
+**The commit and what was verified (#175).** A pull-request attestation's
+statement has two subjects:
+
+- the workflow run, with the sha256 of the predicate;
+- the repository, with the head commit's `gitCommit` digest.
+
+Its predicate adds the `repository`, the `head_commit` and a `verification`
+block:
+
+- **`checks`:** each declared check's id and outcome, with a `checks_verdict`;
+- **`ci`:** `not_run` until CI is read back (#280);
+- **`reviewer`:** the independent reviewer's verdict and model;
+- **`red_team`:** the verdict and model of a scan at the `pr` phase.
+
+A stage that did not run reads `not_run`: never omitted, never a pass.
+Attestations made before #175 have none of these fields and still verify.
 
 ### Data model
 
@@ -174,11 +207,16 @@ batch-Merkle anchoring scheme, unused today).
 
 ### API / CLI surface
 
-Attestations are minted as a **side effect of approval**:
-`PrAttestationResolutionHook` is registered against the F36 approval system, so
-approving a `pr` gate that carries a `workflow_run_id` attests the changeset
-(recording the approving user as `human_approver`). There is deliberately no
-HTTP route that mints one.
+Attestations are minted at two points, and no HTTP route mints one:
+
+- **When a governed run opens its pull request.** `forge.open_pr_with_spec_traceability`
+  signs one for the run's head commit before the pull request exists, once per
+  run and head commit (a retry finds it). The pull request description names its
+  id, payload digest and key id, and how to verify it.
+- **When the `pr` gate is approved.** `PrAttestationResolutionHook` is
+  registered against the F36 approval system, so approving a `pr` gate that
+  carries a `workflow_run_id` records a further attestation naming the approving
+  user as `human_approver`.
 
 Records are surfaced **read-only over REST**
 (`apps/api/scf_api/routers/attestations.py`), workspace-scoped with the same
@@ -189,14 +227,14 @@ auth/tenancy contract as the approvals router (cross-workspace ids read as
 |----------|---------|
 | `GET /attestations` | One workspace-scoped page (`limit`/`offset`, newest first; filters: `workflow_run_id`, `agent_run_id`, `spec_key`) |
 | `GET /attestations/{id}` | One record (`404` for unknown or foreign ids) |
-| `GET /approvals/{id}/attestation` | The record minted for the gate's linked workflow run (`404` when none exists — normal while the gate is still pending) |
+| `GET /approvals/{id}/attestation` | The gate's linked run's newest attestation that names an approver, else its pull-request attestation (`404` when the run has none) |
 
 Every response carries a computed `verified: bool` produced by the **same
 verification seam `scf-verify --run` uses**
 (`scf_api.cli_verify.verify_stored_attestation`): re-derive `payload_hash`
 from the envelope's PAE encoding, confirm it matches the recorded column, then
 Ed25519-verify the signature against the deployment's verification key (the
-public half of `FORGE_ATTEST_SIGNING_KEY`). A record this deployment cannot
+public half of its signing key, configured or stored). A record this deployment cannot
 vouch for honestly reads `verified: false` — the flag is computed per request,
 never stored.
 
@@ -204,8 +242,7 @@ In the web app, the approvals review surface renders an attestation panel
 (`apps/web/src/components/attestations/attestation-panel.tsx`, on the gate's
 run-trace section next to the red-team badge) with three honest states:
 signed + verified, signed + verification-failed, and confirmed-absent ("not
-attested" — normal while the gate is pending, since records are minted on
-approval). A failed fetch renders nothing: an error is not proof of absence.
+attested"). A failed fetch renders nothing: an error is not proof of absence.
 
 Verification is offline-first via the `scf-verify` CLI (`python -m
 scf_api.cli_verify`, `apps/api/scf_api/cli_verify.py`). Three
@@ -214,8 +251,8 @@ they can gate a release:
 
 | Mode | Does | Needs a DB? |
 |------|------|-------------|
-| `--attestation <file\|->` | Offline DSSE-verify an envelope's Ed25519 signature against `--public-key` (or the public half of `FORGE_ATTEST_SIGNING_KEY`) | No |
-| `--run <id>` | Load the stored `Attestation`, re-derive `payload_hash` from the envelope's PAE and confirm it matches the recorded column, then verify the signature | Yes |
+| `--attestation <file\|->` | Offline DSSE-verify an envelope's Ed25519 signature against `--public-key` (or the public half of `FORGE_ATTEST_SIGNING_KEY`; without either it exits `3`) | No |
+| `--run <id>` | Load the stored `Attestation`, re-derive `payload_hash` from the envelope's PAE and confirm it matches the recorded column, then verify the signature against `--public-key` or the deployment's signing key (configured or stored) | Yes |
 | `--audit-export <ndjson>` | Re-walk an F39 audit-chain export offline: recompute each row's `payload_hash`/`entry_hash` and re-check the per-workspace `prev_hash` linkage | No |
 
 Exit codes: `0` verified / chain intact, `1` rejected or tampered, `3` no
@@ -224,18 +261,16 @@ tampered").
 
 ### Current limitations
 
-- **Minted only as an approval side effect.** An attestation is produced when a
-  `pr` approval gate carrying a `workflow_run_id` is approved. The REST surface
-  and the approvals-UI panel are **read-only**: there is deliberately no
-  endpoint to trigger or mint an attestation.
+- **Minted only by the pipeline.** The REST surface and the approvals-UI panel
+  are **read-only**: there is deliberately no endpoint to trigger or mint an
+  attestation.
 - **REST `verified` is deployment-relative.** The endpoints verify against the
-  public half of this deployment's `FORGE_ATTEST_SIGNING_KEY`, and the raw DSSE
+  public half of this deployment's current signing key, and the raw DSSE
   envelope is not exposed over REST — independent third-party verification goes
-  through `scf-verify`, which re-reads the stored row.
-- **Default signing key is process-ephemeral.** If `FORGE_ATTEST_SIGNING_KEY`
-  is unset, signatures are made with a warned-about ephemeral key and will fail
-  verification after a restart or from another process. Set a stable key in any
-  real deployment.
+  through `scf-verify`, which re-reads the stored row. After a rotation, older
+  attestations read `verified: false` here and verify with `--public-key`.
+- **CI and the red-team scan read `not_run` (#280, #283)** in a pull-request
+  attestation until CI is read back and an adversary attacks the diff.
 - `merkle_leaf_hash` is reserved and unused; there is no batch-Merkle-root
   anchoring yet.
 

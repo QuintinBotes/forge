@@ -39,6 +39,7 @@ from typing import Any, ClassVar
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from scf_api.services.attestation_keys import signing_key
 from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRequest,
@@ -51,9 +52,13 @@ from scf_contracts.attestation import (
     CHANGESET_PROVENANCE_PREDICATE_TYPE,
     DSSE_PAYLOAD_TYPE_INTOTO,
     ChangesetProvenance,
+    CheckOutcome,
     DigestSet,
+    StageVerdict,
     Statement,
     Subject,
+    Verification,
+    decode_statement,
 )
 from scf_contracts.audit import AuditEvent, canonical_json
 from scf_contracts.sandbox import SandboxKind
@@ -62,11 +67,26 @@ from scf_db.audit.writer import SqlAuditWriter
 from scf_db.models import (
     AgentRun,
     Attestation,
+    RedTeamRecord,
     SpecVersion,
     TraceabilityCriterionLink,
     WorkflowRun,
 )
 from scf_obs.attest.signing import DsseSigner, pae
+
+
+def _names_commit(row: Attestation, repository: str, head_commit: str) -> bool:
+    """Whether ``row``'s statement names ``head_commit`` of ``repository`` as a subject."""
+    try:
+        statement = decode_statement(dict(row.envelope or {}).get("payload", ""))
+    except (ValueError, TypeError):
+        return False
+    return any(
+        subject.name == repository
+        and (subject.digest.model_extra or {}).get("gitCommit") == head_commit
+        for subject in statement.subject
+    )
+
 
 __all__ = [
     "ATTESTED_ACTION",
@@ -143,7 +163,8 @@ class AttestationService:
         redactor: object | None = None,
     ) -> None:
         self._session = session
-        self._signer = signer or DsseSigner()
+        # The deployment's key: configured, or stored once for every process (#175).
+        self._signer = signer or DsseSigner(signing_key(session))
         self._repo = AttestationRepository(session)
         self._audit = SqlAuditWriter(session, redactor=redactor)
 
@@ -160,19 +181,24 @@ class AttestationService:
         pr_numbers: list[int] | None = None,
         policy: Mapping[str, Any] | None = None,
         actor_id: uuid.UUID | None = None,
+        head: tuple[str, str] | None = None,
     ) -> Attestation:
         """Attest the changeset produced by ``workflow_run_id``.
 
         Reads the truthful provenance, signs an in-toto Statement, inserts the
         append-only :class:`Attestation`, and chains a ``changeset.attested``
         audit event whose ``seq`` is recorded on the row. Returns the row.
+
+        ``head`` is ``(repository, head commit)``: the statement then names the
+        commit as a subject, and the run that built it is the one attested (#175).
         """
         run = self._session.get(WorkflowRun, workflow_run_id)
         if run is None:
             raise ValueError(f"workflow_run {workflow_run_id} not found")
         workspace_id = run.workspace_id
+        repository, head_commit = head if head is not None else (None, None)
 
-        agent = self._representative_agent_run(workflow_run_id)
+        agent = self._representative_agent_run(workflow_run_id, head_commit=head_commit)
         if agent is None:
             raise ValueError(f"workflow_run {workflow_run_id} has no agent_run to attest")
 
@@ -195,17 +221,24 @@ class AttestationService:
             pr_numbers=list(resolved_prs),
             spec_key=spec_key,
             spec_version=spec_version,
+            repository=repository,
+            head_commit=head_commit,
+            verification=self._verification(run, head_commit),
         )
 
         predicate = provenance.model_dump(mode="json")
         subject_hex = hashlib.sha256(canonical_json(predicate).encode("utf-8")).hexdigest()
-        statement = Statement(
-            subject=[
+        subjects = [
+            Subject(name=f"workflow-run/{workflow_run_id}", digest=DigestSet(sha256=subject_hex))
+        ]
+        if repository is not None and head_commit is not None:
+            subjects.append(
                 Subject(
-                    name=f"workflow-run/{workflow_run_id}",
-                    digest=DigestSet(sha256=subject_hex),
+                    name=repository, digest=DigestSet.model_validate({"gitCommit": head_commit})
                 )
-            ],
+            )
+        statement = Statement(
+            subject=subjects,
             predicateType=CHANGESET_PROVENANCE_PREDICATE_TYPE,
             predicate=predicate,
         )
@@ -262,13 +295,81 @@ class AttestationService:
             audit_seq=audit_log.seq,
         )
 
+    def attest_pull_request(
+        self, workflow_run_id: uuid.UUID, *, repository: str, head_commit: str
+    ) -> Attestation:
+        """The attestation for a governed run's pull request, minted once (#175).
+
+        A retry finds the attestation already stored for this run and head commit.
+        """
+        for row in self._repo.list(
+            self._workspace(workflow_run_id), workflow_run_id=workflow_run_id
+        ):
+            if _names_commit(row, repository, head_commit):
+                return row
+        return self.attest_changeset(workflow_run_id, head=(repository, head_commit))
+
     # ---------------------------------------------------------------- reads #
 
-    def _representative_agent_run(self, workflow_run_id: uuid.UUID) -> AgentRun | None:
+    def _workspace(self, workflow_run_id: uuid.UUID) -> uuid.UUID:
+        run = self._session.get(WorkflowRun, workflow_run_id)
+        if run is None:
+            raise ValueError(f"workflow_run {workflow_run_id} not found")
+        return run.workspace_id
+
+    def _verification(self, run: WorkflowRun, head_commit: str | None) -> Verification:
+        """The checks, CI, reviewer and red-team verdicts recorded on ``run`` (#175).
+
+        A stage with nothing recorded is ``not_run``: never omitted, never a pass.
+        """
+        context = run.context or {}
+        attempts = list(context.get("checks") or [])
+        for_head = [a for a in attempts if head_commit and a.get("head_commit") == head_commit]
+        chosen = for_head or attempts
+        last = max(chosen, key=lambda a: a.get("attempt", 0)) if chosen else None
+        checks = [
+            CheckOutcome(id=c["id"], outcome="passed" if c.get("passed") else "failed")
+            for c in (last or {}).get("checks", [])
+            if c.get("id") != "independent_review"  # the reviewer has its own verdict
+        ]
+        if last is None:
+            checks_verdict = "not_run"
+        elif last.get("no_checks_declared") or not checks:
+            checks_verdict = "failed"
+        else:
+            checks_verdict = "passed" if all(c.outcome == "passed" for c in checks) else "failed"
+
+        reviews = [r for r in context.get("reviews") or [] if r.get("verdict")]
+        review = max(reviews, key=lambda r: r.get("attempt", 0)) if reviews else None
+        scans = [
+            record
+            for record in self._session.scalars(
+                select(RedTeamRecord)
+                .where(RedTeamRecord.workflow_run_id == run.id)
+                .order_by(RedTeamRecord.created_at.desc(), RedTeamRecord.id.desc())
+            )
+            if (record.evidence or {}).get("phase") == "pr"  # the spec scan saw no code
+        ]
+        return Verification(
+            checks_verdict=checks_verdict,
+            checks=checks,
+            ci=str(context.get("ci_status") or "not_run"),
+            reviewer=StageVerdict(verdict=review["verdict"], model=review.get("reviewer_model"))
+            if review is not None
+            else StageVerdict(verdict="not_run"),
+            red_team=StageVerdict(verdict=scans[0].verdict, model=scans[0].adversary_model)
+            if scans
+            else StageVerdict(verdict="not_run"),
+        )
+
+    def _representative_agent_run(
+        self, workflow_run_id: uuid.UUID, *, head_commit: str | None = None
+    ) -> AgentRun | None:
         """The agent run whose runtime facts the attestation records.
 
-        Prefers the earliest non-supervisor run that actually recorded a model
-        (what ran); falls back to the earliest run of the workflow.
+        With a head commit, the latest run that recorded it (the run that built the
+        pull request). Otherwise the earliest non-supervisor run that actually
+        recorded a model (what ran), else the earliest run of the workflow.
         """
         runs = list(
             self._session.scalars(
@@ -277,6 +378,14 @@ class AttestationService:
                 .order_by(AgentRun.created_at, AgentRun.id)
             ).all()
         )
+        built = [
+            run
+            for run in runs
+            if head_commit is not None
+            and ((run.output or {}).get("artifacts") or {}).get("head_commit") == head_commit
+        ]
+        if built:
+            return built[-1]
         for run in runs:
             if not run.is_supervisor and run.model:
                 return run

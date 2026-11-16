@@ -45,7 +45,14 @@ import json
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from scf_contracts.audit import canonical_json
 from scf_contracts.sandbox import SandboxKind
@@ -55,11 +62,14 @@ __all__ = [
     "DSSE_PAYLOAD_TYPE_INTOTO",
     "INTOTO_STATEMENT_TYPE",
     "ChangesetProvenance",
+    "CheckOutcome",
     "DigestSet",
     "DsseEnvelope",
     "DsseSignature",
+    "StageVerdict",
     "Statement",
     "Subject",
+    "Verification",
     "decode_statement",
     "encode_statement",
 ]
@@ -113,14 +123,26 @@ class DsseEnvelope(_Model):
 class DigestSet(_Model):
     """in-toto ``DigestSet``: one or more ``{algorithm: hex_digest}`` pairs.
 
-    ``sha256`` is the one SCF always populates; ``extra="allow"`` (instead of
-    the base's ``"ignore"``) lets a producer attach additional algorithms
-    (e.g. ``gitCommit``) without them being silently dropped on validation.
+    ``sha256`` is what SCF populates for a workflow-run subject; a commit subject
+    carries only ``gitCommit`` (#175). ``extra="allow"`` (instead of the base's
+    ``"ignore"``) lets a producer attach additional algorithms without them being
+    silently dropped on validation, and an absent algorithm is left out when
+    serialized, so a ``sha256``-only set serializes as it always did.
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="allow", frozen=True)
 
-    sha256: str
+    sha256: str | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_digest(self) -> DigestSet:
+        if self.sha256 is None and not self.model_extra:
+            raise ValueError("a DigestSet needs at least one digest")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _without_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return {k: v for k, v in handler(self).items() if v is not None}
 
 
 class Subject(_Model):
@@ -139,6 +161,35 @@ class Statement(_Model):
     subject: list[Subject]
     predicateType: str
     predicate: dict[str, Any] = Field(default_factory=dict)
+
+
+class CheckOutcome(_Model):
+    """One service-side check SCF ran on the head commit (#172)."""
+
+    id: str
+    outcome: Literal["passed", "failed"]
+
+
+class StageVerdict(_Model):
+    """A verification stage's verdict and the model that gave it.
+
+    ``not_run`` when the stage did not run: never omitted, never a pass (#175).
+    """
+
+    verdict: str
+    model: str | None = None
+
+
+class Verification(_Model):
+    """What SCF verified about the change before a person reviewed it (#175)."""
+
+    #: ``passed``, ``failed`` or ``not_run`` over all of ``checks``.
+    checks_verdict: str
+    checks: list[CheckOutcome] = Field(default_factory=list)
+    #: The CI status of the head commit, ``not_run`` while it is not read back (#280).
+    ci: str = "not_run"
+    reviewer: StageVerdict
+    red_team: StageVerdict
 
 
 class ChangesetProvenance(_Model):
@@ -167,6 +218,10 @@ class ChangesetProvenance(_Model):
     - ``spec_key``/``spec_version`` — the spec (and version) this changeset is
       attested against, which may have advanced past ``prompt_spec_revision``
       by the time the changeset is attested.
+    - ``repository``/``head_commit`` — the change's repository and head commit
+      when it is attested for its pull request (#175).
+    - ``verification`` — the checks, CI, reviewer and red-team verdicts (#175).
+      Absent on attestations made before #175.
     """
 
     agent_role: str
@@ -182,6 +237,9 @@ class ChangesetProvenance(_Model):
     pr_numbers: list[int] = Field(default_factory=list)
     spec_key: str
     spec_version: int
+    repository: str | None = None
+    head_commit: str | None = None
+    verification: Verification | None = None
 
 
 def encode_statement(statement: Statement) -> str:
