@@ -272,3 +272,29 @@ async def test_open_pr_idempotent_on_activity_retry(harness: Any) -> None:
     assert opens["n"] == 1
     pr_opened = [t for t in h.transitions(run) if t["to_state"] == "pr_opened"]
     assert len(pr_opened) == 1
+
+
+async def test_a_run_started_for_someone_names_them_once_and_waits_at_the_spec_gate(
+    harness: Any,
+) -> None:
+    """#171: an issue-triggered run records who started it on its first transition,
+    and never as an approver; it waits at the spec gate and runs no agent first."""
+    agent_calls: list[Any] = []
+
+    def agent(inp: Any) -> AgentRunResultDTO:
+        agent_calls.append(inp)
+        return AgentRunResultDTO(agent_run_id=uuid.uuid4(), status="succeeded")
+
+    h = harness(run_agent_fn=agent)
+    async with h.worker():
+        run = await h.engine.astart(uuid.uuid4(), started_by="github:octocat")
+        await h.wait_awaiting(run, {"spec_approved_by_human"})
+
+        transitions = h.transitions(run)
+        assert (transitions[0]["event"], transitions[0]["actor"]) == (
+            "generate_spec_draft",
+            "github:octocat",
+        )
+        assert all(t["actor"] != "github:octocat" for t in transitions[1:])
+        assert h.engine.get_run(run.id).current_state == "spec_review"
+        assert agent_calls == [], "no agent before a person decides the spec gate"

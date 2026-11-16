@@ -8,7 +8,9 @@ Two halves, both driven from data SCF already persists:
   run, and if so create + enqueue it through the same code path as
   ``POST /agent/runs`` (:func:`scf_api.services.agent_dispatch.create_and_enqueue_run`).
   The objective is built from the issue *re-fetched through the adapter*,
-  never from the webhook payload (ADR-0014). Every refusal is returned as a
+  never from the webhook payload (ADR-0014). With the Temporal backend
+  selected the label starts a governed workflow run for the issue's board task
+  instead, which walks every gate, the spec gate first (#171). Every refusal is returned as a
   reason for the caller to record on the delivery — never an error to GitHub.
   ``forge.pm.process_webhook`` calls this inline (single owner of the delivery
   row); the ``forge.pm.dispatch_issue`` task below is the standalone re-drive
@@ -53,6 +55,7 @@ from scf_db.models import AgentRun
 from scf_db.models.enums import PMConnectionStatus, PMProvider, PMSyncDirection
 from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_db.models.pm import PMConnection, PMTaskLink, PMWebhookDelivery
+from scf_db.models.runs import WorkflowRun as DbWorkflowRun
 from scf_integrations.github import GitHubClient
 from scf_integrations.pm.sync_engine import run_comment_marker
 from scf_worker.celery_app import celery_app
@@ -69,6 +72,8 @@ logger = logging.getLogger(__name__)
 PM_DISPATCH_TASK = "forge.pm.dispatch_issue"
 
 _ACTIVE_RUN_STATUSES = (DbRunStatus.PENDING, DbRunStatus.RUNNING)
+#: A workflow run waiting at a gate is still active (it holds its issue's slot).
+_ACTIVE_WORKFLOW_STATUSES = (*_ACTIVE_RUN_STATUSES, DbRunStatus.ESCALATED)
 
 
 @dataclass(frozen=True)
@@ -275,6 +280,21 @@ def maybe_dispatch(
         payload_hash=delivery.payload_hash,
         task_id=task_id,
     )
+    if _durable_engine_selected():
+        return _dispatch_governed(
+            session_factory,
+            connection=connection,
+            delivery=delivery,
+            connections=connections,
+            external=external,
+            objective=objective,
+            server_context=server_context,
+            task_id=task_id,
+            sender_login=sender_login if isinstance(sender_login, str) else None,
+            max_active_runs=config.max_active_runs,
+            skipped=skipped,
+            audit=audit,
+        )
     with session_factory() as session:
         # Serialise dispatch per connection: the fetch above sits between the
         # first guard and the insert, so without this row lock two concurrent
@@ -339,6 +359,155 @@ def maybe_dispatch(
             metadata={"run_id": str(result.run_id), "external_id": delivery.external_id},
         )
     return DispatchOutcome("dispatched", run_id=str(result.run_id))
+
+
+def _durable_engine_selected() -> bool:
+    from scf_workflow.temporal.config import TemporalSettings
+
+    return TemporalSettings().workflow_engine_backend == "temporal"
+
+
+def _workflow_run_guard(
+    session: Session,
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    delivery_id: str,
+    payload_hash: str | None,
+    max_active_runs: int,
+) -> str | None:
+    """The dispatch guard for governed runs, over the workflow runs issues started.
+
+    This delivery, or another with the same signed body, already started a run;
+    or the connection is at its ``max_active_runs`` cap. One active run per issue
+    is the engine's own rule (one active Temporal run per task).
+    """
+    tracker = ("trigger", "tracker")
+    run_connection = DbWorkflowRun.context[(*tracker, "connection_id")].as_string()
+    run_delivery = DbWorkflowRun.context[(*tracker, "delivery_id")].as_string()
+    run_hash = DbWorkflowRun.context[(*tracker, "payload_hash")].as_string()
+    rows = session.execute(
+        select(DbWorkflowRun.status, run_delivery, run_hash).where(
+            DbWorkflowRun.workspace_id == workspace_id,
+            run_connection == str(connection_id),
+        )
+    ).all()
+    active = 0
+    for status, delivered, hashed in rows:
+        if delivered == delivery_id or (payload_hash and hashed == payload_hash):
+            return "already_dispatched"
+        if status in _ACTIVE_WORKFLOW_STATUSES:
+            active += 1
+    if active >= max_active_runs:
+        return "max_active_runs_reached"
+    return None
+
+
+def _give_task_the_repository(
+    session_factory: sessionmaker[Session], task_id: uuid.UUID, objective: AgentObjective
+) -> str | None:
+    """Make the run's board task name the repository dispatch acts on.
+
+    Every step of a governed run (the guard, the agent, the checks, the pull
+    request) reads the task's repository, and a task the board sync created from
+    the issue names none: it gets the one the dispatch config names. A task that
+    already names another repository is refused rather than run against two.
+    """
+    from scf_db.models import Task
+
+    target = objective.primary_repo_target
+    if target is None:
+        return None
+    with session_factory() as session:
+        task = session.get(Task, task_id)
+        if task is None:
+            return "no_board_task"
+        current = AgentObjective(objective="dispatch", repo_targets=task.repo_targets)
+        if current.primary_repo_target is None:
+            task.repo_targets = [target.model_dump(mode="json")]
+            session.commit()
+        elif current.primary_repo_target.repo.lower() != target.repo.lower():
+            return "task_repository_mismatch"
+    return None
+
+
+def _dispatch_governed(
+    session_factory: sessionmaker[Session],
+    *,
+    connection: PMConnection,
+    delivery: PMWebhookDelivery,
+    connections: PMConnectionService,
+    external: Any,
+    objective: AgentObjective,
+    server_context: dict[str, Any],
+    task_id: uuid.UUID | None,
+    sender_login: str | None,
+    max_active_runs: int,
+    skipped: Callable[[str], DispatchOutcome],
+    audit: AuditLog | None,
+) -> DispatchOutcome:
+    """Start a governed workflow run for the issue's board task (#171).
+
+    The label only starts the run: the workflow walks every gate, the spec gate
+    first, and its agent runs the objective kept on the run (built from the
+    re-fetched issue). The sender is recorded as the run's starter, never as an
+    approver. Tracker write-back for governed runs is #278.
+    """
+    from scf_api.services.workflow_engine import select_workflow_engine
+    from scf_workflow.exceptions import DuplicateRunError
+    from scf_workflow.temporal.engine import TemporalWorkflowEngine
+
+    if task_id is None:
+        # No board task linked yet: create it (and its link), as the board sync does.
+        from scf_worker.tasks.pm_sync import sync_external_task
+
+        task_id = sync_external_task(session_factory, connections, connection, external, audit)
+        if task_id is None:
+            return skipped("no_board_task")
+    mismatch = _give_task_the_repository(session_factory, task_id, objective)
+    if mismatch is not None:
+        return skipped(mismatch)
+    starter = f"github:{sender_login}" if sender_login else f"pm:{connection.id}"
+    trigger: dict[str, object] = {
+        "source": "issue",
+        "started_by": starter,
+        "tracker": server_context["tracker"],
+        "objective": objective.model_copy(update={"task_id": task_id}).model_dump(mode="json"),
+    }
+    with session_factory() as session:
+        # Serialised per connection, as the direct path is (see maybe_dispatch).
+        session.execute(
+            select(PMConnection.id).where(PMConnection.id == connection.id).with_for_update()
+        )
+        assert delivery.external_id is not None  # guarded by maybe_dispatch
+        guard = _workflow_run_guard(
+            session,
+            workspace_id=connection.workspace_id,
+            connection_id=connection.id,
+            delivery_id=delivery.delivery_id,
+            payload_hash=delivery.payload_hash,
+            max_active_runs=max_active_runs,
+        )
+        if guard is not None:
+            return skipped(guard)
+        engine = select_workflow_engine(session=session, workspace_id=connection.workspace_id)
+        assert isinstance(engine, TemporalWorkflowEngine)  # the durable engine is selected
+        try:
+            run = engine.start(task_id, trigger=trigger, started_by=starter)
+        except DuplicateRunError:
+            return skipped("issue_run_active")
+        session.commit()
+    if audit is not None:
+        audit.record(
+            category=AuditCategory.SYSTEM,
+            action="pm_dispatch",
+            workspace_id=connection.workspace_id,
+            connection_id=str(connection.id),
+            target=delivery.delivery_id,
+            status="dispatched",
+            metadata={"workflow_run_id": str(run.id), "external_id": delivery.external_id},
+        )
+    return DispatchOutcome("dispatched", run_id=str(run.id))
 
 
 # --------------------------------------------------------------------------- #

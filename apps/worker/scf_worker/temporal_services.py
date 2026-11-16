@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import httpx
 import yaml
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 
 from scf_api.observability.redaction import redact_text
-from scf_api.services.agent_dispatch import repo_connected
+from scf_api.services.agent_dispatch import STRIPPED_CONTEXT, repo_connected
 from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.run_events import RunEventDraft, RunEventType
@@ -234,6 +235,20 @@ def _workflow_result(agent_run_id: uuid.UUID, result: AgentRunResult) -> AgentRu
     )
 
 
+def _kept_objective(context: dict[str, Any]) -> AgentObjective | None:
+    """The objective a run was started with (issue dispatch keeps one), if any.
+
+    Server-owned and tracker keys are stripped from its context, as at every other
+    entry point: only SCF sets those, here from the run itself.
+    """
+    raw = (context.get("trigger") or {}).get("objective")
+    if not raw:
+        return None
+    kept = AgentObjective.model_validate(raw)
+    own = {k: v for k, v in kept.context.items() if k not in STRIPPED_CONTEXT}
+    return kept.model_copy(update={"context": own})
+
+
 def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
     """Run the task's agent for a workflow run in a per-run worktree (#250).
 
@@ -255,6 +270,7 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
                 return _workflow_result(agent_run_id, recorded)
             task = session.get(Task, workflow_run.task_id)
             assert task is not None  # workflow_run.task_id is a non-null foreign key
+            kept = _kept_objective(workflow_run.context)
             target = AgentObjective(
                 objective=task.title, repo_targets=task.repo_targets
             ).primary_repo_target
@@ -275,6 +291,19 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
             objective = objective_for_task(
                 task, agent_run_id=agent_run_id, repo_full_name=target.repo if target else None
             )
+            if kept is not None:
+                # The run keeps the text built from the re-fetched issue (#171). The
+                # task still sets what the agent may do and where: its allowed and
+                # restricted actions and its repository.
+                objective = objective.model_copy(
+                    update={
+                        "key": kept.key or objective.key,
+                        "objective": kept.objective,
+                        "description": kept.description,
+                        "acceptance_criteria": kept.acceptance_criteria,
+                        "context": {**kept.context, **objective.context},
+                    }
+                )
             objective.context["workflow_run_id"] = str(inp.workflow_run_id)
             session.add(
                 AgentRun(

@@ -47,6 +47,17 @@ binds every activity except `forge.resume_agent`:
   (CI has not reported yet), the request's `gate_payload.workflow_event.status`
   reads `failed` until `POST /workflow/runs/{id}/gates/pr/sync` applies the event
   with the same attestation; then it reads `submitted`.
+- **An issue's `forge:run` label** starts a governed run for the issue's board
+  task (creating the task when it has none). The label is not a spec approval
+  (owner decision, 2026-11-15, FR-005): the spec gate still opens and waits for a
+  person, and the label's sender is recorded as the run's starter on its first
+  transition, never as an approver. The agent works from the objective built from
+  the re-fetched issue, kept on the run. `POST /agent/runs` (#276), the refusal
+  of ungoverned runs outside development (#277) and tracker write-back for
+  governed runs (#278) follow. The backend is read per process: the API, the
+  Celery worker and the Temporal worker must all see the same
+  `WORKFLOW_ENGINE_BACKEND` and `TEMPORAL_*` settings. A Celery worker without
+  them still sends issues down the direct, ungoverned path.
 - **A cancel** at a gate expires that gate's open request with the reason
   `run_cancelled`, recorded as whoever cancelled the run. The workflow's own
   cancel path does it again, for a request it opened after the cancel arrived.

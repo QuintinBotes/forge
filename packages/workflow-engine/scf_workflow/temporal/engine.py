@@ -134,6 +134,7 @@ class TemporalWorkflowEngine:
         *,
         trigger: dict[str, object] | None = None,
         definition_revision_id: uuid.UUID | None = None,
+        started_by: str = "system",
     ) -> WorkflowRun:
         from temporalio.common import WorkflowIDReusePolicy
         from temporalio.exceptions import WorkflowAlreadyStartedError
@@ -153,6 +154,7 @@ class TemporalWorkflowEngine:
             # start_workflow. Start it under its own id: Temporal refuses a second one.
             run_id, definition_name = active.id, active.workflow_name
             wf_id = workflow_id(run_id)
+            started_by = str(active.context.get("started_by", "system"))  # absent: system
         else:
             run_id = uuid.uuid4()
             wf_id = workflow_id(run_id)
@@ -164,6 +166,8 @@ class TemporalWorkflowEngine:
             }
             if trigger is not None:
                 context["trigger"] = trigger
+            if started_by != "system":
+                context["started_by"] = started_by
             if definition_revision_id is not None:
                 context[DEFINITION_REVISION_KEY] = str(definition_revision_id)
             run = WorkflowRun(
@@ -185,6 +189,7 @@ class TemporalWorkflowEngine:
             definition_name=definition_name,
             retry_policy=self._retry_policy(definition_name),
             escalation_policy=self._escalation_policy(definition_name),
+            started_by=started_by,
         )
         try:
             handle = await client.start_workflow(
@@ -258,12 +263,14 @@ class TemporalWorkflowEngine:
         *,
         trigger: dict[str, object] | None = None,
         definition_revision_id: uuid.UUID | None = None,
+        started_by: str = "system",
     ) -> WorkflowRun:
         return self._runner(
             self.astart(
                 task_id,
                 definition_name,
                 trigger=trigger,
+                started_by=started_by,
                 definition_revision_id=definition_revision_id,
             )
         )
