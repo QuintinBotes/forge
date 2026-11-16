@@ -4,15 +4,14 @@ The Red-Team Gate's verdict shape was born inside the Temporal (V2) activity
 layer (``temporal/activities.py``); this module EXTRACTS it so the V1
 (Postgres-FSM) path mints the identical contract instead of copying it:
 
-* :class:`RedTeamInput` / :class:`RedTeamResult` + the two verdict constants —
+* :class:`RedTeamInput` / :class:`RedTeamResult` + the verdict constants —
   the pure gate payloads, moved here from ``temporal/payloads.py`` (which
   re-exports them unchanged, so every Temporal import path is untouched);
-* :func:`parked_pass_verdict` — the explicit park-don't-fake default: with no
-  adversary model/sandbox wired the verdict is ``survived``/``kind="parked"``
-  with evidence saying so plainly. It is **never** disguised as a real
-  adversarial pass;
+* :func:`not_run_verdict` — the verdict when no adversary ran: ``not_run``,
+  with the reason in its evidence. A stand-in is never recorded as
+  ``survived`` (#174, FR-017);
 * :func:`evaluate_red_team` — run the configured adversary when one is wired,
-  the parked-pass otherwise (the Temporal activity's ``_default_red_team``
+  ``not_run`` otherwise (the Temporal activity's ``_default_red_team``
   delegates here);
 * :func:`ensure_red_team_verdict` / :func:`run_and_record_red_team` — the
   session-in recorders the V1 gate path and the trigger endpoint call: evaluate,
@@ -39,21 +38,23 @@ if TYPE_CHECKING:
 
 __all__ = [
     "REDTEAM_BLOCKED",
+    "REDTEAM_NOT_RUN",
     "REDTEAM_SURVIVED",
     "RedTeamFn",
     "RedTeamInput",
     "RedTeamResult",
     "ensure_red_team_verdict",
     "evaluate_red_team",
-    "parked_pass_verdict",
+    "not_run_verdict",
     "run_and_record_red_team",
 ]
 
-#: The two terminal verdicts of the Red-Team Gate (mirror
-#: ``scf_db.models.red_team.VERDICT_*`` without importing the DB into the
-#: workflow determinism sandbox).
+#: The verdicts of the Red-Team Gate (mirror ``scf_db.models.red_team.VERDICT_*``
+#: without importing the DB into the workflow determinism sandbox). ``not_run``
+#: means no adversary attacked the change; only an adversary's run says ``survived``.
 REDTEAM_BLOCKED = "blocked"
 REDTEAM_SURVIVED = "survived"
+REDTEAM_NOT_RUN = "not_run"
 
 
 @dataclass
@@ -79,14 +80,15 @@ class RedTeamResult:
     """Verdict of an adversarial scan.
 
     ``verdict`` is :data:`REDTEAM_BLOCKED` (the adversary produced a failing test
-    or a structured spec-violation) or :data:`REDTEAM_SURVIVED` (it could not).
-    ``kind`` names the attack class (``failing_test`` / ``spec_violation`` /
-    ``parked``); ``evidence`` carries the structured result. Both models are
-    recorded so the survive is a truthful, heterogeneous-review provenance fact.
+    or a structured spec-violation), :data:`REDTEAM_SURVIVED` (it could not) or
+    :data:`REDTEAM_NOT_RUN` (no adversary ran). ``kind`` names the attack class
+    (``failing_test`` / ``spec_violation`` / ``not_run``); ``evidence`` carries the
+    structured result. Both models are recorded so the survive is a truthful,
+    heterogeneous-review provenance fact.
     """
 
-    verdict: str = REDTEAM_SURVIVED
-    kind: str = "parked"
+    verdict: str = REDTEAM_NOT_RUN
+    kind: str = "not_run"
     evidence: dict[str, Any] = field(default_factory=dict)
     adversary_model: str | None = None
     coder_model: str | None = None
@@ -101,26 +103,23 @@ class RedTeamResult:
 RedTeamFn = Callable[[RedTeamInput], RedTeamResult]
 
 
-def parked_pass_verdict() -> RedTeamResult:
-    """The explicit park-don't-fake verdict used when no adversary is wired.
+def not_run_verdict(phase: str) -> RedTeamResult:
+    """The verdict when no adversary attacked the change (#174, FR-017).
 
-    The evidence states plainly that no adversary model/sandbox was configured —
-    a ``survived``/``parked`` record must never be read as "an adversary tried
-    and failed to break this".
+    At the ``spec`` phase there is no code to attack (``no_candidate_diff``); at
+    any later phase no adversary is wired (``red_team_not_configured``). Neither
+    is ever recorded as ``survived``.
     """
-    return RedTeamResult(
-        verdict=REDTEAM_SURVIVED,
-        kind="parked",
-        evidence={"parked": True, "reason": "no adversary model/sandbox wired"},
-    )
+    reason = "no_candidate_diff" if phase == "spec" else "red_team_not_configured"
+    return RedTeamResult(verdict=REDTEAM_NOT_RUN, kind="not_run", evidence={"reason": reason})
 
 
 def evaluate_red_team(inp: RedTeamInput, red_team_fn: RedTeamFn | None = None) -> RedTeamResult:
-    """Build the gate verdict: the configured adversary when wired, the explicit
-    parked-pass otherwise. Both engine spines call exactly this."""
+    """Build the gate verdict: the configured adversary when wired, ``not_run``
+    otherwise. Both engine spines call exactly this."""
     if red_team_fn is not None:
         return red_team_fn(inp)
-    return parked_pass_verdict()
+    return not_run_verdict(inp.phase)
 
 
 def run_and_record_red_team(
@@ -159,7 +158,8 @@ def run_and_record_red_team(
         workspace_id,
         verdict=result.verdict,
         kind=result.kind,
-        evidence=result.evidence,
+        # The record has no phase column: the phase lives in its evidence (#174).
+        evidence={**result.evidence, "phase": phase},
         adversary_model=result.adversary_model,
         coder_model=result.coder_model,
         workflow_run_id=workflow_run_id,
@@ -179,8 +179,9 @@ def ensure_red_team_verdict(
     red_team_fn: RedTeamFn | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> tuple[RedTeamRecord, bool]:
-    """Idempotently mint the gate verdict for a run: evaluate + record only when
-    the run has no scan yet; otherwise return the newest existing record.
+    """Idempotently mint the gate verdict for a run's ``phase``: evaluate + record
+    only when the run has no scan at that phase yet; otherwise return the newest
+    existing record of it (a record without a phase is a ``spec`` scan).
 
     Mirrors the Temporal spine's once-per-run scan (a block -> changes ->
     resubmit loop re-enters the gate without rescanning). Returns
@@ -190,10 +191,14 @@ def ensure_red_team_verdict(
 
     # Query-first idempotency is best-effort, not a hard guarantee: two
     # concurrent callers can both see "no existing scan" and both record.
-    # Worst case under a race is a duplicate honest `parked`/`survived` row in
+    # Worst case under a race is a duplicate honest `not_run`/`survived` row in
     # the append-only history (extra noise on the GET's `records` list) — it
     # is never a verdict flip, and never fabricates a block or a survive.
-    existing = RedTeamRepository(session).get_by_run(workspace_id, workflow_run_id)
+    existing = [
+        record
+        for record in RedTeamRepository(session).get_by_run(workspace_id, workflow_run_id)
+        if (record.evidence or {}).get("phase", "spec") == phase
+    ]
     if existing:
         return existing[0], False
     row = run_and_record_red_team(

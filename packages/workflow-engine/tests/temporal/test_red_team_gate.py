@@ -4,7 +4,7 @@ gate (Red-Team Gate, slice wire-gate).
 
 Driven on the time-skipping ``WorkflowEnvironment`` with real Activities over an
 in-memory projection store and a scriptable ``red_team_fn``. The default
-parked-pass must leave the existing flow byte-identical; a survive proceeds to
+``not_run`` verdict must leave the existing flow byte-identical; a survive proceeds to
 the human gate; a block routes the change back for changes (→ clarification →
 spec_review) before any human sees it.
 
@@ -31,10 +31,10 @@ from scf_workflow.temporal.payloads import (
 pytestmark = pytest.mark.asyncio
 
 
-async def test_default_parked_pass_keeps_existing_flow(harness: Any) -> None:
-    """With no adversary wired, the default parked-pass survive leaves the flow
+async def test_default_not_run_keeps_existing_flow(harness: Any) -> None:
+    """With no adversary wired, the default ``not_run`` verdict leaves the flow
     unchanged: no red-team-driven transition, straight to the human spec gate."""
-    h = harness()  # defaults: parked-pass red-team scan
+    h = harness()  # defaults: a not_run red-team scan
     async with h.worker():
         run = await h.start()
         await h.wait_awaiting(run, {"spec_approved_by_human", "spec_changes_requested"})

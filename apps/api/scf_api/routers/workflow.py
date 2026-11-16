@@ -26,8 +26,8 @@ no gate hooks, and this router is its only production driver — so when a V1
 transition lands a run in ``spec_review`` (the human spec gate, exactly where
 the Temporal spine scans), the handler mints the run's verdict once via the
 shared :func:`scf_workflow.red_team_gate.ensure_red_team_verdict`: the
-configured adversary when one is wired (:func:`get_red_team_fn`), an explicit
-parked-pass otherwise — park-don't-fake, never silent. The Temporal spine keeps
+configured adversary when one is wired (:func:`get_red_team_fn`), ``not_run``
+otherwise — never a pass (#174). The Temporal spine keeps
 owning its own scan inside ``FeatureWorkflow.run`` (the mint is V1-engine-only).
 """
 
@@ -124,9 +124,9 @@ def get_red_team_fn() -> RedTeamFn | None:
     """The configured Red-Team adversary harness (override in tests / deploys via DI).
 
     ``None`` (the default — no adversary model/sandbox is wired in the API
-    process) makes every V1/triggered scan an EXPLICIT parked-pass
-    (``kind="parked"``, evidence naming the reason) — park-don't-fake, mirroring
-    the Temporal activity's ``_default_red_team``. A real deployment overrides
+    process) makes every V1/triggered scan record ``not_run`` with the reason in
+    its evidence, never ``survived`` (#174), mirroring the Temporal activity's
+    ``_default_red_team``. A real deployment overrides
     this with a callable that runs the heterogeneous, sandboxed adversary
     (``scf_coordinator.red_team.run_red_team``).
     """
@@ -457,7 +457,7 @@ def transition(
     Red-Team Gate (V1 parity): when a V1 (FSM-engine) transition lands the run
     in ``spec_review`` — the human spec gate, exactly where the Temporal spine
     scans — mint the run's verdict once (idempotent across gate re-entries):
-    the configured adversary when wired, an explicit parked-pass otherwise.
+    the configured adversary when wired, ``not_run`` otherwise (#174).
     Failure to record is loud (500 via ``_run_id``/``_run_task_id``), never a
     silently skipped gate. The Temporal engine is excluded: its workflow body
     owns the scan. Recovery from a mint failure needs no special-casing: the
@@ -638,8 +638,8 @@ def trigger_run_red_team(
     """Trigger a Red-Team scan for a run and append its verdict to the history.
 
     Runs the configured adversary when one is wired (:func:`get_red_team_fn`);
-    otherwise records an EXPLICIT parked-pass (``kind="parked"``, evidence
-    naming the missing adversary) — never disguised as a real adversarial pass.
+    otherwise records ``not_run`` with the reason in its evidence — never a
+    claimed adversarial pass (#174).
     Each trigger appends a fresh ``red_team_record`` (a ``blocked`` scan
     followed by a re-triggered ``survived`` one is the documented history the
     GET surface returns). ``409`` when the run is not at a gateable state

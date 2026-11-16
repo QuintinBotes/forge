@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldAlert, ShieldCheck } from "lucide-react";
+import { ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { useState } from "react";
 
 import { useRedTeamVerdict } from "@/lib/api/approvals";
@@ -51,7 +51,15 @@ export function RedTeamBadge({ workflowRunId, client = apiClient }: RedTeamBadge
   }
 
   const blocked = latest.verdict === "blocked";
-  const Icon = blocked ? ShieldAlert : ShieldCheck;
+  // No adversary attacked the change: never shown as a survive (#174). A record
+  // made before #174 says so with `kind: "parked"` on a `survived` verdict.
+  const notRun = latest.verdict === "not_run" || latest.kind === "parked";
+  const Icon = blocked ? ShieldAlert : notRun ? ShieldQuestion : ShieldCheck;
+  const label = blocked
+    ? "Blocked by red-team adversary"
+    : notRun
+      ? "Red-team scan not run"
+      : "Survived adversarial review";
 
   return (
     <div data-testid="red-team-badge" data-verdict={latest.verdict} className="flex flex-col gap-2">
@@ -64,11 +72,13 @@ export function RedTeamBadge({ workflowRunId, client = apiClient }: RedTeamBadge
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           blocked
             ? "border-danger/40 bg-danger/10 text-danger"
-            : "border-success/40 bg-success/10 text-success",
+            : notRun
+              ? "border-border bg-muted text-muted-foreground"
+              : "border-success/40 bg-success/10 text-success",
         )}
       >
         <Icon aria-hidden className="h-3.5 w-3.5" />
-        {blocked ? "Blocked by red-team adversary" : "Survived adversarial review"}
+        {label}
       </button>
 
       {expanded ? <RedTeamEvidence record={latest} /> : null}

@@ -120,8 +120,8 @@ def record_red_team_verdict(
     """Append one verdict row; on ``survived`` also chain a ``redteam.survived``
     audit event whose ``detail_ref`` points back at the row.
 
-    Returns ``(row, audit_log)`` — ``audit_log`` is ``None`` for a ``blocked``
-    verdict (nothing survived to attest). Participates in the caller's
+    Returns ``(row, audit_log)`` — ``audit_log`` is ``None`` for a ``blocked`` or
+    ``not_run`` verdict (nothing survived to attest). Participates in the caller's
     transaction (the caller commits), so the verdict and its audit entry commit
     atomically (fail-closed), mirroring
     :meth:`AttestationService.attest_changeset`.

@@ -95,8 +95,8 @@ binds every activity except `forge.resume_agent`:
 
 - **CI is not read back (#280).** The merge guard's `ci_status_green` comes from
   the `pr` request's payload, which nothing fills yet.
-- **The red-team scan is parked (#174)**, as described under
-  [Red-Team Gate](#red-team-gate).
+- **No adversary attacks the change yet (#283).** Every scan records `not_run`,
+  as described under [Red-Team Gate](#red-team-gate).
 - **The pull request carries no attestation (#175).** The attestation is made
   when the `pr` gate is approved, not when the pull request is opened.
 - **A failed gate submission is not audited (#182).** It is logged and recorded
@@ -329,10 +329,12 @@ in `packages/multi-agent-coordinator/scf_coordinator/red_team.py`
 The `red_team_record` table (migration `0038`,
 `packages/db/scf_db/models/red_team.py`) is append-only via the shared
 immutability trigger. Columns: nullable `workflow_run_id`, `verdict`
-(`blocked`/`survived`), `kind` (`failing_test`, `spec_violation`, or `parked`),
-`evidence` (the structured attack result), and the heterogeneous
-`adversary_model` / `coder_model` pair (both nullable — a parked-pass has no
-adversary model).
+(`blocked`, `survived` or `not_run`), `kind` (`failing_test`, `spec_violation`
+or `not_run`; `parked` on records made before #174), `evidence` (the structured
+attack result, and the `phase` the scan ran at: `spec` or `pr`), and the
+heterogeneous `adversary_model` / `coder_model` pair (both nullable — a
+`not_run` record has no adversary model). The table has no phase column, so the
+phase lives in `evidence`; a record without one is a `spec` scan.
 
 ### API / CLI surface
 
@@ -343,32 +345,32 @@ through the shared `scf_workflow.red_team_gate` helper:
   (`packages/workflow-engine/scf_workflow/temporal/workflows.py`): after the
   spec is drafted and clarified but **before** the human spec-approval gate, the
   workflow runs a red-team scan. A `blocked` verdict routes the change back for
-  changes (→ clarification → spec review) so a human must address the finding; a
-  `survived` verdict proceeds unchanged. The `forge.run_red_team_scan` activity
+  changes (→ clarification → spec review) so a human must address the finding;
+  any other verdict proceeds unchanged. The `forge.run_red_team_scan` activity
   (`packages/workflow-engine/scf_workflow/temporal/activities.py`) returns
   exactly `self._red_team_fn(inp)` and persists nothing itself; the worker's
   bound `red_team_fn` (`apps/worker/scf_worker/temporal_services.py`) records
   the `RedTeamRecord` and, on a survive, the `redteam.survived` audit event
-  through `ensure_red_team_verdict`, once per run.
+  through `ensure_red_team_verdict`, once per run and phase.
 - **V1 (Postgres FSM)** — the FSM is a plain transition graph with no gate
   hooks, and its one production driver is the workflow router: when a
   transition lands a V1 run in `spec_review` (the human spec gate — the same
   position the Temporal spine scans), the handler **unconditionally** mints the
-  run's verdict once via `ensure_red_team_verdict` (idempotent across gate
-  re-entries: a block → changes → resubmit loop does not rescan) and appends it
+  run's verdict once per phase via `ensure_red_team_verdict` (idempotent across
+  gate re-entries: a block → changes → resubmit loop does not rescan) and appends it
   to `red_team_record` with the same `redteam.survived` audit chaining — no
   extra step or injected recorder required.
 
 The verdict is surfaced at `GET /workflow/runs/{run_id}/red-team`
 (`apps/api/scf_api/routers/workflow.py`), returning the latest verdict plus the
-full scan history (a `blocked` scan followed by a re-submitted `survived` one is
+full scan history, each record with its `phase` (a `blocked` scan followed by a re-submitted `survived` one is
 common). It reads the append-only table scoped to the caller's workspace on the
 row itself; an unscanned or foreign run reads as `latest=None` with an empty
 history — never a 404, so the endpoint never leaks cross-tenant existence.
 
 A scan can also be triggered explicitly: `POST /workflow/runs/{run_id}/red-team`
 (write permission, same pattern as the router's other write endpoints) runs the
-configured adversary — or records an explicit parked-pass when none is wired —
+configured adversary — or records `not_run` when none is wired —
 and **appends** a fresh verdict to the run's history, returning `202` with the
 new `record_id` (+ `verdict`/`kind`); the follow-up GET returns it. It answers
 `409` when the run is not at a gateable state (`spec_review` for the spec
@@ -377,27 +379,25 @@ foreign runs (no existence leak).
 
 ### Current limitations
 
-- **Parked-pass when no adversary is wired.** The default `red_team_fn` on both
-  spines (`scf_workflow.red_team_gate.parked_pass_verdict`, which the Temporal
-  activity's `_default_red_team` and the API's `get_red_team_fn` default to)
-  builds a **parked-pass** verdict: `verdict=survived`, `kind=parked`,
-  `evidence={"parked": true, "reason": "no adversary model/sandbox wired"}`.
-  This is a *park-don't-fake* stand-in so the spine runs and the human gate is
-  still reached — it is **not** a real adversarial review, and a
-  `survived`/`parked` record must not be read as "an adversary tried and failed
-  to break this". A real deployment must inject a `red_team_fn` that runs the
-  heterogeneous, sandboxed adversary (`run_red_team`).
-- **The parked-pass is persisted on both spines.** The V1 router transition
-  handler calls `ensure_red_team_verdict` when a run reaches `spec_review`. The
-  Temporal worker binds the same function to `forge.run_red_team_scan`
-  (`apps/worker/scf_worker/temporal_services.py`), so a Temporal run with no
-  adversary wired also has one `survived`/`parked` row and `GET
-  /workflow/runs/{run_id}/red-team` shows it. A retried scan records no second
-  row. A `WorkflowActivities` built without a `red_team_fn` and without
-  `allow_fakes` refuses the scan instead of passing it.
-- **No adversary runs on the Temporal worker yet.** The worker passes no
-  adversary to `ensure_red_team_verdict`, so every Temporal scan is the
-  parked-pass above until issue #174 wires one.
+- **`not_run` when no adversary is wired (#174, FR-017).** The default
+  `red_team_fn` on both spines (`scf_workflow.red_team_gate.not_run_verdict`,
+  which the Temporal activity's `_default_red_team` and the API's
+  `get_red_team_fn` default to) records `verdict=not_run`, `kind=not_run`, with
+  the reason in its evidence: `no_candidate_diff` at the `spec` phase (there is
+  no code to attack yet) and `red_team_not_configured` at a later phase. A stand-in
+  is never recorded as `survived`, chains no `redteam.survived` audit event, and
+  the approval page's badge shows it as "Red-team scan not run". Records made
+  before #174 as `survived`/`parked` show the same way.
+- **It is persisted on both spines.** The V1 router transition handler calls
+  `ensure_red_team_verdict` when a run reaches `spec_review`. The Temporal
+  worker binds the same function to `forge.run_red_team_scan`
+  (`apps/worker/scf_worker/temporal_services.py`), so a Temporal run also has
+  one `not_run` row per phase. A retried scan records no second row. A
+  `WorkflowActivities` built without a `red_team_fn` and without `allow_fakes`
+  refuses the scan instead of passing it.
+- **No adversary attacks the change yet (#283).** Running the heterogeneous,
+  sandboxed adversary (`run_red_team`) on the run's diff at the `pr` phase,
+  before the pull request, is split out of #174.
 
 ---
 

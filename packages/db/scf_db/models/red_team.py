@@ -11,7 +11,7 @@ change earns a ``survived`` record that feeds the Phase-1 attestation.
 Both models are captured for provenance: ``adversary_model`` (what attacked)
 must differ from ``coder_model`` (what produced the change) — the heterogeneity
 that makes the review meaningful — and ``evidence`` holds the structured attack
-result (the failing test's output, the spec-violation, or the parked reason).
+result (the failing test's output, the spec-violation, or why no adversary ran).
 
 Append-only, mirroring ``attestation`` / ``run_recording``: the repository
 exposes no update/delete path, and the table opts into the shared Postgres
@@ -34,9 +34,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from scf_db.base import WorkspaceScopedModel, attach_immutability_trigger, json_type
 
-#: The two terminal verdicts of a red-team scan.
+#: The verdicts of a red-team scan; ``not_run`` means no adversary attacked it.
 VERDICT_BLOCKED = "blocked"
 VERDICT_SURVIVED = "survived"
+VERDICT_NOT_RUN = "not_run"
 
 
 class RedTeamRecord(WorkspaceScopedModel):
@@ -52,18 +53,18 @@ class RedTeamRecord(WorkspaceScopedModel):
     workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("workflow_run.id", ondelete="CASCADE"), nullable=True
     )
-    #: ``blocked`` (the adversary produced a failing test / spec-violation) or
-    #: ``survived`` (it could not) — the two values of :data:`VERDICT_BLOCKED` /
-    #: :data:`VERDICT_SURVIVED`.
+    #: ``blocked`` (the adversary produced a failing test / spec-violation),
+    #: ``survived`` (it could not) or ``not_run`` (no adversary ran) — see
+    #: :data:`VERDICT_BLOCKED`, :data:`VERDICT_SURVIVED` and :data:`VERDICT_NOT_RUN`.
     verdict: Mapped[str] = mapped_column(String(16), nullable=False)
     #: The attack class that produced the verdict (e.g. ``failing_test``,
-    #: ``spec_violation``, or ``parked`` when no adversary/sandbox was wired).
+    #: ``spec_violation``, or ``not_run``; ``parked`` on records made before #174).
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     #: The structured attack result — the failing test's output, the
-    #: spec-violation payload, or the parked reason.
+    #: spec-violation payload, or why no adversary ran; and the scan's ``phase``.
     evidence: Mapped[dict[str, Any]] = mapped_column(json_type(), default=dict, nullable=False)
     #: The model the ADVERSARY ran under (heterogeneous — must differ from
-    #: ``coder_model``). Nullable: a parked-pass has no adversary model.
+    #: ``coder_model``). Nullable: a ``not_run`` record has no adversary model.
     adversary_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     #: The model the change under review was produced by (the coder).
     coder_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -73,4 +74,4 @@ class RedTeamRecord(WorkspaceScopedModel):
 attach_immutability_trigger(RedTeamRecord.__table__)
 
 
-__all__ = ["VERDICT_BLOCKED", "VERDICT_SURVIVED", "RedTeamRecord"]
+__all__ = ["VERDICT_BLOCKED", "VERDICT_NOT_RUN", "VERDICT_SURVIVED", "RedTeamRecord"]

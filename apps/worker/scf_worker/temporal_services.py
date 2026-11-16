@@ -106,8 +106,8 @@ def _owned_run(session: Session, run_id: uuid.UUID, workspace_id: uuid.UUID) -> 
 
 
 def red_team_service(factory: sessionmaker[Session]) -> RedTeamFn:
-    """Record the run's red-team verdict once. No adversary is wired (#174 adds
-    one), so the row is the explicit ``parked`` verdict the V1 engine records."""
+    """Record the run's red-team verdict once per phase. No adversary is wired yet,
+    so the row is ``not_run`` with its reason, as the V1 engine records (#174)."""
 
     def scan(inp: RedTeamInput) -> RedTeamResult:
         with factory() as session:

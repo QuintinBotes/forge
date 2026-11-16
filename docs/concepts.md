@@ -134,8 +134,8 @@ an append-only, single-table record:
 - **Self-Eval Gate** — blocks a model/prompt/router config change that regresses
   a workspace's private per-repo regression suite below a frozen baseline.
 
-Some of these ship with parked or Phase-A limits (the Red-Team Gate records a
-parked-pass when no adversary is wired; the Self-Eval Gate no-ops at the API
+Some of these ship with parked or Phase-A limits (the Red-Team Gate records
+`not_run`, never a pass, when no adversary is wired; the Self-Eval Gate no-ops at the API
 layer without an injected runner) — each is stated plainly in
 **[Trust layer](./trust-layer.md)**.
 
