@@ -30,7 +30,7 @@ from scf_db.models import (
     WorkflowRun,
 )
 from scf_db.models.enums import RunStatus
-from scf_worker.agent_runner import run_agent_objective
+from scf_worker.agent_runner import _commits_ahead, run_agent_objective
 from scf_worker.approval_activity import make_create_approval_fn
 from scf_worker.dispatch import (
     RepositoryUnavailable,
@@ -435,13 +435,21 @@ def open_pr_service(
                 non_retryable=True,
             )
         owner, name = split_repo_name(target.repo)
+        mirror = workspace_mirrors(inp.workspace_id) / owner / name
+        if _commits_ahead(mirror, target.base_branch, str(branch)) == 0:
+            # The Celery finalizer's ``no_changes``: GitHub refuses an empty pull request.
+            raise ApplicationError(
+                f"{branch} has no commits ahead of {target.base_branch}: nothing to deliver",
+                type="NoChangesToDeliver",
+                non_retryable=True,
+            )
         title = f"{task.key + ': ' if task.key else ''}{task.title}"[:120]
         body = (
             f"Opened by SCF workflow run `{inp.workflow_run_id}` for task {task.key or task.id}."
             "\n\nMerging requires human approval through the SCF `pr` gate."
         )
         pr = push_and_open_pr(
-            repo_path=workspace_mirrors(inp.workspace_id) / owner / name,
+            repo_path=mirror,
             branch=str(branch),
             repo_full_name=target.repo,
             base_branch=target.base_branch,

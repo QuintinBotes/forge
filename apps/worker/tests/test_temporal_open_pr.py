@@ -209,6 +209,26 @@ async def test_the_lookup_asks_for_the_run_branch_before_creating(
     assert params["state"] == "all"
 
 
+async def test_a_run_branch_with_no_commits_is_not_delivered(
+    factory: sessionmaker[Session], remotes: Path, pem: str, tmp_path: Path
+) -> None:
+    """Like the Celery finalizer's ``no_changes``: nothing to push, no pull request."""
+    mirror = tmp_path / "mirrors" / str(WS) / "acme" / "app"
+    _git(mirror, "branch", "-f", BRANCH, "main")  # the agent committed nothing
+    run_id = _seed(factory)
+    github = FakeGitHub()
+
+    with pytest.raises(ApplicationError) as caught:
+        await ActivityEnvironment().run(
+            _activities(factory, remotes, pem, github).open_pr_with_spec_traceability,
+            _input(run_id),
+        )
+
+    assert caught.value.type == "NoChangesToDeliver"
+    assert caught.value.non_retryable is True
+    assert github.created == [] and github.lookups == []
+
+
 async def test_without_github_app_credentials_the_activity_refuses(
     factory: sessionmaker[Session], remotes: Path
 ) -> None:
