@@ -97,6 +97,14 @@ def _git_out(repo: Path, *args: str, timeout: float = _GIT_TIMEOUT) -> str:
     ).stdout
 
 
+def file_at(repo: Path, ref: str, path: str) -> str:
+    """``path`` as committed at ``ref``, or nothing when it is not there."""
+    try:
+        return _git_out(repo, "show", f"{ref}:{path}")
+    except subprocess.CalledProcessError:
+        return ""
+
+
 def _repo_policy(worktree: Path) -> Policy | None:
     try:
         return load_policy(worktree)
@@ -295,6 +303,7 @@ __all__ = [
     "CheckRun",
     "RunWorkspace",
     "detached_worktree",
+    "file_at",
     "prepared_workspace",
     "remove_run_worktrees",
     "run_branch",

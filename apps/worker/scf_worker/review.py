@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import uuid
 from pathlib import Path
 
@@ -30,7 +29,7 @@ from scf_worker.agent_runner import (
     build_agent_runner,
     run_objective,
 )
-from scf_worker.run_workspace import _git_out, detached_worktree
+from scf_worker.run_workspace import _git_out, detached_worktree, file_at
 
 __all__ = [
     "DIFF_CAP_CHARS",
@@ -185,7 +184,7 @@ def review_change(
             "review": {"criteria": criteria, "diff": diff[:DIFF_CAP_CHARS], "truncated": truncated},
             # The change may add or edit AGENTS.md files: only the base branch's are
             # instructions, and the runtime would otherwise read the head's.
-            "agents_md": _base_agents_md(repo_path, base),
+            "agents_md": file_at(repo_path, base, "AGENTS.md"),
         },
     )
     with detached_worktree(repo_path, head) as worktree:
@@ -203,11 +202,3 @@ def review_change(
     )
     station = {"truncated": truncated, "reviewer_model": reviewer, "builder_model": builder_model}
     return verdict.model_copy(update=station), objective, result
-
-
-def _base_agents_md(repo_path: Path, base: str) -> str:
-    """The base branch's root AGENTS.md, or nothing when it has none."""
-    try:
-        return _git_out(repo_path, "show", f"{base}:AGENTS.md")
-    except subprocess.CalledProcessError:
-        return ""
