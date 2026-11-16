@@ -519,6 +519,21 @@ class GitHubClient:
             self._add_labels(repo, pr.number, request.labels)
         return pr
 
+    def find_pr_for_head(self, repo: str, head: str) -> PullRequest | None:
+        """The newest pull request in ``repo`` whose head is ``head``, in any state."""
+        r = self.owner_repo(repo)
+        owner = r.split("/", 1)[0]
+        resp = self._request(
+            "GET",
+            f"/repos/{r}/pulls",
+            params={"head": f"{owner}:{head}", "state": "all", "per_page": 1},
+            action="find_pr_for_head",
+            repo=r,
+        )
+        self._raise_for_status(resp)
+        items = resp.json()
+        return self._parse_pr(repo, items[0]) if items else None
+
     def request_reviews(self, pr: PullRequest, reviewers: list[str]) -> None:
         repo = self.owner_repo(pr.repo)
         users, teams = self._split_reviewers(reviewers)

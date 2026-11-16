@@ -33,7 +33,6 @@ from scf_worker.temporal_main import build_activities
 from scf_workflow.temporal.activities import WorkflowActivities
 from scf_workflow.temporal.payloads import (
     ApprovalInput,
-    OpenPrInput,
     RedTeamInput,
     ResumeAgentInput,
 )
@@ -230,9 +229,9 @@ RUN, WS, TASK = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     [
         # load_guard_inputs, run_agent and pause_and_notify are bound by #250 and
         # tested in test_temporal_guard_inputs.py and test_temporal_run_agent.py;
-        # run_checks is bound by #251 and tested in test_temporal_run_checks.py.
+        # run_checks is bound by #251 and tested in test_temporal_run_checks.py;
+        # open_pr_with_spec_traceability by #252, in test_temporal_open_pr.py.
         ("resume_agent", ResumeAgentInput(RUN, TASK, WS, None, attempt=0, idempotency_key="k")),
-        ("open_pr_with_spec_traceability", OpenPrInput(RUN, WS, "b", idempotency_key="k")),
     ],
 )
 async def test_activities_this_slice_does_not_bind_still_refuse(
