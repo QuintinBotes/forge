@@ -122,6 +122,8 @@ def run_refresh_freshness(
             .where(KnowledgeSource.last_synced_at.is_not(None))
         ).all()
     for slug, synced_at in rows:
+        if synced_at is None:  # excluded by the query; SQLAlchemy types the column optional
+            continue
         if synced_at.tzinfo is None:
             synced_at = synced_at.replace(tzinfo=UTC)
         lag = max((now - synced_at).total_seconds(), 0.0)

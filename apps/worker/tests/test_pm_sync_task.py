@@ -449,8 +449,8 @@ def test_transient_fetch_failure_is_retried_by_reliability_base(
     # Point the production seams at the hermetic test factory + connections.
     monkeypatch.setattr(pm_sync_module, "_session_factory", lambda: factory)
     monkeypatch.setattr(pm_sync_module, "_connection_service", lambda _factory: connections)
-    monkeypatch.setattr(celery_app.conf, "task_always_eager", True)
-    monkeypatch.setattr(celery_app.conf, "task_eager_propagates", False)
+    monkeypatch.setitem(celery_app.conf, "task_always_eager", True)
+    monkeypatch.setitem(celery_app.conf, "task_eager_propagates", False)
 
     result = celery_app.tasks[PM_SYNC_TASK].apply(args=[str(row_id)])
 
@@ -479,8 +479,8 @@ def test_transport_error_fetch_failure_is_retried_by_reliability_base(
     # Point the production seams at the hermetic test factory + connections.
     monkeypatch.setattr(pm_sync_module, "_session_factory", lambda: factory)
     monkeypatch.setattr(pm_sync_module, "_connection_service", lambda _factory: connections)
-    monkeypatch.setattr(celery_app.conf, "task_always_eager", True)
-    monkeypatch.setattr(celery_app.conf, "task_eager_propagates", False)
+    monkeypatch.setitem(celery_app.conf, "task_always_eager", True)
+    monkeypatch.setitem(celery_app.conf, "task_eager_propagates", False)
 
     result = celery_app.tasks[PM_SYNC_TASK].apply(args=[str(row_id)])
 
