@@ -17,9 +17,10 @@ from __future__ import annotations
 import asyncio
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -119,10 +120,39 @@ def prepared_workspace(
     prefix = (target.branch_prefix if target else None) or "forge"
     worktree_sandbox = WorktreeSandbox(repo_path, base_branch=base_branch, branch_prefix=prefix)
     worktree = worktree_sandbox.create(branch=run_branch(prefix, run_id))
+    try:
+        policy = _repo_policy(worktree)
+        with _sandbox_commands(
+            worktree, policy, run_id=run_id, workspace_id=workspace_id, settings=settings
+        ) as run_command:
+            tools = agent_tool_belt(
+                worktree,
+                run_id=str(run_id),
+                commands=policy.commands if policy else None,
+                run_command=run_command,
+            )
+            assert worktree_sandbox.branch is not None  # set by create()
+            yield RunWorkspace(path=worktree, branch=worktree_sandbox.branch, tools=tools)
+    finally:
+        worktree_sandbox.cleanup()
+
+
+@contextmanager
+def _sandbox_commands(
+    worktree: Path,
+    policy: Policy | None,
+    *,
+    run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    settings: SandboxSettings | None,
+) -> Iterator[Callable[[str], CommandOutput]]:
+    """One sandbox session over ``worktree`` for the whole block, as a command runner.
+
+    The sandbox is the workspace settings strengthened by ``policy`` (never weakened).
+    """
     loop = asyncio.new_event_loop()
     session: SandboxSession | None = None
     try:
-        policy = _repo_policy(worktree)
         resolved_settings = settings or SandboxSettings.from_env()
         spec = resolve_sandbox_settings(
             resolved_settings,
@@ -145,20 +175,60 @@ def prepared_workspace(
                 )
             )
 
-        tools = agent_tool_belt(
-            worktree,
-            run_id=str(run_id),
-            commands=policy.commands if policy else None,
-            run_command=run_command,
-        )
-        assert worktree_sandbox.branch is not None  # set by create()
-        yield RunWorkspace(path=worktree, branch=worktree_sandbox.branch, tools=tools)
+        yield run_command
     finally:
         if session is not None:
             with suppress(SandboxError):
                 loop.run_until_complete(session.teardown(reason="run_complete"))
         loop.close()
-        worktree_sandbox.cleanup()
 
 
-__all__ = ["RunWorkspace", "prepared_workspace", "remove_run_worktrees", "run_branch"]
+#: The result a repository that declares no command gets: a failing check, never an empty pass.
+NO_DECLARED_CHECKS = {"declared_checks": False}
+
+
+def run_declared_checks(
+    repo_path: Path,
+    commit: str,
+    policy: Policy | None,
+    *,
+    run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    settings: SandboxSettings | None = None,
+) -> dict[str, bool]:
+    """Run ``policy.commands`` in a sandbox on a fresh, detached worktree of ``commit``.
+
+    One result per command, ``True`` when it exited 0 within its time limit. The
+    worktree is removed afterwards, so running again checks the same commit afresh.
+    """
+    commands = policy.commands if policy else {}
+    if not commands:
+        return dict(NO_DECLARED_CHECKS)
+    holder = Path(tempfile.mkdtemp(prefix="scf-checks-"))
+    worktree = holder / "tree"
+    try:
+        _git_out(repo_path, "worktree", "add", "--detach", str(worktree), commit)
+        with _sandbox_commands(
+            worktree, policy, run_id=run_id, workspace_id=workspace_id, settings=settings
+        ) as run_command:
+            results: dict[str, bool] = {}
+            for name, command in commands.items():
+                output = run_command(command)
+                results[name] = output.exit_code == 0 and not output.timed_out
+            return results
+    finally:
+        with suppress(subprocess.SubprocessError):
+            _git_out(repo_path, "worktree", "remove", "--force", str(worktree))
+        shutil.rmtree(holder, ignore_errors=True)
+        with suppress(subprocess.SubprocessError):
+            _git_out(repo_path, "worktree", "prune")
+
+
+__all__ = [
+    "NO_DECLARED_CHECKS",
+    "RunWorkspace",
+    "prepared_workspace",
+    "remove_run_worktrees",
+    "run_branch",
+    "run_declared_checks",
+]

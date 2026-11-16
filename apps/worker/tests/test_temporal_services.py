@@ -36,7 +36,6 @@ from scf_workflow.temporal.payloads import (
     OpenPrInput,
     RedTeamInput,
     ResumeAgentInput,
-    RunChecksInput,
 )
 
 
@@ -230,9 +229,9 @@ RUN, WS, TASK = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     ("method", "payload"),
     [
         # load_guard_inputs, run_agent and pause_and_notify are bound by #250 and
-        # tested in test_temporal_guard_inputs.py and test_temporal_run_agent.py.
+        # tested in test_temporal_guard_inputs.py and test_temporal_run_agent.py;
+        # run_checks is bound by #251 and tested in test_temporal_run_checks.py.
         ("resume_agent", ResumeAgentInput(RUN, TASK, WS, None, attempt=0, idempotency_key="k")),
-        ("run_checks", RunChecksInput(RUN, WS, attempt=0, idempotency_key="k")),
         ("open_pr_with_spec_traceability", OpenPrInput(RUN, WS, "b", idempotency_key="k")),
     ],
 )
