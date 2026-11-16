@@ -39,6 +39,7 @@ from scf_approval import (
 )
 from scf_approval.models import GateType
 from scf_contracts import UserRole
+from scf_contracts.attestation import decode_statement
 from scf_db.base import Base
 from scf_db.models import AgentRun, Attestation, Project, Task, WorkflowRun, Workspace
 from scf_obs.attest.signing import DsseSigner, EnvSigningKeyProvider
@@ -242,6 +243,76 @@ def test_list_filters_by_workflow_run_id(factory, signer) -> None:
     assert [i["id"] for i in items] == [str(att_a)]
 
 
+def test_a_pull_request_attestation_lists_as_verified_with_the_stored_key(
+    factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#175 criterion 9: with no configured key, the pull-request attestation is signed
+    and verified with the deployment's stored key."""
+    monkeypatch.delenv("FORGE_ATTEST_SIGNING_KEY", raising=False)
+    run_id = _seed_run(factory)
+    with factory() as s:
+        attestation = AttestationService(s).attest_pull_request(
+            run_id, repository="acme/app", head_commit="a1" * 20
+        )
+        s.commit()
+        att_id = attestation.id
+    client = _client(factory, _principal())
+
+    resp = client.get("/attestations", params={"workflow_run_id": str(run_id)})
+
+    assert resp.status_code == 200, resp.text
+    [item] = resp.json()["items"]
+    assert item["id"] == str(att_id)
+    assert item["verified"] is True
+
+
+@pytest.mark.parametrize(
+    ("context", "checks_verdict", "reviewer"),
+    [
+        ({}, "not_run", "not_run"),
+        (
+            {"checks": [{"attempt": 0, "no_checks_declared": True, "checks": []}]},
+            "failed",
+            "not_run",
+        ),
+        (
+            {
+                "checks": [
+                    {
+                        "attempt": 0,
+                        "head_commit": "a1" * 20,
+                        "checks": [{"id": "t", "passed": False}],
+                    }
+                ],
+                "reviews": [{"attempt": 0, "verdict": "request_changes", "reviewer_model": "m"}],
+            },
+            "failed",
+            "request_changes",
+        ),
+    ],
+    ids=["nothing ran", "no checks declared", "a check failed"],
+)
+def test_a_stage_that_did_not_pass_is_never_attested_as_a_pass(
+    factory, signer, context, checks_verdict, reviewer
+) -> None:
+    """#175 criterion 2: what did not run reads not_run; what failed reads failed."""
+    run_id = _seed_run(factory)
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        run.context = {**run.context, **context}
+        s.commit()
+        row = AttestationService(s, signer=signer).attest_pull_request(
+            run_id, repository="acme/app", head_commit="a1" * 20
+        )
+        s.commit()
+        verification = decode_statement(row.envelope["payload"]).predicate["verification"]
+
+    assert verification["checks_verdict"] == checks_verdict
+    assert verification["reviewer"]["verdict"] == reviewer
+    assert verification["red_team"]["verdict"] == "not_run"
+
+
 def test_list_never_leaks_cross_workspace_records(factory, signer) -> None:
     """The row-level workspace scope, not record existence, is the boundary."""
     own_run = _seed_run(factory, workspace_id=WS)
@@ -348,6 +419,33 @@ def test_by_approval_returns_the_runs_attestation(factory, signer) -> None:
     assert body["id"] == str(att_id)
     assert body["verified"] is True
     assert body["provenance"]["workflow_run_id"] == str(run_id)
+
+
+def test_by_approval_returns_the_approvers_attestation_after_the_pull_requests(
+    factory, signer
+) -> None:
+    """#175 criterion 8: the pull request's attestation comes first; approving records a
+    further one naming the approver, and the gate's read returns that one."""
+    run_id = _seed_run(factory)
+    approver = uuid.uuid4()
+    with factory() as s:
+        service_ = AttestationService(s, signer=signer)
+        service_.attest_pull_request(run_id, repository="acme/app", head_commit="a1" * 20)
+        approved = service_.attest_changeset(run_id, human_approver=approver)
+        s.commit()
+        approved_id = approved.id
+    service = _approval_service()
+    client = _client(factory, _principal(), approval_service=service)
+    approval_id = _open_pr_gate(service, workflow_run_id=run_id)
+
+    body = client.get(f"/approvals/{approval_id}/attestation").json()
+
+    assert body["id"] == str(approved_id)
+    with factory() as s:
+        stored = s.get(Attestation, approved_id)
+        assert stored is not None
+        predicate = decode_statement(stored.envelope["payload"]).predicate
+    assert predicate["human_approver"] == str(approver)
 
 
 def test_by_approval_404_when_gate_has_no_workflow_run(factory) -> None:

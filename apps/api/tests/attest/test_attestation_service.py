@@ -17,6 +17,7 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -58,7 +59,7 @@ from scf_db.models import (
     WorkflowRun,
     Workspace,
 )
-from scf_obs.attest.signing import DsseSigner, DsseVerifier, EnvSigningKeyProvider
+from scf_obs.attest.signing import DsseSigner, DsseVerifier, EnvSigningKeyProvider, KeyPair
 
 pytestmark = pytest.mark.usefixtures("pg_engine")
 
@@ -242,7 +243,7 @@ def test_attest_changeset_inserts_signs_and_chains(
         # Signature verifies over the PAE encoding (and a wrong key does not).
         verifier = DsseVerifier()
         assert verifier.verify(envelope, public_key_b64=signer.public_key_b64) is True
-        other = DsseSigner(EnvSigningKeyProvider(environ={}))
+        other = DsseSigner(KeyPair(Ed25519PrivateKey.generate()))  # any other key
         assert verifier.verify(envelope, public_key_b64=other.public_key_b64) is False
 
         # The audit chain includes the attested event and re-verifies cleanly.

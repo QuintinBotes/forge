@@ -10,6 +10,7 @@ from scf_db.models import enums
 from scf_db.models.ao_settings import AoWorkspaceSettings
 from scf_db.models.approval import ApprovalDecision, PolicyOverrideGrant
 from scf_db.models.attestation import Attestation
+from scf_db.models.attestation_key import AttestationSigningKey
 from scf_db.models.audit import AuditChainHead, AuditLog, AuditLogImmutableError
 from scf_db.models.automation import AutomationExecution, AutomationRule
 from scf_db.models.benchmark import BenchmarkSubmission, BenchmarkSuite, SelfEvalBaseline
@@ -216,6 +217,7 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalStatus",
     "Attestation",
+    "AttestationSigningKey",
     "AuditChainHead",
     "AuditLog",
     "AuditLogImmutableError",

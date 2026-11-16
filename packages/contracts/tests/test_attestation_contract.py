@@ -92,9 +92,16 @@ def test_dsse_envelope_requires_core_fields(missing: str) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_digest_set_requires_sha256() -> None:
+def test_digest_set_requires_a_digest() -> None:
     with pytest.raises(ValidationError):
         att.DigestSet()
+
+
+def test_a_commit_digest_set_serializes_without_an_absent_sha256() -> None:
+    """#175: a commit subject carries only ``gitCommit``; a sha256-only set is unchanged."""
+    commit = att.DigestSet.model_validate({"gitCommit": "d" * 40})
+    assert commit.model_dump() == {"gitCommit": "d" * 40}
+    assert att.DigestSet(sha256="c" * 64).model_dump() == {"sha256": "c" * 64}
 
 
 def test_digest_set_allows_extra_algorithms() -> None:

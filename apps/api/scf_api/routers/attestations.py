@@ -44,7 +44,8 @@ from scf_api.schemas.attestation import (
 )
 from scf_api.services.approval_service import get_approval_service
 from scf_approval import ApprovalNotFoundError, ApprovalService
-from scf_contracts.attestation import DsseEnvelope
+from scf_auth.errors import KeyMaterialError
+from scf_contracts.attestation import DsseEnvelope, decode_statement
 from scf_db.attest.repository import AttestationRepository
 from scf_db.models import Attestation
 
@@ -107,7 +108,7 @@ def list_attestations(
         limit=limit,
         offset=offset,
     )
-    public_key = resolve_verification_key()
+    public_key = _verification_key(session)
     return AttestationListResponse(
         items=[_to_out(row, public_key_b64=public_key) for row in rows],
         limit=limit,
@@ -123,7 +124,7 @@ def get_attestation(
     row = session.get(Attestation, attestation_id)
     if row is None or row.workspace_id != principal.workspace_id:
         raise _not_found(attestation_id)
-    return _to_out(row, public_key_b64=resolve_verification_key())
+    return _to_out(row, public_key_b64=_verification_key(session))
 
 
 @router.get("/approvals/{approval_id}/attestation", response_model=AttestationOut)
@@ -137,9 +138,10 @@ async def get_approval_attestation(
 
     Resolves the gate through the same workspace-scoped ``ApprovalService.get``
     the approvals router uses (foreign gate ids 404 identically), then reads the
-    newest attestation for its ``workflow_run_id``. A gate without a linked run,
-    or whose run was never attested (e.g. still pending), is an honest 404 —
-    the UI renders that as "not attested", never a fake state.
+    newest attestation for its ``workflow_run_id`` that names an approver, else
+    its newest (the one signed when the pull request opened, #175). A gate without
+    a linked run, or whose run was never attested, is an honest 404 — the UI
+    renders that as "not attested", never a fake state.
     """
     try:
         request = await service.get(approval_id, workspace_id=principal.workspace_id)
@@ -148,19 +150,36 @@ async def get_approval_attestation(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no approval request {approval_id}"
         ) from None
 
-    row = (
-        AttestationRepository(session).get_by_run(
+    rows = (
+        AttestationRepository(session).list(
             principal.workspace_id, workflow_run_id=request.workflow_run_id
         )
         if request.workflow_run_id is not None
-        else None
+        else []
     )
+    row = next((r for r in rows if _names_an_approver(r)), rows[0] if rows else None)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no attestation recorded for approval {approval_id}",
         )
-    return _to_out(row, public_key_b64=resolve_verification_key())
+    return _to_out(row, public_key_b64=_verification_key(session))
+
+
+def _verification_key(session: Session) -> str:
+    """The deployment's public key, or ``""`` when there is none: then nothing verifies."""
+    try:
+        return resolve_verification_key(session=session)
+    except KeyMaterialError:
+        return ""
+
+
+def _names_an_approver(row: Attestation) -> bool:
+    try:
+        statement = decode_statement(dict(row.envelope or {}).get("payload", ""))
+    except (ValueError, TypeError):
+        return False
+    return statement.predicate.get("human_approver") is not None
 
 
 __all__ = ["router"]

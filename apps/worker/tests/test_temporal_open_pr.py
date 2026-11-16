@@ -21,8 +21,17 @@ from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
+from scf_contracts.attestation import decode_statement
 from scf_db.base import Base
-from scf_db.models import AgentRun, Project, RepositoryConnection, Task, WorkflowRun, Workspace
+from scf_db.models import (
+    AgentRun,
+    Attestation,
+    Project,
+    RepositoryConnection,
+    Task,
+    WorkflowRun,
+    Workspace,
+)
 from scf_db.models.enums import RunStatus
 from scf_worker.finalizer import GitHubAppCredentials
 from scf_worker.temporal_main import build_activities
@@ -116,7 +125,12 @@ def _seed(factory: sessionmaker[Session]) -> uuid.UUID:
                 workflow_run_id=run.id,
                 task_id=task.id,
                 status=RunStatus.SUCCEEDED,
-                output={"status": "succeeded", "artifacts": {"branch": BRANCH}},
+                model="claude-opus-5-5",
+                # A governed run's builder records the commit its checks ran on.
+                output={
+                    "status": "succeeded",
+                    "artifacts": {"branch": BRANCH, "head_commit": HEAD},
+                },
             )
         )
         s.commit()
@@ -164,6 +178,15 @@ def _activities(
     return WorkflowActivities(open_pr_fn=service)
 
 
+#: The commit the builder recorded and the checks ran on.
+HEAD = "a1" * 20
+
+
+def _attestations(factory: sessionmaker[Session], run_id: uuid.UUID) -> list[Attestation]:
+    with factory() as s:
+        return list(s.query(Attestation).filter(Attestation.workflow_run_id == run_id))
+
+
 def _input(run_id: uuid.UUID) -> OpenPrInput:
     return OpenPrInput(
         workflow_run_id=run_id, workspace_id=WS, branch_name=BRANCH, idempotency_key="pr"
@@ -192,6 +215,8 @@ async def test_a_repeated_call_returns_the_same_pull_request_and_creates_one(
     assert str(run_id) in str(created["body"])
     # The run branch reached the remote.
     assert _git(remotes / "acme" / "app.git", "rev-parse", f"refs/heads/{BRANCH}")
+    # #175 criterion 4: the retry found the attestation; it did not store a second.
+    assert len(_attestations(factory, run_id)) == 1
 
 
 async def test_the_lookup_asks_for_the_run_branch_before_creating(
@@ -255,3 +280,44 @@ async def test_a_run_outside_the_workspace_is_refused(
         )
 
     assert caught.value.type == "WorkflowRunNotFound"
+
+
+async def test_the_pull_request_names_its_signed_attestation(
+    factory: sessionmaker[Session], remotes: Path, pem: str
+) -> None:
+    """#175 criteria 1 to 3: before the pull request opens, one attestation names the
+    repository and head commit and records what was verified; the description points
+    to it."""
+    run_id = _seed(factory)
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        check = {"id": "tests", "passed": True, "exit_code": 0}
+        review = {"id": "independent_review", "passed": True, "exit_code": 0}
+        run.context = {
+            **run.context,
+            "checks": [{"attempt": 0, "head_commit": HEAD, "checks": [check, review]}],
+            "reviews": [{"attempt": 0, "verdict": "approve", "reviewer_model": "gpt-6-astra"}],
+        }
+        s.commit()
+    github = FakeGitHub()
+
+    await ActivityEnvironment().run(
+        _activities(factory, remotes, pem, github).open_pr_with_spec_traceability, _input(run_id)
+    )
+
+    [attestation] = _attestations(factory, run_id)
+    body = str(github.created[0]["body"])
+    assert str(attestation.id) in body
+    assert attestation.payload_hash in body and attestation.keyid in body
+    statement = decode_statement(attestation.envelope["payload"])
+    assert [(s.name, (s.digest.model_extra or {}).get("gitCommit")) for s in statement.subject][
+        1:
+    ] == [(REPO, HEAD)]
+    verification = statement.predicate["verification"]
+    assert verification["checks_verdict"] == "passed"
+    assert verification["checks"] == [{"id": "tests", "outcome": "passed"}]
+    assert verification["reviewer"] == {"verdict": "approve", "model": "gpt-6-astra"}
+    # Stages that did not run are named, never omitted and never a pass.
+    assert verification["ci"] == "not_run"
+    assert verification["red_team"] == {"verdict": "not_run", "model": None}

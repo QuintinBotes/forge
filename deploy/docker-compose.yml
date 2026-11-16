@@ -753,6 +753,9 @@ services:
       TEMPORAL_CODEC_KEY: ${TEMPORAL_CODEC_KEY:-}
       AGENT_ACTIVITY_TIMEOUT: ${AGENT_ACTIVITY_TIMEOUT:-7200}
       FORGE_SANDBOX_WORKTREE_VOLUME: ${FORGE_WORKTREE_VOLUME:-forge_repos}
+      # #175: the worker signs each pull request's attestation with the stored key,
+      # which is encrypted under the same master KEK as the API's; fail-closed if unset.
+      FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
     volumes:
       - forge_repos:/srv/forge/worktrees
     depends_on:

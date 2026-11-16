@@ -40,6 +40,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from scf_auth.errors import KeyMaterialError
 from scf_contracts.attestation import DsseEnvelope, decode_statement
 from scf_contracts.audit import (
     GENESIS_HASH,
@@ -72,18 +73,25 @@ def _read_source(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
-def resolve_verification_key(explicit: str | None = None) -> str:
+def resolve_verification_key(explicit: str | None = None, *, session: Session | None = None) -> str:
     """The base64 Ed25519 public key to verify against.
 
-    An explicit key (``--public-key`` on the CLI) wins; otherwise fall back to
-    the public half of the env signing key (``FORGE_ATTEST_SIGNING_KEY``) so an
-    attestation signed on this host can be verified without re-passing the key.
-    When no signing key is set, ``EnvSigningKeyProvider`` warns and generates an
-    ephemeral key whose public half will simply not match a real signature — an
-    honest REJECT.
+    An explicit key (``--public-key`` on the CLI) wins. With a database session,
+    it is the public half of the deployment's signing key: ``FORGE_ATTEST_SIGNING_KEY``
+    when set, else the stored key (#175), so an attestation verifies after a restart
+    and in another process; only the public key is read, so no master key is needed.
+    Without a session it is the public half of ``FORGE_ATTEST_SIGNING_KEY``. Raises
+    ``KeyMaterialError`` when there is no key to verify against.
     """
     if explicit:
         return explicit
+    if session is not None:
+        from scf_api.services.attestation_keys import verification_key
+
+        stored = verification_key(session)
+        if stored is None:
+            raise KeyMaterialError("no attestation signing key is stored in this database")
+        return stored
     from scf_obs.attest.signing import EnvSigningKeyProvider
 
     return EnvSigningKeyProvider().public_key_b64
@@ -158,7 +166,8 @@ def _print_envelope_summary(envelope: DsseEnvelope) -> None:
         return
     print(f"predicateType: {statement.predicateType}")
     for subject in statement.subject:
-        print(f"subject: {subject.name} sha256:{subject.digest.sha256}")
+        digests = " ".join(f"{k}:{v}" for k, v in subject.digest.model_dump().items())
+        print(f"subject: {subject.name} {digests}")
 
 
 def _uuid_or_none(value: Any) -> uuid.UUID | None:
@@ -194,7 +203,11 @@ def _cmd_attestation(args: argparse.Namespace) -> int:
     except (OSError, ValueError) as exc:
         print(f"error: invalid DSSE envelope: {exc}", file=sys.stderr)
         return 1
-    public_key = resolve_verification_key(args.public_key)
+    try:
+        public_key = resolve_verification_key(args.public_key)
+    except KeyMaterialError as exc:
+        print(f"error: {exc} (or pass --public-key)", file=sys.stderr)
+        return 3
     ok = DsseVerifier().verify(envelope, public_key_b64=public_key)
     _print_envelope_summary(envelope)
     print("VERIFIED" if ok else "REJECTED")
@@ -206,7 +219,9 @@ def _cmd_attestation(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------- #
 
 
-def _load_attestation(session: Session, run_id: uuid.UUID, workspace: str | None) -> Any:
+def _load_attestation(
+    session: Session, run_id: uuid.UUID, workspace: str | None, attestation_id: str | None = None
+) -> Any:
     from sqlalchemy import or_, select
 
     from scf_db.models import Attestation
@@ -216,6 +231,8 @@ def _load_attestation(session: Session, run_id: uuid.UUID, workspace: str | None
     )
     if workspace:
         query = query.where(Attestation.workspace_id == uuid.UUID(workspace))
+    if attestation_id:  # the one a pull request names (#175)
+        query = query.where(Attestation.id == uuid.UUID(attestation_id))
     query = query.order_by(Attestation.created_at.desc(), Attestation.id.desc())
     return session.scalars(query).first()
 
@@ -230,7 +247,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if factory is None:
         return 3
     with factory() as session:
-        row = _load_attestation(session, run_id, args.workspace)
+        row = _load_attestation(session, run_id, args.workspace, args.attestation_id)
         if row is None:
             print(f"error: no attestation found for run {run_id}", file=sys.stderr)
             return 1
@@ -238,8 +255,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
         recorded_hash = row.payload_hash
         keyid = row.keyid
         attestation_id = row.id
+        try:
+            public_key = resolve_verification_key(args.public_key, session=session)
+        except KeyMaterialError as exc:
+            print(f"error: {exc} (or pass --public-key)", file=sys.stderr)
+            return 3
 
-    result = verify_stored_attestation(envelope, recorded_hash, public_key_b64=args.public_key)
+    result = verify_stored_attestation(envelope, recorded_hash, public_key_b64=public_key)
     if result.error is not None:
         print(f"error: {result.error}", file=sys.stderr)
         return 1
@@ -384,6 +406,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--workspace",
         dest="workspace",
         help="workspace UUID to scope --run",
+    )
+    parser.add_argument(
+        "--attestation-id",
+        dest="attestation_id",
+        help="with --run: verify this attestation of the run (default: its newest)",
     )
     return parser
 

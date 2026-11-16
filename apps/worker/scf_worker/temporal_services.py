@@ -20,9 +20,11 @@ from temporalio.exceptions import ApplicationError
 
 from scf_api.observability.redaction import redact_text
 from scf_api.services.agent_dispatch import STRIPPED_CONTEXT, repo_connected
+from scf_api.services.attestation_service import AttestationService
 from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.review import ReviewVerdict
+from scf_contracts.run_context import CHECKS_KEY, INDEPENDENT_REVIEW_CHECK, REVIEWS_KEY
 from scf_contracts.run_events import RunEventDraft, RunEventType
 from scf_db.models import (
     AgentRun,
@@ -471,10 +473,6 @@ def run_checks_service(
     return run
 
 
-#: The run-context key holding each independent review (#173).
-REVIEWS_KEY = "reviews"
-
-
 def _independent_review(
     factory: sessionmaker[Session],
     inp: RunChecksInput,
@@ -539,7 +537,7 @@ def _independent_review(
     )
     approved = verdict.verdict == "approve"
     return CheckRun(
-        id="independent_review",
+        id=INDEPENDENT_REVIEW_CHECK,
         exit_code=0 if approved else 1,
         timed_out=False,
         started_at=started_at,
@@ -569,10 +567,6 @@ def _record_review(
         ]
         workflow_run.context = {**workflow_run.context, REVIEWS_KEY: [*earlier, entry]}
         session.commit()
-
-
-#: The run-context key holding each check attempt's evidence (#172).
-CHECKS_KEY = "checks"
 
 
 def _record_checks(
@@ -654,11 +648,12 @@ def open_pr_service(
                 non_retryable=True,
             )
         branch = inp.branch_name or artifacts.get("branch")
+        head = artifacts.get("head_commit")
         assert task is not None  # workflow_run.task_id is a non-null foreign key
         target = AgentObjective(
             objective=task.title, repo_targets=task.repo_targets
         ).primary_repo_target
-        if not branch or target is None:
+        if not branch or not head or target is None:
             raise ApplicationError(
                 f"workflow run {inp.workflow_run_id} has no run branch to deliver",
                 type="AgentRunNotFound",
@@ -684,6 +679,17 @@ def open_pr_service(
                 f"\n\nIndependent review: `{review['verdict']}` by "
                 f"`{review.get('reviewer_model')}`; the builder ran on "
                 f"`{review.get('builder_model')}`."
+            )
+        with factory() as session:
+            # Signed before a person sees the pull request, once per head commit (#175).
+            attestation = AttestationService(session).attest_pull_request(
+                inp.workflow_run_id, repository=target.repo, head_commit=str(head)
+            )
+            session.commit()
+            body += (
+                f"\n\nAttestation `{attestation.id}`: payload sha256 "
+                f"`{attestation.payload_hash}`, key `{attestation.keyid}`. Verify it with "
+                f"`scf-verify --run {inp.workflow_run_id} --attestation-id {attestation.id}`."
             )
         pr = push_and_open_pr(
             repo_path=mirror,
