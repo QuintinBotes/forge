@@ -186,6 +186,14 @@ def test_temporal_worker_runs_temporal_entrypoint() -> None:
     assert worker["environment"]["WORKFLOW_ENGINE_BACKEND"] == "temporal"
 
 
+def test_temporal_worker_has_the_master_key_the_api_has() -> None:
+    """#175: the worker signs pull-request attestations with the stored key, which is
+    encrypted under FORGE_SECRET_KEY."""
+    worker = _service("temporal-worker")["environment"]
+    api = _service("api")["environment"]
+    assert worker["FORGE_SECRET_KEY"] == api["FORGE_SECRET_KEY"]
+
+
 def test_caddy_exposes_admin_gated_temporal_route() -> None:
     """AC18 — the Temporal Web UI is reachable only via Caddy's gated /_temporal."""
     caddy = (DEPLOY / "caddy" / "Caddyfile").read_text(encoding="utf-8")

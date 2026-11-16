@@ -266,6 +266,53 @@ def test_a_pull_request_attestation_lists_as_verified_with_the_stored_key(
     assert item["verified"] is True
 
 
+@pytest.mark.parametrize(
+    ("context", "checks_verdict", "reviewer"),
+    [
+        ({}, "not_run", "not_run"),
+        (
+            {"checks": [{"attempt": 0, "no_checks_declared": True, "checks": []}]},
+            "failed",
+            "not_run",
+        ),
+        (
+            {
+                "checks": [
+                    {
+                        "attempt": 0,
+                        "head_commit": "a1" * 20,
+                        "checks": [{"id": "t", "passed": False}],
+                    }
+                ],
+                "reviews": [{"attempt": 0, "verdict": "request_changes", "reviewer_model": "m"}],
+            },
+            "failed",
+            "request_changes",
+        ),
+    ],
+    ids=["nothing ran", "no checks declared", "a check failed"],
+)
+def test_a_stage_that_did_not_pass_is_never_attested_as_a_pass(
+    factory, signer, context, checks_verdict, reviewer
+) -> None:
+    """#175 criterion 2: what did not run reads not_run; what failed reads failed."""
+    run_id = _seed_run(factory)
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        run.context = {**run.context, **context}
+        s.commit()
+        row = AttestationService(s, signer=signer).attest_pull_request(
+            run_id, repository="acme/app", head_commit="a1" * 20
+        )
+        s.commit()
+        verification = decode_statement(row.envelope["payload"]).predicate["verification"]
+
+    assert verification["checks_verdict"] == checks_verdict
+    assert verification["reviewer"]["verdict"] == reviewer
+    assert verification["red_team"]["verdict"] == "not_run"
+
+
 def test_list_never_leaks_cross_workspace_records(factory, signer) -> None:
     """The row-level workspace scope, not record existence, is the boundary."""
     own_run = _seed_run(factory, workspace_id=WS)

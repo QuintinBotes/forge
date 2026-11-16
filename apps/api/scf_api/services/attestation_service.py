@@ -61,6 +61,7 @@ from scf_contracts.attestation import (
     decode_statement,
 )
 from scf_contracts.audit import AuditEvent, canonical_json
+from scf_contracts.run_context import CHECKS_KEY, INDEPENDENT_REVIEW_CHECK, REVIEWS_KEY
 from scf_contracts.sandbox import SandboxKind
 from scf_db.attest.repository import AttestationRepository
 from scf_db.audit.writer import SqlAuditWriter
@@ -323,14 +324,14 @@ class AttestationService:
         A stage with nothing recorded is ``not_run``: never omitted, never a pass.
         """
         context = run.context or {}
-        attempts = list(context.get("checks") or [])
+        attempts = list(context.get(CHECKS_KEY) or [])
         for_head = [a for a in attempts if head_commit and a.get("head_commit") == head_commit]
         chosen = for_head or attempts
         last = max(chosen, key=lambda a: a.get("attempt", 0)) if chosen else None
         checks = [
             CheckOutcome(id=c["id"], outcome="passed" if c.get("passed") else "failed")
             for c in (last or {}).get("checks", [])
-            if c.get("id") != "independent_review"  # the reviewer has its own verdict
+            if c.get("id") != INDEPENDENT_REVIEW_CHECK  # the reviewer has its own verdict
         ]
         if last is None:
             checks_verdict = "not_run"
@@ -339,7 +340,7 @@ class AttestationService:
         else:
             checks_verdict = "passed" if all(c.outcome == "passed" for c in checks) else "failed"
 
-        reviews = [r for r in context.get("reviews") or [] if r.get("verdict")]
+        reviews = [r for r in context.get(REVIEWS_KEY) or [] if r.get("verdict")]
         review = max(reviews, key=lambda r: r.get("attempt", 0)) if reviews else None
         scans = [
             record

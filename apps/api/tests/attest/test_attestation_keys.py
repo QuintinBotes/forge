@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from scf_api.cli_verify import main
 from scf_api.services import attestation_keys
-from scf_api.services.attestation_keys import signing_key
+from scf_api.services.attestation_keys import signing_key, verification_key
 from scf_auth.errors import KeyMaterialError
 from scf_contracts.attestation import DSSE_PAYLOAD_TYPE_INTOTO
 from scf_db.attest.repository import AttestationRepository
@@ -159,3 +159,108 @@ def test_scf_verify_accepts_an_attestation_signed_before_a_restart(
     engine.dispose()  # the signing process is gone
 
     assert main(["--run", str(run_id), "--database-url", url]) == 0
+
+
+def _attest(url: str, key, run_id: uuid.UUID, *, created_at=None) -> uuid.UUID:  # type: ignore[no-untyped-def]
+    engine = create_engine(url)
+    with Session(engine) as session:
+        signer = DsseSigner(key)
+        envelope = signer.sign(payload_type=DSSE_PAYLOAD_TYPE_INTOTO, payload=PAYLOAD)
+        row = AttestationRepository(session).insert(
+            uuid.uuid4(),
+            subject_digest="sha256:" + "ab" * 32,
+            predicate_type="https://example.test/pred/v1",
+            envelope=envelope.model_dump(mode="json"),
+            payload_hash=hashlib.sha256(pae(DSSE_PAYLOAD_TYPE_INTOTO, PAYLOAD)).hexdigest(),
+            keyid=signer.keyid,
+            workflow_run_id=run_id,
+        )
+        if created_at is not None:
+            row.created_at = created_at
+        session.commit()
+        attestation_id = row.id
+    engine.dispose()
+    return attestation_id
+
+
+def test_verifying_reads_the_public_key_and_needs_no_master_key(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An auditor's shell has no FORGE_SECRET_KEY: verification reads only the public
+    half, writes nothing, and says when there is no key to read."""
+    engine = create_engine(url)
+    with Session(engine) as session:
+        assert verification_key(session, environ={}) is None
+    stored = _key_in_a_new_process(url)
+    monkeypatch.delenv("FORGE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    with Session(engine) as session:
+        assert verification_key(session, environ={}) == stored.public_key_b64
+    engine.dispose()
+    assert _stored_rows(url) == 1
+
+
+def test_scf_verify_cannot_check_without_a_stored_key(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exit 3 means "can't check", never "tampered" (1)."""
+    monkeypatch.delenv(SIGNING_KEY_ENV, raising=False)
+    run_id = uuid.uuid4()
+    _attest(url, EnvSigningKeyProvider({SIGNING_KEY_ENV: _CONFIGURED}), run_id)
+
+    assert main(["--run", str(run_id), "--database-url", url]) == 3
+
+
+def test_scf_verify_checks_the_attestation_a_pull_request_names(
+    url: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The run's newest attestation is the approver's; the pull request names its own."""
+    from datetime import UTC, datetime
+
+    monkeypatch.delenv(SIGNING_KEY_ENV, raising=False)
+    key = _key_in_a_new_process(url)
+    run_id = uuid.uuid4()
+    named = _attest(url, key, run_id, created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    newer = _attest(url, key, run_id)
+
+    assert main(["--run", str(run_id), "--database-url", url, "--attestation-id", str(named)]) == 0
+    out = capsys.readouterr().out
+    assert f"attestation: {named}" in out and str(newer) not in out
+
+
+def test_a_key_stored_before_a_master_key_rotation_still_signs(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The KEK rotation drill keeps the old key as FORGE_SECRET_KEY_V1; the stored key is
+    read with it and re-encrypted under the new one."""
+    old = "old-master-secret-0123456789abcdefghij"
+    monkeypatch.setenv("FORGE_SECRET_KEY", old)
+    stored = _key_in_a_new_process(url)
+
+    monkeypatch.setenv("FORGE_SECRET_KEY", "new-master-secret-0123456789abcdefghij")
+    monkeypatch.setenv("FORGE_SECRET_KEY_V1", old)
+    monkeypatch.setenv("FORGE_SECRET_KEY_VERSION", "2")
+    assert _key_in_a_new_process(url).keyid == stored.keyid
+
+    monkeypatch.delenv("FORGE_SECRET_KEY_V1")  # the old key is retired
+    assert _key_in_a_new_process(url).keyid == stored.keyid
+
+
+def test_the_development_key_lasts_the_process(url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Under FORGE_DEV_INSECURE with no master key, one key for the whole process and
+    nothing stored (its master key would be random on every call)."""
+    monkeypatch.delenv("FORGE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.setattr(attestation_keys, "_dev_key", None)
+    dev = {"FORGE_DEV_INSECURE": "1"}
+
+    with pytest.warns(UserWarning, match="FORGE_DEV_INSECURE"):
+        first = _key_in_a_new_process(url, dev)
+    second = _key_in_a_new_process(url, dev)
+
+    assert first.keyid == second.keyid
+    engine = create_engine(url)
+    with Session(engine) as session:
+        assert verification_key(session, environ=dev) == first.public_key_b64
+    engine.dispose()
+    assert _stored_rows(url) == 0

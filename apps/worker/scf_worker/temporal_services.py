@@ -24,6 +24,7 @@ from scf_api.services.attestation_service import AttestationService
 from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.review import ReviewVerdict
+from scf_contracts.run_context import CHECKS_KEY, INDEPENDENT_REVIEW_CHECK, REVIEWS_KEY
 from scf_contracts.run_events import RunEventDraft, RunEventType
 from scf_db.models import (
     AgentRun,
@@ -472,10 +473,6 @@ def run_checks_service(
     return run
 
 
-#: The run-context key holding each independent review (#173).
-REVIEWS_KEY = "reviews"
-
-
 def _independent_review(
     factory: sessionmaker[Session],
     inp: RunChecksInput,
@@ -540,7 +537,7 @@ def _independent_review(
     )
     approved = verdict.verdict == "approve"
     return CheckRun(
-        id="independent_review",
+        id=INDEPENDENT_REVIEW_CHECK,
         exit_code=0 if approved else 1,
         timed_out=False,
         started_at=started_at,
@@ -570,10 +567,6 @@ def _record_review(
         ]
         workflow_run.context = {**workflow_run.context, REVIEWS_KEY: [*earlier, entry]}
         session.commit()
-
-
-#: The run-context key holding each check attempt's evidence (#172).
-CHECKS_KEY = "checks"
 
 
 def _record_checks(
@@ -696,7 +689,7 @@ def open_pr_service(
             body += (
                 f"\n\nAttestation `{attestation.id}`: payload sha256 "
                 f"`{attestation.payload_hash}`, key `{attestation.keyid}`. Verify it with "
-                f"`scf-verify --run {inp.workflow_run_id}`."
+                f"`scf-verify --run {inp.workflow_run_id} --attestation-id {attestation.id}`."
             )
         pr = push_and_open_pr(
             repo_path=mirror,

@@ -44,6 +44,7 @@ from scf_api.schemas.attestation import (
 )
 from scf_api.services.approval_service import get_approval_service
 from scf_approval import ApprovalNotFoundError, ApprovalService
+from scf_auth.errors import KeyMaterialError
 from scf_contracts.attestation import DsseEnvelope, decode_statement
 from scf_db.attest.repository import AttestationRepository
 from scf_db.models import Attestation
@@ -107,7 +108,7 @@ def list_attestations(
         limit=limit,
         offset=offset,
     )
-    public_key = resolve_verification_key(session=session)
+    public_key = _verification_key(session)
     return AttestationListResponse(
         items=[_to_out(row, public_key_b64=public_key) for row in rows],
         limit=limit,
@@ -123,7 +124,7 @@ def get_attestation(
     row = session.get(Attestation, attestation_id)
     if row is None or row.workspace_id != principal.workspace_id:
         raise _not_found(attestation_id)
-    return _to_out(row, public_key_b64=resolve_verification_key(session=session))
+    return _to_out(row, public_key_b64=_verification_key(session))
 
 
 @router.get("/approvals/{approval_id}/attestation", response_model=AttestationOut)
@@ -162,7 +163,15 @@ async def get_approval_attestation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no attestation recorded for approval {approval_id}",
         )
-    return _to_out(row, public_key_b64=resolve_verification_key(session=session))
+    return _to_out(row, public_key_b64=_verification_key(session))
+
+
+def _verification_key(session: Session) -> str:
+    """The deployment's public key, or ``""`` when there is none: then nothing verifies."""
+    try:
+        return resolve_verification_key(session=session)
+    except KeyMaterialError:
+        return ""
 
 
 def _names_an_approver(row: Attestation) -> bool:

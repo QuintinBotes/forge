@@ -152,10 +152,15 @@ unset, the API and the worker use the deployment's **stored key**
 - **How it is made:** the first process that signs generates the key and inserts
   it. A process that loses the insert race reads the winner's key, so the API,
   the worker and a restarted process all sign and verify with one key.
+- **Who needs the master key:** every process that signs, so the API and the
+  Temporal worker both need `FORGE_SECRET_KEY` (the compose file passes it to
+  both) unless `FORGE_ATTEST_SIGNING_KEY` is set. Verifying reads only the public
+  key, which is stored in the clear: `scf-verify` needs no master key.
 - **If it cannot be read:** a stored key that cannot be decrypted with the
-  current `FORGE_SECRET_KEY` fails closed instead of being replaced.
-- **Development:** a process-ephemeral key is used only under the explicit
-  `FORGE_DEV_INSECURE` opt-in.
+  current `FORGE_SECRET_KEY` or a retained `FORGE_SECRET_KEY_V<n>` fails closed
+  instead of being replaced.
+- **Development:** with no master key, a process-ephemeral key (one per process,
+  nothing stored) is used only under the explicit `FORGE_DEV_INSECURE` opt-in.
 
 The `keyid` is the sha256 of the raw public key bytes: a content-derived id that
 a verifier looks up, rather than trusting one the signer asserts.
@@ -163,9 +168,14 @@ a verifier looks up, rather than trusting one the signer asserts.
 **Rotating the key.** Set `FORGE_ATTEST_SIGNING_KEY` to a new seed on every
 process: it takes precedence over the stored key, which is kept. Verification
 uses the current key, so keep the old public key for the attestations it signed
-and verify those with `scf-verify --public-key`. Changing `FORGE_SECRET_KEY`
-makes the stored key unreadable: set `FORGE_ATTEST_SIGNING_KEY` first, or delete
-the `attestation_signing_key` row to let a new key be stored.
+and verify those with `scf-verify --public-key`.
+
+**Rotating the master key.** The stored key follows the KEK rotation drill
+(`docs/self-hosting/security.md`). While the old master key is kept as
+`FORGE_SECRET_KEY_V<n>`, the stored key is read with it and re-encrypted under the
+new `FORGE_SECRET_KEY`. Retiring the old key afterwards is safe once each process
+has signed once. Replacing `FORGE_SECRET_KEY` without keeping the old version
+makes the stored key unreadable: set `FORGE_ATTEST_SIGNING_KEY` instead.
 
 **The commit and what was verified (#175).** A pull-request attestation's
 statement has two subjects:
@@ -212,7 +222,8 @@ Attestations are minted at two points, and no HTTP route mints one:
 - **When a governed run opens its pull request.** `forge.open_pr_with_spec_traceability`
   signs one for the run's head commit before the pull request exists, once per
   run and head commit (a retry finds it). The pull request description names its
-  id, payload digest and key id, and how to verify it.
+  id, payload digest and key id, and the command that verifies that attestation:
+  `scf-verify --run <run> --attestation-id <id>`.
 - **When the `pr` gate is approved.** `PrAttestationResolutionHook` is
   registered against the F36 approval system, so approving a `pr` gate that
   carries a `workflow_run_id` records a further attestation naming the approving
@@ -252,12 +263,12 @@ they can gate a release:
 | Mode | Does | Needs a DB? |
 |------|------|-------------|
 | `--attestation <file\|->` | Offline DSSE-verify an envelope's Ed25519 signature against `--public-key` (or the public half of `FORGE_ATTEST_SIGNING_KEY`; without either it exits `3`) | No |
-| `--run <id>` | Load the stored `Attestation`, re-derive `payload_hash` from the envelope's PAE and confirm it matches the recorded column, then verify the signature against `--public-key` or the deployment's signing key (configured or stored) | Yes |
+| `--run <id>` | Load the run's newest `Attestation` (or the one `--attestation-id` names), re-derive `payload_hash` from the envelope's PAE and confirm it matches the recorded column, then verify the signature against `--public-key` or the public half of the deployment's signing key (configured or stored) | Yes |
 | `--audit-export <ndjson>` | Re-walk an F39 audit-chain export offline: recompute each row's `payload_hash`/`entry_hash` and re-check the per-workspace `prev_hash` linkage | No |
 
 Exit codes: `0` verified / chain intact, `1` rejected or tampered, `3` no
-database configured (a "can't check" distinguished from a "checked and it's
-tampered").
+database or no key to verify against (a "can't check" distinguished from a
+"checked and it's tampered").
 
 ### Current limitations
 
