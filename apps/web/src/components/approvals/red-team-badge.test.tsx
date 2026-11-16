@@ -68,6 +68,36 @@ describe("RedTeamBadge", () => {
     expect(within(badge).getByText(/survived adversarial review/i)).toBeInTheDocument();
   });
 
+  it.each([
+    ["not_run", "not_run", { reason: "no_candidate_diff", phase: "spec" }],
+    ["survived", "parked", { parked: true, reason: "no adversary model/sandbox wired" }],
+  ] as const)(
+    "never shows a %s verdict of kind %s as survived (#174)",
+    async (verdict, kind, evidence) => {
+      const client = makeClient(() =>
+        Promise.resolve({
+          workflow_run_id: "wf-1",
+          latest: {
+            id: "rt-3",
+            verdict,
+            kind,
+            evidence,
+            adversary_model: null,
+            coder_model: null,
+            created_at: "2026-11-16T00:00:00Z",
+          },
+          records: [],
+        }),
+      );
+      renderBadge("wf-1", client);
+
+      const badge = await screen.findByTestId("red-team-badge");
+      expect(badge).toHaveAttribute("data-verdict", verdict);
+      expect(within(badge).getByText(/red-team scan not run/i)).toBeInTheDocument();
+      expect(within(badge).queryByText(/survived/i)).not.toBeInTheDocument();
+    },
+  );
+
   it("shows a danger badge for a blocked verdict and reveals evidence on expand", async () => {
     const client = makeClient(() =>
       Promise.resolve({

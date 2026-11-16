@@ -156,6 +156,27 @@ def test_survived_verdict_is_returned_with_evidence(factory) -> None:
     assert len(body["records"]) == 1
 
 
+def test_each_record_names_the_phase_it_ran_at(factory) -> None:
+    """#174 criterion 7: the phase is in the record's evidence; older records are ``spec``."""
+    run_id = _seed_run(factory)
+    _seed_scan(factory, run_id, verdict=VERDICT_SURVIVED, kind="failing_test", evidence={})
+    _seed_scan(
+        factory,
+        run_id,
+        verdict="not_run",
+        kind="not_run",
+        evidence={"reason": "red_team_not_configured", "phase": "pr"},
+    )
+    client = _client(factory, _principal())
+
+    body = client.get(f"/workflow/runs/{run_id}/red-team").json()
+
+    assert sorted((r["verdict"], r["phase"]) for r in body["records"]) == [
+        ("not_run", "pr"),
+        ("survived", "spec"),
+    ]
+
+
 def test_blocked_verdict_is_returned_with_evidence(factory) -> None:
     run_id = _seed_run(factory)
     evidence = {"test": "test_regression.py::test_boom", "stdout": "AssertionError"}

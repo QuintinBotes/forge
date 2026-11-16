@@ -23,12 +23,13 @@ from scf_db.models.audit import AuditLog
 from scf_db.redteam import REDTEAM_SURVIVED_ACTION, RedTeamRepository
 from scf_workflow.red_team_gate import (
     REDTEAM_BLOCKED,
+    REDTEAM_NOT_RUN,
     REDTEAM_SURVIVED,
     RedTeamInput,
     RedTeamResult,
     ensure_red_team_verdict,
     evaluate_red_team,
-    parked_pass_verdict,
+    not_run_verdict,
     run_and_record_red_team,
 )
 
@@ -82,8 +83,9 @@ def _inp(ws: uuid.UUID, task: uuid.UUID, run: uuid.UUID) -> RedTeamInput:
 # --------------------------------------------------------------------------- #
 
 
-def test_parked_pass_shape_matches_temporal_default() -> None:
-    """The shared parked-pass IS the Temporal activity's default verdict."""
+def test_without_an_adversary_the_verdict_is_not_run_on_both_engines() -> None:
+    """#174 criterion 6: no adversary is never ``survived``; the shared verdict IS the
+    Temporal activity's default."""
     from scf_workflow.temporal.activities import _default_red_team
 
     inp = _inp(uuid.uuid4(), uuid.uuid4(), uuid.uuid4())
@@ -91,12 +93,13 @@ def test_parked_pass_shape_matches_temporal_default() -> None:
     temporal = _default_red_team(inp)
 
     assert shared == temporal
-    assert shared.verdict == REDTEAM_SURVIVED
-    assert shared.kind == "parked"
-    assert shared.evidence == {"parked": True, "reason": "no adversary model/sandbox wired"}
+    assert shared.verdict == REDTEAM_NOT_RUN
+    assert shared.kind == "not_run"
+    assert shared.evidence == {"reason": "no_candidate_diff"}  # a spec has no code to attack
     assert shared.adversary_model is None
     assert shared.coder_model is None
-    assert shared == parked_pass_verdict()
+    assert shared == not_run_verdict("spec")
+    assert not_run_verdict("pr").evidence == {"reason": "red_team_not_configured"}
 
 
 def test_payloads_reexport_the_same_objects() -> None:
@@ -109,6 +112,7 @@ def test_payloads_reexport_the_same_objects() -> None:
     assert payloads.RedTeamResult is red_team_gate.RedTeamResult
     assert payloads.REDTEAM_BLOCKED is red_team_gate.REDTEAM_BLOCKED
     assert payloads.REDTEAM_SURVIVED is red_team_gate.REDTEAM_SURVIVED
+    assert payloads.REDTEAM_NOT_RUN is red_team_gate.REDTEAM_NOT_RUN
 
 
 def test_configured_adversary_fn_is_invoked() -> None:
@@ -138,15 +142,16 @@ def test_configured_adversary_fn_is_invoked() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_ensure_persists_parked_verdict_once(sqlite_session: Session) -> None:
-    """A V1 run reaching its gate persists ONE honest parked verdict row."""
+def test_ensure_persists_one_not_run_verdict_per_phase(sqlite_session: Session) -> None:
+    """A V1 run reaching its gate persists ONE ``not_run`` row for its phase, with the
+    phase in its evidence (#174)."""
     ws, task, run = _seed(sqlite_session)
 
     row, created = ensure_red_team_verdict(sqlite_session, ws, workflow_run_id=run, task_id=task)
     assert created is True
-    assert row.verdict == REDTEAM_SURVIVED
-    assert row.kind == "parked"
-    assert row.evidence == {"parked": True, "reason": "no adversary model/sandbox wired"}
+    assert row.verdict == REDTEAM_NOT_RUN
+    assert row.kind == "not_run"
+    assert row.evidence == {"reason": "no_candidate_diff", "phase": "spec"}
     assert row.adversary_model is None
     assert row.coder_model is None
     assert row.workflow_run_id == run
@@ -157,21 +162,41 @@ def test_ensure_persists_parked_verdict_once(sqlite_session: Session) -> None:
     )
     assert created_again is False
     assert again.id == row.id
-    assert len(RedTeamRepository(sqlite_session).get_by_run(ws, run)) == 1
+
+    # Another phase is another scan.
+    pr, created_pr = ensure_red_team_verdict(
+        sqlite_session, ws, workflow_run_id=run, task_id=task, phase="pr"
+    )
+    assert created_pr is True and pr.id != row.id
+    assert pr.evidence == {"reason": "red_team_not_configured", "phase": "pr"}
+    rows = RedTeamRepository(sqlite_session).get_by_run(ws, run)
+    assert len(rows) == 2 and REDTEAM_SURVIVED not in {r.verdict for r in rows}
 
 
-def test_ensure_survived_chains_the_audit_event(sqlite_session: Session) -> None:
-    """The parked survive still chains the ``redteam.survived`` audit event
-    (recorded honestly as kind=parked in its details)."""
+def test_only_an_adversarys_survive_chains_the_audit_event(sqlite_session: Session) -> None:
+    """``not_run`` attests nothing; a survive from a real adversary chains
+    ``redteam.survived``."""
     ws, task, run = _seed(sqlite_session)
-    row, _ = ensure_red_team_verdict(sqlite_session, ws, workflow_run_id=run, task_id=task)
+    ensure_red_team_verdict(sqlite_session, ws, workflow_run_id=run, task_id=task)
+
+    def survive(_: RedTeamInput) -> RedTeamResult:
+        return RedTeamResult(
+            verdict=REDTEAM_SURVIVED,
+            kind="survived",
+            adversary_model="gpt-5-heavy",
+            coder_model="claude-sonnet-4",
+        )
+
+    row = run_and_record_red_team(
+        sqlite_session, ws, workflow_run_id=run, task_id=task, red_team_fn=survive
+    )
 
     audit = sqlite_session.scalars(
         select(AuditLog).where(AuditLog.action == REDTEAM_SURVIVED_ACTION)
     ).all()
     assert len(audit) == 1
     assert audit[0].detail_ref == {"table": "red_team_record", "id": str(row.id)}
-    assert audit[0].details["kind"] == "parked"
+    assert audit[0].details["kind"] == "survived"
 
 
 def test_run_and_record_appends_a_new_scan(sqlite_session: Session) -> None:
@@ -195,4 +220,4 @@ def test_run_and_record_appends_a_new_scan(sqlite_session: Session) -> None:
     rows = RedTeamRepository(sqlite_session).get_by_run(ws, run)
     assert len(rows) == 2
     verdicts = {r.verdict for r in rows}
-    assert verdicts == {REDTEAM_BLOCKED, REDTEAM_SURVIVED}
+    assert verdicts == {REDTEAM_BLOCKED, REDTEAM_NOT_RUN}

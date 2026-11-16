@@ -103,20 +103,21 @@ def _approval_input(seeded: Seeded, gate: str = "pr", seq: int = 9) -> ApprovalI
     )
 
 
-async def test_red_team_scan_without_an_adversary_records_one_parked_row(
+async def test_red_team_scan_without_an_adversary_records_one_not_run_row(
     activities: WorkflowActivities, factory: sessionmaker[Session]
 ) -> None:
     seeded = _seed(factory)
     first = await ActivityEnvironment().run(activities.run_red_team_scan, _red_team_input(seeded))
     again = await ActivityEnvironment().run(activities.run_red_team_scan, _red_team_input(seeded))
 
-    assert (first.verdict, first.kind) == ("survived", "parked")
-    assert first.evidence == {"parked": True, "reason": "no adversary model/sandbox wired"}
+    # #174: no adversary is never ``survived``; the spec has no code to attack.
+    assert (first.verdict, first.kind) == ("not_run", "not_run")
+    assert first.evidence == {"reason": "no_candidate_diff", "phase": "spec"}
     assert again == first
     with factory() as session:
         rows = session.scalars(select(RedTeamRecord)).all()
-    assert [(r.workflow_run_id, r.workspace_id, r.kind) for r in rows] == [
-        (seeded.run_id, seeded.workspace_id, "parked")
+    assert [(r.workflow_run_id, r.workspace_id, r.verdict) for r in rows] == [
+        (seeded.run_id, seeded.workspace_id, "not_run")
     ]
 
 
@@ -285,7 +286,7 @@ async def test_feature_workflow_reaches_its_first_human_gate_with_real_records(
         (record,) = session.scalars(select(RedTeamRecord)).all()
         (gate,) = session.scalars(select(ApprovalRequest)).all()
         run = session.get_one(WorkflowRun, seeded.run_id)
-    assert (record.workflow_run_id, record.kind) == (seeded.run_id, "parked")
+    assert (record.workflow_run_id, record.verdict) == (seeded.run_id, "not_run")
     assert (gate.workflow_run_id, gate.gate.value, gate.status) == (
         seeded.run_id,
         "spec",

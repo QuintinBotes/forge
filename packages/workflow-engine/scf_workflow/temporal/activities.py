@@ -150,11 +150,11 @@ def _default_approval(_: ApprovalInput) -> uuid.UUID:
 
 
 def _default_red_team(inp: RedTeamInput) -> RedTeamResult:
-    # No adversary model / sandbox wired (park-don't-fake): the scan is a
-    # parked-pass so the durable spine runs and the human gate is reached
-    # unchanged. A real deployment injects a red_team_fn that runs a
-    # heterogeneous adversary against the candidate in a sandbox. The verdict
-    # construction is the shared, engine-agnostic helper (V1 mints the same).
+    # No adversary model / sandbox wired: the verdict is ``not_run``, never
+    # ``survived`` (#174), and the human gate is reached unchanged. A real
+    # deployment injects a red_team_fn that runs a heterogeneous adversary
+    # against the candidate in a sandbox. The verdict construction is the shared,
+    # engine-agnostic helper (V1 mints the same).
     return evaluate_red_team(inp, red_team_fn=None)
 
 

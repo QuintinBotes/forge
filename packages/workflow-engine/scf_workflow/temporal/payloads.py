@@ -23,6 +23,7 @@ from scf_contracts import WorkflowState
 # unchanged so every Temporal import path keeps working byte-identically.
 from scf_workflow.red_team_gate import (
     REDTEAM_BLOCKED,
+    REDTEAM_NOT_RUN,
     REDTEAM_SURVIVED,
     RedTeamInput,
     RedTeamResult,
@@ -250,6 +251,7 @@ __all__ = [
     "EVENT_SPEC_APPROVED",
     "EVENT_SPEC_CHANGES",
     "REDTEAM_BLOCKED",
+    "REDTEAM_NOT_RUN",
     "REDTEAM_SURVIVED",
     "AgentRunResultDTO",
     "ApprovalInput",

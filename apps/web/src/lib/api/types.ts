@@ -368,20 +368,22 @@ export interface ApprovalCount {
 // BLOCKS it (an executed failing test, or a structured spec-violation) or the
 // change earns a "survived adversarial review" record.
 
-/** The two terminal verdicts of a red-team scan. */
-export type RedTeamVerdict = "blocked" | "survived";
+/** The verdicts of a red-team scan; `not_run` means no adversary attacked it. */
+export type RedTeamVerdict = "blocked" | "survived" | "not_run";
 
 /** One immutable adversarial-review verdict for a run. */
 export interface RedTeamRecordOut {
   id: string;
   verdict: RedTeamVerdict;
-  /** The attack class: `failing_test` | `spec_violation` | `parked`. */
+  /** The attack class: `failing_test` | `spec_violation` | `not_run` (`parked` before #174). */
   kind: string;
-  /** Failing-test output, spec-violation payload, or the parked reason. */
+  /** Failing-test output, spec-violation payload, or why no adversary ran. */
   evidence: Record<string, unknown>;
   adversary_model?: string | null;
   coder_model?: string | null;
   created_at: string;
+  /** The gate the scan ran before: `spec` or `pr`. */
+  phase?: string;
 }
 
 /** The Red-Team Gate surface for one workflow run: latest verdict + history. */

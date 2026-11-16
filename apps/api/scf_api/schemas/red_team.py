@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 __all__ = ["RedTeamGateOut", "RedTeamRecordOut", "RedTeamTriggerOut"]
 
@@ -20,17 +20,23 @@ class RedTeamRecordOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    #: ``blocked`` or ``survived`` — see ``scf_db.models.red_team.VERDICT_*``.
+    #: ``blocked``, ``survived`` or ``not_run`` — see ``scf_db.models.red_team.VERDICT_*``.
     verdict: str
     #: The attack class that produced the verdict (``failing_test``,
-    #: ``spec_violation``, or ``parked``).
+    #: ``spec_violation``, or ``not_run``; ``parked`` on records made before #174).
     kind: str
     #: The structured attack result — failing test output, spec-violation
-    #: payload, or the parked reason.
+    #: payload, or why no adversary ran.
     evidence: dict[str, Any] = Field(default_factory=dict)
     adversary_model: str | None = None
     coder_model: str | None = None
     created_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def phase(self) -> str:
+        """The gate the scan ran before (``spec`` or ``pr``), kept in its evidence."""
+        return str(self.evidence.get("phase", "spec"))
 
 
 class RedTeamGateOut(BaseModel):
@@ -52,9 +58,8 @@ class RedTeamGateOut(BaseModel):
 class RedTeamTriggerOut(BaseModel):
     """Acknowledgement of ``POST /workflow/runs/{run_id}/red-team``: the scan ran
     and its verdict row was appended. ``record_id`` is the freshly-recorded
-    ``red_team_record`` the follow-up GET returns as ``latest``. ``kind="parked"``
-    means no adversary is configured — an explicit park, never a claimed
-    adversarial pass."""
+    ``red_team_record`` the follow-up GET returns as ``latest``. ``not_run``
+    means no adversary is configured — never a claimed adversarial pass."""
 
     workflow_run_id: uuid.UUID
     record_id: uuid.UUID

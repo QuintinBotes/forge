@@ -4,7 +4,7 @@ Two surfaces over real handlers on hermetic SQLite (mirrors
 ``test_red_team_api.py`` / ``test_workflow_router.py`` conventions):
 
 * the V1 (FSM) gate-arrival mint — a run transitioned into ``spec_review``
-  through ``POST /workflow/runs/{id}/transition`` persists ONE honest parked
+  through ``POST /workflow/runs/{id}/transition`` persists ONE ``not_run``
   verdict row (no adversary is configured in the API process), exactly where
   the Temporal spine scans (post-``submit_spec_for_review``, pre-human-gate);
 * ``POST /workflow/runs/{id}/red-team`` — explicit trigger: 202 + record id,
@@ -42,7 +42,8 @@ from scf_db.models import Project, Task, Workspace
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000e1")
 WS2 = uuid.UUID("00000000-0000-0000-0000-0000000000e2")
 
-PARKED_EVIDENCE = {"parked": True, "reason": "no adversary model/sandbox wired"}
+#: No adversary is wired, and a spec has no code to attack (#174).
+NOT_RUN_EVIDENCE = {"reason": "no_candidate_diff", "phase": "spec"}
 
 #: created -> spec_drafting -> clarification -> spec_review (the human spec gate).
 _TO_SPEC_REVIEW = ("generate_spec_draft", "gather_clarifications", "submit_spec_for_review")
@@ -169,9 +170,9 @@ def _records(client: TestClient, run_id: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def test_v1_run_reaching_spec_review_persists_parked_verdict(harness) -> None:
-    """A V1 run transitioned into ``spec_review`` mints one honest parked
-    verdict row — same shape as the Temporal default — with no extra calls."""
+def test_v1_run_reaching_spec_review_persists_a_not_run_verdict(harness) -> None:
+    """A V1 run transitioned into ``spec_review`` mints one ``not_run`` verdict row
+    — same shape as the Temporal default — with no extra calls (#174 criterion 6)."""
     _, make_client = harness
     client = make_client(_principal())
     run_id = _start(client)
@@ -180,9 +181,10 @@ def test_v1_run_reaching_spec_review_persists_parked_verdict(harness) -> None:
 
     body = _records(client, run_id)
     assert body["latest"] is not None
-    assert body["latest"]["verdict"] == "survived"
-    assert body["latest"]["kind"] == "parked"
-    assert body["latest"]["evidence"] == PARKED_EVIDENCE
+    assert body["latest"]["verdict"] == "not_run"
+    assert body["latest"]["kind"] == "not_run"
+    assert body["latest"]["evidence"] == NOT_RUN_EVIDENCE
+    assert body["latest"]["phase"] == "spec"
     assert body["latest"]["adversary_model"] is None
     assert body["latest"]["coder_model"] is None
     assert len(body["records"]) == 1
@@ -228,8 +230,8 @@ def test_trigger_returns_202_and_get_returns_the_verdict(harness) -> None:
     assert resp.status_code == 202, resp.text
     body = resp.json()
     assert body["workflow_run_id"] == run_id
-    assert body["verdict"] == "survived"
-    assert body["kind"] == "parked"
+    assert body["verdict"] == "not_run"
+    assert body["kind"] == "not_run"
     record_id = body["record_id"]
 
     # NOTE: ``latest`` identity is not asserted — SQLite's second-resolution
@@ -240,9 +242,9 @@ def test_trigger_returns_202_and_get_returns_the_verdict(harness) -> None:
     got = _records(client, run_id)
     triggered = [r for r in got["records"] if r["id"] == record_id]
     assert len(triggered) == 1
-    assert triggered[0]["verdict"] == "survived"
-    assert triggered[0]["kind"] == "parked"
-    assert triggered[0]["evidence"] == PARKED_EVIDENCE
+    assert triggered[0]["verdict"] == "not_run"
+    assert triggered[0]["kind"] == "not_run"
+    assert triggered[0]["evidence"] == NOT_RUN_EVIDENCE
 
 
 def test_trigger_appends_to_the_scan_history(harness) -> None:

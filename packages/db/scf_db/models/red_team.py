@@ -34,9 +34,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from scf_db.base import WorkspaceScopedModel, attach_immutability_trigger, json_type
 
-#: The two terminal verdicts of a red-team scan.
+#: The verdicts of a red-team scan; ``not_run`` means no adversary attacked it.
 VERDICT_BLOCKED = "blocked"
 VERDICT_SURVIVED = "survived"
+VERDICT_NOT_RUN = "not_run"
 
 
 class RedTeamRecord(WorkspaceScopedModel):
