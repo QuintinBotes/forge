@@ -30,6 +30,7 @@ cannot tell an action forge enforced from one it merely recorded.
    | `artifact.created` | the finalizer opened a pull request | gated |
    | `cost.updated` | token usage and derived cost at the end of a run | observed |
    | `thread.completed` / `thread.failed` | the run's terminal status is recorded (`failed` carries the stop reason, e.g. `budget_exhausted`) | observed |
+   | `thread.state` | the workflow paused the run for a person (`forge.pause_and_notify`); the payload's `state` is tervin's `awaiting_input`. Added 2026-11-16 (#250) | gated |
 
    `gated` means forge's control plane decided or performed the action before it took effect (the
    policy gate, the declared tool belt in a sandbox, the finalizer's scoped token). `observed` means
@@ -46,7 +47,8 @@ cannot tell an action forge enforced from one it merely recorded.
    append-only, workspace-scoped) as the run progresses, through a listener on the run state's single
    `add_step` choke point, so the agent loop's logic does not change. `GET /agent/runs/{id}/events`
    serves them as Server-Sent Events: it replays after `Last-Event-ID` (or `?after=`), then polls
-   for new rows until it has sent a terminal event, with a keep-alive comment every 15 seconds and a
+   for new rows until it has sent a terminal event and the events already stored after it (a
+   workflow's `thread.state` pause comes after the run ended), with a keep-alive comment every 15 seconds and a
    bounded stream lifetime after which the client reconnects with its last id. Writing an event never
    fails the run; a write failure is logged.
 

@@ -44,6 +44,7 @@ from scf_agent.providers import (
 )
 from scf_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
 from scf_agent.replay.cassette import canonical_json
+from scf_agent.sandbox import _git
 from scf_agent.sandbox.base import ArtifactStore
 from scf_agent.sandbox.output import cap_output
 from scf_agent.testing import ScriptedModelClient, finish_response
@@ -397,7 +398,35 @@ def run_agent_task(
                 "idempotency_key": dedup_key,
             }
         return result.model_dump(mode="json")
-    parsed = AgentObjective.model_validate(objective)
+    try:
+        result, _ = run_agent_objective(AgentObjective.model_validate(objective))
+    except SoftTimeLimitExceeded:
+        # The run is already recorded ESCALATED. ``acks_late`` means the message is
+        # not acked, so an operator can re-drive it (dedup-guarded) after raising
+        # the budget.
+        return {
+            "escalated": True,
+            "reason": "soft_time_limit_exceeded",
+            "idempotency_key": dedup_key,
+        }
+    return result.model_dump(mode="json")
+
+
+def run_agent_objective(
+    parsed: AgentObjective, *, deliver: bool = True
+) -> tuple[AgentRunResult, AgentObjective]:
+    """Run one agent objective: the body the Celery task and ``forge.run_agent`` share.
+
+    A persisted run (``context["agent_run_id"]``) is marked started, streams its
+    events and is closed out (terminal events, outcome, tracker write-back). The
+    agent works in a per-run worktree of the resolved repository. ``deliver`` pushes
+    the branch and opens the pull request; a workflow run opens its own through
+    ``forge.open_pr_with_spec_traceability``. Returns the result and the objective
+    with its repository resolved. A failure, or Celery's soft time limit, is
+    recorded on the run and then re-raised.
+    """
+    from celery.exceptions import SoftTimeLimitExceeded
+
     context = parsed.context
     persisted_row = context.get("agent_run_id") is not None
     run_id = _opt_uuid(context.get("agent_run_id")) or uuid.uuid4()
@@ -415,7 +444,7 @@ def run_agent_task(
             _record_terminal(
                 parsed, run_id, workspace_id, refused, events=events, persisted_row=persisted_row
             )
-            return refused.model_dump(mode="json")
+            return refused, parsed
         with prepared_workspace(parsed, run_id=run_id, workspace_id=workspace_id) as workspace:
             if events is not None:
                 events.emit(
@@ -438,14 +467,14 @@ def run_agent_task(
             if workspace is not None:
                 # The branch outlives the worktree; the finalizer pushes it below.
                 result.artifacts["branch"] = workspace.branch
-        if workspace is not None and result.status == RunStatus.SUCCEEDED:
+                head = _git(workspace.path, "rev-parse", "HEAD").stdout.strip()
+                result.artifacts["head_commit"] = head
+        if deliver and workspace is not None and result.status == RunStatus.SUCCEEDED:
             _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
     except SoftTimeLimitExceeded:
-        # A runaway loop tripped the soft time limit: record a terminal
-        # ESCALATED outcome (so the run does not stay PENDING and block its
-        # issue / cap slot forever), write back, then return the escalation
-        # marker. ``acks_late`` means the message is not acked, so an operator
-        # can re-drive it (dedup-guarded) after raising the budget.
+        # A runaway loop tripped the soft time limit: record a terminal ESCALATED
+        # outcome (so the run does not stay PENDING and block its issue / cap slot
+        # forever) and write back before the caller turns it into its marker.
         escalated = AgentRunResult(
             run_id=run_id,
             task_id=parsed.task_id,
@@ -455,15 +484,11 @@ def run_agent_task(
         _record_terminal(
             parsed, run_id, workspace_id, escalated, events=events, persisted_row=persisted_row
         )
-        return {
-            "escalated": True,
-            "reason": "soft_time_limit_exceeded",
-            "idempotency_key": dedup_key,
-        }
+        raise
     except Exception as exc:
         # Any other unhandled failure: still close the persisted run out
-        # (terminal events, outcome, tracker write-back), then re-raise so
-        # Celery's own failure semantics apply unchanged.
+        # (terminal events, outcome, tracker write-back), then re-raise so the
+        # caller's own failure semantics apply unchanged.
         failed = AgentRunResult(
             run_id=run_id,
             task_id=parsed.task_id,
@@ -477,8 +502,8 @@ def run_agent_task(
     _record_terminal(
         parsed, run_id, workspace_id, result, events=events, persisted_row=persisted_row
     )
-    _maybe_persist_recording(runner, objective)
-    return result.model_dump(mode="json")
+    _maybe_persist_recording(runner, parsed.model_dump(mode="json"))
+    return result, parsed
 
 
 def _record_terminal(

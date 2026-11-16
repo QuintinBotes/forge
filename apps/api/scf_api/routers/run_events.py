@@ -115,6 +115,7 @@ async def _stream(
     factory: SessionFactory, run_id: uuid.UUID, workspace_id: uuid.UUID, cursor: int
 ) -> AsyncIterator[str]:
     started = last_sent = time.monotonic()
+    ended = False
     while True:
         rows = await run_in_threadpool(_fetch, factory, run_id, workspace_id, cursor)
         for row in rows:
@@ -123,8 +124,11 @@ async def _stream(
             if message is not None:
                 yield message
                 last_sent = time.monotonic()
-            if row.type in _TERMINAL_TYPES:
-                return
+            # A workflow's pause (``thread.state``) can be stored after the terminal
+            # event: send what is stored, then end.
+            ended = ended or row.type in _TERMINAL_TYPES
+        if ended and len(rows) < _PAGE:
+            return
         if not rows:
             run_status = await run_in_threadpool(_run_status, factory, run_id, workspace_id)
             if run_status is None or RunStatus(run_status) in _FINISHED:

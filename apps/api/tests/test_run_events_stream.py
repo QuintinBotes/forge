@@ -129,6 +129,21 @@ def test_replays_every_event_in_order_with_its_flag_and_closes(factory) -> None:
     assert [e["enforceable"] for e in events] == [True, False, True, False]
 
 
+def test_a_replay_sends_the_events_stored_after_the_terminal_one(factory) -> None:
+    """A workflow records its pause (``thread.state``) after the agent run ended (#250)."""
+    run_id = _run(factory, RunStatus.SUCCEEDED)
+    _event(factory, run_id, 1, "thread.started", "gated")
+    _event(factory, run_id, 2, "thread.completed", "observed")
+    _event(factory, run_id, 3, "thread.state", "gated", summary="retry budget exhausted")
+    with _client(factory).stream("GET", f"/agent/runs/{run_id}/events") as resp:
+        events = _messages(resp.read().decode())
+    assert [(e["id"], e["event"]) for e in events] == [
+        (1, "thread.started"),
+        (2, "thread.completed"),
+        (3, "thread.state"),
+    ]
+
+
 def test_last_event_id_and_after_resume_without_gaps_or_duplicates(factory) -> None:
     run_id = _seed_finished_run(factory)
     client = _client(factory)

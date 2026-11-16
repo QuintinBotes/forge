@@ -20,10 +20,12 @@ delivery never double-writes a transition.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
+from concurrent.futures import Executor, ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import NoReturn
 
@@ -56,8 +58,13 @@ logger = logging.getLogger(__name__)
 #: Default verification check set (spec: default_feature ``checks``).
 DEFAULT_CHECKS = ("lint", "type_check", "tests", "coverage")
 
-#: Seconds between agent-activity heartbeats (the workflow's heartbeat timeout is 120 s).
+#: Seconds between activity heartbeats (the agent activity's heartbeat timeout is 120 s).
 AGENT_HEARTBEAT_EVERY = 30.0
+
+#: An agent body holds its thread for the whole run, so agents get their own pool and
+#: the short services (persist, guards, approvals) keep the loop's default one. Sized
+#: to Temporal's default of 100 concurrent activities per worker.
+_AGENT_THREADS = ThreadPoolExecutor(max_workers=100, thread_name_prefix="scf-agent")
 
 _SUCCESS_STATES = {WorkflowState.MERGED.value, WorkflowState.CLOSED.value}
 _STATUS_BY_STATE = {
@@ -231,6 +238,9 @@ class WorkflowActivities:
 
     @activity.defn(name="forge.persist_transition")
     async def persist_transition(self, rec: TransitionRecord) -> int:
+        return await _heartbeating(self._persist, rec, {"phase": "persist"})
+
+    def _persist(self, rec: TransitionRecord) -> int:
         run = self._store.get(rec.workflow_run_id)
         if run.status is RunStatus.FAILED and run.context.get("start_error"):
             # The engine gave up on this start; an orphaned workflow must not revive the row.
@@ -278,44 +288,47 @@ class WorkflowActivities:
 
     @activity.defn(name="forge.load_guard_inputs")
     async def load_guard_inputs(self, req: GuardInputsRequest) -> GuardInputs:
-        return self._guard_inputs_fn(req)
+        return await _heartbeating(self._guard_inputs_fn, req, {"phase": "guard_inputs"})
 
     # -- agent (F06 LangGraph), heartbeating ------------------------------ #
 
     @activity.defn(name="forge.run_agent")
     async def run_agent(self, inp: RunAgentInput) -> AgentRunResultDTO:
         return await _heartbeating(
-            self._run_agent_fn, inp, {"phase": "executing", "attempt": inp.attempt}
+            self._run_agent_fn,
+            inp,
+            {"phase": "executing", "attempt": inp.attempt},
+            executor=_AGENT_THREADS,
         )
 
     @activity.defn(name="forge.resume_agent")
     async def resume_agent(self, inp: ResumeAgentInput) -> AgentRunResultDTO:
         return await _heartbeating(
-            self._resume_agent_fn, inp, {"phase": "resuming", "attempt": inp.attempt}
+            self._resume_agent_fn,
+            inp,
+            {"phase": "resuming", "attempt": inp.attempt},
+            executor=_AGENT_THREADS,
         )
 
     # -- verification (F08), PR (F03/F08) --------------------------------- #
 
     @activity.defn(name="forge.run_checks")
     async def run_checks(self, inp: RunChecksInput) -> ChecksResult:
-        return self._run_checks_fn(inp)
+        return await _heartbeating(self._run_checks_fn, inp, {"phase": "checks"})
 
     @activity.defn(name="forge.open_pr_with_spec_traceability")
     async def open_pr_with_spec_traceability(self, inp: OpenPrInput) -> OpenPrResult:
-        return self._open_pr_fn(inp)
+        return await _heartbeating(self._open_pr_fn, inp, {"phase": "open_pr"})
 
     # -- notifications (F16) + approvals (F36) ---------------------------- #
 
     @activity.defn(name="forge.pause_and_notify")
     async def pause_and_notify(self, inp: NotifyInput) -> bool:
-        return self._notify_fn(inp)
+        return await _heartbeating(self._notify_fn, inp, {"phase": "notify"})
 
     @activity.defn(name="forge.create_approval")
     async def create_approval(self, inp: ApprovalInput) -> str:
-        result = self._approval_fn(inp)
-        if inspect.isawaitable(result):
-            result = await result
-        return str(result)
+        return str(await _heartbeating(self._approval_fn, inp, {"phase": "approval"}))
 
     # -- red-team gate (heterogeneous adversary, sandboxed) --------------- #
 
@@ -330,8 +343,8 @@ class WorkflowActivities:
         audit event is the recorder's job inside ``red_team_fn`` (real wiring);
         the pure verdict returned here drives the deterministic routing.
         """
-        activity.heartbeat({"phase": "red_team", "idempotency_key": inp.idempotency_key})
-        return self._red_team_fn(inp)
+        details = {"phase": "red_team", "idempotency_key": inp.idempotency_key}
+        return await _heartbeating(self._red_team_fn, inp, details)
 
     # -- compensation ----------------------------------------------------- #
 
@@ -340,21 +353,40 @@ class WorkflowActivities:
         return await asyncio.to_thread(self._cleanup_fn, inp)  # git + DB work blocks
 
 
-async def _heartbeating[I](
-    fn: Callable[[I], AgentRunResultDTO], inp: I, details: dict[str, object]
-) -> AgentRunResultDTO:
-    """Run an agent body off the event loop, heartbeating until it returns.
+async def _heartbeating[I, O](
+    fn: Callable[[I], O | Awaitable[O]],
+    inp: I,
+    details: Mapping[str, object],
+    *,
+    executor: Executor | None = None,
+) -> O:
+    """Run a service off the event loop, heartbeating until it returns.
 
-    A long agent outlives the heartbeat timeout, and an activity cancel (delivered
-    through the heartbeat) cancels this coroutine instead of waiting for the body.
+    Services block (git, the database, a model loop); on the loop they would stall
+    the heartbeats, so a long one outlives its heartbeat timeout. An activity cancel
+    (delivered through the heartbeat) cancels this coroutine instead of waiting.
     """
-    # shortcut: a cancelled agent thread runs to completion, until the body takes a cancel token
-    work = asyncio.ensure_future(asyncio.to_thread(fn, inp))
+
+    def call() -> O:
+        result = fn(inp)
+        if inspect.isawaitable(result):  # an async service gets its own loop in this thread
+            return asyncio.run(_awaited(result))
+        return result
+
+    # shortcut: a cancelled service thread runs to completion, until services take a cancel token
+    loop = asyncio.get_running_loop()
+    # ``executor=None`` is the loop's default pool, as ``asyncio.to_thread`` uses.
+    work = loop.run_in_executor(executor, contextvars.copy_context().run, call)
     while True:
-        activity.heartbeat(details)
+        if activity.in_activity():  # tests call some activities directly
+            activity.heartbeat(details)
         done, _ = await asyncio.wait({work}, timeout=AGENT_HEARTBEAT_EVERY)
         if done:
             return work.result()
+
+
+async def _awaited[O](result: Awaitable[O]) -> O:
+    return await result
 
 
 def _apply_status(run: WorkflowRun, new_state: str, run_status: str | None = None) -> None:
