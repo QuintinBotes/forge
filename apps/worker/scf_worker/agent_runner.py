@@ -44,6 +44,7 @@ from scf_agent.providers import (
 )
 from scf_agent.replay import RecordingModelClient, RecordingToolRegistry, RunCassette
 from scf_agent.replay.cassette import canonical_json
+from scf_agent.sandbox import _git
 from scf_agent.sandbox.base import ArtifactStore
 from scf_agent.sandbox.output import cap_output
 from scf_agent.testing import ScriptedModelClient, finish_response
@@ -466,7 +467,8 @@ def run_agent_objective(
             if workspace is not None:
                 # The branch outlives the worktree; the finalizer pushes it below.
                 result.artifacts["branch"] = workspace.branch
-                result.artifacts["head_commit"] = _head_commit(workspace.path)
+                head = _git(workspace.path, "rev-parse", "HEAD").stdout.strip()
+                result.artifacts["head_commit"] = head
         if deliver and workspace is not None and result.status == RunStatus.SUCCEEDED:
             _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
     except SoftTimeLimitExceeded:
@@ -502,12 +504,6 @@ def run_agent_objective(
     )
     _maybe_persist_recording(runner, parsed.model_dump(mode="json"))
     return result, parsed
-
-
-def _head_commit(worktree: Path) -> str:
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=worktree, check=True, capture_output=True, text=True
-    ).stdout.strip()
 
 
 def _record_terminal(
