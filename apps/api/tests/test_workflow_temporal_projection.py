@@ -29,6 +29,7 @@ from scf_db.base import Base
 from scf_db.models import Project, Task, Workspace
 from scf_db.models.runs import WorkflowRun as DbWorkflowRun
 from scf_worker.temporal_main import build_activities
+from scf_workflow.store import SqlAlchemyWorkflowStore
 from scf_workflow.temporal.payloads import TransitionRecord, WorkflowParams
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000001a1")
@@ -220,3 +221,65 @@ def test_start_run_rejects_a_task_outside_the_callers_workspace(
     assert temporal.started == {}
     with factory() as session:
         assert session.query(DbWorkflowRun).count() == 0
+
+
+def _active_rows(factory: sessionmaker[Session]) -> list[DbWorkflowRun]:
+    with factory() as session:
+        rows = session.query(DbWorkflowRun).filter(DbWorkflowRun.task_id == TASK).all()
+    return [r for r in rows if r.status.value not in {"succeeded", "failed", "cancelled"}]
+
+
+def test_concurrent_starts_for_one_task_give_one_run_and_one_workflow(
+    factory: sessionmaker[Session],
+    temporal: _FakeTemporalClient,
+    client_as: Callable[[uuid.UUID], TestClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = client_as(WS)
+    read = SqlAlchemyWorkflowStore.find_active_by_task
+    winner: list[uuid.UUID] = []
+    racing: list[bool] = []
+
+    def _read_then_lose_the_race(self: SqlAlchemyWorkflowStore, task_id: uuid.UUID) -> Any:
+        found = read(self, task_id)
+        if not racing:
+            racing.append(True)
+            # A second request starts and commits after this one's read.
+            winner.append(_start(client))
+        return found
+
+    monkeypatch.setattr(SqlAlchemyWorkflowStore, "find_active_by_task", _read_then_lose_the_race)
+
+    loser = client.post("/workflow/runs", json={"task_id": str(TASK)})
+
+    assert loser.status_code == 409, loser.text
+    assert [r.id for r in _active_rows(factory)] == winner
+    assert [p.workflow_run_id for p in temporal.started.values()] == winner
+
+
+def test_a_run_whose_workflow_never_started_is_started_by_the_next_start(
+    factory: sessionmaker[Session],
+    temporal: _FakeTemporalClient,
+    client_as: Callable[[uuid.UUID], TestClient],
+) -> None:
+    # What a start leaves when it dies between its commit and ``start_workflow``.
+    stale = uuid.uuid4()
+    with factory() as session:
+        session.add(
+            DbWorkflowRun(
+                id=stale,
+                workspace_id=WS,
+                task_id=TASK,
+                status="running",
+                engine_backend="temporal",
+                temporal_workflow_id=f"wf-{stale}",
+            )
+        )
+        session.commit()
+
+    assert _start(client_as(WS)) == stale
+
+    assert {wf_id: p.workflow_run_id for wf_id, p in temporal.started.items()} == {
+        f"wf-{stale}": stale
+    }
+    assert [r.id for r in _active_rows(factory)] == [stale]

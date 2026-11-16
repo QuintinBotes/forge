@@ -14,6 +14,7 @@ from collections.abc import Iterator
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
+from temporalio.exceptions import WorkflowAlreadyStartedError
 
 from scf_contracts import RunStatus, WorkflowRun, WorkflowState
 from scf_db.base import Base
@@ -60,10 +61,16 @@ class _FakeHandle:
 
 
 class _FakeClient:
+    """Refuses a workflow id it already started, as ``REJECT_DUPLICATE`` does."""
+
     def __init__(self) -> None:
         self.starts = 0
+        self.started: set[object] = set()
 
     async def start_workflow(self, *args: object, **kwargs: object) -> _FakeHandle:
+        if kwargs["id"] in self.started:
+            raise WorkflowAlreadyStartedError(str(kwargs["id"]), "FeatureWorkflow")
+        self.started.add(kwargs["id"])
         self.starts += 1
         return _FakeHandle()
 

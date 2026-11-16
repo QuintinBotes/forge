@@ -176,3 +176,72 @@ async def test_a_duplicate_start_terminates_nothing(factory: sessionmaker[Sessio
         await _engine(session, ws_id, client).astart(task_id)
 
     assert client.terminated == []
+
+
+def _seed_unstarted_run(
+    factory: sessionmaker[Session], ws_id: uuid.UUID, task_id: uuid.UUID
+) -> uuid.UUID:
+    """The row a start leaves when it dies between its commit and ``start_workflow``."""
+    run_id = uuid.uuid4()
+    with factory() as s:
+        s.add(
+            DbWorkflowRun(
+                id=run_id,
+                workspace_id=ws_id,
+                task_id=task_id,
+                status="running",
+                engine_backend="temporal",
+                temporal_workflow_id=f"wf-{run_id}",
+            )
+        )
+        s.commit()
+    return run_id
+
+
+@pytest.mark.parametrize("unstarted_row", [False, True], ids=["fresh run", "unstarted run"])
+async def test_a_start_whose_workflow_already_exists_leaves_the_row_running(
+    factory: sessionmaker[Session], unstarted_row: bool
+) -> None:
+    """The workflow behind the row exists (another start launched it), so the row is
+    live: this start is refused and must not fail the row under that workflow."""
+    ws_id, task_id = _seed_task(factory)
+    if unstarted_row:
+        _seed_unstarted_run(factory, ws_id, task_id)
+    client = _FakeClient(factory, fail=WorkflowAlreadyStartedError("wf-x", "FeatureWorkflow"))
+
+    with factory() as session, pytest.raises(DuplicateRunError):
+        await _engine(session, ws_id, client).astart(task_id)
+
+    assert client.seen is not None, "start_workflow was never asked"
+    with factory() as fresh:
+        row = fresh.get(DbWorkflowRun, client.seen.id)
+        assert row is not None
+        assert row.status.value == "running"
+        assert "start_error" not in row.context
+    assert client.terminated == []
+
+
+async def test_a_start_that_lands_after_a_concurrent_start_failed_the_row_stops_its_workflow(
+    factory: sessionmaker[Session],
+) -> None:
+    """Another start failed this row (and terminated nothing) just before this
+    start's workflow began: the workflow would run behind a failed row, so it is
+    terminated and the start refused."""
+    ws_id, task_id = _seed_task(factory)
+    run_id = _seed_unstarted_run(factory, ws_id, task_id)
+
+    class _FailedMeanwhile(_FakeClient):
+        async def start_workflow(self, fn: Any, params: WorkflowParams, **kw: Any) -> _Handle:
+            with self._factory() as other:
+                row = other.get(DbWorkflowRun, params.workflow_run_id)
+                assert row is not None
+                row.status = "failed"
+                other.commit()
+            return await super().start_workflow(fn, params, **kw)
+
+    client = _FailedMeanwhile(factory)
+
+    with factory() as session, pytest.raises(DuplicateRunError):
+        await _engine(session, ws_id, client).astart(task_id)
+
+    assert client.terminated == [(f"wf-{run_id}", "start_failed")]

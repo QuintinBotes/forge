@@ -14,6 +14,9 @@ time-skipping ``WorkflowEnvironment``) can drive the engine without a nested loo
   (the worker's ``persist_transition`` must find the row; spec K §4.11). A start
   that fails marks the committed row ``failed`` and terminates ``wf-<id>`` in case
   the server started it anyway (the projection then refuses to move that row).
+  An active row no workflow has reported to (no ``temporal_run_id``) is started
+  again under its own ``wf-<id>`` rather than refused, so a start that died after
+  its commit cannot block the task; Temporal refuses it if that workflow exists.
 * ``transition`` is a synchronous Workflow **Update** (cancel is a **Signal**); an
   invalid event / failed guard surfaces as ``InvalidTransitionError`` /
   ``GuardFailedError`` (→ HTTP 409), identical to the FSM.
@@ -136,32 +139,42 @@ class TemporalWorkflowEngine:
         from temporalio.exceptions import WorkflowAlreadyStartedError
         from temporalio.service import RPCError
 
-        if self._store.find_active_by_task(task_id) is not None:
+        active = self._store.find_active_by_task(task_id)
+        if active is not None and (
+            active.context.get("engine_backend") != "temporal"
+            or active.context.get("temporal_run_id")
+        ):
             raise DuplicateRunError(task_id)
         client = await self._get_client()
 
-        run_id = uuid.uuid4()
-        wf_id = workflow_id(run_id)
-        context: dict[str, Any] = {
-            "engine_backend": "temporal",
-            "temporal_workflow_id": wf_id,
-            "retry_count": 0,
-            "transitions": [],
-        }
-        if trigger is not None:
-            context["trigger"] = trigger
-        if definition_revision_id is not None:
-            context[DEFINITION_REVISION_KEY] = str(definition_revision_id)
-        run = WorkflowRun(
-            id=run_id,
-            task_id=task_id,
-            workflow_name=definition_name,
-            current_state=WorkflowState.CREATED.value,
-            status=RunStatus.RUNNING,
-            started_at=_now(),
-            context=context,
-        )
-        self._store.create(run)
+        if active is not None and active.id is not None:
+            # No workflow has reported to this run, so its start may have died before
+            # start_workflow. Start it under its own id: Temporal refuses a second one.
+            run_id, definition_name = active.id, active.workflow_name
+            wf_id = workflow_id(run_id)
+        else:
+            run_id = uuid.uuid4()
+            wf_id = workflow_id(run_id)
+            context: dict[str, Any] = {
+                "engine_backend": "temporal",
+                "temporal_workflow_id": wf_id,
+                "retry_count": 0,
+                "transitions": [],
+            }
+            if trigger is not None:
+                context["trigger"] = trigger
+            if definition_revision_id is not None:
+                context[DEFINITION_REVISION_KEY] = str(definition_revision_id)
+            run = WorkflowRun(
+                id=run_id,
+                task_id=task_id,
+                workflow_name=definition_name,
+                current_state=WorkflowState.CREATED.value,
+                status=RunStatus.RUNNING,
+                started_at=_now(),
+                context=context,
+            )
+            self._store.create(run)  # DuplicateRunError when a concurrent start won the task
         self._commit()  # the workflow's first persist_transition must find this row
 
         params = WorkflowParams(
@@ -180,6 +193,9 @@ class TemporalWorkflowEngine:
                 task_queue=self._task_queue,
                 id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
             )
+        except WorkflowAlreadyStartedError as exc:
+            # This run's workflow exists (another start launched it): the row is live.
+            raise DuplicateRunError(task_id) from exc
         except Exception as exc:
             failed = self._store.get(run_id)
             failed.status = RunStatus.FAILED
@@ -187,13 +203,18 @@ class TemporalWorkflowEngine:
             failed.context["start_error"] = f"{type(exc).__name__}: {exc}"
             self._store.update(failed)
             self._commit()
-            if isinstance(exc, WorkflowAlreadyStartedError):
-                raise DuplicateRunError(task_id) from exc
             # The server may have started it although the call failed: stop that orphan.
             with suppress(RPCError):  # includes not-found: nothing was started
                 await client.get_workflow_handle(wf_id).terminate(reason="start_failed")
             raise
 
+        current = self._store.find_active_by_task(task_id)
+        if current is None or current.id != run_id:
+            # A concurrent start failed this run (commit, then terminate) before our
+            # workflow existed, so its terminate missed it: stop it here.
+            with suppress(RPCError):
+                await client.get_workflow_handle(wf_id).terminate(reason="start_failed")
+            raise DuplicateRunError(task_id)
         self._handles[run_id] = handle
         return self._store.get(run_id)
 
