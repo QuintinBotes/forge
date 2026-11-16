@@ -230,6 +230,8 @@ class CleanupInput:
     workspace_id: uuid.UUID
     reason: str = "cancelled"
     idempotency_key: str = ""
+    # Who cancelled the run; the run's still-open gate requests expire as them.
+    actor: str = "system"
 
 
 __all__ = [

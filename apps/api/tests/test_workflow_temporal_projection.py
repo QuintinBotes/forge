@@ -289,12 +289,20 @@ def test_a_run_whose_workflow_never_started_is_started_by_the_next_start(
     assert [r.id for r in _active_rows(factory)] == [stale]
 
 
-def test_cancelling_a_run_at_its_gate_expires_the_open_request(
-    factory: sessionmaker[Session], temporal: _FakeTemporalClient
+@pytest.mark.parametrize(
+    ("event", "reason"),
+    [
+        ("cancel", "run_cancelled"),
+        # Any other event that moves the run off its gate (the fake's Update lands it
+        # in spec_drafting), such as a definition's non-gate edge out of a review state.
+        ("generate_spec_draft", "run_left_gate_on_generate_spec_draft"),
+    ],
+)
+def test_leaving_a_gate_without_its_approval_expires_the_open_request(
+    factory: sessionmaker[Session], temporal: _FakeTemporalClient, event: str, reason: str
 ) -> None:
-    """Spec K §4.11 (#253): a run that leaves a gate by a cancel, not through the
-    gate's approval, expires the gate's open request with reason ``run_cancelled``,
-    recorded as whoever cancelled it."""
+    """Spec K §4.11 (#253): a run that leaves a gate other than through the gate's
+    approval expires the gate's open request, recorded as whoever moved the run."""
     from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
     from scf_api.services.approval_service import get_approval_service
     from scf_approval import ApprovalAuthorizer, ApprovalService, GateRegistry
@@ -341,10 +349,11 @@ def test_cancelling_a_run_at_its_gate_expires_the_open_request(
         )
     )
 
-    resp = client.post(f"/workflow/runs/{run_id}/transition", json={"event": "cancel"})
+    resp = client.post(f"/workflow/runs/{run_id}/transition", json={"event": event})
 
     assert resp.status_code == 200, resp.text
-    assert [args[0] for _, args in temporal.signals] == ["cancelled"], "the workflow was told"
+    if event == "cancel":  # the workflow is told, with the canceller as the actor
+        assert [args for _, args in temporal.signals] == [["cancelled", f"user:{mover}"]]
     stored = asyncio.run(approvals.get(request.id, workspace_id=WS))
     assert stored.status is GateStatus.EXPIRED
-    assert stored.gate_payload["expired"] == {"reason": "run_cancelled", "actor": f"user:{mover}"}
+    assert stored.gate_payload["expired"] == {"reason": reason, "actor": f"user:{mover}"}

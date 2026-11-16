@@ -48,7 +48,8 @@ binds every activity except `forge.resume_agent`:
   reads `failed` until `POST /workflow/runs/{id}/gates/pr/sync` applies the event
   with the same attestation; then it reads `submitted`.
 - **A cancel** at a gate expires that gate's open request with the reason
-  `run_cancelled`, recorded as whoever cancelled the run.
+  `run_cancelled`, recorded as whoever cancelled the run. The workflow's own
+  cancel path does it again, for a request it opened after the cancel arrived.
 
 ### Current limitations
 

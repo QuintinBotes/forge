@@ -273,3 +273,39 @@ async def test_cleanup_runs_off_the_event_loop(monkeypatch: pytest.MonkeyPatch) 
         CleanupInput(workflow_run_id=uuid.uuid4(), workspace_id=WS)
     )
     assert seen and seen[0] != threading.get_ident()
+
+
+async def test_cancel_cleanup_expires_a_gate_request_opened_after_the_cancel(
+    factory: sessionmaker[Session], mirror: Path
+) -> None:
+    """#253 review: a Temporal workflow can open a gate request after the API's cancel
+    expired the open ones. Its cancel path expires that request too, as the canceller."""
+    from scf_approval.models import GateStatus, GateType
+    from scf_worker.approval_activity import build_approval_service
+
+    task_id = _seed_task(factory)
+    run_id = uuid.uuid4()
+    with factory() as s:
+        s.add(DbWorkflowRun(id=run_id, workspace_id=WS, task_id=task_id))
+        s.commit()
+    approvals = build_approval_service(factory)
+    late = await approvals.create(
+        workspace_id=WS,
+        gate_type=GateType.SPEC,
+        subject_type="workflow_run",
+        subject_id=run_id,
+        workflow_run_id=run_id,
+        task_id=task_id,
+        title="opened after the cancel",
+        requested_actor=f"agent:{run_id}",
+    )
+    canceller = f"user:{uuid.uuid4()}"
+    cleanup = tm.make_cleanup_fn(factory)
+
+    assert await asyncio.to_thread(
+        cleanup, CleanupInput(workflow_run_id=run_id, workspace_id=WS, actor=canceller)
+    )
+
+    stored = await approvals.get(late.id, workspace_id=WS)
+    assert stored.status is GateStatus.EXPIRED
+    assert stored.gate_payload["expired"] == {"reason": "run_cancelled", "actor": canceller}

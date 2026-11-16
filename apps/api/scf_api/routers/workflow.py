@@ -483,7 +483,9 @@ def transition(
         )
     with _workflow_errors():
         left_gate = GATE_BY_STATE.get(engine.get_run(run_id).current_state)
-        engine.transition(run_id, request.event)
+        # The mover is the actor, so a Temporal run's cancel (and the gate it
+        # expires there, which this route cannot see open yet) records them too.
+        engine.transition(run_id, request.event, actor=f"user:{principal.user_id}")
         run = engine.get_run(run_id)
     session.commit()
     if left_gate is not None and (
