@@ -105,7 +105,7 @@ def _seed(factory: sessionmaker[Session], *, connected: bool = True) -> tuple[uu
             project_id=project.id,
             key="CORE-7",
             title="Add a health endpoint",
-            repo_targets=[{"repo": REPO, "base_branch": "main"}],
+            repo_targets=[{"repo": REPO, "base_branch": "main", "branch_prefix": "scf"}],
         )
         s.add(task)
         s.flush()
@@ -135,7 +135,7 @@ async def test_the_agent_runs_the_tasks_objective_in_a_worktree_of_the_run_branc
     result = await _run(factory, _input(run_id, task_id))
 
     assert result.status == "succeeded"
-    assert result.branch_name is not None and result.branch_name.startswith("forge/")
+    assert result.branch_name is not None and result.branch_name.startswith("scf/")
     assert result.head_commit_sha == _git(mirror, "rev-parse", f"refs/heads/{result.branch_name}")
     with factory() as s:
         row = s.get(AgentRun, result.agent_run_id)
