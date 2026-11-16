@@ -16,7 +16,7 @@ from temporalio.exceptions import ApplicationError
 
 from scf_api.observability.redaction import redact_text
 from scf_api.services.agent_dispatch import repo_connected
-from scf_contracts import AgentObjective, AgentRunResult
+from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.run_events import RunEventDraft, RunEventType
 from scf_db.models import (
@@ -142,10 +142,12 @@ def _policy_loads(workspace_id: uuid.UUID, repo: str) -> bool:
 def guard_inputs_service(factory: sessionmaker[Session]) -> GuardInputsFn:
     """The execute preconditions, read from stored data (#250, owner decisions 2026-11-15).
 
-    A repository target on the task is always required, and so is a policy that loads.
-    A skill profile and a knowledge sync are required only once the workspace has
-    configured one; the run records which of the two were not in use. Every phase
-    keeps the plan gate.
+    A repository target on the task is always required, connected to the workspace
+    (the check the API makes before a run), and so is a policy that loads; an
+    unconnected target is not fetched, and the workflow waits at the guard. A skill
+    profile and a knowledge sync are required only once the workspace has configured
+    one; the run records which of the two were not in use. Every phase keeps the plan
+    gate.
     """
 
     def load(req: GuardInputsRequest) -> GuardInputs:
@@ -168,10 +170,17 @@ def guard_inputs_service(factory: sessionmaker[Session]) -> GuardInputsFn:
             )
             targets = task.repo_targets if task is not None else []
             skill_profile = task.skill_profile if task is not None else None
-        target = AgentObjective(objective="guard inputs", repo_targets=targets).primary_repo_target
+            target = AgentObjective(
+                objective="guard inputs", repo_targets=targets
+            ).primary_repo_target
+            connected = target is not None and repo_connected(
+                session, req.workspace_id, target.repo
+            )
         preconditions = {
-            "repo_target_set": target is not None,
-            "policy_loaded": target is not None and _policy_loads(req.workspace_id, target.repo),
+            "repo_target_set": connected,
+            "policy_loaded": connected
+            and target is not None
+            and _policy_loads(req.workspace_id, target.repo),
             "skill_profile_set": not profiles or skill_profile in profiles,
             "knowledge_synced": all(at is not None for at in synced_at),
         }
@@ -231,6 +240,14 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
             target = AgentObjective(
                 objective=task.title, repo_targets=task.repo_targets
             ).primary_repo_target
+            if task.execution_mode == ExecutionMode.SUPERVISED_MULTI_AGENT:
+                # The supervisor runs only on the Celery path; refuse rather than run one agent.
+                raise ApplicationError(
+                    f"task {task.id} runs supervised multi-agent, which forge.run_agent "
+                    "does not support yet (ADR-0007)",
+                    type="ExecutionModeNotSupported",
+                    non_retryable=True,
+                )
             if target is not None and not repo_connected(session, inp.workspace_id, target.repo):
                 raise ApplicationError(
                     f"{target.repo} is not connected to workspace {inp.workspace_id}",

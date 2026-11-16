@@ -47,7 +47,8 @@ cannot tell an action forge enforced from one it merely recorded.
    append-only, workspace-scoped) as the run progresses, through a listener on the run state's single
    `add_step` choke point, so the agent loop's logic does not change. `GET /agent/runs/{id}/events`
    serves them as Server-Sent Events: it replays after `Last-Event-ID` (or `?after=`), then polls
-   for new rows until it has sent a terminal event, with a keep-alive comment every 15 seconds and a
+   for new rows until it has sent a terminal event and the events already stored after it (a
+   workflow's `thread.state` pause comes after the run ended), with a keep-alive comment every 15 seconds and a
    bounded stream lifetime after which the client reconnects with its last id. Writing an event never
    fails the run; a write failure is logged.
 

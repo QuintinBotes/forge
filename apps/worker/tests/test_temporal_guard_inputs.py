@@ -26,6 +26,7 @@ from scf_db.base import Base
 from scf_db.models import (
     KnowledgeSource,
     Project,
+    RepositoryConnection,
     SkillProfile,
     Task,
     WorkflowRun,
@@ -98,10 +99,13 @@ def _seed(
     *,
     repo_targets: list[dict[str, str]] | None = None,
     skill_profile: str | None = None,
+    connected: bool = True,
 ) -> uuid.UUID:
     with factory() as s:
         s.add(Workspace(id=WS, name="Acme", slug="acme"))
         s.flush()
+        if connected:
+            s.add(RepositoryConnection(workspace_id=WS, repo_id=REPO, name=REPO))
         project = Project(workspace_id=WS, name="Core", key="CORE")
         s.add(project)
         s.flush()
@@ -178,6 +182,21 @@ async def test_a_task_without_a_repository_target_meets_neither_repo_preconditio
     guard = await _load(factory, run_id)
 
     assert guard.preconditions == ALL_MET | {"repo_target_set": False, "policy_loaded": False}
+
+
+async def test_a_repository_the_workspace_has_not_connected_is_not_a_target_and_not_fetched(
+    factory: sessionmaker[Session], mirrors: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import scf_worker.temporal_services as services
+
+    fetched: list[str] = []
+    monkeypatch.setattr(services, "_policy_loads", lambda _ws, repo: fetched.append(repo) or True)
+    run_id = _seed(factory, connected=False)
+
+    guard = await _load(factory, run_id)
+
+    assert guard.preconditions == ALL_MET | {"repo_target_set": False, "policy_loaded": False}
+    assert fetched == [], "an unconnected repository is never fetched"
 
 
 async def test_a_repository_with_no_mirror_and_no_credentials_has_no_readable_policy(

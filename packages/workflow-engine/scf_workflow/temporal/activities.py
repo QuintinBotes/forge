@@ -20,10 +20,12 @@ delivery never double-writes a transition.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
+from concurrent.futures import Executor, ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import NoReturn
 
@@ -58,6 +60,11 @@ DEFAULT_CHECKS = ("lint", "type_check", "tests", "coverage")
 
 #: Seconds between activity heartbeats (the agent activity's heartbeat timeout is 120 s).
 AGENT_HEARTBEAT_EVERY = 30.0
+
+#: An agent body holds its thread for the whole run, so agents get their own pool and
+#: the short services (persist, guards, approvals) keep the loop's default one. Sized
+#: to Temporal's default of 100 concurrent activities per worker.
+_AGENT_THREADS = ThreadPoolExecutor(max_workers=100, thread_name_prefix="scf-agent")
 
 _SUCCESS_STATES = {WorkflowState.MERGED.value, WorkflowState.CLOSED.value}
 _STATUS_BY_STATE = {
@@ -288,13 +295,19 @@ class WorkflowActivities:
     @activity.defn(name="forge.run_agent")
     async def run_agent(self, inp: RunAgentInput) -> AgentRunResultDTO:
         return await _heartbeating(
-            self._run_agent_fn, inp, {"phase": "executing", "attempt": inp.attempt}
+            self._run_agent_fn,
+            inp,
+            {"phase": "executing", "attempt": inp.attempt},
+            executor=_AGENT_THREADS,
         )
 
     @activity.defn(name="forge.resume_agent")
     async def resume_agent(self, inp: ResumeAgentInput) -> AgentRunResultDTO:
         return await _heartbeating(
-            self._resume_agent_fn, inp, {"phase": "resuming", "attempt": inp.attempt}
+            self._resume_agent_fn,
+            inp,
+            {"phase": "resuming", "attempt": inp.attempt},
+            executor=_AGENT_THREADS,
         )
 
     # -- verification (F08), PR (F03/F08) --------------------------------- #
@@ -341,7 +354,11 @@ class WorkflowActivities:
 
 
 async def _heartbeating[I, O](
-    fn: Callable[[I], O | Awaitable[O]], inp: I, details: Mapping[str, object]
+    fn: Callable[[I], O | Awaitable[O]],
+    inp: I,
+    details: Mapping[str, object],
+    *,
+    executor: Executor | None = None,
 ) -> O:
     """Run a service off the event loop, heartbeating until it returns.
 
@@ -357,7 +374,9 @@ async def _heartbeating[I, O](
         return result
 
     # shortcut: a cancelled service thread runs to completion, until services take a cancel token
-    work: asyncio.Future[O] = asyncio.ensure_future(asyncio.to_thread(call))
+    loop = asyncio.get_running_loop()
+    # ``executor=None`` is the loop's default pool, as ``asyncio.to_thread`` uses.
+    work = loop.run_in_executor(executor, contextvars.copy_context().run, call)
     while True:
         if activity.in_activity():  # tests call some activities directly
             activity.heartbeat(details)

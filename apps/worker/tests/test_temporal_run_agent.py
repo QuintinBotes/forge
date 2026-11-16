@@ -9,6 +9,7 @@ from __future__ import annotations
 import subprocess
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,7 @@ from scf_db.models import (
     WorkflowRun,
     Workspace,
 )
-from scf_db.models.enums import RunStatus
+from scf_db.models.enums import ExecutionMode, RunStatus
 from scf_worker.temporal_main import build_activities
 from scf_workflow.temporal.payloads import (
     AgentRunResultDTO,
@@ -188,6 +189,25 @@ async def test_a_repository_the_workspace_has_not_connected_is_refused(
         assert s.scalars(select(AgentRun)).all() == []
 
 
+async def test_a_supervised_task_is_refused_rather_than_run_as_one_agent(
+    factory: sessionmaker[Session], mirror: Path
+) -> None:
+    run_id, task_id = _seed(factory)
+    with factory() as s:
+        task = s.get(Task, task_id)
+        assert task is not None
+        task.execution_mode = ExecutionMode.SUPERVISED_MULTI_AGENT
+        s.commit()
+
+    with pytest.raises(ApplicationError) as caught:
+        await _run(factory, _input(run_id, task_id))
+
+    assert caught.value.type == "ExecutionModeNotSupported"
+    assert caught.value.non_retryable is True
+    with factory() as s:
+        assert s.scalars(select(AgentRun)).all() == []
+
+
 async def test_a_run_outside_the_workspace_is_refused(
     factory: sessionmaker[Session], mirror: Path
 ) -> None:
@@ -234,7 +254,13 @@ async def test_a_pause_is_recorded_once_on_the_runs_latest_agent_run(
     factory: sessionmaker[Session], mirror: Path
 ) -> None:
     run_id, task_id = _seed(factory)
-    agent = await _run(factory, _input(run_id, task_id))
+    earlier = await _run(factory, _input(run_id, task_id, key="k-0"))
+    agent = await _run(factory, _input(run_id, task_id, key="k-1"))
+    with factory() as s:  # SQLite's clock is too coarse to order two quick runs
+        row = s.get(AgentRun, earlier.agent_run_id)
+        assert row is not None
+        row.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+        s.commit()
     notify = build_activities(factory).pause_and_notify
 
     assert await ActivityEnvironment().run(notify, _notify(run_id)) is True
