@@ -179,6 +179,22 @@ def query_terms(query: str) -> list[str]:
     return terms[:MAX_QUERY_TERMS]
 
 
+#: A word written as code: an underscore, or a capital after a lower-case letter or digit.
+_IDENTIFIER_SHAPE_RE = re.compile(r"_|[a-z0-9][A-Z]")
+
+
+def identifier_terms(query: str) -> frozenset[str]:
+    """Lower-cased query tokens written as code identifiers, as tokenised.
+
+    ``PgVectorStore``, ``getUser`` and ``iter_source_files`` qualify; a plain
+    word (``chunk``, ``Load``) does not, so prose never reads as a symbol name
+    just because some function shares the word.
+    """
+    return frozenset(
+        token.lower() for token in _TOKEN_RE.findall(query) if _IDENTIFIER_SHAPE_RE.search(token)
+    )
+
+
 # -- Postgres lexemes ------------------------------------------------------ #
 #
 # Candidate generation on Postgres must see exactly the tokens the BM25
@@ -251,6 +267,7 @@ def strip_uri_credentials(uri: str) -> str:
 __all__ = [
     "ENGLISH_STOPWORDS",
     "MAX_QUERY_TERMS",
+    "identifier_terms",
     "pg_lexeme",
     "query_terms",
     "strip_uri_credentials",

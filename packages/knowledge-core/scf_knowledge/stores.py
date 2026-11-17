@@ -74,13 +74,14 @@ from scf_db.models import (
     RetrievalTermStat,
     RetrievalWorkspaceStat,
 )
-from scf_knowledge.text import query_terms as _query_terms_of
 from scf_knowledge.text import (
+    identifier_terms,
     strip_uri_credentials,
     tokenize,
     tsquery_literal,
     tsvector_literal,
 )
+from scf_knowledge.text import query_terms as _query_terms_of
 
 __all__ = [
     "Bm25Store",
@@ -95,9 +96,13 @@ __all__ = [
 # SQLAlchemy ``sessionmaker``). Matches ``scf_db.create_session_factory``.
 SessionFactory = Callable[[], Session]
 
-# Okapi BM25 free parameters (standard defaults).
+# Okapi BM25 free parameters. ``b`` is below the textbook 0.75 because code
+# chunks are whole AST units, never split, so lengths run from a few tokens to
+# over a thousand; at 0.75 a long class or function body loses to any short
+# chunk that mentions the same words (#267: recall@5 on the real-corpus eval
+# rises at b = 0.3-0.5 and falls back above 0.6).
 _BM25_K1 = 1.5
-_BM25_B = 0.75
+_BM25_B = 0.5
 
 #: Postgres candidate-pool size for BM25 candidate-then-rescore (spec J §2.5).
 _BM25_CANDIDATE_LIMIT = 200
@@ -161,6 +166,7 @@ def bm25_score(
     n_docs: int,
     avg_len: float,
     *,
+    symbol: str | None = None,
     k1: float = _BM25_K1,
     b: float = _BM25_B,
 ) -> float:
@@ -170,6 +176,12 @@ def bm25_score(
     to its corpus document frequency, ``n_docs`` is the corpus size and
     ``avg_len`` its mean token length. Repeated query terms count once. Uses
     the non-negative IDF form ``log(1 + (N - df + 0.5) / (df + 0.5))``.
+
+    ``symbol`` is the token of the symbol the document defines (a code chunk's
+    class or function name). A query term equal to it adds ``idf * (k1 + 1)``,
+    the ceiling a term's body contribution saturates below, so the chunk that
+    defines a symbol outranks every chunk that only uses it, however long the
+    definition is (#267).
     """
     if n_docs <= 0 or not doc_terms:
         return 0.0
@@ -185,7 +197,16 @@ def bm25_score(
         idf = math.log(1 + (n_docs - doc_freq + 0.5) / (doc_freq + 0.5))
         denom = freq + k1 * (1 - b + b * doc_len / mean_len)
         score += idf * (freq * (k1 + 1)) / denom
+        if term == symbol:
+            score += idf * (k1 + 1)
     return score
+
+
+def _defined_symbol(row: RetrievalChunk, identifiers: frozenset[str]) -> str | None:
+    """The query identifier ``row`` defines (its class or function name), if any."""
+    symbol = (row.chunk_metadata or {}).get("symbol")
+    term = symbol.lower() if isinstance(symbol, str) else None
+    return term if term in identifiers else None
 
 
 def _hash(text: str) -> str:
@@ -734,7 +755,10 @@ class Bm25Store:
     terms selects up to 200 candidates by ``ts_rank_cd`` (workspace/scope
     filtered), then :func:`bm25_score` rescores them with the incrementally
     maintained corpus statistics. SQLite scores every in-scope chunk with the
-    same function and statistics, so both dialects rank identically.
+    same function and statistics, so both dialects rank identically. A code
+    chunk whose stored symbol the query writes as an identifier
+    (:func:`~scf_knowledge.text.identifier_terms`) gets the definition boost of
+    :func:`bm25_score`, so ``PgVectorStore`` finds the class before its callers.
     """
 
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -768,8 +792,19 @@ class Bm25Store:
             if n_docs <= 0:
                 return []
 
+            identifiers = identifier_terms(query)
             scored = [
-                (bm25_score(query_terms, tokenize(row.content), df, n_docs, avg_len), row)
+                (
+                    bm25_score(
+                        query_terms,
+                        tokenize(row.content),
+                        df,
+                        n_docs,
+                        avg_len,
+                        symbol=_defined_symbol(row, identifiers),
+                    ),
+                    row,
+                )
                 for row in candidates
             ]
             ranked = [(score, row) for score, row in scored if score > 0.0]

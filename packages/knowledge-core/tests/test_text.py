@@ -1,10 +1,16 @@
-"""Tests for ``scf_knowledge.text.strip_uri_credentials``: no token leaves in a uri."""
+"""Tests for ``scf_knowledge.text``: no token leaves in a uri; identifier queries."""
 
 from __future__ import annotations
 
 import pytest
 
-from scf_knowledge.text import strip_uri_credentials
+from scf_knowledge.text import identifier_terms, strip_uri_credentials
+
+
+def test_identifier_terms_are_the_words_written_as_code() -> None:
+    query = "where is PgVectorStore, getUser or iter_source_files? Load a Chunk of v2Client"
+    assert identifier_terms(query) == {"pgvectorstore", "getuser", "iter_source_files", "v2client"}
+    assert identifier_terms("serialize and load the spec manifest") == frozenset()
 
 
 @pytest.mark.parametrize(

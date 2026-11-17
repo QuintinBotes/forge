@@ -260,6 +260,24 @@ def test_parity_dotted_names_and_identifiers(
     )
 
 
+def test_parity_symbol_definition_outranks_its_users(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    # #267: the definition boost reads the stored symbol, on both dialects.
+    body = " ".join(f"step_{i} returns value" for i in range(60))
+    corpus = [
+        Chunk(content=f"class LedgerStore: {body}", path="stores.py", symbol="LedgerStore"),
+        Chunk(content="store = LedgerStore() LedgerStore", path="test_a.py", symbol="test_a"),
+        Chunk(content="LedgerStore LedgerStore LedgerStore", path="test_b.py"),
+    ]
+    _assert_parity(pg_session_factory, corpus, [("LedgerStore", True), ("ledgerstore", True)])
+    sqlite_factory, workspace_id, _ = _seed_sqlite(corpus)
+    hits = Bm25Store(sqlite_factory).search(
+        "LedgerStore", KnowledgeScope(workspace_id=workspace_id), k=10
+    )
+    assert hits[0].path == "stores.py"
+
+
 def test_parity_file_paths(pg_session_factory: sessionmaker[Session]) -> None:
     corpus = [
         Chunk(content="see src/scf/retry_helper.py for details", path="guide.md"),

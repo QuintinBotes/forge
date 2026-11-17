@@ -42,6 +42,7 @@ from scf_db.models import (
     Workspace,
 )
 from scf_db.session import create_session_factory
+from scf_knowledge.chunking import chunk_file
 from scf_knowledge.embeddings import DeterministicEmbeddingClient
 from scf_knowledge.stores import (
     Bm25Store,
@@ -333,10 +334,11 @@ def test_bm25_search_no_match_returns_empty(
 def test_bm25_score_matches_hand_computed_okapi() -> None:
     import math
 
-    # N=3 docs, avg_len=4; doc has tf(retry)=2 over 3 tokens; df(retry)=2.
+    # N=3 docs, avg_len=4; doc has tf(retry)=2 over 3 tokens; df(retry)=2;
+    # k1=1.5, b=0.5 (#267).
     doc = ["retry", "retry", "timeout"]
     idf = math.log(1 + (3 - 2 + 0.5) / (2 + 0.5))
-    expected = idf * (2 * 2.5) / (2 + 1.5 * (1 - 0.75 + 0.75 * 3 / 4.0))
+    expected = idf * (2 * 2.5) / (2 + 1.5 * (1 - 0.5 + 0.5 * 3 / 4.0))
     assert bm25_score(["retry"], doc, {"retry": 2}, 3, 4.0) == pytest.approx(expected)
 
 
@@ -352,6 +354,53 @@ def test_bm25_score_edge_cases() -> None:
     assert bm25_score(["alpha"], doc, {"alpha": 1}, 10, 3.0) > bm25_score(
         ["alpha"], doc, {"alpha": 9}, 10, 3.0
     )
+
+
+def test_bm25_score_a_definition_outscores_any_number_of_uses() -> None:
+    # A term's body contribution saturates below idf * (k1 + 1); a chunk that
+    # defines the queried symbol scores above that ceiling however long it is.
+    stats = ({"widget": 5}, 100, 20.0)
+    long_definition = ["widget", *(["filler"] * 2000)]
+    dense_use = ["widget"] * 50
+    assert bm25_score(["widget"], long_definition, *stats, symbol="widget") > bm25_score(
+        ["widget"], dense_use, *stats
+    )
+    # Naming a symbol the query does not ask for changes nothing.
+    assert bm25_score(["widget"], dense_use, *stats, symbol="gadget") == bm25_score(
+        ["widget"], dense_use, *stats
+    )
+
+
+def test_exact_class_name_query_ranks_the_defining_file_above_its_users(
+    session_factory: sessionmaker[Session], workspace_id: uuid.UUID
+) -> None:
+    """#267 (real-005): the class is one long AST chunk that names itself once;
+    short test functions repeat the name. The definition still ranks first."""
+    methods = "".join(
+        f"    def step_{i}(self, value):\n        return value + {i}\n\n" for i in range(40)
+    )
+    files = {
+        "ledger/stores.py": f'class LedgerStore:\n    """Persist ledger rows."""\n\n{methods}',
+        **{
+            f"tests/test_ledger_{n}.py": (
+                f"def test_ledger_{n}():\n"
+                "    store = LedgerStore()\n"
+                "    assert isinstance(store, LedgerStore)\n"
+            )
+            for n in range(3)
+        },
+    }
+    source_id = _make_source(session_factory, workspace_id)
+    PgVectorStore(session_factory, None).index(
+        source_id=str(source_id),
+        chunks=[chunk for path, src in files.items() for chunk in chunk_file(path, src)],
+    )
+    scope = KnowledgeScope(workspace_id=workspace_id)
+    store = Bm25Store(session_factory)
+
+    hits = store.search("LedgerStore", scope, k=5)
+    assert hits[0].path == "ledger/stores.py"
+    assert {h.path for h in hits[1:]} == {f"tests/test_ledger_{n}.py" for n in range(3)}
 
 
 def test_bm25_partial_match_still_ranks_on_sqlite(
