@@ -41,17 +41,21 @@ from scf_api.schemas.replay import (
 from scf_api.services.agent_dispatch import (
     SERVER_OWNED_CONTEXT,  # noqa: F401  (re-export: historical import path)
     AgentEnqueueFailed,
+    GovernedRunRefused,
     RepoNotConnected,
+    TaskNotFound,
     TrackerRefNotFound,
     build_tracker_objective,
     create_and_enqueue_run,
     resolve_tracker_ref,
+    start_governed_run,
 )
 from scf_api.services.fork_service import (
     PromptOverrideModelClient,
     fork_recording,
 )
 from scf_api.services.replay_service import replay_recording
+from scf_api.services.workflow_engine import resolve_backend
 from scf_api.settings import get_settings
 from scf_contracts import AgentObjective, AgentRunResult, ModelClient
 from scf_db.models import AgentRun, RunRecording
@@ -374,6 +378,18 @@ class CreateRunRequest(AgentObjective):
     tracker_ref: str | None = None
 
 
+class CreateRunResponse(AgentRunResult):
+    """``POST /agent/runs`` result: the agent run, and the workflow run it runs in.
+
+    Under the Temporal backend a repository-changing run is governed (#276):
+    ``workflow_run_id`` names its workflow run, and ``run_id`` the agent run its
+    first agent step will create, after the workflow's gates. Until then that
+    agent run reads as not found. Otherwise ``workflow_run_id`` is null.
+    """
+
+    workflow_run_id: uuid.UUID | None = None
+
+
 def get_tracker_adapter_factory() -> Callable[[Any], Any]:
     """Resolve a PM adapter for a connection (lazy; override in tests).
 
@@ -437,7 +453,7 @@ def _objective_from_tracker_ref(
     )
 
 
-@router.post("/runs", response_model=AgentRunResult, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/runs", response_model=CreateRunResponse, status_code=status.HTTP_202_ACCEPTED)
 def run(
     principal: RunnerPrincipalDep,
     runner: RunnerDep,
@@ -446,7 +462,12 @@ def run(
     tracker_adapters: TrackerAdapterFactoryDep,
     body: CreateRunRequest,
 ) -> AgentRunResult:
-    """Admit a run only when a provider is available, then dispatch to the worker."""
+    """Admit a run only when a provider is available, then dispatch it.
+
+    Under the Temporal backend a run that names a repository starts a workflow run
+    and its agent runs behind the workflow's gates (#276); any other run is
+    enqueued for the worker.
+    """
     server_context: dict | None = None
     if body.tracker_ref:
         objective, server_context = _objective_from_tracker_ref(
@@ -461,6 +482,17 @@ def run(
         objective = AgentObjective.model_validate(body.model_dump(exclude={"tracker_ref"}))
         _enforce_skill_profiles(objective)
     try:
+        if objective.primary_repo_target is not None and resolve_backend() == "temporal":
+            workflow_run_id, agent_run_id = start_governed_run(
+                store.session,
+                workspace_id=principal.workspace_id,
+                objective=objective,
+                started_by=f"user:{principal.user_id}",
+                server_context=server_context,
+            )
+            return CreateRunResponse(
+                run_id=agent_run_id, task_id=objective.task_id, workflow_run_id=workflow_run_id
+            )
         return create_and_enqueue_run(
             store.session,
             workspace_id=principal.workspace_id,
@@ -478,6 +510,10 @@ def run(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="agent run could not be enqueued",
         ) from exc
+    except TaskNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found") from exc
+    except GovernedRunRefused as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.reason) from exc
 
 
 @router.get("/runs/{run_id}", response_model=AgentRunResult)

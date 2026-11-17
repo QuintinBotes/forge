@@ -11,10 +11,12 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from scf_agent import AgentRunner
@@ -34,6 +36,7 @@ from scf_db.models import Project, RepositoryConnection, Task, Workspace
 from scf_db.models.enums import PMConnectionStatus
 from scf_db.models.enums import PMProvider as DbPMProvider
 from scf_db.models.pm import PMConnection, PMTaskLink
+from scf_db.models.runs import WorkflowRun
 from scf_integrations.pm.errors import ExternalNotFound
 
 TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
@@ -260,3 +263,41 @@ def test_no_tracker_workspace_keeps_native_behaviour(
 def test_objective_required_without_tracker_ref(client: TestClient) -> None:
     resp = client.post("/agent/runs", json={})
     assert resp.status_code == 422
+
+
+def test_a_linked_tracker_ref_under_temporal_starts_a_governed_run(
+    client: TestClient,
+    agent_session: Session,
+    enqueued: list[AgentObjective],
+    fake_temporal: Any,
+) -> None:
+    """#276: a tracker run that changes a repository is governed too. The issue's
+    text is the kept objective, labelled with its source, with its tracker block."""
+    connection_id, task_id = _seed_tracker(agent_session, with_link=True)
+
+    resp = client.post("/agent/runs", json={"tracker_ref": "github_issues:acme/widgets#42"})
+
+    assert resp.status_code == 202, resp.text
+    assert enqueued == []
+    [run] = agent_session.scalars(select(WorkflowRun)).all()
+    assert resp.json()["workflow_run_id"] == str(run.id)
+    trigger = run.context["trigger"]
+    assert trigger["source_label"] == "github_issues:acme/widgets#42"
+    assert trigger["tracker"]["connection_id"] == str(connection_id)
+    assert trigger["objective"]["objective"] == "Tracker title"
+    assert trigger["objective"]["task_id"] == str(task_id)
+
+
+def test_an_unlinked_tracker_ref_under_temporal_needs_a_task(
+    client: TestClient,
+    agent_session: Session,
+    enqueued: list[AgentObjective],
+    fake_temporal: Any,
+) -> None:
+    _seed_tracker(agent_session)
+
+    resp = client.post("/agent/runs", json={"tracker_ref": "github_issues:acme/widgets#42"})
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"] == "governed_run_requires_task"
+    assert enqueued == [] and fake_temporal.started == []

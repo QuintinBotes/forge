@@ -300,6 +300,28 @@ async def test_a_run_started_for_someone_names_them_once_and_waits_at_the_spec_g
         assert agent_calls == [], "no agent before a person decides the spec gate"
 
 
+async def test_the_first_agent_run_takes_the_id_its_starter_was_given(harness: Any) -> None:
+    """#276: ``POST /agent/runs`` returns ``agent_run_id(run)`` before the agent runs;
+    the agent step's key derives that id (``forge.run_agent`` takes uuid5 of it)."""
+    from scf_workflow.temporal.ids import agent_run_id
+
+    calls: list[Any] = []
+
+    def agent(inp: Any) -> AgentRunResultDTO:
+        calls.append(inp)
+        return AgentRunResultDTO(agent_run_id=uuid.uuid4(), status="succeeded")
+
+    h = harness(run_agent_fn=agent)
+    async with h.worker():
+        run = await h.start()
+        await h.wait_awaiting(run, {"spec_approved_by_human"})
+        await h.engine.atransition(run.id, "spec_approved_by_human")
+        await h.wait_awaiting(run, {"review_approved_by_human"})
+
+    first = calls[0]
+    assert uuid.uuid5(first.workflow_run_id, first.idempotency_key) == agent_run_id(run.id)
+
+
 async def test_the_check_activity_takes_its_configured_limit_and_heartbeats(
     harness: Any,
 ) -> None:
