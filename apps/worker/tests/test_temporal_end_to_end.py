@@ -4,7 +4,8 @@
 a scripted model that writes and commits one file; ``FORGE_ALLOW_FAKE_ACTIVITIES``
 unset. Only GitHub's HTTP layer is faked, and git really pushes to a local bare
 "remote". Runs on the time-skipping Temporal test server and skips (never fakes)
-when that server cannot start.
+when that server cannot start. One run starts from an issue delivery, as a labelled
+issue starts it, and reports back to that issue (#278).
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import subprocess
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +33,11 @@ import scf_worker.agent_runner as agent_runner_module
 import scf_worker.temporal_main as tm
 import scf_worker.temporal_services as temporal_services_module
 from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
+from scf_api.auth.crypto import HmacAeadCipher
+from scf_api.auth.vault import SecretVault
+from scf_api.observability.audit import AuditLog
+from scf_api.services import pm_service as pm_service_module
+from scf_api.services import workflow_engine as workflow_engine_module
 from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from scf_api.services.approval_service import build_gate_registry
 from scf_api.services.workflow_gate_hook import sync_gate_event
@@ -44,14 +51,23 @@ from scf_approval.models import (
     Role,
 )
 from scf_approval.providers import InMemoryGrantStore
+from scf_contracts.enums import Direction
 from scf_contracts.orchestration_config import AgentRole, Effort
+from scf_contracts.pm import ExternalTask, StatusCategory
+from scf_contracts.pm import PMProvider as ContractsProvider
 from scf_db.base import Base
-from scf_db.models import Attestation, Project, RepositoryConnection, Task, Workspace
+from scf_db.models import AgentRun, Attestation, Project, RepositoryConnection, Task, Workspace
+from scf_db.models.enums import PMConnectionStatus, PMDeliveryStatus
+from scf_db.models.enums import PMProvider as DbPMProvider
+from scf_db.models.pm import PMConnection, PMWebhookDelivery
 from scf_db.models.role_config import AgentRoleConfig
 from scf_worker.finalizer import GitHubAppCredentials
+from scf_worker.tasks import pm_dispatch
+from scf_worker.tasks.pm_sync import process_webhook
 from scf_worker.temporal_services import open_pr_service, run_checks_service
 from scf_workflow.store import SqlAlchemyWorkflowStore
 from scf_workflow.temporal.engine import TemporalWorkflowEngine
+from scf_workflow.temporal.ids import workflow_id
 from scf_workflow.temporal.worker import build_temporal_worker
 from scf_workflow.temporal.workflows import FeatureWorkflow
 
@@ -224,22 +240,28 @@ def independent_reviewer(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def _seed_workspace(s: Session) -> Project:
+    """The workspace, its connected repository, its reviewer and one project."""
+    s.add(Workspace(id=WS, name="Acme", slug="acme"))
+    s.add(RepositoryConnection(workspace_id=WS, repo_id=REPO, name=REPO))
+    s.add(
+        AgentRoleConfig(
+            workspace_id=WS,
+            role=AgentRole.REVIEWER,
+            model_or_tier="gpt-6-astra",
+            effort=Effort.HIGH,
+        )
+    )
+    s.flush()
+    project = Project(workspace_id=WS, name="Core", key="CORE")
+    s.add(project)
+    s.flush()
+    return project
+
+
 def _seed(factory: sessionmaker[Session]) -> uuid.UUID:
     with factory() as s:
-        s.add(Workspace(id=WS, name="Acme", slug="acme"))
-        s.add(RepositoryConnection(workspace_id=WS, repo_id=REPO, name=REPO))
-        s.add(
-            AgentRoleConfig(
-                workspace_id=WS,
-                role=AgentRole.REVIEWER,
-                model_or_tier="gpt-6-astra",
-                effort=Effort.HIGH,
-            )
-        )
-        s.flush()
-        project = Project(workspace_id=WS, name="Core", key="CORE")
-        s.add(project)
-        s.flush()
+        project = _seed_workspace(s)
         task = Task(
             workspace_id=WS,
             project_id=project.id,
@@ -252,8 +274,7 @@ def _seed(factory: sessionmaker[Session]) -> uuid.UUID:
         return task.id
 
 
-async def _wait_awaiting(engine: TemporalWorkflowEngine, run_id: uuid.UUID, event: str) -> None:
-    handle: Any = engine.workflow_handle(run_id)
+async def _wait_awaiting(handle: Any, event: str) -> None:
     last: list[str] = []
     for _ in range(1200):  # the agent, its checks and the pull request run for real
         last = await handle.query(FeatureWorkflow.awaiting)
@@ -266,6 +287,21 @@ async def _wait_awaiting(engine: TemporalWorkflowEngine, run_id: uuid.UUID, even
 async def _pending(factory: sessionmaker[Session], gate: GateType) -> Any:
     rows = await SqlAlchemyApprovalRepository(factory).list(workspace_id=WS)
     return [r for r in rows if r.gate_type is gate and r.status is GateStatus.PENDING]
+
+
+def _approvals(factory: sessionmaker[Session], engine: TemporalWorkflowEngine) -> ApprovalService:
+    """The approval service, whose gate decisions reach the workflow through ``engine``."""
+
+    @contextmanager
+    def engine_for(workspace_id: uuid.UUID) -> Iterator[TemporalWorkflowEngine]:
+        assert workspace_id == WS
+        yield engine
+
+    return ApprovalService(
+        SqlAlchemyApprovalRepository(factory),
+        build_gate_registry(InMemoryGrantStore(), engine_factory=engine_for),
+        ApprovalAuthorizer(),
+    )
 
 
 def _attestations(factory: sessionmaker[Session], run_id: uuid.UUID) -> int:
@@ -332,29 +368,19 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
             client=time_skip_env.client,
             task_queue=TASK_QUEUE,
         )
-
-        @contextmanager
-        def engine_for(workspace_id: uuid.UUID) -> Iterator[TemporalWorkflowEngine]:
-            assert workspace_id == WS
-            yield engine
-
-        approvals = ApprovalService(
-            SqlAlchemyApprovalRepository(factory),
-            build_gate_registry(InMemoryGrantStore(), engine_factory=engine_for),
-            ApprovalAuthorizer(),
-        )
+        approvals = _approvals(factory, engine)
         async with build_temporal_worker(time_skip_env.client, activities, task_queue=TASK_QUEUE):
             run = await engine.astart(task_id)
             session.commit()  # as the API does after start
             assert run.id is not None
-            await _wait_awaiting(engine, run.id, "spec_approved_by_human")
+            await _wait_awaiting(engine.workflow_handle(run.id), "spec_approved_by_human")
             [spec] = await _pending(factory, GateType.SPEC)
             await approvals.resolve(spec.id, approve, approver, workspace_id=WS)
-            await _wait_awaiting(engine, run.id, "plan_approved_by_human")
+            await _wait_awaiting(engine.workflow_handle(run.id), "plan_approved_by_human")
             [plan] = await _pending(factory, GateType.PLAN)
             await approvals.resolve(plan.id, approve, approver, workspace_id=WS)
 
-            await _wait_awaiting(engine, run.id, "review_approved_by_human")
+            await _wait_awaiting(engine.workflow_handle(run.id), "review_approved_by_human")
 
             # Criterion 2: one pull request, one pending pr request, the run at its gate.
             assert len(github.created) == 1
@@ -403,3 +429,200 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
 
     assert result.final_state.value == "closed"
     assert _git(remotes / "acme" / "app.git", "ls-tree", "--name-only", github.created[0]["head"])
+
+
+#: The labelled issue, as the tracker returns it when SCF re-fetches it.
+ISSUE = ExternalTask(
+    provider=ContractsProvider.github_issues,
+    external_id="42",
+    external_key="acme/app#42",
+    url="https://github.com/acme/app/issues/42",
+    title="Add a health endpoint",
+    description_md="Serve a health check.\n\n## Acceptance criteria\n- health() returns ok\n",
+    status_name="open",
+    status_category=StatusCategory.unstarted,
+    labels=["forge:run"],
+    external_updated_at=datetime(2026, 11, 17, 9, 0, tzinfo=UTC),
+)
+
+
+class FakeTracker:
+    """GitHub Issues behind the adapter registry: the issue, and what SCF posts back."""
+
+    provider = ContractsProvider.github_issues
+
+    def __init__(self) -> None:
+        self.comments: list[tuple[str, str]] = []
+        self.transitions: list[tuple[str, StatusCategory]] = []
+
+    def map_status(self, value: str, direction: Direction) -> str:
+        return StatusCategory.unstarted.value
+
+    def map_priority(self, value: str, direction: Direction) -> str:
+        return value
+
+    def map_fields(self, fields: dict[str, Any], direction: Direction) -> dict[str, Any]:
+        return dict(fields)
+
+    async def fetch_external(self, external_id: str) -> ExternalTask:
+        return ISSUE
+
+    async def comment_external(self, external_id: str, body: str) -> str:
+        self.comments.append((external_id, body))
+        return str(len(self.comments))
+
+    async def transition_external(self, external_id: str, category: StatusCategory) -> ExternalTask:
+        self.transitions.append((external_id, category))
+        return ISSUE
+
+
+@pytest.fixture
+def tracker(
+    time_skip_env: Any, factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> tuple[FakeTracker, pm_service_module.PMConnectionService]:
+    """The tracker the issue lives on, and the durable engine its dispatch starts runs on."""
+    fake = FakeTracker()
+
+    def build_adapter(*_args: Any, **_kw: Any) -> FakeTracker:
+        return fake
+
+    monkeypatch.setattr("scf_integrations.pm.registry.build_adapter", build_adapter)
+    monkeypatch.setattr(pm_service_module, "build_adapter", build_adapter)
+    connections = pm_service_module.PMConnectionService(
+        session_factory=factory,
+        vault=SecretVault(cipher=HmacAeadCipher(b"0" * 32)),
+        audit=AuditLog(),
+        transport_factory=lambda _connection: object(),  # type: ignore[arg-type,return-value]
+    )
+    # The worker's write-back reaches the same tracker.
+    monkeypatch.setattr(pm_dispatch, "_connection_service", lambda _factory: connections)
+
+    async def client(_settings: object = None) -> Any:
+        return time_skip_env.client
+
+    monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "temporal")
+    monkeypatch.setenv("TEMPORAL_TASK_QUEUE", TASK_QUEUE)
+    monkeypatch.setattr(workflow_engine_module, "get_temporal_client", client)
+    return fake, connections
+
+
+def _seed_issue_delivery(factory: sessionmaker[Session]) -> uuid.UUID:
+    """A connected tracker whose ``forge:run`` label dispatches to ``REPO``, and one
+    verified ``issues.labeled`` delivery for issue 42. No board task exists yet."""
+    with factory() as s:
+        project = _seed_workspace(s)
+        connection = PMConnection(
+            workspace_id=WS,
+            provider=DbPMProvider.GITHUB_ISSUES,
+            name="GitHub Issues",
+            project_id=project.id,
+            external_project_key=REPO,
+            external_project_id="10",
+            config={
+                "dispatch": {
+                    "enabled": True,
+                    "label": "forge:run",
+                    "repository": REPO,
+                    "allowed_senders": ["octocat"],
+                    "status_on_pr_opened": "started",
+                }
+            },
+            status=PMConnectionStatus.CONNECTED,
+        )
+        s.add(connection)
+        s.flush()
+        delivery = PMWebhookDelivery(
+            provider=DbPMProvider.GITHUB_ISSUES,
+            connection_id=connection.id,
+            delivery_id="gh-278",
+            event_type="issue.updated",
+            external_id="42",
+            payload_hash="cafe278",
+            signature_valid=True,
+            received_at=datetime.now(UTC),
+            status=PMDeliveryStatus.RECEIVED,
+        )
+        s.add(delivery)
+        s.commit()
+        return delivery.id
+
+
+#: The adapter's parsed hints for the delivery: who added which label where.
+LABELED = {
+    "event": "issues",
+    "action": "labeled",
+    "label": "forge:run",
+    "sender_login": "octocat",
+    "repository_full_name": REPO,
+    "is_pull_request": False,
+}
+
+
+async def test_an_issue_delivery_reaches_the_pr_gate_and_the_issue_hears_of_it(
+    time_skip_env: Any,
+    factory: sessionmaker[Session],
+    remotes: Path,
+    github: FakeGitHub,
+    committing_agent: None,
+    independent_reviewer: None,
+    tracker: tuple[FakeTracker, pm_service_module.PMConnectionService],
+) -> None:
+    """#278 criterion 2: an issue delivery starts a run that waits at the spec gate with
+    one pending ``spec`` request and no agent run; once a person approves each gate before
+    execution, it reaches ``awaiting_review`` with a delivered branch, one pull request
+    and one pending ``pr`` request naming the run. Criterion 1: the issue is told the
+    state and the pull request, once."""
+    fake_tracker, connections = tracker
+    delivery_id = _seed_issue_delivery(factory)
+    activities = tm.build_activities(factory)
+    approver = Principal(kind="user", id=uuid.uuid4(), role=Role.MEMBER, workspace_id=WS)
+    approve = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
+
+    with factory() as session:
+        engine = TemporalWorkflowEngine(
+            workspace_id=WS,
+            store=SqlAlchemyWorkflowStore(session, workspace_id=WS),
+            client=time_skip_env.client,
+            task_queue=TASK_QUEUE,
+        )
+        approvals = _approvals(factory, engine)
+        async with build_temporal_worker(time_skip_env.client, activities, task_queue=TASK_QUEUE):
+            # The worker's webhook task: sync the issue to the board, then dispatch it.
+            outcome = await asyncio.to_thread(
+                process_webhook, factory, delivery_id, connections=connections, payload=LABELED
+            )
+            assert outcome["dispatch_action"] == "dispatched", outcome
+            run_id = uuid.UUID(str(outcome["run_id"]))
+            handle = time_skip_env.client.get_workflow_handle(workflow_id(run_id))
+
+            await _wait_awaiting(handle, "spec_approved_by_human")
+            [spec] = await _pending(factory, GateType.SPEC)
+            assert spec.workflow_run_id == run_id
+            with factory() as fresh:
+                assert fresh.scalars(select(AgentRun)).all() == [], "no agent before the gate"
+            assert fake_tracker.comments == [], "a run waiting at its spec gate has not finished"
+            await approvals.resolve(spec.id, approve, approver, workspace_id=WS)
+            await _wait_awaiting(handle, "plan_approved_by_human")
+            [plan] = await _pending(factory, GateType.PLAN)
+            await approvals.resolve(plan.id, approve, approver, workspace_id=WS)
+
+            await _wait_awaiting(handle, "review_approved_by_human")
+
+            with factory() as fresh:
+                waiting = SqlAlchemyWorkflowStore(fresh, workspace_id=WS).get(run_id)
+            assert waiting.current_state == "awaiting_review"
+            assert waiting.context["trigger"]["started_by"] == "github:octocat"
+            [created] = github.created
+            # The branch reached the remote with the agent's commit on it.
+            delivered = _git(
+                remotes / "acme" / "app.git", "ls-tree", "--name-only", created["head"]
+            )
+            assert "health.py" in delivered.split()
+            [pr] = await _pending(factory, GateType.PR)
+            assert pr.workflow_run_id == run_id
+
+    [(issue, comment)] = fake_tracker.comments
+    assert issue == "42"
+    assert f"`{run_id}`" in comment and "**awaiting_review**" in comment
+    assert "https://github.com/acme/app/pull/1" in comment
+    assert fake_tracker.transitions == [("42", StatusCategory.started)]

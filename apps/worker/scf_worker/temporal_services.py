@@ -25,7 +25,12 @@ from scf_api.services.attestation_service import AttestationService
 from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.review import ReviewVerdict
-from scf_contracts.run_context import CHECKS_KEY, INDEPENDENT_REVIEW_CHECK, REVIEWS_KEY
+from scf_contracts.run_context import (
+    CHECKS_KEY,
+    INDEPENDENT_REVIEW_CHECK,
+    PULL_REQUEST_KEY,
+    REVIEWS_KEY,
+)
 from scf_contracts.run_events import RunEventDraft, RunEventType
 from scf_db.models import (
     AgentRun,
@@ -819,6 +824,11 @@ def open_pr_service(
             push=push,
             reuse_existing=True,
         )
+        with factory() as session:
+            workflow_run = _owned_run(session, inp.workflow_run_id, inp.workspace_id)
+            opened = {"number": pr.number, "url": pr.url}
+            workflow_run.context = {**workflow_run.context, PULL_REQUEST_KEY: opened}
+            session.commit()
         return OpenPrResult(pr_number=pr.number, pr_url=pr.url)
 
     return open_pr

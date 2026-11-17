@@ -1183,6 +1183,146 @@ def test_a_governed_dispatch_for_a_task_on_another_repository_is_skipped(
 
 
 # --------------------------------------------------------------------------- #
+# Governed write-back: the workflow's states reach the issue (#278)           #
+# --------------------------------------------------------------------------- #
+
+PR_URL = "https://github.com/acme/widgets/pull/7"
+
+
+def _governed_run(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> uuid.UUID:
+    """An issue dispatched to a governed run; the worker's write-back uses ``connections``."""
+    from scf_worker.tasks import pm_dispatch
+
+    monkeypatch.setattr(pm_dispatch, "_connection_service", lambda _factory: connections)
+    connection_id = _seed_connection(factory, project_id)
+    row_id = _seed_delivery(factory, connection_id)
+    result = process_webhook(factory, row_id, connections=connections, payload=_payload())
+    assert result["dispatch_action"] == "dispatched"
+    return uuid.UUID(result["run_id"])
+
+
+def _reach(factory: sessionmaker[Session], run_id: uuid.UUID, state: str) -> None:
+    """The worker records the run entering ``state``, as ``forge.persist_transition`` does."""
+    import asyncio
+
+    from scf_worker.temporal_main import SessionPerCallStore
+    from scf_workflow.temporal.activities import WorkflowActivities
+    from scf_workflow.temporal.payloads import TransitionRecord
+
+    store = SessionPerCallStore(factory)
+    record = TransitionRecord(
+        workflow_run_id=run_id,
+        workspace_id=WS_ID,
+        from_state=store.get(run_id).current_state,
+        to_state=state,
+        event="test",
+        idempotency_key=f"{run_id}:{state}",
+    )
+    asyncio.run(WorkflowActivities(store=store).persist_transition(record))
+
+
+def _record_pull_request(factory: sessionmaker[Session], run_id: uuid.UUID) -> None:
+    from scf_db.models.runs import WorkflowRun as DbWorkflowRun
+
+    with factory() as session:
+        row = session.get(DbWorkflowRun, run_id)
+        assert row is not None
+        row.context = {**row.context, "pull_request": {"number": 7, "url": PR_URL}}
+        session.commit()
+
+
+def test_a_governed_run_reports_each_terminal_state_once_with_its_pull_request(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    temporal: _FakeTemporalClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#278 criterion 1: the issue hears the workflow's state and its pull request,
+    once for each state the run stops or ends in; the states in between say nothing."""
+    from scf_worker.tasks.pm_dispatch import post_workflow_writeback
+    from scf_worker.temporal_main import SessionPerCallStore
+
+    run_id = _governed_run(factory, connections, project_id, monkeypatch)
+    _reach(factory, run_id, "spec_review")
+    assert fake_adapter.comments == [], "a run waiting at its spec gate has not finished"
+
+    _record_pull_request(factory, run_id)
+    _reach(factory, run_id, "awaiting_review")
+
+    [(external_id, body)] = fake_adapter.comments
+    assert external_id == "42"
+    assert "awaiting_review" in body
+    assert PR_URL in body
+    assert f"<!-- forge:run:{run_id} -->" in body
+    # The pull request opened: the connection's mapped transition, once.
+    assert fake_adapter.transitions == [("42", StatusCategory.started)]
+
+    # A redelivered transition, or a second write-back for the same state, posts nothing.
+    _reach(factory, run_id, "awaiting_review")
+    again = post_workflow_writeback(
+        factory, SessionPerCallStore(factory).get(run_id), connections=connections
+    )
+    assert again == "already_recorded"
+    assert len(fake_adapter.comments) == 1
+
+    _reach(factory, run_id, "merged")
+    _reach(factory, run_id, "closed")
+
+    assert len(fake_adapter.comments) == 2
+    closed = fake_adapter.comments[1][1]
+    assert "closed" in closed and PR_URL in closed
+    assert len(fake_adapter.transitions) == 1, "the pull request opened once"
+    [run] = _workflow_runs(factory)
+    assert {state: r["status"] for state, r in run.context["tracker_writeback"].items()} == {
+        "awaiting_review": "posted",
+        "closed": "posted",
+    }
+
+
+def test_a_tracker_outage_never_changes_a_governed_runs_outcome(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    temporal: _FakeTemporalClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_id = _governed_run(factory, connections, project_id, monkeypatch)
+    fake_adapter.raise_on_comment = RuntimeError("tracker down")
+
+    _reach(factory, run_id, "failed")
+
+    [run] = _workflow_runs(factory)
+    assert (run.current_state, run.status) == ("failed", DbRunStatus.FAILED)
+    assert run.context["tracker_writeback"]["failed"]["status"] == "failed"
+    assert "tracker down" in run.context["tracker_writeback"]["failed"]["error"]
+
+
+def test_a_governed_run_without_a_tracker_writes_nothing_back(
+    factory: sessionmaker[Session],
+) -> None:
+    """A run started through the API names no issue: nothing is posted anywhere."""
+    from scf_contracts import WorkflowRun
+    from scf_worker.tasks.pm_dispatch import post_workflow_writeback
+
+    run = WorkflowRun(
+        id=uuid.uuid4(),
+        task_id=uuid.uuid4(),
+        current_state="closed",
+        context={"trigger": {"source": "api"}},
+    )
+    # connections=object() would explode if the write-back tried to use it.
+    assert post_workflow_writeback(factory, run, connections=object()) == "not_applicable"  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------- #
 # Ungoverned issue runs (#277)                                                #
 # --------------------------------------------------------------------------- #
 
