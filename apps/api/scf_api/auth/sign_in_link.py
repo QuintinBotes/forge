@@ -52,6 +52,19 @@ def _has_enabled_identity_provider(session: Session, workspace_id: uuid.UUID) ->
     )
 
 
+def _refusal(session: Session, link: SignInLink, user: User | None) -> str | None:
+    """Why a consumed link signs no one in (a non-secret audit reason), else ``None``."""
+    if user is None or user.workspace_id != link.workspace_id:
+        return "user_not_in_workspace"
+    if not user.is_active:
+        return "deactivated"
+    if user.role != UserRole.ADMIN:
+        return "demoted"
+    if _has_enabled_identity_provider(session, link.workspace_id):
+        return "identity_provider_enabled"
+    return None
+
+
 def issue(
     session: Session,
     *,
@@ -81,7 +94,8 @@ def issue(
         User.workspace_id == workspace.id, func.lower(User.email) == email.lower()
     )
     admins = select(User.id).where(User.workspace_id == workspace.id, User.role == UserRole.ADMIN)
-    if session.scalar(admins.limit(1)) is None:
+    created = session.scalar(admins.limit(1)) is None
+    if created:
         if session.scalar(in_workspace) is not None:
             raise SignInLinkRefused(f"{email!r} is a user of {workspace_slug!r}, not an admin")
         user = User(workspace_id=workspace.id, email=email, role=UserRole.ADMIN, is_active=True)
@@ -117,7 +131,11 @@ def issue(
         actor_type="system",
         target_type="user",
         target_id=user.id,
-        details={"expires_at": expires_at.isoformat()},
+        details={
+            "expires_at": expires_at.isoformat(),
+            "user_created": created,
+            "role": UserRole.ADMIN.value,
+        },
     )
     session.commit()
     return IssuedLink(
@@ -152,14 +170,19 @@ def redeem(session: Session, token: str, *, now: datetime | None = None) -> User
         return None
     link = session.scalars(select(SignInLink).where(SignInLink.token_hash == token_hash)).one()
     user = session.get(User, link.user_id)
-    if (
-        user is None
-        or user.workspace_id != link.workspace_id
-        or not user.is_active
-        or user.role != UserRole.ADMIN
-        or _has_enabled_identity_provider(session, link.workspace_id)
-    ):
-        session.commit()
+    reason = _refusal(session, link, user)
+    if reason is not None or user is None:
+        emit_sso_audit(
+            session,
+            workspace_id=link.workspace_id,
+            action="auth.sign_in_link_refused",
+            actor_type="system",
+            target_type="user",
+            target_id=link.user_id,
+            result="failure",
+            details={"reason": reason},
+        )
+        session.commit()  # the link stays consumed
         return None
     emit_sso_audit(
         session,

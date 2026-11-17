@@ -502,6 +502,26 @@ def test_a_link_of_an_administrator_deactivated_since_is_refused(
         session.commit()
     assert redeem(client, token).status_code == 401
 
+    # The refusal consumed the link: reactivating the user does not bring it back.
+    with factory() as session:
+        session.scalars(select(User)).one().is_active = True
+        session.commit()
+        assert session.scalars(select(SignInLink)).one().used_at is not None
+    resp = redeem(client, token)
+    assert resp.status_code == 401 and "set-cookie" not in resp.headers
+
+
+def test_a_link_of_an_administrator_demoted_since_is_refused(
+    cli: Callable[..., tuple[int, str, str]], client: TestClient, factory: sessionmaker[Session]
+) -> None:
+    token = issue(cli)
+    with factory() as session:
+        session.scalars(select(User)).one().role = UserRole.MEMBER
+        session.commit()
+    resp = redeem(client, token)
+    assert (resp.status_code, resp.json()) == (401, REFUSED)
+    assert "set-cookie" not in resp.headers
+
 
 # --------------------------------------------------------------------------- #
 # Criterion 9: audit, logs, and response headers                               #
@@ -530,12 +550,65 @@ def test_issuing_and_redeeming_each_write_one_audit_entry_and_never_the_token(
     for row in rows:
         if row.action.startswith("auth.sign_in_link_"):
             assert (row.workspace_id, row.target_id) == (WS, user.id)
+    # The workspace had no administrator, so this issue created one: the entry says so.
+    issued = next(row for row in rows if row.action == "auth.sign_in_link_issued")
+    assert (issued.details["user_created"], issued.details["role"]) == (True, "admin")
     assert token not in dumped
     # The test client logs the URL it requested; that record is the client's, not the route's.
     emitted = [r for r in caplog.records if not r.name.startswith(("httpx", "httpcore"))]
     assert emitted, "expected the command or the route to log something"
     for record in emitted:
         assert token not in record.getMessage() and token not in repr(record.args)
+
+
+def test_a_link_for_an_existing_administrator_is_audited_as_creating_no_one(
+    cli: Callable[..., tuple[int, str, str]], factory: sessionmaker[Session]
+) -> None:
+    add_user(factory, "boss@acme.test")
+    issue(cli, "boss@acme.test")
+    with factory() as session:
+        issued = session.scalars(
+            select(AuditLog).where(AuditLog.action == "auth.sign_in_link_issued")
+        ).one()
+    assert (issued.details["user_created"], issued.details["role"]) == (False, "admin")
+
+
+@pytest.mark.parametrize("change", ["deactivated", "demoted", "identity_provider_enabled"])
+def test_a_consumed_but_refused_link_is_audited_without_the_token(
+    cli: Callable[..., tuple[int, str, str]],
+    client: TestClient,
+    factory: sessionmaker[Session],
+    change: str,
+) -> None:
+    token = issue(cli)
+    with factory() as session:
+        user = session.scalars(select(User)).one()
+        if change == "deactivated":
+            user.is_active = False
+        elif change == "demoted":
+            user.role = UserRole.MEMBER
+        session.commit()
+    if change == "identity_provider_enabled":
+        enable_identity_provider(factory, "oidc")
+
+    assert (redeem(client, token).status_code, redeem(client, token).status_code) == (401, 401)
+
+    with factory() as session:
+        rows = session.scalars(select(AuditLog)).all()
+        dumped = repr(
+            [{c.name: getattr(r, c.key) for c in AuditLog.__mapper__.columns} for r in rows]
+        )
+    refused = [row for row in rows if row.action == "auth.sign_in_link_refused"]
+    # One entry for the redemption that consumed the link; the replay matched no link.
+    assert len(refused) == 1
+    assert (refused[0].workspace_id, refused[0].target_id, refused[0].result) == (
+        WS,
+        user.id,
+        "failure",
+    )
+    assert refused[0].details["reason"] == change
+    assert not [row for row in rows if row.action == "auth.sign_in_link_redeemed"]
+    assert token not in dumped
 
 
 def test_the_servers_access_log_line_for_a_link_keeps_no_token(

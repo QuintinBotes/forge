@@ -386,6 +386,21 @@ The command prints one link and the time it expires. Open the link in a browser:
 it sets the same session cookie an SSO sign-in sets (12 hours) and redirects to
 the app.
 
+The link is built from `FORGE_PUBLIC_URL`: the address at which the browser
+reaches the API. The Docker Compose stacks do not set it for the API, so pass it
+to the command, or it prints a `http://localhost:8000` link that does not work.
+Behind the edge proxy the value must include the `/api` prefix the proxy serves:
+
+```bash
+# Full stack: the edge proxy serves the API under /api, so the value ends in /api.
+docker compose -f deploy/docker-compose.yml exec -e FORGE_PUBLIC_URL=https://<host>/api \
+  api scf-cli admin sign-in-link --workspace <slug> --email <address>
+
+# Single-user profile: no edge proxy, the API is at http://127.0.0.1:8100 (no /api).
+docker compose -f deploy/docker-compose.single-user.yml exec -e FORGE_PUBLIC_URL=http://127.0.0.1:8100 \
+  api scf-cli admin sign-in-link --workspace <slug> --email <address>
+```
+
 - **Who becomes an administrator.** When the workspace has no administrator, the
   command creates one with the given email. Otherwise the email must name an
   existing, active administrator of that workspace. Anything else is refused and
@@ -400,10 +415,13 @@ the app.
   is refused when opened. Sign in through the identity provider instead.
 - **What is stored.** Only a SHA-256 hash of the link's 32 random bytes. The link
   is not an API key: sent as `Authorization: Bearer` or `X-API-Key`, it gets
-  `401`. The link is built from `FORGE_PUBLIC_URL`, so it works behind the
-  reverse proxy.
-- **Audit.** Printing a link records `auth.sign_in_link_issued` and opening it
-  records `auth.sign_in_link_redeemed`, each with the workspace and the person.
+  `401`.
+- **Audit.** Printing a link records `auth.sign_in_link_issued` (with
+  `user_created` when it created the administrator) and opening it records
+  `auth.sign_in_link_redeemed`, each with the workspace and the person. A link
+  that is opened in time but refused (the person was deactivated or demoted, or
+  an identity provider was enabled since) records `auth.sign_in_link_refused`
+  with the reason, and stays used.
   The link's token is in no audit entry and in no log line SCF writes; the API
   server's access log keeps the address with the token removed. The redirect
   carries `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
