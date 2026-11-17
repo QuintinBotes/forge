@@ -26,7 +26,8 @@ from scf_api.db import get_db
 from scf_api.settings import Settings, get_settings
 from scf_contracts import UserRole
 
-#: The HTTP-only cookie ``routers/oidc.py`` and ``routers/saml.py`` set to the session key.
+#: The HTTP-only cookie ``routers.saml.start_session`` sets to the session key (OIDC, SAML
+#: and the CLI sign-in link).
 SESSION_COOKIE = "forge_session"
 
 

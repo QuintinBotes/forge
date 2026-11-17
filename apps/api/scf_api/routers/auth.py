@@ -3,20 +3,24 @@
 Implements API-key authentication (OAuth + API key per spec), the encrypted BYOK
 secret vault, and RBAC enforcement. ``/login`` and ``/logout`` are
 unauthenticated (session bootstrap; ``/logout`` revokes the key the session
-cookie carries); every other route authenticates via ``Authorization: Bearer
-<api_key>`` (or ``X-API-Key``, or the ``forge_session`` cookie an SSO sign-in
-set) and is gated by the caller's role permissions. All responses are redacted —
-no plaintext secret or usable token is ever returned except the one-time mint token.
+cookie carries), and so is ``GET /sign-in-link``, which redeems a one-time link
+``scf-cli admin sign-in-link`` printed into that cookie; every other route
+authenticates via ``Authorization: Bearer <api_key>`` (or ``X-API-Key``, or the
+``forge_session`` cookie a browser sign-in set) and is gated by the caller's role
+permissions. All responses are redacted — no plaintext secret or usable token is
+ever returned except the one-time mint token.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response, status
 
+from scf_api.auth import sign_in_link
 from scf_api.auth.apikeys import APPROVALS_DECIDE, APIKeyInfo
 from scf_api.auth.models import (
     APIKeyCreated,
@@ -45,12 +49,17 @@ from scf_api.auth.service import (
 )
 from scf_api.auth.vault import SecretExpiredError, SecretInfo, SecretNotFoundError
 from scf_api.deps import SESSION_COOKIE, DbSession, Principal, SettingsDep
+from scf_api.routers.saml import start_session
 from scf_api.services.approval_service import owner_role
 from scf_auth.rbac import has_at_least
 from scf_authz import ROLE_RANK
 from scf_contracts.enums import UserRole
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
+
+#: A sign-in link's URL is a secret: its answer is never cached or sent on as a referrer.
+_SIGN_IN_LINK_HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
 # Permission-gated principal dependencies (authenticate + authorize in one step).
 KeyManager = Annotated[Principal, Depends(require_permission(Permission.MANAGE_KEYS))]
@@ -138,6 +147,42 @@ def logout(
         secure=settings.public_url.startswith("https://"),
         samesite="lax",
     )
+    return response
+
+
+@router.get(
+    "/sign-in-link",
+    summary="Redeem a one-time sign-in link: set the session cookie and redirect.",
+)
+def redeem_sign_in_link(
+    session: DbSession,
+    settings: SettingsDep,
+    token: Annotated[str | None, Query()] = None,
+    next: Annotated[str | None, Query()] = None,
+) -> Response:
+    """A browser opens the link without credentials, so this route is public by design.
+
+    A missing, unknown, expired or used link gets one answer, with no cookie.
+    """
+    user = sign_in_link.redeem(session, token) if token else None
+    if user is None:
+        logger.warning("sign-in link refused")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="this sign-in link is not valid",
+            headers=_SIGN_IN_LINK_HEADERS,
+        )
+    logger.info("sign-in link redeemed workspace=%s user=%s", user.workspace_id, user.id)
+    response = start_session(
+        settings,
+        workspace_id=user.workspace_id,
+        user_id=user.id,
+        role=UserRole.ADMIN,
+        next_path=next,
+        now=datetime.now(UTC),
+        label="sign-in-link-session",
+    )
+    response.headers.update(_SIGN_IN_LINK_HEADERS)
     return response
 
 

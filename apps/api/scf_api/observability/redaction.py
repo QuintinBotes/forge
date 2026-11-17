@@ -53,6 +53,8 @@ _SECRET_VALUE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),
     # AWS access key id.
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    # A token in a logged URL's query, such as the access-log line of a sign-in link.
+    re.compile(r"(?<=[?&]token=)[^&\s\"']+"),
 )
 
 
