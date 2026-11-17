@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
+from scf_api.deps import scope_session_cookie
+
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -88,10 +90,17 @@ class InMemoryIdempotencyStore:
 
 
 def _tenant_scope(scope: Scope) -> str:
-    """Stable per-credential scope (hashed); anonymous falls back to the IP."""
+    """Stable per-credential scope (hashed): a credential header, then the session cookie.
+
+    Anonymous falls back to the IP. The cookie must count: a replay runs before
+    authentication, and browsers behind one proxy share its IP.
+    """
     for name, value in scope.get("headers", []):
         if name in (b"authorization", b"x-api-key"):
             return "cred:" + hashlib.sha256(value).hexdigest()[:16]
+    cookie = scope_session_cookie(scope)
+    if cookie:
+        return "cred:" + hashlib.sha256(cookie.encode()).hexdigest()[:16]
     client = scope.get("client")
     return f"ip:{client[0]}" if client else "ip:unknown"
 

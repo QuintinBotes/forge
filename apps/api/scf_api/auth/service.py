@@ -27,9 +27,9 @@ import warnings
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 
 from scf_api.auth.apikeys import APPROVALS_DECIDE, APIKeyBackend, APIKeyInfo, APIKeyStore
 from scf_api.auth.crypto import EnvelopeCipher, default_cipher
@@ -39,7 +39,7 @@ from scf_api.auth.oauth import OAuthClient, UnsupportedOAuthProviderError
 from scf_api.auth.providers import get_default_provider, resolve_secret
 from scf_api.auth.rbac import Permission, PermissionDeniedError, ensure
 from scf_api.auth.vault import SecretStore, SecretVault
-from scf_api.deps import Principal
+from scf_api.deps import SESSION_COOKIE, Principal, request_method
 from scf_api.observability.redaction import redact_text
 from scf_api.services.auth_audit import AuthAuditEmitter
 from scf_auth.errors import AuthenticationError as SdkAuthenticationError
@@ -513,29 +513,83 @@ def get_auth_service() -> AuthService:
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
 
-def _extract_token(authorization: str | None, x_api_key: str | None) -> str | None:
-    """Pull a bearer token from ``Authorization`` or fall back to ``X-API-Key``."""
+#: Methods the session cookie authenticates from any origin: they change nothing.
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _extract_token(
+    authorization: str | None, x_api_key: str | None, session_cookie: str | None = None
+) -> str | None:
+    """Pull a bearer token from ``Authorization``, then ``X-API-Key``, then the session cookie.
+
+    A header always wins, so scripts sending a key behave exactly as before.
+    """
     if authorization:
         scheme, _, value = authorization.partition(" ")
         if scheme.lower() == "bearer" and value:
             return value.strip()
     if x_api_key:
         return x_api_key.strip()
+    if session_cookie and session_cookie.strip():
+        return session_cookie.strip()
     return None
+
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin_of(url: str) -> tuple[str, str, int | None] | None:
+    """``(scheme, host, port)`` of a URL, a default port dropped; ``None`` if it has none."""
+    try:
+        parts = urlsplit(url.strip().lower())
+        port = parts.port
+    except ValueError:  # a malformed port
+        return None
+    if not parts.scheme or not parts.hostname:
+        return None
+    return parts.scheme, parts.hostname, None if port == _DEFAULT_PORTS.get(parts.scheme) else port
+
+
+def is_own_origin(origin: str | None, sec_fetch_site: str | None) -> bool:
+    """Whether a browser request comes from SCF's own origin (``public_url``).
+
+    ``Origin`` decides when the browser sent one (``null`` never matches); without it
+    only ``Sec-Fetch-Site: same-origin`` passes, so a request naming neither is refused.
+    """
+    from scf_api.settings import get_settings
+
+    if origin is not None:
+        own = _origin_of(get_settings().public_url)
+        return own is not None and _origin_of(origin) == own
+    return sec_fetch_site == "same-origin"
 
 
 def get_authenticated_principal(
     service: AuthServiceDep,
     authorization: Annotated[str | None, Header()] = None,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    session_cookie: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+    origin: Annotated[str | None, Header()] = None,
+    sec_fetch_site: Annotated[str | None, Header()] = None,
+    method: Annotated[str | None, Depends(request_method)] = None,
 ) -> Principal:
-    """Authenticate the request via API key; raise 401 if absent/invalid."""
-    token = _extract_token(authorization, x_api_key)
+    """Authenticate the request via API key or session cookie; raise 401 if absent/invalid.
+
+    A state change the cookie alone authenticates must come from SCF's own origin
+    (403 otherwise): a browser attaches the cookie to requests other sites start.
+    """
+    token = _extract_token(authorization, x_api_key, session_cookie)
     if token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="missing API credentials",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    cookie_only = _extract_token(authorization, x_api_key) is None
+    if cookie_only and method not in _SAFE_METHODS and not is_own_origin(origin, sec_fetch_site):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="a session cookie may change something only from SCF's own origin",
         )
     try:
         return service.authenticate(token)
@@ -601,6 +655,7 @@ __all__ = [
     "AuthenticationError",
     "get_auth_service",
     "get_authenticated_principal",
+    "is_own_origin",
     "require_admin",
     "require_permission",
     "require_role",

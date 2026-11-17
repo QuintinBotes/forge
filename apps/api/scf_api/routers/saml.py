@@ -135,11 +135,13 @@ def discover_get() -> Response:  # pragma: no cover - convenience 405 guard
 
 @router.post("/discover", response_model=DiscoverResponse, summary="Home-realm discovery")
 def discover(body: DiscoverRequest, session: DbSession, settings: SettingsDep) -> DiscoverResponse:
+    """Route an email to its workspace's sign-in: the SAML or the OIDC login address."""
     service = SsoConfigService(session, public_url=settings.public_url)
-    slug = service.discover(body.email)
-    if slug is None:
+    found = service.discover(body.email)
+    if found is None:
         return DiscoverResponse(sso=False)
-    return DiscoverResponse(sso=True, redirect=f"/auth/saml/{slug}/login")
+    protocol, slug = found
+    return DiscoverResponse(sso=True, redirect=f"/auth/{protocol}/{slug}/login")
 
 
 @router.get("/{slug}/metadata", summary="SP metadata XML")

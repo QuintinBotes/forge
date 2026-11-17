@@ -183,10 +183,15 @@ def put_oidc_config(
             client_secret=body.client_secret,
             enabled=body.enabled,
             jit_provisioning=body.jit_provisioning,
-            domains=existing.domains if existing is not None else [],
+            domains=body.domains
+            if body.domains is not None
+            else (existing.domains if existing is not None else []),
             actor_id=principal.user_id,
         )
         session.commit()
+    except DomainConflictError as exc:
+        session.rollback()
+        raise _map_config_errors(exc) from exc
     except SsoConfigError as exc:
         session.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

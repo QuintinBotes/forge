@@ -30,6 +30,8 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from scf_api.deps import scope_session_cookie
+
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -111,12 +113,15 @@ class TokenBucket:
 
 
 def _caller_key(scope: Scope) -> str:
-    """Stable limiter key: hash of the credential header, else the client IP."""
+    """Stable limiter key: hash of the credential header or session cookie, else the client IP."""
     credential: bytes | None = None
     for name, value in scope.get("headers", []):
         if name in (b"authorization", b"x-api-key"):
             credential = value
             break
+    if not credential:
+        cookie = scope_session_cookie(scope)
+        credential = cookie.encode() if cookie else None
     if credential:
         return "cred:" + hashlib.sha256(credential).hexdigest()[:32]
     client = scope.get("client")

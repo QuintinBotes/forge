@@ -19,6 +19,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -268,8 +269,27 @@ class SsoConfigService:
         )
         return config
 
+    def _refuse_claimed_domains(self, workspace_id: uuid.UUID, domains: list[str]) -> None:
+        """Refuse a domain another workspace's SAML or OIDC configuration already lists.
+
+        Home-realm discovery routes a domain to one workspace, so a second claim would
+        send people to the wrong identity provider.
+        """
+        for domain in domains:
+            owner = self._session.execute(
+                select(SsoDomain.workspace_id).where(SsoDomain.domain == domain)
+            ).scalar_one_or_none()
+            if owner is not None and owner != workspace_id:
+                raise DomainConflictError(domain)
+        others = select(OidcConfiguration).where(OidcConfiguration.workspace_id != workspace_id)
+        for other in self._session.execute(others).scalars():
+            clash = set(domains) & set(other.domains or [])
+            if clash:
+                raise DomainConflictError(min(clash))
+
     def _project_domains(self, config: SsoConfiguration) -> None:
         wanted = set(config.domains)
+        self._refuse_claimed_domains(config.workspace_id, sorted(wanted))
         for domain in wanted:
             existing = self._session.execute(
                 select(SsoDomain).where(SsoDomain.domain == domain)
@@ -429,6 +449,8 @@ class SsoConfigService:
         workspace's OIDC config is created.
         """
         self._workspace(workspace_id)
+        wanted = sorted({d.strip().lower() for d in (domains or []) if d.strip()})
+        self._refuse_claimed_domains(workspace_id, wanted)
         config = self.get_oidc_config(workspace_id)
         if config is None:
             if client_secret is None:
@@ -458,7 +480,7 @@ class SsoConfigService:
         config.default_role = UserRole(payload.default_role)
         config.group_role_map = dict(payload.group_role_map)
         config.jit_provisioning = jit_provisioning
-        config.domains = sorted({d.strip().lower() for d in (domains or []) if d.strip()})
+        config.domains = wanted
         self._session.flush()
         emit_sso_audit(
             self._session,
@@ -514,27 +536,51 @@ class SsoConfigService:
             token_endpoint=config.token_endpoint,
             jwks_uri=config.jwks_uri,
             jit_provisioning=config.jit_provisioning,
+            domains=list(config.domains or []),
             redirect_uri=urls["redirect_uri"],
             login_url=urls["login_url"],
         )
 
     # -- HRD ---------------------------------------------------------------------- #
 
-    def discover(self, email: str) -> str | None:
-        """Return the workspace slug owning ``email``'s domain, or ``None``."""
+    def discover(self, email: str) -> tuple[Literal["saml", "oidc"], str] | None:
+        """Return ``(protocol, slug)`` to sign in the owner of ``email``'s domain, or ``None``.
+
+        The owner is the workspace whose SAML configuration lists the domain (unique
+        across the install), else the one workspace whose OIDC configuration lists it:
+        a domain two OIDC configurations claim has no owner, so nobody is sent to the
+        wrong identity provider. The owner's enabled SAML wins over its enabled OIDC,
+        so a SAML workspace keeps the address it had.
+        """
         domain = email.rsplit("@", 1)[-1].strip().lower()
         if not domain or "@" not in email:
             return None
-        row = self._session.execute(
-            select(SsoDomain, SsoConfiguration)
-            .join(SsoConfiguration, SsoConfiguration.id == SsoDomain.sso_configuration_id)
-            .where(SsoDomain.domain == domain, SsoConfiguration.enabled.is_(True))
-        ).first()
-        if row is None:
+        owner = self._session.execute(
+            select(SsoConfiguration.workspace_id)
+            .join(SsoDomain, SsoDomain.sso_configuration_id == SsoConfiguration.id)
+            .where(SsoDomain.domain == domain)
+        ).scalar_one_or_none()
+        if owner is None:
+            # shortcut: OIDC domains are a JSON list, so this reads every OIDC configuration;
+            # give them an indexed table like sso_domain if installs reach thousands of workspaces.
+            claims = {
+                config.workspace_id
+                for config in self._session.execute(select(OidcConfiguration)).scalars()
+                if domain in (config.domains or [])
+            }
+            if len(claims) != 1:
+                return None
+            (owner,) = claims
+        saml, oidc = self.get_config(owner), self.get_oidc_config(owner)
+        protocol: Literal["saml", "oidc"]
+        if saml is not None and saml.enabled:
+            protocol = "saml"
+        elif oidc is not None and oidc.enabled:
+            protocol = "oidc"
+        else:
             return None
-        _domain_row, config = row
-        workspace = self._session.get(Workspace, config.workspace_id)
-        return workspace.slug if workspace is not None else None
+        workspace = self._session.get(Workspace, owner)
+        return (protocol, workspace.slug) if workspace is not None else None
 
     # -- SCIM tokens ----------------------------------------------------------------- #
 
