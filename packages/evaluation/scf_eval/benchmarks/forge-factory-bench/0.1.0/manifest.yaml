@@ -1,0 +1,24 @@
+# forge-factory-bench 0.1.0: the seed cases of the end-to-end benchmark (#197).
+# Each case is an issue, a small repository and held-out tests the solver never
+# sees. Not frozen: 1.0.0 freezes the suite (#198). reference.yaml holds the
+# known-good patches and is not part of what a solver receives.
+slug: forge-factory-bench
+version: "0.1.0"
+title: "SCF factory bench (seed)"
+description: "Issue, repository and held-out tests per case; resolved when every fail-to-pass test passes and no pass-to-pass test fails."
+schema_version: 1
+frozen: false
+scoring:
+  primary_metric: benchmark.composite
+  metric_weights:
+    agent.fail_to_pass_rate: 1.0
+  direction:
+    agent.fail_to_pass_rate: higher_is_better
+  category_field: tags
+  k: 10
+case_files:
+  - cases/ffb-chunk-remainder.yaml
+  - cases/ffb-slug-separators.yaml
+  - cases/ffb-roman-subtractive.yaml
+  - cases/ffb-duration-validation.yaml
+  - cases/ffb-cart-subtotal-discount.yaml

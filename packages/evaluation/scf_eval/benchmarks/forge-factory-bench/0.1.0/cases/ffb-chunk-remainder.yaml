@@ -1,0 +1,41 @@
+cases:
+  - id: ffb-chunk-remainder
+    kind: agent_task
+    tags: [agent_task, bugfix]
+    expected_ids: [REQ-CHUNK-1]
+    query: |
+      chunked() loses the last items
+
+      chunked([1, 2, 3, 4, 5], 2) returns [[1, 2], [3, 4]]: the 5 is gone. When the
+      items do not divide evenly, the last chunk must be kept, shorter than the
+      others: [[1, 2], [3, 4], [5]]. A size below 1 must still be refused.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: batching.py
+          content: |
+            def chunked(items, size):
+                """Split ``items`` into lists of ``size`` items, in order."""
+                if size < 1:
+                    raise ValueError("size must be at least 1")
+                return [items[i : i + size] for i in range(0, len(items) - size + 1, size)]
+      held_out:
+        - path: tests/test_batching.py
+          content: |
+            import pytest
+
+            from batching import chunked
+
+
+            def test_keeps_the_short_last_chunk():
+                assert chunked([1, 2, 3, 4, 5], 2) == [[1, 2], [3, 4], [5]]
+                assert chunked([1, 2], 5) == [[1, 2]]
+
+
+            def test_even_split_and_bad_size():
+                assert chunked([1, 2, 3, 4], 2) == [[1, 2], [3, 4]]
+                assert chunked([], 3) == []
+                with pytest.raises(ValueError):
+                    chunked([1], 0)
+      fail_to_pass: [tests/test_batching.py::test_keeps_the_short_last_chunk]
+      pass_to_pass: [tests/test_batching.py::test_even_split_and_bad_size]

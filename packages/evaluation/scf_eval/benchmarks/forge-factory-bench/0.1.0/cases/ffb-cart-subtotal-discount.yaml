@@ -1,0 +1,57 @@
+cases:
+  - id: ffb-cart-subtotal-discount
+    kind: agent_task
+    tags: [agent_task, bugfix]
+    expected_ids: [REQ-CART-1]
+    query: |
+      Cart discount is rounded per line instead of once
+
+      Three items at 999 cents with 10% off total 2700 cents, because the discount is
+      rounded down on every line. Apply the discount once, to the cart's subtotal:
+      the total must be 2698 cents. A cart with no discount is unchanged.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: pricing.py
+          content: |
+            def apply_discount(amount_cents, percent):
+                """``amount_cents`` less ``percent`` per cent, the discount rounded down."""
+                return amount_cents - amount_cents * percent // 100
+        - path: cart.py
+          content: |
+            from pricing import apply_discount
+
+
+            class Cart:
+                def __init__(self):
+                    self._lines = []
+
+                def add(self, price_cents, quantity=1):
+                    self._lines.append((price_cents, quantity))
+
+                def total(self, discount_percent=0):
+                    """What the cart costs in cents, after ``discount_percent``."""
+                    return sum(
+                        apply_discount(price, discount_percent) * quantity
+                        for price, quantity in self._lines
+                    )
+      held_out:
+        - path: tests/test_cart.py
+          content: |
+            from cart import Cart
+
+
+            def test_discount_applies_to_the_subtotal():
+                cart = Cart()
+                cart.add(999, quantity=3)
+                assert cart.total(discount_percent=10) == 2698
+
+
+            def test_total_without_discount():
+                cart = Cart()
+                cart.add(250, quantity=2)
+                cart.add(1000)
+                assert cart.total() == 1500
+                assert Cart().total() == 0
+      fail_to_pass: [tests/test_cart.py::test_discount_applies_to_the_subtotal]
+      pass_to_pass: [tests/test_cart.py::test_total_without_discount]

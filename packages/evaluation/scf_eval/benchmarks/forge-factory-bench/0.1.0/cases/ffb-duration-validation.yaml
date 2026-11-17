@@ -1,0 +1,45 @@
+cases:
+  - id: ffb-duration-validation
+    kind: agent_task
+    tags: [agent_task, feature]
+    expected_ids: [REQ-DURATION-1]
+    query: |
+      parse_duration() accepts text that is not a duration
+
+      parse_duration("90x") and parse_duration("") return 0, and "1h30" silently
+      drops the 30. Text that is not made entirely of <number><h|m|s> parts must
+      raise ValueError. Valid text such as "1h30m" (5400) keeps working.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: durations.py
+          content: |
+            import re
+
+            _PART = re.compile(r"(\d+)([hms])")
+            _SECONDS = {"h": 3600, "m": 60, "s": 1}
+
+
+            def parse_duration(text):
+                """Parse a duration such as ``"1h30m"`` or ``"45s"`` into seconds."""
+                return sum(int(amount) * _SECONDS[unit] for amount, unit in _PART.findall(text))
+      held_out:
+        - path: tests/test_durations.py
+          content: |
+            import pytest
+
+            from durations import parse_duration
+
+
+            @pytest.mark.parametrize("text", ["90x", "", "1h30", "h", "1.5h"])
+            def test_rejects_malformed_text(text):
+                with pytest.raises(ValueError):
+                    parse_duration(text)
+
+
+            def test_hours_and_minutes():
+                assert parse_duration("1h30m") == 5400
+                assert parse_duration("45s") == 45
+                assert parse_duration("2h") == 7200
+      fail_to_pass: [tests/test_durations.py::test_rejects_malformed_text]
+      pass_to_pass: [tests/test_durations.py::test_hours_and_minutes]

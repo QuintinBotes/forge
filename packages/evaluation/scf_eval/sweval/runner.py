@@ -32,8 +32,8 @@ SolveFn = Callable[[GoldenCase], Mapping[str, str]]
 _DEFAULT_TIMEOUT_S = 600
 _EVIDENCE_CAP = 4096
 #: Case-metadata keys that must NEVER reach solve_fn (the model) — the hidden
-#: tests the gate scores against.
-_HIDDEN_KEYS = ("fail_to_pass", "pass_to_pass")
+#: tests the gate scores against, by id and by file.
+_HIDDEN_KEYS = ("fail_to_pass", "pass_to_pass", "held_out")
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,8 @@ class SweCaseResult:
     regressed: list[str] = field(default_factory=list)
     resolved: bool = False
     evidence: str = ""
+    #: A setup command failed, so the case could not be scored at all.
+    infra_error: bool = False
 
 
 def _apply_patch(worktree: Path, files: Mapping[str, str]) -> None:
@@ -94,6 +96,8 @@ async def run_swe_case(
     )
     patch = solve_fn(public_case)
     _apply_patch(Path(worktree_path), patch)
+    # The held-out tests go in last, so the candidate can neither see nor replace them.
+    _apply_patch(Path(worktree_path), {f.path: f.content for f in fields.held_out})
 
     spec = SandboxSpec(
         agent_run_id=uuid.uuid4(),
@@ -115,6 +119,7 @@ async def run_swe_case(
                     output_ids=[],
                     resolved=False,
                     evidence="\n".join(evidence_parts)[-_EVIDENCE_CAP:],
+                    infra_error=True,
                 )
 
         passed = await _run_tests(session, fields.fail_to_pass, timeout_s, evidence_parts)
