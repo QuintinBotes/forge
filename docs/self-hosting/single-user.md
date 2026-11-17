@@ -31,11 +31,12 @@ which git ignores (every `.env.*` file is ignored):
 
 ```bash
 umask 077
-printf 'FORGE_SECRET_KEY=%s\nPOSTGRES_PASSWORD=%s\n' \
+[ -e deploy/.env.single-user ] || printf 'FORGE_SECRET_KEY=%s\nPOSTGRES_PASSWORD=%s\n' \
   "$(openssl rand -hex 32)" "$(openssl rand -hex 24)" > deploy/.env.single-user
 ```
 
-Keep this file. `FORGE_SECRET_KEY` encrypts stored credentials and keys the
+The command writes the file only when it does not exist yet, so running it again
+never replaces the secrets of an instance already in use. Keep this file. `FORGE_SECRET_KEY` encrypts stored credentials and keys the
 API-key hashes: a new key makes the credentials unreadable and every issued key
 invalid. `POSTGRES_PASSWORD` is fixed when the database
 volume is first created.

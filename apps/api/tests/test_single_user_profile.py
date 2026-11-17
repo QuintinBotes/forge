@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from scf_api.cli_secrets import _check_config
 from scf_api.main import create_app
 from scf_api.services.agent_dispatch import ungoverned_runs_allowed
+from scf_api.services.workflow_engine import resolve_backend
 from scf_api.settings import get_settings
 
 COMPOSE = Path(__file__).resolve().parents[3] / "deploy" / "docker-compose.single-user.yml"
@@ -70,5 +71,8 @@ def test_the_profile_passes_the_production_preflight(
     profile_env: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert _check_config() == 0, capsys.readouterr().err
-    # No workflow server in the profile: a repository-changing run is refused (#277).
+    # No workflow server in the profile, so it selects the Postgres engine: selecting
+    # Temporal would fail repository runs with DurableEngineUnavailable instead.
+    assert resolve_backend() == "postgres_fsm"
+    # Outside development, a repository-changing run without it is refused (#277).
     assert not ungoverned_runs_allowed()

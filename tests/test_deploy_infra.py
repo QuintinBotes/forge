@@ -375,6 +375,29 @@ def test_build_manifest_covers_every_image() -> None:
         assert all(images[m]["kind"] == "built" for m in matches)
 
 
+def test_every_compose_pin_matches_the_manifest_digest() -> None:
+    """A compose file left on an old digest keeps pulling that image while the
+    manifest records the new one, so compare the full pin, not the bare name."""
+    images = json.loads(BUILD_MANIFEST.read_text(encoding="utf-8"))["images"]
+    for compose_path in sorted(DEPLOY.glob("docker-compose*.yml")):
+        for service, image in _pulled_images(compose_path).items():
+            bare, _, digest = image.partition("@")
+            recorded = images.get(bare, {}).get("digest")
+            assert recorded == digest, (
+                f"{compose_path.name}: {service} pins {image}, the manifest records {recorded}"
+            )
+
+
+def test_pin_digests_rewrites_every_compose_file_that_pulls_images() -> None:
+    """deploy/scripts/pin-digests.sh rolls pins forward only in the files it lists."""
+    script = (DEPLOY / "scripts" / "pin-digests.sh").read_text(encoding="utf-8")
+    array = re.search(r"^COMPOSE_FILES=\((.*?)\)", script, re.MULTILINE | re.DOTALL)
+    assert array, "pin-digests.sh no longer defines COMPOSE_FILES"
+    listed = set(re.findall(r"deploy/(docker-compose[\w.-]*\.yml)", array.group(1)))
+    pulling = {p.name for p in DEPLOY.glob("docker-compose*.yml") if _pulled_images(p)}
+    assert pulling <= listed, f"pin-digests.sh skips {sorted(pulling - listed)}"
+
+
 def test_prod_app_healthchecks_use_python_not_curl() -> None:
     """The uv slim runtime base ships no curl/wget; the api and mcp-gateway
     healthchecks must use the stdlib urllib probe (latent-bug fix, HARD-07)."""
