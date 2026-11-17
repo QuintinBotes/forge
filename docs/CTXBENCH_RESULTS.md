@@ -20,18 +20,20 @@ calls `assemble_context` once per question with the MCP tool's defaults (8,000 t
 `default` template), and counts a hit when the bundle holds any of the question's evidence. It is
 a regression gate over this corpus, not a measure of answer quality. The default test suite
 (`apps/api/tests/test_cli_ctxbench.py`) runs it and gates it against the committed baseline: it
-fails when a question that hit in the baseline misses, when the p50 bundle size rises more than 10%
-over the baseline's, or when it exceeds 17,800 tokens. A missing retrieval leg is an error, never a
-score.
+fails when a question that hit in the baseline misses, or when the p50 bundle size rises more than
+10% over the baseline's. A missing retrieval leg is an error, never a score. The gate and the test
+also check spec J's 17,800-token p50 ceiling, but a proxy bundle is assembled within its
+8,000-token budget and can never reach it: that ceiling bounds the live lane, where an agent may
+gather more context than one bundle.
 
 The first result is committed as the baseline, `proxy-baseline.json`:
 
 | | |
 |---|---|
-| Lane, embedder | proxy, none (BM25 only), on SQLite (both dialects rank identically, ADR-0017) |
+| Lane, embedder | proxy, none (BM25 only), on SQLite |
 | Commit | `6d385c6` plus the change that adds the suite (taken before it was committed) |
 | Evidence recall | **0.9643** (54 of 56 answerable questions) |
-| p50 bundle size | **1,708.5 tokens** (ceiling 17,800) |
+| p50 bundle size | **1,708.5 tokens** (budget 8,000) |
 
 | Category | Recall |
 |---|---|
@@ -46,6 +48,12 @@ The first result is committed as the baseline, `proxy-baseline.json`:
 The two misses are `scf-dec-07` (why amounts are integer pence) and `scf-learn-05` (the lesson
 about a check followed by a write). The four unanswerable questions have no evidence and are not
 scored.
+
+On Postgres the result is the same 54 hits, and the same bytes on every fresh database, but three
+bundles are a little larger (`scf-hist-03`, `scf-temp-03`, `scf-trk-05`; p50 1,713.5 tokens).
+Postgres rescores only the 200 chunks that `ts_rank_cd` ranks first (spec J §2.5), and those
+questions match more than 200 chunks, so its top 20 can differ from SQLite's full scan. The gate
+passes there too.
 
 The corpus was grown once before it was frozen. With only the project's own documents and the
 issues the questions are about (135 chunks), every question hit: a perfect score by construction,

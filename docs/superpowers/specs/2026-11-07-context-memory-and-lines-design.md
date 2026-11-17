@@ -81,9 +81,9 @@ prompts and rubric are SCF's own. Revised on 2026-11-17 (#199): the lore suite i
   hash. They include evidence across two documents, superseded decisions and tempting wrong
   documents. No question, answer or corpus text comes from another project's benchmark.
 - **CI.** A deterministic, model-free proxy (does `assemble_context` return the gold evidence?) runs
-  in the default test suite against a committed baseline: a lost hit, a p50 rise over 10% or a p50
-  over 17.8k tokens fails it, and a missing retrieval leg is an error with no score. The live run
-  is invoked by hand, never in CI.
+  in the default test suite against a committed baseline: a lost hit or a p50 rise over 10% fails
+  it, and a missing retrieval leg is an error with no score. Its bundles are capped at 8k tokens,
+  so the 17.8k ceiling bounds the live lane. The live run is invoked by hand, never in CI.
 - **Scope.** Knowledge only in v1 (no extracted world facts). BM25 stays in-repo with a
   deterministic tie-break; the embedder default stays ADR-0018's; a reranker becomes a default only
   if it measurably helps within the token bar.

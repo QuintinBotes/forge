@@ -55,9 +55,10 @@ are asked against committed beside them and both frozen by hash
 
 - **Proxy** (no network, no model): does `assemble_context` return each
   question's evidence, and how large is the bundle? It runs in the default test
-  suite against the committed `proxy-baseline.json` and fails on a lost hit, a
-  p50 rise over 10% or a p50 over 17,800 tokens. First result: recall 0.9643,
-  p50 1,708.5 tokens.
+  suite against the committed `proxy-baseline.json` and fails on a lost hit or
+  a p50 rise over 10%. Its bundles are capped at 8,000 tokens, so spec J's
+  17,800-token ceiling bounds the live lane, not this one. First result: recall
+  0.9643, p50 1,708.5 tokens.
 - **Live** (by hand, needs `ANTHROPIC_API_KEY`): Claude Code answers through
   SCF's MCP server and an Opus judge grades the answers. The score is a
   measurement with no pass bar yet (#249); hallucination is held to 7%.

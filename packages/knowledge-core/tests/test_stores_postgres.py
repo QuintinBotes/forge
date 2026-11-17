@@ -159,6 +159,37 @@ def test_bm25_candidate_cut_breaks_ties_on_a_stable_key(
     assert [h.path for h in first] == [f"p{i:03d}.md" for i in range(10)]
 
 
+def test_bm25_candidate_cut_never_breaks_ties_on_a_random_source_id(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    # Source ids are random per ingest, so a fresh index of the same corpus can
+    # order its sources either way. Here the source whose id sorts first holds
+    # the later paths: a cut ordered by source id keeps p100-p299 and loses p000.
+    workspace_id, _ = _seed(pg_session_factory)
+    late, early = uuid.UUID(int=1), uuid.UUID(int=2**128 - 1)
+    with pg_session_factory() as session:
+        for source_id, name in ((early, "early"), (late, "late")):
+            session.add(
+                KnowledgeSource(
+                    id=source_id, workspace_id=workspace_id, kind="repo", name=name, uri=name
+                )
+            )
+        session.commit()
+    store = PgVectorStore(pg_session_factory, None)
+    for source_id, paths in ((early, range(100)), (late, range(100, 350))):
+        store.index(
+            source_id=str(source_id),
+            chunks=[
+                Chunk(content="tiebreak" + " " * (i + 1) + "token", path=f"p{i:03d}.md")
+                for i in paths
+            ],
+        )
+    scope = KnowledgeScope(workspace_id=workspace_id)
+    hits = Bm25Store(pg_session_factory).search("tiebreak token", scope, k=10)
+    assert len({h.score for h in hits}) == 1  # truly tied
+    assert [h.path for h in hits] == [f"p{i:03d}.md" for i in range(10)]
+
+
 _PARITY_CORPUS = [
     Chunk(content="retry retry retry timeout backoff helper", path="retry.py"),
     Chunk(content="timeout timeout configuration network calls retry", path="timeouts.py"),

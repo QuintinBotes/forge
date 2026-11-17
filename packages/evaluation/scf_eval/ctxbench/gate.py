@@ -7,9 +7,11 @@ The live bar (spec J §2.4.1): J is accepted at score >= 0.92, hallucination
 published precision: on 90 asks Utopia's 165/180 (0.9167) misses the bar and
 166/180 meets it. A run also fails when its score falls more than ``noise``
 (0.05, lore's noise level) below a committed baseline. The proxy fails when
-its p50 bundle tokens exceed :data:`TOKENS_P50_CEILING`, when any question's
-evidence hit goes from true to false, or when p50 bundle tokens rise more
-than 10% over the baseline; a baseline from another bank or corpus is invalid.
+any question's evidence hit goes from true to false, or when p50 bundle tokens
+rise more than 10% over the baseline; a baseline from another bank or corpus
+is invalid. It also holds p50 to :data:`TOKENS_P50_CEILING`, but a proxy bundle
+is assembled within an 8,000-token budget and cannot reach it: in practice the
+ceiling bounds the live lane, and here it only matters if that budget is raised.
 
 An invalid run is never a pass: a run with invalid asks, one that does not
 cover every question of the bank with :data:`ASKS_PER_QUESTION` asks, or a

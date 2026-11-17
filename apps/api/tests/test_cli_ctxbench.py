@@ -477,7 +477,7 @@ def test_proxy_over_the_committed_corpus_holds_the_committed_baseline(
     assert (result["lane"], result["embedder"]) == ("proxy", "none")
     assert result["content_hash"] == baseline["content_hash"] == suite_hash(SUITE_DIR)
     assert result["corpus_hash"] == baseline["corpus_hash"]
-    assert result["tokens_p50"] <= 17_800
+    assert result["tokens_p50"] <= 17_800  # spec J's ceiling; the 8,000 budget keeps it far off
     assert 0 < result["recall"] < 1  # a perfect proxy score would be a red flag
     assert _gate(tmp_path / "a.json") == 0
 

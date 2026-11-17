@@ -124,6 +124,31 @@ def test_summary_and_report_state_what_was_measured() -> None:
     assert "Hallucination is held to at most 7.0%." in markdown
 
 
+def test_each_category_scores_its_own_questions() -> None:
+    by_kind = {"decision": "correct", "requirement": "partial", "code-location": "wrong"}
+    rows = [
+        {**row, "verdict": by_kind.get(row["category"], "dont_know")}
+        for row in _rows("forge", "correct")
+    ]
+    forge = build_summary(rows, bank=BANK, run=RUN)["arms"]["forge"]
+    # 10 decision at 1, 10 requirement at 0.5, the 4 unanswerable at 1 (abstaining is right)
+    assert forge["score"] == round(19 / 60, 4)
+    assert forge["by_category"] == {
+        "decision": 1.0,
+        "requirement": 0.5,
+        "code-location": 0.0,
+        "history": 0.0,
+        "tracker": 0.0,
+        "learned": 0.0,
+        "temporal": 0.0,
+        "unanswerable": 1.0,
+    }
+    markdown = render_markdown(build_summary(rows, bank=BANK, run=RUN))
+    table = markdown.split("## By category")[1].split("##")[0]
+    assert "| decision | 1.00 |\n| requirement | 0.50 |\n| code-location | 0.00 |\n" in table
+    assert "| temporal | 0.00 |\n| unanswerable | 1.00 |\n" in table
+
+
 def test_an_invalid_ask_makes_the_summary_invalid() -> None:
     rows = _rows("forge", "correct")
     rows[0] = {**rows[0], "verdict": None, "invalid": ["mcp server forge failed"]}
