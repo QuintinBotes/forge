@@ -269,8 +269,27 @@ class SsoConfigService:
         )
         return config
 
+    def _refuse_claimed_domains(self, workspace_id: uuid.UUID, domains: list[str]) -> None:
+        """Refuse a domain another workspace's SAML or OIDC configuration already lists.
+
+        Home-realm discovery routes a domain to one workspace, so a second claim would
+        send people to the wrong identity provider.
+        """
+        for domain in domains:
+            owner = self._session.execute(
+                select(SsoDomain.workspace_id).where(SsoDomain.domain == domain)
+            ).scalar_one_or_none()
+            if owner is not None and owner != workspace_id:
+                raise DomainConflictError(domain)
+        others = select(OidcConfiguration).where(OidcConfiguration.workspace_id != workspace_id)
+        for other in self._session.execute(others).scalars():
+            clash = set(domains) & set(other.domains or [])
+            if clash:
+                raise DomainConflictError(min(clash))
+
     def _project_domains(self, config: SsoConfiguration) -> None:
         wanted = set(config.domains)
+        self._refuse_claimed_domains(config.workspace_id, sorted(wanted))
         for domain in wanted:
             existing = self._session.execute(
                 select(SsoDomain).where(SsoDomain.domain == domain)
@@ -430,6 +449,8 @@ class SsoConfigService:
         workspace's OIDC config is created.
         """
         self._workspace(workspace_id)
+        wanted = sorted({d.strip().lower() for d in (domains or []) if d.strip()})
+        self._refuse_claimed_domains(workspace_id, wanted)
         config = self.get_oidc_config(workspace_id)
         if config is None:
             if client_secret is None:
@@ -459,7 +480,7 @@ class SsoConfigService:
         config.default_role = UserRole(payload.default_role)
         config.group_role_map = dict(payload.group_role_map)
         config.jit_provisioning = jit_provisioning
-        config.domains = sorted({d.strip().lower() for d in (domains or []) if d.strip()})
+        config.domains = wanted
         self._session.flush()
         emit_sso_audit(
             self._session,
@@ -515,6 +536,7 @@ class SsoConfigService:
             token_endpoint=config.token_endpoint,
             jwks_uri=config.jwks_uri,
             jit_provisioning=config.jit_provisioning,
+            domains=list(config.domains or []),
             redirect_uri=urls["redirect_uri"],
             login_url=urls["login_url"],
         )

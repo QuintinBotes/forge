@@ -535,6 +535,21 @@ def _extract_token(
     return None
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin_of(url: str) -> tuple[str, str, int | None] | None:
+    """``(scheme, host, port)`` of a URL, a default port dropped; ``None`` if it has none."""
+    try:
+        parts = urlsplit(url.strip().lower())
+        port = parts.port
+    except ValueError:  # a malformed port
+        return None
+    if not parts.scheme or not parts.hostname:
+        return None
+    return parts.scheme, parts.hostname, None if port == _DEFAULT_PORTS.get(parts.scheme) else port
+
+
 def is_own_origin(origin: str | None, sec_fetch_site: str | None) -> bool:
     """Whether a browser request comes from SCF's own origin (``public_url``).
 
@@ -544,8 +559,8 @@ def is_own_origin(origin: str | None, sec_fetch_site: str | None) -> bool:
     from scf_api.settings import get_settings
 
     if origin is not None:
-        own = urlsplit(get_settings().public_url)
-        return origin.strip().rstrip("/").lower() == f"{own.scheme}://{own.netloc}".lower()
+        own = _origin_of(get_settings().public_url)
+        return own is not None and _origin_of(origin) == own
     return sec_fetch_site == "same-origin"
 
 

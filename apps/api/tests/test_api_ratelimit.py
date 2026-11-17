@@ -67,6 +67,20 @@ def test_ratelimit_headers_on_allowed_and_429() -> None:
         assert limited.headers["x-ratelimit-remaining"] == "0"
 
 
+def test_each_session_cookie_has_its_own_bucket() -> None:
+    """Browsers behind one proxy share an IP; their session cookies tell them apart."""
+    app = _bare_app()
+    app.add_middleware(RateLimitMiddleware, rate_per_min=60, burst=1)
+    with TestClient(app) as client:
+        assert client.get("/other", headers={"cookie": "forge_session=aaa"}).status_code == 200
+        assert client.get("/other", headers={"cookie": "forge_session=bbb"}).status_code == 200
+        assert client.get("/other").status_code == 200  # the IP bucket is separate too
+        assert client.get("/other", headers={"cookie": "forge_session=aaa"}).status_code == 429
+        # A credential header still wins over the cookie for the bucket.
+        both = {"cookie": "forge_session=aaa", "X-API-Key": "k"}
+        assert client.get("/other", headers=both).status_code == 200
+
+
 def test_health_never_limited() -> None:
     app = _bare_app()
     app.add_middleware(RateLimitMiddleware, rate_per_min=60, burst=1)

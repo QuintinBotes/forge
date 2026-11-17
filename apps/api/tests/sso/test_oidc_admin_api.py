@@ -8,7 +8,7 @@ tenant isolation.
 
 from __future__ import annotations
 
-from conftest import OTHER_WS_ID, WS_ID, make_oidc_config_in
+from conftest import OTHER_WS_ID, WS_ID, install_config, make_config_in, make_oidc_config_in
 from sqlalchemy import select
 
 from scf_contracts import UserRole
@@ -103,3 +103,81 @@ class TestOidcConfigCrud:
         assert body["default_role"] == "viewer"
         assert body["group_role_map"] == {"forge-admins": "admin"}
         assert body["scopes"] == ["openid", "email"]
+
+
+class TestOidcDomains:
+    """An OIDC-only workspace is discoverable once its admin lists its domains (#220)."""
+
+    def test_domains_saved_through_the_admin_route_make_the_workspace_discoverable(
+        self, client_factory
+    ):
+        admin = client_factory(UserRole.ADMIN)
+        payload = make_oidc_config_in(domains=[" Acme.com ", "acme.io"])
+        response = admin.put(f"/workspaces/{WS_ID}/oidc", json=payload)
+        assert response.status_code == 200, response.text
+        assert response.json()["domains"] == ["acme.com", "acme.io"]
+        assert admin.get(f"/workspaces/{WS_ID}/oidc").json()["domains"] == ["acme.com", "acme.io"]
+
+        anon = client_factory(authenticated=False)
+        found = anon.post("/auth/saml/discover", json={"email": "dana@acme.io"})
+        assert found.json() == {"sso": True, "redirect": "/auth/oidc/acme/login"}
+
+    def test_a_save_without_domains_keeps_them(self, client_factory):
+        # The web settings form saves without ``domains``: that must not wipe them.
+        admin = client_factory(UserRole.ADMIN)
+        admin.put(f"/workspaces/{WS_ID}/oidc", json=make_oidc_config_in(domains=["acme.com"]))
+        update = make_oidc_config_in(client_secret=None, issuer="https://idp2.oidc.example")
+        assert "domains" not in {k for k, v in update.items() if v is not None}
+        response = admin.put(f"/workspaces/{WS_ID}/oidc", json=update)
+        assert response.status_code == 200, response.text
+        assert response.json()["domains"] == ["acme.com"]
+        # An explicit empty list clears them.
+        cleared = admin.put(
+            f"/workspaces/{WS_ID}/oidc", json=make_oidc_config_in(client_secret=None, domains=[])
+        )
+        assert cleared.json()["domains"] == []
+
+    def test_a_domain_another_workspaces_oidc_lists_is_refused(self, client_factory):
+        other = client_factory(UserRole.ADMIN, workspace_id=OTHER_WS_ID)
+        assert (
+            other.put(
+                f"/workspaces/{OTHER_WS_ID}/oidc", json=make_oidc_config_in(domains=["acme.com"])
+            ).status_code
+            == 200
+        )
+        admin = client_factory(UserRole.ADMIN)
+        response = admin.put(
+            f"/workspaces/{WS_ID}/oidc", json=make_oidc_config_in(domains=["acme.com"])
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == {"error": "domain_conflict", "domain": "acme.com"}
+        assert admin.get(f"/workspaces/{WS_ID}/oidc").status_code == 404  # nothing saved
+
+    def test_a_domain_another_workspaces_saml_lists_is_refused(
+        self, client_factory, session_factory, idp_keypair
+    ):
+        install_config(session_factory, idp_keypair, workspace_id=OTHER_WS_ID)  # acme.com
+        admin = client_factory(UserRole.ADMIN)
+        response = admin.put(
+            f"/workspaces/{WS_ID}/oidc", json=make_oidc_config_in(domains=["acme.com"])
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]["error"] == "domain_conflict"
+
+    def test_the_workspaces_own_saml_domain_may_be_listed(
+        self, client_factory, session_factory, idp_keypair
+    ):
+        install_config(session_factory, idp_keypair)  # acme.com, this workspace
+        admin = client_factory(UserRole.ADMIN)
+        response = admin.put(
+            f"/workspaces/{WS_ID}/oidc", json=make_oidc_config_in(domains=["acme.com"])
+        )
+        assert response.status_code == 200, response.text
+
+    def test_saml_refuses_a_domain_another_workspaces_oidc_lists(self, client_factory, idp_keypair):
+        other = client_factory(UserRole.ADMIN, workspace_id=OTHER_WS_ID)
+        other.put(f"/workspaces/{OTHER_WS_ID}/oidc", json=make_oidc_config_in(domains=["acme.com"]))
+        admin = client_factory(UserRole.ADMIN)
+        response = admin.put(f"/workspaces/{WS_ID}/sso", json=make_config_in(idp_keypair))
+        assert response.status_code == 409
+        assert response.json()["detail"] == {"error": "domain_conflict", "domain": "acme.com"}

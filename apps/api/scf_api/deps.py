@@ -19,6 +19,8 @@ from typing import Annotated
 from fastapi import Cookie, Depends, Header, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from starlette.requests import HTTPConnection
+from starlette.types import Scope
 
 from scf_api.db import get_db
 from scf_api.settings import Settings, get_settings
@@ -59,6 +61,14 @@ class Principal(BaseModel):
     #: opened with it closes when the key does.
     credential_id: uuid.UUID | None = None
     credential_expires_at: datetime | None = None
+
+
+def scope_session_cookie(scope: Scope) -> str | None:
+    """The session cookie of a raw ASGI request, parsed as authentication parses it.
+
+    For middleware that runs before authentication and must tell credentials apart.
+    """
+    return HTTPConnection(scope).cookies.get(SESSION_COOKIE) or None
 
 
 def request_method(request: Request) -> str:

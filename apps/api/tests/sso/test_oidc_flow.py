@@ -27,6 +27,7 @@ from sqlalchemy import select
 from scf_api.auth.service import get_auth_service
 from scf_api.routers.oidc import get_oidc_client, get_oidc_state_store
 from scf_api.sso.config_service import SsoConfigService
+from scf_api.sso.errors import DomainConflictError
 from scf_api.sso.oidc import InMemoryOidcStateStore, OidcClient
 from scf_contracts.sso import OidcIdpConfig
 from scf_db.models import ExternalIdentity, OidcConfiguration, User
@@ -403,14 +404,30 @@ class TestOidcDiscovery:
             "redirect": None,
         }
 
+    @staticmethod
+    def _claim_without_the_check(session_factory, workspace_id, domains: list[str]) -> None:
+        """A row saved before claims were checked: saving now refuses another's domain."""
+        with session_factory() as session:
+            config = session.execute(
+                select(OidcConfiguration).where(OidcConfiguration.workspace_id == workspace_id)
+            ).scalar_one()
+            config.domains = domains
+            session.commit()
+
+    def test_saving_a_domain_another_workspace_claims_is_refused(self, session_factory, idp):
+        install_oidc_config(session_factory, issuer=idp.issuer, domains=["acme.com"])
+        with pytest.raises(DomainConflictError):
+            install_oidc_config(
+                session_factory, issuer=idp.issuer, domains=["acme.com"], workspace_id=OTHER_WS_ID
+            )
+
     def test_a_domain_two_oidc_workspaces_claim_is_not_routed(
         self, client_factory, session_factory, idp
     ):
-        # OIDC domains are not unique across workspaces: an ambiguous claim sends nobody anywhere.
+        # An ambiguous claim (left by older rows) sends nobody anywhere.
         install_oidc_config(session_factory, issuer=idp.issuer, domains=["acme.com"])
-        install_oidc_config(
-            session_factory, issuer=idp.issuer, domains=["acme.com"], workspace_id=OTHER_WS_ID
-        )
+        install_oidc_config(session_factory, issuer=idp.issuer, workspace_id=OTHER_WS_ID)
+        self._claim_without_the_check(session_factory, OTHER_WS_ID, ["acme.com"])
         assert self._discover(client_factory)["sso"] is False
 
     def test_a_saml_claim_wins_over_another_workspaces_oidc_claim(
@@ -418,7 +435,6 @@ class TestOidcDiscovery:
     ):
         # SAML domains are unique across the install, so that claim is the owner's.
         install_config(session_factory, idp_keypair)
-        install_oidc_config(
-            session_factory, issuer=idp.issuer, domains=["acme.com"], workspace_id=OTHER_WS_ID
-        )
+        install_oidc_config(session_factory, issuer=idp.issuer, workspace_id=OTHER_WS_ID)
+        self._claim_without_the_check(session_factory, OTHER_WS_ID, ["acme.com"])
         assert self._discover(client_factory)["redirect"] == "/auth/saml/acme/login"

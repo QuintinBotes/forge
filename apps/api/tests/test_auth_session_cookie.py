@@ -15,18 +15,19 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import scf_api.auth.service as auth_service_module
-from scf_api.auth.service import AuthService
+from scf_api.auth.service import AuthService, is_own_origin
 from scf_api.deps import CurrentPrincipal
 from scf_api.main import create_app
 from scf_api.realtime.manager import ConnectionManager, get_connection_manager
 from scf_api.routers.realtime import get_api_key_socket_lifetime
-from scf_api.settings import get_settings
+from scf_api.settings import Settings, get_settings
 from scf_contracts.enums import APIKeyKind, UserRole
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000220a1")
@@ -195,13 +196,43 @@ def test_a_cookie_only_state_change_without_an_origin_needs_sec_fetch_site_same_
     assert _create_key(client, with_cookie(token, **{"sec-fetch-site": "same-origin"})) == 201
 
 
-def test_a_cookie_read_from_another_origin_is_not_refused(
-    client: TestClient, auth: AuthService
-) -> None:
+def test_a_cookie_read_from_another_origin_is_not_refused(auth: AuthService) -> None:
+    # A route that answers all three methods, so each one reaches authentication.
+    probe = FastAPI()
+
+    @probe.api_route("/probe", methods=["GET", "HEAD", "OPTIONS"])
+    def _probe(principal: CurrentPrincipal) -> str:
+        return str(principal.workspace_id)
+
     _, token = session_key(auth)
-    for method in ("GET", "HEAD", "OPTIONS"):
-        resp = client.request(method, "/auth/me", headers=with_cookie(token, origin=FOREIGN))
-        assert resp.status_code != 403, (method, resp.status_code)
+    with TestClient(probe) as client:
+        for method in ("GET", "HEAD", "OPTIONS"):
+            resp = client.request(method, "/probe", headers=with_cookie(token, origin=FOREIGN))
+            assert resp.status_code == 200, (method, resp.status_code)
+            assert client.request(method, "/probe").status_code == 401, method
+
+
+@pytest.mark.parametrize(
+    ("public_url", "origin", "own"),
+    [
+        ("https://scf.example:443", "https://scf.example", True),
+        ("https://scf.example", "https://scf.example:443", True),
+        ("http://localhost:80/", "http://localhost", True),
+        ("http://localhost:8080/api", "http://localhost:8080", True),
+        ("https://SCF.example/app", "https://scf.example", True),
+        ("http://localhost:8080", "http://localhost", False),
+        ("https://scf.example", "http://scf.example", False),
+        ("https://scf.example", "https://scf.example:8443", False),
+        ("https://scf.example", "https://scf.example.evil.example", False),
+        ("https://scf.example", "null", False),
+        ("https://scf.example", "https://scf.example:notaport", False),
+    ],
+)
+def test_own_origin_ignores_a_default_port_on_either_side(
+    monkeypatch: pytest.MonkeyPatch, public_url: str, origin: str, own: bool
+) -> None:
+    monkeypatch.setattr("scf_api.settings.get_settings", lambda: Settings(public_url=public_url))
+    assert is_own_origin(origin, None) is own
 
 
 def test_a_header_authenticated_state_change_is_not_subject_to_the_origin_rule(
@@ -230,6 +261,39 @@ def test_feature_routes_read_the_cookie_under_the_same_origin_rule(auth: AuthSer
         assert client.post("/probe", headers=with_cookie(token)).status_code == 403
         own = client.post("/probe", headers=with_cookie(token, origin=own_origin()))
         assert (own.status_code, own.json()) == (200, str(WS))
+
+
+# --------------------------------------------------------------------------- #
+# The middleware in front of authentication treats the cookie as a credential  #
+# --------------------------------------------------------------------------- #
+
+
+def test_an_idempotent_retry_is_never_replayed_to_another_cookie_or_to_no_credential(
+    client: TestClient, auth: AuthService
+) -> None:
+    """The replay runs before authentication, so it must be scoped by the cookie, not the IP."""
+    _, token_a = session_key(auth)
+    _, token_b = auth.bootstrap_key(
+        workspace_id=OTHER_WS, name="sso-session-b", role=UserRole.ADMIN, surface="web"
+    )
+
+    def mint(headers: dict[str, str]) -> httpx.Response:
+        headers = {"Idempotency-Key": "same-key", "origin": own_origin(), **headers}
+        return client.post("/auth/api-keys", headers=headers, json={"name": "replayed?"})
+
+    first = mint(with_cookie(token_a))
+    assert first.status_code == 201, first.text
+    other = mint(with_cookie(token_b))
+    assert other.status_code == 201, other.text
+    assert other.headers.get("idempotency-replayed") is None
+    assert other.json()["token"] != first.json()["token"]
+    assert other.json()["workspace_id"] == str(OTHER_WS)
+    anonymous = mint({})
+    assert anonymous.status_code == 401
+    # The same cookie still gets its own retry back.
+    again = mint(with_cookie(token_a))
+    assert again.headers.get("idempotency-replayed") == "true"
+    assert again.json()["token"] == first.json()["token"]
 
 
 # --------------------------------------------------------------------------- #
