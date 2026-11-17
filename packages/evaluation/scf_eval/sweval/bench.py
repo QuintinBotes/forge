@@ -8,12 +8,15 @@ held-out tests stripped and runs them in the given sandbox. A case ends resolved
 resolved, or an infrastructure error (it could not be scored).
 
 With ``results_path`` each finished case is appended to a JSON-lines file and a rerun
-skips the cases stored there, so an interrupted run resumes. Remove a case's line to
-run it again.
+skips the cases stored there, so an interrupted run resumes. A stored infrastructure
+error is run again; remove a case's line to rerun any other. The file is tied to one
+run's provenance (suite hash, SCF commit, sandbox kind, solver), and a file from
+another run is refused rather than reported under this run's name.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import time
@@ -21,7 +24,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import yaml
 from pydantic import BaseModel, Field, TypeAdapter
@@ -51,8 +54,8 @@ class BenchCaseResult(BaseModel):
     outcome: CaseOutcome
     #: Pass-to-pass tests the change broke.
     regressed: list[str] = Field(default_factory=list)
-    #: Why the case could not be scored (infrastructure errors only).
-    error: str | None = None
+    #: Why the case could not be scored, or why its change was refused unscored.
+    reason: str | None = None
     cost_usd: float | None = None
     wall_time_s: float = 0.0
 
@@ -88,13 +91,13 @@ class BenchRunReport(BaseModel):
             f"- Total cost (USD): {cost}",
             f"- Wall time: {self.wall_time_s:.1f} s",
             "",
-            "| Case | Outcome | Regressed tests | Error |",
+            "| Case | Outcome | Regressed tests | Reason |",
             "| --- | --- | --- | --- |",
         ]
         for c in self.cases:
-            error = c.error.splitlines()[0][:120].replace("|", "\\|") if c.error else ""
+            reason = c.reason.splitlines()[0][:160].replace("|", "\\|") if c.reason else ""
             lines.append(
-                f"| {c.case_id} | {c.outcome.value} | {', '.join(c.regressed)} | {error} |"
+                f"| {c.case_id} | {c.outcome.value} | {', '.join(c.regressed)} | {reason} |"
             )
         return "\n".join(lines) + "\n"
 
@@ -103,6 +106,9 @@ class Solver(Protocol):
     """Any solver the harness runs (FR-015): a public case in, file writes out."""
 
     name: str
+    #: What else tells two solvers of one name apart (an instance, a patch set);
+    #: results stored under another key are never reused.
+    key: str
     #: Model identifiers the solver ran on, for the report; empty when not given.
     models: tuple[str, ...]
     #: What solving the last case cost, when the solver knows; reset before each case.
@@ -117,6 +123,7 @@ class FnSolver:
 
     name: str
     fn: SolveFn
+    key: str = ""
     models: tuple[str, ...] = ()
     last_cost_usd: float | None = None
 
@@ -126,9 +133,13 @@ class FnSolver:
 
 def reference_solver(suite_dir: str | Path) -> FnSolver:
     """Apply each case's known-good patch: every case should resolve."""
-    raw = yaml.safe_load((Path(suite_dir) / REFERENCE_FILENAME).read_text(encoding="utf-8"))
-    patches = TypeAdapter(dict[str, list[CaseFile]]).validate_python(raw)
-    return FnSolver(name="reference", fn=lambda case: {f.path: f.content for f in patches[case.id]})
+    raw = (Path(suite_dir) / REFERENCE_FILENAME).read_bytes()
+    patches = TypeAdapter(dict[str, list[CaseFile]]).validate_python(yaml.safe_load(raw))
+    return FnSolver(
+        name="reference",
+        key="sha256:" + hashlib.sha256(raw).hexdigest(),
+        fn=lambda case: {f.path: f.content for f in patches[case.id]},
+    )
 
 
 def empty_solver() -> FnSolver:
@@ -147,12 +158,19 @@ async def run_suite(
     """Run ``solver`` over every case of the suite at ``suite_dir``."""
     manifest, cases = load_manifest(suite_dir)
     content_hash = compute_content_hash(cases, manifest.scoring)
-    run_key = f"{content_hash} {solver.name} {','.join(solver.models)}"
+    run_key = {
+        "suite_content_hash": content_hash,
+        "scf_commit": scf_commit,
+        "sandbox": str(sandbox_provider.kind),
+        "solver": solver.name,
+        "solver_key": solver.key,
+        "models": list(solver.models),
+    }
     stored = _stored_results(results_path, run_key)
     results: list[BenchCaseResult] = []
     for case in cases:
         result = stored.get(case.id)
-        if result is None:
+        if result is None or result.outcome == CaseOutcome.INFRASTRUCTURE_ERROR:
             result = await _run_case(case, solver, sandbox_provider)
             if results_path is not None:
                 row = {"run": run_key, "result": result.model_dump(mode="json")}
@@ -182,7 +200,7 @@ async def _run_case(
     solver.last_cost_usd = None
     started = time.monotonic()
     regressed: list[str] = []
-    error: str | None = None
+    reason: str | None = None
     with tempfile.TemporaryDirectory(prefix="scf-bench-") as worktree:
         try:
             repo = parse_swe_case_fields(case).repo
@@ -194,11 +212,13 @@ async def _run_case(
                 worktree_path=worktree,
             )
         except Exception as exc:  # a crashed solver, sandbox or checkout: nothing to score
-            outcome, error = CaseOutcome.INFRASTRUCTURE_ERROR, f"{type(exc).__name__}: {exc}"
+            outcome, reason = CaseOutcome.INFRASTRUCTURE_ERROR, f"{type(exc).__name__}: {exc}"
         else:
             regressed = scored.regressed
             if scored.infra_error:
-                outcome, error = CaseOutcome.INFRASTRUCTURE_ERROR, scored.evidence
+                outcome, reason = CaseOutcome.INFRASTRUCTURE_ERROR, scored.evidence
+            elif scored.refused:
+                outcome, reason = CaseOutcome.NOT_RESOLVED, scored.evidence
             elif scored.resolved:
                 outcome = CaseOutcome.RESOLVED
             else:
@@ -207,14 +227,14 @@ async def _run_case(
         case_id=case.id,
         outcome=outcome,
         regressed=regressed,
-        error=error,
+        reason=reason,
         cost_usd=solver.last_cost_usd,
         wall_time_s=time.monotonic() - started,
     )
 
 
-def _stored_results(path: Path | None, run_key: str) -> dict[str, BenchCaseResult]:
-    """Results an earlier, interrupted run of the same suite and solver stored."""
+def _stored_results(path: Path | None, run_key: dict[str, Any]) -> dict[str, BenchCaseResult]:
+    """Results an earlier, interrupted run with the same provenance stored."""
     if path is None or not path.is_file():
         return {}
     stored: dict[str, BenchCaseResult] = {}
@@ -224,7 +244,10 @@ def _stored_results(path: Path | None, run_key: str) -> dict[str, BenchCaseResul
         except ValueError:
             continue  # cut short when the run was killed: that case runs again
         if row.get("run") != run_key:
-            raise ValueError(f"{path} holds results of another suite or solver; use another file")
+            raise ValueError(
+                f"{path} holds results of another run (suite, SCF commit, sandbox or solver): "
+                f"{row.get('run')}; use another file"
+            )
         result = BenchCaseResult.model_validate(row["result"])
         stored[result.case_id] = result
     return stored

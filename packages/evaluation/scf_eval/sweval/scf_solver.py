@@ -1,12 +1,17 @@
 """Drive a running SCF instance as a forge-factory-bench solver (FR-015, #197).
 
-The adapter submits a case's issue text to ``POST /agent/runs`` against a repository
-connected to the instance, waits for the run to finish, and collects the change from
-the branch the run pushed (``artifacts["branch"]``), read from a local clone of that
-repository. Each case's repository tree must already be on its base branch,
-``bench/<case id>`` by default. A run that does not succeed yields an empty patch, so
-the case is scored not resolved; an instance that cannot be reached raises, so the
-harness records an infrastructure error.
+The adapter targets a development instance's direct run path. It submits a case's
+issue text to ``POST /agent/runs`` against a repository connected to the instance,
+waits for the run to finish, and collects the change from the branch the run pushed
+(``artifacts["branch"]``), read from a local clone of that repository. Each case's
+repository tree must already be on its base branch, ``bench/<case id>`` by default.
+
+A run that does not succeed, or that made no commits, yields an empty patch, so the
+case is scored not resolved. An instance that cannot be reached, or that refuses the
+run (409), raises, so the harness records an infrastructure error with the reason.
+Scoring a governed instance is not supported yet: outside development the API
+refuses a run without a task, and a governed run delivers its branch only after
+its workflow's gates and approvals.
 """
 
 from __future__ import annotations
@@ -46,6 +51,8 @@ class ScfInstanceSolver:
     ) -> None:
         self.models: tuple[str, ...] = (model,) if model else ()
         self.last_cost_usd: float | None = None
+        #: Results from another instance or repository are never reused on resume.
+        self.key = f"{base_url.rstrip('/')} {repository}"
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._repository = repository
@@ -63,7 +70,9 @@ class ScfInstanceSolver:
         artifacts = run.get("artifacts") or {}
         self.last_cost_usd = (artifacts.get("model_usage") or {}).get("cost_usd")
         branch = artifacts.get("branch")
-        if run.get("status") != "succeeded" or not branch:
+        # A run that made no commits never pushes its branch: nothing to collect.
+        no_changes = (artifacts.get("pull_request") or {}).get("status") == "no_changes"
+        if run.get("status") != "succeeded" or not branch or no_changes:
             return {}
         self._git("fetch", "--quiet", "origin", base, branch)
         # shortcut: a deleted file cannot be expressed as a file write, so it is dropped;
@@ -89,6 +98,11 @@ class ScfInstanceSolver:
             base_url=self._base_url, transport=self._transport, headers=headers, timeout=30.0
         ) as client:
             created = client.post("/agent/runs", json=body)
+            if created.status_code == httpx.codes.CONFLICT:
+                raise RuntimeError(
+                    f"the instance refused the run: {_detail(created)}; this adapter drives a "
+                    "development instance's direct path, a governed instance is not supported"
+                )
             created.raise_for_status()
             run_id = created.json()["run_id"]
             deadline = time.monotonic() + self._timeout_s
@@ -108,6 +122,14 @@ class ScfInstanceSolver:
         return subprocess.run(
             ["git", *args], cwd=self._clone, check=True, capture_output=True, text=True
         ).stdout
+
+
+def _detail(resp: httpx.Response) -> str:
+    """The API's reason for an error response (its ``detail``), else the raw body."""
+    try:
+        return str(resp.json()["detail"])
+    except (ValueError, KeyError, TypeError):
+        return resp.text
 
 
 __all__ = ["ScfInstanceSolver"]

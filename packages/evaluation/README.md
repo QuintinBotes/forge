@@ -65,6 +65,15 @@ The suite lives in `scf_eval/benchmarks/forge-factory-bench/<version>/`:
 - `reference.yaml` holds each case's known-good patch. Only the reference solver
   reads it.
 
+The solver's change is untrusted input to the scorer. A change that writes pytest's
+configuration or shadows pytest (any `conftest.py`, `pytest.ini`, `tox.ini`,
+`setup.cfg`, `pyproject.toml`, `sitecustomize.py` or `usercustomize.py`, or a
+top-level `pytest.py`, `pytest/` or `_pytest/`) is refused and scored not resolved,
+with the reason in the report. A held-out test counts as passing only when pytest's
+JUnit report says it ran and passed; a skipped test does not count. Candidate code
+still runs inside the test process, so a change built to tamper with pytest from
+within can still lie; the sandbox is the boundary for that.
+
 Run the seed suite offline with the reference solver (every case should resolve)
 or the empty solver (none should):
 
@@ -80,13 +89,17 @@ model identifiers and total cost when it reports them, the sandbox tier, each
 case's outcome with the pass-to-pass tests it regressed, the resolve rate and the
 wall time. The command exits non-zero when any case is an infrastructure error.
 With `--out`, every finished case is stored in `results.jsonl`; rerunning the same
-command skips the stored cases, so an interrupted run resumes. Delete a case's line
-to run it again.
+command skips the stored cases, so an interrupted run resumes. A stored
+infrastructure error is run again; delete a case's line to rerun any other. The file
+belongs to one run: results from another suite version, SCF commit, sandbox tier or
+solver (another reference patch set, another instance) are refused, never reported
+under this run's provenance.
 
 Any solver works through one interface (`scf_eval.sweval.Solver`): a public case in,
 the files its change writes out. `run_suite` takes the sandbox provider as a
-parameter. To score a running SCF instance, push each case's repository tree to
-branch `bench/<case id>` of a repository connected to the instance, then:
+parameter. To score a running **development** SCF instance, push each case's
+repository tree to branch `bench/<case id>` of a repository connected to the
+instance, then:
 
 ```python
 from scf_agent.sandbox import LocalSandboxProvider
@@ -102,8 +115,16 @@ solver = ScfInstanceSolver(
 report = await run_suite(suite_dir, solver, sandbox_provider=LocalSandboxProvider())
 ```
 
-The adapter submits the issue to `POST /agent/runs`, waits for the run to finish,
-and collects the change from the branch the run pushed.
+The adapter submits the issue to `POST /agent/runs` on the instance's direct run
+path, waits for the run to finish, and collects the change from the branch the run
+pushed. A run that made no commits scores not resolved.
+
+**Scoring a governed (production) instance is not supported yet.** Outside
+development the API refuses a repository-changing run that has no task (409
+`governed_run_requires_task`, `governed_run_unsupported`, `ungoverned_run_refused`),
+and a governed run delivers its branch only after its workflow's checks and
+approvals. The adapter records such a refusal as an infrastructure error that names
+the API's reason.
 
 `forge-swe` 1.0.0 (`scf_eval/benchmarks/forge-swe/`) is a **wiring fixture, not an
 agent benchmark**: it is frozen so the leaderboard, freeze and verify paths have a

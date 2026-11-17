@@ -5,14 +5,25 @@ The instance is a stubbed HTTP transport; the repository it pushed to is a local
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
 
 import httpx
+import pytest
 
+from scf_agent.sandbox import LocalSandboxProvider
 from scf_eval.golden import GoldenCase
-from scf_eval.sweval import ScfInstanceSolver
+from scf_eval.sweval import BenchRunReport, CaseOutcome, ScfInstanceSolver, run_suite
+
+SUITE = (
+    Path(__file__).resolve().parents[2]
+    / "scf_eval"
+    / "benchmarks"
+    / "forge-factory-bench"
+    / "0.1.0"
+)
 
 _BASE = "def add(a, b):\n    return a - b\n"
 _FIXED = "def add(a, b):\n    return a + b\n"
@@ -48,7 +59,10 @@ def _repository(tmp_path: Path) -> Path:
 
 
 def _solver(
-    clone: Path, responses: list[httpx.Response], sent: list[httpx.Request]
+    clone: Path,
+    responses: list[httpx.Response],
+    sent: list[httpx.Request],
+    base_url: str = "http://scf.test/api/v1",
 ) -> ScfInstanceSolver:
     replies = iter(responses)
 
@@ -57,7 +71,7 @@ def _solver(
         return next(replies)
 
     return ScfInstanceSolver(
-        base_url="http://scf.test/api/v1",
+        base_url=base_url,
         token="test-token",
         repository="acme/bench",
         clone_dir=clone,
@@ -112,3 +126,43 @@ def test_a_run_that_did_not_succeed_yields_an_empty_patch(tmp_path: Path) -> Non
     )
     assert solver(_CASE) == {}
     assert solver.last_cost_usd is None
+
+
+def test_a_run_with_no_commits_yields_an_empty_patch(tmp_path: Path) -> None:
+    sent: list[httpx.Request] = []
+    finished = {
+        "status": "succeeded",
+        "artifacts": {"branch": "scf/case-1", "pull_request": {"status": "no_changes"}},
+    }
+    solver = _solver(
+        tmp_path / "never-fetched",
+        [httpx.Response(202, json={"run_id": "run-3"}), httpx.Response(200, json=finished)],
+        sent,
+    )
+    assert solver(_CASE) == {}
+
+
+def test_a_refused_run_raises_naming_the_reason(tmp_path: Path) -> None:
+    sent: list[httpx.Request] = []
+    refused = httpx.Response(409, json={"detail": "governed_run_requires_task"})
+    solver = _solver(tmp_path, [refused], sent)
+    with pytest.raises(RuntimeError, match="governed_run_requires_task"):
+        solver(_CASE)
+
+
+def test_refused_runs_are_infrastructure_errors_kept_apart_per_instance(tmp_path: Path) -> None:
+    results = tmp_path / "results.jsonl"
+    refusal = {"detail": "ungoverned_run_refused: development only"}
+
+    def run(base_url: str) -> BenchRunReport:
+        solver = _solver(tmp_path, [httpx.Response(409, json=refusal)] * 5, [], base_url)
+        return asyncio.run(
+            run_suite(SUITE, solver, sandbox_provider=LocalSandboxProvider(), results_path=results)
+        )
+
+    report = run("http://scf.test/api/v1")
+    for case in report.cases:
+        assert case.outcome is CaseOutcome.INFRASTRUCTURE_ERROR
+        assert "ungoverned_run_refused" in (case.reason or "")
+    with pytest.raises(ValueError, match="another"):
+        run("http://other.test/api/v1")

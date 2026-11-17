@@ -52,14 +52,16 @@ _VALIDATES_BUT_RETURNS_ZERO = (
 )
 
 
-def _run(suite: Path, solver: Solver, results: Path | None = None) -> BenchRunReport:
+def _run(
+    suite: Path, solver: Solver, results: Path | None = None, scf_commit: str = "abc123"
+) -> BenchRunReport:
     return asyncio.run(
         run_suite(
             suite,
             solver,
             sandbox_provider=LocalSandboxProvider(),
             results_path=results,
-            scf_commit="abc123",
+            scf_commit=scf_commit,
         )
     )
 
@@ -137,7 +139,7 @@ def test_failing_setup_command_is_an_infrastructure_error(tmp_path: Path) -> Non
     suite = _suite_copy(tmp_path, "ffb-chunk-remainder", setup_commands=["exit 3"])
     [result] = _run(suite, reference_solver(suite)).cases
     assert result.outcome is CaseOutcome.INFRASTRUCTURE_ERROR
-    assert "exit 3" in (result.error or "")
+    assert "exit 3" in (result.reason or "")
 
 
 def test_crashing_solver_is_an_infrastructure_error(tmp_path: Path) -> None:
@@ -147,7 +149,7 @@ def test_crashing_solver_is_an_infrastructure_error(tmp_path: Path) -> None:
     suite = _suite_copy(tmp_path, "ffb-chunk-remainder")
     [result] = _run(suite, FnSolver(name="crash", fn=crash)).cases
     assert result.outcome is CaseOutcome.INFRASTRUCTURE_ERROR
-    assert result.error == "ConnectionError: instance unreachable"
+    assert result.reason == "ConnectionError: instance unreachable"
 
 
 def test_regressed_pass_to_pass_test_is_not_resolved_and_named(tmp_path: Path) -> None:
@@ -217,6 +219,93 @@ def test_report_states_models_and_cost_when_given(tmp_path: Path) -> None:
     assert "0.25" in markdown
 
 
+_SKIP_EVERY_TEST = (
+    "import pytest\n\n\n"
+    "def pytest_collection_modifyitems(items):\n"
+    "    for item in items:\n"
+    "        item.add_marker(pytest.mark.skip(reason='skipped'))\n"
+)
+_COLLECT_ONLY = "addopts = --collect-only\n"
+#: Changes that leave chunked() broken but make pytest exit 0 for every held-out test,
+#: by writing pytest's configuration or shadowing pytest itself.
+_WRITES_PYTEST_FILES = {
+    "conftest.py": _SKIP_EVERY_TEST,
+    "tests/conftest.py": _SKIP_EVERY_TEST,
+    "pytest.ini": "[pytest]\n" + _COLLECT_ONLY,
+    "tox.ini": "[pytest]\n" + _COLLECT_ONLY,
+    "setup.cfg": "[tool:pytest]\n" + _COLLECT_ONLY,
+    "pyproject.toml": '[tool.pytest.ini_options]\naddopts = "--collect-only"\n',
+    "pytest.py": "raise SystemExit(0)\n",
+}
+
+
+@pytest.mark.parametrize(("path", "content"), list(_WRITES_PYTEST_FILES.items()))
+def test_a_change_that_writes_pytest_files_is_refused(
+    tmp_path: Path, path: str, content: str
+) -> None:
+    suite = _suite_copy(tmp_path, "ffb-chunk-remainder")
+    [result] = _run(suite, FnSolver(name="games", fn=lambda _c: {path: content})).cases
+    assert result.outcome is CaseOutcome.NOT_RESOLVED
+    assert path in (result.reason or "")
+
+
+def test_a_skipped_held_out_test_does_not_count_as_passing(tmp_path: Path) -> None:
+    skips = "import pytest\n\n\ndef chunked(items, size):\n    pytest.skip('x')\n"
+    suite = _suite_copy(tmp_path, "ffb-chunk-remainder")
+    [result] = _run(suite, FnSolver(name="skips", fn=lambda _c: {"batching.py": skips})).cases
+    assert result.outcome is CaseOutcome.NOT_RESOLVED
+
+
+def test_a_change_cannot_replace_the_held_out_tests(tmp_path: Path) -> None:
+    stubs = (
+        "def test_keeps_the_short_last_chunk():\n    pass\n\n\n"
+        "def test_even_split_and_bad_size():\n    pass\n"
+    )
+    suite = _suite_copy(tmp_path, "ffb-chunk-remainder")
+    solver = FnSolver(name="stubs", fn=lambda _c: {"tests/test_batching.py": stubs})
+    [result] = _run(suite, solver).cases
+    assert result.outcome is CaseOutcome.NOT_RESOLVED
+
+
+def test_resume_refuses_results_stored_under_other_provenance(tmp_path: Path) -> None:
+    suite = _suite_copy(tmp_path, "ffb-chunk-remainder", setup_commands=["exit 3"])
+    results = tmp_path / "results.jsonl"
+    reference = reference_solver(suite)
+    _run(suite, reference, results)
+    _run(suite, reference, results)  # the same run resumes
+    with pytest.raises(ValueError, match="another run"):
+        _run(suite, reference, results, scf_commit="def456")
+    with pytest.raises(ValueError, match="another run"):
+        _run(suite, FnSolver(name="reference", key="elsewhere", fn=reference), results)
+
+    reference_file = suite / "reference.yaml"
+    reference_file.write_text(reference_file.read_text() + "\n# edited\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="another run"):
+        _run(suite, reference_solver(suite), results)
+
+
+def test_resume_reruns_infrastructure_errors(tmp_path: Path) -> None:
+    suite = _suite_copy(tmp_path, "ffb-chunk-remainder")
+    results = tmp_path / "results.jsonl"
+    reference = reference_solver(suite)
+
+    def down(_case: GoldenCase) -> Mapping[str, str]:
+        raise ConnectionError("instance down")
+
+    [first] = _run(suite, FnSolver(name="reference", fn=down), results).cases
+    assert first.outcome is CaseOutcome.INFRASTRUCTURE_ERROR
+
+    calls: list[str] = []
+
+    def counting(case: GoldenCase) -> Mapping[str, str]:
+        calls.append(case.id)
+        return reference(case)
+
+    [second] = _run(suite, FnSolver(name="reference", fn=counting), results).cases
+    assert calls == ["ffb-chunk-remainder"]
+    assert second.outcome is CaseOutcome.RESOLVED
+
+
 class _Interrupted(BaseException):
     """Stands in for a killed process: the harness does not catch it."""
 
@@ -245,5 +334,5 @@ def test_interrupted_run_resumes_without_rerunning_stored_cases(tmp_path: Path) 
     assert [r.outcome for r in report.cases] == [CaseOutcome.RESOLVED] * 2
 
     # Results stored for one solver are never mixed into another solver's report.
-    with pytest.raises(ValueError, match="another suite or solver"):
+    with pytest.raises(ValueError, match="another run"):
         _run(suite, empty_solver(), results)
