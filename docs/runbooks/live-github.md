@@ -27,7 +27,8 @@ It closes the GitHub half of release blocker #1 (BETA gate **G-GH**).
 1. Create a GitHub App (org → Settings → Developer settings → GitHub Apps → New),
    or use SCF's published App.
 2. Permissions (least privilege): **Contents: Read & write**, **Pull requests:
-   Read & write**, **Metadata: Read-only**. Subscribe to the **Push**,
+   Read & write**, **Checks: Read-only** (the merge guard reads CI, #280),
+   **Metadata: Read-only**. Subscribe to the **Push**,
    **Check run/suite**, **Status**, and **Workflow run** webhook events.
 3. Set a **Webhook secret** (a long random string). Record it.
 4. **Generate a private key** → downloads a `.pem`. This file is the only

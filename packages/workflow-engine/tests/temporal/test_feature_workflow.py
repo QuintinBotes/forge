@@ -219,10 +219,21 @@ async def test_cancel_signal_runs_cleanup(harness: Any) -> None:
 
 
 async def test_merge_gate_guard_failure(harness: Any) -> None:
-    """AC12 — review with incomplete signals fails the merge_ready guard (409)."""
+    """AC12, #280 criterion 2: the merge guard reads CI itself. A caller that says CI
+    is green does not make it so; the run stays at review until SCF reads it green."""
     from scf_workflow.exceptions import GuardFailedError
+    from scf_workflow.temporal.activities import _default_guard_inputs
+    from scf_workflow.temporal.payloads import GuardInputs
 
-    h = harness()
+    ci = {"green": False, "reads": 0}
+
+    def guard(req: Any) -> GuardInputs:
+        if req.phase != "merge":
+            return _default_guard_inputs(req)
+        ci["reads"] += 1
+        return GuardInputs(plan_required=False, ci_status_green=ci["green"], spec_validated=True)
+
+    h = harness(guard_inputs_fn=guard)
     async with h.worker():
         run = await h.start()
         await h.wait_awaiting(run, {"spec_approved_by_human"})
@@ -231,16 +242,16 @@ async def test_merge_gate_guard_failure(harness: Any) -> None:
 
         with pytest.raises(GuardFailedError):
             await h.engine.atransition(
-                run.id, "review_approved_by_human", ci_status_green=False, spec_validated=True
+                run.id, "review_approved_by_human", ci_status_green=True, spec_validated=True
             )
         assert h.engine.get_run(run.id).current_state == "awaiting_review"
 
-        # a corrected approval (all signals) merges + closes.
-        await h.engine.atransition(
-            run.id, "review_approved_by_human", ci_status_green=True, spec_validated=True
-        )
+        # Once SCF reads CI green, the same approval (no payload) merges and closes.
+        ci["green"] = True
+        await h.engine.atransition(run.id, "review_approved_by_human")
         result = await h.handle(run).result()
     assert result.final_state == WorkflowState.CLOSED
+    assert ci["reads"] == 2, "each approval reads CI again"
 
 
 async def test_open_pr_idempotent_on_activity_retry(harness: Any) -> None:

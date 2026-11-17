@@ -534,6 +534,21 @@ class GitHubClient:
         items = resp.json()
         return self._parse_pr(repo, items[0]) if items else None
 
+    def check_runs_for_ref(self, repo: str, ref: str) -> list[dict[str, Any]]:
+        """Every check run on ``ref`` (a commit sha) in ``repo``, across pages (#280)."""
+        r = self.owner_repo(repo)
+        return list(
+            self._paginate(
+                "GET",
+                f"/repos/{r}/commits/{ref}/check-runs",
+                params={"per_page": 100},
+                items_key="check_runs",
+                action="check_runs_for_ref",
+                repo=r,
+                max_pages=10,
+            )
+        )
+
     def request_reviews(self, pr: PullRequest, reviewers: list[str]) -> None:
         repo = self.owner_repo(pr.repo)
         users, teams = self._split_reviewers(reviewers)

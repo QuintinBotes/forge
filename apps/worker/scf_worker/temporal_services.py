@@ -6,6 +6,7 @@ activity. An activity with no service here keeps refusing (ADR-0007).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -35,6 +36,9 @@ from scf_db.models import (
     WorkflowRun,
 )
 from scf_db.models.enums import RunStatus
+from scf_db.models.traceability import TraceabilitySpecRollup
+from scf_integrations.github import GitHubClient
+from scf_integrations.github_auth import InstallationTokenProvider
 from scf_worker.agent_runner import _commits_ahead, configured_model, run_agent_objective
 from scf_worker.approval_activity import make_create_approval_fn
 from scf_worker.dispatch import (
@@ -94,6 +98,8 @@ __all__ = [
 
 #: The run-context key naming the optional preconditions a workspace has not configured.
 NOT_IN_USE_KEY = "preconditions_not_in_use"
+
+logger = logging.getLogger(__name__)
 
 
 def _owned_run(session: Session, run_id: uuid.UUID, workspace_id: uuid.UUID) -> WorkflowRun:
@@ -171,6 +177,113 @@ def _policy_loads(workspace_id: uuid.UUID, repo: str) -> bool:
     return True
 
 
+#: The merge guard's CI read: check runs on the one repository, nothing else (#280).
+CI_TOKEN_PERMISSIONS: dict[str, str] = {"checks": "read"}
+#: Completed conclusions that do not fail CI; any other (failure, cancelled,
+#: timed_out, action_required, stale, startup_failure) does.
+_CI_PASSING = frozenset({"success", "neutral", "skipped"})
+#: The run-context key recording the last merge guard read (FR-011, FR-012).
+MERGE_GUARD_KEY = "merge_guard"
+
+
+class CiUnreadable(RuntimeError):
+    """CI could not be read for the run; it does not count as green."""
+
+
+def github_check_runs(repo: str, ref: str) -> list[dict[str, Any]]:
+    """The check runs on commit ``ref``, read with a token for ``repo`` alone."""
+    creds = GitHubAppCredentials.from_env()
+    if creds is None:
+        raise CiUnreadable("no GitHub App credentials on this worker")
+    _, name = split_repo_name(repo)
+    provider = InstallationTokenProvider(
+        app_id=creds.app_id,
+        private_key_pem=creds.private_key_pem,
+        installation_id=creds.installation_id,
+        base_url=creds.api_base_url,
+        repositories=[name],
+        permissions=CI_TOKEN_PERMISSIONS,
+    )
+    try:
+        client = GitHubClient(token=provider.token(), base_url=creds.api_base_url)
+        try:
+            return client.check_runs_for_ref(repo, ref)
+        finally:
+            client.close()
+    finally:
+        provider.close()
+
+
+def ci_verdict(runs: list[dict[str, Any]]) -> tuple[bool, str]:
+    """Green only when there are check runs and every one completed and passed."""
+    if not runs:
+        return False, "ci_no_check_runs"
+    pending = sorted(str(r.get("name")) for r in runs if r.get("status") != "completed")
+    if pending:  # read once per approval: gates/pr/sync re-reads it later
+        return False, f"ci_pending: {', '.join(pending)}"
+    failed = sorted(str(r.get("name")) for r in runs if r.get("conclusion") not in _CI_PASSING)
+    if failed:
+        return False, f"ci_failed: {', '.join(failed)}"
+    return True, "ci_green"
+
+
+def _spec_validated(session: Session, task: Task) -> tuple[bool, str]:
+    """The spec engine's validation of the task's spec; true when the run has none."""
+    if task.spec_id is None:
+        return True, "no_spec"  # an issue-triggered run carries no drafted spec
+    rollup = session.scalar(
+        select(TraceabilitySpecRollup).where(
+            TraceabilitySpecRollup.workspace_id == task.workspace_id,
+            TraceabilitySpecRollup.spec_id == task.spec_id,
+        )
+    )
+    # The rollup's verdict (scf_spec ValidationStatus): "passing" when every criterion
+    # is validated against the current spec version; partial, failing, stale or none
+    # otherwise.
+    return rollup is not None and rollup.validation_status == "passing", "spec_rollup"
+
+
+def _merge_guard(factory: sessionmaker[Session], req: GuardInputsRequest) -> GuardInputs:
+    """CI on the agent's head commit and the spec's validation, read by SCF (#280).
+
+    A caller's payload never decides these. Unreadable CI is not green: the person
+    re-applies the approval (``gates/pr/sync``), which reads CI again.
+    """
+    with factory() as session:
+        run = _owned_run(session, req.workflow_run_id, req.workspace_id)
+        task = session.get(Task, run.task_id)
+        assert task is not None  # workflow_run.task_id is a non-null foreign key
+        target = AgentObjective(
+            objective="merge guard", repo_targets=task.repo_targets
+        ).primary_repo_target
+        builder = _latest_agent_run(session, req.workflow_run_id, req.workspace_id)
+        artifacts = ((builder.output or {}).get("artifacts") or {}) if builder else {}
+        head = artifacts.get("head_commit")
+        spec_validated, spec_source = _spec_validated(session, task)
+    if target is None or not head:
+        green, ci_reason = False, "ci_unreadable: the run has no repository or head commit"
+    else:
+        try:
+            green, ci_reason = ci_verdict(github_check_runs(target.repo, str(head)))
+        except Exception as exc:  # an unreadable CI blocks the merge; it never fails the run
+            # GitHub's own message names the status (for example a missing checks:read).
+            logger.warning("CI could not be read for workflow run %s", req.workflow_run_id)
+            green, ci_reason = False, f"ci_unreadable: {type(exc).__name__}: {exc}"[:500]
+    record = {
+        "head_commit": head,
+        "ci_status_green": green,
+        "ci_reason": ci_reason,
+        "spec_validated": spec_validated,
+        "spec_source": spec_source,
+        "read_at": datetime.now(UTC).isoformat(),
+    }
+    with factory() as session:
+        run = _owned_run(session, req.workflow_run_id, req.workspace_id)
+        run.context = {**run.context, MERGE_GUARD_KEY: record}
+        session.commit()
+    return GuardInputs(plan_required=True, ci_status_green=green, spec_validated=spec_validated)
+
+
 def guard_inputs_service(factory: sessionmaker[Session]) -> GuardInputsFn:
     """The execute preconditions, read from stored data (#250, owner decisions 2026-11-15).
 
@@ -183,6 +296,8 @@ def guard_inputs_service(factory: sessionmaker[Session]) -> GuardInputsFn:
     """
 
     def load(req: GuardInputsRequest) -> GuardInputs:
+        if req.phase == "merge":
+            return _merge_guard(factory, req)
         with factory() as session:
             run = _owned_run(session, req.workflow_run_id, req.workspace_id)
             if req.phase != "execute":
