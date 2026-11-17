@@ -29,6 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEPLOY = REPO_ROOT / "deploy"
 COMPOSE = DEPLOY / "docker-compose.yml"
 COMPOSE_DEV = DEPLOY / "docker-compose.dev.yml"
+COMPOSE_SINGLE_USER = DEPLOY / "docker-compose.single-user.yml"
 CADDYFILE = DEPLOY / "caddy" / "Caddyfile"
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 DOCKERIGNORE = REPO_ROOT / ".dockerignore"
@@ -283,7 +284,11 @@ def _dockerfile_from_refs() -> dict[str, list[str]]:
     return refs
 
 
-@pytest.mark.parametrize("compose_path", [COMPOSE, COMPOSE_DEV], ids=["prod", "dev"])
+@pytest.mark.parametrize(
+    "compose_path",
+    [COMPOSE, COMPOSE_DEV, COMPOSE_SINGLE_USER],
+    ids=["prod", "dev", "single-user"],
+)
 def test_prod_pulled_images_pinned_by_digest(compose_path: Path) -> None:
     pulled = _pulled_images(compose_path)
     assert pulled, f"{compose_path.name}: expected at least one pulled image"
@@ -356,7 +361,7 @@ def test_build_manifest_covers_every_image() -> None:
     # Coverage: every pulled compose ref and every Dockerfile base ref (digest
     # stripped) must be recorded, plus the 4 first-party built images.
     recorded = set(images)
-    for compose_path in (COMPOSE, COMPOSE_DEV):
+    for compose_path in (COMPOSE, COMPOSE_DEV, COMPOSE_SINGLE_USER):
         for service, image in _pulled_images(compose_path).items():
             bare = image.split("@", 1)[0]
             assert bare in recorded, f"manifest missing pulled image {bare} ({service})"
