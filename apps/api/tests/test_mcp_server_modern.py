@@ -29,7 +29,7 @@ from scf_api.mcp_server.protocol import (
     METHOD_NOT_FOUND,
     UNSUPPORTED_PROTOCOL_VERSION,
     Message,
-    modern_version,
+    declared_version,
 )
 from scf_api.mcp_server.registry import McpTool, ToolContext, ToolRegistry
 from scf_api.observability.audit import AuditCategory, AuditLog
@@ -126,13 +126,16 @@ def post(
     method: str,
     params: dict | None = None,
     *,
-    headers: dict[str, str | None] | None = None,
+    headers: dict[str, str | bytes | None] | None = None,
     meta: dict | None = None,
     rpc_id: int = 7,
 ) -> httpx.Response:
     """POST a current-revision request; ``headers`` overrides (``None`` drops) a header."""
     body_params = {"_meta": META if meta is None else meta, **(params or {})}
-    sent: dict[str, str | None] = {"MCP-Protocol-Version": CURRENT_VERSION, "Mcp-Method": method}
+    sent: dict[str, str | bytes | None] = {
+        "MCP-Protocol-Version": CURRENT_VERSION,
+        "Mcp-Method": method,
+    }
     if method == "tools/call":
         sent["Mcp-Name"] = body_params.get("name")
     sent.update(headers or {})
@@ -240,6 +243,8 @@ def test_header_names_are_case_insensitive(make_client: Callable[..., TestClient
         {"Mcp-Name": None},
         {"Mcp-Name": "shout"},
         {"Mcp-Name": "=?base64?not base64!?="},
+        # Starlette decodes header bytes as latin-1, so this reaches the decoder as "é".
+        {"Mcp-Name": b"=?base64?ZWNo\xe9?="},
     ],
     ids=[
         "version-missing",
@@ -250,10 +255,13 @@ def test_header_names_are_case_insensitive(make_client: Callable[..., TestClient
         "name-missing",
         "name-differs",
         "name-malformed",
+        "name-not-ascii",
     ],
 )
 def test_header_mismatch_is_400_and_runs_nothing(
-    make_client: Callable[..., TestClient], audit: AuditLog, headers: dict[str, str | None]
+    make_client: Callable[..., TestClient],
+    audit: AuditLog,
+    headers: dict[str, str | bytes | None],
 ) -> None:
     resp = post(
         make_client(), "tools/call", {"name": "echo", "arguments": {"text": "x"}}, headers=headers
@@ -307,6 +315,22 @@ def test_unimplemented_method_is_404(make_client: Callable[..., TestClient], met
     error(post(make_client(), method), 404, METHOD_NOT_FOUND)
 
 
+@pytest.mark.parametrize("version", ["2025-06-18", "2025-03-26"])
+def test_a_legacy_version_in_meta_is_served_at_that_version(
+    make_client: Callable[..., TestClient], version: str
+) -> None:
+    """The declared version is honoured: handshake-era behaviour, not the current revision's."""
+    client = make_client()
+    meta = {**META, "io.modelcontextprotocol/protocolVersion": version}
+    headers: dict[str, str | bytes | None] = {"MCP-Protocol-Version": version}
+    assert ok(post(client, "ping", headers=headers, meta=meta)) == {}
+    assert set(ok(post(client, "tools/list", headers=headers, meta=meta))) == {"tools"}
+    nope = post(client, "nope/nothing", headers=headers, meta=meta)
+    assert (nope.status_code, nope.json()["error"]["code"]) == (200, METHOD_NOT_FOUND)
+    mismatch = post(client, "ping", headers={**headers, "Mcp-Method": "tools/list"}, meta=meta)
+    error(mismatch, 400, HEADER_MISMATCH)
+
+
 def test_legacy_requests_keep_their_shape(make_client: Callable[..., TestClient]) -> None:
     """A request with a handshake-era header and no ``_meta`` takes the legacy path."""
     resp = make_client().post(
@@ -320,11 +344,11 @@ def test_legacy_requests_keep_their_shape(make_client: Callable[..., TestClient]
 
 def test_era_detection_is_pure() -> None:
     legacy = Message(method="tools/list")
-    assert modern_version({}, legacy) is None
-    assert modern_version({"mcp-protocol-version": "2025-06-18"}, legacy) is None
+    assert declared_version({}, legacy) is None
+    assert declared_version({"mcp-protocol-version": "2025-06-18"}, legacy) is None
     current = Message(method="tools/list", params={"_meta": META})
     headers = {"mcp-protocol-version": CURRENT_VERSION, "mcp-method": "tools/list"}
-    assert modern_version(headers, current) == CURRENT_VERSION
+    assert declared_version(headers, current) == CURRENT_VERSION
 
 
 # --------------------------------------------------------------------------- #

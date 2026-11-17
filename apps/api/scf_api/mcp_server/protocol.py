@@ -4,16 +4,16 @@ One message per HTTP POST. Batches are refused. A message without ``id`` is a
 notification; a message carrying ``result``/``error`` instead of ``method`` is a
 client response. Both are acknowledged with HTTP 202 and no body by the router.
 
-Two eras share the endpoint. A request that declares its version per request
-(in ``params._meta``, or with a current ``MCP-Protocol-Version`` header) is
-served at :data:`CURRENT_VERSION`. Everything else follows the ``initialize``
-handshake of :data:`PROTOCOL_VERSIONS`, unchanged.
+Two eras share the endpoint. A request that declares :data:`CURRENT_VERSION`
+per request (in ``params._meta``, or with the ``MCP-Protocol-Version`` header)
+is served at that revision. Everything else follows the ``initialize`` handshake
+of :data:`PROTOCOL_VERSIONS`, unchanged; a request that declares one of those
+versions in ``_meta`` has its headers checked and is then served at it too.
 """
 
 from __future__ import annotations
 
 import base64
-import binascii
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -136,18 +136,21 @@ def _header(headers: Mapping[str, str], name: str, *, encoded: bool = False) -> 
     if encoded and value.startswith("=?base64?") and value.endswith("?="):
         try:
             return base64.b64decode(value[9:-2], validate=True).decode("utf-8")
-        except (binascii.Error, UnicodeDecodeError) as exc:
+        # ValueError covers binascii.Error, a non-ASCII value and invalid UTF-8 alike.
+        except ValueError as exc:
             raise _mismatch(f"{name} is not valid Base64") from exc
     return value
 
 
-def modern_version(headers: Mapping[str, str], message: Message) -> str | None:
-    """The version a current-era request declares, or ``None`` for a legacy request.
+def declared_version(headers: Mapping[str, str], message: Message) -> str | None:
+    """The version a request declares per request, or ``None`` for a handshake request.
 
-    ``headers`` must look names up case-insensitively, as Starlette's ``Headers``
-    does. Raises, with HTTP 400, when the request metadata is incomplete
-    (``-32602``), a mirrored header differs from the body (``-32020``) or the
-    version is not supported (``-32022``).
+    A request declares one in ``params._meta``, or by sending the current version
+    header. The result may be a handshake-era version; the caller serves it at
+    that version. ``headers`` must look names up case-insensitively, as
+    Starlette's ``Headers`` does. Raises, with HTTP 400, when the request
+    metadata is incomplete (``-32602``), a mirrored header differs from the body
+    (``-32020``) or the version is not supported (``-32022``).
     """
     meta = message.params.get("_meta")
     header_version = _header(headers, "mcp-protocol-version")
@@ -210,8 +213,8 @@ __all__ = [
     "UNSUPPORTED_PROTOCOL_VERSION",
     "JsonRpcError",
     "Message",
+    "declared_version",
     "failure",
-    "modern_version",
     "negotiate_version",
     "parse_message",
     "success",

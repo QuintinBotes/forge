@@ -32,14 +32,15 @@ from scf_api import __version__
 from scf_api.db import get_db
 from scf_api.deps import Principal, get_current_principal
 from scf_api.mcp_server.protocol import (
+    CURRENT_VERSION,
     INTERNAL_ERROR,
     META_SERVER_INFO,
     METHOD_NOT_FOUND,
     SUPPORTED_VERSIONS,
     JsonRpcError,
     Message,
+    declared_version,
     failure,
-    modern_version,
     negotiate_version,
     parse_message,
     success,
@@ -178,7 +179,8 @@ async def mcp_endpoint(
         return Response(status_code=status.HTTP_202_ACCEPTED)
 
     try:
-        modern = modern_version(request.headers, message) is not None
+        # A handshake-era version declared in _meta is honoured: served at that version.
+        modern = declared_version(request.headers, message) == CURRENT_VERSION
         result = await run_in_threadpool(
             _dispatch,
             message,

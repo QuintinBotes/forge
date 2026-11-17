@@ -30,7 +30,9 @@ SCF_MCP_TOKEN=<SCF API key> scripts/mcp-conformance.sh http://localhost:8000/mcp
   scenarios). Extra arguments go to the suite; `-o <dir>` saves each scenario's `checks.json`.
 - The suite sends no credentials. The script starts a small proxy on `127.0.0.1` (port
   `SCF_MCP_PROXY_PORT`, default `8765`) that adds `Authorization: Bearer $SCF_MCP_TOKEN` to each
-  request and forwards it to the URL. The proxy stops when the script exits.
+  request and forwards it to the URL. Only the proxy holds the key: the suite runs under
+  `env -u SCF_MCP_TOKEN`. If the proxy cannot listen, for example because the port is taken, the
+  script exits `2` before the suite starts. The proxy stops when the script exits.
 - The suite sends a few hundred requests in a burst. With the default rate limit
   (`FORGE_RATELIMIT_RPM=120`, `FORGE_RATELIMIT_BURST=60`) SCF answers some of them with HTTP 429
   and scenarios fail for that reason alone. Run it against an instance with a higher limit.
@@ -143,6 +145,30 @@ or check and gives the reason on the same line.
 Entries name single checks wherever a scenario also exercises something SCF does implement, so
 the rest of that scenario still has to pass. Whole scenarios are baselined only for the Tasks
 extension and `http-custom-header-server-validation`.
+
+## A handshake-era version declared per request
+
+A request can name `2025-06-18` or `2025-03-26` in `_meta["io.modelcontextprotocol/protocolVersion"]`
+and skip `initialize`. The `2026-07-28` specification does not say what a server does with that.
+This is how it was read on 2026-11-17:
+
+- The versioning page defines the eras by mechanism. Modern versions carry the version per request
+  and start at `2026-07-28`. Legacy versions use the `initialize` handshake and run up to
+  `2025-11-25`.
+- Its rule for a dual-era server covers two openings only. A request carrying modern per-request
+  `_meta` is served by the current revision, and an `initialize` request selects legacy semantics.
+  A legacy version named in `_meta` fits neither case.
+- `UnsupportedProtocolVersionError` (`-32022`) is for a version the server does not implement. SCF
+  implements both handshake-era versions and lists them in `supportedVersions`, so refusing them
+  would contradict its own answer.
+- The changelog and the streamable-http page add nothing here. Streamable-http only lets a server
+  treat a request that has no version header as `2025-03-26`.
+
+Since the specification leaves the case open, SCF honours the declared version. It validates the
+request's `_meta` and headers exactly as for a `2026-07-28` request, so a mismatch is still HTTP 400
+with `-32020`. It then serves the request by the handshake rules of the declared version: `ping`
+answers, results carry no `resultType`, `ttlMs` or `cacheScope`, and an unknown method is `-32601`
+with HTTP 200. `test_a_legacy_version_in_meta_is_served_at_that_version` covers this.
 
 ## Known differences not covered by the suite run
 

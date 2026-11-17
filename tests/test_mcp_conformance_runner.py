@@ -37,6 +37,14 @@ def test_script_pins_one_exact_suite_version_and_the_server_revision() -> None:
     assert '--expected-failures "${BASELINE}"' in text
 
 
+def test_the_suite_runs_without_the_api_key_in_its_environment() -> None:
+    """Only the loopback proxy needs the key; npx and its install scripts must not see it."""
+    lines = [line.strip() for line in SCRIPT.read_text(encoding="utf-8").splitlines()]
+    launches = [line for line in lines if re.search(r"\bnpx\b", line) and line[:1] != "#"]
+    assert launches, "the script must launch the suite with npx"
+    assert all(line.startswith("env -u SCF_MCP_TOKEN npx ") for line in launches), launches
+
+
 def test_every_baseline_entry_has_a_written_reason() -> None:
     text = BASELINE.read_text(encoding="utf-8")
     loaded = yaml.safe_load(text)

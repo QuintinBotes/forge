@@ -44,9 +44,11 @@ Rejected:
 - Protocol versions: `2026-07-28`, the revision marked Current on the MCP versioning page when
   checked on 2026-11-17 (issue #210, ADR-0016), plus the handshake-era `2025-06-18` (preferred
   for `initialize`) and `2025-03-26`.
-- Era: a request is current-revision when `params._meta` carries
+- Era: a request declares its version per request when `params._meta` carries
   `io.modelcontextprotocol/protocolVersion` or the `MCP-Protocol-Version` header is `2026-07-28`.
-  Everything else takes the handshake path below, unchanged.
+  Such a request has its `_meta` and headers validated as below, then is served at the version it
+  declares: `2026-07-28` by the current-revision rules, `2025-06-18` or `2025-03-26` by the
+  handshake rules. Everything else takes the handshake path below, unchanged.
 - Current revision, no handshake: methods `server/discover`, `tools/list`, `tools/call`.
   `_meta` must carry `io.modelcontextprotocol/protocolVersion` and
   `io.modelcontextprotocol/clientCapabilities` (else HTTP 400, `-32602`). `MCP-Protocol-Version`,
