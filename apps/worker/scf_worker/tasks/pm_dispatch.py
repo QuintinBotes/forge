@@ -45,6 +45,7 @@ from scf_api.schemas.pm import PMDispatchConfig
 from scf_api.services.agent_dispatch import (
     AgentEnqueueFailed,
     RepoNotConnected,
+    UngovernedRunRefused,
     build_tracker_objective,
     create_and_enqueue_run,
     repo_connected,
@@ -326,6 +327,9 @@ def maybe_dispatch(
             )
         except RepoNotConnected:
             return skipped("repository_not_connected")
+        except UngovernedRunRefused:
+            # Outside development an issue never runs without a workflow run (#277).
+            return skipped("ungoverned_run_refused")
         except AgentEnqueueFailed as exc:
             # The persisted run is already terminal FAILED; the person who
             # added the label still gets its run-state comment.
@@ -495,6 +499,9 @@ def _dispatch_governed(
             run = engine.start(task_id, trigger=trigger, started_by=starter)
         except DuplicateRunError:
             return skipped("issue_run_active")
+        except Exception:  # never the direct path (#277); a failed connect leaves no row
+            logger.exception("the durable engine could not start a run for task %s", task_id)
+            return skipped("durable_engine_unavailable")
         session.commit()
     if audit is not None:
         audit.record(

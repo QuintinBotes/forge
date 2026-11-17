@@ -194,6 +194,19 @@ def test_temporal_worker_has_the_master_key_the_api_has() -> None:
     assert worker["FORGE_SECRET_KEY"] == api["FORGE_SECRET_KEY"]
 
 
+def test_the_api_and_celery_worker_see_the_engine_the_temporal_worker_runs() -> None:
+    """#277: outside development a repository run without the durable engine is
+    refused, so the API and the Celery worker must be able to select it from .env,
+    with the same Temporal settings as the Temporal worker."""
+    temporal = _service("temporal-worker")["environment"]
+    for name in ("api", "worker"):
+        env = _service(name)["environment"]
+        assert env["WORKFLOW_ENGINE_BACKEND"] == "${WORKFLOW_ENGINE_BACKEND:-postgres_fsm}"
+        for key in ("TEMPORAL_HOST", "TEMPORAL_NAMESPACE", "TEMPORAL_TASK_QUEUE"):
+            assert env[key] == temporal[key], f"{name} {key}"
+        assert env["TEMPORAL_CODEC_KEY"] == temporal["TEMPORAL_CODEC_KEY"]
+
+
 def test_caddy_exposes_admin_gated_temporal_route() -> None:
     """AC18 — the Temporal Web UI is reachable only via Caddy's gated /_temporal."""
     caddy = (DEPLOY / "caddy" / "Caddyfile").read_text(encoding="utf-8")

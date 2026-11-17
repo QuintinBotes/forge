@@ -388,6 +388,9 @@ def run_agent_task(
     dedup_key = idempotency_key or objective.get("task_id")
     if self.is_duplicate(dedup_key):
         return {"deduplicated": True, "idempotency_key": dedup_key}
+    refused = _refuse_ungoverned_run(AgentObjective.model_validate(objective))
+    if refused is not None:
+        return refused.model_dump(mode="json")
     if objective.get("execution_mode") == ExecutionMode.SUPERVISED_MULTI_AGENT.value:
         # Task 17 (F27): a supervised-mode objective is driven by the
         # deterministic multi-agent Supervisor, never a single AgentRunner.
@@ -416,6 +419,34 @@ def run_agent_task(
             "idempotency_key": dedup_key,
         }
     return result.model_dump(mode="json")
+
+
+def _refuse_ungoverned_run(objective: AgentObjective) -> AgentRunResult | None:
+    """Refuse, without running it, a repository-changing run outside development (#277).
+
+    Admission refuses it first (``create_and_enqueue_run``); this holds for anything
+    already enqueued. The refusal is recorded on the run's row when it has one.
+    """
+    from scf_api.services.agent_dispatch import UngovernedRunRefused, refuse_ungoverned
+
+    try:
+        refuse_ungoverned(objective)
+    except UngovernedRunRefused as exc:
+        context = objective.context
+        run_id = _opt_uuid(context.get("agent_run_id"))
+        refused = AgentRunResult(
+            run_id=run_id, task_id=objective.task_id, status=RunStatus.FAILED, error=exc.reason
+        )
+        _record_terminal(
+            objective,
+            run_id or uuid.uuid4(),
+            _opt_uuid(context.get("workspace_id")) or uuid.UUID(int=0),
+            refused,
+            events=None,
+            persisted_row=run_id is not None,
+        )
+        return refused
+    return None
 
 
 def run_agent_objective(
@@ -527,7 +558,11 @@ def _record_terminal(
     stop, so its last events must already be stored. Best-effort on the
     failure paths: a recording error must never mask the original exception
     or marker (the sinks themselves already swallow their own errors).
+
+    A run with no workflow run passed no gate, and its record says so (#277).
     """
+    if objective.context.get("workflow_run_id") is None:
+        result.artifacts["governance"] = "none"
     _emit_terminal(events, result)
     if persisted_row:
         _record_run_outcome(run_id, workspace_id, result)
@@ -660,8 +695,16 @@ def _finalize(
     the PR, ``no_changes``, ``not_configured`` (no GitHub App credentials), or a
     failure that fails the run — delivery that did not happen is not success.
     """
+    from scf_api.services.agent_dispatch import ungoverned_runs_allowed
+    from scf_api.services.workflow_engine import resolve_backend
+
     repo_full_name = objective.context.get("repo_full_name")
     if not repo_full_name:
+        return
+    if resolve_backend() == "temporal" or not ungoverned_runs_allowed():
+        # This run has no workflow run. With the durable engine selected, only a
+        # workflow run delivers (FR-007); without it, only development may (#277).
+        result.artifacts["pull_request"] = {"status": "ungoverned_refused"}
         return
     repo_path = Path(str(objective.context["repo_path"]))
     target = objective.primary_repo_target
@@ -676,6 +719,9 @@ def _finalize(
     title = f"{objective.key + ': ' if objective.key else ''}{objective.objective}"[:120]
     body = (
         f"Opened by SCF agent run `{run_id}`.\n\n{result.summary or result.output or ''}\n\n"
+        "**Ungoverned run:** this change was made with no workflow run, so it passed "
+        "no spec or plan gate and carries no attestation. SCF allows that only in a "
+        "development environment.\n\n"
         "Merging requires human approval through the SCF `pr` gate."
     )
     try:
