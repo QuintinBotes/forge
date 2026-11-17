@@ -168,6 +168,14 @@ services:
       FORGE_READINESS_REQUIRE_DEPS: ${FORGE_READINESS_REQUIRE_DEPS:-true}
       MINIO_ENDPOINT: http://minio:9000
       MCP_GATEWAY_URL: http://mcp-gateway:8001
+      # #277: the API and the Celery worker must see the engine the Temporal worker
+      # runs. Outside development a repository run without it is refused, so set
+      # WORKFLOW_ENGINE_BACKEND=temporal (and start the `temporal` profile) to run one.
+      WORKFLOW_ENGINE_BACKEND: ${WORKFLOW_ENGINE_BACKEND:-postgres_fsm}
+      TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-forge}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-forge-feature}
+      TEMPORAL_CODEC_KEY: ${TEMPORAL_CODEC_KEY:-}
       # HARD-13: the instance master KEK. ``:?`` fails the ``up`` when unset, so a
       # production stack can never boot with an ephemeral key (fail-closed at the
       # orchestration layer, mirroring the app + CI check-config gate). Prefer the
@@ -286,6 +294,14 @@ services:
       FORGE_REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: http://minio:9000
       MCP_GATEWAY_URL: http://mcp-gateway:8001
+      # #277: the API and the Celery worker must see the engine the Temporal worker
+      # runs. Outside development a repository run without it is refused, so set
+      # WORKFLOW_ENGINE_BACKEND=temporal (and start the `temporal` profile) to run one.
+      WORKFLOW_ENGINE_BACKEND: ${WORKFLOW_ENGINE_BACKEND:-postgres_fsm}
+      TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-forge}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-forge-feature}
+      TEMPORAL_CODEC_KEY: ${TEMPORAL_CODEC_KEY:-}
       # HARD-11 worker reliability (acks_late re-queues an interrupted task; fair
       # prefetch + per-child cap bound memory; soft/hard limits stop runaways).
       FORGE_WORKER_PREFETCH_MULTIPLIER: ${FORGE_WORKER_PREFETCH_MULTIPLIER:-1}

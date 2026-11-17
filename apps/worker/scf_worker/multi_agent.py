@@ -164,7 +164,8 @@ def _finalize_parent_agent_run(session_factory: SessionFactory, *, result: Agent
             row.output = {
                 "summary": result.summary,
                 "output": result.output,
-                "governance": result.artifacts.get("governance"),
+                # Under artifacts, where GET /agent/runs/{id} reads it (#277).
+                "artifacts": {"governance": result.artifacts.get("governance")},
             }
             row.completed_at = datetime.now(UTC)
             session.commit()

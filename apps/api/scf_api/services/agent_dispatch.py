@@ -285,7 +285,7 @@ def start_governed_run(
         run = engine.start(task.id, trigger=trigger, started_by=started_by)
     except DuplicateRunError as exc:
         raise GovernedRunRefused("governed_run_active") from exc
-    except Exception as exc:  # the engine recorded the failed start; refuse, never fall back
+    except Exception as exc:  # refuse, never fall back: an unreachable server leaves no row
         logger.exception("the durable engine could not start a run for task %s", task.id)
         raise DurableEngineUnavailable(str(task.id)) from exc
     session.commit()

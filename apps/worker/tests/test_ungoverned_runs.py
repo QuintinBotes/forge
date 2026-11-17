@@ -96,3 +96,37 @@ def test_a_supervised_run_is_labelled_ungoverned(monkeypatch: pytest.MonkeyPatch
     )
 
     assert result.artifacts["governance"] == "none"
+
+
+def test_a_supervised_runs_label_reaches_the_record_the_api_reads() -> None:
+    """Criterion 4 (#277 review): the parent run's row keeps the label under
+    ``artifacts``, where ``GET /agent/runs/{id}`` reads it."""
+    from sqlalchemy import StaticPool, create_engine
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from scf_api.routers.agent import AgentRunStore
+    from scf_db.base import Base
+    from scf_db.models import AgentRun, Workspace
+    from scf_db.models.enums import RunStatus as DbRunStatus
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
+    workspace_id, run_id = uuid.uuid4(), uuid.uuid4()
+    with factory() as s:
+        s.add(Workspace(id=workspace_id, name="Acme", slug="acme"))
+        s.flush()
+        s.add(AgentRun(id=run_id, workspace_id=workspace_id, inputs={}, status=DbRunStatus.PENDING))
+        s.commit()
+    result = AgentRunResult(
+        run_id=run_id, status=RunStatus.SUCCEEDED, artifacts={"governance": "none"}
+    )
+
+    multi_agent._finalize_parent_agent_run(factory, result=result)
+
+    with factory() as s:
+        read = AgentRunStore(s).get(run_id, workspace_id=workspace_id)
+    assert read is not None and read.artifacts["governance"] == "none"
+    engine.dispose()

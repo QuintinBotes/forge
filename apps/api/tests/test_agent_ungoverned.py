@@ -176,6 +176,34 @@ def test_production_still_runs_an_objective_that_changes_no_repository(
     assert len(enqueued) == 1
 
 
+def test_a_durable_engine_that_cannot_be_reached_refuses_the_run(
+    client: TestClient,
+    agent_session: Session,
+    enqueued: list[AgentObjective],
+    environment: Callable[[str], None],
+    fake_temporal: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Criterion 2 (#277 review): a server that cannot be reached fails at connect,
+    before any workflow run row exists; the run is still refused, never run directly."""
+    from scf_api.services import workflow_engine as workflow_engine_module
+
+    environment("production")
+    task = _task(agent_session)
+
+    async def unreachable(_settings: object = None) -> Any:
+        raise ConnectionRefusedError("temporal:7233")
+
+    monkeypatch.setattr(workflow_engine_module, "get_temporal_client", unreachable)
+
+    resp = client.post("/agent/runs", json=_body(task))
+
+    assert resp.status_code == 503, resp.text
+    assert resp.json()["detail"] == "durable_engine_unavailable"
+    assert _nothing_ran(agent_session, enqueued)
+    assert agent_session.scalars(select(WorkflowRun)).all() == []
+
+
 def test_a_durable_engine_that_cannot_start_the_run_refuses_it(
     client: TestClient,
     agent_session: Session,
@@ -200,4 +228,4 @@ def test_a_durable_engine_that_cannot_start_the_run_refuses_it(
     assert resp.json()["detail"] == "durable_engine_unavailable"
     assert _nothing_ran(agent_session, enqueued)
     [run] = agent_session.scalars(select(WorkflowRun)).all()
-    assert run.status.value == "failed"  # the engine records the failed start
+    assert run.status.value == "failed"  # a start that reached Temporal is recorded failed

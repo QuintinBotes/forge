@@ -118,6 +118,12 @@ binds every activity except `forge.resume_agent`:
   - In development without the durable engine, the direct path runs as before.
     Its pull request body says the run was ungoverned, and every run with no
     workflow run records `governance: none` in its artifacts.
+  - Deployment: the production compose file passes `WORKFLOW_ENGINE_BACKEND`
+    (default `postgres_fsm`) and the `TEMPORAL_*` settings to the API and the
+    Celery worker. Set `WORKFLOW_ENGINE_BACKEND=temporal` and start the
+    `temporal` profile to run repository changes; without that, a production
+    stack refuses them. The Helm chart renders no Temporal yet, so a Helm
+    production install refuses repository-changing runs until it does (#293).
 - **A cancel** at a gate expires that gate's open request with the reason
   `run_cancelled`, recorded as whoever cancelled the run. The workflow's own
   cancel path does it again, for a request it opened after the cancel arrived.

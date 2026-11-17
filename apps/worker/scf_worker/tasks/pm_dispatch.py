@@ -499,7 +499,7 @@ def _dispatch_governed(
             run = engine.start(task_id, trigger=trigger, started_by=starter)
         except DuplicateRunError:
             return skipped("issue_run_active")
-        except Exception:  # the engine recorded the failed start; never the direct path (#277)
+        except Exception:  # never the direct path (#277); a failed connect leaves no row
             logger.exception("the durable engine could not start a run for task %s", task_id)
             return skipped("durable_engine_unavailable")
         session.commit()
