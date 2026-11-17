@@ -314,14 +314,18 @@ Assisted-by: scf-agent:claude-sonnet-4-5
 Forge-Run: 6f1c...  (the agent run id)
 ```
 
-- `Assisted-by:` names the agent and the model the run used, or `scf-agent`
-  alone when the model is unknown. A model is never guessed. The format is SCF's
-  own (ADR-0016).
+- `Assisted-by:` names the agent and the model the run's client runs: the pinned
+  or configured model for a provider, `local-cli:<cli>` for a local CLI (which
+  ignores a pinned model), and `scf-agent` alone for the scripted client or an
+  unknown model. A model is never guessed. The format is SCF's own (ADR-0016).
 - No agent commit carries `Signed-off-by`: only a person can certify the
   Developer Certificate of Origin. A `Signed-off-by` line in an agent's message,
-  in any letter case, is removed, and the tool result says so. So are
+  in any letter case and behind any invisible format character (such as a
+  zero-width space), is removed, and the tool result says so. So are
   `Assisted-by` and `Forge-Run` lines, so that each commit has one of each,
   written by SCF.
+- A message with a line starting with `---` is refused: `git interpret-trailers`
+  and `git am` end the message there, which would hide the trailers.
 - A squash merge or a cherry-pick makes a new commit. Its id is not the attested
   head, and its message may lose the trailers. The signed statement is the
   durable record, not the trailer: the pull request names its attestation, and
@@ -384,7 +388,9 @@ auth/tenancy contract as the approvals router (cross-workspace ids read as
 | `GET /attestations/{id}/envelope` | The stored DSSE envelope as JSON (`payloadType`, `payload`, `signatures`), unchanged, for offline verification (`404` for unknown or foreign ids) |
 | `GET /approvals/{id}/attestation` | The gate's linked run's newest attestation that names an approver, else its pull-request attestation (`404` when the run has none) |
 
-Every response carries a computed `verified: bool` produced by the **same
+Every attestation record (the list, the detail and the approval's read) carries a
+computed `verified: bool`. The `/envelope` read does not: it returns the stored
+envelope unverified, for the caller to verify. `verified` is produced by the **same
 verification seam `scf-verify --run` uses**
 (`scf_api.cli_verify.verify_stored_attestation`): re-derive `payload_hash`
 from the envelope's PAE encoding, confirm it matches the recorded column, then

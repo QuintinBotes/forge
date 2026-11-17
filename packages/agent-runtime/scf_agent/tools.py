@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -248,6 +249,17 @@ _OUTPUT_TAIL_LINES = 400
 #: Lines SCF writes itself, dropped from an agent's message (#214). Only a person
 #: certifies the DCO, so an agent commit never carries ``Signed-off-by``.
 _OWNED_LINE = re.compile(r"\s*(signed-off-by|assisted-by|Forge-Run)\s*:", re.IGNORECASE)
+#: Where ``git interpret-trailers`` and ``git am`` end a commit message: a line after it
+#: would hide the trailers SCF appends.
+_DIVIDER = re.compile(r"---(\s|$)")
+
+
+def _owned(line: str) -> bool:
+    """Whether ``line`` is one SCF writes, read as GitHub renders it: invisible format
+    characters (Unicode ``Cf``, such as a zero-width space or a BOM) are ignored."""
+    return bool(_OWNED_LINE.match("".join(c for c in line if unicodedata.category(c) != "Cf")))
+
+
 #: Keys looked up in ``policy.commands`` for each command tool, first match wins.
 _COMMAND_TOOLS: tuple[tuple[str, tuple[str, ...], str], ...] = (
     ("run_tests", ("test", "tests"), "Run the repository's declared test command"),
@@ -357,10 +369,16 @@ def agent_tool_belt(
 
     def git_commit(args: dict[str, Any]) -> ToolResult:
         lines = str(args.get("message", "")).splitlines()
-        removed = [line.strip() for line in lines if _OWNED_LINE.match(line)]
-        message = "\n".join(line for line in lines if not _OWNED_LINE.match(line)).strip()
+        removed = [line.strip() for line in lines if _owned(line)]
+        message = "\n".join(line for line in lines if not _owned(line)).strip()
         if not message:
             return ToolResult(ok=False, error="message is required")
+        if any(_DIVIDER.match(line) for line in message.splitlines()):
+            return ToolResult(
+                ok=False,
+                error="a line starting with '---' ends a commit message for git, which would "
+                "hide its trailers: remove that line or rewrite it, then commit again",
+            )
         git = [
             "git",
             "-c", "core.hooksPath=/dev/null",

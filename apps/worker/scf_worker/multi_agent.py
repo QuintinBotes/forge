@@ -232,7 +232,7 @@ class _SubAgentRuntime:
         self, objective: AgentObjective, root: Path, allowed: frozenset[str]
     ) -> AgentRunResult:
         # Local import, as in run_supervised_objective: agent_runner imports this module.
-        from scf_worker.agent_runner import configured_model
+        from scf_worker.agent_runner import assisted_model
 
         run_id = uuid.uuid4()
         policy = _repo_policy(root)
@@ -263,7 +263,7 @@ class _SubAgentRuntime:
                 belt = agent_tool_belt(
                     root,
                     run_id=str(run_id),
-                    model=objective.model or configured_model(),
+                    model=assisted_model(self.model_client, objective.model),
                     commands=policy.commands if policy else None,
                     run_command=run_command,
                 )
