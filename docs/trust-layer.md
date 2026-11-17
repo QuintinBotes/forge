@@ -76,6 +76,18 @@ binds every activity except `forge.resume_agent`:
   (CI has not reported yet), the request's `gate_payload.workflow_event.status`
   reads `failed` until `POST /workflow/runs/{id}/gates/pr/sync` applies the event
   with the same attestation; then it reads `submitted`.
+- **The merge guard reads CI and the spec itself** (#280, FR-011). For each `pr`
+  approval, the workflow reads the check runs on the agent's head commit, with a
+  token for the one repository that can only read checks. CI is green only when
+  there is at least one check run and every one completed as `success`,
+  `neutral` or `skipped`; none, a pending one, or any other conclusion is not
+  green, and so is CI that cannot be read. `spec_validated` is the spec engine's
+  rollup for the task's spec (`validated`), or true for a run with no spec. A
+  caller's `ci_status_green` or `spec_validated` is ignored. The run's
+  `merge_guard` context records the head commit, the reason (`ci_green`,
+  `ci_no_check_runs`, `ci_pending: <names>`, `ci_failed: <names>`,
+  `ci_unreadable: <why>`) and where `spec_validated` came from. A refused
+  approval is applied later through `gates/pr/sync`, which reads CI again.
 - **An issue's `forge:run` label** starts a governed run for the issue's board
   task (creating the task when it has none). The label is not a spec approval
   (owner decision, 2026-11-15, FR-005): the spec gate still opens and waits for a

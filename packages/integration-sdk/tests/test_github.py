@@ -259,3 +259,36 @@ def test_context_manager_closes() -> None:
 
     with _client(handler) as client:
         assert client.health().healthy is True
+
+
+# --------------------------------------------------------------------------- #
+# check_runs_for_ref (#280)                                                    #
+# --------------------------------------------------------------------------- #
+
+
+def test_check_runs_for_ref_reads_every_page_of_a_commits_check_runs() -> None:
+    rec = RequestRecorder()
+    base = "https://api.github.com"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        rec.record(request)
+        if request.url.params.get("page") == "2":
+            return httpx.Response(
+                200, json={"total_count": 2, "check_runs": [{"name": "lint", "status": "queued"}]}
+            )
+        next_url = f"{base}/repos/acme/widgets/commits/abc123/check-runs?per_page=100&page=2"
+        return httpx.Response(
+            200,
+            json={
+                "total_count": 2,
+                "check_runs": [{"name": "tests", "status": "completed", "conclusion": "success"}],
+            },
+            headers={"Link": f'<{next_url}>; rel="next"'},
+        )
+
+    runs = _client(handler).check_runs_for_ref("acme/widgets", "abc123")
+
+    assert [r["name"] for r in runs] == ["tests", "lint"]
+    first = rec.requests[0]
+    assert first.method == "GET"
+    assert first.url.path == "/repos/acme/widgets/commits/abc123/check-runs"

@@ -79,6 +79,8 @@ _DRAFTING_TIMEOUT = timedelta(seconds=900)  # a verifier agent drafts scenarios
 #: Marks histories that draft held-out scenarios before the spec gate (#258); a
 #: history recorded before it replays without the step.
 HELD_OUT_DRAFTING_PATCH = "held-out-drafting-258"
+#: #280: the merge gate reads CI and the spec itself; earlier histories used the payload.
+CI_READ_BACK_PATCH = "ci-read-back-280"
 _DEFAULT_AGENT_TIMEOUT = timedelta(seconds=7200)
 _AGENT_HEARTBEAT = timedelta(seconds=120)
 
@@ -120,6 +122,7 @@ class FeatureWorkflow:
         self._last_confidence: float | None = None
         self._exec_guard: GuardInputs | None = None
         self._plan_guard: GuardInputs | None = None
+        self._merge_guard: GuardInputs | None = None
         self._params: WorkflowParams | None = None
         self._failure_reason: str | None = None
 
@@ -207,6 +210,9 @@ class FeatureWorkflow:
             await self._create_approval("pr")
             while True:
                 ev = await self._await_gate([EVENT_REVIEW_APPROVED])
+                if workflow.patched(CI_READ_BACK_PATCH):
+                    # Read for each approval: a caller's say-so about CI never counts.
+                    self._merge_guard = await self._load_guard_inputs("merge")
                 try:
                     await self._apply_event(ev)  # awaiting_review → merged
                     break
@@ -538,10 +544,16 @@ class FeatureWorkflow:
     def _pure_ctx(self, ev: WorkflowEventPayload) -> PureGuardContext:
         ctx = self._pure_ctx_system(confidence=ev.confidence)
         if ev.type == EVENT_REVIEW_APPROVED:
+            source: Any = ev.payload  # a history from before CI read-back (#280)
+            if self._merge_guard is not None:
+                source = {
+                    "ci_status_green": self._merge_guard.ci_status_green,
+                    "spec_validated": self._merge_guard.spec_validated,
+                }
             ctx.merge_signals = {
                 "review_approved_by_human": True,
-                "ci_status_green": bool(ev.payload.get("ci_status_green", False)),
-                "spec_validated": bool(ev.payload.get("spec_validated", False)),
+                "ci_status_green": bool(source.get("ci_status_green", False)),
+                "spec_validated": bool(source.get("spec_validated", False)),
             }
         return ctx
 

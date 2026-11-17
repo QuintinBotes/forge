@@ -303,10 +303,22 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
     github: FakeGitHub,
     committing_agent: None,
     independent_reviewer: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Criteria 2 and 3: start to ``awaiting_review`` with one pull request and one
     pending ``pr`` request; approving it attests at once, and the run is synced to
     that attestation later, with the request marked unsynced until then."""
+    import scf_worker.temporal_services as services
+
+    # SCF reads CI itself (#280): the head commit's check runs, pending at first.
+    check_runs: list[dict[str, Any]] = [{"name": "tests", "status": "in_progress"}]
+    ci_reads: list[str] = []
+
+    def read_check_runs(_repo: str, ref: str) -> list[dict[str, Any]]:
+        ci_reads.append(ref)
+        return check_runs
+
+    monkeypatch.setattr(services, "github_check_runs", read_check_runs)
     task_id = _seed(factory)
     activities = tm.build_activities(factory)
     approver = Principal(kind="user", id=uuid.uuid4(), role=Role.MEMBER, workspace_id=WS)
@@ -361,21 +373,17 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
                 waiting = SqlAlchemyWorkflowStore(fresh, workspace_id=WS).get(run.id)
                 assert waiting.current_state == "awaiting_review"
 
-            # Criterion 3: approving attests at once. The merge guard has no CI
-            # signals yet, so the run stays at the gate and the request says so.
+            # Criterion 3: approving attests at once. CI is still running on the head
+            # commit, so the run stays at the gate and the request says so.
             await approvals.resolve(pr.id, approve, decider, workspace_id=WS)
             unsynced = await approvals.get(pr.id, workspace_id=WS)
             assert unsynced.gate_payload["workflow_event"]["status"] == "failed"
             # Approving records a further attestation naming the approver (#175 criterion 8).
             assert _attestations(factory, run.id) == 2
 
-            # CI reports green; sync applies the approval with the same attestation.
-            unsynced.gate_payload = {
-                **unsynced.gate_payload,
-                "ci_status_green": True,
-                "spec_validated": True,
-            }
-            await approvals.save_gate_payload(unsynced)
+            # CI reports green on the head commit; sync reads it again and applies the
+            # approval with the same attestation.
+            check_runs[:] = [{"name": "tests", "status": "completed", "conclusion": "success"}]
             with factory() as sync_session:
                 new_state = await sync_gate_event(
                     engine,
@@ -390,6 +398,7 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
             assert synced.gate_payload["workflow_event"]["status"] == "submitted"
             assert synced.gate_payload["workflow_event"]["actor"] == f"user:{decider.id}"
             assert _attestations(factory, run.id) == 2, "the attestation is reused, not redone"
+            assert len(ci_reads) == 2 and len(set(ci_reads)) == 1, "both read the head commit"
             result = await engine.workflow_handle(run.id).result()  # type: ignore[union-attr]
 
     assert result.final_state.value == "closed"
