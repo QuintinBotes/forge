@@ -127,7 +127,11 @@ def _contains(actual: Any, value: Any) -> bool:
     return False
 
 
-def _matches_glob(actual: Any, value: Any) -> bool:
+def matches_glob(actual: Any, value: Any) -> bool:
+    """The ``matches_glob`` op: ``actual`` (path or basename) matches any of ``value``'s globs.
+
+    Public so risk rules (``scf_risk``) match paths exactly as policy rules do.
+    """
     patterns = [value] if isinstance(value, str) else list(value or [])
     text = str(actual).replace("\\", "/").lstrip("/")
     base = text.rsplit("/", 1)[-1]
@@ -193,7 +197,7 @@ def _eval_condition(cond: Condition, fields: Mapping[str, Any], whitelist: froze
         except TypeError:
             return False  # totality: incomparable types never crash the gate
     if op is ConditionOp.MATCHES_GLOB:
-        return _matches_glob(actual, value)
+        return matches_glob(actual, value)
     # Time-window ops (operand is non-None here).
     if not isinstance(actual, datetime):
         raise ValueError(f"op {op.value!r} operand must be a datetime, got {type(actual).__name__}")
@@ -233,4 +237,5 @@ __all__ = [
     "ConditionGroup",
     "ConditionOp",
     "evaluate_condition",
+    "matches_glob",
 ]

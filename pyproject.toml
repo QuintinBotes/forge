@@ -31,6 +31,7 @@ dependencies = [
     "scf-worker",
     "scf-mcp-gateway",
     "scf-orchestration-policy",
+    "scf-risk",
     "scf-cli-bridge",
 ]
 
@@ -92,6 +93,7 @@ scf-api = { workspace = true }
 scf-worker = { workspace = true }
 scf-mcp-gateway = { workspace = true }
 scf-orchestration-policy = { workspace = true }
+scf-risk = { workspace = true }
 scf-cli-bridge = { workspace = true }
 
 [tool.pytest.ini_options]
@@ -175,6 +177,7 @@ version_files = [
     "packages/observability/pyproject.toml:^version",
     "packages/orchestration-policy/pyproject.toml:^version",
     "packages/policy-sdk/pyproject.toml:^version",
+    "packages/risk-core/pyproject.toml:^version",
     "packages/skill-sdk/pyproject.toml:^version",
     "packages/spec-engine/pyproject.toml:^version",
     "packages/workflow-engine/pyproject.toml:^version",
@@ -200,6 +203,7 @@ version_files = [
     "packages/observability/scf_obs/__init__.py:__version__",
     "packages/orchestration-policy/scf_orchestration_policy/__init__.py:__version__",
     "packages/policy-sdk/scf_policy/__init__.py:__version__",
+    "packages/risk-core/scf_risk/__init__.py:__version__",
     "packages/skill-sdk/scf_skill/__init__.py:__version__",
     "packages/spec-engine/scf_spec/__init__.py:__version__",
     "packages/workflow-engine/scf_workflow/__init__.py:__version__",
