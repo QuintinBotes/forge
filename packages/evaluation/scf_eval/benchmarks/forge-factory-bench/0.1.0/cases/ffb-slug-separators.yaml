@@ -1,0 +1,38 @@
+cases:
+  - id: ffb-slug-separators
+    kind: agent_task
+    tags: [agent_task, bugfix]
+    expected_ids: [REQ-SLUG-1]
+    query: |
+      slugify() leaves doubled and trailing hyphens
+
+      slugify("Hello, World!") returns "hello--world-". A run of characters that are
+      not letters or digits should become a single hyphen, and a slug should never
+      start or end with a hyphen: "hello-world".
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: slugs.py
+          content: |
+            import re
+
+
+            def slugify(text):
+                """Lower-case ``text`` and join its words with hyphens."""
+                return re.sub(r"[^a-z0-9]", "-", text.lower())
+      held_out:
+        - path: tests/test_slugs.py
+          content: |
+            from slugs import slugify
+
+
+            def test_collapses_separator_runs():
+                assert slugify("Hello, World!") == "hello-world"
+                assert slugify("  --Already  slugged--  ") == "already-slugged"
+
+
+            def test_plain_words():
+                assert slugify("Python") == "python"
+                assert slugify("Release 2") == "release-2"
+      fail_to_pass: [tests/test_slugs.py::test_collapses_separator_runs]
+      pass_to_pass: [tests/test_slugs.py::test_plain_words]
