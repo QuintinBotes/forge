@@ -4,8 +4,10 @@
 depends on. Phase-2 Task 2.3 wires it to the **real** auth layer (Task 1.15): it
 verifies an API key (``Authorization: Bearer <key>`` or ``X-API-Key``) and
 returns the resolved :class:`Principal` (role + scopes from the key), raising 401
-when no valid credential is presented. There is no longer a hardcoded admin
-principal — the previous stub left every endpoint unauthenticated.
+when no valid credential is presented. A browser that signed in through OIDC or
+SAML presents the same kind of key in the ``forge_session`` cookie instead (a
+header always wins). There is no longer a hardcoded admin principal — the
+previous stub left every endpoint unauthenticated.
 """
 
 from __future__ import annotations
@@ -14,13 +16,16 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import Depends, Header
+from fastapi import Cookie, Depends, Header, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from scf_api.db import get_db
 from scf_api.settings import Settings, get_settings
 from scf_contracts import UserRole
+
+#: The HTTP-only cookie ``routers/oidc.py`` and ``routers/saml.py`` set to the session key.
+SESSION_COOKIE = "forge_session"
 
 
 class Principal(BaseModel):
@@ -56,15 +61,25 @@ class Principal(BaseModel):
     credential_expires_at: datetime | None = None
 
 
+def request_method(request: Request) -> str:
+    """The HTTP method, so the session-cookie origin rule knows a read from a change."""
+    return request.method
+
+
 def get_current_principal(
     authorization: Annotated[str | None, Header()] = None,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    session_cookie: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+    origin: Annotated[str | None, Header()] = None,
+    sec_fetch_site: Annotated[str | None, Header()] = None,
+    method: Annotated[str | None, Depends(request_method)] = None,
 ) -> Principal:
     """Authenticate the caller via API key and return the resolved principal.
 
     Delegates to the real auth layer (``scf_api.auth.service``): the request
-    must present a valid, unexpired API key whose role determines the principal's
-    scopes. Missing or invalid credentials raise HTTP 401.
+    must present a valid, unexpired API key (in a header, or the session cookie)
+    whose role determines the principal's scopes. Missing or invalid credentials
+    raise HTTP 401; a cookie-only state change from another origin raises 403.
 
     The auth-service import is deferred to call time on purpose:
     ``scf_api.auth.service`` imports :class:`Principal` from this module, so a
@@ -73,7 +88,13 @@ def get_current_principal(
     from scf_api.auth.service import get_auth_service, get_authenticated_principal
 
     return get_authenticated_principal(
-        get_auth_service(), authorization=authorization, x_api_key=x_api_key
+        get_auth_service(),
+        authorization=authorization,
+        x_api_key=x_api_key,
+        session_cookie=session_cookie,
+        origin=origin,
+        sec_fetch_site=sec_fetch_site,
+        method=method,
     )
 
 

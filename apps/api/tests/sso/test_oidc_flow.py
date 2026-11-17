@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import jwt
 import pytest
-from conftest import WS_ID, Keypair, install_config  # noqa: F401  (shared fixtures)
+from conftest import OTHER_WS_ID, WS_ID, Keypair, install_config
 from jwt import algorithms
 from sqlalchemy import select
 
@@ -139,6 +139,7 @@ def install_oidc_config(
     enabled: bool = True,
     group_role_map: dict[str, str] | None = None,
     jit_provisioning: bool = True,
+    domains: list[str] | None = None,
 ) -> OidcConfiguration:
     """Provision an OIDC config directly through the service layer (secret vaulted)."""
     with session_factory() as session:
@@ -155,6 +156,7 @@ def install_oidc_config(
             client_secret=CLIENT_SECRET,
             enabled=enabled,
             jit_provisioning=jit_provisioning,
+            domains=domains,
         )
         session.commit()
         config_id = config.id
@@ -351,3 +353,72 @@ class TestOidcGroupRoleMapping:
             dev = session.execute(select(User).where(User.email == "dev@acme.com")).scalar_one()
             assert lead.role.value == "admin"
             assert dev.role.value == "member"
+
+
+class TestOidcDiscovery:
+    """Home-realm discovery by email routes to the workspace's enabled protocol (#220)."""
+
+    @staticmethod
+    def _discover(client_factory, email: str = "dana@acme.com") -> dict:
+        response = client_factory(authenticated=False).post(
+            "/auth/saml/discover", json={"email": email}
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    def test_an_oidc_workspace_is_discovered_by_email(self, client_factory, session_factory, idp):
+        install_oidc_config(session_factory, issuer=idp.issuer, domains=["Acme.com"])
+        assert self._discover(client_factory) == {
+            "sso": True,
+            "redirect": "/auth/oidc/acme/login",
+        }
+
+    def test_a_saml_workspace_still_gets_the_saml_address(
+        self, client_factory, session_factory, idp_keypair
+    ):
+        install_config(session_factory, idp_keypair)
+        assert self._discover(client_factory) == {
+            "sso": True,
+            "redirect": "/auth/saml/acme/login",
+        }
+
+    def test_the_owning_workspace_signs_in_with_the_protocol_it_has_enabled(
+        self, client_factory, session_factory, idp, idp_keypair
+    ):
+        # The domain is the workspace's (listed on its SAML settings); only OIDC is on.
+        install_config(session_factory, idp_keypair, enabled=False)
+        install_oidc_config(session_factory, issuer=idp.issuer)
+        assert self._discover(client_factory)["redirect"] == "/auth/oidc/acme/login"
+        # With both on, SAML keeps the address it had before OIDC was discoverable.
+        install_config(session_factory, idp_keypair, enabled=True)
+        assert self._discover(client_factory)["redirect"] == "/auth/saml/acme/login"
+
+    def test_an_unknown_domain_or_disabled_oidc_is_not_routed(
+        self, client_factory, session_factory, idp
+    ):
+        install_oidc_config(session_factory, issuer=idp.issuer, domains=["acme.com"], enabled=False)
+        assert self._discover(client_factory) == {"sso": False, "redirect": None}
+        assert self._discover(client_factory, "who@unknown.example") == {
+            "sso": False,
+            "redirect": None,
+        }
+
+    def test_a_domain_two_oidc_workspaces_claim_is_not_routed(
+        self, client_factory, session_factory, idp
+    ):
+        # OIDC domains are not unique across workspaces: an ambiguous claim sends nobody anywhere.
+        install_oidc_config(session_factory, issuer=idp.issuer, domains=["acme.com"])
+        install_oidc_config(
+            session_factory, issuer=idp.issuer, domains=["acme.com"], workspace_id=OTHER_WS_ID
+        )
+        assert self._discover(client_factory)["sso"] is False
+
+    def test_a_saml_claim_wins_over_another_workspaces_oidc_claim(
+        self, client_factory, session_factory, idp, idp_keypair
+    ):
+        # SAML domains are unique across the install, so that claim is the owner's.
+        install_config(session_factory, idp_keypair)
+        install_oidc_config(
+            session_factory, issuer=idp.issuer, domains=["acme.com"], workspace_id=OTHER_WS_ID
+        )
+        assert self._discover(client_factory)["redirect"] == "/auth/saml/acme/login"

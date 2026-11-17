@@ -2,10 +2,11 @@
 
 Implements API-key authentication (OAuth + API key per spec), the encrypted BYOK
 secret vault, and RBAC enforcement. ``/login`` and ``/logout`` are
-unauthenticated (session bootstrap); every other route authenticates via
-``Authorization: Bearer <api_key>`` (or ``X-API-Key``) and is gated by the
-caller's role permissions. All responses are redacted — no plaintext secret or
-usable token is ever returned except the one-time mint token.
+unauthenticated (session bootstrap; ``/logout`` revokes the key the session
+cookie carries); every other route authenticates via ``Authorization: Bearer
+<api_key>`` (or ``X-API-Key``, or the ``forge_session`` cookie an SSO sign-in
+set) and is gated by the caller's role permissions. All responses are redacted —
+no plaintext secret or usable token is ever returned except the one-time mint token.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
 
 from scf_api.auth.apikeys import APPROVALS_DECIDE, APIKeyInfo
 from scf_api.auth.models import (
@@ -37,11 +38,13 @@ from scf_api.auth.oauth import (
 from scf_api.auth.rbac import Permission
 from scf_api.auth.service import (
     AuthedPrincipal,
+    AuthenticationError,
     AuthServiceDep,
+    is_own_origin,
     require_permission,
 )
 from scf_api.auth.vault import SecretExpiredError, SecretInfo, SecretNotFoundError
-from scf_api.deps import DbSession, Principal
+from scf_api.deps import SESSION_COOKIE, DbSession, Principal, SettingsDep
 from scf_api.services.approval_service import owner_role
 from scf_auth.rbac import has_at_least
 from scf_authz import ROLE_RANK
@@ -94,10 +97,48 @@ async def oauth_callback(body: OAuthCallbackRequest, service: AuthServiceDep) ->
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="End the current session (stateless: client discards its token).",
+    summary="End the session: revoke the session cookie's key and clear the cookie.",
 )
-def logout() -> Response:
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    service: AuthServiceDep,
+    settings: SettingsDep,
+    session_cookie: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+    origin: Annotated[str | None, Header()] = None,
+    sec_fetch_site: Annotated[str | None, Header()] = None,
+) -> Response:
+    """Sign out a browser. Without a cookie there is nothing to end (204).
+
+    Only the key the cookie carries is revoked, so a replay of it gets 401 and the
+    person's other sessions and keys keep working. A sign-out started by another
+    origin is refused, like every other state change the cookie authenticates.
+    """
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    if not session_cookie:
+        return response
+    if not is_own_origin(origin, sec_fetch_site):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="a session cookie may change something only from SCF's own origin",
+        )
+    try:
+        principal: Principal | None = service.authenticate(session_cookie)
+    except AuthenticationError:
+        principal = None  # expired or already revoked: only the cookie is left to clear
+    if principal is not None and principal.credential_id is not None:
+        service.api_keys.revoke(principal.workspace_id, principal.credential_id)
+        service.audit.emit(
+            action="auth.logout",
+            principal=principal,
+            target_type="platform_api_key",
+            target_id=principal.credential_id,
+        )
+    response.delete_cookie(
+        SESSION_COOKIE,
+        httponly=True,
+        secure=settings.public_url.startswith("https://"),
+        samesite="lax",
+    )
+    return response
 
 
 @router.get(
