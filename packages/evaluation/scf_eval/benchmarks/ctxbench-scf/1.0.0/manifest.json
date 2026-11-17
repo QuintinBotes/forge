@@ -1,0 +1,24 @@
+{
+  "suite": "ctxbench-scf",
+  "version": "1.0.0",
+  "title": "SCF context benchmark: 60 questions on Quayline, an invented project",
+  "mix": {
+    "decision": 10,
+    "requirement": 10,
+    "code-location": 8,
+    "history": 8,
+    "tracker": 8,
+    "learned": 6,
+    "temporal": 6,
+    "unanswerable": 4
+  },
+  "asks_per_question": 3,
+  "files": [
+    "questions.json",
+    "prompts/agent.md",
+    "prompts/judge.md",
+    "corpus.jsonl"
+  ],
+  "content_hash": "sha256:eeed9396c001424097b27afdbcc1105ebb3e582fb3364de2e2f20370912ffe34",
+  "corpus_hash": "sha256:ce092fa7dcffbbb08f7ca69a7fdc1533e1764084a660bb26ef6d2d9a2357fb2d"
+}

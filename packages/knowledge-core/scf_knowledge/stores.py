@@ -835,10 +835,10 @@ class Bm25Store:
         # ``ix_retrieval_chunk_tsv`` is usable (a ``coalesce`` wrapper was not).
         rank = func.ts_rank_cd(RetrievalChunk.tsv, ts_query)
         stmt: Select = select(RetrievalChunk).where(RetrievalChunk.tsv.op("@@")(ts_query))
-        # Ties at the cut break on a stable key (never the random chunk id), so
-        # the same index always yields the same candidates (spec J §2.4.1).
+        # Ties at either cut break on a stable key, so every index of the same
+        # corpus yields the same candidates (spec J §2.4.1). Never a random id:
+        # chunk and source ids are minted per ingest.
         stable_key = (
-            RetrievalChunk.knowledge_source_id,
             RetrievalChunk.path,
             RetrievalChunk.start_line,
             RetrievalChunk.content_hash,

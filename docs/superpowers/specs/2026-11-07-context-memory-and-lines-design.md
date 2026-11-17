@@ -63,23 +63,27 @@ named entities and decisions from them into `forge_world`. A code-symbol index m
 
 ### 2.4.1 Benchmark port and wider index decisions (2026-11-08)
 
-The port (`ctxbench`) follows lore's published method; its harness, prompts and rubric are not
-public, so forge's are new and comparable in shape, not byte for byte.
-- **Bar.** Only lore's own 30 questions can be run (the other 30 target a private repository).
-  On those 30, utopia scored 0.92 with 5.6% hallucination, so 0.86 would not beat it. J is accepted
-  at **≥ 0.92, hallucination ≤ 5.6%, p50 ≤ 17.8k tokens, in two consecutive live runs**; 0.86 /
-  7% / 17.8k is the hard floor a CI run fails under.
+The benchmark (`ctxbench`) keeps lore's published method (asks, judge, scoring); its harness,
+prompts and rubric are SCF's own. Revised on 2026-11-17 (#199): the lore suite is replaced by SCF's.
+- **Bar.** Measure first (owner decision of 2026-11-15): the score is reported as a measurement with
+  no pass bar, and #249 sets the bar from the first baseline. The 0.86 figure is not carried over.
+  Hallucination stays at most 7% and p50 context at most 17.8k tokens.
 - **Asker and judge.** Each ask is a fresh Claude Code `--print` run (sonnet, medium effort, no
   built-in tools, only forge's MCP server with a read-only key), three asks per question; an Opus
   judge without tools grades correct / partial / wrong / don't-know with lore's scoring. A run whose
   MCP server is unreachable or whose retrieval legs are missing or degraded is invalid, never scored.
-- **Corpus.** lore's tree and history at a pinned commit plus a GitHub dump of issues, PRs and
-  comments cut off at 2026-10-27T00:00Z, recorded once as a private bundle that never enters this
-  repository. The repository owner is a runtime variable, never source text.
-- **Bank.** JSON (lore lost eight gold answers to YAML comments), gold answers verbatim, frozen by
-  content hash, with attribution (Apache-2.0).
-- **CI.** A deterministic, model-free proxy (does `assemble_context` return the gold evidence?)
-  blocks every PR; the live run is weekly, on dispatch, and on labelled PRs.
+- **Corpus.** Committed with the suite (`benchmarks/ctxbench-scf/1.0.0/corpus.jsonl`) and frozen by
+  its own hash: the repository files, commits, issues and pull requests of Quayline, an invented
+  berth-booking project, about 450 chunks once ingested. Build refuses a corpus that does not match
+  the hash; build and the proxy read nothing from GitHub or a private bundle.
+- **Bank.** 60 questions written for SCF against that corpus (decision 10, requirement 10, code
+  location 8, history 8, tracker 8, learned 6, temporal 6, unanswerable 4), JSON, frozen by content
+  hash. They include evidence across two documents, superseded decisions and tempting wrong
+  documents. No question, answer or corpus text comes from another project's benchmark.
+- **CI.** A deterministic, model-free proxy (does `assemble_context` return the gold evidence?) runs
+  in the default test suite against a committed baseline: a lost hit or a p50 rise over 10% fails
+  it, and a missing retrieval leg is an error with no score. Its bundles are capped at 8k tokens,
+  so the 17.8k ceiling bounds the live lane. The live run is invoked by hand, never in CI.
 - **Scope.** Knowledge only in v1 (no extracted world facts). BM25 stays in-repo with a
   deterministic tie-break; the embedder default stays ADR-0018's; a reranker becomes a default only
   if it measurably helps within the token bar.

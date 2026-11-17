@@ -32,7 +32,7 @@ from scf_eval.ctxbench.judge import JudgeError, judge, judge_prompt, parse_verdi
 from scf_eval.ctxbench.prompts import load_prompts
 
 FAKE = str(Path(__file__).resolve().parent / "fake_claude.py")
-SUBJECT = "acme-example/lore"
+SUBJECT = "acme-example/quayline"
 ENV = {"PATH": os.environ["PATH"], "ANTHROPIC_API_KEY": "sk-test", "LEAK": "x"}
 BANK = load_bank(subject=SUBJECT)
 
@@ -251,7 +251,7 @@ def test_parse_verdict_is_strict() -> None:
 
 def test_judge_through_the_fake(tmp_path: Path) -> None:
     rubric = load_prompts(SUITE_DIR).judge
-    question = BANK.by_id()["lore-dec-02"]
+    question = BANK.by_id()["scf-dec-05"]
     prompt = judge_prompt(rubric, question, "It is {gold}.")
     assert "It is {gold}." in prompt  # the answer is never expanded
     assert "Answerable: yes" in prompt and question.gold in prompt
@@ -260,7 +260,7 @@ def test_judge_through_the_fake(tmp_path: Path) -> None:
         assert call.model == JUDGE_MODEL and dict(call.mcp_servers) == {}
         return _run(tmp_path, call)
 
-    graded = judge(question, "Over one WebSocket.", rubric=rubric, runner=runner, claude_bin=FAKE)
+    graded = judge(question, "A /v2 beside /v1.", rubric=rubric, runner=runner, claude_bin=FAKE)
     assert (graded.verdict, graded.reason, graded.model) == ("correct", "fake judge", JUDGE_MODEL)
     assert judge(
         question, "I don't know", rubric=rubric, runner=runner, claude_bin=FAKE
@@ -268,6 +268,6 @@ def test_judge_through_the_fake(tmp_path: Path) -> None:
     with pytest.raises(JudgeError):
         judge(question, "BADJUDGE", rubric=rubric, runner=runner, claude_bin=FAKE)
     # the fake judge refuses an <answer> block that holds more than the answer
-    row = json.dumps({"answer": "Over one WebSocket.", "sources": ["adrs/ADR-001.md"]})
+    row = json.dumps({"answer": "A /v2 beside /v1.", "sources": ["docs/adr/0006.md"]})
     with pytest.raises(JudgeError, match="no result event"):
         judge(question, row, rubric=rubric, runner=runner, claude_bin=FAKE)

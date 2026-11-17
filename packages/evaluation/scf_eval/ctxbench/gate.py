@@ -7,8 +7,11 @@ The live bar (spec J §2.4.1): J is accepted at score >= 0.92, hallucination
 published precision: on 90 asks Utopia's 165/180 (0.9167) misses the bar and
 166/180 meets it. A run also fails when its score falls more than ``noise``
 (0.05, lore's noise level) below a committed baseline. The proxy fails when
-any question's evidence hit goes from true to false, or p50 bundle tokens
-rise more than 10% over the baseline.
+any question's evidence hit goes from true to false, or when p50 bundle tokens
+rise more than 10% over the baseline; a baseline from another bank or corpus
+is invalid. It also holds p50 to :data:`TOKENS_P50_CEILING`, but a proxy bundle
+is assembled within an 8,000-token budget and cannot reach it: in practice the
+ceiling bounds the live lane, and here it only matters if that budget is raised.
 
 An invalid run is never a pass: a run with invalid asks, one that does not
 cover every question of the bank with :data:`ASKS_PER_QUESTION` asks, or a
@@ -25,6 +28,7 @@ __all__ = [
     "ACCEPTANCE",
     "ASKS_PER_QUESTION",
     "FLOOR",
+    "TOKENS_P50_CEILING",
     "Bar",
     "GateResult",
     "gate_live",
@@ -32,6 +36,8 @@ __all__ = [
 ]
 
 ASKS_PER_QUESTION = 3
+#: Spec J §2.4's ceiling on the median context size, for both lanes.
+TOKENS_P50_CEILING = 17_800
 
 
 @dataclass(frozen=True)
@@ -41,8 +47,8 @@ class Bar:
     max_tokens_p50: int
 
 
-ACCEPTANCE = Bar(min_score=0.92, max_hallucination=0.056, max_tokens_p50=17_800)
-FLOOR = Bar(min_score=0.86, max_hallucination=0.07, max_tokens_p50=17_800)
+ACCEPTANCE = Bar(min_score=0.92, max_hallucination=0.056, max_tokens_p50=TOKENS_P50_CEILING)
+FLOOR = Bar(min_score=0.86, max_hallucination=0.07, max_tokens_p50=TOKENS_P50_CEILING)
 
 _EXIT = {"pass": 0, "fail": 1, "invalid": 2}
 
@@ -111,11 +117,16 @@ def gate_proxy(
     """Gate a ``proxy-result.json`` against a committed ``proxy-baseline.json``."""
     if result.get("kind") != "ctxbench-proxy" or not result.get("hits"):
         return GateResult("invalid", ("not a ctxbench proxy result",))
+    failures = []
+    if result["tokens_p50"] > TOKENS_P50_CEILING:
+        failures.append(f"p50 bundle tokens {result['tokens_p50']} above {TOKENS_P50_CEILING}")
     if baseline is None:
-        return GateResult("pass")
+        return _verdict(failures)
     if baseline.get("content_hash") != result.get("content_hash"):
         return GateResult("invalid", ("the baseline was taken on a different bank",))
-    failures = [
+    if baseline.get("corpus_hash") != result.get("corpus_hash"):
+        return GateResult("invalid", ("the baseline was taken on another corpus",))
+    failures += [
         f"{qid}: evidence hit lost"
         for qid, hit in sorted(baseline["hits"].items())
         if hit and not result["hits"].get(qid)

@@ -1,22 +1,24 @@
 """``scf-cli ctxbench`` end to end, hermetically (spec J §2.4.1).
 
-A tiny synthetic corpus (invented content: a few files, two issues, one PR,
-three commits, and an issue, two PRs and two comments that the cut-off must
-hide or wind back) is checked in below and assembled at test time into a real
-git repository with fixed dates, so its shas are stable. ``record`` reads a
-fake GitHub page client and clones the local repository; ``build`` and
-``proxy`` run against fresh SQLite databases (and fresh Postgres schemas when
-``FORGE_TEST_DATABASE_URL`` is set); ``run`` and ``grade`` call the fake
-``claude`` executable in ``packages/evaluation/tests/ctxbench``, never a model.
+``build`` and ``proxy`` ingest the shipped suite's committed corpus (an
+invented project, Quayline) into fresh SQLite databases (and fresh Postgres
+schemas when ``FORGE_TEST_DATABASE_URL`` is set), with no network and no
+model. ``record`` reads a fake GitHub page client and clones a tiny synthetic
+git repository (invented content, assembled at test time with fixed dates so
+its shas are stable). ``run`` and ``grade`` call the fake ``claude``
+executable in ``packages/evaluation/tests/ctxbench`` over synthetic suites,
+never a model.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -333,12 +335,6 @@ def _write_suite(suite: Path, sha: str, questions: list[tuple[str, str, str, lis
         "content_hash": suite_hash(suite),
     }
     (suite / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    verdicts = {qid: "C/C/C" for qid, *_ in questions}
-    reference = {
-        "verdicts": {"C": "correct", "P": "partial", "W": "wrong", "A": "dont_know"},
-        "arms": {"lore": {"verdicts": verdicts}, "utopia": {"verdicts": verdicts}},
-    }
-    (suite / "reference.json").write_text(json.dumps(reference), encoding="utf-8")
     return suite
 
 
@@ -430,6 +426,7 @@ def test_record_cli_needs_the_token_and_refuses_a_used_directory(
     corpus: dict[str, Any], env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
 ) -> None:
     argv = ["ctxbench", "record", "--sha", corpus["shas"][-1], "--out", str(tmp_path / "b")]
+    argv += ["--cutoff", CUTOFF]
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     assert cli.main(argv) == 2
     monkeypatch.setenv("GITHUB_TOKEN", "ghp-fake-token")
@@ -454,78 +451,100 @@ def test_verify_bundle_catches_tampering(corpus: dict[str, Any], tmp_path: Path)
 
 
 # --------------------------------------------------------------------------- #
-# build / proxy                                                                #
+# build / proxy over the committed corpus                                      #
 # --------------------------------------------------------------------------- #
 
+BASELINE = SUITE_DIR / "proxy-baseline.json"
 
-def _proxy(
-    corpus: dict[str, Any], factory: sessionmaker[Session], out: Path, monkeypatch: Any
-) -> bytes:
+
+def _proxy(factory: sessionmaker[Session], out: Path, monkeypatch: Any, *extra: str) -> int:
     monkeypatch.setattr(cli_ctxbench, "_session_factory", lambda: factory)
-    argv = ["ctxbench", "proxy", "--bundle", str(corpus["bundle"]), "--suite", str(corpus["suite"])]
-    assert cli.main([*argv, "--out", str(out)]) == 0
-    return out.read_bytes()
+    return cli.main(["ctxbench", "proxy", "--out", str(out), *extra])
 
 
-EXPECTED_HITS = {
-    "syn-dec-01": True,
-    "syn-code-01": True,
-    "syn-hist-01": True,
-    "syn-trk-01": True,
-    "syn-learn-01": True,
-    "syn-none-01": None,
-}
+def _gate(result: Path, baseline: Path = BASELINE) -> int:
+    return cli.main(["ctxbench", "gate", str(result), "--baseline", str(baseline)])
 
 
-def test_proxy_is_byte_identical_on_fresh_sqlite_databases(
-    corpus: dict[str, Any], env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_proxy_over_the_committed_corpus_holds_the_committed_baseline(
+    env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    first = _proxy(corpus, _sqlite(), tmp_path / "a.json", monkeypatch)
-    second = _proxy(corpus, _sqlite(), tmp_path / "b.json", monkeypatch)
-    assert first == second
-    result = json.loads(first)
-    assert result["hits"] == EXPECTED_HITS
-    assert result["content_hash"] == suite_hash(corpus["suite"])
-    assert (
-        cli.main(
-            ["ctxbench", "gate", str(tmp_path / "a.json"), "--baseline", str(tmp_path / "b.json")]
-        )
-        == 0
-    )
-    lost = {**result, "hits": {**result["hits"], "syn-dec-01": False}}
-    (tmp_path / "lost.json").write_text(json.dumps(lost), encoding="utf-8")
-    assert (
-        cli.main(
-            [
-                "ctxbench",
-                "gate",
-                str(tmp_path / "lost.json"),
-                "--baseline",
-                str(tmp_path / "a.json"),
-            ]
-        )
-        == 1
-    )
+    assert _proxy(_sqlite(), tmp_path / "a.json", monkeypatch) == 0
+    assert _proxy(_sqlite(), tmp_path / "b.json", monkeypatch) == 0
+    first = (tmp_path / "a.json").read_bytes()
+    assert first == (tmp_path / "b.json").read_bytes()  # byte-identical on fresh databases
+    result, baseline = json.loads(first), json.loads(BASELINE.read_text(encoding="utf-8"))
+    assert (result["lane"], result["embedder"]) == ("proxy", "none")
+    assert result["content_hash"] == baseline["content_hash"] == suite_hash(SUITE_DIR)
+    assert result["corpus_hash"] == baseline["corpus_hash"]
+    assert result["tokens_p50"] <= 17_800  # spec J's ceiling; the 8,000 budget keeps it far off
+    assert 0 < result["recall"] < 1  # a perfect proxy score would be a red flag
+    assert _gate(tmp_path / "a.json") == 0
+
+
+def test_a_lower_quality_assembly_fails_the_gate(
+    env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    real = cli_ctxbench.assemble
+
+    def worse(factory: Any, workspace_id: uuid.UUID) -> Callable[[str], Mapping[str, Any]]:
+        assemble = real(factory, workspace_id)
+
+        def first_item_only(task: str) -> Mapping[str, Any]:
+            bundle = assemble(task)
+            return {**bundle, "items": bundle["items"][:1]}
+
+        return first_item_only
+
+    monkeypatch.setattr(cli_ctxbench, "assemble", worse)
+    assert _proxy(_sqlite(), tmp_path / "worse.json", monkeypatch) == 0
+    assert _gate(tmp_path / "worse.json") == 1
+
+
+def _no_legs(bundle: Mapping[str, Any]) -> Mapping[str, Any]:
+    return {**bundle, "legs": []}
+
+
+def _raises(bundle: Mapping[str, Any]) -> Mapping[str, Any]:
+    raise RuntimeError("bm25 statistics missing")
+
+
+@pytest.mark.parametrize("failure", [_no_legs, _raises], ids=["no-legs", "assembly-raises"])
+def test_an_unavailable_retrieval_leg_is_an_error_and_no_score(
+    failure: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+    env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    real = cli_ctxbench.assemble
+
+    def broken(factory: Any, workspace_id: uuid.UUID) -> Callable[[str], Mapping[str, Any]]:
+        assemble = real(factory, workspace_id)
+        return lambda task: failure(assemble(task))
+
+    monkeypatch.setattr(cli_ctxbench, "assemble", broken)
+    assert _proxy(_sqlite(), tmp_path / "r.json", monkeypatch) == 2
+    assert not (tmp_path / "r.json").exists()
+    err = capsys.readouterr().err
+    assert "scf-dec-01: " in err and ("retrieval legs []" in err or "assembly failed" in err)
 
 
 @pytest.mark.postgres
 def test_proxy_is_byte_identical_on_fresh_postgres_databases(
-    corpus: dict[str, Any],
-    env: None,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    postgres_url: str,
+    env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, postgres_url: str
 ) -> None:
     outputs = []
     for name in ("a", "b"):
         with _postgres_schema(postgres_url) as factory:
-            outputs.append(_proxy(corpus, factory, tmp_path / f"{name}.json", monkeypatch))
+            assert _proxy(factory, tmp_path / f"{name}.json", monkeypatch) == 0
+            outputs.append((tmp_path / f"{name}.json").read_bytes())
     assert outputs[0] == outputs[1]
-    assert json.loads(outputs[0])["hits"] == EXPECTED_HITS
+    assert _gate(tmp_path / "a.json") == 0
 
 
-def test_build_ingests_at_the_cutoff_and_mints_a_viewer_key(
-    corpus: dict[str, Any], env: None, monkeypatch: pytest.MonkeyPatch, capsys: Any
+def test_build_ingests_the_committed_corpus_and_mints_a_viewer_key(
+    env: None, monkeypatch: pytest.MonkeyPatch, capsys: Any
 ) -> None:
     from scf_api.auth import service as auth_service
     from scf_db.models import RetrievalChunk
@@ -533,10 +552,9 @@ def test_build_ingests_at_the_cutoff_and_mints_a_viewer_key(
     factory = _sqlite()
     monkeypatch.setattr(cli_ctxbench, "_session_factory", lambda: factory)
     monkeypatch.setattr(auth_service, "_default_service", None)
-    argv = ["ctxbench", "build", "--bundle", str(corpus["bundle"]), "--suite", str(corpus["suite"])]
     monkeypatch.setattr("scf_api.routers.knowledge.get_configured_embedder", lambda: None)
-    assert cli.main(argv) == 2  # no embedder and no --bm25-only
-    assert cli.main([*argv, "--bm25-only"]) == 0
+    assert cli.main(["ctxbench", "build"]) == 2  # no embedder and no --bm25-only
+    assert cli.main(["ctxbench", "build", "--bm25-only"]) == 0
     out = capsys.readouterr().out
     workspace_id = uuid.UUID(out.split("workspace: ")[1].split()[0])
     token = out.rsplit(": ", 1)[1].strip()
@@ -545,72 +563,69 @@ def test_build_ingests_at_the_cutoff_and_mints_a_viewer_key(
     assert (key.workspace_id, key.role.value) == (workspace_id, "viewer")
     with factory() as session:
         rows = session.query(RetrievalChunk.path, RetrievalChunk.content).all()
-    paths = {path for path, _ in rows}
-    assert {
-        "README.md",
-        "CLAUDE.md",
-        "src/widgets/queue.py",
-        "issues/3",
-        "issues/5",
-        "pulls/7",
-    } <= paths
-    assert "src/widgets/blinker.py" not in paths  # deleted at the pinned sha
-    assert not {"issues/7", "issues/8", "issues/10"} & paths  # a PR stub is not an issue
-    assert not {"issues/9", "pulls/10"} & paths  # created after the cut-off
-    assert {f"commits/{sha}" for sha in corpus["shas"]} <= paths
-    text_ = "\n".join(content for _, content in rows)
-    assert "Fixed by raising the feeder limit" not in text_  # comment after the cut-off
-    assert "Seen again on Tuesday." in text_
     by_path = dict(rows)
-    assert by_path["pulls/7"].startswith("PR #7 [merged 2026-10-01, merge commit 0000")
-    # merged after the cut-off: open, with its description and none of what came later
-    assert by_path["pulls/8"].startswith("PR #8 [open] Count the gizmos\n")
-    assert "> Adds a gizmo counter." in by_path["pulls/8"]
-    assert "Counted twice on retry" not in text_  # review comment after the cut-off
-    assert "Is anything still importing blink()?" in text_
+    expected = {"CLAUDE.md", "docs/adr/0009-invoice-on-departure.md", "issues/169", "pulls/44"}
+    assert expected | {"src/quayline/bookings/allocate.py"} <= set(by_path)
+    assert any(path.startswith("commits/54d11fd16") for path in by_path)
+    assert by_path["pulls/44"].startswith("PR #44 [merged 2026-03-20, merge commit 54d11fd16")
+    assert by_path["pulls/111"].startswith("PR #111 [closed 2026-06-25] Retry the SMS gateway")
+    assert by_path["issues/169"].startswith("Issue #169 [open] Storm alert reached only 50 of")
+    assert "> Waiting is fine: the lock is held for milliseconds" in by_path["pulls/44"]
+
+
+def _copy_suite(
+    root: Path,
+    *,
+    questions: Callable[[list[dict[str, Any]]], None],
+    corpus: Callable[[list[dict[str, Any]]], None],
+) -> Path:
+    """The shipped suite with its questions and corpus changed and both hashes recomputed."""
+    suite = root / "suite"
+    shutil.copytree(SUITE_DIR, suite)
+    data = json.loads((suite / "questions.json").read_text(encoding="utf-8"))
+    questions(data["questions"])
+    (suite / "questions.json").write_text(json.dumps(data), encoding="utf-8")
+    path = suite / "corpus.jsonl"
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    corpus(records)
+    path.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+    manifest = json.loads((suite / "manifest.json").read_text(encoding="utf-8"))
+    manifest["content_hash"] = suite_hash(suite)
+    manifest["corpus_hash"] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    (suite / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return suite
 
 
 def test_build_fails_when_a_question_is_in_the_corpus(
-    corpus: dict[str, Any], env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
-) -> None:
-    leaky = [
-        *QUESTIONS[:-1],
-        ("syn-none-01", "unanswerable", "A small service that QUEUES widgets.", []),
-    ]
-    suite = _write_suite(tmp_path / "leaky", corpus["shas"][-1], leaky)
-    monkeypatch.setattr(cli_ctxbench, "_session_factory", _sqlite)
-    argv = ["ctxbench", "build", "--bundle", str(corpus["bundle"]), "--suite", str(suite)]
-    assert cli.main([*argv, "--bm25-only"]) == 1
-    assert "question text found in the corpus: syn-none-01" in capsys.readouterr().err
-    other = _write_suite(tmp_path / "other-sha", corpus["shas"][0], QUESTIONS)
-    assert (
-        cli.main(["ctxbench", "proxy", "--bundle", str(corpus["bundle"]), "--suite", str(other)])
-        == 2
-    )
-
-
-def test_build_finds_a_question_wrapped_in_a_quoted_body(
     env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
 ) -> None:
-    """Issue and commit bodies are quoted line by line; a question wrapped there still leaks."""
-    note = "Note a question\n\nSomeone asked: Where is\nenqueue_widget defined?"
-    commits = [*COMMITS, ("2026-10-02T09:00:00+00:00", note, {"NOTES.md": "Notes.\n"})]
-    shas = _make_repo(tmp_path / "repo", commits)
-    asked = "Asked at standup: which issue tracks sprockets\njamming when the queue is full?"
-    github = FakeGitHub({**LISTINGS, "issues": [{**ISSUES[0], "body": asked}, *ISSUES[1:]]})
-    cli_ctxbench.record(
-        shas[-1],
-        tmp_path / "bundle",
-        subject=SUBJECT,
-        client=github,
-        source=str(tmp_path / "repo"),
-        cutoff=CUTOFF,
-    )
-    suite = _write_suite(tmp_path / "suite", shas[-1], QUESTIONS)
+    def leak(questions: list[dict[str, Any]]) -> None:
+        questions[3]["question"] = "Long berths are SCARCE."  # a sentence of an ADR
+
+    def quote(records: list[dict[str, Any]]) -> None:
+        """A question wrapped across two lines of an issue body (each line quoted ``> ``)."""
+        issue = next(r for r in records if r.get("number") == 17)
+        issue["body"] += "\n\nAsked at standup: Who is on call for\nQuayline outside office hours?"
+
+    suite = _copy_suite(tmp_path, questions=leak, corpus=quote)
     monkeypatch.setattr(cli_ctxbench, "_session_factory", _sqlite)
-    argv = ["ctxbench", "build", "--bundle", str(tmp_path / "bundle"), "--suite", str(suite)]
-    assert cli.main([*argv, "--bm25-only"]) == 1
-    assert "question text found in the corpus: syn-code-01, syn-trk-01\n" in capsys.readouterr().err
+    assert cli.main(["ctxbench", "build", "--bm25-only", "--suite", str(suite)]) == 1
+    err = capsys.readouterr().err
+    assert "question text found in the corpus: scf-dec-04, scf-none-03\n" in err
+
+
+def test_build_and_proxy_refuse_a_corpus_that_does_not_match_its_hash(
+    env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
+) -> None:
+    suite = tmp_path / "suite"
+    shutil.copytree(SUITE_DIR, suite)
+    with (suite / "corpus.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"kind": "file", "path": "NOTES.md", "text": "Extra."}) + "\n")
+    monkeypatch.setattr(cli_ctxbench, "_session_factory", _sqlite)
+    assert cli.main(["ctxbench", "build", "--bm25-only", "--suite", str(suite)]) == 2
+    assert _proxy(_sqlite(), tmp_path / "r.json", monkeypatch, "--suite", str(suite)) == 2
+    assert "does not match the manifest's" in capsys.readouterr().err
+    assert not (tmp_path / "r.json").exists()
 
 
 # --------------------------------------------------------------------------- #
@@ -639,6 +654,7 @@ def _run_once(corpus: dict[str, Any], suite: Path, out: Path, arm: str, *extra: 
     """One ask per question on one arm, in bank order."""
     argv = ["ctxbench", "run", "--out", str(out), "--arms", arm, "--reps", "1"]
     argv += ["--mcp-url", "http://forge.invalid/api/v1/mcp", "--concurrency", "1", *extra]
+    argv += ["--embedder", "test-embedder"]
     return cli.main(_live(corpus, *argv, suite=suite))
 
 
@@ -646,6 +662,7 @@ def test_run_grade_report_gate(corpus: dict[str, Any], env: None, tmp_path: Path
     run_dir = tmp_path / "run"
     argv = ["ctxbench", "run", "--out", str(run_dir), "--arms", "none,forge"]
     argv += ["--mcp-url", "http://forge.invalid/api/v1/mcp", "--concurrency", "4"]
+    argv += ["--embedder", "test-embedder"]
     assert cli.main(_live(corpus, *argv)) == 0
     asks = [json.loads(line) for line in (run_dir / "asks.jsonl").read_text().splitlines()]
     assert len(asks) == 2 * 6 * 3
@@ -657,6 +674,7 @@ def test_run_grade_report_gate(corpus: dict[str, Any], env: None, tmp_path: Path
     assert meta["claude_version"] == "9.9.9 (Claude Code, fake)"
     assert meta["agent"] == {"model": "claude-sonnet-5-5", "effort": "medium"}
     assert meta["content_hash"] == suite_hash(corpus["suite"])
+    assert (meta["embedder"], meta["corpus_hash"]) == ("test-embedder", None)
     # every ask ran in its own directory under a temporary root, never under --out
     assert sorted(p.name for p in run_dir.iterdir()) == ["asks.jsonl", "run.json", "transcripts"]
 
@@ -684,7 +702,10 @@ def test_run_grade_report_gate(corpus: dict[str, Any], env: None, tmp_path: Path
     assert summary["arms"]["forge"]["score"] == 1.0
     assert summary["arms"]["none"]["score"] == round(1 / 6, 4)
     assert summary["arms"]["forge"]["judge_agreement"] == 1.0
+    assert (summary["lane"], summary["embedder"]) == ("live", "test-embedder")
+    assert summary["commit"] == meta["forge_sha"] + (" (dirty)" if meta["forge_dirty"] else "")
     assert written.read_text() == (run_dir / "report.md").read_text()
+    assert "The score is a measurement: no pass bar is set yet (#249)." in written.read_text()
     assert cli.main(["ctxbench", "gate", str(run_dir), "--bar", "acceptance"]) == 0
     baseline = tmp_path / "baseline.json"
     baseline.write_text(json.dumps(summary), encoding="utf-8")
@@ -711,7 +732,7 @@ def test_an_unreachable_forge_makes_the_run_invalid(
 ) -> None:
     run_dir = tmp_path / "run"
     argv = ["ctxbench", "run", "--out", str(run_dir), "--arms", "forge", "--reps", "1"]
-    argv += ["--mcp-url", "http://unreachable.invalid/api/v1/mcp"]
+    argv += ["--mcp-url", "http://unreachable.invalid/api/v1/mcp", "--embedder", "test-embedder"]
     assert cli.main(_live(corpus, *argv)) == 2
     asks = [json.loads(line) for line in (run_dir / "asks.jsonl").read_text().splitlines()]
     assert {(a["attempts"], tuple(a["invalid"])) for a in asks} == {
@@ -725,14 +746,24 @@ def test_an_unreachable_forge_makes_the_run_invalid(
 
 
 def test_run_refuses_without_its_inputs(
-    corpus: dict[str, Any], env: None, tmp_path: Path, monkeypatch: Any
+    corpus: dict[str, Any], env: None, tmp_path: Path, monkeypatch: Any, capsys: Any
 ) -> None:
     base = ["ctxbench", "run", "--out", str(tmp_path / "r")]
     assert cli.main(_live(corpus, *base, "--arms", "forge")) == 2  # no --mcp-url
     assert cli.main(_live(corpus, *base, "--arms", "nonsense")) == 2
+    forge = [*base, "--arms", "forge", "--mcp-url", "http://forge.invalid/api/v1/mcp"]
+    assert cli.main(_live(corpus, *forge)) == 2  # a vector leg and no --embedder
+    assert "--embedder" in capsys.readouterr().err
     monkeypatch.delenv("FORGE_CTXBENCH_SUBJECT")
     assert cli.main(_live(corpus, *base, "--arms", "none")) == 2
     assert cli.main(["ctxbench", "gate", str(tmp_path)]) == 2  # no summary there
+    monkeypatch.setenv("FORGE_CTXBENCH_SUBJECT", SUBJECT)
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    capsys.readouterr()
+    assert cli.main(_live(corpus, *base, "--arms", "none")) == 2
+    assert cli.main(_live(corpus, "ctxbench", "grade", str(tmp_path))) == 2
+    assert capsys.readouterr().err.count("set ANTHROPIC_API_KEY: the live lane calls a model") == 2
+    assert not (tmp_path / "r").exists()
 
 
 def test_a_forge_tool_error_makes_the_run_invalid(

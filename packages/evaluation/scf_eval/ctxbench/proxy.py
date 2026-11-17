@@ -10,8 +10,11 @@ ingests. Evidence entries are written as the article writes them:
 * ``#N``, matching ``issues/N`` or ``pulls/N`` (one number space on GitHub).
 
 A question hits when any of its evidence is in the bundle; an unanswerable
-question has no evidence and no hit (``None``). The result holds only ids,
-booleans and numbers, so it can be committed as a baseline.
+question has no evidence and no hit (``None``). The lane is BM25 only, with no
+embedder and no model: a bundle that reports other retrieval legs, or an
+assembly that fails, is a :class:`ProxyError` and the run has no score. The
+result holds only ids, booleans, numbers and the hashes and commit it was
+taken on, so it can be committed as a baseline.
 """
 
 from __future__ import annotations
@@ -25,7 +28,18 @@ from typing import Any
 from scf_eval.ctxbench.bank import CATEGORIES, Bank, Question
 from scf_eval.ctxbench.score import percentile
 
-__all__ = ["ProxyResult", "evidence_hit", "evidence_matches", "proxy_json", "run_proxy"]
+__all__ = [
+    "PROXY_LEGS",
+    "ProxyError",
+    "ProxyResult",
+    "evidence_hit",
+    "evidence_matches",
+    "proxy_json",
+    "run_proxy",
+]
+
+#: The retrieval legs every proxy bundle must report.
+PROXY_LEGS = ["bm25"]
 
 _SHA_RE = re.compile(r"[0-9a-f]{7,40}")
 _NUMBER_RE = re.compile(r"#(\d+)")
@@ -51,6 +65,10 @@ def evidence_hit(question: Question, items: Sequence[Mapping[str, Any]]) -> bool
     return any(evidence_matches(e, s) for e in question.evidence for s in sources)
 
 
+class ProxyError(RuntimeError):
+    """A question whose bundle cannot be scored; the run reports it and has no score."""
+
+
 @dataclass(frozen=True)
 class ProxyResult:
     suite: str
@@ -58,6 +76,8 @@ class ProxyResult:
     content_hash: str
     hits: dict[str, bool | None]
     bundle_tokens: dict[str, int]
+    corpus_hash: str = ""
+    commit: str = ""
 
     @property
     def recall(self) -> float:
@@ -81,12 +101,21 @@ class ProxyResult:
         return percentile(list(self.bundle_tokens.values()), 50)
 
 
-def run_proxy(bank: Bank, assemble: Callable[[str], Mapping[str, Any]]) -> ProxyResult:
+def run_proxy(
+    bank: Bank, assemble: Callable[[str], Mapping[str, Any]], *, commit: str = ""
+) -> ProxyResult:
     """Assemble a bundle per question (in bank order) and score its evidence."""
     hits: dict[str, bool | None] = {}
     tokens: dict[str, int] = {}
     for question in bank.questions:
-        bundle = assemble(question.question)
+        try:
+            bundle = assemble(question.question)
+        except Exception as exc:  # whatever broke, this run has no score
+            failure = f"{type(exc).__name__}: {exc}"
+            raise ProxyError(f"{question.id}: assembly failed: {failure}") from exc
+        legs = list(bundle.get("legs") or [])
+        if legs != PROXY_LEGS:
+            raise ProxyError(f"{question.id}: retrieval legs {legs}, expected {PROXY_LEGS}")
         hits[question.id] = evidence_hit(question, bundle.get("items") or [])
         tokens[question.id] = int(bundle.get("total_tokens") or 0)
     return ProxyResult(
@@ -95,6 +124,8 @@ def run_proxy(bank: Bank, assemble: Callable[[str], Mapping[str, Any]]) -> Proxy
         content_hash=bank.content_hash,
         hits=hits,
         bundle_tokens=tokens,
+        corpus_hash=str(bank.manifest.get("corpus_hash", "")),
+        commit=commit,
     )
 
 
@@ -102,9 +133,13 @@ def proxy_json(result: ProxyResult, bank: Bank) -> str:
     """Byte-stable JSON (sorted keys, fixed rounding, trailing newline)."""
     payload = {
         "kind": "ctxbench-proxy",
+        "lane": "proxy",
+        "embedder": "none",
         "suite": result.suite,
         "version": result.version,
         "content_hash": result.content_hash,
+        "corpus_hash": result.corpus_hash,
+        "commit": result.commit,
         "hits": result.hits,
         "bundle_tokens": result.bundle_tokens,
         "recall": round(result.recall, 4),

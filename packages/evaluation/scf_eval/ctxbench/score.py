@@ -8,9 +8,6 @@ of its asks, an arm the mean of its questions; the range is each rep scored
 alone. Hallucinated asks are wrong answers to answerable questions plus any
 answer (partial or wrong) to an unanswerable one, over all asks; abstaining
 is never a hallucination.
-
-:func:`reference_asks` turns ``reference.json``'s published verdicts into
-asks, so the same code reproduces lore's figures (the acceptance test).
 """
 
 from __future__ import annotations
@@ -31,7 +28,6 @@ __all__ = [
     "ask_score",
     "hallucinated",
     "percentile",
-    "reference_asks",
     "summarize",
 ]
 
@@ -107,7 +103,7 @@ def _mean(values: Sequence[float]) -> float:
 
 
 def _present(values: Sequence[float | int | None]) -> list[float] | None:
-    """The values when every ask has one, else ``None`` (a reference arm has no tokens)."""
+    """The values when every ask has one, else ``None`` (an ask may lack a figure)."""
     if not values or any(v is None for v in values):
         return None
     return [float(cast(float, v)) for v in values]
@@ -180,20 +176,3 @@ def summarize(asks: Sequence[GradedAsk]) -> Summary:
             {qid: [a.duration_s for a in group] for qid, group in by_question.items()}
         ),
     )
-
-
-def reference_asks(
-    reference: Mapping[str, Any], arm: str, categories: Mapping[str, Category]
-) -> list[GradedAsk]:
-    """Asks from a published arm's ``"C/C/P"`` verdict strings in ``reference.json``."""
-    letters: Mapping[str, str] = reference["verdicts"]
-    return [
-        GradedAsk(
-            question_id=qid,
-            category=categories[qid],
-            rep=rep,
-            verdict=cast(Verdict, letters[letter]),
-        )
-        for qid, verdicts in sorted(reference["arms"][arm]["verdicts"].items())
-        for rep, letter in enumerate(verdicts.split("/"), start=1)
-    ]

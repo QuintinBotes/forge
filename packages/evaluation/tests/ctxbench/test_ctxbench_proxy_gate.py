@@ -10,10 +10,10 @@ import pytest
 
 from scf_eval.ctxbench.bank import load_bank
 from scf_eval.ctxbench.gate import ACCEPTANCE, FLOOR, Bar, gate_live, gate_proxy
-from scf_eval.ctxbench.proxy import evidence_matches, proxy_json, run_proxy
+from scf_eval.ctxbench.proxy import ProxyError, evidence_matches, proxy_json, run_proxy
 
-BANK = load_bank(subject="acme-example/lore")
-URI = "https://github.com/acme-example/lore"
+BANK = load_bank(subject="acme-example/quayline")
+URI = "https://github.com/acme-example/quayline"
 
 
 @pytest.mark.parametrize(
@@ -36,39 +36,62 @@ def test_evidence_matches_on_labels(evidence: str, source: str, hit: bool) -> No
     assert evidence_matches(evidence, source) is hit
 
 
-def _assembler(found: Mapping[str, list[str]]) -> Any:
+def _assembler(found: Mapping[str, list[str]], legs: list[str] | None = None) -> Any:
     by_text = {q.question: q.id for q in BANK.questions}
 
     def assemble(task: str) -> Mapping[str, Any]:
         qid = by_text[task]
         items = [{"id": "random-uuid", "source": s} for s in found.get(qid, [])]
-        return {"items": items, "total_tokens": 1000 + 10 * len(items)}
+        bundle = {"items": items, "total_tokens": 1000 + 10 * len(items), "legs": ["bm25"]}
+        return {**bundle, "legs": legs} if legs is not None and qid == "scf-req-01" else bundle
 
     return assemble
 
 
 def test_run_proxy_scores_hits_and_writes_stable_json() -> None:
     found = {
-        "lore-dec-01": [f"repo:{URI}:adrs/ADR-045-npm-package-publishing.md"],
-        "lore-hist-01": [f"repo:{URI}:commits/ca031776d{'1' * 31}"],
-        "lore-trk-02": [f"url:{URI}:issues/2766"],
-        "lore-code-01": [f"repo:{URI}:apps/elsewhere.ts"],
-        "lore-none-01": [f"repo:{URI}:README.md"],
+        "scf-dec-01": [f"repo:{URI}:docs/adr/0001-one-postgres-database.md"],
+        "scf-hist-01": [f"repo:{URI}:commits/54d11fd16{'1' * 31}"],
+        "scf-trk-01": [f"url:{URI}:issues/169"],
+        "scf-code-01": [f"repo:{URI}:src/quayline/bookings/waitlist.py"],  # the tempting one
+        "scf-none-01": [f"repo:{URI}:README.md"],
     }
-    result = run_proxy(BANK, _assembler(found))
+    result = run_proxy(BANK, _assembler(found), commit="abc123")
     assert [qid for qid, hit in result.hits.items() if hit] == [
-        "lore-dec-01",
-        "lore-hist-01",
-        "lore-trk-02",
+        "scf-dec-01",
+        "scf-hist-01",
+        "scf-trk-01",
     ]
-    assert result.hits["lore-code-01"] is False
-    assert result.hits["lore-none-01"] is None
-    assert result.recall == pytest.approx(3 / 28)
-    assert result.recall_by_category(BANK)["tracker"] == 0.25
+    assert result.hits["scf-code-01"] is False
+    assert result.hits["scf-none-01"] is None
+    assert result.recall == pytest.approx(3 / 56)
+    assert result.recall_by_category(BANK)["tracker"] == 1 / 8
     text = proxy_json(result, BANK)
-    assert text == proxy_json(run_proxy(BANK, _assembler(found)), BANK)
+    assert text == proxy_json(run_proxy(BANK, _assembler(found), commit="abc123"), BANK)
     assert "random-uuid" not in text
-    assert json.loads(text)["kind"] == "ctxbench-proxy"
+    stamped = json.loads(text)
+    assert stamped["kind"] == "ctxbench-proxy"
+    assert {k: stamped[k] for k in ("lane", "embedder", "commit")} == {
+        "lane": "proxy",
+        "embedder": "none",
+        "commit": "abc123",
+    }
+    assert stamped["content_hash"] == BANK.content_hash
+    assert stamped["corpus_hash"] == BANK.manifest["corpus_hash"]
+
+
+@pytest.mark.parametrize("legs", [[], ["vector"], ["bm25", "vector"]])
+def test_a_missing_or_unexpected_retrieval_leg_is_an_error_not_a_score(legs: list[str]) -> None:
+    with pytest.raises(ProxyError, match=r"scf-req-01: retrieval legs"):
+        run_proxy(BANK, _assembler({}, legs=legs))
+
+
+def test_a_failing_assembly_is_an_error_not_a_score() -> None:
+    def broken(task: str) -> Mapping[str, Any]:
+        raise RuntimeError("bm25 index unavailable")
+
+    with pytest.raises(ProxyError, match="scf-dec-01: assembly failed: RuntimeError: bm25 index"):
+        run_proxy(BANK, broken)
 
 
 def _proxy(hits: dict[str, bool | None], p50: float) -> dict[str, Any]:
@@ -85,6 +108,16 @@ def test_gate_proxy() -> None:
     assert other.exit_code == 2
     assert gate_proxy({"kind": "something"}, baseline=base).exit_code == 2
     assert gate_proxy(base).exit_code == 0
+    corpus = gate_proxy({**_proxy({"a": True}, 1000), "corpus_hash": "other"}, baseline=base)
+    assert (corpus.exit_code, corpus.reasons) == (2, ("the baseline was taken on another corpus",))
+
+
+def test_gate_proxy_holds_p50_bundle_tokens_to_the_ceiling() -> None:
+    assert gate_proxy(_proxy({"a": True}, 17_800)).exit_code == 0
+    over = gate_proxy(_proxy({"a": True}, 17_801))
+    assert (over.exit_code, over.reasons) == (1, ("p50 bundle tokens 17801 above 17800",))
+    base = _proxy({"a": True}, 17_000)
+    assert gate_proxy(_proxy({"a": True}, 17_801), baseline=base).exit_code == 1
 
 
 QUESTIONS = [f"q{n:02d}" for n in range(30)]

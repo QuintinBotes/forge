@@ -15,7 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[4]
 CTXBENCH_PATHS = (
     "packages/evaluation/scf_eval/ctxbench",
-    "packages/evaluation/scf_eval/benchmarks/ctxbench-lore",
+    "packages/evaluation/scf_eval/benchmarks/ctxbench-scf",
     "packages/evaluation/tests/ctxbench",
     "apps/api/scf_api/cli_ctxbench.py",
     "apps/api/tests/test_cli_ctxbench.py",

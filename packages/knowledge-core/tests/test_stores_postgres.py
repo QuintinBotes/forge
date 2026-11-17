@@ -15,7 +15,7 @@ never faked. This is the Phase-2 / CI verification of the live retrieval path.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from sqlalchemy import create_engine, inspect, select, text
@@ -157,6 +157,74 @@ def test_bm25_candidate_cut_breaks_ties_on_a_stable_key(
     assert len({h.score for h in first}) == 1  # truly tied
     assert [h.path for h in first] == [h.path for h in second]
     assert [h.path for h in first] == [f"p{i:03d}.md" for i in range(10)]
+
+
+def _two_sources(factory: sessionmaker[Session], chunk: Callable[[int], Chunk]) -> uuid.UUID:
+    """350 chunks in one workspace: 0-99 in a source whose id sorts last, 100-349 first.
+
+    Source ids are random per ingest, so a fresh index of the same corpus can
+    order its sources either way; a cut ordered by source id here keeps the
+    chunks numbered from 100 and loses 0-99.
+    """
+    workspace_id, _ = _seed(factory)
+    late, early = uuid.UUID(int=1), uuid.UUID(int=2**128 - 1)
+    with factory() as session:
+        for source_id, name in ((early, "early"), (late, "late")):
+            session.add(
+                KnowledgeSource(
+                    id=source_id, workspace_id=workspace_id, kind="repo", name=name, uri=name
+                )
+            )
+        session.commit()
+    store = PgVectorStore(factory, None)
+    for source_id, numbers in ((early, range(100)), (late, range(100, 350))):
+        store.index(source_id=str(source_id), chunks=[chunk(i) for i in numbers])
+    return workspace_id
+
+
+def test_bm25_candidate_cut_never_breaks_ties_on_a_random_source_id(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    workspace_id = _two_sources(
+        pg_session_factory,
+        lambda i: Chunk(content="tiebreak" + " " * (i + 1) + "token", path=f"p{i:03d}.md"),
+    )
+    scope = KnowledgeScope(workspace_id=workspace_id)
+    hits = Bm25Store(pg_session_factory).search("tiebreak token", scope, k=10)
+    assert len({h.score for h in hits}) == 1  # truly tied
+    assert [h.path for h in hits] == [f"p{i:03d}.md" for i in range(10)]
+
+
+def test_bm25_symbol_cut_never_breaks_ties_on_a_random_source_id(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    # #267's second cut: 350 tied definitions of LedgerStore, all below the
+    # 205 users that fill the ts_rank_cd cut, so only the symbol cut adds them.
+    workspace_id = _two_sources(
+        pg_session_factory,
+        lambda i: Chunk(
+            content="class LedgerStore:" + " " * (i + 1) + "pass",
+            path=f"d{i:03d}.py",
+            symbol="LedgerStore",
+        ),
+    )
+    with pg_session_factory() as session:
+        source_id = session.scalar(
+            select(KnowledgeSource.id).where(
+                KnowledgeSource.workspace_id == workspace_id, KnowledgeSource.name == "api"
+            )
+        )
+    PgVectorStore(pg_session_factory, None).index(
+        source_id=str(source_id),
+        chunks=[
+            Chunk(content=f"store = LedgerStore() and LedgerStore {i}", path=f"use{i}.py")
+            for i in range(205)
+        ],
+    )
+    scope = KnowledgeScope(workspace_id=workspace_id)
+    hits = Bm25Store(pg_session_factory).search("LedgerStore", scope, k=10)
+    assert len({h.score for h in hits}) == 1  # truly tied definitions
+    assert [h.path for h in hits] == [f"d{i:03d}.py" for i in range(10)]
 
 
 _PARITY_CORPUS = [
