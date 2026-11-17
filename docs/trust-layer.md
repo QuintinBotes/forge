@@ -81,8 +81,10 @@ binds every activity except `forge.resume_agent`:
   token for the one repository that can only read checks. CI is green only when
   there is at least one check run and every one completed as `success`,
   `neutral` or `skipped`; none, a pending one, or any other conclusion is not
-  green, and so is CI that cannot be read. `spec_validated` is the spec engine's
-  rollup for the task's spec (`validated`), or true for a run with no spec. A
+  green, and so is CI that cannot be read. The GitHub App needs the **Checks:
+  Read-only** permission for this read. `spec_validated` is the spec engine's
+  rollup for the task's spec (`passing`: every criterion validated against the
+  current spec version), or true for a run with no spec. A
   caller's `ci_status_green` or `spec_validated` is ignored. The run's
   `merge_guard` context records the head commit, the reason (`ci_green`,
   `ci_no_check_runs`, `ci_pending: <names>`, `ci_failed: <names>`,
@@ -142,8 +144,6 @@ binds every activity except `forge.resume_agent`:
 
 ### Current limitations
 
-- **CI is not read back (#280).** The merge guard's `ci_status_green` comes from
-  the `pr` request's payload, which nothing fills yet.
 - **No adversary attacks the change yet (#283).** Every scan records `not_run`,
   as described under [Red-Team Gate](#red-team-gate).
 - **A failed gate submission is not audited (#182).** It is logged and recorded

@@ -51,7 +51,8 @@ class PureGuardContext:
     checks: dict[str, bool] | None = None
     confidence: float | None = None
     confidence_threshold: float = 0.72
-    #: review_approved_by_human / ci_status_green / spec_validated (from payload).
+    #: review_approved_by_human / ci_status_green / spec_validated: the last two from
+    #: the merge-phase load_guard_inputs read (#280), or the payload before that patch.
     merge_signals: dict[str, bool] | None = None
     #: from the load_guard_inputs Activity: preconditions + plan flag.
     preconditions: dict[str, bool] | None = None

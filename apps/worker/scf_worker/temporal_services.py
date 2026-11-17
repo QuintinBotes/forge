@@ -6,6 +6,7 @@ activity. An activity with no service here keeps refusing (ADR-0007).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -97,6 +98,8 @@ __all__ = [
 
 #: The run-context key naming the optional preconditions a workspace has not configured.
 NOT_IN_USE_KEY = "preconditions_not_in_use"
+
+logger = logging.getLogger(__name__)
 
 
 def _owned_run(session: Session, run_id: uuid.UUID, workspace_id: uuid.UUID) -> WorkflowRun:
@@ -234,7 +237,10 @@ def _spec_validated(session: Session, task: Task) -> tuple[bool, str]:
             TraceabilitySpecRollup.spec_id == task.spec_id,
         )
     )
-    return rollup is not None and rollup.validation_status == "validated", "spec_rollup"
+    # The rollup's verdict (scf_spec ValidationStatus): "passing" when every criterion
+    # is validated against the current spec version; partial, failing, stale or none
+    # otherwise.
+    return rollup is not None and rollup.validation_status == "passing", "spec_rollup"
 
 
 def _merge_guard(factory: sessionmaker[Session], req: GuardInputsRequest) -> GuardInputs:
@@ -260,8 +266,9 @@ def _merge_guard(factory: sessionmaker[Session], req: GuardInputsRequest) -> Gua
         try:
             green, ci_reason = ci_verdict(github_check_runs(target.repo, str(head)))
         except Exception as exc:  # an unreadable CI blocks the merge; it never fails the run
-            detail = str(exc) if isinstance(exc, CiUnreadable) else type(exc).__name__
-            green, ci_reason = False, f"ci_unreadable: {detail}"
+            # GitHub's own message names the status (for example a missing checks:read).
+            logger.warning("CI could not be read for workflow run %s", req.workflow_run_id)
+            green, ci_reason = False, f"ci_unreadable: {type(exc).__name__}: {exc}"[:500]
     record = {
         "head_commit": head,
         "ci_status_green": green,

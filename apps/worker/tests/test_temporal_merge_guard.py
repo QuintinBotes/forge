@@ -45,7 +45,8 @@ def factory(monkeypatch: pytest.MonkeyPatch) -> Iterator[sessionmaker[Session]]:
 
 
 def _seed(factory: sessionmaker[Session], *, spec: str | None = None) -> uuid.UUID:
-    """A run whose agent committed ``HEAD``; ``spec`` is None, "validated" or "open"."""
+    """A run whose agent committed ``HEAD``; ``spec`` is None, "no_rollup" or the
+    spec rollup's ``validation_status`` (scf_spec ValidationStatus)."""
     with factory() as s:
         s.add(Workspace(id=WS, name="Acme", slug="acme"))
         s.flush()
@@ -138,8 +139,23 @@ def _done(name: str, conclusion: str) -> dict[str, Any]:
         ([{"name": "tests", "status": "in_progress"}], False, "ci_pending: tests"),
         ([_done("tests", "success"), _done("lint", "failure")], False, "ci_failed: lint"),
         ([_done("tests", "success"), _done("lint", "success")], True, "ci_green"),
+        ([_done("tests", "success"), _done("lint", "cancelled")], False, "ci_failed: lint"),
+        ([_done("tests", "timed_out")], False, "ci_failed: tests"),
+        ([_done("tests", "action_required")], False, "ci_failed: tests"),
+        ([{"name": "tests", "status": "completed"}], False, "ci_failed: tests"),
+        ([_done("tests", "neutral"), _done("docs", "skipped")], True, "ci_green"),
     ],
-    ids=["none", "pending", "failed", "green"],
+    ids=[
+        "none",
+        "pending",
+        "failed",
+        "green",
+        "cancelled",
+        "timed-out",
+        "action-required",
+        "no-conclusion",
+        "neutral-and-skipped",
+    ],
 )
 async def test_ci_is_green_only_when_every_check_run_completed_and_passed(
     factory: sessionmaker[Session],
@@ -176,8 +192,11 @@ async def test_without_github_app_credentials_ci_reads_as_not_green(
     ("spec", "validated", "source"),
     [
         (None, True, "no_spec"),
-        ("validated", True, "spec_rollup"),
+        ("passing", True, "spec_rollup"),
         ("partial", False, "spec_rollup"),
+        ("failing", False, "spec_rollup"),
+        ("stale", False, "spec_rollup"),
+        ("none", False, "spec_rollup"),
         ("no_rollup", False, "spec_rollup"),
     ],
 )
