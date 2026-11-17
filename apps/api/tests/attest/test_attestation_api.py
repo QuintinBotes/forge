@@ -16,9 +16,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -26,6 +29,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from scf_api import cli_verify
+from scf_api.cli_verify import verify_stored_attestation
 from scf_api.db import get_db
 from scf_api.deps import Principal, get_current_principal
 from scf_api.main import create_app
@@ -39,7 +44,12 @@ from scf_approval import (
 )
 from scf_approval.models import GateType
 from scf_contracts import UserRole
-from scf_contracts.attestation import decode_statement
+from scf_contracts.attestation import (
+    ChangesetProvenance,
+    DsseEnvelope,
+    Statement,
+    decode_statement,
+)
 from scf_db.base import Base
 from scf_db.models import AgentRun, Attestation, Project, Task, WorkflowRun, Workspace
 from scf_obs.attest.signing import DsseSigner, EnvSigningKeyProvider
@@ -509,3 +519,202 @@ def test_by_approval_cross_workspace_404s(factory, signer) -> None:
     foreign_client = _client(factory, _principal(workspace_id=WS2), approval_service=service)
     resp = foreign_client.get(f"/approvals/{approval_id}/attestation")
     assert resp.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# #214: the statement names the commit; the envelope leaves over REST         #
+# --------------------------------------------------------------------------- #
+
+BASE = "b0" * 20
+HEAD = "c1" * 20
+RUN_BRANCH = "scf/run-214"
+FIXTURE = Path(__file__).parent / "fixtures" / "attestation_signed_before_214.json"
+
+
+def _record_change(factory: sessionmaker[Session], run_id: uuid.UUID, *, head: str) -> None:
+    """The run record a governed builder leaves: its repository, branch, base and head."""
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        task = s.get(Task, run.task_id)
+        assert task is not None
+        task.repo_targets = [{"repo": "acme/app", "base_branch": "main"}]
+        agent = s.query(AgentRun).filter(AgentRun.workflow_run_id == run_id).one()
+        artifacts = {"branch": RUN_BRANCH, "base_commit": BASE, "head_commit": head}
+        agent.output = {**(agent.output or {}), "artifacts": artifacts}
+        s.commit()
+
+
+def _statement_of(factory: sessionmaker[Session], attestation_id: uuid.UUID) -> Statement:
+    with factory() as s:
+        row = s.get(Attestation, attestation_id)
+        assert row is not None
+        return decode_statement(row.envelope["payload"])
+
+
+def _git_commits(statement: Statement) -> list[tuple[str, str]]:
+    return [
+        (s.name, (s.digest.model_extra or {})["gitCommit"])
+        for s in statement.subject
+        if "gitCommit" in (s.digest.model_extra or {})
+    ]
+
+
+def test_a_change_with_commits_is_named_by_its_head_commit_repository_and_ref(
+    factory, signer
+) -> None:
+    """#214 criterion 2: approving the gate attests the commit the run recorded."""
+    run_id = _seed_run(factory)
+    _record_change(factory, run_id, head=HEAD)
+
+    statement = _statement_of(factory, _mint(factory, signer, run_id))
+
+    assert _git_commits(statement) == [(f"acme/app@refs/heads/{RUN_BRANCH}", HEAD)]
+    # The predicate's own digest stays, so a stored record keeps its meaning.
+    assert statement.subject[0].name == f"workflow-run/{run_id}"
+    assert statement.subject[0].digest.sha256 is not None
+
+
+def test_the_pull_request_statement_names_the_ref_too(factory, signer) -> None:
+    run_id = _seed_run(factory)
+    _record_change(factory, run_id, head=HEAD)
+    with factory() as s:
+        row = AttestationService(s, signer=signer).attest_pull_request(
+            run_id, repository="acme/app", head_commit=HEAD
+        )
+        s.commit()
+        att_id = row.id
+
+    statement = _statement_of(factory, att_id)
+
+    assert _git_commits(statement) == [(f"acme/app@refs/heads/{RUN_BRANCH}", HEAD)]
+
+
+@pytest.mark.parametrize("recorded", ["no commit made", "nothing recorded"])
+def test_a_run_that_made_no_commit_claims_none(factory, signer, recorded: str) -> None:
+    """#214 criterion 3: a run whose head is its base commit names no commit."""
+    run_id = _seed_run(factory)
+    if recorded == "no commit made":
+        _record_change(factory, run_id, head=BASE)
+
+    statement = _statement_of(factory, _mint(factory, signer, run_id))
+
+    assert _git_commits(statement) == []
+    assert statement.predicate["head_commit"] is None
+    assert statement.predicate["assisted_by"] == []
+
+
+def test_the_predicate_records_the_base_the_head_and_who_assisted(factory, signer) -> None:
+    """#214 criterion 4: additive fields for the change's commits and its assistants."""
+    run_id = _seed_run(factory)
+    _record_change(factory, run_id, head=HEAD)
+
+    predicate = _statement_of(factory, _mint(factory, signer, run_id)).predicate
+
+    assert (predicate["base_commit"], predicate["head_commit"]) == (BASE, HEAD)
+    assert predicate["assisted_by"] == [{"agent": "scf-agent", "model": "claude-sonnet-4-5"}]
+    assert predicate["repository"] == "acme/app"
+
+
+def _store_fixture(factory: sessionmaker[Session]) -> tuple[uuid.UUID, dict[str, Any]]:
+    """Store the attestation signed by the code before #214, as its row was written."""
+    fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    predicate = decode_statement(fixture["envelope"]["payload"]).predicate
+    run_id = uuid.UUID(predicate["workflow_run_id"])
+    with factory() as s:
+        project = Project(workspace_id=WS, name="Old", key="OLD")
+        s.add(project)
+        s.flush()
+        task = Task(workspace_id=WS, project_id=project.id, key="OLD-1", title="old")
+        s.add(task)
+        s.flush()
+        s.add(WorkflowRun(id=run_id, workspace_id=WS, task_id=task.id))
+        s.flush()
+        row = Attestation(
+            workspace_id=WS,
+            subject_digest=fixture["subject_digest"],
+            predicate_type=fixture["predicate_type"],
+            envelope=fixture["envelope"],
+            payload_hash=fixture["payload_hash"],
+            keyid=fixture["keyid"],
+            workflow_run_id=run_id,
+            agent_run_id=uuid.UUID(predicate["agent_run_id"]),
+        )
+        s.add(row)
+        s.commit()
+        return row.id, fixture
+
+
+def test_an_attestation_signed_before_214_still_decodes_and_verifies(
+    factory, tmp_path: Path
+) -> None:
+    """#214 criterion 4: no field renamed, removed or retyped; the old record still verifies."""
+    att_id, fixture = _store_fixture(factory)
+    envelope = DsseEnvelope.model_validate(fixture["envelope"])
+
+    provenance = ChangesetProvenance.model_validate(decode_statement(envelope.payload).predicate)
+    assert (provenance.head_commit, provenance.base_commit, provenance.assisted_by) == (
+        "a1" * 20,
+        None,
+        [],
+    )
+    assert verify_stored_attestation(
+        envelope, fixture["payload_hash"], public_key_b64=fixture["public_key"]
+    ).ok
+    # Its envelope comes back over REST unchanged and verifies offline.
+    served = _client(factory, _principal()).get(f"/attestations/{att_id}/envelope")
+    assert served.status_code == 200, served.text
+    assert served.json() == fixture["envelope"]
+    path = tmp_path / "old.dsse.json"
+    path.write_text(served.text, encoding="utf-8")
+    assert cli_verify.main(["--attestation", str(path), "--public-key", fixture["public_key"]]) == 0
+
+
+def test_a_retry_finds_the_pull_request_attestation_signed_before_214(
+    factory, other_signer
+) -> None:
+    """Old statements keep their old subject (``acme/app``), and a retry still finds them."""
+    att_id, fixture = _store_fixture(factory)
+    predicate = decode_statement(fixture["envelope"]["payload"]).predicate
+    with factory() as s:
+        row = AttestationService(s, signer=other_signer).attest_pull_request(
+            uuid.UUID(predicate["workflow_run_id"]),
+            repository="acme/app",
+            head_commit=predicate["head_commit"],
+        )
+    assert row.id == att_id
+
+
+def test_the_envelope_endpoint_returns_what_scf_verify_accepts_offline(
+    factory, signer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """#214 criterion 5: the stored envelope verifies with only the public key, no database."""
+    run_id = _seed_run(factory)
+    _record_change(factory, run_id, head=HEAD)
+    att_id = _mint(factory, signer, run_id)
+
+    resp = _client(factory, _principal()).get(f"/attestations/{att_id}/envelope")
+
+    assert resp.status_code == 200, resp.text
+    with factory() as s:
+        row = s.get(Attestation, att_id)
+        assert row is not None
+        assert resp.json() == row.envelope
+    monkeypatch.delenv("FORGE_DATABASE_URL", raising=False)
+    monkeypatch.delenv("FORGE_ATTEST_SIGNING_KEY", raising=False)
+    path = tmp_path / "envelope.json"
+    path.write_text(resp.text, encoding="utf-8")
+    assert cli_verify.main(["--attestation", str(path), "--public-key", signer.public_key_b64]) == 0
+    assert _git_commits(decode_statement(resp.json()["payload"])) == [
+        (f"acme/app@refs/heads/{RUN_BRANCH}", HEAD)
+    ]
+
+
+def test_the_envelope_of_an_unknown_or_foreign_attestation_is_404(factory, signer) -> None:
+    """Workspace scoping as on the other routes: a foreign id is a 404, never a 403."""
+    att_id = _mint(factory, signer, _seed_run(factory, workspace_id=WS))
+
+    foreign = _client(factory, _principal(workspace_id=WS2)).get(f"/attestations/{att_id}/envelope")
+    unknown = _client(factory, _principal()).get(f"/attestations/{uuid.uuid4()}/envelope")
+
+    assert (foreign.status_code, unknown.status_code) == (404, 404)

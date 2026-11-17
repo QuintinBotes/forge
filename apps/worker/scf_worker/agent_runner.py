@@ -482,7 +482,12 @@ def run_agent_objective(
                 parsed, run_id, workspace_id, refused, events=events, persisted_row=persisted_row
             )
             return refused, parsed
-        with prepared_workspace(parsed, run_id=run_id, workspace_id=workspace_id) as workspace:
+        with prepared_workspace(
+            parsed,
+            run_id=run_id,
+            workspace_id=workspace_id,
+            model=parsed.model or configured_model(),
+        ) as workspace:
             if events is not None:
                 events.emit(
                     RunEventDraft(
@@ -506,6 +511,7 @@ def run_agent_objective(
                 result.artifacts["branch"] = workspace.branch
                 head = _git(workspace.path, "rev-parse", "HEAD").stdout.strip()
                 result.artifacts["head_commit"] = head
+                result.artifacts["base_commit"] = workspace.base_commit
         if deliver and workspace is not None and result.status == RunStatus.SUCCEEDED:
             _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
     except SoftTimeLimitExceeded:

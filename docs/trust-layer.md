@@ -284,14 +284,50 @@ new `FORGE_SECRET_KEY`. Retiring the old key afterwards is safe once each proces
 has signed once. Replacing `FORGE_SECRET_KEY` without keeping the old version
 makes the stored key unreadable: set `FORGE_ATTEST_SIGNING_KEY` instead.
 
-**The commit and what was verified (#175).** A pull-request attestation's
-statement has two subjects:
+**The commit (#175, #214).** The statement for a change that made commits has
+two subjects:
 
-- the workflow run, with the sha256 of the predicate;
-- the repository, with the head commit's `gitCommit` digest.
+- the workflow run, with the sha256 of the predicate. It is the same as before,
+  so stored records keep their meaning;
+- the change, named `<owner>/<repository>@refs/heads/<run branch>`, with the full
+  head commit id as its `gitCommit` digest.
 
-Its predicate adds the `repository`, the `head_commit` and a `verification`
-block:
+The pull-request attestation and the approver's attestation both name the commit.
+The approver's attestation takes it from the run record: the latest builder run
+whose recorded head differs from the commit its branch started from. A run that
+made no commit names none, and its `head_commit` is `null`. Statements signed
+before #214 keep their old subjects: the pull-request statement's commit subject
+is named `<owner>/<repository>`, and an earlier approver's statement has no commit
+subject.
+
+The predicate adds the `repository`, the `base_commit`, the `head_commit` and
+`assisted_by`: the agent and the model of the run that made the commits, or
+`[]` when there are none. All are optional. Attestations signed before them still
+decode and verify: a fixture signed by the code before #214 is checked in
+`apps/api/tests/attest/test_attestation_api.py`.
+
+**Commit trailers (#214).** Every commit made through the agent's `git_commit`
+tool ends with two trailers:
+
+```text
+Assisted-by: scf-agent:claude-sonnet-4-5
+Forge-Run: 6f1c...  (the agent run id)
+```
+
+- `Assisted-by:` names the agent and the model the run used, or `scf-agent`
+  alone when the model is unknown. A model is never guessed. The format is SCF's
+  own (ADR-0016).
+- No agent commit carries `Signed-off-by`: only a person can certify the
+  Developer Certificate of Origin. A `Signed-off-by` line in an agent's message,
+  in any letter case, is removed, and the tool result says so. So are
+  `Assisted-by` and `Forge-Run` lines, so that each commit has one of each,
+  written by SCF.
+- A squash merge or a cherry-pick makes a new commit. Its id is not the attested
+  head, and its message may lose the trailers. The signed statement is the
+  durable record, not the trailer: the pull request names its attestation, and
+  the attestation names the head commit the agent made.
+
+**What was verified (#175).** The predicate's `verification` block records:
 
 - **`checks`:** each declared check's id and outcome, with a `checks_verdict`;
 - **`ci`:** `not_run` until CI is read back (#280);
@@ -345,6 +381,7 @@ auth/tenancy contract as the approvals router (cross-workspace ids read as
 |----------|---------|
 | `GET /attestations` | One workspace-scoped page (`limit`/`offset`, newest first; filters: `workflow_run_id`, `agent_run_id`, `spec_key`) |
 | `GET /attestations/{id}` | One record (`404` for unknown or foreign ids) |
+| `GET /attestations/{id}/envelope` | The stored DSSE envelope as JSON (`payloadType`, `payload`, `signatures`), unchanged, for offline verification (`404` for unknown or foreign ids) |
 | `GET /approvals/{id}/attestation` | The gate's linked run's newest attestation that names an approver, else its pull-request attestation (`404` when the run has none) |
 
 Every response carries a computed `verified: bool` produced by the **same
@@ -377,16 +414,36 @@ Exit codes: `0` verified / chain intact, `1` rejected or tampered, `3` no
 database or no key to verify against (a "can't check" distinguished from a
 "checked and it's tampered").
 
+**From a commit to a verified statement.** A third party needs read access to the
+workspace's API and the deployment's public key, and no access to its database:
+
+1. Find the attestation. The pull request's description names its id. From the
+   commit alone, read the agent run id from its trailer
+   (`git log -1 --format='%(trailers:key=Forge-Run,valueonly)' <commit>`) and list
+   `GET /attestations?agent_run_id=<id>`.
+2. Fetch the envelope: `GET /attestations/<id>/envelope > envelope.json`.
+3. Verify it offline:
+   `scf-verify --attestation envelope.json --public-key <deployment public key>`.
+   It exits `0` and prints `VERIFIED` and each subject.
+4. Check that a subject's `gitCommit` is the full id of the commit, and that its
+   name is the repository and branch expected.
+
+The envelope is a standard DSSE envelope with an in-toto v1 Statement and an
+Ed25519 signature over the PAE. Other DSSE and in-toto tooling can verify it with
+the same public key. The signature's `keyid` is the sha256 of the raw public key,
+so a verifier can check that it holds the key that signed.
+
 ### Current limitations
 
 - **Minted only by the pipeline.** The REST surface and the approvals-UI panel
   are **read-only**: there is deliberately no endpoint to trigger or mint an
   attestation.
 - **REST `verified` is deployment-relative.** The endpoints verify against the
-  public half of this deployment's current signing key, and the raw DSSE
-  envelope is not exposed over REST — independent third-party verification goes
-  through `scf-verify`, which re-reads the stored row. After a rotation, older
+  public half of this deployment's current signing key. After a rotation, older
   attestations read `verified: false` here and verify with `--public-key`.
+- **The public key is handed out by the operator.** No endpoint publishes it. It
+  is the public half of `FORGE_ATTEST_SIGNING_KEY` when that is set, else the
+  `public_key_b64` column of the `attestation_signing_key` row.
 - **CI and the red-team scan read `not_run` (#280, #283)** in a pull-request
   attestation until CI is read back and an adversary attacks the diff.
 - `merkle_leaf_hash` is reserved and unused; there is no batch-Merkle-root

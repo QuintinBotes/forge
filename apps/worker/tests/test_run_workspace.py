@@ -159,6 +159,70 @@ def test_celery_task_runs_in_a_workspace_and_reports_the_branch(
     assert _git(repo, "show", f"{result['artifacts']['branch']}:done.txt") == "yes"
 
 
+def test_a_run_commits_with_its_model_and_records_its_base_commit(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#214: the commit names the model the run used; the base lets the attestation tell
+    a run that committed from one that did not."""
+    monkeypatch.setenv("FORGE_SANDBOX_KIND", "worktree")
+    monkeypatch.setattr(agent_runner_module, "configured_model", lambda: "claude-sonnet-5")
+    scripted = ScriptedModelClient(responses=list(SCRIPT))
+    real_build = agent_runner_module.build_agent_runner
+    monkeypatch.setattr(
+        agent_runner_module,
+        "build_agent_runner",
+        lambda **kw: real_build(model_client=scripted, **kw),
+    )
+    base = _git(repo, "rev-parse", "main")
+
+    result = run_agent_task(
+        {
+            "objective": "Create done.txt",
+            "context": {"repo_path": str(repo), "agent_run_id": str(uuid.uuid4())},
+        }
+    )
+
+    artifacts = result["artifacts"]
+    assert (artifacts["base_commit"], artifacts["head_commit"] != base) == (base, True)
+    trailers = _git(
+        repo, "log", "-1", "--format=%(trailers:key=Assisted-by,valueonly)", artifacts["branch"]
+    )
+    assert trailers == "scf-agent:claude-sonnet-5"
+
+
+def test_a_subagent_commits_with_the_model_its_role_was_routed_to(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#214: the supervised path passes the model to the tool belt the same way."""
+    from scf_worker.multi_agent import _SubAgentRuntime
+
+    monkeypatch.setenv("FORGE_SANDBOX_KIND", "worktree")
+    model = ScriptedModelClient(
+        responses=[
+            tool_response("write_file", {"path": "done.txt", "content": "yes"}),
+            tool_response("git_commit", {"message": "Add done.txt"}),
+            finish_response("done", confidence=0.95),
+        ]
+    )
+    objective = AgentObjective(
+        objective="Create done.txt",
+        model="claude-haiku-5",
+        allowed_actions=["read_repo", "write_code"],
+        context={"role": "implementer"},
+    )
+
+    result = _SubAgentRuntime(model, uuid.uuid4(), repo_root=repo).run(objective)
+
+    committed = [
+        step.observation or ""
+        for step in result.steps
+        if step.tool_call and step.tool_call.tool == "git_commit" and step.observation
+    ]
+    sha = committed[-1].split()[-1]
+    trailers = _git(repo, "log", "-1", "--format=%(trailers:key=Assisted-by,valueonly)", sha)
+    assert trailers == "scf-agent:claude-haiku-5"
+
+
 def test_remove_run_worktrees_removes_only_that_runs_worktree_once(repo: Path) -> None:
     """``forge.cleanup_worktree`` (spec K §4.11): a worktree a cancelled run
     left behind is removed, its branch kept; a second call is a no-op."""

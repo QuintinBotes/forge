@@ -2,6 +2,8 @@
 
 * ``GET /attestations``                    — workspace-scoped page, newest first
 * ``GET /attestations/{id}``               — one record (foreign ids look nonexistent)
+* ``GET /attestations/{id}/envelope``      — its signed DSSE envelope, exactly as stored,
+  for ``scf-verify --attestation`` and other DSSE/in-toto tooling (#214)
 * ``GET /approvals/{id}/attestation``      — the record minted when the gate's
   linked workflow run was attested (404 when none)
 
@@ -27,7 +29,7 @@ leak).
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -125,6 +127,20 @@ def get_attestation(
     if row is None or row.workspace_id != principal.workspace_id:
         raise _not_found(attestation_id)
     return _to_out(row, public_key_b64=_verification_key(session))
+
+
+@router.get("/attestations/{attestation_id}/envelope", response_model=DsseEnvelope)
+def get_attestation_envelope(
+    principal: ReaderDep, session: SessionDep, attestation_id: uuid.UUID
+) -> dict[str, Any]:
+    """The stored DSSE envelope, unchanged, so it verifies offline with the public key alone.
+
+    Workspace-scoped like the record itself: a foreign id is a 404, never a 403.
+    """
+    row = session.get(Attestation, attestation_id)
+    if row is None or row.workspace_id != principal.workspace_id:
+        raise _not_found(attestation_id)
+    return dict(row.envelope)
 
 
 @router.get("/approvals/{approval_id}/attestation", response_model=AttestationOut)

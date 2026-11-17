@@ -108,6 +108,67 @@ def test_git_commit_commits_locally_with_trailer_and_skips_repo_hooks(repo: Path
     assert not (repo / "HOOK_RAN").exists(), "repository hooks must never run on the host"
 
 
+def _trailers(repo: Path, key: str) -> list[str]:
+    """The values of ``key`` in the last commit's trailer block, as git parses it."""
+    out = _git(repo, "log", "-1", f"--format=%(trailers:key={key},valueonly)")
+    return [line for line in out.splitlines() if line]
+
+
+def _change(belt_repo: Path) -> None:
+    (belt_repo / "src" / "app.py").write_text("def handler():\n    return 1\n")
+
+
+def test_every_commit_names_the_agent_and_model_once(repo: Path) -> None:
+    """#214 criterion 6: one ``Assisted-by:`` trailer, and ``Forge-Run:`` is kept."""
+    belt = agent_tool_belt(repo, run_id="run-42", model="claude-sonnet-5")
+    _change(repo)
+    # An agent cannot add a second identity, or claim another model.
+    message = "Implement handler\n\nAssisted-by: someone-else:gpt-1\nForge-Run: not-this-run"
+    assert belt.dispatch("git_commit", {"message": message}).ok
+
+    assert _trailers(repo, "Assisted-by") == ["scf-agent:claude-sonnet-5"]
+    assert _trailers(repo, "Forge-Run") == ["run-42"]
+
+
+def test_a_commit_without_a_known_model_names_the_agent_alone(repo: Path) -> None:
+    """#214: never a guessed model."""
+    belt = agent_tool_belt(repo, run_id="run-42")
+    _change(repo)
+    assert belt.dispatch("git_commit", {"message": "Implement handler"}).ok
+
+    assert _trailers(repo, "Assisted-by") == ["scf-agent"]
+
+
+def test_a_sign_off_in_any_case_is_removed_and_reported(repo: Path) -> None:
+    """#214 criterion 7: only a person certifies the DCO, so no agent commit signs off."""
+    belt = agent_tool_belt(repo, run_id="run-42", model="claude-sonnet-5")
+    _change(repo)
+    message = (
+        "Implement handler\n\nSigned-off-by: A Person <a@example.com>\n"
+        "  signed-OFF-by: Another <b@example.com>"
+    )
+    result = belt.dispatch("git_commit", {"message": message})
+
+    assert result.ok, result.error
+    body = _git(repo, "log", "-1", "--format=%B")
+    assert "signed-off-by" not in body.lower()
+    assert _trailers(repo, "Signed-off-by") == []
+    assert result.data["removed_lines"] == [
+        "Signed-off-by: A Person <a@example.com>",
+        "signed-OFF-by: Another <b@example.com>",
+    ]
+    assert "removed 2 lines" in result.output and "Signed-off-by" in result.output
+
+
+def test_a_message_that_is_only_a_sign_off_is_refused(repo: Path) -> None:
+    _change(repo)
+    result = agent_tool_belt(repo, run_id="r1").dispatch(
+        "git_commit", {"message": "Signed-off-by: A Person <a@example.com>"}
+    )
+    assert not result.ok
+    assert result.error == "message is required"
+
+
 def test_git_commit_with_nothing_staged_is_an_error(repo: Path) -> None:
     result = agent_tool_belt(repo, run_id="r1").dispatch("git_commit", {"message": "noop"})
     assert not result.ok
