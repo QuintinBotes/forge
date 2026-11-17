@@ -313,6 +313,31 @@ def test_a_stage_that_did_not_pass_is_never_attested_as_a_pass(
     assert verification["red_team"]["verdict"] == "not_run"
 
 
+def test_the_attested_run_is_the_builder_not_the_verifier(factory, signer) -> None:
+    """#258: the verifier's run comes first on a governed run, but built nothing."""
+    from datetime import UTC, datetime
+
+    run_id = _seed_run(factory)
+    with factory() as s:
+        task_id = s.get(WorkflowRun, run_id).task_id  # type: ignore[union-attr]
+        s.add(
+            AgentRun(
+                workspace_id=WS,
+                workflow_run_id=run_id,
+                task_id=task_id,
+                role="verifier",
+                model="gpt-6-astra",
+                created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+        )
+        s.commit()
+        row = AttestationService(s, signer=signer).attest_changeset(run_id)
+        s.commit()
+        predicate = decode_statement(row.envelope["payload"]).predicate
+
+    assert (predicate["agent_role"], predicate["model"]) == ("implementer", "claude-sonnet-4-5")
+
+
 def test_list_never_leaks_cross_workspace_records(factory, signer) -> None:
     """The row-level workspace scope, not record existence, is the boundary."""
     own_run = _seed_run(factory, workspace_id=WS)

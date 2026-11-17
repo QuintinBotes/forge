@@ -290,6 +290,7 @@ def test_every_activity_but_resume_agent_is_bound(
         "cleanup_worktree": activities._cleanup_fn,
         "create_approval": activities._approval_fn,
         "run_red_team_scan": activities._red_team_fn,
+        "draft_held_out_scenarios": activities._draft_scenarios_fn,
     }
     refusing = {name for name, fn in services.items() if fn.__name__ == "_not_configured"}
     assert refusing == {"resume_agent"}

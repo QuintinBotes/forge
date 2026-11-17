@@ -48,6 +48,8 @@ with workflow.unsafe.imports_passed_through():
         ApprovalInput,
         ChecksResult,
         CleanupInput,
+        DraftScenariosInput,
+        DraftScenariosResult,
         GuardInputs,
         GuardInputsRequest,
         NotifyInput,
@@ -73,6 +75,10 @@ _NOTIFY_TIMEOUT = timedelta(seconds=30)
 _APPROVAL_TIMEOUT = timedelta(seconds=30)
 _CLEANUP_TIMEOUT = timedelta(seconds=60)
 _REDTEAM_TIMEOUT = timedelta(seconds=900)  # adversary builds + sandboxes a test
+_DRAFTING_TIMEOUT = timedelta(seconds=900)  # a verifier agent drafts scenarios
+#: Marks histories that draft held-out scenarios before the spec gate (#258); a
+#: history recorded before it replays without the step.
+HELD_OUT_DRAFTING_PATCH = "held-out-drafting-258"
 _DEFAULT_AGENT_TIMEOUT = timedelta(seconds=7200)
 _AGENT_HEARTBEAT = timedelta(seconds=120)
 
@@ -153,6 +159,10 @@ class FeatureWorkflow:
                 )  # spec_review → clarification
                 await self._auto("submit_spec_for_review")  # → spec_review
 
+            if workflow.patched(HELD_OUT_DRAFTING_PATCH):
+                # #258: a verifier on another model family drafts held-out scenarios
+                # from the spec before a person sees the spec gate.
+                await self._draft_held_out_scenarios()
             await self._create_approval("spec")
             while True:
                 ev = await self._await_gate([EVENT_SPEC_APPROVED, EVENT_SPEC_CHANGES])
@@ -634,6 +644,22 @@ class FeatureWorkflow:
             ),
             start_to_close_timeout=_NOTIFY_TIMEOUT,
             retry_policy=_FIVE,
+        )
+
+    async def _draft_held_out_scenarios(self) -> DraftScenariosResult:
+        assert self._params is not None
+        return await workflow.execute_activity(
+            "forge.draft_held_out_scenarios",
+            arg=DraftScenariosInput(
+                workflow_run_id=self._params.workflow_run_id,
+                workspace_id=self._params.workspace_id,
+                task_id=self._params.task_id,
+                idempotency_key=f"{self._params.workflow_run_id}:draft_held_out:0",
+            ),
+            start_to_close_timeout=_DRAFTING_TIMEOUT,
+            heartbeat_timeout=_AGENT_HEARTBEAT,
+            retry_policy=_ONCE,
+            result_type=DraftScenariosResult,
         )
 
     async def _run_red_team_scan(self, phase: str = "spec") -> RedTeamResult:

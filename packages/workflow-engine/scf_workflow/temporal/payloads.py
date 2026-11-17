@@ -234,6 +234,27 @@ class NotifyInput:
 
 
 @dataclass
+class DraftScenariosInput:
+    """Argument to the held-out scenario drafting step before the spec gate (#258)."""
+
+    workflow_run_id: uuid.UUID
+    workspace_id: uuid.UUID
+    task_id: uuid.UUID
+    idempotency_key: str = ""
+
+
+@dataclass
+class DraftScenariosResult:
+    """The drafted scenarios' ids; ``reason`` names why none were drafted.
+
+    Never the scenarios' content: only their ids reach the workflow history.
+    """
+
+    scenario_ids: list[str] = field(default_factory=list)
+    reason: str | None = None
+
+
+@dataclass
 class CleanupInput:
     workflow_run_id: uuid.UUID
     workspace_id: uuid.UUID
@@ -257,6 +278,8 @@ __all__ = [
     "ApprovalInput",
     "ChecksResult",
     "CleanupInput",
+    "DraftScenariosInput",
+    "DraftScenariosResult",
     "EscalationPolicyDTO",
     "GuardInputs",
     "GuardInputsRequest",

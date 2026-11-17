@@ -29,6 +29,8 @@ __all__ = [
     "create_scenario",
     "delete_scenario",
     "list_scenarios",
+    "store_agent_draft",
+    "store_draft",
 ]
 
 
@@ -60,27 +62,103 @@ def _scenario(
     return row
 
 
-def _audit(session: Session, principal: Principal, action: str, row: HeldOutScenario) -> None:
+def _emit(
+    session: Session,
+    row: HeldOutScenario,
+    action: str,
+    *,
+    actor_id: uuid.UUID | None,
+    actor_type: str,
+    extra: dict[str, str | None] | None = None,
+) -> None:
+    """Chain ``action`` on ``row`` into the audit log: who, never the content."""
     SqlAuditWriter(session).emit(
         AuditEvent(
-            workspace_id=principal.workspace_id,
+            workspace_id=row.workspace_id,
             action=action,
-            actor_id=principal.user_id,
-            actor_type="user" if principal.decides else "system",
+            actor_id=actor_id,
+            actor_type=actor_type,
             target_type="held_out_scenario",
             scope_type="task",
             scope_id=row.task_id,
             severity="notice",
             detail_ref={"table": "held_out_scenario", "id": str(row.id)},
-            details={
-                "scenario_id": str(row.id),
-                "task_id": str(row.task_id),
-                # Which credential and surface acted, as approval decisions record.
-                "key_id": str(principal.credential_id) if principal.credential_id else None,
-                "surface": principal.surface,
-            },
+            details={"scenario_id": str(row.id), "task_id": str(row.task_id), **(extra or {})},
         )
     )
+
+
+def _audit(session: Session, principal: Principal, action: str, row: HeldOutScenario) -> None:
+    _emit(
+        session,
+        row,
+        action,
+        actor_id=principal.user_id,
+        actor_type="user" if principal.decides else "system",
+        # Which credential and surface acted, as approval decisions record.
+        extra={
+            "key_id": str(principal.credential_id) if principal.credential_id else None,
+            "surface": principal.surface,
+        },
+    )
+
+
+def store_draft(
+    session: Session,
+    *,
+    workspace_id: uuid.UUID,
+    task_id: uuid.UUID,
+    body: HeldOutScenarioCreate,
+    drafted_by: str,
+    drafted_by_user_id: uuid.UUID | None,
+) -> HeldOutScenario:
+    """Add a draft scenario to the store; the caller audits its creation.
+
+    The one place a scenario row is built, for the API and for the verifier (#258).
+    """
+    row = HeldOutScenario(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        task_id=task_id,
+        title=body.title,
+        files=[f.model_dump() for f in body.files],
+        command=body.command,
+        drafted_by=drafted_by,
+        drafted_by_user_id=drafted_by_user_id,
+        state=SCENARIO_DRAFT,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def store_agent_draft(
+    session: Session,
+    *,
+    workspace_id: uuid.UUID,
+    task_id: uuid.UUID,
+    body: HeldOutScenarioCreate,
+    drafted_by: str,
+    agent_run_id: uuid.UUID,
+) -> HeldOutScenario:
+    """Store a draft an agent wrote (the verifier, #258), audited as the agent's."""
+    row = store_draft(
+        session,
+        workspace_id=workspace_id,
+        task_id=task_id,
+        body=body,
+        drafted_by=drafted_by,
+        drafted_by_user_id=None,
+    )
+    _emit(
+        session,
+        row,
+        "held_out.created",
+        actor_id=None,
+        actor_type="agent",
+        extra={"agent_run_id": str(agent_run_id)},
+    )
+    return row
 
 
 def create_scenario(
@@ -88,19 +166,14 @@ def create_scenario(
 ) -> HeldOutScenario:
     """Store a draft scenario for the task, recording who drafted it."""
     _task(session, principal, task_id)
-    row = HeldOutScenario(
-        id=uuid.uuid4(),
+    row = store_draft(
+        session,
         workspace_id=principal.workspace_id,
         task_id=task_id,
-        title=body.title,
-        files=[f.model_dump() for f in body.files],
-        command=body.command,
+        body=body,
         drafted_by=_identity(principal),
         drafted_by_user_id=principal.user_id,
-        state=SCENARIO_DRAFT,
     )
-    session.add(row)
-    session.flush()
     _audit(session, principal, "held_out.created", row)
     return row
 

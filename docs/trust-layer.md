@@ -135,10 +135,39 @@ the builder's objective.
   through any credential.
 - **Audit:** creating, approving and deleting a scenario are chained into the
   audit log with who did it, never the files or the command.
-- **Who drafts them:** per the owner decision of 2026-11-15 (spec FR-022), a
-  verifier agent on another model family drafts scenarios from the spec, and a
-  person approves them at the spec gate. That agent and that step are a
-  follow-up.
+- **Who drafts them (#258):** per the owner decision of 2026-11-15 (spec FR-022),
+  a verifier agent drafts scenarios from the spec before the first `spec`
+  approval opens (`forge.draft_held_out_scenarios`, behind the patch marker
+  `held-out-drafting-258`, so recorded histories replay unchanged).
+  - **Its model:** the reviewer role's configured model, which must be of
+    another family than the builder's. A same-family model is refused before any
+    model call (`verifier_same_family`); with none configured the run records
+    `held_out: verifier_not_configured` and drafts nothing.
+  - **What it sees:** the spec (the issue's or the task's text and its
+    acceptance criteria) as untrusted data, and no tools.
+  - **What is stored:** each scenario is checked against the store's rules and
+    stored as a draft, drafted by `agent:<verifier run>/<model>`, with its own
+    `held_out.created` audit entry. A scenario the store refuses is dropped with
+    its reason.
+  - **Why nothing was drafted:** the run's `held_out` records the reason, and the
+    spec gate opens as before. The reasons:
+    - `verifier_not_configured`: no reviewer model is configured, or there is no
+      key for its provider;
+    - `verifier_same_family`: the reviewer model is of the builder's family;
+    - `verifier_family_unknown`: the builder's family cannot be shown to differ;
+    - `verifier_run_failed`: the verifier's run failed or escalated, a provider
+      error included;
+    - `unparseable_scenarios`: its output did not parse;
+    - `no_scenarios_drafted`: its output parsed, but nothing could be stored;
+    - `no_spec_to_draft_from`: the spec has neither a description nor
+      acceptance criteria.
+  - **What is kept out of records:** scenario content. The verifier's agent run
+    keeps only ids and titles, with no steps and no events; the workflow run
+    keeps only ids and counts; the audit entry keeps only counts and the model.
+- **Who approves them (#288):** the spec gate naming the drafted scenarios,
+  refusing approval while one is undecided, and withdrawing them when the spec
+  changes, is still to come. Until then, scenarios are approved through
+  `POST .../approve` above.
 - **Running them (#286):** running the approved scenarios against the change
   after the checks pass, and returning only a count of failures to the builder,
   is still to come.

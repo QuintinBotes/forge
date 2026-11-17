@@ -16,6 +16,13 @@ class ScenarioFile(BaseModel):
     path: str = Field(min_length=1, max_length=1024)
     content: str
 
+    @field_validator("content")
+    @classmethod
+    def _no_nul(cls, content: str) -> str:
+        if "\x00" in content:  # the database refuses it, and the whole draft with it
+            raise ValueError("a file may not contain a NUL character")
+        return content
+
     @field_validator("path")
     @classmethod
     def _inside_the_checkout(cls, path: str) -> str:
@@ -38,6 +45,13 @@ class HeldOutScenarioCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     files: list[ScenarioFile] = Field(min_length=1)
     command: str = Field(min_length=1)
+
+    @field_validator("title", "command")
+    @classmethod
+    def _no_nul(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("it may not contain a NUL character")
+        return value
 
     @model_validator(mode="after")
     def _one_content_per_path(self) -> HeldOutScenarioCreate:
