@@ -37,9 +37,19 @@ def activity_idempotency_key(workflow_run_id: uuid.UUID | str, effect: str, atte
     return f"{workflow_run_id}:{effect}:{attempt}"
 
 
+def agent_run_id(workflow_run_id: uuid.UUID, attempt: int = 0) -> uuid.UUID:
+    """The id ``forge.run_agent`` gives the agent run of a run's ``attempt`` (#276).
+
+    Known before the agent runs, so whoever starts the run can name it.
+    """
+    key = activity_idempotency_key(workflow_run_id, "run_agent", attempt)
+    return uuid.uuid5(workflow_run_id, key)
+
+
 __all__ = [
     "WORKFLOW_ID_PREFIX",
     "activity_idempotency_key",
+    "agent_run_id",
     "transition_idempotency_key",
     "workflow_id",
     "workflow_run_id_from",

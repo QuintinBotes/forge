@@ -39,7 +39,7 @@ from scf_contracts import (
     RepoTarget,
 )
 from scf_contracts.pm import ExternalTask
-from scf_db.models import AgentRun, RepositoryConnection
+from scf_db.models import AgentRun, RepositoryConnection, Task
 from scf_db.models.enums import PMProvider as DbPMProvider
 from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_db.models.pm import PMConnection, PMTaskLink
@@ -87,6 +87,18 @@ class AgentEnqueueFailed(RuntimeError):
 
 class TrackerRefNotFound(LookupError):
     """A ``provider:key`` tracker ref is unknown in the caller's workspace."""
+
+
+class TaskNotFound(LookupError):
+    """The objective's board task is unknown in the caller's workspace."""
+
+
+class GovernedRunRefused(ValueError):
+    """A governed run cannot start; ``reason`` names why (#276)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 def repo_connected(session: Session, workspace_id: uuid.UUID, repo: str) -> bool:
@@ -151,6 +163,97 @@ def create_and_enqueue_run(
         logger.exception("failed to enqueue agent run %s", run_id)
         raise AgentEnqueueFailed(str(run_id)) from exc
     return AgentRunResult(run_id=run_id, task_id=objective.task_id)
+
+
+def claim_task_repository(task: Task, objective: AgentObjective) -> bool:
+    """Make ``task`` name the objective's repository; ``False`` when it names another.
+
+    Every step of a governed run (the guard, the agent, the checks, the pull
+    request) reads the task's repository, and a task with none gets the objective's.
+    The caller commits.
+    """
+    target = objective.primary_repo_target
+    if target is None:
+        return True
+    current = AgentObjective(objective="claim", repo_targets=task.repo_targets)
+    if current.primary_repo_target is None:
+        task.repo_targets = [target.model_dump(mode="json")]
+        return True
+    return current.primary_repo_target.repo.lower() == target.repo.lower()
+
+
+#: What a governed run's agent step takes from the kept objective; the task sets the
+#: rest (its model, actions and execution mode). See ``agent_run_service`` (#276).
+_GOVERNED_FIELDS = frozenset(
+    {"task_id", "key", "objective", "description", "acceptance_criteria", "repo_targets", "context"}
+)
+
+
+def _unsupported_settings(objective: AgentObjective, task: Task) -> list[str]:
+    """The settings a governed run's agent would not apply, so must not be accepted."""
+    unsupported = set(objective.model_dump(exclude_defaults=True)) - _GOVERNED_FIELDS
+    targets = objective.repo_targets
+    if len(targets) > 1 or (targets and targets[0].skill_profile):
+        unsupported.add("repo_targets")  # one repository, with the task's skill profile
+    if task.execution_mode == ExecutionMode.SUPERVISED_MULTI_AGENT:
+        unsupported.add("execution_mode")  # the agent step refuses it (ADR-0007)
+    return sorted(unsupported)
+
+
+def start_governed_run(
+    session: Session,
+    *,
+    workspace_id: uuid.UUID,
+    objective: AgentObjective,
+    started_by: str,
+    server_context: dict | None = None,
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """Start the workflow run a repository-changing objective runs inside (#276).
+
+    The agent runs in the workflow, after its gates, on the objective's text kept
+    on the run (as issue dispatch keeps it, #171) and the task's settings. A
+    request that sets anything else is refused rather than accepted and dropped.
+    Returns the workflow run's id and the id its first agent step will take.
+    Server-owned and tracker context keys are stripped: ``server_context`` is
+    SCF's own provenance for a tracker reference.
+    """
+    from scf_api.services.workflow_engine import select_workflow_engine
+    from scf_workflow.exceptions import DuplicateRunError
+    from scf_workflow.temporal.engine import TemporalWorkflowEngine
+    from scf_workflow.temporal.ids import agent_run_id
+
+    if objective.task_id is None:
+        raise GovernedRunRefused("governed_run_requires_task")
+    task = session.get(Task, objective.task_id)
+    if task is None or task.workspace_id != workspace_id:
+        raise TaskNotFound(str(objective.task_id))
+    unsupported = _unsupported_settings(objective, task)
+    if unsupported:
+        raise GovernedRunRefused(f"governed_run_unsupported: {', '.join(unsupported)}")
+    for target in objective.repo_targets:
+        if not repo_connected(session, workspace_id, target.repo):
+            raise RepoNotConnected(target.repo)
+    if not claim_task_repository(task, objective):
+        raise GovernedRunRefused("task_repository_mismatch")
+    own = {k: v for k, v in objective.context.items() if k not in STRIPPED_CONTEXT}
+    trigger: dict[str, object] = {
+        "source": "api",
+        "started_by": started_by,
+        "objective": objective.model_copy(update={"context": own}).model_dump(mode="json"),
+    }
+    if server_context:
+        # The agent renders the tracker item's text as untrusted data under this label.
+        trigger["source_label"] = server_context.get("source")
+        trigger["tracker"] = server_context.get("tracker")
+    engine = select_workflow_engine(session=session, workspace_id=workspace_id)
+    assert isinstance(engine, TemporalWorkflowEngine)  # the caller selected the durable engine
+    try:
+        run = engine.start(task.id, trigger=trigger, started_by=started_by)
+    except DuplicateRunError as exc:
+        raise GovernedRunRefused("governed_run_active") from exc
+    session.commit()
+    assert run.id is not None  # the engine assigns it on start
+    return run.id, agent_run_id(run.id)
 
 
 # --------------------------------------------------------------------------- #
@@ -311,12 +414,16 @@ __all__ = [
     "SERVER_OWNED_CONTEXT",
     "TRACKER_CONTEXT_KEYS",
     "AgentEnqueueFailed",
+    "GovernedRunRefused",
     "RepoNotConnected",
     "ResolvedTrackerRef",
+    "TaskNotFound",
     "TrackerRefNotFound",
     "build_tracker_objective",
+    "claim_task_repository",
     "create_and_enqueue_run",
     "parse_acceptance_criteria",
     "repo_connected",
     "resolve_tracker_ref",
+    "start_governed_run",
 ]

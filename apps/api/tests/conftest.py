@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -51,6 +52,48 @@ def make_test_principal(
         auth_method="test",
         scopes=["*"],
     )
+
+
+class FakeTemporalHandle:
+    result_run_id = "fake-temporal-run"
+
+
+class FakeTemporalClient:
+    """Records the workflows started; nothing runs (the workflow's own tests do).
+
+    Like Temporal under ``REJECT_DUPLICATE``, it refuses a workflow id it started.
+    """
+
+    def __init__(self) -> None:
+        self.started: list[Any] = []
+        self._ids: set[str] = set()
+
+    async def start_workflow(self, _workflow: Any, params: Any, **kw: Any) -> FakeTemporalHandle:
+        from temporalio.exceptions import WorkflowAlreadyStartedError
+
+        if kw["id"] in self._ids:
+            raise WorkflowAlreadyStartedError(kw["id"], "FeatureWorkflow")
+        self._ids.add(kw["id"])
+        self.started.append(params)
+        return FakeTemporalHandle()
+
+    def get_workflow_handle(self, _wf_id: str) -> FakeTemporalHandle:
+        return FakeTemporalHandle()
+
+
+@pytest.fixture
+def fake_temporal(monkeypatch: pytest.MonkeyPatch) -> FakeTemporalClient:
+    """Select the Temporal backend, with a client that starts nothing."""
+    from scf_api.services import workflow_engine as workflow_engine_module
+
+    fake = FakeTemporalClient()
+
+    async def _get_client(_settings: object = None) -> FakeTemporalClient:
+        return fake
+
+    monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "temporal")
+    monkeypatch.setattr(workflow_engine_module, "get_temporal_client", _get_client)
+    return fake
 
 
 @pytest.fixture

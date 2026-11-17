@@ -413,21 +413,18 @@ def _give_task_the_repository(
     the issue names none: it gets the one the dispatch config names. A task that
     already names another repository is refused rather than run against two.
     """
+    from scf_api.services.agent_dispatch import claim_task_repository
     from scf_db.models import Task
 
-    target = objective.primary_repo_target
-    if target is None:
+    if objective.primary_repo_target is None:
         return None
     with session_factory() as session:
         task = session.get(Task, task_id)
         if task is None:
             return "no_board_task"
-        current = AgentObjective(objective="dispatch", repo_targets=task.repo_targets)
-        if current.primary_repo_target is None:
-            task.repo_targets = [target.model_dump(mode="json")]
-            session.commit()
-        elif current.primary_repo_target.repo.lower() != target.repo.lower():
+        if not claim_task_repository(task, objective):
             return "task_repository_mismatch"
+        session.commit()
     return None
 
 
