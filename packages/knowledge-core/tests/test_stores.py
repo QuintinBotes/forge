@@ -401,6 +401,8 @@ def test_exact_class_name_query_ranks_the_defining_file_above_its_users(
     hits = store.search("LedgerStore", scope, k=5)
     assert hits[0].path == "ledger/stores.py"
     assert {h.path for h in hits[1:]} == {f"tests/test_ledger_{n}.py" for n in range(3)}
+    # Not written as an identifier, so no definition boost: plain BM25 order.
+    assert store.search("ledgerstore", scope, k=5)[0].path != "ledger/stores.py"
 
 
 def test_bm25_partial_match_still_ranks_on_sqlite(

@@ -771,9 +771,11 @@ class Bm25Store:
         query_terms = _query_terms_of(query)
         if not query_terms:
             return []
+        # Only a symbol among the scored query terms can earn the definition boost.
+        identifiers = identifier_terms(query).intersection(query_terms)
         with self._session_factory() as session:
             if session.get_bind().dialect.name == "postgresql":
-                candidates = self._candidates_postgres(session, query_terms, scope)
+                candidates = self._candidates_postgres(session, query_terms, scope, identifiers)
                 corpus: list[RetrievalChunk] | None = None
             else:
                 candidates = list(session.scalars(_scope_filter(select(RetrievalChunk), scope)))
@@ -792,7 +794,6 @@ class Bm25Store:
             if n_docs <= 0:
                 return []
 
-            identifiers = identifier_terms(query)
             scored = [
                 (
                     bm25_score(
@@ -814,7 +815,11 @@ class Bm25Store:
             return [_to_retrieved(row, score=score) for score, row in ranked[:k]]
 
     def _candidates_postgres(
-        self, session: Session, query_terms: list[str], scope: KnowledgeScope
+        self,
+        session: Session,
+        query_terms: list[str],
+        scope: KnowledgeScope,
+        identifiers: frozenset[str],
     ) -> list[RetrievalChunk]:
         # OR semantics keep BM25's recall (``plainto_tsquery`` ANDs and loses
         # it). The query is the exact tokens as quoted lexemes, matching the
@@ -832,18 +837,36 @@ class Bm25Store:
         stmt: Select = select(RetrievalChunk).where(RetrievalChunk.tsv.op("@@")(ts_query))
         # Ties at the cut break on a stable key (never the random chunk id), so
         # the same index always yields the same candidates (spec J §2.4.1).
+        stable_key = (
+            RetrievalChunk.knowledge_source_id,
+            RetrievalChunk.path,
+            RetrievalChunk.start_line,
+            RetrievalChunk.content_hash,
+        )
         stmt = (
             _scope_filter(stmt, scope)
-            .order_by(
-                rank.desc(),
-                RetrievalChunk.knowledge_source_id,
-                RetrievalChunk.path,
-                RetrievalChunk.start_line,
-                RetrievalChunk.content_hash,
-            )
+            .order_by(rank.desc(), *stable_key)
             .limit(_BM25_CANDIDATE_LIMIT)
         )
-        return list(session.scalars(stmt))
+        pool = {row.id: row for row in session.scalars(stmt)}
+        if identifiers:
+            # A definition names its symbol once, so ``ts_rank_cd`` cuts it
+            # below its users; add the chunks defining a queried symbol so the
+            # rescore boosts them here as SQLite does (#267). Capped like the pool.
+            symbol = func.lower(RetrievalChunk.chunk_metadata["symbol"].as_string())
+            defining = (
+                _scope_filter(
+                    select(RetrievalChunk).where(
+                        RetrievalChunk.tsv.op("@@")(ts_query),
+                        symbol.in_(sorted(identifiers)),
+                    ),
+                    scope,
+                )
+                .order_by(*stable_key)
+                .limit(_BM25_CANDIDATE_LIMIT)
+            )
+            pool.update((row.id, row) for row in session.scalars(defining))
+        return list(pool.values())
 
     @staticmethod
     def _load_stats(

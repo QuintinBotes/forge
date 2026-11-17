@@ -654,6 +654,30 @@ def test_parity_snake_case_flood_keeps_exact_tokens(
     _assert_parity(pg_session_factory, corpus, [("retry", True), ("retry_limit", True)])
 
 
+def test_parity_symbol_definition_survives_a_candidate_flood(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    # #267 review: the definition names its symbol once, so ``ts_rank_cd``
+    # ranks it below every chunk that uses the name twice; the boost must
+    # still reach it on Postgres when more than 200 such chunks exist.
+    from scf_knowledge.stores import _BM25_CANDIDATE_LIMIT
+
+    body = " ".join(f"step_{i} returns value" for i in range(60))
+    corpus = [
+        Chunk(content=f"store = LedgerStore() and LedgerStore {i}", path=f"use{i}.py")
+        for i in range(_BM25_CANDIDATE_LIMIT + 5)
+    ]
+    corpus.append(
+        Chunk(content=f"class LedgerStore: {body}", path="stores.py", symbol="LedgerStore")
+    )
+    _assert_parity(pg_session_factory, corpus, [("LedgerStore", True)])
+    sqlite_factory, workspace_id, _ = _seed_sqlite(corpus)
+    hits = Bm25Store(sqlite_factory).search(
+        "LedgerStore", KnowledgeScope(workspace_id=workspace_id), k=10
+    )
+    assert hits[0].path == "stores.py"
+
+
 def test_parity_identifiers_with_edge_underscores_and_long_tokens(
     pg_session_factory: sessionmaker[Session],
 ) -> None:

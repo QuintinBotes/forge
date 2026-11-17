@@ -179,14 +179,15 @@ def query_terms(query: str) -> list[str]:
     return terms[:MAX_QUERY_TERMS]
 
 
-#: A word written as code: an underscore, or a capital after a lower-case letter or digit.
-_IDENTIFIER_SHAPE_RE = re.compile(r"_|[a-z0-9][A-Z]")
+#: A word written as code: an underscore, a capital after a lower-case letter or
+#: digit, or an acronym running into a word (``MCPClient``; ``URLs`` is not one).
+_IDENTIFIER_SHAPE_RE = re.compile(r"_|[a-z0-9][A-Z]|[A-Z]{2}[a-z]{2}")
 
 
 def identifier_terms(query: str) -> frozenset[str]:
     """Lower-cased query tokens written as code identifiers, as tokenised.
 
-    ``PgVectorStore``, ``getUser`` and ``iter_source_files`` qualify; a plain
+    ``PgVectorStore``, ``getUser``, ``MCPClient`` and ``iter_source_files`` qualify; a plain
     word (``chunk``, ``Load``) does not, so prose never reads as a symbol name
     just because some function shares the word.
     """
