@@ -62,6 +62,10 @@ x-python-env: &python-env
   FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:-dev-only-insecure-secret-change-me-0123456789abcdef}
   FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:-forge}@db:5432/${POSTGRES_DB:-forge}
   FORGE_REDIS_URL: redis://redis:6379/0
+  # The address the browser uses: the Caddy edge, where /api/* reaches the API. The
+  # session cookie is honoured only from this origin, and the SSO callback and SCIM
+  # addresses are built from it.
+  FORGE_PUBLIC_URL: ${FORGE_PUBLIC_URL:-http://localhost:${CADDY_PORT:-8080}/api}
   MCP_GATEWAY_URL: http://mcp-gateway:8001
   MINIO_ENDPOINT: http://minio:9000
   # F27 multi-agent coordinator (supervised runs); read by CoordinatorSettings.

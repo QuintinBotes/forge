@@ -12,19 +12,27 @@ The OSS-facing paths are offline + file-based, mirroring ``scf marketplace``:
   reproduce path shipped on every public submission detail: deterministically
   replay the downloaded bundles against the frozen suite and exit ``0``
   (verified) / ``1`` (rejected), printing claimed vs reproduced (AC20/AC21).
+* ``scf bench run --suite-dir <dir> --solver reference|empty [--out <dir>]`` — run
+  a solver over a forge-factory-bench suite offline, in the local worktree
+  sandbox, and print the Markdown report (#197). ``--out`` also writes
+  ``report.json``/``report.md`` and keeps ``results.jsonl`` so a rerun resumes.
+  Exits ``1`` when any case is an infrastructure error.
 
-The DB/API-backed subcommands (``run``/``submit``/``leaderboard``) require a
-running SCF API and are PARKED here (same precedent as the marketplace CLI);
-use ``/api/v1/benchmarks/*`` or the web UI.
+The DB/API-backed subcommands (``submit``/``leaderboard``) require a running SCF
+API and are PARKED here (same precedent as the marketplace CLI); use
+``/api/v1/benchmarks/*`` or the web UI.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import subprocess
 import sys
 from pathlib import Path
 
+from scf_agent.sandbox import LocalSandboxProvider
 from scf_eval.benchmark import (
     BenchmarkContentHashMismatch,
     BenchmarkError,
@@ -36,6 +44,7 @@ from scf_eval.benchmark import (
     replay_bundles,
     verify_submission,
 )
+from scf_eval.sweval import CaseOutcome, empty_solver, reference_solver, run_suite
 
 DEFAULT_EPSILON = 0.005
 
@@ -107,6 +116,49 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 0 if result.verified else 1
 
 
+def _git_head() -> str | None:
+    """The commit of this checkout, for the report; None outside a git checkout."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    suite_dir = Path(args.suite_dir)
+    out = Path(args.out) if args.out else None
+    try:
+        solver = reference_solver(suite_dir) if args.solver == "reference" else empty_solver()
+        if out is not None:
+            out.mkdir(parents=True, exist_ok=True)
+        report = asyncio.run(
+            run_suite(
+                suite_dir,
+                solver,
+                sandbox_provider=LocalSandboxProvider(),
+                results_path=out / "results.jsonl" if out else None,
+                scf_commit=_git_head(),
+            )
+        )
+    except (BenchmarkError, FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    markdown = report.to_markdown()
+    if out is not None:
+        (out / "report.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        (out / "report.md").write_text(markdown, encoding="utf-8")
+    print(markdown, end="")
+    infra = any(c.outcome == CaseOutcome.INFRASTRUCTURE_ERROR for c in report.cases)
+    return 1 if infra else 0
+
+
 def _requires_api(args: argparse.Namespace) -> int:  # pragma: no cover - parked path
     print(
         f"'{args.command}' talks to a running SCF API (/api/v1/benchmarks) — "
@@ -134,7 +186,13 @@ def build_parser() -> argparse.ArgumentParser:
     ver.add_argument("--epsilon", type=float, default=DEFAULT_EPSILON)
     ver.set_defaults(func=_cmd_verify)
 
-    for name in ("run", "submit", "leaderboard"):
+    run = sub.add_parser("run", help="run a solver over a suite offline and report (exit 0/1)")
+    run.add_argument("--suite-dir", dest="suite_dir", required=True)
+    run.add_argument("--solver", choices=("reference", "empty"), default="reference")
+    run.add_argument("--out", help="directory for report.json, report.md and results.jsonl")
+    run.set_defaults(func=_cmd_run)
+
+    for name in ("submit", "leaderboard"):
         p = sub.add_parser(name, help=f"{name} (requires a running API — parked)")
         p.set_defaults(func=_requires_api)
 

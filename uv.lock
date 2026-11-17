@@ -28,6 +28,7 @@ members = [
     "scf-obs",
     "scf-orchestration-policy",
     "scf-policy",
+    "scf-risk",
     "scf-skill",
     "scf-spec",
     "scf-worker",
@@ -3358,6 +3359,21 @@ requires-dist = [
 ]
 
 [[package]]
+name = "scf-risk"
+version = "0.1.0"
+source = { editable = "packages/risk-core" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "scf-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "scf-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
 name = "scf-skill"
 version = "0.1.0"
 source = { editable = "packages/skill-sdk" }
@@ -3747,6 +3763,7 @@ dependencies = [
     { name = "scf-obs" },
     { name = "scf-orchestration-policy" },
     { name = "scf-policy" },
+    { name = "scf-risk" },
     { name = "scf-skill" },
     { name = "scf-spec" },
     { name = "scf-worker" },
@@ -3792,6 +3809,7 @@ requires-dist = [
     { name = "scf-obs", editable = "packages/observability" },
     { name = "scf-orchestration-policy", editable = "packages/orchestration-policy" },
     { name = "scf-policy", editable = "packages/policy-sdk" },
+    { name = "scf-risk", editable = "packages/risk-core" },
     { name = "scf-skill", editable = "packages/skill-sdk" },
     { name = "scf-spec", editable = "packages/spec-engine" },
     { name = "scf-worker", editable = "apps/worker" },

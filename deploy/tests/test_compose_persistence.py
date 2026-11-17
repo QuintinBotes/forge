@@ -122,6 +122,20 @@ def test_the_dev_web_reaches_the_api_through_caddy() -> None:
     assert env["NEXT_PUBLIC_API_URL"].rstrip("}").endswith("/api")
 
 
+@pytest.mark.parametrize("service", DEV_PYTHON_SERVICES)
+def test_the_dev_public_url_is_the_edge_the_browser_uses(service: str) -> None:
+    """The session cookie is honoured only from ``public_url``'s origin (issue #220).
+
+    Left at its ``http://localhost:8000`` default, every cookie write, ``/ws`` and
+    sign-out made through the Caddy edge would be refused as cross-origin. The
+    ``/api`` path keeps the SSO callback and SCIM addresses on the API route.
+    """
+    web = _env(DEV, "web")["NEXT_PUBLIC_API_URL"]
+    assert _env(DEV, service)["FORGE_PUBLIC_URL"] == web.replace(
+        "NEXT_PUBLIC_API_URL", "FORGE_PUBLIC_URL"
+    )
+
+
 @pytest.mark.parametrize("caddyfile", ["Caddyfile", "Caddyfile.dev"], ids=["production", "dev"])
 def test_the_edge_proxies_the_realtime_sockets(caddyfile: str) -> None:
     """Both sockets: the board channel at /ws, spec collab under /ws/spec/{id}."""

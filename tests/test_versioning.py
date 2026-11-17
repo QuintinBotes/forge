@@ -121,6 +121,6 @@ def test_deliberate_desync_is_detected(tmp_path: Path) -> None:
 
 
 def test_expected_file_counts() -> None:
-    # 21 packages + 4 apps = 25 member pyprojects, and one __version__ per package.
-    assert len(_member_pyprojects()) == 25
-    assert len(_package_inits()) == 25
+    # 22 packages + 4 apps = 26 member pyprojects, and one __version__ per package.
+    assert len(_member_pyprojects()) == 26
+    assert len(_package_inits()) == 26

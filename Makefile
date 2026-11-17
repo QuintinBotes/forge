@@ -15,7 +15,8 @@ MYPY_PACKAGES := \
 	scf_spec scf_board scf_knowledge scf_integrations scf_mcp \
 	scf_policy scf_authz scf_skill scf_eval scf_approval scf_api \
 	scf_worker scf_mcp_gateway scf_orchestration_policy \
-	scf_deploy scf_auth scf_marketplace scf_obs scf_cli_bridge scf_world
+	scf_deploy scf_auth scf_marketplace scf_obs scf_cli_bridge scf_world \
+	scf_risk
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

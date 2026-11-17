@@ -412,6 +412,130 @@
       "title": "ReviewRules",
       "type": "object"
     },
+    "RiskClass": {
+      "description": "How dangerous a change is, ordered ``minimal < low < high < critical``.",
+      "enum": [
+        "minimal",
+        "low",
+        "high",
+        "critical"
+      ],
+      "title": "RiskClass",
+      "type": "string"
+    },
+    "RiskClassRequirements": {
+      "additionalProperties": false,
+      "description": "What the policy demands of the shipping gates for one class.",
+      "properties": {
+        "approvals": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Approvals",
+          "type": "integer"
+        },
+        "deploy": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "gated"
+          ],
+          "title": "Deploy",
+          "type": "string"
+        },
+        "red_team": {
+          "default": false,
+          "title": "Red Team",
+          "type": "boolean"
+        },
+        "self_eval": {
+          "default": false,
+          "title": "Self Eval",
+          "type": "boolean"
+        }
+      },
+      "title": "RiskClassRequirements",
+      "type": "object"
+    },
+    "RiskRule": {
+      "additionalProperties": false,
+      "description": "One ``derive`` entry: a change touching any of ``paths`` is at least ``class``.",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/RiskClass"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Paths",
+          "type": "array"
+        }
+      },
+      "required": [
+        "paths",
+        "class"
+      ],
+      "title": "RiskRule",
+      "type": "object"
+    },
+    "RiskRules": {
+      "additionalProperties": false,
+      "description": "The ``risk_rules`` block of the repository policy.",
+      "properties": {
+        "classes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RiskClassRequirements"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/RiskClass"
+          },
+          "title": "Classes",
+          "type": "object"
+        },
+        "default": {
+          "$ref": "#/$defs/RiskClass"
+        },
+        "derive": {
+          "items": {
+            "$ref": "#/$defs/RiskRule"
+          },
+          "title": "Derive",
+          "type": "array"
+        },
+        "enforcement": {
+          "default": "shadow",
+          "enum": [
+            "shadow",
+            "enforcing"
+          ],
+          "title": "Enforcement",
+          "type": "string"
+        },
+        "fallback": {
+          "$ref": "#/$defs/RiskClass",
+          "default": "critical"
+        }
+      },
+      "required": [
+        "default"
+      ],
+      "title": "RiskRules",
+      "type": "object"
+    },
     "RuleEffect": {
       "description": "Effect a conditional policy rule applies (F29 \u2014 advanced policy engine).\n\nA rule may always *tighten* (``deny`` / ``require_approval``); it may only\n*loosen* (``allow``) a non-critical base denial and only with\n``override_base=True`` (see ``ConditionalRule``).",
       "enum": [
@@ -539,6 +663,17 @@
     },
     "review_rules": {
       "$ref": "#/$defs/ReviewRules"
+    },
+    "risk_rules": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RiskRules"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "rules": {
       "items": {

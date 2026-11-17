@@ -43,6 +43,7 @@ known-first-party = [
     "scf_coordinator",
     "scf_spec",
     "scf_orchestration_policy",
+    "scf_risk",
     "scf_board",
     "scf_knowledge",
     "scf_integrations",

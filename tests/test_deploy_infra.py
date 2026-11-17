@@ -29,6 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEPLOY = REPO_ROOT / "deploy"
 COMPOSE = DEPLOY / "docker-compose.yml"
 COMPOSE_DEV = DEPLOY / "docker-compose.dev.yml"
+COMPOSE_SINGLE_USER = DEPLOY / "docker-compose.single-user.yml"
 CADDYFILE = DEPLOY / "caddy" / "Caddyfile"
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 DOCKERIGNORE = REPO_ROOT / ".dockerignore"
@@ -283,7 +284,11 @@ def _dockerfile_from_refs() -> dict[str, list[str]]:
     return refs
 
 
-@pytest.mark.parametrize("compose_path", [COMPOSE, COMPOSE_DEV], ids=["prod", "dev"])
+@pytest.mark.parametrize(
+    "compose_path",
+    [COMPOSE, COMPOSE_DEV, COMPOSE_SINGLE_USER],
+    ids=["prod", "dev", "single-user"],
+)
 def test_prod_pulled_images_pinned_by_digest(compose_path: Path) -> None:
     pulled = _pulled_images(compose_path)
     assert pulled, f"{compose_path.name}: expected at least one pulled image"
@@ -356,7 +361,7 @@ def test_build_manifest_covers_every_image() -> None:
     # Coverage: every pulled compose ref and every Dockerfile base ref (digest
     # stripped) must be recorded, plus the 4 first-party built images.
     recorded = set(images)
-    for compose_path in (COMPOSE, COMPOSE_DEV):
+    for compose_path in (COMPOSE, COMPOSE_DEV, COMPOSE_SINGLE_USER):
         for service, image in _pulled_images(compose_path).items():
             bare = image.split("@", 1)[0]
             assert bare in recorded, f"manifest missing pulled image {bare} ({service})"
@@ -368,6 +373,29 @@ def test_build_manifest_covers_every_image() -> None:
         matches = [r for r in recorded if r.startswith(f"swarm-code-factory/{svc}:")]
         assert matches, f"manifest missing built image swarm-code-factory/{svc}:<version>"
         assert all(images[m]["kind"] == "built" for m in matches)
+
+
+def test_every_compose_pin_matches_the_manifest_digest() -> None:
+    """A compose file left on an old digest keeps pulling that image while the
+    manifest records the new one, so compare the full pin, not the bare name."""
+    images = json.loads(BUILD_MANIFEST.read_text(encoding="utf-8"))["images"]
+    for compose_path in sorted(DEPLOY.glob("docker-compose*.yml")):
+        for service, image in _pulled_images(compose_path).items():
+            bare, _, digest = image.partition("@")
+            recorded = images.get(bare, {}).get("digest")
+            assert recorded == digest, (
+                f"{compose_path.name}: {service} pins {image}, the manifest records {recorded}"
+            )
+
+
+def test_pin_digests_rewrites_every_compose_file_that_pulls_images() -> None:
+    """deploy/scripts/pin-digests.sh rolls pins forward only in the files it lists."""
+    script = (DEPLOY / "scripts" / "pin-digests.sh").read_text(encoding="utf-8")
+    array = re.search(r"^COMPOSE_FILES=\((.*?)\)", script, re.MULTILINE | re.DOTALL)
+    assert array, "pin-digests.sh no longer defines COMPOSE_FILES"
+    listed = set(re.findall(r"deploy/(docker-compose[\w.-]*\.yml)", array.group(1)))
+    pulling = {p.name for p in DEPLOY.glob("docker-compose*.yml") if _pulled_images(p)}
+    assert pulling <= listed, f"pin-digests.sh skips {sorted(pulling - listed)}"
 
 
 def test_prod_app_healthchecks_use_python_not_curl() -> None:

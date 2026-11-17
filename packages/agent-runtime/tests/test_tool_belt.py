@@ -108,6 +108,112 @@ def test_git_commit_commits_locally_with_trailer_and_skips_repo_hooks(repo: Path
     assert not (repo / "HOOK_RAN").exists(), "repository hooks must never run on the host"
 
 
+def _trailers(repo: Path, key: str) -> list[str]:
+    """The values of ``key`` in the last commit's message, as ``git interpret-trailers
+    --parse`` reads them (the parsing ADR-0016 pins)."""
+    parsed = subprocess.run(
+        ["git", "interpret-trailers", "--parse"],
+        input=_git(repo, "log", "-1", "--format=%B"),
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    prefix = f"{key.lower()}: "
+    return [line[len(prefix) :] for line in parsed.splitlines() if line.lower().startswith(prefix)]
+
+
+def _change(belt_repo: Path) -> None:
+    (belt_repo / "src" / "app.py").write_text("def handler():\n    return 1\n")
+
+
+def test_every_commit_names_the_agent_and_model_once(repo: Path) -> None:
+    """#214 criterion 6: one ``Assisted-by:`` trailer, and ``Forge-Run:`` is kept."""
+    belt = agent_tool_belt(repo, run_id="run-42", model="claude-sonnet-5")
+    _change(repo)
+    # An agent cannot add a second identity, or claim another model.
+    message = "Implement handler\n\nAssisted-by: someone-else:gpt-1\nForge-Run: not-this-run"
+    assert belt.dispatch("git_commit", {"message": message}).ok
+
+    assert _trailers(repo, "Assisted-by") == ["scf-agent:claude-sonnet-5"]
+    assert _trailers(repo, "Forge-Run") == ["run-42"]
+
+
+def test_a_commit_without_a_known_model_names_the_agent_alone(repo: Path) -> None:
+    """#214: never a guessed model."""
+    belt = agent_tool_belt(repo, run_id="run-42")
+    _change(repo)
+    assert belt.dispatch("git_commit", {"message": "Implement handler"}).ok
+
+    assert _trailers(repo, "Assisted-by") == ["scf-agent"]
+
+
+def test_a_sign_off_in_any_case_is_removed_and_reported(repo: Path) -> None:
+    """#214 criterion 7: only a person certifies the DCO, so no agent commit signs off."""
+    belt = agent_tool_belt(repo, run_id="run-42", model="claude-sonnet-5")
+    _change(repo)
+    message = (
+        "Implement handler\n\nSigned-off-by: A Person <a@example.com>\n"
+        "  signed-OFF-by: Another <b@example.com>"
+    )
+    result = belt.dispatch("git_commit", {"message": message})
+
+    assert result.ok, result.error
+    body = _git(repo, "log", "-1", "--format=%B")
+    assert "signed-off-by" not in body.lower()
+    assert _trailers(repo, "Signed-off-by") == []
+    assert result.data["removed_lines"] == [
+        "Signed-off-by: A Person <a@example.com>",
+        "signed-OFF-by: Another <b@example.com>",
+    ]
+    assert "removed 2 lines" in result.output and "Signed-off-by" in result.output
+
+
+@pytest.mark.parametrize("hidden", ["\u200b", "\ufeff"], ids=["zero-width space", "BOM"])
+def test_a_sign_off_behind_an_invisible_character_is_removed_too(repo: Path, hidden: str) -> None:
+    """It would render as a person's sign-off on GitHub (#214 criterion 7)."""
+    belt = agent_tool_belt(repo, run_id="run-42")
+    _change(repo)
+    message = f"Implement handler\n\n{hidden}Signed-off-by: A Person <a@example.com>"
+
+    result = belt.dispatch("git_commit", {"message": message})
+
+    assert result.ok, result.error
+    body = _git(repo, "log", "-1", "--format=%B")
+    assert "signed-off-by" not in body.lower()
+    assert len(result.data["removed_lines"]) == 1
+
+
+@pytest.mark.parametrize("divider", ["---", "--- notes", "---\tnotes"])
+def test_a_divider_line_is_refused_so_git_still_finds_the_trailers(
+    repo: Path, divider: str
+) -> None:
+    """``git interpret-trailers`` and ``git am`` end a message at a ``---`` line, which
+    would hide the trailers SCF appends after it."""
+    belt = agent_tool_belt(repo, run_id="run-42", model="claude-sonnet-5")
+    _change(repo)
+    before = _git(repo, "rev-parse", "HEAD")
+
+    refused = belt.dispatch("git_commit", {"message": f"Implement handler\n\n{divider}\nmore"})
+
+    assert not refused.ok
+    assert "---" in (refused.error or "") and "remove" in (refused.error or "")
+    assert _git(repo, "rev-parse", "HEAD") == before
+    # A dash rule that is not a divider still commits, and git parses the trailers.
+    assert belt.dispatch("git_commit", {"message": "Implement handler\n\n----\nmore"}).ok
+    assert _trailers(repo, "Assisted-by") == ["scf-agent:claude-sonnet-5"]
+    assert _trailers(repo, "Forge-Run") == ["run-42"]
+
+
+def test_a_message_that_is_only_a_sign_off_is_refused(repo: Path) -> None:
+    _change(repo)
+    result = agent_tool_belt(repo, run_id="r1").dispatch(
+        "git_commit", {"message": "Signed-off-by: A Person <a@example.com>"}
+    )
+    assert not result.ok
+    assert result.error == "message is required"
+
+
 def test_git_commit_with_nothing_staged_is_an_error(repo: Path) -> None:
     result = agent_tool_belt(repo, run_id="r1").dispatch("git_commit", {"message": "noop"})
     assert not result.ok

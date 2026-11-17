@@ -14,6 +14,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+import scf_api.auth.service as auth_service_module
+from scf_api.auth.service import AuthService
 from scf_api.deps import Principal, get_current_principal
 from scf_api.main import create_app
 from scf_api.routers import run_events as run_events_router
@@ -201,3 +203,28 @@ def test_foreign_and_unknown_runs_are_404(factory) -> None:
     run_id = _seed_finished_run(factory)
     assert _client(factory, OTHER).get(f"/agent/runs/{run_id}/events").status_code == 404
     assert _client(factory).get(f"/agent/runs/{uuid.uuid4()}/events").status_code == 404
+
+
+def test_the_session_cookie_alone_opens_the_stream_of_its_own_workspace(
+    factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #220: a browser follows a run with its SSO session cookie, no token in the URL."""
+    auth = AuthService(secret_key=b"3" * 32)
+    monkeypatch.setattr(auth_service_module, "_default_service", auth)
+    app = create_app()
+    app.dependency_overrides[run_events_router.get_run_event_session_factory] = lambda: factory
+    client = TestClient(app)
+    run_id = _seed_finished_run(factory)
+
+    def cookie(workspace_id: uuid.UUID) -> dict[str, str]:
+        _, token = auth.bootstrap_key(
+            workspace_id=workspace_id, name="sso-session-t", role=UserRole.VIEWER, surface="web"
+        )
+        return {"cookie": f"forge_session={token}"}
+
+    with client.stream("GET", f"/agent/runs/{run_id}/events", headers=cookie(WS)) as resp:
+        assert resp.status_code == 200
+        assert [e["id"] for e in _messages(resp.read().decode())] == [1, 2, 3, 4]
+    # The workspace comes from the key: another workspace's cookie cannot read this run.
+    assert client.get(f"/agent/runs/{run_id}/events", headers=cookie(OTHER)).status_code == 404
+    assert client.get(f"/agent/runs/{run_id}/events").status_code == 401

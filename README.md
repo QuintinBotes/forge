@@ -154,6 +154,7 @@ swarm-code-factory/
 │   ├── integration-sdk/         # scf_integrations
 │   ├── mcp-sdk/                 # scf_mcp
 │   ├── policy-sdk/              # scf_policy
+│   ├── risk-core/               # scf_risk
 │   ├── skill-sdk/               # scf_skill
 │   ├── evaluation/              # scf_eval
 │   ├── auth-sdk/                # scf_auth

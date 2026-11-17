@@ -189,6 +189,8 @@ EXPECTED_MODELS = [
     "AttestationSigningKey",
     # #176: held-out acceptance scenarios, read by no agent-facing surface.
     "HeldOutScenario",
+    # #260: one-time sign-in links for a first administrator (token hash only).
+    "SignInLink",
     # J retrieval (ADR-0017): incrementally maintained BM25 corpus statistics —
     # per-workspace document frequencies + per-workspace corpus totals.
     "RetrievalTermStat",

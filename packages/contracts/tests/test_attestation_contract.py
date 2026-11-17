@@ -172,6 +172,18 @@ def test_changeset_provenance_optional_fields_default() -> None:
     assert provenance.tool_calls == []
     assert provenance.human_approver is None
     assert provenance.pr_numbers == []
+    # #214: additive and optional, so predicates signed before it still parse.
+    assert provenance.base_commit is None
+    assert provenance.head_commit is None
+    assert provenance.assisted_by == []
+
+
+def test_an_assistance_identity_is_one_trailer_value() -> None:
+    """#214: ``Assisted-by: <agent>:<model>``, the agent alone when the model is unknown."""
+    assert att.AssistanceIdentity(model="claude-sonnet-5").trailer == "scf-agent:claude-sonnet-5"
+    assert att.AssistanceIdentity().trailer == "scf-agent"
+    with pytest.raises(ValidationError):  # a value that would break the trailer onto two lines
+        att.AssistanceIdentity(model="m\nSigned-off-by: someone")
 
 
 @pytest.mark.parametrize(

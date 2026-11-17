@@ -15,7 +15,7 @@ never faked. This is the Phase-2 / CI verification of the live retrieval path.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from sqlalchemy import create_engine, inspect, select, text
@@ -159,15 +159,16 @@ def test_bm25_candidate_cut_breaks_ties_on_a_stable_key(
     assert [h.path for h in first] == [f"p{i:03d}.md" for i in range(10)]
 
 
-def test_bm25_candidate_cut_never_breaks_ties_on_a_random_source_id(
-    pg_session_factory: sessionmaker[Session],
-) -> None:
-    # Source ids are random per ingest, so a fresh index of the same corpus can
-    # order its sources either way. Here the source whose id sorts first holds
-    # the later paths: a cut ordered by source id keeps p100-p299 and loses p000.
-    workspace_id, _ = _seed(pg_session_factory)
+def _two_sources(factory: sessionmaker[Session], chunk: Callable[[int], Chunk]) -> uuid.UUID:
+    """350 chunks in one workspace: 0-99 in a source whose id sorts last, 100-349 first.
+
+    Source ids are random per ingest, so a fresh index of the same corpus can
+    order its sources either way; a cut ordered by source id here keeps the
+    chunks numbered from 100 and loses 0-99.
+    """
+    workspace_id, _ = _seed(factory)
     late, early = uuid.UUID(int=1), uuid.UUID(int=2**128 - 1)
-    with pg_session_factory() as session:
+    with factory() as session:
         for source_id, name in ((early, "early"), (late, "late")):
             session.add(
                 KnowledgeSource(
@@ -175,19 +176,55 @@ def test_bm25_candidate_cut_never_breaks_ties_on_a_random_source_id(
                 )
             )
         session.commit()
-    store = PgVectorStore(pg_session_factory, None)
-    for source_id, paths in ((early, range(100)), (late, range(100, 350))):
-        store.index(
-            source_id=str(source_id),
-            chunks=[
-                Chunk(content="tiebreak" + " " * (i + 1) + "token", path=f"p{i:03d}.md")
-                for i in paths
-            ],
-        )
+    store = PgVectorStore(factory, None)
+    for source_id, numbers in ((early, range(100)), (late, range(100, 350))):
+        store.index(source_id=str(source_id), chunks=[chunk(i) for i in numbers])
+    return workspace_id
+
+
+def test_bm25_candidate_cut_never_breaks_ties_on_a_random_source_id(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    workspace_id = _two_sources(
+        pg_session_factory,
+        lambda i: Chunk(content="tiebreak" + " " * (i + 1) + "token", path=f"p{i:03d}.md"),
+    )
     scope = KnowledgeScope(workspace_id=workspace_id)
     hits = Bm25Store(pg_session_factory).search("tiebreak token", scope, k=10)
     assert len({h.score for h in hits}) == 1  # truly tied
     assert [h.path for h in hits] == [f"p{i:03d}.md" for i in range(10)]
+
+
+def test_bm25_symbol_cut_never_breaks_ties_on_a_random_source_id(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    # #267's second cut: 350 tied definitions of LedgerStore, all below the
+    # 205 users that fill the ts_rank_cd cut, so only the symbol cut adds them.
+    workspace_id = _two_sources(
+        pg_session_factory,
+        lambda i: Chunk(
+            content="class LedgerStore:" + " " * (i + 1) + "pass",
+            path=f"d{i:03d}.py",
+            symbol="LedgerStore",
+        ),
+    )
+    with pg_session_factory() as session:
+        source_id = session.scalar(
+            select(KnowledgeSource.id).where(
+                KnowledgeSource.workspace_id == workspace_id, KnowledgeSource.name == "api"
+            )
+        )
+    PgVectorStore(pg_session_factory, None).index(
+        source_id=str(source_id),
+        chunks=[
+            Chunk(content=f"store = LedgerStore() and LedgerStore {i}", path=f"use{i}.py")
+            for i in range(205)
+        ],
+    )
+    scope = KnowledgeScope(workspace_id=workspace_id)
+    hits = Bm25Store(pg_session_factory).search("LedgerStore", scope, k=10)
+    assert len({h.score for h in hits}) == 1  # truly tied definitions
+    assert [h.path for h in hits] == [f"d{i:03d}.py" for i in range(10)]
 
 
 _PARITY_CORPUS = [
@@ -289,6 +326,24 @@ def test_parity_dotted_names_and_identifiers(
         corpus,
         [("retry", True), ("compute_rrf_score", True), ("self retry", True)],
     )
+
+
+def test_parity_symbol_definition_outranks_its_users(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    # #267: the definition boost reads the stored symbol, on both dialects.
+    body = " ".join(f"step_{i} returns value" for i in range(60))
+    corpus = [
+        Chunk(content=f"class LedgerStore: {body}", path="stores.py", symbol="LedgerStore"),
+        Chunk(content="store = LedgerStore() LedgerStore", path="test_a.py", symbol="test_a"),
+        Chunk(content="LedgerStore LedgerStore LedgerStore", path="test_b.py"),
+    ]
+    _assert_parity(pg_session_factory, corpus, [("LedgerStore", True), ("ledgerstore", True)])
+    sqlite_factory, workspace_id, _ = _seed_sqlite(corpus)
+    hits = Bm25Store(sqlite_factory).search(
+        "LedgerStore", KnowledgeScope(workspace_id=workspace_id), k=10
+    )
+    assert hits[0].path == "stores.py"
 
 
 def test_parity_file_paths(pg_session_factory: sessionmaker[Session]) -> None:
@@ -665,6 +720,30 @@ def test_parity_snake_case_flood_keeps_exact_tokens(
     ]
     corpus.append(Chunk(content="on failure call retry once from the scheduler", path="exact.py"))
     _assert_parity(pg_session_factory, corpus, [("retry", True), ("retry_limit", True)])
+
+
+def test_parity_symbol_definition_survives_a_candidate_flood(
+    pg_session_factory: sessionmaker[Session],
+) -> None:
+    # #267 review: the definition names its symbol once, so ``ts_rank_cd``
+    # ranks it below every chunk that uses the name twice; the boost must
+    # still reach it on Postgres when more than 200 such chunks exist.
+    from scf_knowledge.stores import _BM25_CANDIDATE_LIMIT
+
+    body = " ".join(f"step_{i} returns value" for i in range(60))
+    corpus = [
+        Chunk(content=f"store = LedgerStore() and LedgerStore {i}", path=f"use{i}.py")
+        for i in range(_BM25_CANDIDATE_LIMIT + 5)
+    ]
+    corpus.append(
+        Chunk(content=f"class LedgerStore: {body}", path="stores.py", symbol="LedgerStore")
+    )
+    _assert_parity(pg_session_factory, corpus, [("LedgerStore", True)])
+    sqlite_factory, workspace_id, _ = _seed_sqlite(corpus)
+    hits = Bm25Store(sqlite_factory).search(
+        "LedgerStore", KnowledgeScope(workspace_id=workspace_id), k=10
+    )
+    assert hits[0].path == "stores.py"
 
 
 def test_parity_identifiers_with_edge_underscores_and_long_tokens(

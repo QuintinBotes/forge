@@ -39,6 +39,7 @@ from scf_contracts.enums import (
     TaskKind,
     TaskStatus,
 )
+from scf_contracts.risk import RiskRules
 
 #: Severity attached to a policy decision / conditional rule (F29).
 Severity = Literal["info", "warning", "critical"]
@@ -646,6 +647,8 @@ class Policy(_Model):
     allowed_actions: list[str] = Field(default_factory=list)
     restricted_actions: list[str] = Field(default_factory=list)
     rules: list[ConditionalRule] = Field(default_factory=list)
+    #: Spec A: absent means nothing is classified and behaviour is unchanged.
+    risk_rules: RiskRules | None = None
 
     @model_validator(mode="after")
     def _validate_rules(self) -> Policy:

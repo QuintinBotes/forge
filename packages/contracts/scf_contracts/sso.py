@@ -130,6 +130,9 @@ class OidcConfigIn(BaseModel):
     token_endpoint: str | None = None
     jwks_uri: str | None = None
     jit_provisioning: bool = True
+    #: Email domains home-realm discovery routes to this workspace. ``None`` keeps
+    #: the saved ones (a form that does not edit them must not wipe them).
+    domains: list[str] | None = None
 
 
 class OidcConfigOut(BaseModel):
@@ -159,6 +162,7 @@ class OidcConfigOut(BaseModel):
     token_endpoint: str | None = None
     jwks_uri: str | None = None
     jit_provisioning: bool
+    domains: list[str] = Field(default_factory=list)
     redirect_uri: str
     login_url: str
 

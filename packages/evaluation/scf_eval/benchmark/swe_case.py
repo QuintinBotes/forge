@@ -12,6 +12,10 @@ other golden-set kind too), these sandbox fields are carried in
 any ``agent_task`` case declaring ``expected_terminal_state == "merged"``; a
 minted case must terminate no later than ``pr_opened``/``awaiting_review`` —
 the harness never merges on the model's behalf (AC24, human approval gate).
+
+A forge-factory-bench case (#197) ships its own repository tree (``repo``) instead of a
+``base_commit``, and its held-out test files (``held_out``), in the file shape a #176
+held-out scenario uses.
 """
 
 from __future__ import annotations
@@ -20,7 +24,14 @@ from pydantic import BaseModel, Field
 
 from scf_eval.golden import GoldenCase
 
-__all__ = ["SweCaseFields", "parse_swe_case_fields"]
+__all__ = ["CaseFile", "SweCaseFields", "parse_swe_case_fields"]
+
+
+class CaseFile(BaseModel):
+    """One file of a case: a repository file, a held-out test or a known-good patch."""
+
+    path: str
+    content: str
 
 
 class SweCaseFields(BaseModel):
@@ -40,6 +51,10 @@ class SweCaseFields(BaseModel):
     setup_commands: list[str] = Field(default_factory=list)
     #: Commit the sandbox checks out before applying any candidate change.
     base_commit: str | None = None
+    #: The repository the case starts from, for a case that ships its own tree.
+    repo: list[CaseFile] = Field(default_factory=list)
+    #: HIDDEN test files, written over the checkout after the candidate change.
+    held_out: list[CaseFile] = Field(default_factory=list)
 
 
 def parse_swe_case_fields(case: GoldenCase) -> SweCaseFields:

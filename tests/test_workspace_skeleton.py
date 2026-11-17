@@ -28,6 +28,7 @@ PYTHON_MEMBERS: list[tuple[str, str]] = [
     ("packages/integration-sdk", "scf_integrations"),
     ("packages/mcp-sdk", "scf_mcp"),
     ("packages/policy-sdk", "scf_policy"),
+    ("packages/risk-core", "scf_risk"),
     ("packages/skill-sdk", "scf_skill"),
     ("packages/evaluation", "scf_eval"),
     ("apps/api", "scf_api"),

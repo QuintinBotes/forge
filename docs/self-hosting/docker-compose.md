@@ -1,9 +1,10 @@
 # Docker Compose deployment
 
-Swarm Code Factory ships two Compose files: a hardened single-node production stack and a
-lighter local-development stack. This guide explains the production topology,
-the hardening applied, and how to operate it. To get running quickly first, see
-[quickstart.md](quickstart.md).
+Swarm Code Factory ships three Compose files: a hardened single-node production stack, a
+lighter local-development stack, and a single-user profile that runs only the API, the
+worker and their data stores ([single-user.md](single-user.md)). This guide explains the
+production topology, the hardening applied, and how to operate it. To get running quickly
+first, see [quickstart.md](quickstart.md).
 
 ## Files
 
@@ -11,6 +12,7 @@ the hardening applied, and how to operate it. To get running quickly first, see
 |---|---|
 | [../../deploy/docker-compose.yml](../../deploy/docker-compose.yml) | Production single-node stack |
 | [../../deploy/docker-compose.dev.yml](../../deploy/docker-compose.dev.yml) | Local development stack (`make dev`) |
+| [../../deploy/docker-compose.single-user.yml](../../deploy/docker-compose.single-user.yml) | Single-user profile: API, worker, Postgres and Redis only. See [single-user.md](single-user.md) |
 | [../../deploy/caddy/Caddyfile](../../deploy/caddy/Caddyfile) | Edge reverse proxy + automatic HTTPS |
 
 ## Services

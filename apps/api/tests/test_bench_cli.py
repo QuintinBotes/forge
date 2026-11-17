@@ -1,12 +1,15 @@
-"""F35 CLI tests — `scf bench` freeze/hash/verify exit codes (AC21/AC24)."""
+"""F35 CLI tests — `scf bench` freeze/hash/verify/run exit codes (AC21/AC24, #197)."""
 
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
+import pytest
 import yaml
 
+import scf_eval
 from scf_api.cli_bench import main
 from scf_eval.benchmark import (
     BenchmarkScoring,
@@ -141,3 +144,44 @@ def test_scoring_helper_types_roundtrip() -> None:
     case = GoldenCase(id="c1", query="q", expected_ids=["a"])
     assert scoring.k == 5
     assert case.kind == "retrieval"
+
+
+FACTORY_BENCH = Path(scf_eval.__file__).parent / "benchmarks" / "forge-factory-bench" / "0.1.0"
+
+
+def _one_case_bench(tmp_path: Path, **metadata: object) -> Path:
+    """The shipped factory bench cut down to one case, with ``metadata`` set on it."""
+    suite = tmp_path / "suite"
+    shutil.copytree(FACTORY_BENCH, suite)
+    manifest = yaml.safe_load((suite / "manifest.yaml").read_text())
+    case_file = suite / manifest["case_files"][0]
+    manifest["case_files"] = manifest["case_files"][:1]
+    (suite / "manifest.yaml").write_text(yaml.safe_dump(manifest))
+    doc = yaml.safe_load(case_file.read_text())
+    doc["cases"][0]["metadata"].update(metadata)
+    case_file.write_text(yaml.safe_dump(doc))
+    return suite
+
+
+def test_bench_run_reference_offline_writes_the_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#197: the offline run scores every case, prints and writes the report, exits 0."""
+    out = tmp_path / "out"
+    suite = _one_case_bench(tmp_path)
+    assert main(["run", "--suite-dir", str(suite), "--solver", "reference", "--out", str(out)]) == 0
+    report = json.loads((out / "report.json").read_text())
+    assert report["solver"] == "reference"
+    assert [c["outcome"] for c in report["cases"]] == ["resolved"]
+    assert (out / "report.md").read_text() in capsys.readouterr().out
+    assert (out / "results.jsonl").is_file()
+
+
+def test_bench_run_exits_1_on_an_infrastructure_error(tmp_path: Path) -> None:
+    """#197: a case that could not be scored makes the run exit non-zero."""
+    suite = _one_case_bench(tmp_path, setup_commands=["exit 3"])
+    assert main(["run", "--suite-dir", str(suite), "--solver", "reference"]) == 1
+
+
+def test_bench_run_missing_suite_dir_errors(tmp_path: Path) -> None:
+    assert main(["run", "--suite-dir", str(tmp_path / "nope"), "--solver", "reference"]) == 1
