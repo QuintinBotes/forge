@@ -219,3 +219,54 @@ def test_a_task_of_another_workspace_is_not_found(
 
     assert resp.status_code == 404, resp.text
     assert _runs(agent_session) == [] and fake_temporal.started == []
+
+
+@pytest.mark.parametrize(
+    ("setting", "field"),
+    [
+        ({"instructions": "Only touch docs/"}, "instructions"),
+        ({"model": "gpt-6-astra"}, "model"),
+        ({"skill_profile": {"name": "strict"}}, "skill_profile"),
+        ({"execution_mode": "supervised_multi_agent"}, "execution_mode"),
+        ({"allowed_actions": ["run_command"]}, "allowed_actions"),
+        (
+            {"repo_targets": [{"repo": REPO}, {"repo": "acme/other"}]},
+            "repo_targets",
+        ),
+        ({"repo_targets": [{"repo": REPO, "skill_profile": "strict"}]}, "repo_targets"),
+    ],
+    ids=lambda v: v if isinstance(v, str) else None,
+)
+def test_a_setting_the_governed_agent_does_not_apply_is_refused(
+    client: TestClient,
+    agent_session: Session,
+    fake_temporal: Any,
+    setting: dict[str, Any],
+    field: str,
+) -> None:
+    """#276 review: the workflow's agent step runs the task's settings, so a request
+    that sets one it would drop is refused rather than accepted and ignored."""
+    task = _task(agent_session)
+
+    resp = client.post("/agent/runs", json=_body(task, **setting))
+
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert detail.startswith("governed_run_unsupported:") and field in detail
+    assert _runs(agent_session) == [] and fake_temporal.started == []
+
+
+def test_a_supervised_task_is_refused_before_its_gates(
+    client: TestClient,
+    agent_session: Session,
+    fake_temporal: Any,
+) -> None:
+    """The agent step refuses a supervised task (ADR-0007); refusing at admission
+    saves a person approving a spec the run can never act on."""
+    task = _task(agent_session, execution_mode="supervised_multi_agent")
+
+    resp = client.post("/agent/runs", json=_body(task))
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"] == "governed_run_unsupported: execution_mode"
+    assert _runs(agent_session) == [] and fake_temporal.started == []

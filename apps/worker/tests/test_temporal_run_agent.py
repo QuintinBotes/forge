@@ -33,6 +33,7 @@ from scf_db.models import (
 )
 from scf_db.models.enums import ExecutionMode, RunStatus
 from scf_worker.temporal_main import build_activities
+from scf_workflow.temporal.ids import activity_idempotency_key, agent_run_id
 from scf_workflow.temporal.payloads import (
     AgentRunResultDTO,
     NotifyInput,
@@ -257,6 +258,22 @@ async def test_a_new_attempt_key_is_a_new_agent_run(
     second = await _run(factory, _input(run_id, task_id, key="k-1"))
 
     assert first.agent_run_id != second.agent_run_id
+
+
+async def test_the_first_agent_run_has_the_id_its_starter_was_given(
+    factory: sessionmaker[Session], mirror: Path
+) -> None:
+    """#276: POST /agent/runs returns ``agent_run_id(run)`` before the agent runs.
+    Called with the workflow's own key for its first attempt, the agent step
+    creates the agent run under that id."""
+    run_id, task_id = _seed(factory)
+    key = activity_idempotency_key(run_id, "run_agent", 0)
+
+    result = await _run(factory, _input(run_id, task_id, key=key))
+
+    assert result.agent_run_id == agent_run_id(run_id)
+    with factory() as s:
+        assert s.get(AgentRun, agent_run_id(run_id)) is not None
 
 
 async def test_a_repository_the_workspace_has_not_connected_is_refused(

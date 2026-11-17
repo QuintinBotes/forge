@@ -182,6 +182,24 @@ def claim_task_repository(task: Task, objective: AgentObjective) -> bool:
     return current.primary_repo_target.repo.lower() == target.repo.lower()
 
 
+#: What a governed run's agent step takes from the kept objective; the task sets the
+#: rest (its model, actions and execution mode). See ``agent_run_service`` (#276).
+_GOVERNED_FIELDS = frozenset(
+    {"task_id", "key", "objective", "description", "acceptance_criteria", "repo_targets", "context"}
+)
+
+
+def _unsupported_settings(objective: AgentObjective, task: Task) -> list[str]:
+    """The settings a governed run's agent would not apply, so must not be accepted."""
+    unsupported = set(objective.model_dump(exclude_defaults=True)) - _GOVERNED_FIELDS
+    targets = objective.repo_targets
+    if len(targets) > 1 or (targets and targets[0].skill_profile):
+        unsupported.add("repo_targets")  # one repository, with the task's skill profile
+    if task.execution_mode == ExecutionMode.SUPERVISED_MULTI_AGENT:
+        unsupported.add("execution_mode")  # the agent step refuses it (ADR-0007)
+    return sorted(unsupported)
+
+
 def start_governed_run(
     session: Session,
     *,
@@ -192,10 +210,12 @@ def start_governed_run(
 ) -> tuple[uuid.UUID, uuid.UUID]:
     """Start the workflow run a repository-changing objective runs inside (#276).
 
-    The agent runs in the workflow, after its gates, on the objective kept on the
-    run (as issue dispatch keeps it, #171). Returns the workflow run's id and the
-    id its first agent step will take. Server-owned and tracker context keys are
-    stripped: ``server_context`` is SCF's own provenance for a tracker reference.
+    The agent runs in the workflow, after its gates, on the objective's text kept
+    on the run (as issue dispatch keeps it, #171) and the task's settings. A
+    request that sets anything else is refused rather than accepted and dropped.
+    Returns the workflow run's id and the id its first agent step will take.
+    Server-owned and tracker context keys are stripped: ``server_context`` is
+    SCF's own provenance for a tracker reference.
     """
     from scf_api.services.workflow_engine import select_workflow_engine
     from scf_workflow.exceptions import DuplicateRunError
@@ -207,6 +227,9 @@ def start_governed_run(
     task = session.get(Task, objective.task_id)
     if task is None or task.workspace_id != workspace_id:
         raise TaskNotFound(str(objective.task_id))
+    unsupported = _unsupported_settings(objective, task)
+    if unsupported:
+        raise GovernedRunRefused(f"governed_run_unsupported: {', '.join(unsupported)}")
     for target in objective.repo_targets:
         if not repo_connected(session, workspace_id, target.repo):
             raise RepoNotConnected(target.repo)

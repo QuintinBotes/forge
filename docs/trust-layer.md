@@ -81,12 +81,25 @@ binds every activity except `forge.resume_agent`:
   (owner decision, 2026-11-15, FR-005): the spec gate still opens and waits for a
   person, and the label's sender is recorded as the run's starter on its first
   transition, never as an approver. The agent works from the objective built from
-  the re-fetched issue, kept on the run. `POST /agent/runs` (#276), the refusal
-  of ungoverned runs outside development (#277) and tracker write-back for
-  governed runs (#278) follow. The backend is read per process: the API, the
-  Celery worker and the Temporal worker must all see the same
-  `WORKFLOW_ENGINE_BACKEND` and `TEMPORAL_*` settings. A Celery worker without
-  them still sends issues down the direct, ungoverned path.
+  the re-fetched issue, kept on the run. The refusal of ungoverned runs outside
+  development (#277) and tracker write-back for governed runs (#278) follow. The
+  backend is read per process: the API, the Celery worker and the Temporal
+  worker must all see the same `WORKFLOW_ENGINE_BACKEND` and `TEMPORAL_*`
+  settings. A Celery worker without them still sends issues down the direct,
+  ungoverned path.
+- **`POST /agent/runs`** (#276) does the same for an objective that names a
+  repository: it starts a governed run for the objective's `task_id`, and the
+  agent works from the objective's text after the gates. An objective that names
+  no repository is still run directly. The 202 names the run (`workflow_run_id`)
+  and the agent run its first agent step will create (`run_id`); that agent run
+  reads as not found until a person approves the spec and the agent starts. The
+  request is refused with 409 when it:
+  - has no `task_id` (`governed_run_requires_task`);
+  - names a task already on another repository (`task_repository_mismatch`);
+  - names a task with an active run (`governed_run_active`);
+  - sets anything the governed agent would not apply, such as instructions, a
+    model, a skill profile, actions, a second repository or a supervised mode
+    (`governed_run_unsupported: <fields>`). The task sets those.
 - **A cancel** at a gate expires that gate's open request with the reason
   `run_cancelled`, recorded as whoever cancelled the run. The workflow's own
   cancel path does it again, for a request it opened after the cancel arrived.
