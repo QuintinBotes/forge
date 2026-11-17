@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 import uuid
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405  # no DTD reaches the parser, see _report_problem
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
@@ -56,6 +56,8 @@ _PYTEST_CONFIG = frozenset(
 )
 #: Top-level names that shadow pytest itself (``python -m`` imports from the cwd first).
 _PYTEST_SHADOWS = frozenset({"pytest.py", "pytest", "_pytest"})
+#: Far above any report one held-out test writes; a bigger file is not read.
+_REPORT_CAP_BYTES = 8 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -100,14 +102,39 @@ def _test_command(test_id: str, report: str) -> str:
     return f"python -m pytest -q -p no:cacheprovider --junitxml={report} {test_id}"
 
 
-def _reported_passing(report: Path) -> bool:
-    """True when pytest's report holds at least one test and every one of them passed."""
+def _report_problem(report: Path) -> str | None:
+    """Why pytest's report does not show every test run and passed; None when it does.
+
+    The report is untrusted: candidate code runs inside pytest and can rewrite it.
+    """
     try:
-        cases = list(ET.parse(report).getroot().iter("testcase"))
-    except (OSError, ET.ParseError):
-        return False
+        with report.open("rb") as fh:
+            raw = fh.read(_REPORT_CAP_BYTES + 1)
+    except OSError:
+        return "no report"
+    if len(raw) > _REPORT_CAP_BYTES:
+        return "report too large"
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return "report is not UTF-8"
+    # pytest never writes a DTD, so one here was planted; refusing it keeps entities from
+    # the parser (a str is parsed as UTF-8 whatever encoding the text declares).
+    upper = text.upper()
+    if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+        return "report refused: it declares a DTD or entities"
+    try:
+        # DTDs and entities are refused above, so there is nothing for expat to expand.
+        root = ET.fromstring(text)  # nosec B314  # nosemgrep: python.lang.security.use-defused-xml-parse.use-defused-xml-parse
+    except ET.ParseError:
+        return "report unreadable"
+    cases = list(root.iter("testcase"))
+    if not cases:
+        return "no test ran"
     bad = ("failure", "error", "skipped")
-    return bool(cases) and all(case.find(tag) is None for case in cases for tag in bad)
+    if any(case.find(tag) is not None for case in cases for tag in bad):
+        return "a test failed, errored or was skipped"
+    return None
 
 
 async def run_swe_case(
@@ -203,10 +230,11 @@ async def _run_tests(
         out = await session.run(
             _test_command(test_id, report), cwd=session.workspace_dir, timeout_s=timeout_s
         )
-        reported = _reported_passing(host_report)
+        problem = _report_problem(host_report)
         host_report.unlink(missing_ok=True)
-        if out.exit_code == 0 and reported:
+        if out.exit_code == 0 and problem is None:
             passing.append(test_id)
         else:
-            evidence.append(f"{test_id}: exit {out.exit_code}\n{out.stdout}{out.stderr}")
+            why = f"exit {out.exit_code}" + (f", {problem}" if problem else "")
+            evidence.append(f"{test_id}: {why}\n{out.stdout}{out.stderr}")
     return passing

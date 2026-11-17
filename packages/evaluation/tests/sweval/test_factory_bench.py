@@ -32,6 +32,7 @@ from scf_eval.sweval import (
     empty_solver,
     reference_solver,
     run_suite,
+    run_swe_case,
 )
 
 SUITE = (
@@ -254,6 +255,51 @@ def test_a_skipped_held_out_test_does_not_count_as_passing(tmp_path: Path) -> No
     suite = _suite_copy(tmp_path, "ffb-chunk-remainder")
     [result] = _run(suite, FnSolver(name="skips", fn=lambda _c: {"batching.py": skips})).cases
     assert result.outcome is CaseOutcome.NOT_RESOLVED
+
+
+#: Code under test that, once pytest has written its report, rewrites it with an entity
+#: declaration that expands into a passing test, then forces exit 0.
+_REWRITES_THE_REPORT_WITH_A_DTD = (
+    "import atexit\n"
+    "import os\n"
+    "import sys\n"
+    "\n"
+    "_REPORT = (\n"
+    "    '<!DOCTYPE testsuites [<!ENTITY ok \"passed\">]>'\n"
+    "    '<testsuites><testsuite><testcase name=\"&ok;\"/></testsuite></testsuites>'\n"
+    ")\n"
+    "\n"
+    "\n"
+    "def _rewrite():\n"
+    "    for arg in sys.argv:\n"
+    "        if arg.startswith('--junitxml='):\n"
+    "            with open(arg.split('=', 1)[1], 'w') as fh:\n"
+    "                fh.write(_REPORT)\n"
+    "    os._exit(0)\n"
+    "\n"
+    "\n"
+    "atexit.register(_rewrite)\n"
+    "\n"
+    "\n"
+    "def chunked(items, size):\n"
+    "    return []\n"
+)
+
+
+async def test_a_report_that_declares_entities_is_not_counted(tmp_path: Path) -> None:
+    _manifest, cases = load_manifest(SUITE)
+    [case] = [c for c in cases if c.id == "ffb-chunk-remainder"]
+    for f in parse_swe_case_fields(case).repo:
+        (tmp_path / f.path).write_text(f.content, encoding="utf-8")
+    result = await run_swe_case(
+        case=case,
+        solve_fn=lambda _c: {"batching.py": _REWRITES_THE_REPORT_WITH_A_DTD},
+        sandbox_provider=LocalSandboxProvider(),
+        worktree_path=str(tmp_path),
+    )
+    assert result.resolved is False
+    assert result.output_ids == []
+    assert "declares a DTD or entities" in result.evidence
 
 
 def test_a_change_cannot_replace_the_held_out_tests(tmp_path: Path) -> None:
