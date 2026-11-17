@@ -1,0 +1,162 @@
+# SCF — single-user profile: the API, the worker, Postgres and nothing they do not
+# strictly need (issue #205; specs/006-tervin-bridge FR-019, FR-023).
+#
+# One person, one machine: the instance a desktop client such as tervin talks to.
+# Start it (after creating deploy/.env.single-user, see the guide) and stop it with:
+#
+#   docker compose -f deploy/docker-compose.single-user.yml \
+#     --env-file deploy/.env.single-user up -d --build --wait api worker
+#   docker compose -p scf-single-user down
+#
+# Guide: docs/self-hosting/single-user.md. Compared with deploy/docker-compose.yml
+# there is no object store, reverse proxy, web app, MCP gateway, workflow server,
+# observability, autoheal or container-sandbox proxy. Redis stays: it is the
+# Celery broker the worker cannot run without.
+#
+# It fails closed like the production file (ADR-0007): FORGE_ENVIRONMENT is
+# production, no development-only flag is set, and the secrets must be supplied
+# at start (``${VAR:?}``), never defaulted here. Without the durable engine a
+# repository-changing agent run is refused (#277); use the full stack with the
+# `temporal` profile for those.
+
+name: scf-single-user
+
+x-python-env: &python-env
+  FORGE_ENVIRONMENT: production
+  FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set FORGE_SECRET_KEY in deploy/.env.single-user (see docs/self-hosting/single-user.md)}
+  FORGE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forge}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env.single-user}@db:5432/${POSTGRES_DB:-forge}
+  FORGE_REDIS_URL: redis://redis:6379/0
+  # Durable Postgres-backed stores (the settings default is in-memory, a test default).
+  FORGE_APIKEY_BACKEND: db
+  FORGE_APPROVAL_BACKEND: db
+  FORGE_AUDIT_BACKEND: db
+  FORGE_BOARD_BACKEND: db
+  FORGE_OVERRIDE_GRANT_BACKEND: db
+  FORGE_PM_LINK_BACKEND: db
+  FORGE_POLICY_AUDIT_BACKEND: db
+  FORGE_PROJECTION_BACKEND: db
+  FORGE_SECRET_BACKEND: db
+  FORGE_REALTIME_BACKEND: redis
+  FORGE_SPEC_ROOT: /srv/forge/specs
+  # No workflow server here: the Postgres engine, so repository runs are refused (#277).
+  WORKFLOW_ENGINE_BACKEND: postgres_fsm
+  # BYOK model provider and embedder; empty means unset (see deploy/docker-compose.yml).
+  FORGE_MODEL_PROVIDER: ${FORGE_MODEL_PROVIDER:-}
+  FORGE_MODEL_NAME: ${FORGE_MODEL_NAME:-}
+  FORGE_MODEL_API_KEY: ${FORGE_MODEL_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  FORGE_EMBEDDING_PROVIDER: ${FORGE_EMBEDDING_PROVIDER:-}
+  FORGE_EMBEDDING_MODEL: ${FORGE_EMBEDDING_MODEL:-}
+  FORGE_EMBEDDING_BASE_URL: ${FORGE_EMBEDDING_BASE_URL:-}
+  FORGE_EMBEDDING_DIMENSION: ${FORGE_EMBEDDING_DIMENSION:-}
+  FORGE_EMBEDDING_API_KEY: ${FORGE_EMBEDDING_API_KEY:-}
+
+services:
+  db:
+    image: pgvector/pgvector:pg16@sha256:ad2e18408bf447f62092a8a5259e7df10505c5a0360bd1a1853ac8b8b0763da2
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-forge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env.single-user}
+      POSTGRES_DB: ${POSTGRES_DB:-forge}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forge} -d ${POSTGRES_DB:-forge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:7.4-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/docker/api.Dockerfile
+    image: swarm-code-factory/api:${FORGE_VERSION:-0.1.0}
+    command: ["alembic", "-c", "packages/db/alembic.ini", "upgrade", "head"]
+    environment: *python-env
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/docker/api.Dockerfile
+    image: swarm-code-factory/api:${FORGE_VERSION:-0.1.0}
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      <<: *python-env
+      FORGE_READINESS_REQUIRE_DEPS: "true"
+    volumes:
+      - specs:/srv/forge/specs
+    # The only published port, on loopback: nothing else on the network reaches it.
+    ports:
+      - "127.0.0.1:${SCF_API_PORT:-8100}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # stdlib probe (the slim image has no curl); 503 until the database answers.
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')\" || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/docker/worker.Dockerfile
+    image: swarm-code-factory/worker:${FORGE_VERSION:-0.1.0}
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["celery", "-A", "scf_worker", "worker", "--loglevel=info", "-Q", "forge,incident"]
+    environment:
+      <<: *python-env
+      # No Docker daemon access in this profile (no docker-proxy, never the host
+      # socket): commands run as worker subprocesses in a git worktree. A run that
+      # asks for a container tier fails loudly instead of downgrading.
+      FORGE_SANDBOX_KIND: worktree
+    volumes:
+      - specs:/srv/forge/specs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A scf_worker inspect ping || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  db-data:
+  redis-data:
+  # The spec engine's documents, shared by the API and the worker.
+  specs:
