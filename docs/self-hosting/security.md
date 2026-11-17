@@ -373,6 +373,48 @@ adds two **kernel-boundary** tiers behind the same `SandboxProvider` seam:
 - **VM artifact hygiene.** The reaper sweeps any orphaned jailer chroot under
   `FORGE_SANDBOX_JAILER_ROOT` once a run's sandbox container is gone.
 
+## First administrator: a sign-in link from the CLI
+
+A fresh installation has no identity provider yet, so nobody can sign in. On the
+API server, print a sign-in link for the first administrator:
+
+```bash
+scf-cli admin sign-in-link --workspace <slug> --email <address>
+```
+
+The command prints one link and the time it expires. Open the link in a browser:
+it sets the same session cookie an SSO sign-in sets (12 hours) and redirects to
+the app.
+
+- **Who becomes an administrator.** When the workspace has no administrator, the
+  command creates one with the given email. Otherwise the email must name an
+  existing, active administrator of that workspace. Anything else is refused and
+  nothing is created.
+- **Lifetime.** `FORGE_SIGN_IN_LINK_TTL_SECONDS`, default `900` (15 minutes). A
+  value above `3600` (one hour) is refused when the settings load.
+- **Single use.** A link works once. A second use, an expired link and an unknown
+  one get the same `401` and no cookie. Printing a new link for the same person
+  makes their earlier unused link stop working.
+- **Only without an identity provider.** The command refuses a workspace with an
+  enabled OIDC or SAML configuration, and a link printed before one was enabled
+  is refused when opened. Sign in through the identity provider instead.
+- **What is stored.** Only a SHA-256 hash of the link's 32 random bytes. The link
+  is not an API key: sent as `Authorization: Bearer` or `X-API-Key`, it gets
+  `401`. The link is built from `FORGE_PUBLIC_URL`, so it works behind the
+  reverse proxy.
+- **Audit.** Printing a link records `auth.sign_in_link_issued` and opening it
+  records `auth.sign_in_link_redeemed`, each with the workspace and the person.
+  The link's token is in no audit entry and in no log line SCF writes; the API
+  server's access log keeps the address with the token removed. The redirect
+  carries `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
+
+> **Warning.** Anyone who can run this command on the server can become an
+> administrator of any workspace that has no identity provider. Give shell
+> access to the API server only to people you trust with that. Treat the
+> printed link as a password until it is used or expires: do not paste it into
+> chat or tickets. A reverse proxy in front of SCF may log the full link in its
+> own access log; the link is useless once used or expired.
+
 ## Enterprise SSO — SAML + SCIM (F33)
 
 - **SAML 2.0 (SCF as SP).** Per-workspace federation with a corporate IdP
@@ -432,6 +474,7 @@ accidentally publishes internal benchmark scores. Before opting in:
 - [ ] MCP connections that need writes are explicitly reviewed and audited.
 - [ ] Backups are encrypted in transit and at rest off-host.
 - [ ] The seed's bootstrap admin key is revoked once per-person keys exist.
+- [ ] Shell access to the API server is limited to people trusted to become an administrator (see [the sign-in link](#first-administrator-a-sign-in-link-from-the-cli)).
 - [ ] Operators browse a real hostname, not `localhost` (see [browser storage](#browser-storage-on-localhost)).
 
 ## Related
