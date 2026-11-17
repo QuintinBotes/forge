@@ -626,3 +626,56 @@ async def test_an_issue_delivery_reaches_the_pr_gate_and_the_issue_hears_of_it(
     assert f"`{run_id}`" in comment and "**awaiting_review**" in comment
     assert "https://github.com/acme/app/pull/1" in comment
     assert fake_tracker.transitions == [("42", StatusCategory.started)]
+
+
+async def test_an_issue_run_whose_pull_request_cannot_open_tells_the_issue_it_failed(
+    time_skip_env: Any,
+    factory: sessionmaker[Session],
+    remotes: Path,
+    committing_agent: None,
+    independent_reviewer: None,
+    tracker: tuple[FakeTracker, pm_service_module.PMConnectionService],
+) -> None:
+    """#278: with no GitHub App on the worker, opening the pull request refuses and the
+    execution fails; the run records ``failed`` with why first, and its issue hears it once."""
+    from temporalio.client import WorkflowFailureError
+
+    fake_tracker, connections = tracker
+    delivery_id = _seed_issue_delivery(factory)
+    activities = tm.build_activities(factory)  # no credentials: the pull request refuses
+    approver = Principal(kind="user", id=uuid.uuid4(), role=Role.MEMBER, workspace_id=WS)
+    approve = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
+
+    with factory() as session:
+        engine = TemporalWorkflowEngine(
+            workspace_id=WS,
+            store=SqlAlchemyWorkflowStore(session, workspace_id=WS),
+            client=time_skip_env.client,
+            task_queue=TASK_QUEUE,
+        )
+        approvals = _approvals(factory, engine)
+        async with build_temporal_worker(time_skip_env.client, activities, task_queue=TASK_QUEUE):
+            outcome = await asyncio.to_thread(
+                process_webhook, factory, delivery_id, connections=connections, payload=LABELED
+            )
+            run_id = uuid.UUID(str(outcome["run_id"]))
+            handle = time_skip_env.client.get_workflow_handle(workflow_id(run_id))
+            for gate, event in (
+                (GateType.SPEC, "spec_approved_by_human"),
+                (GateType.PLAN, "plan_approved_by_human"),
+            ):
+                await _wait_awaiting(handle, event)
+                [request] = await _pending(factory, gate)
+                await approvals.resolve(request.id, approve, approver, workspace_id=WS)
+            with pytest.raises(WorkflowFailureError):
+                await handle.result()
+
+    with factory() as fresh:
+        failed = SqlAlchemyWorkflowStore(fresh, workspace_id=WS).get(run_id)
+    assert (failed.current_state, failed.status.value) == ("failed", "failed")
+    reason = failed.context["transitions"][-1]["payload"]["reason"]
+    assert reason.startswith("GitHubAppNotConfigured: "), reason
+    [(issue, comment)] = fake_tracker.comments
+    assert issue == "42"
+    assert f"`{run_id}`" in comment and "**failed**" in comment
+    assert fake_tracker.transitions == [], "no pull request opened"

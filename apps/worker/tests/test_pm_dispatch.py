@@ -1306,20 +1306,33 @@ def test_a_tracker_outage_never_changes_a_governed_runs_outcome(
 
 
 def test_a_governed_run_without_a_tracker_writes_nothing_back(
-    factory: sessionmaker[Session],
+    factory: sessionmaker[Session], project_id: uuid.UUID
 ) -> None:
-    """A run started through the API names no issue: nothing is posted anywhere."""
-    from scf_contracts import WorkflowRun
+    """A run started through the API names no issue: nothing is posted or recorded."""
+    from scf_db.models.runs import WorkflowRun as DbWorkflowRun
     from scf_worker.tasks.pm_dispatch import post_workflow_writeback
+    from scf_worker.temporal_main import SessionPerCallStore
 
-    run = WorkflowRun(
-        id=uuid.uuid4(),
-        task_id=uuid.uuid4(),
-        current_state="closed",
-        context={"trigger": {"source": "api"}},
-    )
+    with factory() as session:
+        task = Task(workspace_id=WS_ID, project_id=project_id, key="CORE-9", title="api run")
+        session.add(task)
+        session.flush()
+        row = DbWorkflowRun(
+            workspace_id=WS_ID,
+            task_id=task.id,
+            engine_backend="temporal",
+            current_state="closed",
+            context={"trigger": {"source": "api", "started_by": "user:1"}},
+        )
+        session.add(row)
+        session.commit()
+        run_id = row.id
+    run = SessionPerCallStore(factory).get(run_id)
+
     # connections=object() would explode if the write-back tried to use it.
     assert post_workflow_writeback(factory, run, connections=object()) == "not_applicable"  # type: ignore[arg-type]
+    [stored] = _workflow_runs(factory)
+    assert "tracker_writeback" not in stored.context
 
 
 # --------------------------------------------------------------------------- #

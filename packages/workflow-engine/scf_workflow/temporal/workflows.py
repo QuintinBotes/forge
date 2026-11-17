@@ -23,7 +23,7 @@ from typing import Any
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy as ActivityRetryPolicy
-from temporalio.exceptions import ApplicationError
+from temporalio.exceptions import ActivityError, ApplicationError, FailureError
 
 with workflow.unsafe.imports_passed_through():
     from scf_contracts import WorkflowState
@@ -81,6 +81,10 @@ _DRAFTING_TIMEOUT = timedelta(seconds=900)  # a verifier agent drafts scenarios
 HELD_OUT_DRAFTING_PATCH = "held-out-drafting-258"
 #: #280: the merge gate reads CI and the spec itself; earlier histories used the payload.
 CI_READ_BACK_PATCH = "ci-read-back-280"
+#: #278: an activity error that ends the execution is first recorded as ``failed``.
+RECORD_FAILURE_PATCH = "record-failure-278"
+#: The control event of that transition (the DSL has no edge for it).
+EVENT_ACTIVITY_FAILED = "activity_failed"
 _DEFAULT_AGENT_TIMEOUT = timedelta(seconds=7200)
 _AGENT_HEARTBEAT = timedelta(seconds=120)
 
@@ -224,6 +228,11 @@ class FeatureWorkflow:
             return self._result()
         except _Cancelled:
             return await self._do_cancel()
+        except ActivityError as exc:
+            if workflow.patched(RECORD_FAILURE_PATCH):
+                # #278: the run records why it ended before the execution fails.
+                await self._record_failure(exc)
+            raise
 
     # ------------------------------------------------------------------ #
     # Execute / verify / retry loop                                       #
@@ -730,6 +739,18 @@ class FeatureWorkflow:
         )
         self._failure_reason = self._cancel_reason
         return self._result()
+
+    async def _record_failure(self, exc: ActivityError) -> None:
+        """Record ``failed`` with the activity's error, a durable-engine control (#278)."""
+        cause = exc.cause if isinstance(exc.cause, FailureError) else exc
+        kind = cause.type if isinstance(cause, ApplicationError) and cause.type else None
+        self._failure_reason = f"{kind or type(cause).__name__}: {cause.message}"[:500]
+        await self._control(
+            WorkflowState.FAILED,
+            EVENT_ACTIVITY_FAILED,
+            [],
+            payload={"reason": self._failure_reason, "activity": exc.activity_type},
+        )
 
     # ------------------------------------------------------------------ #
     # Durable timer + result                                              #
