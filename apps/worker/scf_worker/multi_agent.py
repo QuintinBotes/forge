@@ -161,7 +161,11 @@ def _finalize_parent_agent_run(session_factory: SessionFactory, *, result: Agent
             row.status = DbRunStatus(result.status.value)
             row.pattern = result.artifacts.get("pattern")
             row.confidence = result.confidence
-            row.output = {"summary": result.summary, "output": result.output}
+            row.output = {
+                "summary": result.summary,
+                "output": result.output,
+                "governance": result.artifacts.get("governance"),
+            }
             row.completed_at = datetime.now(UTC)
             session.commit()
     except Exception:
@@ -321,6 +325,7 @@ def run_supervised_objective(
             task_id=objective.task_id,
             status=RunStatus.FAILED,
             error=str(exc),
+            artifacts={"governance": "none"},
         )
     repo_path = objective.context.get("repo_path")
 
@@ -347,6 +352,8 @@ def run_supervised_objective(
         settings=settings or CoordinatorSettings.from_env(),
     )
     result = Supervisor(deps).run(objective)
+    # Supervised runs have no workflow run (ADR-0007): they passed no gate (#277).
+    result.artifacts["governance"] = "none"
     if session_factory is not None:
         _finalize_parent_agent_run(session_factory, result=result)
     return result

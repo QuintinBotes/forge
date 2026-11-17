@@ -220,3 +220,78 @@ def test_finalize_failure_fails_the_run_and_redacts(
     assert result.status == RunStatus.FAILED
     assert result.artifacts["pull_request"]["status"] == "failed"
     assert TOKEN not in (result.error or "") and TOKEN not in str(result.artifacts)
+
+
+# --------------------------------------------------------------------------- #
+# Ungoverned runs (#277)                                                      #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def environment(monkeypatch: pytest.MonkeyPatch) -> Any:
+    from scf_api.settings import get_settings
+
+    def _set(name: str, backend: str = "postgres_fsm") -> None:
+        monkeypatch.setenv("FORGE_ENVIRONMENT", name)
+        monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", backend)
+        get_settings.cache_clear()
+
+    yield _set
+    get_settings.cache_clear()
+
+
+def _never_open(**_: Any) -> PullRequest:
+    raise AssertionError("an ungoverned run must not be delivered here")
+
+
+@pytest.mark.parametrize(
+    ("name", "backend"),
+    [("development", "temporal"), ("production", "temporal"), ("production", "postgres_fsm")],
+)
+def test_the_finalizer_delivers_no_run_without_a_workflow_run_unless_in_development(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pem: str,
+    environment: Any,
+    name: str,
+    backend: str,
+) -> None:
+    """Criterion 1 (FR-007): with the durable engine selected, a run with no
+    workflow run is never delivered; outside development, never either."""
+    environment(name, backend)
+    creds = GitHubAppCredentials(app_id="1", installation_id="2", private_key_pem=pem)
+    monkeypatch.setattr(GitHubAppCredentials, "from_env", classmethod(lambda cls: creds))
+    monkeypatch.setattr(agent_runner_module, "push_and_open_pr", _never_open)
+    result = _succeeded()
+
+    agent_runner_module._finalize(
+        _objective(repo), result, branch="forge/run-1", run_id=uuid.uuid4()
+    )
+
+    assert result.artifacts["pull_request"] == {"status": "ungoverned_refused"}
+    assert result.status == RunStatus.SUCCEEDED
+
+
+def test_a_development_run_without_the_durable_engine_is_delivered_labelled_ungoverned(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, pem: str, environment: Any
+) -> None:
+    """Criterion 3: development with postgres_fsm keeps the direct path, and the
+    pull request says the run was ungoverned."""
+    environment("development")
+    creds = GitHubAppCredentials(app_id="1", installation_id="2", private_key_pem=pem)
+    monkeypatch.setattr(GitHubAppCredentials, "from_env", classmethod(lambda cls: creds))
+    captured: dict[str, Any] = {}
+
+    def fake_open(**kwargs: Any) -> PullRequest:
+        captured.update(kwargs)
+        return PullRequest(repo="acme/widgets", number=8, url="https://github.com/x/y/pull/8")
+
+    monkeypatch.setattr(agent_runner_module, "push_and_open_pr", fake_open)
+    result = _succeeded()
+
+    agent_runner_module._finalize(
+        _objective(repo), result, branch="forge/run-1", run_id=uuid.uuid4()
+    )
+
+    assert result.artifacts["pull_request"]["status"] == "opened"
+    assert "ungoverned" in captured["body"].lower()

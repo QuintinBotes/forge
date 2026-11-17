@@ -227,7 +227,8 @@ def test_a_task_of_another_workspace_is_not_found(
         ({"instructions": "Only touch docs/"}, "instructions"),
         ({"model": "gpt-6-astra"}, "model"),
         ({"skill_profile": {"name": "strict"}}, "skill_profile"),
-        ({"execution_mode": "supervised_multi_agent"}, "execution_mode"),
+        # A supervised request is not refused here: it stays on its direct path,
+        # run in development and refused elsewhere (#277, test_agent_ungoverned.py).
         ({"allowed_actions": ["run_command"]}, "allowed_actions"),
         (
             {"repo_targets": [{"repo": REPO}, {"repo": "acme/other"}]},

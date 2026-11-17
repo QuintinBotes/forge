@@ -41,6 +41,7 @@ from scf_api.schemas.replay import (
 from scf_api.services.agent_dispatch import (
     SERVER_OWNED_CONTEXT,  # noqa: F401  (re-export: historical import path)
     AgentEnqueueFailed,
+    DurableEngineUnavailable,
     GovernedRunRefused,
     RepoNotConnected,
     TaskNotFound,
@@ -57,7 +58,7 @@ from scf_api.services.fork_service import (
 from scf_api.services.replay_service import replay_recording
 from scf_api.services.workflow_engine import resolve_backend
 from scf_api.settings import get_settings
-from scf_contracts import AgentObjective, AgentRunResult, ModelClient
+from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
 from scf_db.models import AgentRun, RunRecording
 from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_integrations.github import GitHubClient
@@ -481,8 +482,13 @@ def run(
             )
         objective = AgentObjective.model_validate(body.model_dump(exclude={"tracker_ref"}))
         _enforce_skill_profiles(objective)
+    governable = (
+        objective.primary_repo_target is not None
+        # A supervised run stays on its direct path (ADR-0007), governed nowhere (#277).
+        and objective.execution_mode != ExecutionMode.SUPERVISED_MULTI_AGENT
+    )
     try:
-        if objective.primary_repo_target is not None and resolve_backend() == "temporal":
+        if governable and resolve_backend() == "temporal":
             workflow_run_id, agent_run_id = start_governed_run(
                 store.session,
                 workspace_id=principal.workspace_id,
@@ -514,6 +520,10 @@ def run(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found") from exc
     except GovernedRunRefused as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.reason) from exc
+    except DurableEngineUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="durable_engine_unavailable"
+        ) from exc
 
 
 @router.get("/runs/{run_id}", response_model=AgentRunResult)

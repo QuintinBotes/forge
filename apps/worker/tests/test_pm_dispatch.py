@@ -1180,3 +1180,71 @@ def test_a_governed_dispatch_for_a_task_on_another_repository_is_skipped(
 
     assert (outcome.action, outcome.reason) == ("skipped", "task_repository_mismatch")
     assert temporal.started == [] and _workflow_runs(factory) == []
+
+
+# --------------------------------------------------------------------------- #
+# Ungoverned issue runs (#277)                                                #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    from scf_api.settings import get_settings
+
+    monkeypatch.setenv("FORGE_ENVIRONMENT", "production")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def test_production_without_the_durable_engine_refuses_an_issue_run(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    production: None,
+) -> None:
+    """#277 criterion 2: the direct path never runs a repository change in production."""
+    connection_id = _seed_connection(factory, project_id)
+    row_id = _seed_delivery(factory, connection_id)
+    enqueued: list[AgentObjective] = []
+
+    result = process_webhook(
+        factory, row_id, connections=connections, payload=_payload(), enqueue_run=enqueued.append
+    )
+
+    assert (result["dispatch_action"], result["dispatch_reason"]) == (
+        "skipped",
+        "ungoverned_run_refused",
+    )
+    assert enqueued == [] and _runs(factory) == []
+
+
+def test_a_durable_engine_that_cannot_start_an_issue_run_skips_it(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    temporal: _FakeTemporalClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#277 criterion 2: Temporal selected but unreachable never falls back to the
+    direct path."""
+
+    async def unreachable(*_a: Any, **_kw: Any) -> Any:
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(temporal, "start_workflow", unreachable)
+    connection_id = _seed_connection(factory, project_id)
+    row_id = _seed_delivery(factory, connection_id)
+    enqueued: list[AgentObjective] = []
+
+    result = process_webhook(
+        factory, row_id, connections=connections, payload=_payload(), enqueue_run=enqueued.append
+    )
+
+    assert (result["dispatch_action"], result["dispatch_reason"]) == (
+        "skipped",
+        "durable_engine_unavailable",
+    )
+    assert enqueued == [] and _runs(factory) == []

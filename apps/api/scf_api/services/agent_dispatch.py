@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from scf_api.settings import get_settings
 from scf_contracts import (
     AcceptanceCriterion,
     AgentObjective,
@@ -101,6 +102,35 @@ class GovernedRunRefused(ValueError):
         self.reason = reason
 
 
+class UngovernedRunRefused(GovernedRunRefused):
+    """A repository-changing run would run outside a workflow run, outside development."""
+
+    def __init__(self, why: str) -> None:
+        super().__init__(f"ungoverned_run_refused: {why}")
+
+
+class DurableEngineUnavailable(RuntimeError):
+    """The durable engine is selected but could not start the run: never a fallback."""
+
+
+def ungoverned_runs_allowed() -> bool:
+    """Only development may run a repository-changing run with no workflow run (#277).
+
+    Owner decision 2026-11-15 (spec FR-005): when the durable engine is unavailable,
+    production refuses the run; development runs it, labelled ungoverned.
+    """
+    return get_settings().environment == "development"
+
+
+def refuse_ungoverned(objective: AgentObjective) -> None:
+    """Raise ``UngovernedRunRefused`` for a repository-changing run outside development."""
+    if objective.primary_repo_target is None or ungoverned_runs_allowed():
+        return
+    if objective.execution_mode == ExecutionMode.SUPERVISED_MULTI_AGENT:
+        raise UngovernedRunRefused("supervised runs are not governed")
+    raise UngovernedRunRefused("the durable engine is not selected")
+
+
 def repo_connected(session: Session, workspace_id: uuid.UUID, repo: str) -> bool:
     """An active repository connection in this workspace names ``repo``."""
     row = session.scalar(
@@ -129,7 +159,11 @@ def create_and_enqueue_run(
     anywhere on the worker host; a forged ``tracker`` block would let tracker
     text drive write-back to an issue it does not own. ``server_context`` is
     forge-set provenance applied after stripping.
+
+    This is the direct path: outside development a repository-changing run is
+    refused here (``UngovernedRunRefused``), before anything is persisted (#277).
     """
+    refuse_ungoverned(objective)
     run_id = uuid.uuid4()
     context = {k: v for k, v in objective.context.items() if k not in _STRIPPED_CONTEXT}
     context |= {"agent_run_id": str(run_id), "workspace_id": str(workspace_id)}
@@ -251,6 +285,9 @@ def start_governed_run(
         run = engine.start(task.id, trigger=trigger, started_by=started_by)
     except DuplicateRunError as exc:
         raise GovernedRunRefused("governed_run_active") from exc
+    except Exception as exc:  # the engine recorded the failed start; refuse, never fall back
+        logger.exception("the durable engine could not start a run for task %s", task.id)
+        raise DurableEngineUnavailable(str(task.id)) from exc
     session.commit()
     assert run.id is not None  # the engine assigns it on start
     return run.id, agent_run_id(run.id)
@@ -414,16 +451,20 @@ __all__ = [
     "SERVER_OWNED_CONTEXT",
     "TRACKER_CONTEXT_KEYS",
     "AgentEnqueueFailed",
+    "DurableEngineUnavailable",
     "GovernedRunRefused",
     "RepoNotConnected",
     "ResolvedTrackerRef",
     "TaskNotFound",
     "TrackerRefNotFound",
+    "UngovernedRunRefused",
     "build_tracker_objective",
     "claim_task_repository",
     "create_and_enqueue_run",
     "parse_acceptance_criteria",
+    "refuse_ungoverned",
     "repo_connected",
     "resolve_tracker_ref",
     "start_governed_run",
+    "ungoverned_runs_allowed",
 ]
