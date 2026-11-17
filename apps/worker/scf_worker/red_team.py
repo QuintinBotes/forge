@@ -17,20 +17,20 @@ import uuid
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy.orm import Session
 
-from scf_agent.sandbox import build_sandbox_provider
-from scf_agent.sandbox.settings import SandboxSettings
+from scf_agent.providers.family import UnknownModelFamily
+from scf_agent.sandbox import SandboxError
 from scf_api.observability.redaction import redact_text
-from scf_contracts import ModelClient, SandboxProvider
+from scf_contracts import ModelClient, Policy, SandboxNetwork
 from scf_contracts.orchestration_config import AgentRole
 from scf_coordinator.red_team import HomogeneousAdversaryError, RedTeamError, run_red_team
 from scf_db.role_config import SqlRoleConfigStore
 from scf_orchestration_policy.role_config import resolve_effective_config
-from scf_worker.review import _TIERS, ReviewerRefused
-from scf_worker.run_workspace import _git_out, detached_worktree, file_at
+from scf_worker.review import _TIERS, DIFF_CAP_CHARS, ReviewerRefused
+from scf_worker.run_workspace import _git_out, detached_worktree, file_at, resolve_sandbox
 from scf_workflow.red_team_gate import (
     REDTEAM_BLOCKED,
     REDTEAM_NOT_RUN,
@@ -86,32 +86,46 @@ def attack_change(
     builder_model: str,
     adversary: str | None,
     client: Callable[[str], ModelClient],
+    policy: Policy | None,
+    run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
 ) -> RedTeamResult:
     """Attack ``base...head`` with ``adversary``: ``blocked``, ``survived`` or ``not_run``.
 
-    The adversary's repository instructions are the base branch's AGENTS.md: one the
-    change adds is part of what it attacks, so only data (ADR-0014).
+    The diff is cut at the reviewer's cap, and the verdict says when it was. The test
+    runs in the sandbox the declared checks get (``policy`` strengthens the workspace's
+    settings, no network). The adversary's repository instructions are the base
+    branch's AGENTS.md: one the change adds is part of what it attacks (ADR-0014).
     """
     if adversary is None:
         return _not_run("red_team_not_configured", builder_model=builder_model)
-    if adversary == ADVERSARY_OFF:
+    if adversary.strip().lower() == ADVERSARY_OFF:
         return _not_run(RED_TEAM_OFF, builder_model=builder_model)
     try:
         model_client = client(adversary)
     except ReviewerRefused as exc:  # ``reviewer_client``: no key for the adversary's provider
         return _not_run("red_team_not_configured", str(exc), builder_model=builder_model)
+    except UnknownModelFamily as exc:
+        return _not_run("red_team_failed", str(exc), builder_model=builder_model)
     diff = _git_out(repo_path, "diff", "--no-color", f"{base}...{head}")
+    truncated = len(diff) > DIFF_CAP_CHARS
     try:
         with detached_worktree(repo_path, head) as worktree:
+            spec, provider = resolve_sandbox(
+                worktree,
+                policy,
+                run_id=run_id,
+                workspace_id=workspace_id,
+                network=SandboxNetwork.NONE,
+            )
             found = asyncio.run(
                 run_red_team(
-                    diff=diff,
+                    diff=diff[:DIFF_CAP_CHARS],
+                    diff_truncated=truncated,
                     spec={"acceptance_criteria": criteria},
                     adversary_client=model_client,
-                    # The provider union widens ``create``'s result; every provider is one.
-                    sandbox_provider=cast(
-                        SandboxProvider, build_sandbox_provider(SandboxSettings.from_env())
-                    ),
+                    sandbox_provider=provider,
+                    sandbox_spec=spec,
                     coder_model=builder_model,
                     worktree_path=str(worktree),
                     adversary_model=adversary,
@@ -120,9 +134,9 @@ def attack_change(
             )
     except HomogeneousAdversaryError as exc:
         return _not_run("red_team_same_family", str(exc), builder_model=builder_model)
-    except RedTeamError as exc:  # an unknown family, or a run that did not finish
+    except (RedTeamError, SandboxError) as exc:  # unknown family, unfinished run, sandbox fault
         return _not_run("red_team_failed", str(exc), builder_model=builder_model)
-    evidence: dict[str, Any] = {"output": redact_text(found.evidence)}
+    evidence: dict[str, Any] = {"output": redact_text(found.evidence), "truncated": truncated}
     if found.failing_test_ref is not None:
         evidence["failing_test"] = asdict(found.failing_test_ref)
     if found.violation is not None:

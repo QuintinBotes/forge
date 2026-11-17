@@ -36,7 +36,15 @@ from scf_agent.sandbox import (
 )
 from scf_agent.sandbox.settings import SandboxSettings
 from scf_agent.tools import ToolRegistry, agent_tool_belt
-from scf_contracts import AgentObjective, CommandOutput, Policy, SandboxNetwork, SandboxSession
+from scf_contracts import (
+    AgentObjective,
+    CommandOutput,
+    Policy,
+    SandboxNetwork,
+    SandboxProvider,
+    SandboxSession,
+    SandboxSpec,
+)
 from scf_policy.loader import load_policy
 
 
@@ -147,6 +155,32 @@ def prepared_workspace(
         worktree_sandbox.cleanup()
 
 
+def resolve_sandbox(
+    worktree: Path,
+    policy: Policy | None,
+    *,
+    run_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    settings: SandboxSettings | None = None,
+    network: SandboxNetwork | None = None,
+) -> tuple[SandboxSpec, SandboxProvider]:
+    """The sandbox over ``worktree``: workspace settings strengthened by ``policy``."""
+    resolved_settings = settings or SandboxSettings.from_env()
+    spec = resolve_sandbox_settings(
+        resolved_settings,
+        policy.sandbox if policy else None,
+        language=(policy.languages[0] if policy and policy.languages else "python"),
+        agent_run_id=run_id,
+        workspace_id=workspace_id,
+        host_worktree_path=str(worktree),
+    )
+    if network is not None:  # the caller's posture wins over the policy's (checks: none)
+        spec = spec.model_copy(update={"network": network})
+    provider = build_sandbox_provider(resolved_settings.model_copy(update={"kind": spec.kind}))
+    # The provider union widens ``create``'s result; every provider is a SandboxProvider.
+    return spec, cast(SandboxProvider, provider)
+
+
 @contextmanager
 def _sandbox_commands(
     worktree: Path,
@@ -164,21 +198,16 @@ def _sandbox_commands(
     loop = asyncio.new_event_loop()
     session: SandboxSession | None = None
     try:
-        resolved_settings = settings or SandboxSettings.from_env()
-        spec = resolve_sandbox_settings(
-            resolved_settings,
-            policy.sandbox if policy else None,
-            language=(policy.languages[0] if policy and policy.languages else "python"),
-            agent_run_id=run_id,
+        spec, provider = resolve_sandbox(
+            worktree,
+            policy,
+            run_id=run_id,
             workspace_id=workspace_id,
-            host_worktree_path=str(worktree),
+            settings=settings,
+            network=network,
         )
-        if network is not None:  # the caller's posture wins over the policy's (checks: none)
-            spec = spec.model_copy(update={"network": network})
-        provider = build_sandbox_provider(resolved_settings.model_copy(update={"kind": spec.kind}))
         loop.run_until_complete(provider.preflight())
-        # The provider union widens the coroutine's result; every provider returns a session.
-        live_session = cast(SandboxSession, loop.run_until_complete(provider.create(spec)))
+        live_session = loop.run_until_complete(provider.create(spec))
         session = live_session
         exec_timeout = spec.exec_timeout_seconds
 
@@ -306,6 +335,7 @@ __all__ = [
     "file_at",
     "prepared_workspace",
     "remove_run_worktrees",
+    "resolve_sandbox",
     "run_branch",
     "run_declared_checks",
 ]

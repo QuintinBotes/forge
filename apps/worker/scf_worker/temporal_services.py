@@ -22,7 +22,7 @@ from temporalio.exceptions import ApplicationError
 from scf_api.observability.redaction import redact_text
 from scf_api.services.agent_dispatch import STRIPPED_CONTEXT, repo_connected
 from scf_api.services.attestation_service import AttestationService
-from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
+from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient, Policy
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.review import ReviewVerdict
 from scf_contracts.run_context import (
@@ -604,6 +604,7 @@ def run_checks_service(
                 head=str(head),
                 builder=agent_run,
                 task=task,
+                policy=policy,
                 adversary=adversary,
             )
             runs += [scan] if scan is not None else []
@@ -622,6 +623,7 @@ def _red_team(
     head: str,
     builder: AgentRun,
     task: Task,
+    policy: Policy | None,
     adversary: Callable[[str], ModelClient],
 ) -> tuple[CheckRun | None, str | None]:
     """Attack the change with an adversary of another model family, once per head commit.
@@ -643,6 +645,9 @@ def _red_team(
                 builder_model=str(builder.model or ""),
                 adversary=model,
                 client=adversary,
+                policy=policy,
+                run_id=builder.id,
+                workspace_id=inp.workspace_id,
             )
 
         row, _ = ensure_red_team_verdict(

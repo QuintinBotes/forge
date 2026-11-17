@@ -198,10 +198,12 @@ def ensure_red_team_verdict(
     from scf_db.redteam import RedTeamRepository
 
     # Query-first idempotency is best-effort, not a hard guarantee: two
-    # concurrent callers can both see "no existing scan" and both record.
-    # Worst case under a race is a duplicate honest `not_run`/`survived` row in
-    # the append-only history (extra noise on the GET's `records` list) — it
-    # is never a verdict flip, and never fabricates a block or a survive.
+    # concurrent callers can both see "no existing scan" and both record, with no
+    # lock or unique index to stop them. With a real adversary (#283) the two
+    # scans of one head commit can disagree (one `blocked`, one `survived`), for
+    # example when a timed-out checks activity's thread runs on beside its retry.
+    # Each row is still an honest scan, and the newest one is what the attestation
+    # reads; `docs/trust-layer.md` lists this as a limitation.
     existing = [
         record
         for record in RedTeamRepository(session).get_by_run(workspace_id, workflow_run_id)

@@ -70,16 +70,19 @@ binds every activity except `forge.resume_agent`:
 - **The red-team adversary** (#283) attacks a change the reviewer approved,
   before its pull request, inside the same `forge.run_checks` activity
   (`apps/worker/scf_worker/red_team.py`). It is given the diff against the base
-  branch and the acceptance criteria, and its repository instructions are the
-  base branch's root `AGENTS.md`. Its test runs in the worker's sandbox
-  (`FORGE_SANDBOX_KIND`) on a fresh, detached worktree of the head commit, which
-  is removed afterwards, so the test never reaches the run branch.
+  branch and the acceptance criteria only as untrusted data, in the same fenced
+  block as the reviewer, cut at the same 60,000 characters (the record's
+  evidence then says `truncated`). Its repository instructions are the base
+  branch's root `AGENTS.md`. Its test runs in the sandbox the declared checks
+  get (the workspace's settings strengthened by the default branch's policy, no
+  network) on a fresh, detached worktree of the head commit, which is removed
+  afterwards, so the test never reaches the run branch.
   - **Its model** is the `adversary` role's model in the role configuration,
     resolved and keyed as for the reviewer, and its family must differ from the
     builder's (`HomogeneousAdversaryError` before any model call).
-  - **The off switch** is the `adversary` role's model `off` (a workspace or
-    project override): the run goes on, and the record reads `not_run` with the
-    reason `red_team_off`.
+  - **The off switch** is the `adversary` role's model `off`, in any case (a
+    workspace or project override): the run goes on, and the record reads
+    `not_run` with the reason `red_team_off`.
   - **Its verdict** is the check `red_team` and a `red_team_record` row at phase
     `pr` with the head commit and both model ids, once per head commit. `blocked`
     fails the checks, so the builder's next attempt sees the failing test's
@@ -87,8 +90,8 @@ binds every activity except `forge.resume_agent`:
     `survived` lets the pull request open.
   - **Without a usable adversary**, the run moves to `needs_human_input` with
     the reason, and the record reads `not_run`: `red_team_not_configured`,
-    `red_team_same_family`, or `red_team_failed` (an unknown model family, or an
-    adversary run that did not finish).
+    `red_team_same_family`, or `red_team_failed` (an unknown model family, an
+    adversary run that did not finish, or a sandbox fault).
 - **The pull request** is opened once: a retry finds the one already opened. A
   branch with no commits is not delivered, and without GitHub App credentials
   the step refuses.
@@ -166,9 +169,9 @@ binds every activity except `forge.resume_agent`:
 
 ### Current limitations
 
-- **The adversary's test runs on the worker's sandbox tier (#184).** On the
+- **The adversary's test runs on the checks' sandbox tier (#184).** On the
   `worktree` tier that is the worker's host, and the command is the one the
-  adversary chose; the repository policy's sandbox block does not strengthen it.
+  adversary chose.
 - **A failed gate submission is not audited (#182).** It is logged and recorded
   on the request (`workflow_event` `failed`), but the audit log records only the
   decision; nothing retries it when CI turns green.
@@ -579,6 +582,12 @@ foreign runs (no existence leak).
 - **The adversary runs on the Temporal spine only (#283).** The V1 router and
   the explicit trigger keep the `not_run` default; on Temporal a run with no
   adversary configured stops for a person instead (FR-017).
+- **Two overlapping scans of one head commit can disagree (#283).** The
+  once-per-head check reads before it records, with no lock or unique index. When
+  a checks activity times out, its thread runs on beside the retry, so both can
+  run an adversary and record different verdicts (say `blocked` and
+  `survived`) for the same head commit. Each row is an honest scan; the
+  attestation reads the newest.
 
 ---
 
