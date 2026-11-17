@@ -34,6 +34,7 @@ from scf_worker.approval_activity import expire_open_gates
 from scf_worker.dispatch import workspace_mirrors
 from scf_worker.held_out_drafting import draft_scenarios_service
 from scf_worker.run_workspace import remove_run_worktrees
+from scf_worker.tasks.pm_dispatch import post_workflow_writeback
 from scf_worker.temporal_services import (
     agent_run_service,
     approval_service,
@@ -86,7 +87,9 @@ class SessionPerCallStore:
         with self._factory() as session:
             result = self._store_for(session, run.id).update(run)
             session.commit()
-            return result
+        # The issue a governed run came from hears its state (#278); this never raises.
+        post_workflow_writeback(self._factory, result)
+        return result
 
     def find_active_by_task(self, task_id: uuid.UUID) -> WorkflowRun | None:
         raise NotImplementedError("task lookups need a workspace; the worker has none")

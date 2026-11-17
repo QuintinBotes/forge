@@ -391,6 +391,32 @@ async def test_a_change_no_reviewer_can_judge_pauses_for_a_person_without_a_pr(
     assert opened == []
 
 
+async def test_an_activity_that_refuses_records_the_run_failed_with_why(harness: Any) -> None:
+    """#278: a non-retryable activity error still fails the execution, and the run
+    records ``failed`` with the reason first, so the issue it came from hears it."""
+    from temporalio.client import WorkflowFailureError
+    from temporalio.exceptions import ApplicationError
+
+    def nothing_to_deliver(_: Any) -> Any:
+        raise ApplicationError(
+            "scf/run has no commits ahead of main", type="NoChangesToDeliver", non_retryable=True
+        )
+
+    h = harness(open_pr_fn=nothing_to_deliver)
+    async with h.worker():
+        run = await h.start()
+        await h.wait_awaiting(run, {"spec_approved_by_human"})
+        await h.engine.atransition(run.id, "spec_approved_by_human")
+        with pytest.raises(WorkflowFailureError):
+            await h.handle(run).result()
+
+    final = h.engine.get_run(run.id)
+    assert (final.current_state, final.status.value) == ("failed", "failed")
+    [last] = h.transitions(run)[-1:]
+    assert (last["from_state"], last["to_state"]) == ("pr_opened", "failed")
+    assert last["payload"]["reason"] == ("NoChangesToDeliver: scf/run has no commits ahead of main")
+
+
 async def test_held_out_scenarios_are_drafted_before_the_spec_gate_opens(harness: Any) -> None:
     """#258 criterion 1: after the spec is submitted for review and before the `spec`
     approval request is created, the drafting step runs once."""

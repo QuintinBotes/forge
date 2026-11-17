@@ -219,6 +219,26 @@ async def test_a_repeated_call_returns_the_same_pull_request_and_creates_one(
     assert len(_attestations(factory, run_id)) == 1
 
 
+async def test_the_run_records_the_pull_request_it_opened(
+    factory: sessionmaker[Session], remotes: Path, pem: str
+) -> None:
+    """The issue a run came from is told of its pull request from the run (#278)."""
+    run_id = _seed(factory)
+
+    await ActivityEnvironment().run(
+        _activities(factory, remotes, pem, FakeGitHub()).open_pr_with_spec_traceability,
+        _input(run_id),
+    )
+
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        assert run.context["pull_request"] == {
+            "number": 1,
+            "url": "https://github.com/acme/app/pull/1",
+        }
+
+
 async def test_the_lookup_asks_for_the_run_branch_before_creating(
     factory: sessionmaker[Session], remotes: Path, pem: str
 ) -> None:

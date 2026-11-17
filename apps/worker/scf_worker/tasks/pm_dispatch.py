@@ -21,7 +21,8 @@ Two halves, both driven from data SCF already persists:
   hidden ``<!-- forge:run:<run_id> -->`` marker) to the originating issue and,
   only when a PR was opened, apply the connection's mapped
   ``status_on_pr_opened`` transition. Best-effort: failures are logged and
-  recorded on the run row, never raised into the run's outcome.
+  recorded on the run row, never raised into the run's outcome. A governed run
+  writes back from its workflow states instead (:func:`post_workflow_writeback`).
 
 Triggers beyond ``issues.labeled`` (status transitions, Linear/Jira) are out
 of scope for M3 — see spec M §4 "Next".
@@ -51,7 +52,8 @@ from scf_api.services.agent_dispatch import (
     repo_connected,
 )
 from scf_api.services.pm_service import PMConnectionService
-from scf_contracts import AgentObjective, AgentRunResult, RunStatus
+from scf_contracts import AgentObjective, AgentRunResult, RunStatus, WorkflowRun
+from scf_contracts.run_context import PULL_REQUEST_KEY
 from scf_db.models import AgentRun
 from scf_db.models.enums import PMConnectionStatus, PMProvider, PMSyncDirection
 from scf_db.models.enums import RunStatus as DbRunStatus
@@ -452,7 +454,7 @@ def _dispatch_governed(
     The label only starts the run: the workflow walks every gate, the spec gate
     first, and its agent runs the objective kept on the run (built from the
     re-fetched issue). The sender is recorded as the run's starter, never as an
-    approver. Tracker write-back for governed runs is #278.
+    approver. The issue hears the run's states from :func:`post_workflow_writeback`.
     """
     from scf_api.services.workflow_engine import select_workflow_engine
     from scf_workflow.exceptions import DuplicateRunError
@@ -571,8 +573,119 @@ def post_run_writeback(
     ``status_on_pr_opened`` is applied only when the run actually opened a
     pull request.
     """
+    pr = (result.artifacts or {}).get("pull_request") or {}
+    pr_url = pr["url"] if pr.get("status") == "opened" and pr.get("url") else None
+    return _post_writeback(
+        claim=lambda: _claim_writeback(session_factory, run_id),
+        record=lambda record: _record_writeback(session_factory, run_id, record),
+        run_id=run_id,
+        headline=f"SCF run `{run_id}` finished with state **{result.status.value}**.",
+        pr_url=pr_url,
+        pr_opened=pr_url is not None,
+        workspace_id=workspace_id,
+        tracker=tracker,
+        connections=connections,
+    )
+
+
+#: The workflow states a governed run reports to its issue (#278): where it waits
+#: for a person with its pull request (``awaiting_review``), and the states it ends
+#: in. ``merged`` is left out: the run moves on to ``closed`` at once.
+WRITEBACK_STATES = frozenset(
+    {"awaiting_review", "closed", "needs_human_input", "failed", "cancelled"}
+)
+
+
+def _set_state_writeback(
+    session_factory: sessionmaker[Session],
+    run_id: uuid.UUID,
+    state: str,
+    record: dict,
+    *,
+    claim: bool = False,
+) -> bool:
+    """Record one state's write-back on the workflow run; with ``claim``, only if unset.
+
+    Kept per state in ``context.tracker_writeback``, so each state posts at most once.
+    """
+    with session_factory() as session:
+        row = session.get(DbWorkflowRun, run_id, with_for_update=True)
+        if row is None:  # pragma: no cover - row deleted mid-flight
+            return False
+        done = dict(row.context.get("tracker_writeback") or {})
+        if claim and done.get(state):
+            return False
+        row.context = {**row.context, "tracker_writeback": {**done, state: record}}
+        session.commit()
+        return True
+
+
+def post_workflow_writeback(
+    session_factory: sessionmaker[Session],
+    run: WorkflowRun,
+    *,
+    connections: PMConnectionService | None = None,
+) -> str:
+    """Post a governed run's state to the issue it came from (#278); never raises.
+
+    Called each time the worker records a transition. Only a run whose trigger keeps
+    a tracker block (issue dispatch sets it, #171) and that has entered one of
+    :data:`WRITEBACK_STATES` posts, once per state, with the pull request the run
+    opened. Returns ``"not_applicable"`` or what :func:`post_run_writeback` returns.
+    """
+    state = run.current_state
+    trigger = run.context.get("trigger")
+    tracker = trigger.get("tracker") if isinstance(trigger, dict) else None
+    if (
+        run.id is None
+        or state not in WRITEBACK_STATES
+        or not isinstance(tracker, dict)
+        or not tracker.get("connection_id")
+    ):
+        return "not_applicable"
+    run_id = run.id
     try:
-        if not _claim_writeback(session_factory, run_id):
+        with session_factory() as session:
+            workspace_id = session.scalar(
+                select(DbWorkflowRun.workspace_id).where(DbWorkflowRun.id == run_id)
+            )
+        service = connections or _connection_service(session_factory)
+    except Exception:
+        logger.exception("tracker write-back seam failed for workflow run %s (non-fatal)", run_id)
+        return "failed"
+    if workspace_id is None:  # pragma: no cover - row deleted mid-flight
+        return "not_applicable"
+    pr_url = (run.context.get(PULL_REQUEST_KEY) or {}).get("url")
+    return _post_writeback(
+        claim=lambda: _set_state_writeback(
+            session_factory, run_id, state, {"status": "posting"}, claim=True
+        ),
+        record=lambda record: _set_state_writeback(session_factory, run_id, state, record),
+        run_id=run_id,
+        headline=f"SCF workflow run `{run_id}` reached state **{state}**.",
+        pr_url=pr_url,
+        pr_opened=pr_url is not None and state == "awaiting_review",
+        workspace_id=workspace_id,
+        tracker=tracker,
+        connections=service,
+    )
+
+
+def _post_writeback(
+    *,
+    claim: Callable[[], bool],
+    record: Callable[[dict], object],
+    run_id: uuid.UUID,
+    headline: str,
+    pr_url: str | None,
+    pr_opened: bool,
+    workspace_id: uuid.UUID,
+    tracker: dict,
+    connections: PMConnectionService,
+) -> str:
+    """Claim, post the comment (and on ``pr_opened`` the mapped transition), record."""
+    try:
+        if not claim():
             return "already_recorded"
         connection_id = uuid.UUID(str(tracker["connection_id"]))
         external_id = str(tracker["external_id"])
@@ -580,30 +693,22 @@ def post_run_writeback(
         if connection is None or connection.workspace_id != workspace_id:
             raise LookupError(f"tracker connection {connection_id} not in run workspace")
         if connection.status == PMConnectionStatus.DISABLED:
-            _record_writeback(
-                session_factory,
-                run_id,
-                {"status": "skipped", "reason": "connection_disabled"},
-            )
+            record({"status": "skipped", "reason": "connection_disabled"})
             return "skipped"
         if connection.sync_direction == PMSyncDirection.INBOUND_ONLY:
-            _record_writeback(
-                session_factory, run_id, {"status": "skipped", "reason": "inbound_only"}
-            )
+            record({"status": "skipped", "reason": "inbound_only"})
             return "skipped"
         adapter: Any = connections.get_adapter_for_project(
             connection.workspace_id, connection.project_id, connection.provider.value
         )
         comment = getattr(adapter, "comment_external", None)
         if comment is None:
-            _record_writeback(session_factory, run_id, {"status": "unsupported"})
+            record({"status": "unsupported"})
             return "unsupported"
 
-        pr = (result.artifacts or {}).get("pull_request") or {}
-        pr_opened = pr.get("status") == "opened" and bool(pr.get("url"))
-        lines = [f"SCF run `{run_id}` finished with state **{result.status.value}**."]
-        if pr_opened:
-            lines.append(f"Pull request: {pr['url']}")
+        lines = [headline]
+        if pr_url:
+            lines.append(f"Pull request: {pr_url}")
         lines.append(run_comment_marker(run_id))
         body = "\n\n".join(lines)
         config = _parse_dispatch_config(connection) if pr_opened else None
@@ -628,17 +733,15 @@ def post_run_writeback(
 
         comment_id, transition_record = asyncio.run(_post_and_transition())
 
-        record: dict[str, Any] = {"status": "posted", "comment_id": str(comment_id)}
+        posted: dict[str, Any] = {"status": "posted", "comment_id": str(comment_id)}
         if transition_record is not None:
-            record["transition"] = transition_record
-        _record_writeback(session_factory, run_id, record)
+            posted["transition"] = transition_record
+        record(posted)
         return "posted"
     except Exception as exc:
         logger.exception("tracker write-back failed for run %s (non-fatal)", run_id)
         try:
-            _record_writeback(
-                session_factory, run_id, {"status": "failed", "error": str(exc)[:500]}
-            )
+            record({"status": "failed", "error": str(exc)[:500]})
         except Exception:
             logger.exception("tracker write-back outcome could not be recorded for %s", run_id)
         return "failed"
@@ -706,5 +809,6 @@ __all__ = [
     "dispatch_issue_task",
     "maybe_dispatch",
     "post_run_writeback",
+    "post_workflow_writeback",
     "register_pm_dispatch_tasks",
 ]
