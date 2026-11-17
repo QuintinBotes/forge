@@ -251,11 +251,15 @@ async def test_feature_workflow_reaches_its_first_human_gate_with_real_records(
     from temporalio.testing import WorkflowEnvironment
 
     from scf_workflow.temporal.payloads import WorkflowParams
+    from scf_workflow.temporal.testing import TEST_SERVER_VERSION
     from scf_workflow.temporal.worker import build_temporal_worker
     from scf_workflow.temporal.workflows import FeatureWorkflow
 
     try:
-        env = await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter)
+        env = await WorkflowEnvironment.start_time_skipping(
+            data_converter=pydantic_data_converter,
+            test_server_download_version=TEST_SERVER_VERSION,
+        )
     except Exception as exc:  # pragma: no cover - offline sandbox
         pytest.skip(f"Temporal test server unavailable: {exc}")
     seeded = _seed(factory)
