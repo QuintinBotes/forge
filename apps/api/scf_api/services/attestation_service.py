@@ -48,9 +48,11 @@ from scf_approval.models import (
     Principal,
     ResolutionOutcome,
 )
+from scf_contracts import AgentObjective
 from scf_contracts.attestation import (
     CHANGESET_PROVENANCE_PREDICATE_TYPE,
     DSSE_PAYLOAD_TYPE_INTOTO,
+    AssistanceIdentity,
     ChangesetProvenance,
     CheckOutcome,
     DigestSet,
@@ -70,6 +72,7 @@ from scf_db.models import (
     Attestation,
     RedTeamRecord,
     SpecVersion,
+    Task,
     TraceabilityCriterionLink,
     WorkflowRun,
 )
@@ -83,10 +86,22 @@ def _names_commit(row: Attestation, repository: str, head_commit: str) -> bool:
     except (ValueError, TypeError):
         return False
     return any(
-        subject.name == repository
+        # ``<repository>@<ref>`` since #214, ``<repository>`` before it.
+        subject.name.partition("@")[0] == repository
         and (subject.digest.model_extra or {}).get("gitCommit") == head_commit
         for subject in statement.subject
     )
+
+
+def _artifacts(run: AgentRun) -> Mapping[str, Any]:
+    return (run.output or {}).get("artifacts") or {}
+
+
+def _made_commits(run: AgentRun) -> bool:
+    """Whether ``run`` recorded a head commit other than the commit it started from (#214)."""
+    artifacts = _artifacts(run)
+    head, base = artifacts.get("head_commit"), artifacts.get("base_commit")
+    return bool(head and base and head != base)
 
 
 __all__ = [
@@ -195,6 +210,9 @@ class AttestationService:
 
         ``head`` is ``(repository, head commit)``: the statement then names the
         commit as a subject, and the run that built it is the one attested (#175).
+        Without it, the change is the one the run record holds: the latest builder run
+        that made commits, in the task's repository. A run that made none names no
+        commit (#214).
         """
         run = self._session.get(WorkflowRun, workflow_run_id)
         if run is None:
@@ -205,6 +223,13 @@ class AttestationService:
         agent = self._representative_agent_run(workflow_run_id, head_commit=head_commit)
         if agent is None:
             raise ValueError(f"workflow_run {workflow_run_id} has no agent_run to attest")
+        artifacts = _artifacts(agent)
+        if head is None and _made_commits(agent):
+            repository, head_commit = self._repository(run), str(artifacts["head_commit"])
+        # The base and ref are read only off the run that recorded this head commit.
+        recorded = head_commit is not None and artifacts.get("head_commit") == head_commit
+        base_commit = artifacts.get("base_commit") if recorded else None
+        branch = artifacts.get("branch") if recorded else None
 
         spec_key, spec_version, link_prs = self._spec_and_prs(workspace_id, run.task_id)
         resolved_prs = pr_numbers if pr_numbers is not None else link_prs
@@ -228,6 +253,8 @@ class AttestationService:
             repository=repository,
             head_commit=head_commit,
             verification=self._verification(run, head_commit),
+            base_commit=base_commit,
+            assisted_by=[AssistanceIdentity(model=agent.model or None)] if head_commit else [],
         )
 
         predicate = provenance.model_dump(mode="json")
@@ -238,7 +265,8 @@ class AttestationService:
         if repository is not None and head_commit is not None:
             subjects.append(
                 Subject(
-                    name=repository, digest=DigestSet.model_validate({"gitCommit": head_commit})
+                    name=f"{repository}@refs/heads/{branch}" if branch else repository,
+                    digest=DigestSet.model_validate({"gitCommit": head_commit}),
                 )
             )
         statement = Statement(
@@ -321,6 +349,14 @@ class AttestationService:
             raise ValueError(f"workflow_run {workflow_run_id} not found")
         return run.workspace_id
 
+    def _repository(self, run: WorkflowRun) -> str | None:
+        """The task's primary repository, as the pull request is opened against it."""
+        task = self._session.get(Task, run.task_id) if run.task_id is not None else None
+        if task is None:
+            return None
+        target = AgentObjective(objective="attest", repo_targets=task.repo_targets)
+        return target.primary_repo_target.repo if target.primary_repo_target else None
+
     def _verification(self, run: WorkflowRun, head_commit: str | None) -> Verification:
         """The checks, CI, reviewer and red-team verdicts recorded on ``run`` (#175).
 
@@ -372,8 +408,9 @@ class AttestationService:
         """The agent run whose runtime facts the attestation records.
 
         With a head commit, the latest run that recorded it (the run that built the
-        pull request). Otherwise the earliest non-supervisor run that actually
-        recorded a model (what ran), else the earliest run of the workflow.
+        pull request). Otherwise the latest builder run that made commits (#214), else
+        the earliest non-supervisor run that actually recorded a model (what ran),
+        else the earliest run of the workflow.
         """
         runs = list(
             self._session.scalars(
@@ -382,16 +419,15 @@ class AttestationService:
                 .order_by(AgentRun.created_at, AgentRun.id)
             ).all()
         )
-        built = [
-            run
-            for run in runs
-            if head_commit is not None
-            and ((run.output or {}).get("artifacts") or {}).get("head_commit") == head_commit
-        ]
-        if built:
-            return built[-1]
         # The verifier and the reviewer (#258, #173) ran on the run but built nothing.
         builders = [run for run in runs if run.role not in _NOT_BUILDERS]
+        built = (
+            [run for run in runs if _artifacts(run).get("head_commit") == head_commit]
+            if head_commit is not None
+            else [run for run in builders if _made_commits(run)]
+        )
+        if built:
+            return built[-1]
         for run in builders:
             if not run.is_supervisor and run.model:
                 return run

@@ -45,6 +45,8 @@ class RunWorkspace:
     path: Path
     branch: str
     tools: ToolRegistry
+    #: The commit the run branch started from: a head equal to it means no commit (#214).
+    base_commit: str = ""
 
 
 def run_branch(prefix: str, run_id: uuid.UUID) -> str:
@@ -119,8 +121,12 @@ def prepared_workspace(
     run_id: uuid.UUID,
     workspace_id: uuid.UUID,
     settings: SandboxSettings | None = None,
+    model: str | None = None,
 ) -> Iterator[RunWorkspace | None]:
-    """Yield a ready workspace, or ``None`` when the objective names no repository."""
+    """Yield a ready workspace, or ``None`` when the objective names no repository.
+
+    ``model`` is the model the run uses, named in each commit's ``Assisted-by:`` (#214).
+    """
     repo_path = objective.context.get("repo_path")
     if not repo_path:
         yield None
@@ -131,6 +137,7 @@ def prepared_workspace(
     worktree_sandbox = WorktreeSandbox(repo_path, base_branch=base_branch, branch_prefix=prefix)
     worktree = worktree_sandbox.create(branch=run_branch(prefix, run_id))
     try:
+        base_commit = _git_out(worktree, "rev-parse", "HEAD").strip()
         policy = _repo_policy(worktree)
         with _sandbox_commands(
             worktree, policy, run_id=run_id, workspace_id=workspace_id, settings=settings
@@ -138,11 +145,14 @@ def prepared_workspace(
             tools = agent_tool_belt(
                 worktree,
                 run_id=str(run_id),
+                model=model,
                 commands=policy.commands if policy else None,
                 run_command=run_command,
             )
             assert worktree_sandbox.branch is not None  # set by create()
-            yield RunWorkspace(path=worktree, branch=worktree_sandbox.branch, tools=tools)
+            yield RunWorkspace(
+                path=worktree, branch=worktree_sandbox.branch, tools=tools, base_commit=base_commit
+            )
     finally:
         worktree_sandbox.cleanup()
 
