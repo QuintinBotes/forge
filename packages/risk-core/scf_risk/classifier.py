@@ -6,7 +6,7 @@ Pure, total and deterministic: no I/O, no clock, and no input makes it raise.
 from __future__ import annotations
 
 from scf_contracts import ChangeSignals, DerivedRisk, RiskRules
-from scf_risk.rules import matches, rule_id
+from scf_risk.rules import matches
 
 
 def derive(signals: ChangeSignals, rules: RiskRules) -> DerivedRisk:
@@ -22,8 +22,8 @@ def derive(signals: ChangeSignals, rules: RiskRules) -> DerivedRisk:
             reason=signals.unavailable_reason or "change signals unavailable",
         )
     matched = [
-        (rule_id(rule, index), rule.risk_class)
-        for index, rule in enumerate(rules.derive)
+        (rule_id, rule.risk_class)
+        for rule_id, rule in zip(rules.rule_ids(), rules.derive, strict=True)
         if matches(rule, signals.paths)
     ]
     return DerivedRisk(

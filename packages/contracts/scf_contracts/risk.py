@@ -15,7 +15,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 #: ``shadow`` records what risk would decide; ``enforcing`` lets it tighten gates.
 RiskEnforcement = Literal["shadow", "enforcing"]
@@ -35,17 +35,26 @@ class RiskClass(StrEnum):
     def _rank(self) -> int:
         return list(RiskClass).index(self)
 
+    @staticmethod
+    def _rank_of(other: object) -> int | None:
+        """A plain str (JSON, a database column) is read as a class; an unknown name raises."""
+        return RiskClass(other)._rank() if isinstance(other, str) else None
+
     def __lt__(self, other: object) -> bool:
-        return self._rank() < other._rank() if isinstance(other, RiskClass) else NotImplemented
+        rank = self._rank_of(other)
+        return NotImplemented if rank is None else self._rank() < rank
 
     def __le__(self, other: object) -> bool:
-        return self._rank() <= other._rank() if isinstance(other, RiskClass) else NotImplemented
+        rank = self._rank_of(other)
+        return NotImplemented if rank is None else self._rank() <= rank
 
     def __gt__(self, other: object) -> bool:
-        return self._rank() > other._rank() if isinstance(other, RiskClass) else NotImplemented
+        rank = self._rank_of(other)
+        return NotImplemented if rank is None else self._rank() > rank
 
     def __ge__(self, other: object) -> bool:
-        return self._rank() >= other._rank() if isinstance(other, RiskClass) else NotImplemented
+        rank = self._rank_of(other)
+        return NotImplemented if rank is None else self._rank() >= rank
 
 
 class _Model(BaseModel):
@@ -62,9 +71,29 @@ class RiskRule(_Strict):
     """One ``derive`` entry: a change touching any of ``paths`` is at least ``class``."""
 
     #: Optional; an unnamed rule is reported as ``derive[<index>]``.
-    id: str | None = None
+    id: str | None = Field(default=None, min_length=1)
     paths: list[str] = Field(min_length=1)
     risk_class: RiskClass = Field(alias="class")
+
+    @field_validator("paths")
+    @classmethod
+    def _matchable_paths(cls, paths: list[str]) -> list[str]:
+        """Reject globs the matcher can never match, so a rule cannot silently do nothing.
+
+        Repository paths are relative with no trailing ``/``. Rejected rather than
+        rewritten, so risk rules keep matching exactly as conditional policy rules do.
+        """
+        for path in paths:
+            if not path.strip():
+                raise ValueError("risk rule path is blank")
+            fixed = path.removeprefix("./").lstrip("/")
+            if fixed.endswith("/"):
+                fixed += "**"
+            if fixed != path:
+                raise ValueError(
+                    f"risk rule path {path!r} can never match a repository path; use {fixed!r}"
+                )
+        return paths
 
 
 class RiskClassRequirements(_Strict):
@@ -85,6 +114,18 @@ class RiskRules(_Strict):
     fallback: RiskClass = RiskClass.CRITICAL
     derive: list[RiskRule] = Field(default_factory=list)
     classes: dict[RiskClass, RiskClassRequirements] = Field(default_factory=dict)
+
+    def rule_ids(self) -> list[str]:
+        """Each ``derive`` rule's id, or ``derive[<index>]`` when the policy gave none."""
+        return [rule.id or f"derive[{index}]" for index, rule in enumerate(self.derive)]
+
+    @model_validator(mode="after")
+    def _unique_rule_ids(self) -> RiskRules:
+        ids = self.rule_ids()
+        duplicates = sorted({rule_id for rule_id in ids if ids.count(rule_id) > 1})
+        if duplicates:
+            raise ValueError(f"duplicate risk rule ids {duplicates}")
+        return self
 
 
 class ChangeSignals(_Model):
@@ -114,7 +155,7 @@ class DerivedRisk(_Model):
 class RiskOverride(_Model):
     """A named person's permission to declare a class below the derived floor."""
 
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
 
     approver: str = Field(min_length=1)
     reason: str = Field(min_length=1)
@@ -130,6 +171,18 @@ class RiskEvaluation(_Model):
     fallback_applied: bool = False
     override_approver: str | None = None
     override_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _lowered_only_by_a_named_override(self) -> RiskEvaluation:
+        named = bool(
+            (self.override_approver or "").strip() and (self.override_reason or "").strip()
+        )
+        if self.final_class < self.derived_class and not named:
+            raise ValueError(
+                f"final class {self.final_class.value!r} is below the derived class "
+                f"{self.derived_class.value!r} without an override approver and reason"
+            )
+        return self
 
 
 class GateRequirements(_Model):

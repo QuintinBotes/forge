@@ -96,6 +96,11 @@ def test_enforcement_defaults_to_shadow_and_fallback_to_critical(tmp_path: Path)
     assert rules.fallback is RiskClass.CRITICAL
 
 
+def _derive(*rules: str) -> str:
+    """A ``risk_rules`` block whose ``derive`` list holds ``rules``, each a YAML flow mapping."""
+    return "risk_rules:\n  default: low\n  derive:\n" + "".join(f"    - {r}\n" for r in rules)
+
+
 @pytest.mark.parametrize(
     ("body", "complaint"),
     [
@@ -122,6 +127,22 @@ def test_enforcement_defaults_to_shadow_and_fallback_to_critical(tmp_path: Path)
             "risk_rules:\n  default: low\n  classes:\n    low: { approvals: -1 }\n",
             "approvals",
         ),
+        # Paths the shared matcher can never match against a repository path.
+        (_derive('{paths: [""], class: high}'), "blank"),
+        (_derive('{paths: ["   "], class: high}'), "blank"),
+        (_derive('{paths: ["/infra/**"], class: high}'), r"use 'infra/\*\*'"),
+        (_derive('{paths: ["./app/**"], class: high}'), r"use 'app/\*\*'"),
+        (_derive('{paths: ["app/billing/"], class: high}'), r"use 'app/billing/\*\*'"),
+        # Effective rule ids must be unique, as conditional rule ids are.
+        (
+            _derive("{id: x, paths: [a/**], class: high}", "{id: x, paths: [b/**], class: low}"),
+            "duplicate.*'x'",
+        ),
+        (
+            _derive("{id: 'derive[1]', paths: [a/**], class: high}", "{paths: [b/**], class: low}"),
+            r"duplicate.*'derive\[1\]'",
+        ),
+        (_derive("{id: '', paths: [a/**], class: high}"), "id"),
     ],
 )
 def test_an_invalid_risk_block_is_rejected_at_load(

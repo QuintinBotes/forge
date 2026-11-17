@@ -9,7 +9,7 @@ from scf_contracts import (
     DerivedRisk,
     GateRequirements,
     RiskClass,
-    RiskClassRequirements,
+    RiskEvaluation,
     RiskOverride,
     RiskRules,
 )
@@ -91,6 +91,55 @@ def test_an_override_with_a_blank_approver_or_reason_is_rejected(
         RiskOverride(approver=approver, reason=reason)
 
 
+def test_a_declared_class_given_as_a_string_is_ordered_as_a_class() -> None:
+    critical_floor = DerivedRisk(risk_class=RiskClass.CRITICAL)
+
+    with pytest.raises(RiskDeEscalationError):
+        evaluate(HIGH_FLOOR, "low", None)
+    with pytest.raises(RiskDeEscalationError):
+        evaluate(critical_floor, "minimal", None)
+    assert evaluate(HIGH_FLOOR, "critical", None).final_class is RiskClass.CRITICAL
+    assert evaluate(HIGH_FLOOR, "low", RiskOverride(approver="ana", reason="r")).declared_class is (
+        RiskClass.LOW
+    )
+
+
+@pytest.mark.parametrize(
+    ("approver", "reason"), [(None, None), ("   ", "why"), ("ana", ""), (None, "why")]
+)
+def test_an_evaluation_cannot_lower_the_class_without_a_named_override(
+    approver: str | None, reason: str | None
+) -> None:
+    with pytest.raises(pydantic.ValidationError, match="override"):
+        RiskEvaluation(
+            derived_class="critical",
+            final_class="minimal",
+            override_approver=approver,
+            override_reason=reason,
+        )
+
+
+def test_an_evaluation_with_a_named_override_or_no_lowering_is_valid() -> None:
+    lowered = RiskEvaluation(
+        derived_class="critical",
+        final_class="minimal",
+        override_approver="ana",
+        override_reason="r",
+    )
+    raised = RiskEvaluation(derived_class="low", final_class="high")
+
+    assert lowered.final_class is RiskClass.MINIMAL
+    assert raised.final_class is RiskClass.HIGH
+
+
+def test_an_override_cannot_be_changed_after_it_is_made() -> None:
+    override = RiskOverride(approver="ana", reason="reviewed")
+
+    with pytest.raises(pydantic.ValidationError):
+        override.approver = "   "  # type: ignore[misc]
+    assert override.approver == "ana"
+
+
 # --------------------------------------------------------------------------- #
 # requirements_for (AC6)                                                        #
 # --------------------------------------------------------------------------- #
@@ -123,12 +172,37 @@ def test_requirements_follow_the_configured_class() -> None:
 
 def test_an_unconfigured_class_adds_no_requirement() -> None:
     rules = RiskRules(default=RiskClass.LOW)
-    none = RiskClassRequirements()
 
     assert requirements_for(RiskClass.HIGH, rules) == GateRequirements(
-        risk_class=RiskClass.HIGH,
-        approvals=none.approvals,
-        deploy_mode=none.deploy,
-        red_team=none.red_team,
-        self_eval=none.self_eval,
+        risk_class=RiskClass.HIGH, approvals=0, deploy_mode="auto", red_team=False, self_eval=False
+    )
+
+
+def test_an_unconfigured_class_takes_the_nearest_configured_class_below_it() -> None:
+    only_high = RiskRules.model_validate(
+        {"default": "low", "classes": {"high": {"approvals": 2, "deploy": "gated"}}}
+    )
+    low_and_critical = RiskRules.model_validate(
+        {
+            "default": "low",
+            "classes": {
+                "low": {"approvals": 1, "self_eval": True},
+                "critical": {"approvals": 3, "deploy": "gated", "red_team": True},
+            },
+        }
+    )
+
+    # A fallback-to-critical change must not get fewer controls than a high one.
+    assert requirements_for(RiskClass.CRITICAL, only_high) == GateRequirements(
+        risk_class=RiskClass.CRITICAL,
+        approvals=2,
+        deploy_mode="gated",
+        red_team=False,
+        self_eval=False,
+    )
+    assert requirements_for(RiskClass.LOW, only_high) == GateRequirements(
+        risk_class=RiskClass.LOW, approvals=0, deploy_mode="auto", red_team=False, self_eval=False
+    )
+    assert requirements_for(RiskClass.HIGH, low_and_critical) == GateRequirements(
+        risk_class=RiskClass.HIGH, approvals=1, deploy_mode="auto", red_team=False, self_eval=True
     )

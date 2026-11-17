@@ -8,10 +8,13 @@ from scf_contracts import GateRequirements, RiskClass, RiskClassRequirements, Ri
 def requirements_for(risk_class: RiskClass, rules: RiskRules) -> GateRequirements:
     """The approvals, deploy mode, red-team and self-eval the policy sets for ``risk_class``.
 
-    A class the policy does not configure adds no requirement: risk only ever
-    tightens a gate (spec A §4.1), so "nothing extra" is the safe reading.
+    A class the policy does not configure takes the requirements of the highest
+    configured class below it, so a critical change (every fallback is one) never
+    gets fewer controls than a high one. With no configured class at or below it,
+    the class adds no requirement.
     """
-    configured = rules.classes.get(risk_class, RiskClassRequirements())
+    at_or_below = [configured for configured in rules.classes if configured <= risk_class]
+    configured = rules.classes[max(at_or_below)] if at_or_below else RiskClassRequirements()
     return GateRequirements(
         risk_class=risk_class,
         approvals=configured.approvals,

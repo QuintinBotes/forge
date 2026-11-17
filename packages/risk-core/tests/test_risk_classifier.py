@@ -7,6 +7,7 @@ import glob
 import random
 from pathlib import Path
 
+import pydantic
 import pytest
 
 import scf_contracts
@@ -69,6 +70,18 @@ def test_risk_class_is_ordered_minimal_low_high_critical() -> None:
         RiskClass.LOW,
         RiskClass.MINIMAL,
     ]
+
+
+def test_a_plain_string_is_ordered_as_a_risk_class() -> None:
+    # A class read from JSON or a database column arrives as str, not as RiskClass.
+    # The str is on the left on purpose: that order fell back to alphabetical.
+    assert not "minimal" >= RiskClass.CRITICAL  # noqa: SIM300
+    assert "critical" >= RiskClass.HIGH  # noqa: SIM300
+    assert RiskClass.LOW < "high"
+    assert RiskClass.CRITICAL > "minimal"
+    assert RiskClass.HIGH <= "high"
+    with pytest.raises(ValueError, match="severe"):
+        _ = RiskClass.LOW < "severe"
 
 
 def test_change_signals_carry_no_author_team_or_agent_field() -> None:
@@ -168,7 +181,12 @@ def _random_path(rng: random.Random) -> str:
 def _random_glob(rng: random.Random) -> str:
     if rng.random() < 0.5:
         return rng.choice(["**", "docs/**", "**/*.md", "app/*/**", "*.py", "infra/prod/**"])
-    return "".join(rng.choice(_GLOB_CHARS) for _ in range(rng.randint(0, 6)))
+    while True:  # only globs a policy may load, so derive() is tested on what it can be given
+        candidate = "".join(rng.choice(_GLOB_CHARS) for _ in range(rng.randint(1, 6)))
+        try:
+            return _rule([candidate], RiskClass.LOW).paths[0]
+        except pydantic.ValidationError:
+            continue
 
 
 def _random_rules(rng: random.Random) -> RiskRules:
@@ -235,11 +253,10 @@ def test_adding_a_matching_rule_never_lowers_the_derived_class() -> None:
         if not signals.paths:
             continue
         before = derive(signals, rules)
-        added = _rule(
-            [glob.escape(rng.choice(signals.paths).lstrip("/"))],
-            rng.choice(list(RiskClass)),
-            "added",
-        )
+        target = glob.escape(rng.choice(signals.paths).lstrip("/"))
+        if not target or target.endswith("/"):
+            target += "**"  # a loadable glob that still matches this exact path
+        added = _rule([target], rng.choice(list(RiskClass)), "added")
         assert matches(added, signals.paths)
         position = rng.randint(0, len(rules.derive))
         grown = rules.model_copy(
@@ -274,7 +291,7 @@ GLOB_TABLE: list[tuple[str, str]] = [
     ("[!a]*.py", "b.py"),
     ("[!a]*.py", "a.py"),
     ("?.py", "x.py"),
-    ("", ""),
+    ("app/billing/**", "app/billing/"),
 ]
 
 

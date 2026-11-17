@@ -13,15 +13,19 @@ from scf_risk.errors import RiskDeEscalationError
 
 def evaluate(
     derived: DerivedRisk,
-    declared: RiskClass | None,
+    declared: RiskClass | str | None,
     override: RiskOverride | None = None,
 ) -> RiskEvaluation:
     """The final class: the floor, a higher declaration, or an overridden lower one.
 
+    ``declared`` may be a plain class name (from JSON or a database column).
+
     Raises:
         RiskDeEscalationError: ``declared`` is below the floor and no override is given.
+        ValueError: ``declared`` is not a risk class name.
     """
     floor = derived.risk_class
+    declared = None if declared is None else RiskClass(declared)
     if declared is None or declared >= floor:
         final = floor if declared is None else declared
         override = None  # nothing was lowered, so there is no override to record

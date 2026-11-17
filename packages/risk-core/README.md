@@ -31,7 +31,10 @@ risk_rules:
   above the floor wins; one below it raises `RiskDeEscalationError` unless a
   `RiskOverride` names an approver and a reason, which the result then records.
 - `scf_risk.requirements.requirements_for(risk_class, rules)`: the gate requirements
-  the policy configures for a class; a class it does not configure adds none.
+  the policy configures for a class. A class it does not configure takes those of the
+  highest configured class below it, and adds none when there is no such class.
 
-Rule paths use the same glob matcher as the `matches_glob` policy condition.
-Invalid rules are rejected when the policy loads, by `scf_policy.load_policy`.
+Rule paths use the same glob matcher as the `matches_glob` policy condition. Write
+them relative to the repository root, with no leading `/` or `./`, and match a
+directory with `<dir>/**`. Invalid rules, including duplicate rule ids, are rejected
+when the policy loads, by `scf_policy.load_policy`.
