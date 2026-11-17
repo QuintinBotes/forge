@@ -132,13 +132,15 @@ def run_and_record_red_team(
     coder_model: str | None = None,
     red_team_fn: RedTeamFn | None = None,
     actor_id: uuid.UUID | None = None,
+    head_commit: str | None = None,
 ) -> RedTeamRecord:
     """Evaluate the gate and APPEND the verdict row (+ ``redteam.survived``
     audit event on a survive) on the caller's transaction.
 
     Always records a fresh scan — the explicit-trigger semantics (a ``blocked``
     scan followed by a re-triggered ``survived`` one builds the history the
-    read surface documents). The caller commits.
+    read surface documents). ``head_commit``, when given, is the commit the scan
+    attacked (#283). The caller commits.
     """
     from scf_db.redteam import record_red_team_verdict
 
@@ -158,8 +160,12 @@ def run_and_record_red_team(
         workspace_id,
         verdict=result.verdict,
         kind=result.kind,
-        # The record has no phase column: the phase lives in its evidence (#174).
-        evidence={**result.evidence, "phase": phase},
+        # The record has no phase or commit column: both live in its evidence (#174, #283).
+        evidence={
+            **result.evidence,
+            "phase": phase,
+            **({"head_commit": head_commit} if head_commit else {}),
+        },
         adversary_model=result.adversary_model,
         coder_model=result.coder_model,
         workflow_run_id=workflow_run_id,
@@ -178,10 +184,12 @@ def ensure_red_team_verdict(
     coder_model: str | None = None,
     red_team_fn: RedTeamFn | None = None,
     actor_id: uuid.UUID | None = None,
+    head_commit: str | None = None,
 ) -> tuple[RedTeamRecord, bool]:
-    """Idempotently mint the gate verdict for a run's ``phase``: evaluate + record
-    only when the run has no scan at that phase yet; otherwise return the newest
-    existing record of it (a record without a phase is a ``spec`` scan).
+    """Idempotently mint the gate verdict for a run's ``phase`` and ``head_commit``:
+    evaluate + record only when the run has no scan of them yet; otherwise return the
+    newest existing record of them (a record without a phase is a ``spec`` scan). A
+    retry after a block, on a new head commit, is scanned again (#283).
 
     Mirrors the Temporal spine's once-per-run scan (a block -> changes ->
     resubmit loop re-enters the gate without rescanning). Returns
@@ -198,6 +206,7 @@ def ensure_red_team_verdict(
         record
         for record in RedTeamRepository(session).get_by_run(workspace_id, workflow_run_id)
         if (record.evidence or {}).get("phase", "spec") == phase
+        and (record.evidence or {}).get("head_commit") == head_commit
     ]
     if existing:
         return existing[0], False
@@ -210,5 +219,6 @@ def ensure_red_team_verdict(
         coder_model=coder_model,
         red_team_fn=red_team_fn,
         actor_id=actor_id,
+        head_commit=head_commit,
     )
     return row, True

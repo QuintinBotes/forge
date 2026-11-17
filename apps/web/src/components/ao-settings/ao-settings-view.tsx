@@ -40,6 +40,7 @@ const ROLES: AgentRole[] = [
   "reviewer",
   "spec_author",
   "coordinator",
+  "adversary",
 ];
 
 const ROLE_LABELS: Record<AgentRole, string> = {
@@ -48,6 +49,7 @@ const ROLE_LABELS: Record<AgentRole, string> = {
   reviewer: "Reviewer",
   spec_author: "Spec author",
   coordinator: "Coordinator",
+  adversary: "Adversary (red team)",
 };
 
 const EFFORTS: AoEffort[] = ["low", "medium", "high", "max"];
@@ -350,7 +352,11 @@ export function AoSettingsView({ projectId, client = apiClient }: AoSettingsView
                     aria-label={`${ROLE_LABELS[role]} model or tier`}
                     value={draft.modelOrTier}
                     onChange={(e) => patchRole(role, "modelOrTier", e.target.value)}
-                    placeholder="junior / medior / senior, or a concrete model id"
+                    placeholder={
+                      role === "adversary"
+                        ? "a model id of another family than the coder's, or off"
+                        : "junior / medior / senior, or a concrete model id"
+                    }
                     className={cn(FIELD, "font-mono text-xs")}
                   />
                 </label>

@@ -41,6 +41,7 @@ from scf_contracts import (
     AcceptanceCriterion,
     AgentObjective,
     ModelClient,
+    RunStatus,
     SandboxKind,
     SandboxProvider,
     SandboxSpec,
@@ -248,6 +249,7 @@ async def run_red_team(
     agent_run_id: uuid.UUID | None = None,
     timeout_s: int = DEFAULT_TEST_TIMEOUT_S,
     max_iterations: int = 6,
+    agents_md: str | None = None,
 ) -> RedTeamResult:
     """Attack ``diff`` with a heterogeneous adversary and return a typed verdict.
 
@@ -255,7 +257,9 @@ async def run_red_team(
     matches the coder's (``coder_model``). The adversary authors a candidate
     test which is executed through the sandbox ``create``/``run`` seam; a
     non-zero exit BLOCKS. Alternatively a structured spec-violation referencing
-    a real acceptance criterion BLOCKS. Otherwise the diff SURVIVES.
+    a real acceptance criterion BLOCKS. Otherwise the diff SURVIVES, but only when
+    the adversary's run finished: one that did not raises :class:`RedTeamError`.
+    ``agents_md``, when given, replaces the worktree's repository instructions.
     """
     # (1) Enforce heterogeneity BEFORE spending any model/sandbox work.
     adv_model = (adversary_model or getattr(adversary_client, "model", "") or "").strip()
@@ -295,7 +299,10 @@ async def run_red_team(
         allowed_actions=sorted(ROLE_TOOLS[SubAgentRole.ADVERSARY]),
         acceptance_criteria=criteria,
         model=adv_model,
-        context={"role": SubAgentRole.ADVERSARY.value},
+        context={
+            "role": SubAgentRole.ADVERSARY.value,
+            **({"agents_md": agents_md} if agents_md is not None else {}),
+        },
     )
     runner = AgentRunner(
         adversary_client,
@@ -303,7 +310,7 @@ async def run_red_team(
         repo_root=worktree,
         max_iterations=max_iterations,
     )
-    runner.run(objective)
+    run = runner.run(objective)
 
     # (3) Execute the authored test IN-SANDBOX through the create/run seam.
     if capture.test_path and capture.test_cmd:
@@ -356,6 +363,10 @@ async def run_red_team(
             adversary_model=adv_model,
             coder_model=coder_model,
         )
+
+    # An adversary that stopped early did not attack: that is never a survive (#174).
+    if run.status != RunStatus.SUCCEEDED:
+        raise RedTeamError(f"the adversary's run did not finish: {run.error or run.status.value}")
 
     # Nothing landed: the change survived adversarial review.
     return RedTeamResult(

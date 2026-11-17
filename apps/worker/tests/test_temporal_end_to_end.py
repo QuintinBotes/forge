@@ -56,7 +56,15 @@ from scf_contracts.orchestration_config import AgentRole, Effort
 from scf_contracts.pm import ExternalTask, StatusCategory
 from scf_contracts.pm import PMProvider as ContractsProvider
 from scf_db.base import Base
-from scf_db.models import AgentRun, Attestation, Project, RepositoryConnection, Task, Workspace
+from scf_db.models import (
+    AgentRun,
+    Attestation,
+    Project,
+    RedTeamRecord,
+    RepositoryConnection,
+    Task,
+    Workspace,
+)
 from scf_db.models.enums import PMConnectionStatus, PMDeliveryStatus
 from scf_db.models.enums import PMProvider as DbPMProvider
 from scf_db.models.pm import PMConnection, PMWebhookDelivery
@@ -227,7 +235,8 @@ def github(remotes: Path, monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
 
 @pytest.fixture
 def independent_reviewer(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The builder runs on Anthropic's model; the reviewer, of OpenAI's family, approves."""
+    """The builder runs on Anthropic's model; the reviewer, of OpenAI's family, approves,
+    and the adversary, of OpenAI's family too, attacks with a test that passes (#283)."""
     monkeypatch.setattr(temporal_services_module, "configured_model", lambda: "claude-opus-5-5")
 
     def reviewer(_model: str) -> ScriptedModelClient:
@@ -235,23 +244,29 @@ def independent_reviewer(monkeypatch: pytest.MonkeyPatch) -> None:
             [finish_response('{"verdict": "approve", "findings": []}', confidence=0.9)]
         )
 
+    def adversary(_model: str) -> ScriptedModelClient:
+        attack = {
+            "path": "test_attack.py",
+            "content": "import health\n",
+            "test_cmd": "python test_attack.py",
+        }
+        return ScriptedModelClient(
+            [tool_response("write_test", attack), finish_response("attacked", confidence=0.9)]
+        )
+
     monkeypatch.setattr(
-        tm, "run_checks_service", functools.partial(run_checks_service, reviewer=reviewer)
+        tm,
+        "run_checks_service",
+        functools.partial(run_checks_service, reviewer=reviewer, adversary=adversary),
     )
 
 
 def _seed_workspace(s: Session) -> Project:
-    """The workspace, its connected repository, its reviewer and one project."""
+    """The workspace, its connected repository, its reviewer, its adversary and one project."""
     s.add(Workspace(id=WS, name="Acme", slug="acme"))
     s.add(RepositoryConnection(workspace_id=WS, repo_id=REPO, name=REPO))
-    s.add(
-        AgentRoleConfig(
-            workspace_id=WS,
-            role=AgentRole.REVIEWER,
-            model_or_tier="gpt-6-astra",
-            effort=Effort.HIGH,
-        )
-    )
+    for role, model in ((AgentRole.REVIEWER, "gpt-6-astra"), (AgentRole.ADVERSARY, "gpt-6-sable")):
+        s.add(AgentRoleConfig(workspace_id=WS, role=role, model_or_tier=model, effort=Effort.HIGH))
     s.flush()
     project = Project(workspace_id=WS, name="Core", key="CORE")
     s.add(project)
@@ -389,6 +404,14 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
             assert (
                 "Independent review: `approve` by `gpt-6-astra`; the builder ran on "
                 "`claude-opus-5-5`." in github.created[0]["body"]
+            )
+            # #283: an adversary of another family attacked the head commit first.
+            with factory() as fresh:
+                records = fresh.scalars(select(RedTeamRecord)).all()
+            [scan] = [r for r in records if r.evidence.get("phase") == "pr"]
+            assert (scan.verdict, scan.adversary_model) == ("survived", "gpt-6-sable")
+            assert scan.evidence["head_commit"] == _git(
+                remotes / "acme" / "app.git", "rev-parse", github.created[0]["head"]
             )
             # #175: the pull request was attested before anyone reviewed it.
             assert _attestations(factory, run.id) == 1
