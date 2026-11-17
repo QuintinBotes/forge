@@ -41,13 +41,30 @@ Rejected:
 
 - JSON-RPC 2.0 over HTTP POST; one request or notification per POST; the response is
   `application/json`. `GET` returns `405` (no server-initiated stream in this phase).
-- Protocol versions: `2025-06-18` (preferred) and `2025-03-26`. `initialize` answers with the
-  client's requested version when supported, else the preferred one.
-- Methods: `initialize`, `notifications/initialized` (HTTP 202, empty body), `ping`, `tools/list`,
-  `tools/call`. Anything else is JSON-RPC `-32601`.
+- Protocol versions: `2026-07-28`, the revision marked Current on the MCP versioning page when
+  checked on 2026-11-17 (issue #210, ADR-0016), plus the handshake-era `2025-06-18` (preferred
+  for `initialize`) and `2025-03-26`.
+- Era: a request is current-revision when `params._meta` carries
+  `io.modelcontextprotocol/protocolVersion` or the `MCP-Protocol-Version` header is `2026-07-28`.
+  Everything else takes the handshake path below, unchanged.
+- Current revision, no handshake: methods `server/discover`, `tools/list`, `tools/call`.
+  `_meta` must carry `io.modelcontextprotocol/protocolVersion` and
+  `io.modelcontextprotocol/clientCapabilities` (else HTTP 400, `-32602`). `MCP-Protocol-Version`,
+  `Mcp-Method` and, for `tools/call`, `Mcp-Name` (Base64 sentinel decoded) must match the body
+  (else HTTP 400, `-32020`). A version outside the three is HTTP 400, `-32022` with
+  `data {supported, requested}`. Any other method, `initialize` and `ping` included, is HTTP 404,
+  `-32601`. Every result carries `resultType: "complete"` and
+  `_meta["io.modelcontextprotocol/serverInfo"]`. `server/discover` answers `supportedVersions`,
+  `capabilities` and `instructions`; it and `tools/list` carry `ttlMs: 60000` and
+  `cacheScope: "private"`, because the tool list depends on the caller's role.
+- Handshake revisions: methods `initialize`, `notifications/initialized` (HTTP 202, empty body),
+  `ping`, `tools/list`, `tools/call`. Anything else is JSON-RPC `-32601`. `initialize` answers
+  with the client's requested version when supported, else `2025-06-18`.
 - `initialize` result: `serverInfo {name: "forge", version}`, `capabilities {tools: {listChanged:
   false}}`, `instructions` (one paragraph: the two time axes and that writes are proposals).
 - No `Mcp-Session-Id`: the server is stateless; every call re-authenticates.
+- Conformance: `scripts/mcp-conformance.sh` runs the published suite at a pinned release against
+  a URL and token; `docs/integrations/mcp-conformance.md` records a run and the baseline.
 
 ## 4. Security
 
