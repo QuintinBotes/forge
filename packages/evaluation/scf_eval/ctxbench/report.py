@@ -1,9 +1,11 @@
 """``summary.json`` and the markdown report of a graded run (spec J §2.4.1).
 
-Both hold ids, verdicts and numbers only, never answer text or judge
-reasons (those stay in the private run store), so they can be published as
-CI artifacts and committed. Reference rows are recomputed from
-``reference.json`` by the same scoring code.
+Both hold ids, verdicts, numbers and what the run was taken on (the
+question-set and corpus hashes, the commit, the lane and the embedder), never
+answer text or judge reasons (those stay in the private run store), so they
+can be published as CI artifacts and committed. The score is reported as a
+measurement with no pass bar (#249 sets it); hallucination is reported
+against spec J's ceiling.
 """
 
 from __future__ import annotations
@@ -13,13 +15,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 from scf_eval.ctxbench.bank import CATEGORIES, Bank, Category
+from scf_eval.ctxbench.gate import FLOOR
 from scf_eval.ctxbench.judge import Verdict
-from scf_eval.ctxbench.score import GradedAsk, reference_asks, summarize
+from scf_eval.ctxbench.score import GradedAsk, summarize
 
-__all__ = ["REFERENCE_ARMS", "build_summary", "render_markdown"]
+__all__ = ["build_summary", "render_markdown"]
 
-#: Published arms recomputed on these 30 questions, with their report labels.
-REFERENCE_ARMS = {"lore": "Lore (published)", "utopia": "Utopia (published)"}
 _LETTER = {"correct": "C", "partial": "P", "wrong": "W", "dont_know": "A"}
 
 
@@ -50,10 +51,9 @@ def build_summary(
     rows: Sequence[Mapping[str, Any]],
     *,
     bank: Bank,
-    reference: Mapping[str, Any],
     run: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The run's figures per arm, beside the published arms on the same questions."""
+    """The run's figures per arm, stamped with what the run was taken on."""
     invalid = [
         {k: row[k] for k in ("arm", "question_id", "rep", "invalid")}
         for row in rows
@@ -81,29 +81,23 @@ def build_summary(
             for qid in figures["by_question"]
         }
         arms[arm] = figures
-    categories = {q.id: q.category for q in bank.questions}
-    published = {}
-    for arm in REFERENCE_ARMS:
-        ref = summarize(reference_asks(reference, arm, categories))
-        published[arm] = {
-            "score": ref.score,
-            "hallucination": ref.hallucination,
-            "score_by_rep": ref.score_by_rep,
-            "by_category": ref.by_category,
-            "by_question": ref.by_question,
-        }
+    run = dict(run or {})
+    commit = run.get("forge_sha") or ""
     return _rounded(
         {
             "kind": "ctxbench-live",
+            "lane": "live",
             "suite": bank.suite,
             "version": bank.version,
             "content_hash": bank.content_hash,
+            "corpus_hash": bank.manifest.get("corpus_hash"),
+            "commit": f"{commit} (dirty)" if run.get("forge_dirty") else commit,
+            "embedder": run.get("embedder"),
             "questions": [q.id for q in bank.questions],
-            "run": dict(run or {}),
+            "run": run,
             "valid": not invalid,
             "invalid": invalid,
             "arms": arms,
-            "reference": published,
         }
     )
 
@@ -115,12 +109,17 @@ def _num(value: float | None, fmt: str = "{:.2f}") -> str:
 def render_markdown(summary: Mapping[str, Any]) -> str:
     """The report's tables: headline, by category, consistency, per question, lost points."""
     arms: Mapping[str, Any] = summary["arms"]
-    reference: Mapping[str, Any] = summary["reference"]
     lines = [
         f"# ctxbench: {summary['suite']} {summary['version']}",
         "",
-        f"Bank `{summary['content_hash']}`. Run valid: **{'yes' if summary['valid'] else 'no'}**"
+        f"Question set `{summary['content_hash']}`, corpus `{summary['corpus_hash']}`,"
+        f" commit `{summary['commit']}`, lane `{summary['lane']}`,"
+        f" embedder `{summary['embedder']}`.",
+        "",
+        f"Run valid: **{'yes' if summary['valid'] else 'no'}**"
         + (f" ({len(summary['invalid'])} invalid asks)." if summary["invalid"] else "."),
+        "The score is a measurement: no pass bar is set yet (#249)."
+        f" Hallucination is held to at most {FLOOR.max_hallucination:.1%}.",
         "",
         "## Headline",
         "",
@@ -138,19 +137,11 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
             f"| {_num(f['time_p50'], '{:.1f} s')} / {_num(f['time_p95'], '{:.1f} s')} "
             f"| {_num(f['calls_mean'], '{:.1f}')} |"
         )
-    for arm, label in REFERENCE_ARMS.items():
-        r = reference[arm]
-        reps = r["score_by_rep"]
-        lines.append(
-            f"| {label} | {r['score']:.2f} ({min(reps):.2f}-{max(reps):.2f}) "
-            f"| {r['hallucination']:.1%} | n/a | n/a | n/a | n/a |"
-        )
     lines += ["", "## By category", ""]
-    header = ["Category", *arms, *REFERENCE_ARMS.values()]
+    header = ["Category", *arms]
     lines += ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     for category in CATEGORIES:
         cells = [_num(f["by_category"].get(category)) for f in arms.values()]
-        cells += [_num(reference[arm]["by_category"].get(category)) for arm in REFERENCE_ARMS]
         lines.append(f"| {category} | " + " | ".join(cells) + " |")
     lines += [
         "",
@@ -165,19 +156,15 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
             f"| {arm} | {f['same_verdict_share']:.0%} | {_num(f['cv_tokens_median'], '{:.0%}')} "
             f"| {_num(f['cv_time_median'], '{:.0%}')} | {_num(f['judge_agreement'], '{:.0%}')} |"
         )
-    utopia = reference["utopia"]["by_question"]
     lines += ["", "## Per question", ""]
-    header = ["Id", *(f"{arm} verdicts | {arm} score" for arm in arms), "Utopia", "Δ"]
-    lines += ["| " + " | ".join(header) + " |", "|" + "---|" * (2 * len(arms) + 3)]
+    header = ["Id", *(f"{arm} verdicts | {arm} score" for arm in arms)]
+    lines += ["| " + " | ".join(header) + " |", "|" + "---|" * (2 * len(arms) + 1)]
     focus = "forge" if "forge" in arms else next(iter(arms), None)
-    for qid in sorted(utopia):
+    for qid in sorted(summary["questions"]):
         cells = []
         for f in arms.values():
-            score = f["by_question"].get(qid)
-            cells += [f["verdicts"].get(qid, "n/a"), _num(score)]
-        mine = arms[focus]["by_question"].get(qid) if focus else None
-        delta = "n/a" if mine is None else f"{mine - utopia[qid]:+.2f}"
-        lines.append(f"| {qid} | " + " | ".join(cells) + f" | {utopia[qid]:.2f} | {delta} |")
+            cells += [f["verdicts"].get(qid, "n/a"), _num(f["by_question"].get(qid))]
+        lines.append(f"| {qid} | " + " | ".join(cells) + " |")
     if focus:
         lost = {qid: 1 - s for qid, s in arms[focus]["by_question"].items() if s < 1}
         lines += [

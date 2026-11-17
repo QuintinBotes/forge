@@ -1,23 +1,25 @@
-"""``scf-cli ctxbench``: lore's agent-question benchmark on forge (spec J §2.4.1).
+"""``scf-cli ctxbench``: the context benchmark on SCF (spec J §2.4, §2.4.1).
 
 The wiring that needs the database, auth or GitHub; the logic lives in
 :mod:`scf_eval.ctxbench`. Commands:
 
-* ``record --sha S --out DIR``: the private corpus bundle. GitHub's issues,
-  pulls, issue comments and review comments as raw, unfiltered JSON lines
-  (``GitHubClient.iter_pages``), plus a ``git bundle`` of the pinned sha and a
-  manifest of sha256s. The cut-off is recorded, and applied at build time.
+* ``record --sha S --cutoff T --out DIR``: a private bundle of a GitHub
+  repository. Its issues, pulls, issue comments and review comments as raw,
+  unfiltered JSON lines (``GitHubClient.iter_pages``), plus a ``git bundle``
+  of the pinned sha and a manifest of sha256s. No shipped suite reads one.
 * ``verify-bundle DIR``: sha256s, line counts, ``git bundle verify``, the sha.
-* ``build --bundle DIR [--bm25-only]``: a fresh workspace, the repo files at
-  the pinned sha and its commits (``git_log``), the tracker JSON through
-  ``scf_knowledge.tracker`` as it stood at the cut-off (``at_cutoff`` plus
-  the mappers' cutoff), an embedding-coverage check, the leakage check (no
-  question text in the corpus), and a viewer key.
-* ``proxy --bundle DIR --out FILE``: ``build --bm25-only``, then in-process
-  ``assemble_context`` per question, then ``proxy-result.json``.
-* ``run``, ``grade``, ``regrade``, ``report``, ``gate``: the live lane. Each
-  ask and grade runs in its own directory under a temporary root, never under
-  the run directory; ``asks.jsonl`` grows as the asks finish.
+* ``build [--bm25-only]``: a fresh workspace holding the suite's committed
+  corpus (refused when it does not match the manifest's corpus hash): its
+  files and commits under a repo source, its issues and pull requests through
+  ``scf_knowledge.tracker`` under a tracker source; then an embedding-coverage
+  check, the leakage check (no question text in the corpus) and a viewer key.
+* ``proxy --out FILE``: ``build --bm25-only``, then in-process
+  ``assemble_context`` per question, then ``proxy-result.json``. No network
+  and no model; a missing retrieval leg is an error and writes no result.
+* ``run``, ``grade``, ``regrade``, ``report``, ``gate``: the live lane, run
+  only when invoked and refused without ``ANTHROPIC_API_KEY``. Each ask and
+  grade runs in its own directory under a temporary root, never under the run
+  directory; ``asks.jsonl`` grows as the asks finish.
 
 The subject (``<owner>/<repo>``) comes only from ``FORGE_CTXBENCH_SUBJECT``,
 the GitHub token only from ``GITHUB_TOKEN`` and the benchmark key only from
@@ -37,7 +39,6 @@ import sys
 import tempfile
 import time
 import uuid
-from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -50,6 +51,7 @@ from scf_eval.ctxbench.bank import (
     BankError,
     Question,
     load_bank,
+    load_corpus,
     subject_from_env,
 )
 
@@ -63,6 +65,8 @@ __all__ = ["GROUP", "add_parsers", "run"]
 GROUP = "ctxbench"
 TOKEN_ENV = "FORGE_CTXBENCH_TOKEN"
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
+#: The live lane's only model credential (each call gets an empty HOME).
+API_KEY_ENV = "ANTHROPIC_API_KEY"
 
 #: Raw listings recorded per bundle: file -> (``/repos/{repo}/<path>``, params).
 _ITEMS = {"state": "all", "sort": "created", "direction": "asc", "per_page": "100"}
@@ -148,10 +152,6 @@ def _write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> int:
     return count
 
 
-def _cutoff(text: str) -> datetime:
-    return datetime.fromisoformat(text.replace("Z", "+00:00"))
-
-
 def _bank(args: argparse.Namespace, env: Mapping[str, str]) -> Bank:
     return load_bank(Path(args.suite), subject=subject_from_env(env))
 
@@ -234,28 +234,35 @@ def verify_bundle(bundle: Path) -> list[str]:
 # --------------------------------------------------------------------------- #
 
 
-def _by_number(items: Iterable[Mapping[str, Any]], url_key: str) -> dict[int, list[Any]]:
-    grouped: dict[int, list[Any]] = defaultdict(list)
-    for item in items:
-        grouped[int(str(item[url_key]).rsplit("/", 1)[1])].append(item)
-    return grouped
+def corpus_chunks(
+    records: Iterable[Mapping[str, Any]],
+) -> tuple[dict[str, str], list[Any], list[Any]]:
+    """The committed corpus as repo files, commit chunks and tracker chunks."""
+    from scf_knowledge.tracker import CommitRecord, commit_chunks, issue_chunks, pull_chunks
 
-
-def tracker_chunks(bundle: Path, cutoff: datetime) -> list[Any]:
-    """Issues and PRs as they stood at ``cutoff``, through ``scf_knowledge.tracker``."""
-    from scf_knowledge.tracker import at_cutoff, issue_chunks, pull_chunks
-
-    github = bundle / "github"
-    comments = _by_number(_jsonl(github / "issue_comments.jsonl"), "issue_url")
-    reviews = _by_number(_jsonl(github / "review_comments.jsonl"), "pull_request_url")
-    chunks: list[Any] = []
-    for issue in at_cutoff(_jsonl(github / "issues.jsonl"), cutoff):
-        if "pull_request" not in issue:  # the issues listing includes PR stubs
-            chunks += issue_chunks(issue, comments[issue["number"]], cutoff=cutoff)
-    for pull in at_cutoff(_jsonl(github / "pulls.jsonl"), cutoff):
-        number = pull["number"]
-        chunks += pull_chunks(pull, comments[number], reviews[number], cutoff=cutoff)
-    return chunks
+    files: dict[str, str] = {}
+    commits: list[Any] = []
+    tracker: list[Any] = []
+    for record in records:
+        kind = record["kind"]
+        if kind == "file":
+            files[record["path"]] = record["text"]
+        elif kind == "commit":
+            commit = CommitRecord(
+                sha=record["sha"],
+                committed_at=datetime.fromisoformat(record["committed_at"]),
+                subject=record["subject"],
+                body=record["body"],
+                paths=tuple(record["paths"]),
+            )
+            commits += commit_chunks(commit)
+        elif kind == "issue":
+            tracker += issue_chunks(record, record["comments"])
+        elif kind == "pull":
+            tracker += pull_chunks(record, record["comments"], record["review_comments"])
+        else:
+            raise CtxbenchError(f"corpus record of unknown kind {kind!r}")
+    return files, commits, tracker
 
 
 def _normalise(text: str) -> str:
@@ -308,29 +315,21 @@ def _unembedded(factory: sessionmaker[Session], workspace_id: uuid.UUID) -> int:
 
 def ingest(
     factory: sessionmaker[Session],
-    bundle: Path,
+    suite: Path,
     bank: Bank,
     *,
     subject: str,
     embedder: EmbeddingClient | None,
 ) -> tuple[uuid.UUID, list[str]]:
-    """Ingest a bundle into a fresh workspace; return its id and the failed checks."""
+    """Ingest the suite's committed corpus into a fresh workspace; return its id and problems."""
     from scf_db.models import KnowledgeSource, KnowledgeSourceKind, Workspace
-    from scf_knowledge import KnowledgeService, full_sync, git_log, read_repo_files
-    from scf_knowledge.tracker import commit_chunks
+    from scf_knowledge import KnowledgeService, full_sync
 
-    problems = verify_bundle(bundle)
-    if problems:
-        raise CtxbenchError("bundle does not verify: " + "; ".join(problems))
-    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
-    sha = manifest["sha"]
-    if sha != bank.manifest["snapshot"]["sha"]:
-        raise CtxbenchError(f"bundle pins {sha[:12]}, the bank was checked against another commit")
-    cutoff = _cutoff(manifest["cutoff"])
+    files, commits, tracker_items = corpus_chunks(load_corpus(suite))
     uri = f"https://github.com/{subject}"
     with factory() as session:
-        slug = f"ctxbench-{manifest['subject_name']}-{sha[:8]}-{secrets.token_hex(3)}"
-        workspace = Workspace(name=f"ctxbench {manifest['subject_name']} {sha[:8]}", slug=slug)
+        slug = f"{bank.suite}-{bank.version.replace('.', '-')}-{secrets.token_hex(3)}"
+        workspace = Workspace(name=f"{bank.suite} {bank.version}", slug=slug)
         session.add(workspace)
         session.flush()
         repo = KnowledgeSource(
@@ -348,22 +347,8 @@ def ingest(
         workspace_id, repo_id, tracker_id = workspace.id, str(repo.id), str(tracker.id)
         session.commit()
     service = KnowledgeService.from_session_factory(factory, embedder, None)
-    with tempfile.TemporaryDirectory(prefix="ctxbench-build-") as tmp:
-        root = Path(tmp) / "repo"
-        _git(
-            [
-                "clone",
-                "--quiet",
-                "--no-checkout",
-                "--",
-                str((bundle / REPO_BUNDLE).resolve()),
-                str(root),
-            ]
-        )
-        _git(["checkout", "--quiet", "--detach", sha], cwd=root)
-        commits = [chunk for record in git_log(root, sha) for chunk in commit_chunks(record)]
-        repo_result = full_sync(service, repo_id, read_repo_files(root), extra=commits)
-    tracker_result = full_sync(service, tracker_id, {}, extra=tracker_chunks(bundle, cutoff))
+    repo_result = full_sync(service, repo_id, files, extra=commits)
+    tracker_result = full_sync(service, tracker_id, {}, extra=tracker_items)
     problems = [*repo_result.errors, *tracker_result.errors]
     if embedder is not None and (missing := _unembedded(factory, workspace_id)):
         problems.append(f"{missing} chunks have no embedding")
@@ -412,7 +397,7 @@ def _cmd_build(args: argparse.Namespace, env: Mapping[str, str]) -> int:
             raise CtxbenchError("no embedder configured (FORGE_EMBEDDING_*); or pass --bm25-only")
     factory = _session_factory()
     workspace_id, problems = ingest(
-        factory, Path(args.bundle), bank, subject=subject_from_env(env), embedder=embedder
+        factory, Path(args.suite), bank, subject=subject_from_env(env), embedder=embedder
     )
     print(f"workspace: {workspace_id}")
     if problems:
@@ -434,18 +419,24 @@ def _cmd_build(args: argparse.Namespace, env: Mapping[str, str]) -> int:
 
 
 def _cmd_proxy(args: argparse.Namespace, env: Mapping[str, str]) -> int:
-    from scf_eval.ctxbench.proxy import proxy_json, run_proxy
+    from scf_eval.ctxbench.proxy import ProxyError, proxy_json, run_proxy
 
     bank = _bank(args, env)
     factory = _session_factory()
     workspace_id, problems = ingest(
-        factory, Path(args.bundle), bank, subject=subject_from_env(env), embedder=None
+        factory, Path(args.suite), bank, subject=subject_from_env(env), embedder=None
     )
     if problems:
         for problem in problems:
             print(f"FAIL {problem}", file=sys.stderr)
         return 1
-    result = run_proxy(bank, assemble(factory, workspace_id))
+    sha, dirty = _scf_revision()
+    try:
+        result = run_proxy(
+            bank, assemble(factory, workspace_id), commit=f"{sha} (dirty)" if dirty else sha
+        )
+    except ProxyError as exc:  # no score: a missing leg is never a low score
+        raise CtxbenchError(str(exc)) from exc
     Path(args.out).write_text(proxy_json(result, bank), encoding="utf-8")
     hits = [hit for hit in result.hits.values() if hit is not None]
     print(
@@ -570,15 +561,23 @@ def _ask_row(arm: str, question: Question, rep: int, **context: Any) -> dict[str
         }
 
 
+def _need_api_key(env: Mapping[str, str]) -> None:
+    if not env.get(API_KEY_ENV):
+        raise CtxbenchError(f"set {API_KEY_ENV}: the live lane calls a model")
+
+
 def _cmd_run(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     from scf_eval.ctxbench.claude import AGENT_EFFORT, AGENT_MODEL, JUDGE_MODEL, claude_version
     from scf_eval.ctxbench.prompts import load_prompts, prompt_hashes
 
+    _need_api_key(env)
     arms = [arm for arm in args.arms.split(",") if arm]
     if not arms or set(arms) - set(ARMS):
         raise CtxbenchError(f"--arms must name some of {', '.join(ARMS)}")
     if "forge" in arms and not (args.mcp_url and env.get(TOKEN_ENV)):
         raise CtxbenchError(f"the forge arm needs --mcp-url and {TOKEN_ENV}")
+    if "forge" in arms and "vector" in args.legs.split(",") and not args.embedder:
+        raise CtxbenchError("name the server's embedder with --embedder (the vector leg is on)")
     run_dir = Path(args.out)
     if run_dir.exists():
         raise CtxbenchError(f"{run_dir} exists; a run never overwrites another")
@@ -617,6 +616,7 @@ def _cmd_run(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         "suite": bank.suite,
         "version": bank.version,
         "content_hash": bank.content_hash,
+        "corpus_hash": bank.manifest.get("corpus_hash"),
         "prompts_sha256": prompt_hashes(Path(args.suite)),
         "forge_sha": sha,
         "forge_dirty": dirty,
@@ -627,6 +627,7 @@ def _cmd_run(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         "reps": args.reps,
         "concurrency": args.concurrency,
         "legs": args.legs.split(","),
+        "embedder": args.embedder or "none",
         "rerank": args.rerank,
         "timeout_s": args.timeout,
         "started_at": started,
@@ -698,6 +699,7 @@ def _judged(
 def _cmd_grade(args: argparse.Namespace, env: Mapping[str, str], *, regrade: bool) -> int:
     from scf_eval.ctxbench.prompts import load_prompts
 
+    _need_api_key(env)
     run_dir = Path(args.run_dir)
     target = run_dir / "graded.jsonl"
     if target.exists() and not regrade:
@@ -743,11 +745,8 @@ def _cmd_report(args: argparse.Namespace, env: Mapping[str, str]) -> int:
 
     run_dir = Path(args.run_dir)
     bank = _bank(args, env)
-    reference = json.loads((Path(args.suite) / "reference.json").read_text(encoding="utf-8"))
     run_record = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
-    summary = build_summary(
-        _jsonl(run_dir / "graded.jsonl"), bank=bank, reference=reference, run=run_record
-    )
+    summary = build_summary(_jsonl(run_dir / "graded.jsonl"), bank=bank, run=run_record)
     (run_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
@@ -792,7 +791,7 @@ def _cmd_gate(args: argparse.Namespace) -> int:
 
 def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register ``scf-cli ctxbench <command>``."""
-    group = sub.add_parser(GROUP, help="lore's agent-question benchmark (spec J §2.4.1)")
+    group = sub.add_parser(GROUP, help="the context benchmark (spec J §2.4.1)")
     csub = group.add_subparsers(dest="command", required=True)
 
     def suite(p: argparse.ArgumentParser) -> None:
@@ -803,20 +802,17 @@ def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
         p.add_argument("--concurrency", type=int, default=3)
         p.add_argument("--backoff", type=float, default=10.0, help="seconds before the one retry")
 
-    snapshot = json.loads((SUITE_DIR / "manifest.json").read_text(encoding="utf-8"))["snapshot"]
-    rec = csub.add_parser("record", help="record the private corpus bundle (GitHub, once)")
-    rec.add_argument("--sha", default=snapshot["sha"])
+    rec = csub.add_parser("record", help="record a private bundle of a GitHub repository")
+    rec.add_argument("--sha", required=True)
     rec.add_argument("--out", required=True)
-    rec.add_argument("--cutoff", default=snapshot["cutoff"])
+    rec.add_argument("--cutoff", required=True, help="ISO 8601, recorded in the manifest")
     rec.add_argument("--source", default=None, help="clone source (default: the GitHub repo)")
     ver = csub.add_parser("verify-bundle", help="check a bundle's sha256s, counts and git bundle")
     ver.add_argument("bundle")
-    build = csub.add_parser("build", help="ingest a bundle into a fresh workspace + viewer key")
-    build.add_argument("--bundle", required=True)
+    build = csub.add_parser("build", help="ingest the committed corpus + a viewer key")
     build.add_argument("--bm25-only", action="store_true")
     suite(build)
     proxy = csub.add_parser("proxy", help="BM25-only build, then the evidence proxy")
-    proxy.add_argument("--bundle", required=True)
     proxy.add_argument("--out", default="proxy-result.json")
     suite(proxy)
     run_p = csub.add_parser("run", help="ask every question (Anthropic + forge)")
@@ -825,6 +821,7 @@ def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
     run_p.add_argument("--reps", type=int, default=3)
     run_p.add_argument("--mcp-url", default=None)
     run_p.add_argument("--legs", default="bm25,vector", help="legs the forge arm must report")
+    run_p.add_argument("--embedder", default=None, help="the server's embedder, for the record")
     run_p.add_argument("--rerank", default=None, help="rerank status the forge arm must report")
     run_p.add_argument("--timeout", type=float, default=600.0)
     suite(run_p)

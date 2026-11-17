@@ -1,10 +1,12 @@
-"""The ctxbench question bank: load, validate, hash, ``{org}`` substitution (spec J §2.4.1).
+"""The ctxbench question bank and corpus: load, validate, hash, ``{org}`` substitution.
 
-A suite directory holds ``manifest.json`` (suite, version, snapshot, category
-mix, ``content_hash``), ``questions.json`` and ``prompts/*.md``. The content
-hash is the sha256 of canonical JSON over the questions and the prompts,
-taken *before* substitution, so a frozen suite cannot drift: change anything
-and the loader refuses it until a new version directory is written.
+A suite directory (spec J §2.4.1) holds ``manifest.json`` (suite, version,
+category mix, ``content_hash``, ``corpus_hash``), ``questions.json``,
+``prompts/*.md`` and the committed corpus ``corpus.jsonl``. The content hash
+is the sha256 of canonical JSON over the questions and the prompts, taken
+*before* substitution, and the corpus hash the sha256 of the corpus file, so
+a frozen suite cannot drift: change anything and the loader refuses it until
+a new version directory is written.
 
 The repository owner never appears in a suite file. Questions and gold
 answers carry ``{org}``, replaced at load time with the owner part of the
@@ -32,6 +34,7 @@ __all__ = [
     "Category",
     "Question",
     "load_bank",
+    "load_corpus",
     "subject_from_env",
     "suite_hash",
 ]
@@ -50,10 +53,11 @@ CATEGORIES: tuple[Category, ...] = get_args(Category)
 
 SUBJECT_ENV = "FORGE_CTXBENCH_SUBJECT"
 
-#: The frozen lore suite shipped with scf_eval.
-SUITE_DIR = Path(__file__).resolve().parent.parent / "benchmarks" / "ctxbench-lore" / "1.0.0"
+#: The frozen suite shipped with scf_eval: SCF's own questions on an invented corpus.
+SUITE_DIR = Path(__file__).resolve().parent.parent / "benchmarks" / "ctxbench-scf" / "1.0.0"
 
 PROMPT_FILES = ("agent.md", "judge.md")
+CORPUS_FILE = "corpus.jsonl"
 
 _SUBJECT_RE = re.compile(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+")
 _PLACEHOLDER = "{org}"
@@ -169,3 +173,22 @@ def load_bank(suite_dir: Path = SUITE_DIR, *, subject: str) -> Bank:
         questions=questions,
         manifest=manifest,
     )
+
+
+def load_corpus(suite_dir: Path = SUITE_DIR) -> list[dict[str, Any]]:
+    """The suite's committed corpus records; refuses a corpus that does not match its hash.
+
+    One JSON record per line, each with a ``kind``: ``file`` (``path``,
+    ``text``), ``commit`` (``sha``, ``committed_at``, ``subject``, ``body``,
+    ``paths``), or ``issue`` / ``pull`` (GitHub REST fields, with their
+    ``comments`` and, for a pull, ``review_comments``).
+    """
+    data = (suite_dir / CORPUS_FILE).read_bytes()
+    digest = "sha256:" + hashlib.sha256(data).hexdigest()
+    manifest = json.loads((suite_dir / "manifest.json").read_text(encoding="utf-8"))
+    if digest != manifest.get("corpus_hash"):
+        raise BankError(
+            f"{suite_dir}: corpus hash {digest} does not match the manifest's "
+            f"{manifest.get('corpus_hash')}; a frozen corpus changes only by a new version"
+        )
+    return [json.loads(line) for line in data.decode("utf-8").splitlines() if line.strip()]

@@ -46,6 +46,24 @@ wiring and ranking logic end-to-end with **no network and no model** — it is a
 wiring check, not a measurement of retrieval quality. It runs in the default
 hermetic suite (`uv run pytest packages/evaluation -q`).
 
+## Context benchmark — `scf_eval.ctxbench`
+
+60 questions SCF wrote about Quayline, an invented project, with the corpus they
+are asked against committed beside them and both frozen by hash
+(`scf_eval/benchmarks/ctxbench-scf/1.0.0/`). Two lanes, wired to the database by
+`scf-cli ctxbench` (`apps/api/scf_api/cli_ctxbench.py`):
+
+- **Proxy** (no network, no model): does `assemble_context` return each
+  question's evidence, and how large is the bundle? It runs in the default test
+  suite against the committed `proxy-baseline.json` and fails on a lost hit, a
+  p50 rise over 10% or a p50 over 17,800 tokens. First result: recall 0.9643,
+  p50 1,708.5 tokens.
+- **Live** (by hand, needs `ANTHROPIC_API_KEY`): Claude Code answers through
+  SCF's MCP server and an Opus judge grades the answers. The score is a
+  measurement with no pass bar yet (#249); hallucination is held to 7%.
+
+Results and how to reproduce them: [`docs/CTXBENCH_RESULTS.md`](../../docs/CTXBENCH_RESULTS.md).
+
 ## Metrics — `scf_eval.metrics`
 
 Pure, deterministic ranked-list metrics: `recall_at_k`, `precision_at_k`,
