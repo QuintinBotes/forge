@@ -1,8 +1,11 @@
-"""A task's held-out acceptance scenarios: create, list, approve, delete (#176).
+"""A task's held-out acceptance scenarios: create, list, decide, delete (#176, #288).
 
 Every query is filtered on the caller's workspace. A scenario is a draft until a
-person approves it, and the identity that drafted it cannot. Each change is
-chained into the audit log with who made it; the files and the command are not.
+person approves or rejects it, and the identity that drafted it cannot. One the
+verifier drafted for a run's spec is withdrawn when that spec goes back for
+changes, and the run's ``spec`` gate cannot be approved while one is undecided.
+Each change is chained into the audit log with who made it and the run; the
+files and the command are not.
 """
 
 from __future__ import annotations
@@ -20,17 +23,29 @@ from scf_contracts import UserRole
 from scf_contracts.audit import AuditEvent
 from scf_db.audit.writer import SqlAuditWriter
 from scf_db.models import Task
-from scf_db.models.held_out import SCENARIO_APPROVED, SCENARIO_DRAFT, HeldOutScenario
+from scf_db.models.held_out import (
+    SCENARIO_APPROVED,
+    SCENARIO_DRAFT,
+    SCENARIO_REJECTED,
+    SCENARIO_WITHDRAWN,
+    HeldOutScenario,
+)
 
 __all__ = [
     "ApprovalRefused",
     "ScenarioNotFound",
+    "ScenarioNotOpen",
+    "ScenariosUndecided",
     "approve_scenario",
     "create_scenario",
     "delete_scenario",
+    "drafted_for_run",
+    "ensure_scenarios_decided",
     "list_scenarios",
+    "reject_scenario",
     "store_agent_draft",
     "store_draft",
+    "withdraw_run_scenarios",
 ]
 
 
@@ -39,7 +54,21 @@ class ScenarioNotFound(LookupError):
 
 
 class ApprovalRefused(PermissionError):
-    """Only a person who did not draft the scenario may approve it."""
+    """Only a person who did not draft the scenario may approve or reject it."""
+
+
+class ScenarioNotOpen(ValueError):
+    """Only a draft is decided; a decided or withdrawn scenario keeps its state."""
+
+
+class ScenariosUndecided(Exception):
+    """The run's ``spec`` gate cannot be approved while a scenario drafted for it is a draft."""
+
+    def __init__(self, scenario_ids: list[uuid.UUID]) -> None:
+        super().__init__(
+            f"{len(scenario_ids)} held-out scenario(s) are neither approved nor rejected"
+        )
+        self.scenario_ids = scenario_ids
 
 
 def _identity(principal: Principal) -> str:
@@ -83,7 +112,12 @@ def _emit(
             scope_id=row.task_id,
             severity="notice",
             detail_ref={"table": "held_out_scenario", "id": str(row.id)},
-            details={"scenario_id": str(row.id), "task_id": str(row.task_id), **(extra or {})},
+            details={
+                "scenario_id": str(row.id),
+                "task_id": str(row.task_id),
+                "workflow_run_id": str(row.workflow_run_id) if row.workflow_run_id else None,
+                **(extra or {}),
+            },
         )
     )
 
@@ -111,6 +145,7 @@ def store_draft(
     body: HeldOutScenarioCreate,
     drafted_by: str,
     drafted_by_user_id: uuid.UUID | None,
+    workflow_run_id: uuid.UUID | None = None,
 ) -> HeldOutScenario:
     """Add a draft scenario to the store; the caller audits its creation.
 
@@ -120,6 +155,7 @@ def store_draft(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         task_id=task_id,
+        workflow_run_id=workflow_run_id,
         title=body.title,
         files=[f.model_dump() for f in body.files],
         command=body.command,
@@ -140,8 +176,9 @@ def store_agent_draft(
     body: HeldOutScenarioCreate,
     drafted_by: str,
     agent_run_id: uuid.UUID,
+    workflow_run_id: uuid.UUID,
 ) -> HeldOutScenario:
-    """Store a draft an agent wrote (the verifier, #258), audited as the agent's."""
+    """Store a draft an agent wrote for a run's spec (the verifier, #258), audited as its."""
     row = store_draft(
         session,
         workspace_id=workspace_id,
@@ -149,6 +186,7 @@ def store_agent_draft(
         body=body,
         drafted_by=drafted_by,
         drafted_by_user_id=None,
+        workflow_run_id=workflow_run_id,
     )
     _emit(
         session,
@@ -194,10 +232,11 @@ def list_scenarios(
     )
 
 
-def approve_scenario(
-    session: Session, principal: Principal, task_id: uuid.UUID, scenario_id: uuid.UUID
+def _decide(
+    session: Session, principal: Principal, task_id: uuid.UUID, scenario_id: uuid.UUID, state: str
 ) -> HeldOutScenario:
-    """Approve a draft. Refused for an agent or any non-person credential, and for its drafter.
+    """Approve or reject a draft. Refused for an agent or any non-person credential, and
+    for its drafter; a decided or withdrawn scenario keeps its state.
 
     The caller is resolved as approval decisions are (``to_decider``): a key decides
     with the lower of its own role and its owner's current role.
@@ -209,22 +248,85 @@ def approve_scenario(
         or decider.kind != "user"
         or decider.role not in {UserRole.MEMBER, UserRole.ADMIN}
     ):
-        raise ApprovalRefused("only a person with write access can approve a held-out scenario")
+        raise ApprovalRefused("only a person with write access can decide a held-out scenario")
     if principal.user_id == row.drafted_by_user_id or _identity(principal) == row.drafted_by:
-        raise ApprovalRefused("the identity that drafted a scenario cannot approve it")
-    if row.state != SCENARIO_APPROVED:
-        row.state = SCENARIO_APPROVED
+        raise ApprovalRefused("the identity that drafted a scenario cannot decide it")
+    session.refresh(row, with_for_update=True)  # a concurrent withdrawal is seen, not undone
+    if row.state == state:  # the same decision again changes nothing
+        return row
+    if row.state != SCENARIO_DRAFT:
+        raise ScenarioNotOpen(f"the scenario is {row.state}; only a draft is decided")
+    row.state = state
+    if state == SCENARIO_APPROVED:
         row.approved_by = principal.user_id
         row.approved_at = datetime.now(UTC)
-        session.flush()
-        _audit(session, principal, "held_out.approved", row)
+    session.flush()
+    _audit(session, principal, f"held_out.{state}", row)
     return row
+
+
+def approve_scenario(
+    session: Session, principal: Principal, task_id: uuid.UUID, scenario_id: uuid.UUID
+) -> HeldOutScenario:
+    """A person's approval: only approved scenarios are run."""
+    return _decide(session, principal, task_id, scenario_id, SCENARIO_APPROVED)
+
+
+def reject_scenario(
+    session: Session, principal: Principal, task_id: uuid.UUID, scenario_id: uuid.UUID
+) -> HeldOutScenario:
+    """A person's rejection (#288): the scenario is never run."""
+    return _decide(session, principal, task_id, scenario_id, SCENARIO_REJECTED)
 
 
 def delete_scenario(
     session: Session, principal: Principal, task_id: uuid.UUID, scenario_id: uuid.UUID
 ) -> None:
     row = _scenario(session, principal, task_id, scenario_id)
+    if row.workflow_run_id is not None:  # deleting would pass the spec gate undecided
+        raise ScenarioNotOpen("a scenario drafted for a run is decided or withdrawn, not deleted")
     _audit(session, principal, "held_out.deleted", row)
     session.delete(row)
     session.flush()
+
+
+def drafted_for_run(
+    session: Session, *, workspace_id: uuid.UUID, workflow_run_id: uuid.UUID
+) -> list[HeldOutScenario]:
+    """The scenarios drafted for the run's current spec: every one not withdrawn."""
+    return list(
+        session.scalars(
+            select(HeldOutScenario)
+            .where(
+                HeldOutScenario.workspace_id == workspace_id,
+                HeldOutScenario.workflow_run_id == workflow_run_id,
+                HeldOutScenario.state != SCENARIO_WITHDRAWN,
+            )
+            .order_by(HeldOutScenario.created_at, HeldOutScenario.id)
+        )
+    )
+
+
+def ensure_scenarios_decided(
+    session: Session, *, workspace_id: uuid.UUID, workflow_run_id: uuid.UUID
+) -> None:
+    """Refuse the run's ``spec`` approval while a scenario drafted for it is undecided.
+
+    A closed default (ADR-0007): an undecided scenario is not silently dropped.
+    """
+    rows = drafted_for_run(session, workspace_id=workspace_id, workflow_run_id=workflow_run_id)
+    undecided = [row.id for row in rows if row.state == SCENARIO_DRAFT]
+    if undecided:
+        raise ScenariosUndecided(undecided)
+
+
+def withdraw_run_scenarios(
+    session: Session, *, workspace_id: uuid.UUID, workflow_run_id: uuid.UUID
+) -> list[HeldOutScenario]:
+    """Withdraw what was drafted for the run's earlier spec, whatever its state (#288)."""
+    rows = drafted_for_run(session, workspace_id=workspace_id, workflow_run_id=workflow_run_id)
+    for row in rows:
+        row.state = SCENARIO_WITHDRAWN
+        _emit(session, row, "held_out.withdrawn", actor_id=None, actor_type="system")
+    session.flush()
+    return rows

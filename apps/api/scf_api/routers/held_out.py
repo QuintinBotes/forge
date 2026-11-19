@@ -1,8 +1,9 @@
 """A task's held-out acceptance scenarios (#176).
 
 Write access only: a reader without it gets 403, and a task or scenario in
-another workspace is a 404. Approval is a person's decision, never an agent's
-and never the drafter's. No agent-facing surface reads these scenarios.
+another workspace is a 404. Approval and rejection are a person's decision, never
+an agent's and never the drafter's; only a draft is decided (409 otherwise). No
+agent-facing surface reads these scenarios.
 """
 
 from __future__ import annotations
@@ -23,10 +24,12 @@ from scf_api.schemas.held_out import HeldOutScenarioCreate, HeldOutScenarioOut
 from scf_api.services.held_out import (
     ApprovalRefused,
     ScenarioNotFound,
+    ScenarioNotOpen,
     approve_scenario,
     create_scenario,
     delete_scenario,
     list_scenarios,
+    reject_scenario,
 )
 
 router = APIRouter(
@@ -47,6 +50,8 @@ def _errors() -> Iterator[None]:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such task or scenario") from None
     except ApprovalRefused as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from None
+    except ScenarioNotOpen as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
 
 
 @router.post("", response_model=HeldOutScenarioOut, status_code=status.HTTP_201_CREATED)
@@ -76,6 +81,17 @@ def approve(
     """A person's approval, recorded with who and when. Only approved scenarios run."""
     with _errors():
         row = approve_scenario(session, principal, task_id, scenario_id)
+    session.commit()
+    return HeldOutScenarioOut.model_validate(row)
+
+
+@router.post("/{scenario_id}/reject", response_model=HeldOutScenarioOut)
+def reject(
+    principal: WriterDep, session: SessionDep, task_id: uuid.UUID, scenario_id: uuid.UUID
+) -> HeldOutScenarioOut:
+    """A person's rejection, chained into the audit log. A rejected scenario never runs."""
+    with _errors():
+        row = reject_scenario(session, principal, task_id, scenario_id)
     session.commit()
     return HeldOutScenarioOut.model_validate(row)
 
