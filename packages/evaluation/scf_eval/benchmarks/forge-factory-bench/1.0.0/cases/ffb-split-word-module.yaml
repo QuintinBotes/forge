@@ -37,6 +37,7 @@ cases:
 
                 assert words.count_words("one two  three") == 3
                 assert textstats.count_words is words.count_words
+                assert words.count_words.__module__ == "words"
 
 
             def test_counts_and_reading_time():

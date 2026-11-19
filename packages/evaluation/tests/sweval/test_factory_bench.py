@@ -5,6 +5,7 @@ The held-out tests run for real, offline, in the local worktree sandbox.
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import shutil
@@ -132,6 +133,22 @@ def test_cases_cover_the_four_kinds() -> None:
     kinds = {case.id: set(case.tags) & _KINDS for case in cases}
     assert all(len(k) == 1 for k in kinds.values()), kinds
     assert set().union(*kinds.values()) == _KINDS
+
+
+def test_new_test_cases_check_the_repository_tests_against_the_starting_code() -> None:
+    """A ``BEFORE`` that is not the code the solver starts from would credit an added
+    test that passes on that code."""
+    _manifest, cases = load_manifest(SUITE)
+    checked = []
+    for case in cases:
+        fields = parse_swe_case_fields(case)
+        modules = [f.content for f in fields.repo if not f.path.startswith("tests/")]
+        for held in fields.held_out:
+            for node in ast.parse(held.content).body:
+                if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "BEFORE":
+                    assert ast.literal_eval(node.value) in modules, case.id
+                    checked.append(case.id)
+    assert sorted(checked) == ["ffb-flag-case", "ffb-negative-cents", "ffb-title-case-apostrophe"]
 
 
 def test_suite_is_frozen_by_its_content_hash() -> None:

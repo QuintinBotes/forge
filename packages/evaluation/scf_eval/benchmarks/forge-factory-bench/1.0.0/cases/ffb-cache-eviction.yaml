@@ -42,6 +42,8 @@ cases:
                 cache.put("c", 3)
                 assert cache.get("b") is None
                 assert (cache.get("a"), cache.get("c"), len(cache)) == (1, 3, 2)
+                cache.put("c", 4)
+                assert (cache.get("a"), cache.get("c"), len(cache)) == (1, 4, 2)
 
 
             def test_unbounded_cache_keeps_everything():

@@ -38,5 +38,5 @@ case_files:
 - cases/ffb-title-case-apostrophe.yaml
 - cases/ffb-pin-name-split.yaml
 schema_version: 1
-content_hash: sha256:6ea9dff0fdb2209d87fa6ae5b05e25015924b77098da2667bff12b9a2fe5acb8
+content_hash: sha256:19a5da091c2504c6bd5eccc97ef905647e2c7fd1a81c4220960a0fd15a544a3c
 frozen: true

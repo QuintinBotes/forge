@@ -36,7 +36,12 @@ cases:
             from money import format_cents
 
             ROOT = Path(__file__).resolve().parents[1]
-            BEFORE = 'def format_cents(cents):\n    return f"{cents // 100}.{cents % 100:02d}"\n'
+            #: money.py exactly as the issue found it.
+            BEFORE = (
+                "def format_cents(cents):\n"
+                '    """``cents`` as a decimal amount: 1234 is "12.34"."""\n'
+                '    return f"{cents // 100}.{cents % 100:02d}"\n'
+            )
 
 
             def _repository_tests(tmp_path, source):

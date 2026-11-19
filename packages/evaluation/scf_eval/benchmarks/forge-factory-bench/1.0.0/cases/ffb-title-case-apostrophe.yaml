@@ -38,7 +38,12 @@ cases:
             from headings import title_case
 
             ROOT = Path(__file__).resolve().parents[1]
-            BEFORE = "def title_case(text):\n    return text.title()\n"
+            #: headings.py exactly as the issue found it.
+            BEFORE = (
+                "def title_case(text):\n"
+                '    """``text`` with each word capitalised."""\n'
+                "    return text.title()\n"
+            )
 
 
             def _repository_tests(tmp_path, source):

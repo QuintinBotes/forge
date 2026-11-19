@@ -1,13 +1,13 @@
 # forge-factory-bench 1.0.0
 
-- Suite content hash: `sha256:6ea9dff0fdb2209d87fa6ae5b05e25015924b77098da2667bff12b9a2fe5acb8`
-- SCF commit: `769b9cae4f53f56c52efd601fad0fa7f9e55f835`
+- Suite content hash: `sha256:19a5da091c2504c6bd5eccc97ef905647e2c7fd1a81c4220960a0fd15a544a3c`
+- SCF commit: `2cf7129b4a3e235534bb2e1d76d674b50223afa4`
 - Solver: reference
 - Models: n/a
 - Sandbox tier: worktree
 - Resolved: 20/20 (100.0%)
 - Total cost (USD): n/a
-- Wall time: 38.5 s
+- Wall time: 34.8 s
 
 | Case | Outcome | Regressed tests | Reason |
 | --- | --- | --- | --- |

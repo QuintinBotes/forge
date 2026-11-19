@@ -24,7 +24,7 @@ them.
 Version 1.0.0 has 20 cases, in
 `packages/evaluation/scf_eval/benchmarks/forge-factory-bench/1.0.0/`. It is frozen
 with content hash
-`sha256:6ea9dff0fdb2209d87fa6ae5b05e25015924b77098da2667bff12b9a2fe5acb8`. Every
+`sha256:19a5da091c2504c6bd5eccc97ef905647e2c7fd1a81c4220960a0fd15a544a3c`. Every
 benchmark command rejects the suite if a case or the scoring is edited; a change to
 the cases needs a new version. Each case's tags record its kind:
 
@@ -37,7 +37,8 @@ the cases needs a new version. Each case's tags record its kind:
 
 For the `new_test` cases, the held-out tests run the repository's test file in a
 subprocess, once against the code as the issue found it (or, for the case that only
-pins behaviour, against rewrites that change it) and once against the change. The
+pins behaviour, against rewrites that each break one rule it pins) and once against
+the change. The
 repository's tests must fail on the first and pass on the second, so a fix without
 a test, or a test that always fails, is not resolved.
 
@@ -94,8 +95,9 @@ the same checkout.
 **This baseline is a harness self-test, not a measurement of an agent.** The
 reference solver applies the known-good patches stored beside the suite, so its
 result shows only that every case is solvable and that the harness scores it as
-resolved. No model ran. The report's `scf_commit` is the commit this suite was
-added on top of; the harness code is the same in both.
+resolved. No model ran. The report's `scf_commit` is the checkout the report was
+generated on, before this version of the suite was committed; the harness code is
+the same, and the suite that ran is the one its content hash names.
 
 An agent score needs a live run: a development SCF instance with model credentials,
 each case's repository pushed to branch `bench/<case id>` of a repository connected

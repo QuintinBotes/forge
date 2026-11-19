@@ -46,6 +46,8 @@ cases:
                 with pytest.raises(ValueError):
                     stock.reserve("nut", 1)
                 assert stock.level("bolt") == 2
+                stock.reserve("bolt", 2)
+                assert stock.level("bolt") == 0
 
 
             def test_receiving_adds_up():

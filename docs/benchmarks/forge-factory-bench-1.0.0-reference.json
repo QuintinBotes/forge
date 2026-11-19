@@ -1,8 +1,8 @@
 {
   "suite_slug": "forge-factory-bench",
   "suite_version": "1.0.0",
-  "suite_content_hash": "sha256:6ea9dff0fdb2209d87fa6ae5b05e25015924b77098da2667bff12b9a2fe5acb8",
-  "scf_commit": "769b9cae4f53f56c52efd601fad0fa7f9e55f835",
+  "suite_content_hash": "sha256:19a5da091c2504c6bd5eccc97ef905647e2c7fd1a81c4220960a0fd15a544a3c",
+  "scf_commit": "2cf7129b4a3e235534bb2e1d76d674b50223afa4",
   "solver": "reference",
   "models": [],
   "sandbox_tier": "worktree",
@@ -13,7 +13,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 0.9231319160026032
+      "wall_time_s": 1.2072757919959258
     },
     {
       "case_id": "ffb-slug-separators",
@@ -21,7 +21,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.0459775000053924
+      "wall_time_s": 1.1307797920017038
     },
     {
       "case_id": "ffb-roman-subtractive",
@@ -29,7 +29,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.0672456669854
+      "wall_time_s": 1.147275916999206
     },
     {
       "case_id": "ffb-duration-validation",
@@ -37,7 +37,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.0885557500005234
+      "wall_time_s": 1.1200736660102848
     },
     {
       "case_id": "ffb-cart-subtotal-discount",
@@ -45,7 +45,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.0894741670053918
+      "wall_time_s": 1.1747759580030106
     },
     {
       "case_id": "ffb-leap-century",
@@ -53,7 +53,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.0510124159918632
+      "wall_time_s": 1.2069203330029268
     },
     {
       "case_id": "ffb-median-even",
@@ -61,7 +61,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.0105607089935802
+      "wall_time_s": 1.141113416000735
     },
     {
       "case_id": "ffb-shared-default-tags",
@@ -69,7 +69,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.2480432500015013
+      "wall_time_s": 1.1995208750013262
     },
     {
       "case_id": "ffb-stock-reserve",
@@ -77,7 +77,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.6498649579880293
+      "wall_time_s": 1.2209848749917
     },
     {
       "case_id": "ffb-template-defaults",
@@ -85,7 +85,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.6381858749955427
+      "wall_time_s": 1.5031759589910507
     },
     {
       "case_id": "ffb-version-bump",
@@ -93,7 +93,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.1142516669933684
+      "wall_time_s": 1.9361109999881592
     },
     {
       "case_id": "ffb-cache-eviction",
@@ -101,7 +101,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.0425807920109946
+      "wall_time_s": 1.5440267089870758
     },
     {
       "case_id": "ffb-rename-with-alias",
@@ -109,7 +109,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.249720416002674
+      "wall_time_s": 1.4948131249984726
     },
     {
       "case_id": "ffb-split-word-module",
@@ -117,7 +117,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.9984507500194013
+      "wall_time_s": 1.2927617089881096
     },
     {
       "case_id": "ffb-unit-table",
@@ -125,7 +125,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.8028318340075202
+      "wall_time_s": 1.2150465000013355
     },
     {
       "case_id": "ffb-id-generator-class",
@@ -133,7 +133,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 1.9555705419916194
+      "wall_time_s": 1.2347727500018664
     },
     {
       "case_id": "ffb-negative-cents",
@@ -141,7 +141,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 5.433475041994825
+      "wall_time_s": 2.8928050419781357
     },
     {
       "case_id": "ffb-flag-case",
@@ -149,7 +149,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 4.816753958992194
+      "wall_time_s": 3.1348500000021886
     },
     {
       "case_id": "ffb-title-case-apostrophe",
@@ -157,7 +157,7 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 3.5634120000177063
+      "wall_time_s": 3.7103667079936713
     },
     {
       "case_id": "ffb-pin-name-split",
@@ -165,10 +165,10 @@
       "regressed": [],
       "reason": null,
       "cost_usd": null,
-      "wall_time_s": 3.72441695802263
+      "wall_time_s": 4.328673542011529
     }
   ],
   "resolve_rate": 1.0,
   "total_cost_usd": null,
-  "wall_time_s": 38.51351616802276
+  "wall_time_s": 34.836123667948414
 }

@@ -48,13 +48,15 @@ cases:
             from flags import parse_flag
 
             ROOT = Path(__file__).resolve().parents[1]
+            #: flags.py exactly as the issue found it.
             BEFORE = (
                 "def parse_flag(text):\n"
-                "    if text in ('true', 'yes', '1'):\n"
+                '    """Read a flag: true, yes and 1 are True; false, no and 0 are False."""\n'
+                '    if text in ("true", "yes", "1"):\n'
                 "        return True\n"
-                "    if text in ('false', 'no', '0'):\n"
+                '    if text in ("false", "no", "0"):\n'
                 "        return False\n"
-                "    raise ValueError(text)\n"
+                '    raise ValueError(f"not a flag: {text!r}")\n'
             )
 
 
