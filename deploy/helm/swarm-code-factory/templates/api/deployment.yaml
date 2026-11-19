@@ -21,10 +21,11 @@ spec:
     metadata:
       labels:
         {{- include "swarm-code-factory.componentLabels" (dict "ctx" . "component" "api") | nindent 8 }}
-      {{- with .Values.api.podAnnotations }}
       annotations:
+        {{- include "swarm-code-factory.envChecksums" . | nindent 8 }}
+        {{- with .Values.api.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "swarm-code-factory.serviceAccountName" . }}
       {{- include "swarm-code-factory.imagePullSecrets" . | nindent 6 }}
@@ -62,6 +63,9 @@ spec:
               containerPort: {{ .Values.api.service.port }}
           envFrom:
             {{- include "swarm-code-factory.envFrom" . | nindent 12 }}
+          {{- if .Values.temporal.enabled }}
+          {{- include "swarm-code-factory.engineEnv" . | nindent 10 }}
+          {{- end }}
           startupProbe:
             httpGet:
               path: {{ .Values.api.probes.startup }}
