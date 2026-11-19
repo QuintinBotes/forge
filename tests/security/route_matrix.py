@@ -172,6 +172,8 @@ DECLARED: dict[str, Permission] = {
             "GET /auth/api-keys",
             "POST /auth/api-keys",
             "DELETE /auth/api-keys/{key_id}",
+            "PUT /integration/github/app-credentials",
+            "DELETE /integration/github/app-credentials",
         ],
         Permission.MANAGE_KEYS,
     ),
