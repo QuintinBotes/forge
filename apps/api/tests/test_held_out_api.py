@@ -242,3 +242,54 @@ def test_a_path_that_leaves_the_checkout_is_refused(
     body = {**SCENARIO, "files": [{"path": path, "content": "x"}]}
 
     assert client_as(_person()).post(_url(task_id), json=body).status_code == 422
+
+
+def test_a_scenarios_results_are_read_by_id_and_title_by_writers_only(
+    factory: sessionmaker[Session], client_as: Callable[[Principal], TestClient]
+) -> None:
+    """#286 criterion 7: each run of a scenario on a change reads back by its id and
+    title, never its files or command, and only for a person with write access."""
+    from scf_api.services.held_out import record_result
+    from scf_db.models.held_out import HeldOutScenario
+
+    task_id = _task(factory)
+    writer = client_as(_person())
+    scenario_id = writer.post(_url(task_id), json=SCENARIO).json()["id"]
+    run_id, other_run = uuid.uuid4(), uuid.uuid4()
+    with factory() as s:
+        row = s.get(HeldOutScenario, uuid.UUID(scenario_id))
+        assert row is not None
+        for run, passed in ((run_id, False), (other_run, True)):
+            outcome = {
+                "passed": passed,
+                "exit_code": 0 if passed else 1,
+                "timed_out": False,
+                "duration_ms": 12,
+                "reason": None if passed else "exited_nonzero",
+            }
+            record_result(
+                s, row, workflow_run_id=run, attempt=0, head_commit="ab" * 20, outcome=outcome
+            )
+        s.commit()
+
+    resp = writer.get(_url(task_id, "/results"), params={"workflow_run_id": str(run_id)})
+
+    assert resp.status_code == 200, resp.text
+    [result] = resp.json()
+    assert result.pop("recorded_at")
+    assert result == {
+        "scenario_id": scenario_id,
+        "title": SCENARIO["title"],
+        "workflow_run_id": str(run_id),
+        "attempt": 0,
+        "head_commit": "ab" * 20,
+        "passed": False,
+        "exit_code": 1,
+        "timed_out": False,
+        "duration_ms": 12,
+        "reason": "exited_nonzero",
+    }
+    assert len(writer.get(_url(task_id, "/results")).json()) == 2
+    assert client_as(_person(UserRole.VIEWER)).get(_url(task_id, "/results")).status_code == 403
+    _task(factory, WS2)
+    assert client_as(_person(workspace_id=WS2)).get(_url(task_id, "/results")).status_code == 404
