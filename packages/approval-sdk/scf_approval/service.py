@@ -277,6 +277,11 @@ class ApprovalService:
         matches = [r for r in rows if r.subject_type == subject_type and r.subject_id == subject_id]
         return matches[-1] if matches else None
 
+    @property
+    def audit_sink(self) -> ApprovalAuditSink:
+        """Where this service audits; gate sync records the recovery it applies here too."""
+        return self._audit
+
     def resolution_hook(self, gate_type: GateType) -> GateResolutionHook | None:
         """The hook :meth:`resolve` runs for ``gate_type`` (gate sync re-runs part of it)."""
         return self._registry.hook(gate_type)

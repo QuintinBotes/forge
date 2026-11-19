@@ -46,10 +46,16 @@ def agent_run_id(workflow_run_id: uuid.UUID, attempt: int = 0) -> uuid.UUID:
     return uuid.uuid5(workflow_run_id, key)
 
 
+def station_visit_id(workflow_run_id: uuid.UUID, state: str, visit: int) -> uuid.UUID:
+    """The id of a line run's ``visit``-th visit of ``state`` (spec K §4.2)."""
+    return uuid.uuid5(workflow_run_id, f"{state}#{visit}")
+
+
 __all__ = [
     "WORKFLOW_ID_PREFIX",
     "activity_idempotency_key",
     "agent_run_id",
+    "station_visit_id",
     "transition_idempotency_key",
     "workflow_id",
     "workflow_run_id_from",

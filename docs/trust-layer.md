@@ -118,11 +118,19 @@ binds every activity except `forge.resume_agent`:
   branch with no commits is not delivered, and without GitHub App credentials
   the step refuses.
 - **The gates** (`spec`, `plan`, `pr`) open approval requests, and only an
-  approval moves the run past one. Approving a `pr` request records its
-  attestation when the decision is made. When the merge guard refuses the event
-  (CI has not reported yet), the request's `gate_payload.workflow_event.status`
-  reads `failed` until `POST /workflow/runs/{id}/gates/pr/sync` applies the event
-  with the same attestation; then it reads `submitted`.
+  approval moves the run past one: the transition route refuses the gate events
+  (`409 gate_events_come_from_approvals`), and the web app decides them in the
+  approvals inbox. Approving a `pr` request records its
+  attestation when the decision is made. When the run's engine refuses the event
+  (unreachable, or the merge guard: CI has not reported yet), the request's
+  `gate_payload.workflow_event.status` reads `failed`, and the audit log gets an
+  `approval` entry with status `workflow_event_failed` (the decider, the event
+  and the error) before the decision's own entry (#182). The request's status
+  stays `failed` until `POST /workflow/runs/{id}/gates/{gate}/sync` applies the
+  event (for `pr`, with the same attestation); then the request reads
+  `submitted`, and the audit log gets a further `workflow_event_synced` entry
+  naming who ran the sync (audit entries are never changed). A failed audit
+  write is logged and changes nothing else.
 - **The merge guard reads CI and the spec itself** (#280, FR-011). For each `pr`
   approval, the workflow reads the check runs on the agent's head commit, with a
   token for the one repository that can only read checks. CI is green only when
@@ -197,9 +205,8 @@ binds every activity except `forge.resume_agent`:
 - **The adversary's test runs on the checks' sandbox tier (#184).** On the
   `worktree` tier that is the worker's host, and the command is the one the
   adversary chose.
-- **A failed gate submission is not audited (#182).** It is logged and recorded
-  on the request (`workflow_event` `failed`), but the audit log records only the
-  decision; nothing retries it when CI turns green.
+- **Nothing retries a refused `pr` approval when CI turns green.** It waits for
+  `gates/pr/sync`.
 - **A repository with no declared checks spends the agent's retries** before it
   pauses (#272, an owner decision).
 - **Some builders cannot be reviewed.** A scripted builder records no model,
