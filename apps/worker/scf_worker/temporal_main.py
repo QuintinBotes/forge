@@ -49,7 +49,7 @@ from scf_workflow.store import SqlAlchemyWorkflowStore
 from scf_workflow.temporal.activities import WorkflowActivities
 from scf_workflow.temporal.client import get_temporal_client
 from scf_workflow.temporal.config import TemporalSettings
-from scf_workflow.temporal.payloads import CleanupInput
+from scf_workflow.temporal.payloads import CleanupInput, StationVisitRecord
 from scf_workflow.temporal.worker import build_temporal_worker
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,8 @@ class SessionPerCallStore:
 
     Suitable for the Temporal worker, where each Activity invocation is an
     independent unit of work. The worker only reads and updates runs the API
-    created (``persist_transition``); the run id comes from the workflow's own
+    created (``persist_transition``) and records their station visits
+    (``persist_station``); the run id comes from the workflow's own
     params, so each call scopes the store to that run's workspace.
     """
 
@@ -90,6 +91,15 @@ class SessionPerCallStore:
         # The issue a governed run came from hears its state (#278); this never raises.
         post_workflow_writeback(self._factory, result)
         return result
+
+    def save_station_visit(self, visit: StationVisitRecord) -> None:
+        with self._factory() as session:
+            self._store_for(session, visit.workflow_run_id).save_station_visit(visit)
+            session.commit()
+
+    def list_station_visits(self, run_id: uuid.UUID) -> list[StationVisitRecord]:
+        with self._factory() as session:
+            return self._store_for(session, run_id).list_station_visits(run_id)
 
     def find_active_by_task(self, task_id: uuid.UUID) -> WorkflowRun | None:
         raise NotImplementedError("task lookups need a workspace; the worker has none")

@@ -21,10 +21,23 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from scf_db.models.runs import WorkflowRun as DbWorkflowRun
+    from scf_db.models.runs import WorkflowStationVisit
+    from scf_workflow.temporal.payloads import StationVisitRecord
 
 
 #: Terminal run statuses — used to decide whether a task already has a live run.
 _TERMINAL_STATUSES = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
+
+#: How far a station visit has got (spec K §4.3); 2 is finished. Status only moves forward.
+STATION_STATUS_RANK = {
+    "running": 0,
+    "waiting": 1,
+    "succeeded": 2,
+    "failed": 2,
+    "parked": 2,
+    "cancelled": 2,
+}
+STATION_KINDS = frozenset({"agent", "service", "human"})
 
 
 @runtime_checkable
@@ -43,6 +56,19 @@ class WorkflowStore(Protocol):
 
     def list_by_task(self, task_id: uuid.UUID) -> list[WorkflowRun]:
         """Return all runs for ``task_id`` (F25; used by ``list_runs``)."""
+        ...
+
+
+@runtime_checkable
+class StationVisitStore(Protocol):
+    """A store that also records a line run's station visits (spec K §4.3)."""
+
+    def save_station_visit(self, visit: StationVisitRecord) -> None:
+        """Upsert ``visit`` by its id; a status that does not move forward changes nothing."""
+        ...
+
+    def list_station_visits(self, run_id: uuid.UUID) -> list[StationVisitRecord]:
+        """The run's visits in the order they started."""
         ...
 
 
@@ -242,9 +268,78 @@ class SqlAlchemyWorkflowStore:
         )
         return [self._to_dto(m) for m in self._session.execute(stmt).scalars().all()]
 
+    def save_station_visit(self, visit: StationVisitRecord) -> None:
+        from datetime import UTC, datetime
+        from decimal import Decimal
+
+        from scf_db.models.runs import WorkflowStationVisit
+        from scf_workflow.temporal.ids import station_visit_id
+
+        self._load(visit.workflow_run_id)  # the run is this workspace's, or not found
+        visit_id = station_visit_id(visit.workflow_run_id, visit.state, visit.visit)
+        now = datetime.now(UTC)
+        # Locked, so a late retry cannot interleave with a later report of the visit. Two
+        # first reports racing to insert: one fails on the key, and its retry lands here.
+        row = self._session.get(WorkflowStationVisit, visit_id, with_for_update=True)
+        if row is None:
+            row = WorkflowStationVisit(
+                id=visit_id,
+                workspace_id=self._workspace_id,
+                workflow_run_id=visit.workflow_run_id,
+                definition_revision_id=visit.definition_revision_id,
+                state=visit.state,
+                visit=visit.visit,
+                kind=visit.kind,
+                started_at=now,
+            )
+            self._session.add(row)
+        elif STATION_STATUS_RANK[visit.status] <= STATION_STATUS_RANK[row.status]:
+            return
+        row.status = visit.status
+        row.outcome = visit.outcome
+        row.outputs = visit.outputs
+        row.error_code = visit.error_code
+        row.error_message = visit.error_message
+        # A later report that leaves a link out keeps the one an earlier report made.
+        row.service_name = visit.service_name or row.service_name
+        row.agent_run_id = visit.agent_run_id or row.agent_run_id
+        row.approval_request_id = visit.approval_request_id or row.approval_request_id
+        row.tokens_used = visit.tokens_used
+        row.cost_usd = None if visit.cost_usd is None else Decimal(str(visit.cost_usd))
+        row.priced = visit.priced
+        if STATION_STATUS_RANK[visit.status] == 2:
+            row.finished_at = now
+        self._session.flush()
+
+    def list_station_visits(self, run_id: uuid.UUID) -> list[StationVisitRecord]:
+        from sqlalchemy import select
+
+        from scf_db.models.runs import WorkflowStationVisit as Visit
+
+        self._load(run_id)
+        stmt = (
+            select(Visit)
+            .where(Visit.workspace_id == self._workspace_id, Visit.workflow_run_id == run_id)
+            .order_by(Visit.started_at, Visit.visit)
+        )
+        return [_visit_record(row) for row in self._session.scalars(stmt)]
+
+
+def _visit_record(row: WorkflowStationVisit) -> StationVisitRecord:
+    from dataclasses import fields
+
+    from scf_workflow.temporal.payloads import StationVisitRecord
+
+    values = {f.name: getattr(row, f.name) for f in fields(StationVisitRecord)}
+    values["cost_usd"] = None if row.cost_usd is None else float(row.cost_usd)
+    return StationVisitRecord(**values)
+
 
 __all__ = [
+    "STATION_KINDS",
+    "STATION_STATUS_RANK",
     "InMemoryWorkflowStore",
     "SqlAlchemyWorkflowStore",
+    "StationVisitStore",
     "WorkflowStore",
 ]
