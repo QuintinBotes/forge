@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
-from datetime import date, datetime
-from typing import Annotated
+from datetime import UTC, date, datetime
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
@@ -41,6 +41,7 @@ from scf_obs.analytics.coverage import (
     SqlCoverageRepository,
 )
 from scf_obs.analytics.dora import DoraMetrics, SqlDoraReader
+from scf_obs.analytics.factory import FactoryMetricsReport, SqlFactoryMetricsReader
 from scf_obs.analytics.fx import DbFxRateBook
 from scf_obs.analytics.incidents import IncidentReliabilityMetrics, SqlIncidentReliabilityReader
 from scf_obs.cost.repository import SqlCostReader
@@ -73,6 +74,14 @@ def get_observability_analytics_service() -> ObservabilityAnalyticsService:
 AnalyticsDep = Annotated[
     ObservabilityAnalyticsService, Depends(get_observability_analytics_service)
 ]
+
+
+def get_factory_metrics_reader() -> SqlFactoryMetricsReader:
+    """The DB-backed factory metrics reader (overridable in tests via DI)."""
+    return SqlFactoryMetricsReader(get_session_factory())
+
+
+FactoryReaderDep = Annotated[SqlFactoryMetricsReader, Depends(get_factory_metrics_reader)]
 
 
 def _guard[T](call: Callable[[], T]) -> T:
@@ -242,6 +251,35 @@ def dora_metrics(
         lambda: service.dora_metrics(
             workspace_id=principal.workspace_id, project_id=project_id, frm=from_, to=to
         )
+    )
+
+
+@router.get(
+    "/analytics/factory",
+    response_model=FactoryMetricsReport,
+    summary="The five factory metrics for a window, each with numerator, denominator and sample.",
+)
+def factory_metrics(
+    principal: ReaderDep,
+    reader: FactoryReaderDep,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+    repository: Annotated[str | None, Query(max_length=255)] = None,
+    source: Annotated[Literal["api", "tracker"] | None, Query()] = None,
+) -> FactoryMetricsReport:
+    """Defined in ``docs/metrics/factory-metrics.md``; the window defaults to the last 30 days."""
+    # A time without an offset is UTC, so naive and aware bounds compare.
+    since, until = (t.replace(tzinfo=UTC) if t and t.tzinfo is None else t for t in (since, until))
+    if since is not None and until is not None and since >= until:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="since must precede until"
+        )
+    return reader.report(
+        workspace_id=principal.workspace_id,
+        since=since,
+        until=until,
+        repository=repository,
+        source=source,
     )
 
 

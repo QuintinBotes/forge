@@ -87,6 +87,7 @@ from scf_db.models.enums import (
     UserRole,
     WorkflowState,
 )
+from scf_db.models.factory_metrics import ChangeOutcome, RunIntervention
 from scf_db.models.held_out import HeldOutScenario
 from scf_db.models.idempotency import IdempotencyKey
 from scf_db.models.incidents import (
@@ -234,6 +235,7 @@ __all__ = [
     "Budget",
     "BudgetPeriod",
     "BudgetScope",
+    "ChangeOutcome",
     "ChunkType",
     "Constitution",
     "CostEvent",
@@ -324,6 +326,7 @@ __all__ = [
     "RevisionStatus",
     "RevisionValidationStatus",
     "RoleGrant",
+    "RunIntervention",
     "RunRecording",
     "RunStatus",
     "SamlReplay",

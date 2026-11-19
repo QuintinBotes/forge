@@ -1,6 +1,6 @@
 """Remote read commands for desktop clients (spec L §2 seam 2, ADR-0015).
 
-``scf-cli board|specs|approvals|runs`` read an SCF team server over HTTP and print
+``scf-cli board|specs|approvals|runs|metrics`` read an SCF team server over HTTP and print
 either a table or, with ``--json``, one versioned envelope a client such as tervin
 draws natively. The server comes from ``FORGE_URL`` (or ``--url``); the token comes
 from the environment variable named by ``--token-env`` (default ``FORGE_TOKEN``), so
@@ -60,6 +60,11 @@ def _endpoint(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
         return f"/projects/{args.project}/specs", {}
     if args.group == "approvals":
         return "/approvals", ({"status": args.status} if args.status else {})
+    if args.group == "metrics":
+        filters = ("since", "until", "repository", "source")
+        return "/observability/analytics/factory", {
+            name: getattr(args, name) for name in filters if getattr(args, name)
+        }
     return f"/agent/runs/{args.run_id}", {}
 
 
@@ -118,7 +123,7 @@ def render(envelope: Mapping[str, Any], *, as_json: bool, out: TextIO) -> None:
 
 
 def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the four remote read commands and ``login`` on the scf-cli parser."""
+    """Register the remote read commands and ``login`` on the scf-cli parser."""
 
     def common(p: argparse.ArgumentParser) -> None:
         p.add_argument("--json", action="store_true", dest="as_json")
@@ -144,6 +149,14 @@ def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
     runs = sub.add_parser("runs", help="one agent run from an SCF server")
     runs.add_argument("run_id")
     common(runs)
+    metrics = sub.add_parser(
+        "metrics", help="the five factory metrics for a window from an SCF server"
+    )
+    metrics.add_argument("--since", default=None, help="ISO 8601 start (default: 30 days ago)")
+    metrics.add_argument("--until", default=None, help="ISO 8601 end (default: now)")
+    metrics.add_argument("--repository", default=None, help="owner/name")
+    metrics.add_argument("--source", choices=("api", "tracker"), default=None)
+    common(metrics)
     login = sub.add_parser(
         LOGIN, help="get a token that starts runs by approving a code; print a shell line"
     )
@@ -157,7 +170,7 @@ def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
     login.add_argument("--timeout", type=float, default=15.0)
 
 
-REMOTE_GROUPS = frozenset({"board", "specs", "approvals", "runs"})
+REMOTE_GROUPS = frozenset({"board", "specs", "approvals", "runs", "metrics"})
 LOGIN = "login"
 #: ``eval`` runs the printed line, so the variable name must be a plain shell name.
 _SHELL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")

@@ -50,6 +50,27 @@ ENV = {"FORGE_URL": SERVER, "FORGE_TOKEN": TOKEN}
         (["specs", "--project", "p1"], "/api/projects/p1/specs", {}),
         (["approvals"], "/api/approvals", {"status": "pending"}),
         (["runs", "r1"], "/api/agent/runs/r1", {}),
+        (["metrics"], "/api/observability/analytics/factory", {}),
+        (
+            [
+                "metrics",
+                "--since",
+                "2026-06-01T00:00:00Z",
+                "--until",
+                "2026-07-01T00:00:00Z",
+                "--repository",
+                "org/api",
+                "--source",
+                "tracker",
+            ],
+            "/api/observability/analytics/factory",
+            {
+                "since": "2026-06-01T00:00:00Z",
+                "until": "2026-07-01T00:00:00Z",
+                "repository": "org/api",
+                "source": "tracker",
+            },
+        ),
     ],
 )
 def test_each_command_reads_its_endpoint_with_the_bearer_token(
@@ -75,6 +96,23 @@ def test_json_envelope_carries_schema_and_provenance() -> None:
     assert envelope["enforceable"] is False
     assert envelope["recorded_at"].endswith("+00:00")
     assert envelope["data"] == tasks
+
+
+def test_metrics_json_prints_the_factory_report_in_the_envelope() -> None:
+    report = {
+        "since": "2026-06-01T00:00:00Z",
+        "until": "2026-07-01T00:00:00Z",
+        "autonomous_merge_rate": {"value": 0.4, "numerator": 4, "denominator": 10},
+    }
+    code, out, _ = _run(["metrics", "--json"], ENV, _handler([], body=report))
+    assert code == 0
+    envelope = json.loads(out)
+    assert envelope["schema"] == cli_remote.SCHEMA
+    assert envelope["kind"] == "metrics"
+    assert envelope["observed_by"] == SERVER
+    assert envelope["recorded_at"].endswith("+00:00")
+    assert envelope["enforceable"] is False
+    assert envelope["data"] == report
 
 
 def test_table_output_names_the_source() -> None:
