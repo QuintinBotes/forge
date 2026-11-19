@@ -585,7 +585,11 @@ def run_checks_service(
         assert target is not None  # the agent run resolved this repository
         objective = AgentObjective(
             objective="checks",
-            context={"repo_full_name": target.repo, "workspace_id": str(inp.workspace_id)},
+            context={
+                "repo_full_name": target.repo,
+                "workspace_id": str(inp.workspace_id),
+                "workflow_run_id": str(inp.workflow_run_id),
+            },
         )
         mirror = Path(str(resolve_run_repository(objective).context["repo_path"]))
         try:

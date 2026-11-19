@@ -72,10 +72,11 @@ class Mint:
 
 
 class FakeGitHub:
-    """GitHub's REST API: a fresh token per mint, and pull requests."""
+    """GitHub's REST API: a fresh token per mint, pull requests and check runs."""
 
     def __init__(self) -> None:
         self.mints: list[Mint] = []
+        self.ci_reads: list[str] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -99,6 +100,10 @@ class FakeGitHub:
                     "title": "t",
                 },
             )
+        if path.startswith(f"/repos/{REPO}/commits/") and path.endswith("/check-runs"):
+            self.ci_reads.append(request.headers["authorization"])
+            run = {"name": "tests", "status": "completed", "conclusion": "success"}
+            return httpx.Response(200, json={"total_count": 1, "check_runs": [run]})
         return httpx.Response(404)
 
 
@@ -427,6 +432,35 @@ def test_each_token_names_one_repository_and_the_steps_permissions_and_is_never_
     assert len({m.token for m in github.mints}) == 4
 
 
+def test_the_merge_guard_reads_ci_with_the_workspaces_own_read_token(
+    monkeypatch: pytest.MonkeyPatch,
+    github: FakeGitHub,
+    two_workspaces: None,
+    factory: sessionmaker[Session],
+) -> None:
+    from scf_integrations.github import GitHubClient
+    from scf_worker import temporal_services
+
+    transport = httpx.MockTransport(github.handler)
+    monkeypatch.setattr(
+        temporal_services, "GitHubClient", functools.partial(GitHubClient, transport=transport)
+    )
+    run = uuid.uuid4()
+
+    runs = temporal_services.github_check_runs(
+        REPO, "a1" * 20, workspace_id=WS_A, run_id=run, session_factory=factory
+    )
+
+    assert [r["name"] for r in runs] == ["tests"]
+    [mint] = github.mints
+    assert (mint.app_id, mint.installation) == ("11", "222")
+    assert mint.body == {"repositories": ["app"], "permissions": {"checks": "read"}}
+    assert github.ci_reads and all(mint.token in auth for auth in github.ci_reads)
+    [issued] = _issued(factory)
+    assert (issued.workspace_id, issued.details["run_id"]) == (WS_A, str(run))
+    assert issued.details["permissions"] == {"checks": "read"}
+
+
 # --------------------------------------------------------------------------- #
 # Criterion 5: every issue audited; no secret anywhere                        #
 # --------------------------------------------------------------------------- #
@@ -478,9 +512,12 @@ def test_each_token_issue_is_audited_without_any_secret(
 
 
 def _secrets(github: FakeGitHub, keys: dict[str, str]) -> list[str]:
-    """Each token, each App JWT and the body of each private key."""
-    bodies = [k.split("-----")[2].strip() for k in keys.values()]
-    return [*(m.token for m in github.mints), *(m.app_jwt for m in github.mints), *bodies]
+    """Each token, each App JWT and every base64 line of each private key.
+
+    Lines, not the whole key: JSON and ``repr`` escape the newlines between them.
+    """
+    lines = [line for k in keys.values() for line in k.splitlines()[1:-1]]
+    return [*(m.token for m in github.mints), *(m.app_jwt for m in github.mints), *lines]
 
 
 def test_no_token_jwt_or_key_reaches_the_logs(
@@ -556,7 +593,7 @@ def test_a_rejected_token_request_raises_no_secret(
 
     message = f"{caught.value} {caught.value!r}"
     assert seen and seen[0] not in message
-    assert keys["a"].split("-----")[2].strip() not in message
+    assert keys["a"].splitlines()[1] not in message
     assert _issued(factory) == [], "a token that was never issued is not audited as issued"
 
 
@@ -566,7 +603,7 @@ def test_resolved_credentials_never_show_the_key_in_repr(
     creds = workspace_credentials(WS_A, REPO, session_factory=factory)
     assert creds is not None
     shown = f"{creds!r} {creds}"
-    assert keys["a"].split("-----")[2].strip() not in shown and "PRIVATE" not in shown
+    assert keys["a"].splitlines()[1] not in shown and "PRIVATE" not in shown
 
 
 def test_unreadable_stored_credentials_are_none_and_raise_nothing(

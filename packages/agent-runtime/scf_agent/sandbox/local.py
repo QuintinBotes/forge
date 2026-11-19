@@ -26,7 +26,11 @@ _KILL_GRACE_SECONDS = 10
 
 
 def _command_env(env: Mapping[str, str] | None) -> dict[str, str]:
-    """The command's environment, never with the worker's GitHub App variables (#186)."""
+    """The command's environment without the worker's GitHub App variables (#186).
+
+    Defence in depth only: the worktree tier is no boundary, and its commands can
+    still reach the worker's other secrets.
+    """
     source = os.environ if env is None else env
     return {k: v for k, v in source.items() if not k.startswith("FORGE_GITHUB_")}
 

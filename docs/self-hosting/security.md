@@ -146,20 +146,40 @@ lists the entry as `github-app`, without its value.
   the workspace, run, repository, installation, permissions and expiry. The
   token, the App JWT and the private key appear in no audit record, log, run
   event or error.
-- **Not in the sandbox.** Commands an agent run executes never see a token or a
-  `FORGE_GITHUB_*` variable, on the `worktree` tier as on the container tiers.
+- **More than one workspace needs a container tier.** On the container tiers
+  (`container`, `gvisor`, `microvm`) an agent run's commands start from an
+  environment of their own: no token and no `FORGE_GITHUB_*` variable reaches
+  them. The `worktree` tier is not a boundary. Its commands are host processes
+  with the worker's privileges: they inherit the worker's environment, including
+  `FORGE_SECRET_KEY` and `FORGE_DATABASE_URL`, which together open every
+  workspace's stored `github-app` entry, and they can read the worker's own
+  process environment. A production install that serves more than one workspace
+  must run a container tier (#184 makes one the default). The `worktree` tier
+  drops the `FORGE_GITHUB_*` variables from a command's environment; that is
+  defence in depth, not isolation.
 
 **The environment variables are a development fallback only.**
 `FORGE_GITHUB_APP_ID`, `FORGE_GITHUB_INSTALLATION_ID` and
-`FORGE_GITHUB_APP_PRIVATE_KEY_PATH` on the worker are used only when
-`FORGE_ENVIRONMENT=development` and the workspace stored no credentials. In any
-other environment a workspace without stored credentials has none: delivery
-refuses (`GitHubAppNotConfigured`, or `not_configured` on a development run),
-and a repository with no mirror yet is unavailable, even when the variables are
-set. After upgrading, store each workspace's credentials through the route
-above, then remove the variables and the mounted key from the worker. The API's
-own GitHub client for webhooks and repository sync still reads the API
-container's variables.
+`FORGE_GITHUB_APP_PRIVATE_KEY_PATH` on the worker are used only when the worker
+runs as development and the workspace stored no credentials. A worker runs as
+development when `FORGE_ENVIRONMENT=development`, when `FORGE_ENVIRONMENT` is not
+set at all (development is the default), and with the deprecated
+`FORGE_ENV=development`. **Set `FORGE_ENVIRONMENT=production` on every worker**
+(`deploy/docker-compose.yml` does). In any other environment a workspace without
+stored credentials has none: delivery refuses (`GitHubAppNotConfigured`, or
+`not_configured` on a development run), and a repository with no mirror yet is
+unavailable, even when the variables are set. The API's own GitHub client for
+webhooks and repository sync still reads the API container's variables.
+
+**Upgrade in this order**, so delivery never fails in between:
+
+1. Upgrade the API, which adds the route.
+2. Store each workspace's credentials with `PUT /integration/github/app-credentials`.
+3. Upgrade the workers. From now on they use only the stored credentials.
+4. Remove the `FORGE_GITHUB_*` variables and the mounted key from the workers.
+
+A worker upgraded before a workspace has stored its credentials refuses the
+environment's App, and that workspace's deliveries fail without a retry.
 
 ## Credential rotation
 
@@ -359,10 +379,11 @@ locked-down Docker container.
 - **Curated image allowlist.** The sandbox image must be on
   `FORGE_SANDBOX_ALLOWED_IMAGES`; a repo policy cannot point the sandbox at an
   arbitrary image.
-- **Secrets never enter the sandbox.** The BYOK model key and GitHub App
-  credentials are never placed in the sandbox environment or any persisted
-  `sandbox_instance` row. The `worktree` tier starts commands from the worker's
-  environment without its `FORGE_GITHUB_*` variables.
+- **Secrets never enter a container sandbox.** The BYOK model key and GitHub App
+  credentials are never placed in a container sandbox's environment or any
+  persisted `sandbox_instance` row. The `worktree` tier is no sandbox: its
+  commands inherit the worker's environment and can reach the worker's secrets.
+  It drops only the `FORGE_GITHUB_*` variables, as defence in depth.
 - **No silent downgrade.** If `container` is requested but the daemon/proxy is
   unreachable, the run fails loudly — SCF never quietly executes untrusted code
   on the host when the operator asked for containment.
