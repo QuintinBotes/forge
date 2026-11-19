@@ -31,10 +31,15 @@ _PREFIX_VISIBLE = 8
 
 #: The scope that lets a key bound to a person decide approvals (spec L §6a).
 APPROVALS_DECIDE = "approvals:decide"
+#: The scope that lets a key bound to a person start runs (spec L §6b).
+RUNS_EXECUTE = "runs:execute"
 #: The narrowed scope sets a key may carry; ``None`` (no scopes) is a full-role key.
+#: No set holds both ``approvals:decide`` and ``runs:execute``: a token that starts
+#: work never approves it.
 ALLOWED_SCOPE_SETS: tuple[frozenset[str], ...] = (
     frozenset({"read"}),
     frozenset({"read", APPROVALS_DECIDE}),
+    frozenset({"read", RUNS_EXECUTE}),
 )
 #: Surfaces a key may name: a personal token's (``tervin`` / ``cli``) or ``web``
 #: for a key an SSO login mints. ``system`` (the sweep) never comes from a key.
@@ -89,7 +94,8 @@ class APIKeyInfo(BaseModel):
     expires_at: datetime | None = None
     is_active: bool = True
     #: ``None``: the key acts with its full role. Otherwise one of
-    #: :data:`ALLOWED_SCOPE_SETS`, and the key authenticates as a viewer.
+    #: :data:`ALLOWED_SCOPE_SETS`, and the key authenticates as a viewer (as an
+    #: agent-runner with ``runs:execute``).
     scopes: list[str] | None = None
     surface: str | None = None
 
@@ -177,13 +183,14 @@ class APIKeyStore:
         says, so code that ignores scopes fails closed (spec L §6a).
 
         Raises :class:`ValueError` for a scope set outside
-        :data:`ALLOWED_SCOPE_SETS`, ``approvals:decide`` on a key bound to no
-        person, or a surface outside :data:`KEY_SURFACES`.
+        :data:`ALLOWED_SCOPE_SETS`, ``approvals:decide`` or ``runs:execute`` on a
+        key bound to no person, or a surface outside :data:`KEY_SURFACES`.
         """
         if scopes is not None and frozenset(scopes) not in ALLOWED_SCOPE_SETS:
             raise ValueError(f"unsupported key scopes {sorted(scopes)}")
-        if scopes is not None and APPROVALS_DECIDE in scopes and user_id is None:
-            raise ValueError("unsupported key scopes: approvals:decide needs a person (user_id)")
+        for scope in (APPROVALS_DECIDE, RUNS_EXECUTE):
+            if scopes is not None and scope in scopes and user_id is None:
+                raise ValueError(f"unsupported key scopes: {scope} needs a person (user_id)")
         if surface is not None and surface not in KEY_SURFACES:
             raise ValueError(f"unsupported key surface {surface!r}")
         if scopes is not None:
@@ -250,6 +257,7 @@ __all__ = [
     "ALLOWED_SCOPE_SETS",
     "APPROVALS_DECIDE",
     "KEY_SURFACES",
+    "RUNS_EXECUTE",
     "APIKeyBackend",
     "APIKeyInfo",
     "APIKeyRecord",

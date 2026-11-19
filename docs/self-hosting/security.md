@@ -433,6 +433,58 @@ docker compose -f deploy/docker-compose.single-user.yml exec -e FORGE_PUBLIC_URL
 > chat or tickets. A reverse proxy in front of SCF may log the full link in its
 > own access log; the link is useless once used or expired.
 
+## Personal access tokens for desktop clients and the CLI
+
+Give a desktop client (tervin), the ACP shim and your scripts a personal access
+token, never an administrator's key. A person mints a token for themselves with
+`POST /auth/personal-tokens`, from a browser session or their own unscoped key; a
+token cannot mint a token. A token is bound to the person, names its surface
+(`tervin` or `cli`), expires (`expires_in_days`, default 90, at most 365) and
+carries one of three fixed scope sets:
+
+| Scope set | Request body | What the token can do |
+|---|---|---|
+| `read` | `"decide": false` (the default) | Read what a workspace viewer reads. |
+| `read`, `approvals:decide` | `"decide": true` | Also decide approvals, as its owner with the owner's current role. |
+| `read`, `runs:execute` | `"start_runs": true` | Also what the agent-runner role may do, such as starting and forking agent runs (`POST /agent/runs`), simulating policy, calling the read tools of a connected MCP server, and proposing world-model facts (recorded as an agent's). |
+
+```bash
+curl -fsS -X POST https://<host>/api/auth/personal-tokens \
+  -H "Authorization: Bearer $YOUR_KEY" -H 'Content-Type: application/json' \
+  -d '{"name": "laptop runner", "surface": "cli", "start_runs": true}'
+```
+
+- **No token both starts runs and decides approvals.** A request with both
+  `decide` and `start_runs` is refused (`422`), and the key store refuses that
+  scope set. A token that starts runs is refused on
+  `POST /approvals/{id}/decision`, so one leaked token cannot approve its own
+  work.
+- **No token administers the workspace.** No token holds `write` or an
+  administrator's permissions: none changes the board, opens an approval, or
+  manages keys, secrets, members, teams or grants. Team and project access
+  (F30) see every token as a workspace viewer.
+- **A token is never more than its owner.** A deciding token decides with its
+  owner's current role. A token that starts runs is minted only when both the
+  credential that mints it and its owner's current role may run agents (an
+  administrator or a member; a viewer may not). It is checked again on every
+  call: once its owner is demoted to viewer, deactivated or removed, the token
+  gets `401` at its next call.
+- **Listing.** `GET /auth/api-keys` (administrators) shows each key's `scopes`
+  (`null` for an unscoped key) and never the token. Revoke a token with
+  `DELETE /auth/api-keys/{id}`.
+
+**What a desktop client should hold.** A read token, with `approvals:decide` only
+if the person answers approvals from that client. Give a process that runs agents
+on the machine (the ACP shim) its own token with `runs:execute`, in its own
+environment variable, apart from the deciding token: an agent that can read its
+token can start runs with it but cannot approve them.
+
+**Read the token from a named environment variable.** A client stores no secret:
+it reads the token from an environment variable whose name it is given, never
+from a command-line argument or a file it writes. `scf-cli board`, `specs`,
+`approvals` and `runs` read `FORGE_TOKEN`, or the variable `--token-env <NAME>`
+names (for example `TERVIN_FORGE_TOKEN`), and never print it.
+
 ## Enterprise SSO — SAML + SCIM (F33)
 
 - **SAML 2.0 (SCF as SP).** Per-workspace federation with a corporate IdP
@@ -492,6 +544,7 @@ accidentally publishes internal benchmark scores. Before opting in:
 - [ ] MCP connections that need writes are explicitly reviewed and audited.
 - [ ] Backups are encrypted in transit and at rest off-host.
 - [ ] The seed's bootstrap admin key is revoked once per-person keys exist.
+- [ ] Desktop clients hold [personal access tokens](#personal-access-tokens-for-desktop-clients-and-the-cli), never an admin key, and a token that starts runs is kept apart from one that decides.
 - [ ] Shell access to the API server is limited to people trusted to become an administrator (see [the sign-in link](#first-administrator-a-sign-in-link-from-the-cli)).
 - [ ] Operators browse a real hostname, not `localhost` (see [browser storage](#browser-storage-on-localhost)).
 
