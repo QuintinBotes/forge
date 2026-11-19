@@ -61,6 +61,8 @@ __all__ = [
     "CHANGESET_PROVENANCE_PREDICATE_TYPE",
     "DSSE_PAYLOAD_TYPE_INTOTO",
     "INTOTO_STATEMENT_TYPE",
+    "SCF_AGENT",
+    "AssistanceIdentity",
     "ChangesetProvenance",
     "CheckOutcome",
     "DigestSet",
@@ -192,6 +194,25 @@ class Verification(_Model):
     red_team: StageVerdict
 
 
+#: The agent name SCF writes in each commit's ``Assisted-by:`` trailer (#214).
+SCF_AGENT = "scf-agent"
+
+
+class AssistanceIdentity(_Model):
+    """Who assisted a change: SCF's agent and the model the run used (#214).
+
+    ``model`` is ``None`` when the run's model is unknown; it is never guessed.
+    """
+
+    agent: str = SCF_AGENT
+    model: str | None = Field(default=None, pattern=r"^\S+$")
+
+    @property
+    def trailer(self) -> str:
+        """The ``Assisted-by:`` value: ``<agent>:<model>``, or the agent alone."""
+        return f"{self.agent}:{self.model}" if self.model else self.agent
+
+
 class ChangesetProvenance(_Model):
     """SCF's in-toto predicate for one attested changeset.
 
@@ -222,6 +243,9 @@ class ChangesetProvenance(_Model):
       when it is attested for its pull request (#175).
     - ``verification`` — the checks, CI, reviewer and red-team verdicts (#175).
       Absent on attestations made before #175.
+    - ``base_commit``/``head_commit``/``assisted_by`` — the commit the change starts
+      from, its head and who assisted it, when the run made commits (#214). Absent on
+      attestations made before #214.
     """
 
     agent_role: str
@@ -240,6 +264,8 @@ class ChangesetProvenance(_Model):
     repository: str | None = None
     head_commit: str | None = None
     verification: Verification | None = None
+    base_commit: str | None = None
+    assisted_by: list[AssistanceIdentity] = Field(default_factory=list)
 
 
 def encode_statement(statement: Statement) -> str:

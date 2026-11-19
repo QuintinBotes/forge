@@ -186,7 +186,7 @@ from scf_db.models.workflow_editor import (
     WorkflowDefinitionRevision,
     WorkflowDefinitionSource,
 )
-from scf_db.models.workspace import APIKey, User, Workspace
+from scf_db.models.workspace import APIKey, SignInLink, User, Workspace
 from scf_db.models.world import (
     WorldClass,
     WorldDecision,
@@ -337,6 +337,7 @@ __all__ = [
     "ScopeType",
     "Secret",
     "SelfEvalBaseline",
+    "SignInLink",
     "SkillProfile",
     "SkillProfileSnapshot",
     "SpecDocument",

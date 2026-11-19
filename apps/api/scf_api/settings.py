@@ -13,7 +13,7 @@ import warnings
 from functools import lru_cache
 from typing import Any
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from scf_api import __version__
@@ -394,6 +394,9 @@ class Settings(BaseSettings):
     oidc_clock_skew_seconds: int = 120
     oidc_transaction_ttl_seconds: int = 600
     oidc_jwks_cache_ttl_seconds: int = 3600
+    # #260: how long a ``scf-cli admin sign-in-link`` link stays redeemable. Capped at
+    # an hour: a value above it is refused when settings load.
+    sign_in_link_ttl_seconds: int = Field(default=15 * 60, gt=0, le=3600)
 
     # F35 — benchmark suite & public leaderboard. The public, unauthenticated,
     # read-only ``/public/*`` router is DISABLED by default (self-hosted privacy:

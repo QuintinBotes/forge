@@ -37,6 +37,8 @@ from sqlalchemy.orm import Session
 from scf_agent import AgentRunner
 from scf_agent.budget import DEFAULT_RUN_TOKEN_BUDGET, BudgetedModelClient
 from scf_agent.providers import (
+    LocalCliBridgeClient,
+    LocalCliModelClient,
     ModelClientConfig,
     ModelClientError,
     ModelClientUnavailable,
@@ -147,6 +149,20 @@ def configured_model() -> str | None:
     """The model the environment names for agent runs; ``None`` when none is (#173)."""
     config = ModelClientConfig.from_env()
     return config.model if config is not None else None
+
+
+def assisted_model(client: ModelClient, pinned: str | None) -> str | None:
+    """The model ``client`` runs, which each commit's ``Assisted-by:`` names (#214).
+
+    Never a guess: the scripted client runs no model, and a local CLI runs its own
+    (``local-cli:<cli>``) whatever the objective pins. A provider's client runs the
+    pinned model, else the configured one it was built with.
+    """
+    if isinstance(client, ScriptedModelClient):
+        return None
+    if isinstance(client, LocalCliModelClient | LocalCliBridgeClient):
+        return client._model_id
+    return pinned or configured_model()
 
 
 def _scripted_agent_allowed() -> bool:
@@ -482,7 +498,14 @@ def run_agent_objective(
                 parsed, run_id, workspace_id, refused, events=events, persisted_row=persisted_row
             )
             return refused, parsed
-        with prepared_workspace(parsed, run_id=run_id, workspace_id=workspace_id) as workspace:
+        # Resolved first, so each commit names the model this client runs (#214).
+        client = _resolve_model_client(None)
+        with prepared_workspace(
+            parsed,
+            run_id=run_id,
+            workspace_id=workspace_id,
+            model=assisted_model(client, parsed.model),
+        ) as workspace:
             if events is not None:
                 events.emit(
                     RunEventDraft(
@@ -495,6 +518,7 @@ def run_agent_objective(
                     )
                 )
             runner = build_agent_runner(
+                model_client=client,
                 tools=workspace.tools if workspace else None,
                 repo_root=workspace.path if workspace else None,
                 token_budget=_run_token_budget(),
@@ -506,6 +530,7 @@ def run_agent_objective(
                 result.artifacts["branch"] = workspace.branch
                 head = _git(workspace.path, "rev-parse", "HEAD").stdout.strip()
                 result.artifacts["head_commit"] = head
+                result.artifacts["base_commit"] = workspace.base_commit
         if deliver and workspace is not None and result.status == RunStatus.SUCCEEDED:
             _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
     except SoftTimeLimitExceeded:

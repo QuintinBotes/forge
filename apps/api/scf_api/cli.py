@@ -100,6 +100,38 @@ def _sprint_session_factory() -> sessionmaker[Session]:
     return _db_session_factory()
 
 
+#: ``scf-cli admin sign-in-link`` (#260): the name is this project's choice, kept here only.
+ADMIN_GROUP = "admin"
+SIGN_IN_LINK_COMMAND = "sign-in-link"
+
+
+def _admin_sign_in_link(workspace: str, email: str) -> int:
+    """Print a single-use sign-in link for an administrator of ``workspace``, and its expiry.
+
+    Whoever can run this on the server can become an administrator of any workspace
+    that has no enabled identity provider.
+    """
+    from scf_api.auth import sign_in_link
+    from scf_api.settings import get_settings
+
+    settings = get_settings()
+    with _db_session_factory()() as session:
+        try:
+            issued = sign_in_link.issue(
+                session,
+                workspace_slug=workspace,
+                email=email,
+                public_url=settings.public_url,
+                ttl_seconds=settings.sign_in_link_ttl_seconds,
+            )
+        except sign_in_link.SignInLinkRefused as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+    print(f"sign-in link: {issued.url}")
+    print(f"expires at:   {issued.expires_at.isoformat()}")
+    return 0
+
+
 def _knowledge_rebuild_bm25_stats(workspace_id: str) -> int:
     """Recompute a workspace's BM25 statistics from scratch (idempotent).
 
@@ -314,6 +346,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sign.add_argument("--manifest", required=True, help="forge-package manifest (YAML or JSON)")
 
+    admin = sub.add_parser(ADMIN_GROUP, help="Workspace administrator commands")
+    asub = admin.add_subparsers(dest="command", required=True)
+    link = asub.add_parser(
+        SIGN_IN_LINK_COMMAND, help="print a single-use sign-in link for a workspace administrator"
+    )
+    link.add_argument("--workspace", required=True, help="workspace slug")
+    link.add_argument(
+        "--email", required=True, help="an active administrator, or the first one to create"
+    )
+
     cli_remote.add_parsers(sub)
     cli_ctxbench.add_parsers(sub)
     return parser
@@ -341,6 +383,8 @@ def main(argv: list[str] | None = None) -> int:
         return _knowledge_rebuild_bm25_stats(args.workspace_id)
     if args.group == "marketplace" and args.command == "sign":
         return _marketplace_sign(args.key_file, args.manifest)
+    if args.group == ADMIN_GROUP and args.command == SIGN_IN_LINK_COMMAND:
+        return _admin_sign_in_link(args.workspace, args.email)
     if args.group in cli_remote.REMOTE_GROUPS:
         return cli_remote.run(args)
     if args.group == cli_ctxbench.GROUP:

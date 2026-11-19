@@ -24,7 +24,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from scf_api.auth.service import get_auth_service
-from scf_api.deps import DbSession, SettingsDep
+from scf_api.deps import SESSION_COOKIE, DbSession, SettingsDep
 from scf_api.settings import Settings
 from scf_api.sso.attribute_mapping import map_assertion
 from scf_api.sso.config_service import SsoConfigService
@@ -126,6 +126,41 @@ def _safe_next(target: str | None) -> str:
     ):
         return target
     return "/"
+
+
+def start_session(
+    settings: Settings,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    role: UserRole,
+    next_path: str | None,
+    now: datetime,
+    label: str,
+) -> RedirectResponse:
+    """Mint a ``SESSION_TTL`` session key and redirect to ``next_path`` with it in the cookie.
+
+    The one browser sign-in every flow ends in: OIDC, SAML and the CLI sign-in link.
+    """
+    _info, token = get_auth_service().bootstrap_key(
+        workspace_id=workspace_id,
+        name=f"{label}-{uuid.uuid4().hex[:8]}",
+        role=role,
+        user_id=user_id,
+        kind=APIKeyKind.SYSTEM,
+        expires_at=now + SESSION_TTL,
+        surface="web",
+    )
+    response = RedirectResponse(url=_safe_next(next_path), status_code=status.HTTP_302_FOUND)
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        secure=settings.public_url.startswith("https://"),
+        samesite="lax",
+        max_age=int(SESSION_TTL.total_seconds()),
+    )
+    return response
 
 
 @router.get("/discover", include_in_schema=False)
@@ -268,26 +303,15 @@ def acs(
         details={"name_id_format": assertion.name_id_format},
     )
     session.commit()
-
-    _info, token = get_auth_service().bootstrap_key(
+    return start_session(
+        settings,
         workspace_id=workspace.id,
-        name=f"sso-session-{uuid.uuid4().hex[:8]}",
-        role=UserRole(user.role.value),
         user_id=user.id,
-        kind=APIKeyKind.SYSTEM,
-        expires_at=now + SESSION_TTL,
-        surface="web",
+        role=UserRole(user.role.value),
+        next_path=RelayState,
+        now=now,
+        label="sso-session",
     )
-    response = RedirectResponse(url=_safe_next(RelayState), status_code=status.HTTP_302_FOUND)
-    response.set_cookie(
-        "forge_session",
-        token,
-        httponly=True,
-        secure=settings.public_url.startswith("https://"),
-        samesite="lax",
-        max_age=int(SESSION_TTL.total_seconds()),
-    )
-    return response
 
 
 @router.get("/{slug}/slo", summary="Single Logout (parked)")

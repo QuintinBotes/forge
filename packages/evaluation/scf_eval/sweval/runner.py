@@ -12,14 +12,22 @@ prompt/metadata — so a model cannot game the gate by reading the checks.
 change writes into the worktree (a file-write patch; simple + deterministic to
 verify). A case is *resolved* only when every ``fail_to_pass`` test now passes
 AND no ``pass_to_pass`` test regresses.
+
+The candidate's files are untrusted input to the scorer. A change that writes
+pytest's configuration or shadows pytest is refused unscored, and a test counts
+as passing only when pytest's own report says it ran and passed (a skip does not).
+Candidate code still runs inside the test process, so a change built to tamper
+with that process from within can still lie; the sandbox is the boundary there.
 """
 
 from __future__ import annotations
 
+import os
 import uuid
+import xml.etree.ElementTree as ET  # nosec B405  # no DTD reaches the parser, see _report_problem
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from scf_contracts import SandboxKind, SandboxSpec
 from scf_contracts.sandbox import SandboxProvider, SandboxSession
@@ -32,8 +40,24 @@ SolveFn = Callable[[GoldenCase], Mapping[str, str]]
 _DEFAULT_TIMEOUT_S = 600
 _EVIDENCE_CAP = 4096
 #: Case-metadata keys that must NEVER reach solve_fn (the model) — the hidden
-#: tests the gate scores against.
-_HIDDEN_KEYS = ("fail_to_pass", "pass_to_pass")
+#: tests the gate scores against, by id and by file.
+_HIDDEN_KEYS = ("fail_to_pass", "pass_to_pass", "held_out")
+#: File names, at any depth, that configure pytest or load into it before any test.
+_PYTEST_CONFIG = frozenset(
+    {
+        "conftest.py",
+        "pytest.ini",
+        "tox.ini",
+        "setup.cfg",
+        "pyproject.toml",
+        "sitecustomize.py",
+        "usercustomize.py",
+    }
+)
+#: Top-level names that shadow pytest itself (``python -m`` imports from the cwd first).
+_PYTEST_SHADOWS = frozenset({"pytest.py", "pytest", "_pytest"})
+#: Far above any report one held-out test writes; a bigger file is not read.
+_REPORT_CAP_BYTES = 8 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -50,6 +74,16 @@ class SweCaseResult:
     regressed: list[str] = field(default_factory=list)
     resolved: bool = False
     evidence: str = ""
+    #: A setup command failed, so the case could not be scored at all.
+    infra_error: bool = False
+    #: Paths the change wrote that would alter how pytest runs; the change was refused.
+    refused: list[str] = field(default_factory=list)
+
+
+def _touches_pytest(rel: str) -> bool:
+    """Whether writing ``rel`` would change how pytest runs or reports the tests."""
+    norm = os.path.normpath(rel).lower()
+    return PurePosixPath(norm).name in _PYTEST_CONFIG or norm.split("/")[0] in _PYTEST_SHADOWS
 
 
 def _apply_patch(worktree: Path, files: Mapping[str, str]) -> None:
@@ -63,9 +97,44 @@ def _apply_patch(worktree: Path, files: Mapping[str, str]) -> None:
         dest.write_text(content, encoding="utf-8")
 
 
-def _test_command(test_id: str) -> str:
-    """pytest node-id / path -> a deterministic, quiet invocation."""
-    return f"python -m pytest -q -p no:cacheprovider {test_id}"
+def _test_command(test_id: str, report: str) -> str:
+    """pytest node-id / path -> a deterministic, quiet invocation writing a JUnit report."""
+    return f"python -m pytest -q -p no:cacheprovider --junitxml={report} {test_id}"
+
+
+def _report_problem(report: Path) -> str | None:
+    """Why pytest's report does not show every test run and passed; None when it does.
+
+    The report is untrusted: candidate code runs inside pytest and can rewrite it.
+    """
+    try:
+        with report.open("rb") as fh:
+            raw = fh.read(_REPORT_CAP_BYTES + 1)
+    except OSError:
+        return "no report"
+    if len(raw) > _REPORT_CAP_BYTES:
+        return "report too large"
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return "report is not UTF-8"
+    # pytest never writes a DTD, so one here was planted; refusing it keeps entities from
+    # the parser (a str is parsed as UTF-8 whatever encoding the text declares).
+    upper = text.upper()
+    if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+        return "report refused: it declares a DTD or entities"
+    try:
+        # DTDs and entities are refused above, so there is nothing for expat to expand.
+        root = ET.fromstring(text)  # nosec B314  # nosemgrep: python.lang.security.use-defused-xml-parse.use-defused-xml-parse
+    except ET.ParseError:
+        return "report unreadable"
+    cases = list(root.iter("testcase"))
+    if not cases:
+        return "no test ran"
+    bad = ("failure", "error", "skipped")
+    if any(case.find(tag) is not None for case in cases for tag in bad):
+        return "a test failed, errored or was skipped"
+    return None
 
 
 async def run_swe_case(
@@ -93,7 +162,17 @@ async def run_swe_case(
         metadata={k: v for k, v in case.metadata.items() if k not in _HIDDEN_KEYS},
     )
     patch = solve_fn(public_case)
+    refused = [rel for rel in patch if _touches_pytest(rel)]
+    if refused:
+        return SweCaseResult(
+            case_id=case.id,
+            output_ids=[],
+            evidence=f"refused: the change writes pytest's own files: {', '.join(refused)}",
+            refused=refused,
+        )
     _apply_patch(Path(worktree_path), patch)
+    # The held-out tests go in last, so the candidate can neither see nor replace them.
+    _apply_patch(Path(worktree_path), {f.path: f.content for f in fields.held_out})
 
     spec = SandboxSpec(
         agent_run_id=uuid.uuid4(),
@@ -115,6 +194,7 @@ async def run_swe_case(
                     output_ids=[],
                     resolved=False,
                     evidence="\n".join(evidence_parts)[-_EVIDENCE_CAP:],
+                    infra_error=True,
                 )
 
         passed = await _run_tests(session, fields.fail_to_pass, timeout_s, evidence_parts)
@@ -141,14 +221,20 @@ async def _run_tests(
     timeout_s: int,
     evidence: list[str],
 ) -> list[str]:
-    """Return the subset of ``test_ids`` that PASS (exit 0) in the sandbox."""
+    """Return the subset of ``test_ids`` that pytest reports as run and passed."""
     passing: list[str] = []
     for test_id in test_ids:
+        # A fresh name per run, so a change cannot plant a report there beforehand.
+        report = f".scf-junit-{uuid.uuid4().hex}.xml"
+        host_report = Path(session.host_worktree_path) / report
         out = await session.run(
-            _test_command(test_id), cwd=session.workspace_dir, timeout_s=timeout_s
+            _test_command(test_id, report), cwd=session.workspace_dir, timeout_s=timeout_s
         )
-        if out.exit_code == 0:
+        problem = _report_problem(host_report)
+        host_report.unlink(missing_ok=True)
+        if out.exit_code == 0 and problem is None:
             passing.append(test_id)
         else:
-            evidence.append(f"{test_id}: exit {out.exit_code}\n{out.stdout}{out.stderr}")
+            why = f"exit {out.exit_code}" + (f", {problem}" if problem else "")
+            evidence.append(f"{test_id}: {why}\n{out.stdout}{out.stderr}")
     return passing

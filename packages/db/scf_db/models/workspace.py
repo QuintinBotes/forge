@@ -1,16 +1,19 @@
-"""Tenant root and identity models: Workspace, User, APIKey."""
+"""Tenant root and identity models: Workspace, User, APIKey, SignInLink."""
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     DateTime,
+    ForeignKey,
     LargeBinary,
     SmallInteger,
     String,
     UniqueConstraint,
+    Uuid,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -97,3 +100,26 @@ class APIKey(WorkspaceScopedModel):
             f"APIKey(id={self.id!r}, name={self.name!r}, "
             f"kind={self.kind!r}, provider={self.provider!r}, secret=<redacted>)"
         )
+
+
+class SignInLink(WorkspaceScopedModel):
+    """A one-time sign-in link for a workspace administrator (#260).
+
+    Holds only a SHA-256 hash of the link's token; ``used_at`` is set once, by the
+    redemption that consumes it.
+    """
+
+    __tablename__ = "sign_in_link"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("app_user.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - trivial, secret-safe
+        return f"SignInLink(id={self.id!r}, user_id={self.user_id!r}, used_at={self.used_at!r})"

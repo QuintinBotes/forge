@@ -1,0 +1,63 @@
+# Expected failures for scripts/mcp-conformance.sh: SUITE_VERSION 0.2.0-alpha.12,
+# --requirements 2026-07-28. Each entry is `scenario` (every check) or
+# `scenario:check-id` (that check only), followed by the reason on the same line.
+# tests/test_mcp_conformance_runner.py fails on an entry without a reason. The suite
+# fails the run when an entry starts passing, so remove it then.
+# Recorded run and context: docs/integrations/mcp-conformance.md.
+server:
+  # The suite's diagnostic fixture tools. SCF exposes its own tools only (spec I section 5).
+  - server-stateless:sep-2575-server-rejects-undeclared-capability  # needs fixture tool test_missing_capability; no SCF tool requires a client capability
+  - server-stateless:sep-2575-missing-capability-http-400  # same fixture tool; SCF never returns -32021 because no tool needs a client capability
+  - server-stateless:sep-2575-http-server-no-independent-requests-on-stream  # needs fixture tool test_streaming_elicitation; SCF answers with JSON only and never opens a stream
+  - server-stateless:sep-2575-server-no-log-without-loglevel  # needs fixture tool test_logging_tool; SCF sends no notifications/message at all
+  - tools-call-simple-text:tools-call-simple-text  # needs fixture tool test_simple_text
+  - tools-call-image:tools-call-image  # needs fixture tool test_image_content; SCF tools return text and structured content only
+  - tools-call-audio:tools-call-audio  # needs fixture tool test_audio_content; SCF tools return text and structured content only
+  - tools-call-embedded-resource:tools-call-embedded-resource  # needs fixture tool test_embedded_resource; SCF offers no resources
+  - tools-call-mixed-content:tools-call-mixed-content  # needs fixture tool test_multiple_content_types
+  - tools-call-error:tools-call-error  # needs fixture tool test_error_handling; SCF domain errors are isError results (test_domain_error_is_in_band)
+  - tools-call-with-progress:tools-call-with-progress  # needs fixture tool test_tool_with_progress; SCF sends no progress notifications
+  - json-schema-2020-12:json-schema-2020-12-tool-found  # needs fixture tool json_schema_2020_12_tool; pending in the suite and not scored
+  # Features outside this change (issue #210 non-goals): resources, prompts, completions.
+  - completion-complete:completion-complete  # SCF offers no prompts or resource templates, so it has nothing to complete
+  - resources-list:resources-list  # SCF does not offer resources
+  - resources-read-text:resources-read-text  # SCF does not offer resources
+  - resources-read-binary:resources-read-binary  # SCF does not offer resources
+  - resources-templates-read:resources-templates-read  # SCF does not offer resources
+  - sep-2164-resource-not-found:sep-2164-error-code  # SCF does not offer resources, so resources/read is -32601 (method not found), not -32602
+  - sep-2164-resource-not-found:sep-2164-data-uri  # SCF does not offer resources, so the error carries no data.uri
+  - prompts-list:prompts-list  # SCF does not offer prompts
+  - prompts-get-simple:prompts-get-simple  # SCF does not offer prompts
+  - prompts-get-with-args:prompts-get-with-args  # SCF does not offer prompts
+  - prompts-get-embedded-resource:prompts-get-embedded-resource  # SCF does not offer prompts
+  - prompts-get-with-image:prompts-get-with-image  # SCF does not offer prompts
+  - caching:sep-2549-prompts-list-caching-hints  # SCF does not offer prompts; tools/list carries the hints and passes
+  - caching:sep-2549-resources-list-caching-hints  # SCF does not offer resources
+  - caching:sep-2549-resources-templates-list-caching-hints  # SCF does not offer resources
+  # Multi round-trip input requests (issue #210 non-goal); each also needs a fixture tool.
+  - input-required-result-basic-elicitation:sep-2322-elicitation-incomplete  # SCF tools never ask for input; needs fixture test_input_required_result_elicitation
+  - input-required-result-basic-sampling:sep-2322-sampling-incomplete  # SCF tools never ask for input; needs fixture test_input_required_result_sampling
+  - input-required-result-basic-list-roots:sep-2322-list-roots-incomplete  # SCF tools never ask for input; needs fixture test_input_required_result_list_roots
+  - input-required-result-request-state:sep-2322-request-state-incomplete  # SCF tools never ask for input; needs fixture test_input_required_result_request_state
+  - input-required-result-multiple-input-requests:sep-2322-multiple-inputs-incomplete  # SCF tools never ask for input; needs fixture test_input_required_result_multiple_inputs
+  - input-required-result-multi-round:sep-2322-multi-round-r1  # SCF tools never ask for input, so there is no first round
+  - input-required-result-missing-input-response:sep-2322-missing-response-rerequests  # warning: SCF tools never ask for input, so there is nothing to re-request
+  - input-required-result-non-tool-request:sep-2322-non-tool-incomplete  # drives prompts/get, which SCF does not offer
+  - input-required-result-result-type:sep-2322-result-type-included  # needs fixture test_input_required_result_elicitation; resultType itself is covered by test_mcp_server_modern.py
+  - input-required-result-tampered-state:sep-2322-reject-tampered-state  # SCF issues no requestState, so there is none to tamper with
+  - input-required-result-capability-check:sep-2322-respect-client-capabilities  # SCF tools never ask for input; needs fixture test_input_required_result_capabilities
+  - input-required-result-ignore-extra-params:sep-2322-ignore-unexpected-params  # warning: the probe calls fixture test_input_required_result_elicitation, an unknown tool
+  # Custom request headers: no SCF tool marks a parameter with x-mcp-header.
+  - http-custom-header-server-validation  # every check needs a tool with an x-mcp-header parameter; pending in the suite and not scored
+  # The Tasks extension (issue #210 non-goal); not scored for 2026-07-28 (reason: extension).
+  - tasks-lifecycle  # SCF does not implement the io.modelcontextprotocol/tasks extension
+  - tasks-capability-negotiation  # SCF does not implement the io.modelcontextprotocol/tasks extension
+  - tasks-wire-fields  # SCF does not implement the io.modelcontextprotocol/tasks extension
+  - tasks-request-state-removal  # SCF does not implement the io.modelcontextprotocol/tasks extension
+  - tasks-mrtr-input  # SCF does not implement the io.modelcontextprotocol/tasks extension
+  - tasks-request-headers  # SCF does not implement the io.modelcontextprotocol/tasks extension
+  - tasks-dispatch-and-envelope  # SCF does not implement the io.modelcontextprotocol/tasks extension
+  - tasks-required-task-error  # SCF does not implement the io.modelcontextprotocol/tasks extension
+  - tasks-mrtr-composition  # SCF does not implement the io.modelcontextprotocol/tasks extension
+  # Deliberate SCF policy (spec I section 4).
+  - dns-rebinding-protection:localhost-host-valid-accepted  # SCF admits no browser Origin unless FORGE_MCP_ALLOWED_ORIGINS lists it (default none); a localhost Origin gets 403 by design
