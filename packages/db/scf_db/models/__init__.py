@@ -186,7 +186,7 @@ from scf_db.models.workflow_editor import (
     WorkflowDefinitionRevision,
     WorkflowDefinitionSource,
 )
-from scf_db.models.workspace import APIKey, SignInLink, User, Workspace
+from scf_db.models.workspace import APIKey, DeviceAuthorization, SignInLink, User, Workspace
 from scf_db.models.world import (
     WorldClass,
     WorldDecision,
@@ -247,6 +247,7 @@ __all__ = [
     "DeploymentState",
     "DeploymentTransition",
     "DeploymentTrigger",
+    "DeviceAuthorization",
     "Effort",
     "EngineBackend",
     "Environment",

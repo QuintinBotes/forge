@@ -206,8 +206,13 @@ class IdempotencyMiddleware:
         await self.app(scope, _replay_receive(body), capture_send)
 
         # Cache anything that is not a server error so a later retry replays it;
-        # 5xx is left uncached so the client can genuinely re-drive the work.
-        if status_code < 500:
+        # 5xx is left uncached so the client can genuinely re-drive the work. An
+        # answer marked no-store (a device sign-in's codes or token) is never kept.
+        no_store = any(
+            name.lower() == b"cache-control" and b"no-store" in value.lower()
+            for name, value in resp_headers
+        )
+        if status_code < 500 and not no_store:
             content_type = "application/json"
             for name, value in resp_headers:
                 if name.lower() == b"content-type":

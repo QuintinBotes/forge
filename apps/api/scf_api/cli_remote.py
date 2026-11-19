@@ -7,6 +7,10 @@ from the environment variable named by ``--token-env`` (default ``FORGE_TOKEN``)
 a client that stores no secrets can point at its own variable. The token is never
 printed, logged, or put on the command line.
 
+``scf-cli login`` obtains such a token with a device sign-in (#207): it shows the
+person a short code to approve, and prints only ``export NAME=<token>`` to standard
+output, for ``eval "$(scf-cli login --token-env NAME)"``. It writes the token nowhere.
+
 Every envelope carries provenance (spec L §4): ``observed_by`` (the server that
 answered), ``recorded_at`` (when it answered), and ``enforceable: false`` (a read is
 an observation, never a gate).
@@ -18,7 +22,10 @@ import argparse
 import contextlib
 import json
 import os
+import re
+import shlex
 import sys
+import time
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any, TextIO
@@ -111,7 +118,7 @@ def render(envelope: Mapping[str, Any], *, as_json: bool, out: TextIO) -> None:
 
 
 def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the four remote read commands on the scf-cli parser."""
+    """Register the four remote read commands and ``login`` on the scf-cli parser."""
 
     def common(p: argparse.ArgumentParser) -> None:
         p.add_argument("--json", action="store_true", dest="as_json")
@@ -137,9 +144,99 @@ def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
     runs = sub.add_parser("runs", help="one agent run from an SCF server")
     runs.add_argument("run_id")
     common(runs)
+    login = sub.add_parser(
+        LOGIN, help="get a token that starts runs by approving a code; print a shell line"
+    )
+    login.add_argument("--url", default=None, help="server base URL (default: $FORGE_URL)")
+    login.add_argument(
+        "--token-env",
+        default=DEFAULT_TOKEN_ENV,
+        help="name of the environment variable the printed line sets",
+    )
+    login.add_argument("--client-name", default="scf-cli", help="the name the approver sees")
+    login.add_argument("--timeout", type=float, default=15.0)
 
 
 REMOTE_GROUPS = frozenset({"board", "specs", "approvals", "runs"})
+LOGIN = "login"
+#: ``eval`` runs the printed line, so the variable name must be a plain shell name.
+_SHELL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _post(client: httpx.Client, path: str, body: dict[str, Any]) -> httpx.Response:
+    try:
+        return client.post(path, json=body)
+    except httpx.HTTPError as exc:
+        raise RemoteError(
+            f"cannot reach {client.base_url}: {type(exc).__name__}", EXIT_HTTP
+        ) from exc
+
+
+def _device_sign_in(
+    client: httpx.Client, client_name: str, err: TextIO, sleep: Callable[[float], None]
+) -> str:
+    """RFC 8628: show the person the user code, then poll until they approve or deny it."""
+    resp = _post(client, "/auth/device/code", {"client_name": client_name})
+    if resp.status_code != 200:
+        raise RemoteError(f"/auth/device/code returned {resp.status_code}", EXIT_HTTP)
+    started = resp.json()
+    user_code = started["user_code"]
+    err.write(
+        f"To let {client_name!r} start runs as you, approve code {user_code} within "
+        f"{started['expires_in'] // 60} minutes. While signed in to SCF, send\n"
+        f'  POST {started["verification_uri"]}  {{"user_code": "{user_code}"}}\n'
+        "Approve only a code this command printed for you.\n"
+    )
+    interval = float(started["interval"])
+    while True:
+        sleep(interval)
+        resp = _post(client, "/auth/device/token", {"device_code": started["device_code"]})
+        if resp.status_code == 200:
+            err.write("Approved.\n")
+            return str(resp.json()["access_token"])
+        answer: dict[str, Any] = {}
+        with contextlib.suppress(ValueError):
+            answer = resp.json()
+        error = answer.get("error")
+        if error == "authorization_pending":
+            continue
+        if error == "slow_down":
+            interval += 5  # RFC 8628 §3.5
+            continue
+        detail = answer.get("error_description", "")
+        raise RemoteError(f"no token: {error or resp.status_code} {detail}".strip(), EXIT_HTTP)
+
+
+def login(
+    args: argparse.Namespace,
+    *,
+    env: Mapping[str, str] | None = None,
+    out: TextIO | None = None,
+    err: TextIO | None = None,
+    transport: httpx.BaseTransport | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
+    """Run a device sign-in and print one line, ``export NAME=<token>``, to standard output.
+
+    Everything for the person goes to standard error, so the output can be ``eval``-ed.
+    """
+    env = os.environ if env is None else env
+    err = err or sys.stderr
+    try:
+        if not _SHELL_NAME.fullmatch(args.token_env):
+            raise RemoteError(
+                f"--token-env must be a shell variable name, not {args.token_env!r}", EXIT_CONFIG
+            )
+        base = (args.url or env.get("FORGE_URL") or "").rstrip("/")
+        if not base:
+            raise RemoteError("no server: set FORGE_URL or pass --url", EXIT_CONFIG)
+        with httpx.Client(base_url=base, transport=transport, timeout=args.timeout) as client:
+            token = _device_sign_in(client, args.client_name, err, sleep)
+    except RemoteError as exc:
+        err.write(f"scf-cli login: {exc}\n")
+        return exc.code
+    (out or sys.stdout).write(f"export {args.token_env}={shlex.quote(token)}\n")
+    return EXIT_OK
 
 
 def run(
@@ -159,4 +256,14 @@ def run(
     return EXIT_OK
 
 
-__all__ = ["REMOTE_GROUPS", "SCHEMA", "RemoteError", "add_parsers", "fetch", "render", "run"]
+__all__ = [
+    "LOGIN",
+    "REMOTE_GROUPS",
+    "SCHEMA",
+    "RemoteError",
+    "add_parsers",
+    "fetch",
+    "login",
+    "render",
+    "run",
+]

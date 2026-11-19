@@ -143,6 +143,10 @@ PUBLIC_BY_DESIGN: dict[str, str] = {
     "cookie's own key and clears it (from SCF's own origin only)",
     "/auth/sign-in-link": "a browser opens the one-time link scf-cli admin sign-in-link "
     "printed, with no credentials: the link's token is the authentication, once (#260)",
+    "/auth/device/code": "a client with no credential starts a device sign-in; it gets only "
+    "codes, and nothing is issued until a signed-in person approves (#207)",
+    "/auth/device/token": "the device code is the authentication: a token once, only for a "
+    "request a signed-in person approved (#207)",
     "/saml/metadata": "SP metadata is public by SAML design (no secrets inside)",
     "/saml/acs": "IdP-POSTed assertion is its own signed credential",
     "/saml/login": "SP-initiated login redirect (pre-authentication)",

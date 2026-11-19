@@ -47,6 +47,42 @@ class PersonalTokenCreateRequest(BaseModel):
         return self
 
 
+class DeviceCodeRequest(BaseModel):
+    """Body for starting a device sign-in (#207): the name the approver and the key list see."""
+
+    client_name: str = Field(min_length=1, max_length=64)
+
+
+class DeviceCodeResponse(BaseModel):
+    """RFC 8628 §3.2: the codes for one device sign-in, its lifetime and polling interval."""
+
+    device_code: str
+    user_code: str
+    verification_uri: str
+    expires_in: int
+    interval: int
+    scope: str
+    client_name: str
+
+
+class DeviceApproveRequest(BaseModel):
+    """Body for approving or denying a device sign-in by the user code its client shows."""
+
+    user_code: str = Field(min_length=1, max_length=32)
+    decision: Literal["approve", "deny"] = "approve"
+
+
+class DeviceDecision(BaseModel):
+    client_name: str
+    decision: Literal["approve", "deny"]
+
+
+class DeviceTokenRequest(BaseModel):
+    """Body a client polls with (RFC 8628 §3.4); ``grant_type`` and ``client_id`` are ignored."""
+
+    device_code: str
+
+
 class SecretCreateRequest(BaseModel):
     """Body for storing a BYOK secret in the encrypted vault."""
 
