@@ -76,7 +76,8 @@ from scf_worker.dispatch import RepositoryUnavailable, resolve_run_repository
 from scf_worker.finalizer import push_and_open_pr, workspace_credentials
 from scf_worker.reliability import ScfTask
 from scf_worker.run_events import terminal_drafts
-from scf_worker.run_record import InProcessRunRecord, RunRecord
+from scf_worker.run_executor import INLINE, configured_executor
+from scf_worker.run_record import EXECUTOR_KEY, InProcessRunRecord, RunRecord
 from scf_worker.run_workspace import prepared_workspace
 
 __all__ = [
@@ -418,6 +419,12 @@ def run_agent_task(
     refused = _refuse_ungoverned_run(AgentObjective.model_validate(objective))
     if refused is not None:
         return refused.model_dump(mode="json")
+    executor = configured_executor()
+    if executor != INLINE:
+        # #239: the run's own unit runs the loop; the worker never runs it instead.
+        from scf_worker.launched_runs import launch_run
+
+        return launch_run(AgentObjective.model_validate(objective), executor)
     if objective.get("execution_mode") == ExecutionMode.SUPERVISED_MULTI_AGENT.value:
         # Task 17 (F27): a supervised-mode objective is driven by the
         # deterministic multi-agent Supervisor, never a single AgentRunner.
@@ -712,12 +719,14 @@ def _record_run_outcome(
                 result.artifacts["context_refs"] = list(row.context_refs)
             row.status = DbRunStatus(result.status.value)
             row.steps = [step.model_dump(mode="json") for step in result.steps]
-            # Preserve the write-back claim/record: replacing output wholesale
-            # would erase the at-most-once guard on a redelivery.
-            previous_writeback = (row.output or {}).get("tracker_writeback")
-            row.output = result.model_dump(mode="json") | (
-                {"tracker_writeback": previous_writeback} if previous_writeback else {}
-            )
+            # Preserve the write-back and executor claims: replacing output wholesale
+            # would erase their at-most-once guards on a redelivery.
+            previous = row.output or {}
+            row.output = result.model_dump(mode="json") | {
+                key: previous[key]
+                for key in ("tracker_writeback", EXECUTOR_KEY)
+                if previous.get(key)
+            }
             row.confidence = result.confidence
             row.completed_at = datetime.now(UTC)
             session.commit()
