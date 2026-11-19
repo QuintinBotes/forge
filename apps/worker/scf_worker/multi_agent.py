@@ -305,14 +305,17 @@ def run_supervised_objective(
     model_client: ModelClient | None = None,
     sub_agent_sink: SubAgentRunSink | None = None,
     settings: CoordinatorSettings | None = None,
+    resolve_repository: Callable[[AgentObjective], AgentObjective] | None = None,
 ) -> AgentRunResult:
     """Run a supervised multi-agent objective through the F27 Supervisor.
 
     Keyword seams exist for tests/DI only; the Celery task calls this with just
-    the payload. Settings come from the ``MULTI_AGENT_*`` environment — with
-    ``MULTI_AGENT_ENABLED`` unset the coordinator's own gate escalates the run
-    with ``needs_human_reason=multi_agent_disabled`` (never a silent
-    single-agent fallback).
+    the payload, and a run process (``scf_worker.run_main``) passes a
+    ``resolve_repository`` that holds no source-control credentials. Settings come
+    from the ``MULTI_AGENT_*`` environment — with ``MULTI_AGENT_ENABLED`` unset the
+    coordinator's own gate escalates the run with
+    ``needs_human_reason=multi_agent_disabled`` (never a silent single-agent
+    fallback).
     """
     # Local import: agent_runner lazily imports this module inside the task body,
     # and this module needs its Task-1 model-client seam — resolve at call time.
@@ -323,7 +326,7 @@ def run_supervised_objective(
     )
     objective = _with_parent_run_id(objective)
     try:
-        objective = resolve_run_repository(objective)
+        objective = (resolve_repository or resolve_run_repository)(objective)
     except RepositoryUnavailable as exc:
         return AgentRunResult(
             run_id=_as_uuid(objective.context.get("parent_agent_run_id")),

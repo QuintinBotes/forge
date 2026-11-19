@@ -43,6 +43,28 @@ binds every activity except `forge.resume_agent`:
   tail of at most 400 lines of each output stream), and the agent's next attempt
   sees the failing ones in its prompt, as data. The check stage's time limit is
   `CHECKS_ACTIVITY_TIMEOUT` (30 minutes by default).
+- **The diff gates** (#187) run beside the declared checks, in the worker, on the
+  diff from the merge base to the head commit (`apps/worker/scf_worker/diff_gates.py`
+  over `scf_policy`'s `secret_gate` and `sast_gate`). Each is one check, recorded
+  like the others with a finding per line (file, line, rule), and fails on a
+  finding or when it could not verify the change (`could_not_verify`, with the
+  reason). A failed gate means no review and no pull request. A gate the worker
+  could not run (no `bandit`) pauses the run for a person with the reason, instead
+  of spending the builder's retries. What they allow comes from the default
+  branch's `diff_gates` policy block, so a change cannot loosen its own gates.
+  Nothing from the change runs. The dependency gate follows in #316.
+  - **`secret_scan`** matches the lines each commit adds, each commit message and
+    each path a commit adds or renames against a small set of high-precision
+    credential shapes (private keys; AWS, GitHub, GitLab, Slack, Stripe, Google,
+    Anthropic, OpenAI, npm and PyPI tokens). A finding never holds the value, and
+    a path that holds one is masked in every gate's recorded output.
+    `secret_allowed_files` allows matches in named files only (no wildcard; a path
+    is matched exactly), never in a commit message or a path; allowed matches are
+    recorded as `allowed by policy`.
+  - **`sast`** runs `bandit` over the changed Python files, ignoring `# nosec`,
+    and fails on a finding at or above `sast_severity` (`high` by default; `low`
+    and `medium` are stricter). A changed Python path that is a symlink or not a
+    regular file, and a worker without `bandit`, cannot be verified.
 - **The independent reviewer** (#173) judges a change whose checks all pass,
   before its pull request. It is an agent run with role `reviewer` on the
   workflow run, with read-only tools (`read_file`, `list_dir`, `search_code`).
@@ -203,6 +225,10 @@ binds every activity except `forge.resume_agent`:
   scenario runs in the change's own checkout. The guard refuses the ways we know
   for a change to hook into the test run; the boundary is #184's container tier
   running the scenarios with the base branch's test setup.
+- **The diff gates have limits (#187).** `sast` reads Python only; the worker
+  image installs no `bandit` (`uv sync --no-dev`), so until it does (#311) every
+  Python change fails `sast` as `could_not_verify` and the run pauses for a
+  person. `secret_scan` finds only the shapes it names.
 - **Drafts stored before migration `0051` name no run (#288).** The spec gate
   does not list, wait on or withdraw them; decide them through the scenario
   routes. A verifier's such draft (`drafted_by` `agent:...`) is never run, even
