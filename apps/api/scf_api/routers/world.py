@@ -4,9 +4,9 @@ Every route requires an authenticated principal and scopes by
 ``principal.workspace_id``; cross-workspace ids are 404. Reads need READ;
 writes need WRITE, except proposing and decision-recording, which also
 admit RUN_AGENT (agents propose; only people with WRITE — never the
-proposer — decide). A personal access token never records a decision, which
-would be stored as its owner's own. Ingest resolves the workspace model client and refuses
-with 503 when none is configured. Every mutation emits exactly one audit
+proposer — decide). A personal access token or an agent's token never records a
+decision, which would be stored as its owner's own. Ingest resolves the workspace
+model client and refuses with 503 when none is configured. Every mutation emits exactly one audit
 event (``world.<verb>``) in the same transaction, with fact text clipped to
 200 characters. Domain rules live in ``scf_world``; this module only maps
 HTTP <-> service and translates domain errors (404/403/409/422/503).
@@ -117,11 +117,17 @@ ProposerDep = Annotated[Principal, Depends(_require_write_or_run_agent)]
 
 
 def _require_decision_recorder(principal: ProposerDep) -> Principal:
-    """A narrowed key may not record a decision: it would be stored as its owner's own."""
+    """A narrowed key or an agent's token may not record a decision: it would be
+    stored as its owner's own."""
     if principal.narrowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="a personal access token cannot record a decision",
+        )
+    if principal.agent:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="an agent's token cannot record a decision",
         )
     return principal
 
