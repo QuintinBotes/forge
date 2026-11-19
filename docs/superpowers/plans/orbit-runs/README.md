@@ -30,7 +30,8 @@ then open_pr + end to end; 5: CLI, then SSE + `/ws`).
 - Orbit 0.3.1 through `~/.local/bin/orbit031`. The shared `~/.orbit/bin/orbit` launcher follows
   whichever Orbit ran last and may point at a development build.
 - Test services the `python-unit-tests` check reaches on loopback:
-  `docker start forge-test-pg forge-test-redis` (pgvector Postgres 16 on 5432, Redis 7.4 on 6379).
+  `make test-services-up` (`scripts/test-services.sh up`: creates or starts `forge-test-pg` and
+  `forge-test-redis`, pgvector Postgres 16 on 127.0.0.1:5432 and Redis 7.4 on 127.0.0.1:6379).
   Never point `FORGE_TEST_DATABASE_URL` at another database: the test fixtures drop tables.
 - The policy is `.orbit/config.yaml` in this worktree (untracked; Orbit's clean-tree check ignores
   `.orbit`). A person sets `providers.codex.data_policy_eligible: true` there so Codex reviews every
@@ -41,7 +42,7 @@ then open_pr + end to end; 5: CLI, then SSE + `/ws`).
 
 ```bash
 cd ~/Projects/forge-factory
-docker start forge-test-pg forge-test-redis
+make test-services-up
 export SSL_CERT_FILE=/etc/ssl/cert.pem
 ~/.local/bin/orbit031 run --foreground --goal - < docs/superpowers/plans/orbit-runs/<goal-file>.md
 ```

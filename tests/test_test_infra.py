@@ -8,12 +8,21 @@ no-network sandbox.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from collections import defaultdict
 from pathlib import Path
 
-import conftest
 import pytest
+
+# Load the root conftest by path: ``import conftest`` binds whichever conftest.py
+# pytest imported last under that name (apps/worker/tests has one too).
+_spec = importlib.util.spec_from_file_location(
+    "scf_root_conftest", Path(__file__).resolve().parents[1] / "conftest.py"
+)
+assert _spec and _spec.loader
+conftest = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(conftest)
 
 
 def test_resolve_test_database_url_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -43,6 +52,57 @@ def test_postgres_and_integration_markers_registered(
 def test_postgres_fixture_yields_url(postgres_url: str) -> None:
     # Runs only when Postgres is configured; otherwise skipped (parked).
     assert postgres_url
+
+
+def test_redis_url_or_skip_skips_with_a_reason_when_nothing_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import socket
+
+    with socket.socket() as sock:  # a port nothing listens on once closed
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    monkeypatch.setenv("FORGE_REDIS_URL", f"redis://127.0.0.1:{port}/0")
+    with pytest.raises(pytest.skip.Exception) as skipped:
+        conftest.redis_url_or_skip()
+    assert "FORGE_REDIS_URL" in str(skipped.value)
+    assert "make test-services-up" in str(skipped.value)
+
+
+def test_redis_url_or_skip_returns_the_configured_url_when_redis_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import redis
+
+    class _Answers:
+        def ping(self) -> bool:
+            return True
+
+        def close(self) -> None:
+            pass
+
+    seen: list[str] = []
+
+    def _from_url(url: str, **kwargs: object) -> _Answers:
+        seen.append(url)
+        return _Answers()
+
+    monkeypatch.setattr(redis.Redis, "from_url", _from_url)
+    monkeypatch.setenv("FORGE_REDIS_URL", "redis://example.test:6379/3")
+    assert conftest.redis_url_or_skip() == "redis://example.test:6379/3"
+    assert seen == ["redis://example.test:6379/3"]
+
+
+def test_redis_url_or_skip_defaults_to_the_url_the_worker_uses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("FORGE_REDIS_URL", raising=False)
+    assert conftest.resolve_test_redis_url() == "redis://localhost:6379/0"
+
+
+def test_redis_fixture_yields_url(redis_url: str) -> None:
+    # Runs only when Redis answers; otherwise skipped with the reason above.
+    assert redis_url.startswith("redis://")
 
 
 # --------------------------------------------------------------------------- #
