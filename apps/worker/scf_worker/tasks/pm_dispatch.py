@@ -63,6 +63,7 @@ from scf_integrations.github import GitHubClient
 from scf_integrations.pm.sync_engine import run_comment_marker
 from scf_worker.celery_app import celery_app
 from scf_worker.reliability import ScfTask as ScfReliableTask
+from scf_worker.run_record import EXECUTOR_KEY
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
@@ -143,7 +144,9 @@ def _dispatch_guard(
     ``started_at``, created within the last day) or within the hard task time
     limit plus 10 minutes of the worker starting it, so a run whose worker
     died without recording an outcome cannot block its issue and cap slot
-    forever, and a run still waiting in the broker keeps counting.
+    forever, and a run still waiting in the broker keeps counting. A run launched
+    to an executor (#239) counts until it is closed out: its unit may run for the
+    wall-clock limit, and the launched-run reconciler always closes it out.
     """
     now = _aware(now) if now is not None else datetime.now(UTC)
     recent_cutoff = now - timedelta(days=7)
@@ -155,6 +158,7 @@ def _dispatch_guard(
     tracker_external = AgentRun.inputs[("context", "tracker", "external_id")].as_string()
     tracker_delivery = AgentRun.inputs[("context", "tracker", "delivery_id")].as_string()
     tracker_hash = AgentRun.inputs[("context", "tracker", "payload_hash")].as_string()
+    executor = AgentRun.output[(EXECUTOR_KEY, "name")].as_string()
     rows = session.execute(
         select(
             AgentRun.status,
@@ -163,6 +167,7 @@ def _dispatch_guard(
             tracker_external,
             tracker_delivery,
             tracker_hash,
+            executor,
         ).where(
             AgentRun.workspace_id == workspace_id,
             tracker_connection == str(connection_id),
@@ -173,13 +178,13 @@ def _dispatch_guard(
         )
     ).all()
     active_for_connection = 0
-    for status, created_at, started_at, run_external, run_delivery, run_hash in rows:
+    for status, created_at, started_at, run_external, run_delivery, run_hash, launched in rows:
         if run_delivery == delivery_id or (payload_hash and run_hash == payload_hash):
             return "already_dispatched"
         alive = (
-            _aware(started_at) > started_cutoff
-            if started_at is not None
-            else _aware(created_at) > queued_cutoff
+            launched is not None
+            or (started_at is not None and _aware(started_at) > started_cutoff)
+            or (started_at is None and _aware(created_at) > queued_cutoff)
         )
         if status in _ACTIVE_RUN_STATUSES and alive:
             if run_external == external_id:

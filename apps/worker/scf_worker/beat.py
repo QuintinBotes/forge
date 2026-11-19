@@ -41,6 +41,8 @@ OBS_FRESHNESS_TASK = "obs.refresh_freshness_gauges"
 # F39: daily re-walk of every workspace's audit hash chain (tamper detection;
 # a break records a critical ``audit.chain_broken`` event).
 AUDIT_VERIFY_TASK = "audit.verify_chain_all"
+# #239: close out, fail or stop runs launched to a non-inline executor (default 60s).
+RUN_RECONCILE_TASK = "agent.reconcile_launched_runs"
 
 
 def reap_interval_seconds() -> float:
@@ -95,6 +97,11 @@ def obs_freshness_seconds() -> float:
 def audit_verify_seconds() -> float:
     """Beat cadence for the F39 audit chain verifier (default daily)."""
     return float(os.environ.get("FORGE_AUDIT_VERIFY_INTERVAL_SECONDS", str(24 * 3600)))
+
+
+def run_reconcile_seconds() -> float:
+    """Beat cadence for the launched-run reconciler (default 60s)."""
+    return float(os.environ.get("FORGE_RUN_RECONCILE_INTERVAL_SECONDS", "60"))
 
 
 def configure_beat(app: object) -> dict[str, object]:
@@ -167,6 +174,10 @@ def configure_beat(app: object) -> dict[str, object]:
             "task": AUDIT_VERIFY_TASK,
             "schedule": audit_verify_seconds(),
         },
+        "agent-reconcile-launched-runs": {
+            "task": RUN_RECONCILE_TASK,
+            "schedule": run_reconcile_seconds(),
+        },
     }
     existing = dict(getattr(app.conf, "beat_schedule", {}) or {})  # type: ignore[attr-defined]
     existing.update(schedule)
@@ -188,6 +199,7 @@ __all__ = [
     "MARKETPLACE_SYNC_TASK",
     "MCP_REFRESH_TASK",
     "OBS_FRESHNESS_TASK",
+    "RUN_RECONCILE_TASK",
     "SANDBOX_REAP_TASK",
     "SPRINT_SNAPSHOT_TASK",
     "SSO_METADATA_REFRESH_TASK",
@@ -202,6 +214,7 @@ __all__ = [
     "mcp_index_poll_seconds",
     "obs_freshness_seconds",
     "reap_interval_seconds",
+    "run_reconcile_seconds",
     "sso_metadata_refresh_seconds",
     "sso_replay_cleanup_seconds",
 ]

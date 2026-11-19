@@ -49,6 +49,7 @@ from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_db.models.pm import PMConnection, PMWebhookDelivery
 from scf_worker.agent_runner import _maybe_tracker_writeback
 from scf_worker.celery_app import celery_app
+from scf_worker.run_record import EXECUTOR_KEY
 from scf_worker.tasks.pm_dispatch import PM_DISPATCH_TASK, maybe_dispatch, post_run_writeback
 from scf_worker.tasks.pm_sync import process_webhook
 
@@ -825,6 +826,36 @@ def test_stale_pending_run_no_longer_blocks_issue_or_cap(
     )
     assert second["dispatch_action"] == "dispatched"
     assert len(enqueued) == 2
+
+
+def test_a_launched_run_keeps_blocking_its_issue_past_the_task_time_limit(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+) -> None:
+    """A run handed to an executor lives up to its wall-clock limit; the reconciler ends it."""
+    connection_id = _seed_connection(
+        factory, project_id, dispatch=_dispatch_config(max_active_runs=1)
+    )
+    enqueued: list[AgentObjective] = []
+    first = _dispatch_delivery(
+        factory, connections, connection_id, delivery_id="gh-1", external_id="42", enqueued=enqueued
+    )
+    with factory() as session:
+        run = session.get(AgentRun, uuid.UUID(first["run_id"]))
+        assert run is not None
+        run.created_at = datetime.now(UTC) - timedelta(hours=3)
+        run.started_at = datetime.now(UTC) - timedelta(hours=2)
+        run.output = {EXECUTOR_KEY: {"name": "docker", "unit": "unit-0", "launched_at": "t"}}
+        session.commit()
+
+    second = _dispatch_delivery(
+        factory, connections, connection_id, delivery_id="gh-2", external_id="42", enqueued=enqueued
+    )
+    assert second["dispatch_action"] == "skipped"
+    assert second["dispatch_reason"] == "issue_run_active"
+    assert len(enqueued) == 1
 
 
 def test_a_run_still_queued_keeps_blocking_its_issue(

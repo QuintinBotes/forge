@@ -20,13 +20,16 @@ from scf_contracts import AgentRunResult, RunEventDraft, Step
 from scf_db.models import AgentRun
 from scf_worker.run_events import RunEventSink
 
-__all__ = ["HANDOFF_KEY", "InProcessRunRecord", "RunRecord"]
+__all__ = ["EXECUTOR_KEY", "HANDOFF_KEY", "InProcessRunRecord", "RunRecord"]
 
 logger = logging.getLogger("scf_worker.run_record")
 
 #: The reserved ``agent_run.output`` key a handoff waits under until close-out
 #: records the outcome, which replaces ``output`` and so removes it.
 HANDOFF_KEY = "handoff"
+#: The ``agent_run.output`` key a launched run's executor, unit and close-out claim are
+#: kept under (#239); recording the outcome keeps it.
+EXECUTOR_KEY = "executor"
 
 
 class RunRecord(Protocol):
