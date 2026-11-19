@@ -145,6 +145,7 @@ from scf_db.models.profiles import PolicyProfile, SkillProfile
 from scf_db.models.project import Constitution, Project
 from scf_db.models.project_team_access import ProjectTeamAccess
 from scf_db.models.red_team import RedTeamRecord
+from scf_db.models.risk import RiskClassification, RiskGateObservation
 from scf_db.models.role_config import AgentRoleConfig
 from scf_db.models.role_grant import RoleGrant
 from scf_db.models.run_recording import RunRecording
@@ -325,6 +326,8 @@ __all__ = [
     "RetrievalWorkspaceStat",
     "RevisionStatus",
     "RevisionValidationStatus",
+    "RiskClassification",
+    "RiskGateObservation",
     "RoleGrant",
     "RunIntervention",
     "RunRecording",

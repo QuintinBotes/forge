@@ -43,16 +43,17 @@ binds every activity except `forge.resume_agent`:
   tail of at most 400 lines of each output stream), and the agent's next attempt
   sees the failing ones in its prompt, as data. The check stage's time limit is
   `CHECKS_ACTIVITY_TIMEOUT` (30 minutes by default).
-- **The diff gates** (#187) run beside the declared checks, in the worker, on the
-  diff from the merge base to the head commit (`apps/worker/scf_worker/diff_gates.py`
-  over `scf_policy`'s `secret_gate` and `sast_gate`). Each is one check, recorded
-  like the others with a finding per line (file, line, rule), and fails on a
-  finding or when it could not verify the change (`could_not_verify`, with the
-  reason). A failed gate means no review and no pull request. A gate the worker
-  could not run (no `bandit`) pauses the run for a person with the reason, instead
-  of spending the builder's retries. What they allow comes from the default
-  branch's `diff_gates` policy block, so a change cannot loosen its own gates.
-  Nothing from the change runs. The dependency gate follows in #316.
+- **The diff gates** (#187, #316) run beside the declared checks, in the worker, on
+  the diff from the merge base to the head commit
+  (`apps/worker/scf_worker/diff_gates.py` over `scf_policy`'s `secret_gate`,
+  `dependency_gate` and `sast_gate`). Each is one check, recorded like the others
+  with a finding per line (file, line, rule), and fails on a finding or when it
+  could not verify the change (`could_not_verify`, with the reason). A failed gate
+  means no review and no pull request. A gate the worker could not run (no
+  `bandit`, a registry that errors or times out) pauses the run for a person with
+  the reason, instead of spending the builder's retries. What they allow comes from
+  the default branch's `diff_gates` policy block, so a change cannot loosen its own
+  gates. Nothing from the change runs.
   - **`secret_scan`** matches the lines each commit adds, each commit message and
     each path a commit adds or renames against a small set of high-precision
     credential shapes (private keys; AWS, GitHub, GitLab, Slack, Stripe, Google,
@@ -61,6 +62,40 @@ binds every activity except `forge.resume_agent`:
     `secret_allowed_files` allows matches in named files only (no wildcard; a path
     is matched exactly), never in a commit message or a path; allowed matches are
     recorded as `allowed by policy`.
+  - **`dependency_check`** compares each changed `pyproject.toml`, pip requirements
+    or constraints file (`.txt`, `.in`) and `package.json`, and a `uv.lock` or
+    `package-lock.json` changed beside its manifest, before and after the change.
+    It asks PyPI or npm about every dependency or locked version the change adds,
+    and fails on one the registry does not know or one published less than
+    `min_dependency_age_days` ago (7 by default) unless `allowed_packages` names
+    it. A pin is dated by its release's newest file (PyPI takes new files for an
+    old release); a range by the newest release it may install (on PyPI
+    pre-releases included, as pip and uv fall back to them). A
+    locked package is identified by what is downloaded: a `uv.lock` entry's files
+    must be its release's on `files.pythonhosted.org` and a `package-lock.json`
+    entry's `resolved` its own tarball on `registry.npmjs.org`; files or a hash
+    that change under the same release cannot be verified. A package counts as
+    local (not looked up) only when the base branch's `[tool.uv.sources]` (the
+    project's own, or the root's for a member of the base branch's workspace)
+    takes it from the workspace or a directory in the repository and the change
+    leaves that source as it was; a path to an archive is not local.
+  - **The dependency gate is a deny-list over the install inputs it names, and
+    fails closed on anything it cannot read**: a manifest or lockfile that is a
+    symlink or does not parse; a requirements file pip may decode other than as
+    UTF-8 (a BOM, or a `coding:` comment naming another codec); a URL, VCS, path
+    or archive requirement (pip reads `stream.zip` as a local file); an option
+    line (`-r`, `--extra-index-url`); an
+    npm dist-tag (`latest`, `next`), `*`, or a range with a pre-release tag; a
+    change to `[tool.uv]`, a `[tool.uv.sources]` entry that is neither a
+    workspace member nor a path in the repository, another tool's table
+    (`[tool.poetry]`, `[tool.hatch]`, `[tool.pixi]`...) or npm's `overrides`,
+    `workspaces` or `packageManager`; another installer's or ecosystem's file
+    (`uv.toml`, `pip.conf`, `.npmrc`, `pylock.toml`, `requirements.lock`,
+    `hatch.toml`, `pixi.toml`, `environment.yml`, `poetry.lock`, `yarn.lock`,
+    `go.mod`...), its name compared case-folded (`.NPMRC`, `Package.json`); and
+    a lockfile changed without its manifest. Install inputs
+    outside that list are not seen: a Dockerfile, a CI workflow, `tox.ini`, a
+    pre-commit config, or a script that runs an installer.
   - **`sast`** runs `bandit` over the changed Python files, ignoring `# nosec`,
     and fails on a finding at or above `sast_severity` (`high` by default; `low`
     and `medium` are stricter). A changed Python path that is a symlink or not a
@@ -235,7 +270,12 @@ binds every activity except `forge.resume_agent`:
 - **The diff gates have limits (#187).** `sast` reads Python only; the worker
   image installs no `bandit` (`uv sync --no-dev`), so until it does (#311) every
   Python change fails `sast` as `could_not_verify` and the run pauses for a
-  person. `secret_scan` finds only the shapes it names.
+  person. `secret_scan` finds only the shapes it names. `dependency_check` reads
+  PyPI and npm only (no private registry or mirror), judges a range by the
+  package's newest release rather than the newest one the range admits (so a
+  range can fail on a release it excludes), reads only the root
+  `pyproject.toml` as the workspace root, and does not follow a symlink the base
+  branch already has to a file the change edits.
 - **Drafts stored before migration `0051` name no run (#288).** The spec gate
   does not list, wait on or withdraw them; decide them through the scenario
   routes. A verifier's such draft (`drafted_by` `agent:...`) is never run, even

@@ -12,6 +12,7 @@ the policy is loaded, never when a change is classified.
 
 from __future__ import annotations
 
+from collections import Counter
 from enum import StrEnum
 from typing import Literal
 
@@ -121,8 +122,8 @@ class RiskRules(_Strict):
 
     @model_validator(mode="after")
     def _unique_rule_ids(self) -> RiskRules:
-        ids = self.rule_ids()
-        duplicates = sorted({rule_id for rule_id in ids if ids.count(rule_id) > 1})
+        counts = Counter(self.rule_ids())  # linear: a policy may carry many rules
+        duplicates = sorted(rule_id for rule_id, count in counts.items() if count > 1)
         if duplicates:
             raise ValueError(f"duplicate risk rule ids {duplicates}")
         return self
