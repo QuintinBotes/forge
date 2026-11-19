@@ -22,6 +22,7 @@ def test_agent_role_values() -> None:
         "reviewer",
         "spec_author",
         "coordinator",
+        "adversary",
     }
 
 

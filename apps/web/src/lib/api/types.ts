@@ -2337,8 +2337,14 @@ export interface OnboardingProgress {
 
 // --- Adaptive Orchestration settings (ao-settings-api, /ao/*) ------------- //
 
-/** The five Adaptive Orchestration roles configured independently. */
-export type AgentRole = "planner" | "coder" | "reviewer" | "spec_author" | "coordinator";
+/** The Adaptive Orchestration roles configured independently. */
+export type AgentRole =
+  | "planner"
+  | "coder"
+  | "reviewer"
+  | "spec_author"
+  | "coordinator"
+  | "adversary";
 
 /** Model "thinking effort" a role runs at (provider-agnostic). */
 export type AoEffort = "low" | "medium" | "high" | "max";

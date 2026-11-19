@@ -367,15 +367,17 @@ async def test_the_check_activity_takes_its_configured_limit_and_heartbeats(
     assert scheduled.heartbeat_timeout.seconds > 0
 
 
+@pytest.mark.parametrize("reason", ["reviewer_not_configured", "red_team_not_configured"])
 async def test_a_change_no_reviewer_can_judge_pauses_for_a_person_without_a_pr(
-    harness: Any,
+    harness: Any, reason: str
 ) -> None:
     """#173 criterion 4: with no usable independent reviewer, the run moves to
-    needs_human_input with the reason, and no pull request is opened."""
+    needs_human_input with the reason, and no pull request is opened. #283 criterion 5:
+    so does a run with no adversary configured."""
     opened: list[Any] = []
 
     def no_reviewer(_: RunChecksInput) -> ChecksResult:
-        return ChecksResult(results={"tests": True}, pause_reason="reviewer_not_configured")
+        return ChecksResult(results={"tests": True}, pause_reason=reason)
 
     h = harness(run_checks_fn=no_reviewer, open_pr_fn=opened.append)
     async with h.worker():
@@ -385,9 +387,9 @@ async def test_a_change_no_reviewer_can_judge_pauses_for_a_person_without_a_pr(
         result = await h.handle(run).result()
 
     assert result.final_state == WorkflowState.NEEDS_HUMAN_INPUT
-    assert result.failure_reason == "reviewer_not_configured"
+    assert result.failure_reason == reason
     paused = [t for t in h.transitions(run) if t["to_state"] == "needs_human_input"]
-    assert [t["payload"]["reason"] for t in paused] == ["reviewer_not_configured"]
+    assert [t["payload"]["reason"] for t in paused] == [reason]
     assert opened == []
 
 
@@ -415,6 +417,34 @@ async def test_an_activity_that_refuses_records_the_run_failed_with_why(harness:
     [last] = h.transitions(run)[-1:]
     assert (last["from_state"], last["to_state"]) == ("pr_opened", "failed")
     assert last["payload"]["reason"] == ("NoChangesToDeliver: scf/run has no commits ahead of main")
+
+
+async def test_a_blocked_red_team_verdict_goes_back_to_the_builder_then_to_a_person(
+    harness: Any,
+) -> None:
+    """#283 criterion 2: a ``blocked`` scan is the failed check ``red_team``: no pull
+    request opens, the builder retries within the budget, and then a person decides."""
+    opened: list[Any] = []
+    attempts: list[int] = []
+
+    def agent(inp: Any) -> AgentRunResultDTO:
+        attempts.append(inp.attempt)
+        return AgentRunResultDTO(agent_run_id=uuid.uuid4(), status="succeeded")
+
+    def blocked(_: RunChecksInput) -> ChecksResult:
+        return ChecksResult(results={"tests": True, "independent_review": True, "red_team": False})
+
+    h = harness(run_agent_fn=agent, run_checks_fn=blocked, open_pr_fn=opened.append)
+    async with h.worker():
+        run = await h.start()
+        await h.wait_awaiting(run, {"spec_approved_by_human"})
+        await h.engine.atransition(run.id, "spec_approved_by_human")
+        result = await h.handle(run).result()
+
+    assert result.final_state == WorkflowState.NEEDS_HUMAN_INPUT
+    assert result.failure_reason == "retry_budget_exhausted"
+    assert attempts == [0, 1, 2, 3]
+    assert opened == []
 
 
 async def test_held_out_scenarios_are_drafted_before_the_spec_gate_opens(harness: Any) -> None:

@@ -41,6 +41,7 @@ from scf_contracts import (
     AcceptanceCriterion,
     AgentObjective,
     ModelClient,
+    RunStatus,
     SandboxKind,
     SandboxProvider,
     SandboxSpec,
@@ -223,11 +224,10 @@ def _spec_criteria(spec: Any) -> list[AcceptanceCriterion]:
     return out
 
 
-def _spec_text(spec: Any, criteria: list[AcceptanceCriterion]) -> str:
+def _spec_lines(spec: Any, criteria: list[AcceptanceCriterion]) -> list[str]:
     if isinstance(spec, str):
-        return spec
-    lines = [f"- {c.id}: {c.text}" for c in criteria]
-    return "Acceptance criteria:\n" + "\n".join(lines) if lines else "(no acceptance criteria)"
+        return [spec]
+    return [f"{c.id}: {c.text}" for c in criteria]
 
 
 # --------------------------------------------------------------------------- #
@@ -248,6 +248,9 @@ async def run_red_team(
     agent_run_id: uuid.UUID | None = None,
     timeout_s: int = DEFAULT_TEST_TIMEOUT_S,
     max_iterations: int = 6,
+    agents_md: str | None = None,
+    diff_truncated: bool = False,
+    sandbox_spec: SandboxSpec | None = None,
 ) -> RedTeamResult:
     """Attack ``diff`` with a heterogeneous adversary and return a typed verdict.
 
@@ -255,7 +258,14 @@ async def run_red_team(
     matches the coder's (``coder_model``). The adversary authors a candidate
     test which is executed through the sandbox ``create``/``run`` seam; a
     non-zero exit BLOCKS. Alternatively a structured spec-violation referencing
-    a real acceptance criterion BLOCKS. Otherwise the diff SURVIVES.
+    a real acceptance criterion BLOCKS. Otherwise the diff SURVIVES, but only when
+    the adversary's run finished: one that did not raises :class:`RedTeamError`.
+
+    The diff and the spec reach the adversary only as fenced data (ADR-0014);
+    ``diff_truncated`` says the diff was cut. ``agents_md``, when given, replaces
+    the worktree's repository instructions. ``sandbox_spec``, when given, is the
+    test's sandbox (resolved for ``sandbox_provider``'s tier) instead of a bare
+    worktree one.
     """
     # (1) Enforce heterogeneity BEFORE spending any model/sandbox work.
     adv_model = (adversary_model or getattr(adversary_client, "model", "") or "").strip()
@@ -283,19 +293,25 @@ async def run_red_team(
         task_id=uuid.uuid4(),
         key="red-team",
         objective=(
-            "You are a red-team ADVERSARY. A candidate diff is under review before "
-            "a human gate. Author a CANDIDATE FAILING TEST that targets the NEW "
-            "behavior in the diff and would fail if the change is wrong, using the "
-            "write_test tool. If instead the diff violates a specific acceptance "
-            "criterion, call report_spec_violation with its criterion id. You may "
-            "NOT edit product code.\n\n"
-            f"--- CANDIDATE DIFF ---\n{diff}\n\n"
-            f"--- SPEC ---\n{_spec_text(spec, criteria)}"
+            "You are a red-team ADVERSARY. The candidate change in the 'Change under "
+            "review' block is under review before a human gate. Author a CANDIDATE "
+            "FAILING TEST that targets the NEW behavior in its diff and would fail if "
+            "the change is wrong, using the write_test tool. If instead the diff "
+            "violates a specific acceptance criterion, call report_spec_violation with "
+            "its criterion id. You may NOT edit product code."
         ),
         allowed_actions=sorted(ROLE_TOOLS[SubAgentRole.ADVERSARY]),
-        acceptance_criteria=criteria,
         model=adv_model,
-        context={"role": SubAgentRole.ADVERSARY.value},
+        context={
+            "role": SubAgentRole.ADVERSARY.value,
+            # The runtime fences this block as data: the diff and spec are untrusted.
+            "review": {
+                "criteria": _spec_lines(spec, criteria),
+                "diff": diff,
+                "truncated": diff_truncated,
+            },
+            **({"agents_md": agents_md} if agents_md is not None else {}),
+        },
     )
     runner = AgentRunner(
         adversary_client,
@@ -303,11 +319,11 @@ async def run_red_team(
         repo_root=worktree,
         max_iterations=max_iterations,
     )
-    runner.run(objective)
+    run = runner.run(objective)
 
     # (3) Execute the authored test IN-SANDBOX through the create/run seam.
     if capture.test_path and capture.test_cmd:
-        spec_ = SandboxSpec(
+        spec_ = sandbox_spec or SandboxSpec(
             agent_run_id=agent_run_id or uuid.uuid4(),
             workspace_id=workspace_id or uuid.uuid4(),
             kind=SandboxKind.WORKTREE,
@@ -356,6 +372,10 @@ async def run_red_team(
             adversary_model=adv_model,
             coder_model=coder_model,
         )
+
+    # An adversary that stopped early did not attack: that is never a survive (#174).
+    if run.status != RunStatus.SUCCEEDED:
+        raise RedTeamError(f"the adversary's run did not finish: {run.error or run.status.value}")
 
     # Nothing landed: the change survived adversarial review.
     return RedTeamResult(

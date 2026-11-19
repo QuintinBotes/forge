@@ -21,6 +21,7 @@ function makeRoleConfig(over: Partial<RoleConfigOut>[] = []): RoleConfigListResp
     { role: "reviewer", model_or_tier: "senior", effort: "high", source: "default" },
     { role: "spec_author", model_or_tier: "medior", effort: "medium", source: "default" },
     { role: "coordinator", model_or_tier: "senior", effort: "high", source: "default" },
+    { role: "adversary", model_or_tier: "senior", effort: "high", source: "default" },
   ];
   const merged = defaults.map((d) => {
     const patch = over.find((o) => o.role === d.role);

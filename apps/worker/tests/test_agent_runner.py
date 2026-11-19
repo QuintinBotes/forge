@@ -175,6 +175,8 @@ def test_run_agent_task_executes_and_serializes() -> None:
 # --------------------------------------------------------------------------- #
 # Supervised multi-agent dispatch (Task 17 — F27 wiring)                       #
 # --------------------------------------------------------------------------- #
+# These payloads carry a task_id, so run_agent_task's dedup guard writes to the
+# real Redis (FORGE_REDIS_URL); ``redis_url`` skips them when none answers.
 
 
 @pytest.fixture
@@ -223,7 +225,10 @@ def _use_sqlite(monkeypatch: pytest.MonkeyPatch, engine: Engine) -> None:
 
 
 def test_supervised_mode_dispatches_coordinator_and_persists_rows(
-    monkeypatch: pytest.MonkeyPatch, sqlite_engine: Engine, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch,
+    sqlite_engine: Engine,
+    caplog: pytest.LogCaptureFixture,
+    redis_url: str,
 ) -> None:
     """The supervised branch drives scf_coordinator end-to-end, offline.
 
@@ -312,7 +317,7 @@ def test_default_mode_builds_exactly_one_agent_runner(
 
 
 def test_supervised_mode_single_runner_never_built(
-    monkeypatch: pytest.MonkeyPatch, sqlite_engine: Engine
+    monkeypatch: pytest.MonkeyPatch, sqlite_engine: Engine, redis_url: str
 ) -> None:
     """The supervised branch never builds the single-agent runner."""
     monkeypatch.delenv("FORGE_MODEL_PROVIDER", raising=False)
@@ -329,7 +334,7 @@ def test_supervised_mode_single_runner_never_built(
 
 
 def test_supervised_mode_disabled_gate_escalates_without_db(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, redis_url: str
 ) -> None:
     """MULTI_AGENT_ENABLED unset -> the coordinator's own disabled gate escalates.
 
@@ -351,7 +356,10 @@ def test_supervised_mode_disabled_gate_escalates_without_db(
 
 
 def test_supervised_mode_recording_is_honest_noop(
-    monkeypatch: pytest.MonkeyPatch, sqlite_engine: Engine, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch,
+    sqlite_engine: Engine,
+    caplog: pytest.LogCaptureFixture,
+    redis_url: str,
 ) -> None:
     """FORGE_RECORD_RUNS=1 on the supervised path: loud no-op, no RunRecording rows."""
     monkeypatch.delenv("FORGE_MODEL_PROVIDER", raising=False)
