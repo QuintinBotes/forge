@@ -293,6 +293,14 @@ _SELECTOR_BODIES: dict[str, Any] = {
     "POST /workspaces/{workspace_id}/scim/tokens": {"name": "t"},
 }
 
+#: Routes that authenticate no principal yet take a workspace selector, each with why.
+UNAUTHENTICATED_WORKSPACE_SELECTORS: dict[str, str] = {
+    "POST /integrations/alerts/{provider}/webhook": (
+        "OPEN DEFECT (#321): the workspace_id query is not covered by the provider's"
+        " signature, which is over the body only and under one secret per deployment"
+    ),
+}
+
 
 def check_workspace_selector_scoped() -> None:
     import os
@@ -334,6 +342,7 @@ def check_workspace_selector_scoped() -> None:
     authenticators = {get_current_principal, get_authenticated_principal}
     seen: list[str] = []
     wrong: list[str] = []
+    unauthenticated: set[str] = set()
     # The SSO config service keeps its keys under the master key.
     master_key = {"FORGE_SECRET_KEY": "matrix-selector-master-key-0123456789"}
     with (
@@ -347,12 +356,14 @@ def check_workspace_selector_scoped() -> None:
             while stack:
                 deps.append(stack.pop())
                 stack.extend(deps[-1].dependencies)
-            # A route that reads no principal (a webhook) has no caller's workspace to keep.
-            if not any(dep.call in authenticators for dep in deps):
-                continue
             params = [p for d in deps for p in (*d.path_params, *d.query_params, *d.header_params)]
             named = {p.alias: str(other) for p in params if "workspace" in p.alias.lower()}
             if not named:
+                continue
+            # A route that reads no principal has no caller's workspace to hold it to,
+            # so its selector must be accounted for by name, never skipped silently.
+            if not any(dep.call in authenticators for dep in deps):
+                unauthenticated.update(f"{m} {route.path}" for m in route.methods or ())
                 continue
             probe = route.path
             for param in route.param_convertors:
@@ -366,6 +377,10 @@ def check_workspace_selector_scoped() -> None:
                     wrong.append(f"{key} -> {resp.status_code}")
     assert len(seen) >= 11, f"the selector walk found too few routes: {seen}"
     assert wrong == [], f"routes acting on another workspace: {wrong}"
+    assert unauthenticated == set(UNAUTHENTICATED_WORKSPACE_SELECTORS), (
+        "unauthenticated routes taking a workspace selector must be listed with a reason: "
+        f"{sorted(unauthenticated ^ set(UNAUTHENTICATED_WORKSPACE_SELECTORS))}"
+    )
 
 
 # --------------------------------------------------------------------------- #
