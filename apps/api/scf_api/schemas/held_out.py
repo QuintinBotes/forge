@@ -7,7 +7,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-__all__ = ["HeldOutScenarioCreate", "HeldOutScenarioOut", "ScenarioFile"]
+__all__ = ["HeldOutResultOut", "HeldOutScenarioCreate", "HeldOutScenarioOut", "ScenarioFile"]
 
 
 class ScenarioFile(BaseModel):
@@ -83,3 +83,23 @@ class HeldOutScenarioOut(BaseModel):
     approved_by: uuid.UUID | None = None
     approved_at: datetime | None = None
     created_at: datetime
+
+
+class HeldOutResultOut(BaseModel):
+    """One scenario's run on a change (#286), by id and title only: never its files,
+    its command or its output. Only people with write access read it."""
+
+    scenario_id: uuid.UUID
+    #: ``None`` once the scenario is deleted.
+    title: str | None
+    #: The run whose change it ran on.
+    workflow_run_id: uuid.UUID
+    attempt: int
+    head_commit: str
+    passed: bool
+    exit_code: int | None
+    timed_out: bool
+    duration_ms: int
+    #: Why it failed: ``timed_out``, ``could_not_start`` or ``exited_nonzero``.
+    reason: str | None
+    recorded_at: datetime

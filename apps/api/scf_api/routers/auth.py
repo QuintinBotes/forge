@@ -4,7 +4,9 @@ Implements API-key authentication (OAuth + API key per spec), the encrypted BYOK
 secret vault, and RBAC enforcement. ``/login`` and ``/logout`` are
 unauthenticated (session bootstrap; ``/logout`` revokes the key the session
 cookie carries), and so is ``GET /sign-in-link``, which redeems a one-time link
-``scf-cli admin sign-in-link`` printed into that cookie; every other route
+``scf-cli admin sign-in-link`` printed into that cookie, and so are
+``POST /device/code`` and ``POST /device/token``, a device sign-in's start and
+poll, which issue a token only for a request a person approved; every other route
 authenticates via ``Authorization: Bearer <api_key>`` (or ``X-API-Key``, or the
 ``forge_session`` cookie a browser sign-in set) and is gated by the caller's role
 permissions. All responses are redacted — no plaintext secret or usable token is
@@ -18,13 +20,32 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Cookie,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
-from scf_api.auth import sign_in_link
+from scf_api.auth import device_code, sign_in_link
 from scf_api.auth.apikeys import APPROVALS_DECIDE, RUNS_EXECUTE, APIKeyInfo
 from scf_api.auth.models import (
     APIKeyCreated,
     APIKeyCreateRequest,
+    DeviceApproveRequest,
+    DeviceCodeLookup,
+    DeviceCodeRequest,
+    DeviceCodeResponse,
+    DeviceDecision,
+    DevicePreview,
+    DeviceTokenRequest,
     LoginRequest,
     OAuthCallbackRequest,
     OAuthChallenge,
@@ -54,12 +75,23 @@ from scf_api.services.approval_service import owner_role
 from scf_auth.rbac import has_at_least
 from scf_authz import ROLE_RANK
 from scf_contracts.enums import UserRole
+from scf_db.models import DeviceAuthorization
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
 #: A sign-in link's URL is a secret: its answer is never cached or sent on as a referrer.
 _SIGN_IN_LINK_HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+#: RFC 6749 §5.1: an answer carrying a device code or a token is never cached.
+_NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+#: What a client polling for its token is told, by RFC 8628 §3.5 error code.
+_DEVICE_ERRORS = {
+    "authorization_pending": "nobody has approved this request yet",
+    "slow_down": "polled before the interval passed: wait longer between polls",
+    "access_denied": "this request was denied",
+    "expired_token": "this request has ended: start a new one",
+    "invalid_grant": "this device code is not valid",
+}
 
 # Permission-gated principal dependencies (authenticate + authorize in one step).
 KeyManager = Annotated[Principal, Depends(require_permission(Permission.MANAGE_KEYS))]
@@ -261,38 +293,20 @@ def create_personal_token(
 ) -> APIKeyCreated:
     """A token for another surface (tervin, the CLI), bound to the calling person.
 
-    A session or a person-bound unscoped key (the web's credential) may mint one;
-    a narrowed or unbound key may not, so a token never mints a token (spec L
-    §6a). It reads as a viewer (plus ``approvals:decide`` when asked, deciding
-    with its owner's current role) and expires. With ``start_runs`` it acts as an
-    agent-runner instead, minted only while both the minting credential and its
-    owner's current role grant ``run_agent`` (spec L §6b).
+    Only a person mints one (:func:`_minter_role`). It reads as a viewer (plus
+    ``approvals:decide`` when asked, deciding with its owner's current role) and
+    expires. With ``start_runs`` it acts as an agent-runner instead
+    (:func:`_ensure_may_start_runs`, spec L §6b).
     """
-    if not principal.decides or principal.narrowed:  # a session or a person-bound unscoped key
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="personal tokens are minted by a person: a session or your own unscoped key",
-        )
-    current = owner_role(session, principal)
-    if current is None:  # deactivated, removed or expired: nothing to delegate
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="your account has no current role in this workspace",
-        )
+    current = _minter_role(principal, session)
     if body.decide and ROLE_RANK[principal.role] < ROLE_RANK[current]:
         # The token decides with its owner's role: never more than the minting key's.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="a deciding token is minted by a credential with your full role",
         )
-    if body.start_runs and not (
-        can(principal.role, Permission.RUN_AGENT) and can(current, Permission.RUN_AGENT)
-    ):
-        # The token starts runs as an agent-runner: never more than its minter or owner may.
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="a token that starts runs needs run_agent in your current role",
-        )
+    if body.start_runs:
+        _ensure_may_start_runs(principal, current)
     scopes = ["read"]
     if body.decide:
         scopes.append(APPROVALS_DECIDE)
@@ -322,6 +336,176 @@ def create_personal_token(
         },
     )
     return APIKeyCreated(**info.model_dump(), token=token)
+
+
+def _minter_role(principal: Principal, session: Session) -> UserRole:
+    """The current role of the person minting a personal token; 403 for anyone else.
+
+    A session or a person-bound unscoped key (the web's credential) may mint one; a
+    narrowed or unbound key may not, so a token never mints a token (spec L §6a).
+    """
+    if not principal.decides or principal.narrowed:  # a session or a person-bound unscoped key
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="personal tokens are minted by a person: a session or your own unscoped key",
+        )
+    current = owner_role(session, principal)
+    if current is None:  # deactivated, removed or expired: nothing to delegate
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="your account has no current role in this workspace",
+        )
+    return current
+
+
+def _ensure_may_start_runs(principal: Principal, current: UserRole) -> None:
+    """A token that starts runs is an agent-runner: never more than its minter or owner may."""
+    if not (can(principal.role, Permission.RUN_AGENT) and can(current, Permission.RUN_AGENT)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="a token that starts runs needs run_agent in your current role",
+        )
+
+
+@router.post(
+    "/device/code",
+    response_model=DeviceCodeResponse,
+    summary="Start a device sign-in for a client with no browser (no credential).",
+)
+def start_device_sign_in(
+    body: DeviceCodeRequest,
+    session: DbSession,
+    settings: SettingsDep,
+    http: Request,
+    response: Response,
+) -> DeviceCodeResponse:
+    """RFC 8628 §3.1: public by design; it hands out only codes until a person approves.
+
+    The rate limiter keys this route by client address; an address that already holds
+    ``MAX_PENDING_PER_ADDRESS`` pending requests is refused.
+    """
+    address = http.client.host if http.client else "unknown"
+    started = device_code.start(
+        session,
+        client_name=body.client_name,
+        address=address,
+        agent=http.headers.get("user-agent"),
+    )
+    if started is None:
+        logger.warning("device sign-in refused: too many pending from %s", address)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many pending device sign-ins from this address; try again later",
+        )
+    request, code, user_code = started
+    logger.info("device sign-in requested id=%s client=%r", request.id, request.client_name)
+    response.headers.update(_NO_STORE)
+    return DeviceCodeResponse(
+        device_code=code,
+        user_code=user_code,
+        verification_uri=f"{settings.public_url.rstrip('/')}{device_code.APPROVE_PATH}",
+        expires_in=int(device_code.LIFETIME.total_seconds()),
+        interval=int(device_code.INTERVAL.total_seconds()),
+        scope=" ".join(device_code.SCOPES),
+        client_name=request.client_name,
+    )
+
+
+def _device_request(session: Session, user_code: str) -> DeviceAuthorization:
+    request = device_code.find(session, user_code)
+    if request is None:
+        logger.warning("device code refused")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="this code is not valid"
+        )
+    return request
+
+
+@router.post(
+    "/device/preview",
+    response_model=DevicePreview,
+    summary="See who asked for a device sign-in before deciding (a person only).",
+)
+def preview_device_sign_in(
+    body: DeviceCodeLookup, principal: AuthedPrincipal, session: DbSession
+) -> DevicePreview:
+    """Read-only, as approving's authentication; a wrong code counts here as there.
+
+    A POST, so the user code stays out of the access log's request line.
+    """
+    _minter_role(principal, session)
+    request = _device_request(session, body.user_code)
+    return DevicePreview(
+        client_name=request.client_name,
+        requester_address=request.requester_address,
+        requester_agent=request.requester_agent,
+        requested_at=request.created_at,
+        expires_at=request.expires_at,
+    )
+
+
+@router.post(
+    "/device/approve",
+    response_model=DeviceDecision,
+    summary="Approve or deny a device sign-in by its user code (a person only).",
+)
+def decide_device_sign_in(
+    body: DeviceApproveRequest, principal: AuthedPrincipal, session: DbSession
+) -> DeviceDecision:
+    """Bind the request to the caller's workspace and identity, approved or denied.
+
+    Only a person decides, as only a person mints a personal token. Approving needs
+    ``run_agent`` in both the credential and the person's current role, since the
+    client receives a token that starts runs. A denial is final. An unknown, wrong,
+    expired or already decided code gets one answer.
+    """
+    current = _minter_role(principal, session)
+    request = _device_request(session, body.user_code)
+    approve = body.decision == "approve"
+    if approve:
+        _ensure_may_start_runs(principal, current)
+    if not device_code.decide(session, request, principal, approve=approve):
+        logger.warning("device code refused user=%s", principal.user_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="this code is not valid"
+        )
+    logger.info(
+        "device sign-in %s id=%s workspace=%s user=%s",
+        "approved" if approve else "denied",
+        request.id,
+        principal.workspace_id,
+        principal.user_id,
+    )
+    return DeviceDecision(client_name=request.client_name, decision=body.decision)
+
+
+@router.post(
+    "/device/token",
+    summary="Poll for a device sign-in's token: returned once, after a person approves.",
+)
+def collect_device_token(
+    body: DeviceTokenRequest, session: DbSession, service: AuthServiceDep
+) -> JSONResponse:
+    """RFC 8628 §3.4-3.5: a run-start personal token once, else an error code to act on."""
+    outcome = device_code.collect(session, body.device_code, service.api_keys)
+    if isinstance(outcome, str):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": outcome, "error_description": _DEVICE_ERRORS[outcome]},
+            headers=_NO_STORE,
+        )
+    info, token = outcome
+    logger.info("device sign-in issued key=%s workspace=%s", info.id, info.workspace_id)
+    return JSONResponse(
+        content={
+            "access_token": token,
+            "token_type": "Bearer",
+            "expires_in": int(device_code.TOKEN_LIFETIME.total_seconds()),
+            "scope": " ".join(device_code.SCOPES),
+            "key_id": str(info.id),
+        },
+        headers=_NO_STORE,
+    )
 
 
 @router.delete(

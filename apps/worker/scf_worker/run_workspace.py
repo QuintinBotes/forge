@@ -200,10 +200,12 @@ def _sandbox_commands(
     workspace_id: uuid.UUID,
     settings: SandboxSettings | None,
     network: SandboxNetwork | None = None,
+    timeout_s: int | None = None,
 ) -> Iterator[Callable[[str], CommandOutput]]:
     """One sandbox session over ``worktree`` for the whole block, as a command runner.
 
     The sandbox is the workspace settings strengthened by ``policy`` (never weakened).
+    ``timeout_s`` lowers the per-command limit further, never raises it.
     """
     loop = asyncio.new_event_loop()
     session: SandboxSession | None = None
@@ -219,7 +221,7 @@ def _sandbox_commands(
         loop.run_until_complete(provider.preflight())
         live_session = loop.run_until_complete(provider.create(spec))
         session = live_session
-        exec_timeout = spec.exec_timeout_seconds
+        exec_timeout = min(spec.exec_timeout_seconds, timeout_s or spec.exec_timeout_seconds)
 
         def run_command(command: str) -> CommandOutput:
             return loop.run_until_complete(

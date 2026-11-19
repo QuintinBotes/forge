@@ -75,6 +75,7 @@ def test_session_per_call_store_reads_and_updates_runs_in_their_workspace() -> N
     from scf_db.models import Project, Task, Workspace
     from scf_workflow import WorkflowRunNotFoundError
     from scf_workflow.store import SqlAlchemyWorkflowStore
+    from scf_workflow.temporal.payloads import StationVisitRecord
 
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
@@ -107,6 +108,9 @@ def test_session_per_call_store_reads_and_updates_runs_in_their_workspace() -> N
     fetched.context["transitions"] = [{"sequence": 1}]
     store.update(fetched)
     assert store.get(run.id).context["transitions"] == [{"sequence": 1}]
+    visit = StationVisitRecord(run.id, ws, uuid.uuid4(), "plan", 1, "agent", "running")
+    store.save_station_visit(visit)  # committed: the next call reads it in a new session
+    assert store.list_station_visits(run.id) == [visit]
     with pytest.raises(WorkflowRunNotFoundError):
         store.get(uuid.uuid4())
     for call in (

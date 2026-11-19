@@ -113,6 +113,34 @@ class TransitionRecord:
 
 
 @dataclass
+class StationVisitRecord:
+    """One station visit the ``persist_station`` activity upserts (spec K §4.3).
+
+    The visit's id is ``station_visit_id(workflow_run_id, state, visit)``. The field
+    names are the ``workflow_station_visit`` columns'.
+    """
+
+    workflow_run_id: uuid.UUID
+    workspace_id: uuid.UUID
+    definition_revision_id: uuid.UUID
+    state: str
+    visit: int
+    kind: str  # agent | service | human
+    status: str  # running | waiting | succeeded | failed | parked | cancelled
+    outcome: str | None = None
+    outputs: dict[str, Any] = field(default_factory=dict)
+    error_code: str | None = None
+    error_message: str | None = None
+    service_name: str | None = None
+    agent_run_id: uuid.UUID | None = None
+    approval_request_id: uuid.UUID | None = None
+    tokens_used: int = 0
+    #: ``None`` while running or when the model is unpriced.
+    cost_usd: float | None = None
+    priced: bool = False
+
+
+@dataclass
 class GuardInputsRequest:
     workflow_run_id: uuid.UUID
     workspace_id: uuid.UUID
@@ -292,6 +320,7 @@ __all__ = [
     "RetryPolicyDTO",
     "RunAgentInput",
     "RunChecksInput",
+    "StationVisitRecord",
     "TransitionRecord",
     "WorkflowEventPayload",
     "WorkflowParams",

@@ -112,8 +112,15 @@ class TokenBucket:
         return self.consume(key, now=now).allowed
 
 
+def _address_key(scope: Scope) -> str:
+    client = scope.get("client")
+    return f"ip:{client[0]}" if client else "ip:unknown"
+
+
 def _caller_key(scope: Scope) -> str:
     """Stable limiter key: hash of the credential header or session cookie, else the client IP."""
+    if scope.get("path", "") in _ADDRESS_KEYED:
+        return _address_key(scope)
     credential: bytes | None = None
     for name, value in scope.get("headers", []):
         if name in (b"authorization", b"x-api-key"):
@@ -124,8 +131,7 @@ def _caller_key(scope: Scope) -> str:
         credential = cookie.encode() if cookie else None
     if credential:
         return "cred:" + hashlib.sha256(credential).hexdigest()[:32]
-    client = scope.get("client")
-    return f"ip:{client[0]}" if client else "ip:unknown"
+    return _address_key(scope)
 
 
 def _ratelimit_headers(result: BucketResult) -> list[tuple[bytes, bytes]]:
@@ -137,6 +143,9 @@ def _ratelimit_headers(result: BucketResult) -> list[tuple[bytes, bytes]]:
 
 
 _DEFAULT_EXEMPT = frozenset({"/health", "/healthz", "/health/ready", "/readyz", "/"})
+#: Routes that read no credential, keyed by client address whatever headers a caller
+#: sends: an unchecked header would otherwise buy a fresh bucket per request (#207).
+_ADDRESS_KEYED = frozenset({"/auth/device/code", "/auth/device/token"})
 
 
 class RateLimitMiddleware:
