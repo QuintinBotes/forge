@@ -191,6 +191,8 @@ EXPECTED_MODELS = [
     "HeldOutScenario",
     # #260: one-time sign-in links for a first administrator (token hash only).
     "SignInLink",
+    # #207: pending device sign-ins for a CLI client (code hashes only).
+    "DeviceAuthorization",
     # J retrieval (ADR-0017): incrementally maintained BM25 corpus statistics —
     # per-workspace document frequencies + per-workspace corpus totals.
     "RetrievalTermStat",

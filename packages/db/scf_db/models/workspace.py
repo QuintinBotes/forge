@@ -1,4 +1,4 @@
-"""Tenant root and identity models: Workspace, User, APIKey, SignInLink."""
+"""Tenant root and identity models: Workspace, User, APIKey, SignInLink, DeviceAuthorization."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     LargeBinary,
     SmallInteger,
     String,
@@ -123,3 +124,51 @@ class SignInLink(WorkspaceScopedModel):
 
     def __repr__(self) -> str:  # pragma: no cover - trivial, secret-safe
         return f"SignInLink(id={self.id!r}, user_id={self.user_id!r}, used_at={self.used_at!r})"
+
+
+class DeviceAuthorization(ScfModel):
+    """A device sign-in a CLI client started (#207, RFC 8628).
+
+    Holds only SHA-256 hashes of the device code and the user code, plus the user
+    code's first half (``user_code_selector``), which names the request so that wrong
+    codes count against it. The workspace and the person are unknown until someone
+    approves or denies it, so both are nullable. A pending request's user code is
+    unique, so an approval names exactly one request.
+    """
+
+    __tablename__ = "device_authorization"
+    __table_args__ = (
+        Index(
+            "uq_device_authorization_pending_user_code",
+            "user_code_hash",
+            unique=True,
+            sqlite_where=text("status = 'pending'"),
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("app_user.id", ondelete="CASCADE"), nullable=True
+    )
+    device_code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    user_code_selector: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    user_code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    client_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: pending, approved, denied, issued (the token was returned), invalid (wrong codes).
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_attempts: Mapped[int] = mapped_column(
+        default=0, server_default=text("0"), nullable=False
+    )
+    #: Who asked, as the API saw them, for the approver and the audit log.
+    requester_address: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    requester_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - trivial, secret-safe
+        return f"DeviceAuthorization(id={self.id!r}, status={self.status!r})"

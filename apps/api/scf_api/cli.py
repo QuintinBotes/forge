@@ -385,6 +385,8 @@ def main(argv: list[str] | None = None) -> int:
         return _marketplace_sign(args.key_file, args.manifest)
     if args.group == ADMIN_GROUP and args.command == SIGN_IN_LINK_COMMAND:
         return _admin_sign_in_link(args.workspace, args.email)
+    if args.group == cli_remote.LOGIN:
+        return cli_remote.login(args)
     if args.group in cli_remote.REMOTE_GROUPS:
         return cli_remote.run(args)
     if args.group == cli_ctxbench.GROUP:
