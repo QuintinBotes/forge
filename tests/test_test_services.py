@@ -1,7 +1,9 @@
 """Tests for ``scripts/test-services.sh`` and the ``make`` targets around it.
 
 The script runs against a fake ``docker`` on ``PATH`` that records every call and
-answers ``inspect`` from ``FAKE_DOCKER_STATE``, so no Docker daemon is needed.
+answers ``inspect`` from ``FAKE_DOCKER_STATE`` (``down`` plays an unreachable daemon) and
+``FAKE_PG_BOUND``/``FAKE_REDIS_BOUND`` (a container's published port), so no Docker
+daemon is needed.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import socket
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,8 +24,15 @@ NAMES = ("forge-test-pg", "forge-test-redis")
 FAKE_DOCKER = """#!/usr/bin/env bash
 echo "$*" >> "$FAKE_DOCKER_LOG"
 if [ "$1" = inspect ]; then
-  [ "$FAKE_DOCKER_STATE" = absent ] && { echo "Error: No such object" >&2; exit 1; }
-  echo "$FAKE_DOCKER_STATE"
+  case "$FAKE_DOCKER_STATE" in
+    absent) echo "Error: No such object: ${@: -1}" >&2; exit 1 ;;
+    down) echo "Cannot connect to the Docker daemon. Is the docker daemon running?" >&2; exit 1 ;;
+  esac
+  case "$*" in
+    *PortBindings*forge-test-pg) echo "${FAKE_PG_BOUND:-$SCF_TEST_PG_PORT}" ;;
+    *PortBindings*forge-test-redis) echo "${FAKE_REDIS_BOUND:-$SCF_TEST_REDIS_PORT}" ;;
+    *) echo "$FAKE_DOCKER_STATE" ;;
+  esac
 fi
 exit 0
 """
@@ -105,6 +115,41 @@ def test_up_names_a_taken_port_and_its_override(tmp_path: Path) -> None:
     assert not _verbs(calls, "run")
 
 
+@pytest.mark.parametrize("state", ["true", "false"])
+def test_up_refuses_an_existing_container_published_on_another_port(
+    tmp_path: Path, state: str
+) -> None:
+    # The container keeps the port it was created with; env would export the override.
+    result, calls = _run(tmp_path, "up", state=state, FAKE_PG_BOUND="5432")
+    assert result.returncode != 0
+    assert "127.0.0.1:5432" in result.stderr and "SCF_TEST_PG_PORT=5432" in result.stderr
+    assert "down" in result.stderr
+    assert not _verbs(calls, "start") and not _verbs(calls, "run")
+
+
+def test_up_names_the_override_when_a_stopped_containers_port_is_taken(tmp_path: Path) -> None:
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = str(busy.getsockname()[1])
+        result, calls = _run(tmp_path, "up", state="false", SCF_TEST_PG_PORT=port)
+    assert result.returncode != 0
+    assert port in result.stderr and "SCF_TEST_PG_PORT" in result.stderr
+    assert "down" in result.stderr
+    assert not _verbs(calls, "start")
+
+
+@pytest.mark.parametrize("command", ["up", "down", "status"])
+def test_an_unreachable_docker_daemon_fails_instead_of_reading_absent(
+    tmp_path: Path, command: str
+) -> None:
+    result, calls = _run(tmp_path, command, state="down")
+    assert result.returncode != 0
+    assert "Cannot connect to the Docker daemon" in result.stderr
+    assert "absent" not in result.stdout
+    assert not _verbs(calls, "rm") and not _verbs(calls, "run")
+
+
 def test_down_removes_only_the_two_containers(tmp_path: Path) -> None:
     result, calls = _run(tmp_path, "down", state="true")
     assert result.returncode == 0, result.stderr
@@ -164,5 +209,6 @@ def test_makefile_has_the_test_service_targets() -> None:
         assert re.search(rf"^{target}:", makefile, re.MULTILINE), target
         assert target in phony.split(), f"{target} missing from .PHONY"
     recipe = makefile.split("\ntest-full:", 1)[1].split("\n\n", 1)[0]
-    assert "test-services-up" in recipe and "test-services.sh env" in recipe
+    # The eval is what exports the URLs; printing them alone leaves pytest unconfigured.
+    assert "test-services-up" in recipe and 'eval "$$(scripts/test-services.sh env)"' in recipe
     assert "uv run pytest" in recipe

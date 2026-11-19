@@ -22,13 +22,18 @@ PG_PORT="${SCF_TEST_PG_PORT:-5432}"
 REDIS_PORT="${SCF_TEST_REDIS_PORT:-6379}"
 WAIT_SECONDS=60
 
-# running | stopped | absent
+# running | stopped | absent; any other inspect failure (no daemon, no permission) fails.
+# Call it as an assignment (st="$(state ...)") so set -e sees the failure.
 state() {
-  case "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null || true)" in
-    true) echo running ;;
-    false) echo stopped ;;
-    *) echo absent ;;
-  esac
+  local out
+  if out="$(docker inspect -f '{{.State.Running}}' "$1" 2>&1)"; then
+    [ "${out}" = true ] && echo running || echo stopped
+  elif [[ "${out}" == *"No such"* ]]; then
+    echo absent
+  else
+    echo "error: docker inspect $1 failed: ${out}" >&2
+    return 1
+  fi
 }
 
 port_free() {
@@ -37,11 +42,24 @@ port_free() {
 
 # ensure <name> <port> <port variable> <docker run args...>
 ensure() {
-  local name="$1" port="$2" var="$3"
+  local name="$1" port="$2" var="$3" st bound
   shift 3
-  case "$(state "${name}")" in
+  st="$(state "${name}")"
+  if [ "${st}" != absent ]; then
+    # A container keeps the port it was created with, whatever ${var} says now.
+    bound="$(docker inspect -f '{{range $p, $b := .HostConfig.PortBindings}}{{(index $b 0).HostPort}}{{end}}' "${name}")"
+    if [ "${bound}" != "${port}" ]; then
+      echo "error: ${name} is published on 127.0.0.1:${bound}, not ${port}; set ${var}=${bound}, or run '$0 down' first" >&2
+      exit 1
+    fi
+  fi
+  case "${st}" in
     running) echo "${name}: already running" ;;
     stopped)
+      if ! port_free "${port}"; then
+        echo "error: port ${port} on 127.0.0.1 is taken; run '$0 down', then set ${var} to a free port" >&2
+        exit 1
+      fi
       docker start "${name}" >/dev/null
       echo "${name}: started"
       ;;
@@ -85,7 +103,8 @@ case "${1:-}" in
     ;;
   down)
     for name in "${PG_NAME}" "${REDIS_NAME}"; do
-      if [ "$(state "${name}")" != absent ]; then
+      st="$(state "${name}")"
+      if [ "${st}" != absent ]; then
         docker rm -f -v "${name}" >/dev/null
         echo "${name}: removed"
       fi
@@ -93,7 +112,8 @@ case "${1:-}" in
     ;;
   status)
     for name in "${PG_NAME}" "${REDIS_NAME}"; do
-      echo "${name}: $(state "${name}")"
+      st="$(state "${name}")"
+      echo "${name}: ${st}"
     done
     ;;
   env)

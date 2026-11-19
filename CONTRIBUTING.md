@@ -114,10 +114,12 @@ make typecheck   # mypy (module-mode, per the Makefile package list)
 make fmt         # auto-format + auto-fix before you push
 ```
 
-Some Python tests need a live pgvector-enabled Postgres or a Redis; they skip
-cleanly, with the reason, when one is not reachable (CI runs them against real
-`pgvector/pgvector:pg16` and `redis:7.4-alpine` services). With Docker you can
-run them locally too:
+Some Python tests need a live pgvector-enabled Postgres or a Redis (CI runs them
+against real `pgvector/pgvector:pg16` and `redis:7.4-alpine` services). Postgres
+tests skip, with the reason, when `FORGE_TEST_DATABASE_URL` is unset, but error
+when it is set and the server is down. Redis tests skip, with the reason, when
+the configured Redis does not answer a ping. With Docker you can run them
+locally too:
 
 ```bash
 make test-services-up    # scripts/test-services.sh up: create/start forge-test-pg + forge-test-redis
