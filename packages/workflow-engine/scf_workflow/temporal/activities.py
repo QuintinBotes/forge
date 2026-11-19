@@ -14,7 +14,8 @@ started with ``FORGE_ALLOW_FAKE_ACTIVITIES=1``. The stand-ins never invent a PR.
 ``workflow_run`` row (+ an append-only transition list in ``context``) byte-faithful
 so the board timeline / run-trace viewer / audit log are engine-agnostic. It is
 idempotent on ``(workflow_run_id, idempotency_key)`` so Temporal's at-least-once
-delivery never double-writes a transition.
+delivery never double-writes a transition. ``persist_station`` writes a line run's
+``workflow_station_visit`` rows the same way, keyed by the visit id (spec K §4.3).
 """
 
 from __future__ import annotations
@@ -22,19 +23,29 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import inspect
+import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from concurrent.futures import Executor, ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime
-from typing import NoReturn
+from typing import Any, NoReturn
 
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
 from scf_contracts import RunStatus, WorkflowRun, WorkflowState
 from scf_workflow.red_team_gate import evaluate_red_team
-from scf_workflow.store import InMemoryWorkflowStore, WorkflowStore
+from scf_workflow.store import (
+    STATION_KINDS,
+    STATION_STATUS_RANK,
+    InMemoryWorkflowStore,
+    StationVisitStore,
+    WorkflowStore,
+)
+from scf_workflow.temporal.converter import REDACTED, redact_secrets
+from scf_workflow.temporal.ids import station_visit_id
 from scf_workflow.temporal.payloads import (
     AgentRunResultDTO,
     ApprovalInput,
@@ -52,6 +63,7 @@ from scf_workflow.temporal.payloads import (
     ResumeAgentInput,
     RunAgentInput,
     RunChecksInput,
+    StationVisitRecord,
     TransitionRecord,
 )
 
@@ -59,6 +71,11 @@ logger = logging.getLogger(__name__)
 
 #: Default verification check set (spec: default_feature ``checks``).
 DEFAULT_CHECKS = ("lint", "type_check", "tests", "coverage")
+
+#: A station visit's stored outputs are at most this many bytes of JSON (spec K §4.3).
+STATION_OUTPUTS_CAP = 16 * 1024
+#: ``workflow_station_visit`` column widths; Postgres refuses a longer value, or a NUL.
+_VISIT_WIDTHS = {"state": 64, "outcome": 48, "error_code": 64, "service_name": 64}
 
 #: Seconds between activity heartbeats (the agent activity's heartbeat timeout is 120 s).
 AGENT_HEARTBEAT_EVERY = 30.0
@@ -237,6 +254,7 @@ class WorkflowActivities:
         """The bound activity methods to register on a worker."""
         return [
             self.persist_transition,
+            self.persist_station,
             self.load_guard_inputs,
             self.run_agent,
             self.resume_agent,
@@ -298,6 +316,43 @@ class WorkflowActivities:
         _apply_status(run, str(rec.to_state), rec.run_status)
         self._store.update(run)
         return sequence
+
+    @activity.defn(name="forge.persist_station")
+    async def persist_station(self, rec: StationVisitRecord) -> str:
+        """Record one station visit and mirror it into the run's context (spec K §4.3, §4.11).
+
+        An idempotent upsert by the visit id whose status only moves forward, so a
+        late retry of ``running`` never undoes ``succeeded``. Outputs and the error
+        message are redacted, and outputs are capped at 16 KiB. The run's state and
+        status stay ``persist_transition``'s. Returns the visit id.
+        """
+        return await _heartbeating(self._persist_station, rec, {"phase": "persist_station"})
+
+    def _persist_station(self, rec: StationVisitRecord) -> str:
+        store = self._store
+        if not isinstance(store, StationVisitStore):
+            _refuse("forge.persist_station")(rec)
+        unfit = [
+            name
+            for name, width in _VISIT_WIDTHS.items()
+            if (value := getattr(rec, name)) and (len(value) > width or "\x00" in value)
+        ]
+        if rec.status not in STATION_STATUS_RANK or rec.kind not in STATION_KINDS or unfit:
+            # Every retry would fail the same way, so fail now.
+            raise ApplicationError(
+                f"station visit not recordable: kind {rec.kind!r}, status {rec.status!r}, "
+                f"unfit fields {unfit}",
+                type="InvalidStationVisit",
+                non_retryable=True,
+            )
+        error = _text(redact_secrets(rec.error_message)) if rec.error_message else None
+        store.save_station_visit(
+            replace(rec, outputs=_station_outputs(rec.outputs), error_message=error)
+        )
+        run = store.get(rec.workflow_run_id)
+        _mirror_visits(run, store.list_station_visits(rec.workflow_run_id))
+        store.update(run)
+        return str(station_visit_id(rec.workflow_run_id, rec.state, rec.visit))
 
     # -- IO-bound guard resolution ---------------------------------------- #
 
@@ -416,6 +471,60 @@ async def _awaited[O](result: Awaitable[O]) -> O:
     return await result
 
 
+def _text(value: str) -> str:
+    """``value`` as Postgres text and JSONB take it: NUL and lone surrogates escaped."""
+    return value.encode("utf-8", "backslashreplace").decode().replace("\x00", "\\x00")
+
+
+def _redacted(value: Any) -> Any:
+    """``value`` with secrets masked, as the history codec masks them in its JSON text."""
+    if isinstance(value, str):
+        return _text(redact_secrets(value))
+    if isinstance(value, list):
+        return [_redacted(item) for item in value]
+    if isinstance(value, dict):
+        # A key the codec's ``key=value`` pattern names (``token``, ``db_password``, ...).
+        return {
+            _text(str(k)): REDACTED if redact_secrets(f"{k}=x") != f"{k}=x" else _redacted(v)
+            for k, v in value.items()
+        }
+    return value
+
+
+def _station_outputs(outputs: dict[str, Any]) -> dict[str, Any]:
+    redacted: dict[str, Any] = _redacted(outputs)
+    # The UTF-8 bytes stored, not the ASCII-escaped JSON six times the size.
+    text = json.dumps(redacted, default=str, ensure_ascii=False)
+    size = len(text.encode("utf-8", "surrogatepass"))
+    return redacted if size <= STATION_OUTPUTS_CAP else {"truncated": True, "bytes": size}
+
+
+def _mirror_visits(run: WorkflowRun, visits: list[StationVisitRecord]) -> None:
+    """Rebuild the run's ``outputs``, ``spend`` and ``parked`` from all its visits.
+
+    Rebuilt rather than added to, so a retried or late report never counts twice.
+    """
+    latest: dict[str, StationVisitRecord] = {}
+    for v in visits:
+        if v.state not in latest or v.visit > latest[v.state].visit:
+            latest[v.state] = v
+    run.context["outputs"] = {state: v.outputs for state, v in latest.items()}
+    run.context["spend"] = {
+        "tokens": sum(v.tokens_used for v in visits),
+        "usd": round(sum(v.cost_usd or 0.0 for v in visits if v.priced), 4),
+        "unpriced_tokens": sum(v.tokens_used for v in visits if not v.priced),
+    }
+    parked = [v for v in latest.values() if v.status == "parked"]
+    if parked:
+        run.context["parked"] = {
+            "state": parked[-1].state,
+            "visit": parked[-1].visit,
+            "reason": parked[-1].outcome,
+        }
+    else:
+        run.context.pop("parked", None)
+
+
 def _apply_status(run: WorkflowRun, new_state: str, run_status: str | None = None) -> None:
     if run_status is not None:
         # Station runs (spec K §4.2): the line's terminals set the status.
@@ -436,6 +545,7 @@ def _apply_status(run: WorkflowRun, new_state: str, run_status: str | None = Non
 __all__ = [
     "AGENT_HEARTBEAT_EVERY",
     "DEFAULT_CHECKS",
+    "STATION_OUTPUTS_CAP",
     "ApprovalFn",
     "WorkflowActivities",
 ]

@@ -13,8 +13,10 @@ worker:
   key fails closed (the AES-GCM tag check raises).
 
 The redaction patterns mirror the canonical :mod:`scf_knowledge.redaction`
-(AWS keys, PEM private-key blocks, bearer tokens, ``key=value`` secrets, JWTs);
-they are inlined here to keep ``scf_workflow`` free of the heavier
+(AWS keys, PEM private-key blocks, bearer tokens, ``key=value`` secrets, JWTs),
+widened to prefixed names (``GITHUB_TOKEN=``), ``Authorization`` schemes and
+GitHub and ``sk-`` token shapes, because station outputs are stored with this
+redaction (#178); they are inlined here to keep ``scf_workflow`` free of the heavier
 knowledge-core dependency closure (tree-sitter / numpy).
 """
 
@@ -39,12 +41,18 @@ _PEM_RE = re.compile(
 )
 _AWS_KEY_RE = re.compile(r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}\b")
 _BEARER_RE = re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]+")
+# A prefixed name (``GITHUB_TOKEN``, ``db_password``) counts, and the credential after an
+# ``Authorization`` scheme word (``Basic``, ``token``) is masked, not the word.
 _KV_SECRET_RE = re.compile(
-    r"(?i)\b(?:token|secret|password|passwd|api[_-]?key|authorization|"
+    r"(?i)\b(?:[a-z0-9]+[_-])*(?:token|secret|password|passwd|api[_-]?key|authorization|"
     r"aws_secret_access_key|aws_access_key_id|private_key|client_secret)\b"
-    r"(\\?[\"']?\s*[:=]\s*\\?[\"']?)[^\s\"',}]+"
+    r"(\\?[\"']?\s*[:=]\s*\\?[\"']?)(?:(?:basic|bearer|digest|token)\s+)?[^\s\"',}]+"
 )
 _JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")
+# GitHub (ghp_, gho_, ghu_, ghs_, ghr_, github_pat_) and sk- provider keys, wherever they sit.
+_TOKEN_SHAPE_RE = re.compile(
+    r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_\-]{20,})"
+)
 
 #: Metadata encoding marker for our codec-wrapped payloads.
 _ENCODING = b"binary/encrypted"
@@ -60,6 +68,7 @@ def redact_secrets(text: str) -> str:
     text = _KV_SECRET_RE.sub(lambda m: _redact_kv(m), text)
     text = _JWT_RE.sub(REDACTED, text)
     text = _AWS_KEY_RE.sub(REDACTED, text)
+    text = _TOKEN_SHAPE_RE.sub(REDACTED, text)
     return text
 
 
