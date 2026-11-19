@@ -52,6 +52,7 @@ Start here and follow the path that fits you.
 | **[Platform specification](./SCF_SPEC.md)** | The full SCF spec |
 | **[Release readiness](../RELEASE_READINESS.md)** | Automated gate status at the beta bar |
 | **[Eval results](./EVAL_RESULTS.md)** | Real-corpus retrieval evaluation |
+| **[Factory benchmark](./benchmarks/forge-factory-bench.md)** | The end-to-end benchmark: what it measures, how to run it, its reference baseline |
 
 ## Contributing
 

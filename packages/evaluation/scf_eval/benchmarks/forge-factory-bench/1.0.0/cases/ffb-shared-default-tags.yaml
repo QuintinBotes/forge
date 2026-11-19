@@ -1,0 +1,37 @@
+cases:
+  - id: ffb-shared-default-tags
+    kind: agent_task
+    tags: [agent_task, bugfix]
+    expected_ids: [REQ-TAGS-1]
+    query: |
+      add_tag() remembers tags from earlier calls
+
+      add_tag("a") returns ["a"], but a second call add_tag("b") returns ["a", "b"].
+      A call without a list must start from an empty list every time. A call that
+      passes its own list keeps appending to that list and returns it.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: tagging.py
+          content: |
+            def add_tag(tag, tags=[]):
+                """Append ``tag`` to ``tags`` and return the list."""
+                tags.append(tag)
+                return tags
+      held_out:
+        - path: tests/test_tagging.py
+          content: |
+            from tagging import add_tag
+
+
+            def test_calls_without_a_list_start_empty():
+                assert add_tag("a") == ["a"]
+                assert add_tag("b") == ["b"]
+
+
+            def test_given_list_is_extended_in_place():
+                tags = ["x"]
+                assert add_tag("y", tags) is tags
+                assert tags == ["x", "y"]
+      fail_to_pass: [tests/test_tagging.py::test_calls_without_a_list_start_empty]
+      pass_to_pass: [tests/test_tagging.py::test_given_list_is_extended_in_place]

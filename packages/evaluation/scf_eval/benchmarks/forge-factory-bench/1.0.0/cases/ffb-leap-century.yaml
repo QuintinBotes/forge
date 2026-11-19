@@ -1,0 +1,38 @@
+cases:
+  - id: ffb-leap-century
+    kind: agent_task
+    tags: [agent_task, bugfix]
+    expected_ids: [REQ-LEAP-1]
+    query: |
+      is_leap_year(1900) returns True
+
+      Every year divisible by 4 is treated as a leap year. A century year is a leap
+      year only when it is also divisible by 400: 1900 and 2100 are not, 2000 is.
+      Other years keep the rule they have now (2024 is a leap year, 2023 is not).
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: leapyears.py
+          content: |
+            def is_leap_year(year):
+                """Whether ``year`` has a 29 February in the Gregorian calendar."""
+                return year % 4 == 0
+      held_out:
+        - path: tests/test_leapyears.py
+          content: |
+            from leapyears import is_leap_year
+
+
+            def test_century_years_need_400():
+                assert not is_leap_year(1900)
+                assert not is_leap_year(2100)
+                assert is_leap_year(2000)
+                assert is_leap_year(2400)
+
+
+            def test_years_between_centuries():
+                assert is_leap_year(2024)
+                assert is_leap_year(1996)
+                assert not is_leap_year(2023)
+      fail_to_pass: [tests/test_leapyears.py::test_century_years_need_400]
+      pass_to_pass: [tests/test_leapyears.py::test_years_between_centuries]

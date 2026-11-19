@@ -22,7 +22,7 @@ SUITE = (
     / "scf_eval"
     / "benchmarks"
     / "forge-factory-bench"
-    / "0.1.0"
+    / "1.0.0"
 )
 
 _BASE = "def add(a, b):\n    return a - b\n"
@@ -155,7 +155,7 @@ def test_refused_runs_are_infrastructure_errors_kept_apart_per_instance(tmp_path
     refusal = {"detail": "ungoverned_run_refused: development only"}
 
     def run(base_url: str) -> BenchRunReport:
-        solver = _solver(tmp_path, [httpx.Response(409, json=refusal)] * 5, [], base_url)
+        solver = _solver(tmp_path, [httpx.Response(409, json=refusal)] * 20, [], base_url)
         return asyncio.run(
             run_suite(SUITE, solver, sandbox_provider=LocalSandboxProvider(), results_path=results)
         )
