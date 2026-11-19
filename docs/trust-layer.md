@@ -148,11 +148,19 @@ binds every activity except `forge.resume_agent`:
   branch with no commits is not delivered, and without GitHub App credentials
   the step refuses.
 - **The gates** (`spec`, `plan`, `pr`) open approval requests, and only an
-  approval moves the run past one. Approving a `pr` request records its
-  attestation when the decision is made. When the merge guard refuses the event
-  (CI has not reported yet), the request's `gate_payload.workflow_event.status`
-  reads `failed` until `POST /workflow/runs/{id}/gates/pr/sync` applies the event
-  with the same attestation; then it reads `submitted`.
+  approval moves the run past one: the transition route refuses the gate events
+  (`409 gate_events_come_from_approvals`), and the web app decides them in the
+  approvals inbox. Approving a `pr` request records its
+  attestation when the decision is made. When the run's engine refuses the event
+  (unreachable, or the merge guard: CI has not reported yet), the request's
+  `gate_payload.workflow_event.status` reads `failed`, and the audit log gets an
+  `approval` entry with status `workflow_event_failed` (the decider, the event
+  and the error) before the decision's own entry (#182). The request's status
+  stays `failed` until `POST /workflow/runs/{id}/gates/{gate}/sync` applies the
+  event (for `pr`, with the same attestation); then the request reads
+  `submitted`, and the audit log gets a further `workflow_event_synced` entry
+  naming who ran the sync (audit entries are never changed). A failed audit
+  write is logged and changes nothing else.
 - **The merge guard reads CI and the spec itself** (#280, FR-011). For each `pr`
   approval, the workflow reads the check runs on the agent's head commit, with a
   token for the one repository that can only read checks. CI is green only when
@@ -227,9 +235,8 @@ binds every activity except `forge.resume_agent`:
 - **The adversary's test runs on the checks' sandbox tier (#184).** On the
   `worktree` tier that is the worker's host, and the command is the one the
   adversary chose.
-- **A failed gate submission is not audited (#182).** It is logged and recorded
-  on the request (`workflow_event` `failed`), but the audit log records only the
-  decision; nothing retries it when CI turns green.
+- **Nothing retries a refused `pr` approval when CI turns green.** It waits for
+  `gates/pr/sync`.
 - **A repository with no declared checks spends the agent's retries** before it
   pauses (#272, an owner decision).
 - **Some builders cannot be reviewed.** A scripted builder records no model,
@@ -243,7 +250,18 @@ binds every activity except `forge.resume_agent`:
 - **The checks have network on the worktree tier (#184).** Only the container
   tiers enforce the no-network sandbox; the default `worktree` tier runs the
   commands on the worker's host with its network and environment.
-- **Held-out scenarios are stored but not run yet (#286).** See below.
+- **Held-out scenarios run with network on the worktree tier (#184, #286).**
+  As for the checks, only the container tiers enforce their no-network sandbox.
+- **A retried check attempt runs the held-out scenarios again (#286).** Each run
+  adds its own `held_out.ran` entries; the results route returns them all.
+- **The held-out scenarios share the check stage's time limit (#286).** Each has
+  its own limit (`FORGE_HELD_OUT_TIMEOUT_SECONDS`, 300 s by default), so a hung
+  one is recorded as `timed_out`; they run one after another, so many slow ones
+  can still run the stage out of time.
+- **The held-out test-hook guard is a deny-list, not a boundary (#286).** A
+  scenario runs in the change's own checkout. The guard refuses the ways we know
+  for a change to hook into the test run; the boundary is #184's container tier
+  running the scenarios with the base branch's test setup.
 - **The diff gates have limits (#187).** `sast` reads Python only; the worker
   image installs no `bandit` (`uv sync --no-dev`), so until it does (#311) every
   Python change fails `sast` as `could_not_verify` and the run pauses for a
@@ -255,7 +273,8 @@ binds every activity except `forge.resume_agent`:
   branch already has to a file the change edits.
 - **Drafts stored before migration `0051` name no run (#288).** The spec gate
   does not list, wait on or withdraw them; decide them through the scenario
-  routes.
+  routes. A verifier's such draft (`drafted_by` `agent:...`) is never run, even
+  approved (#286): it was drafted for some run's spec, not the current one.
 
 ### Held-out acceptance scenarios (#176)
 
@@ -343,10 +362,62 @@ the builder's objective.
     and audit entries carry none. The titles are on the `spec` approval
     request, which any reader of the workspace can see, so a title should name
     the check, not spell it out. The builder learns nothing else about the
-    scenarios until #286 reports only how many failed.
-- **Running them (#286):** running the approved scenarios against the change
-  after the checks pass, and returning only a count of failures to the builder,
-  is still to come.
+    scenarios beyond how many failed (#286).
+- **Running them (#286):** in `forge.run_checks`, once the declared checks, the
+  independent review and the red-team scan pass, the run's approved scenarios
+  run on the change. The result is one more check, `held_out_scenarios`, so a
+  failure takes the existing `checks_failed` route: no pull request, and the
+  run goes back to the builder within the retry budget.
+  - **Which run:** every scenario a person wrote for the task and every one the
+    verifier drafted for this run, approved and not withdrawn. One drafted for
+    another run of the task was decided against that run's spec and does not run,
+    nor does a verifier's draft stored before migration `0051`.
+  - **A change that hooks into the test run:** the scenarios run in the change's
+    own checkout, so a change could make any of them pass, for example with a
+    `conftest.py` that resets pytest's exit status. When `base...head` adds,
+    changes or removes such a file, no scenario runs: the attempt's verdict is
+    `could_not_verify` and the run pauses for a person with the reason
+    `held_out_test_hooks_changed: <files>`. It never goes back to the builder.
+    The deny-list, matched on file names in any letter case: any `conftest.py`,
+    `pytest.ini`, `tox.ini`, `setup.cfg`,
+    `sitecustomize.py`, `usercustomize.py`, `*.pth`, `jest.config.*`,
+    `vitest.config.*` or `.mocharc*`; a `pyproject.toml` whose `[tool.pytest*]`
+    tables changed; a `package.json` whose `scripts`, `jest` or `mocha` changed;
+    and a top-level module or package named like a program, or `-m` module, of
+    an approved scenario's command (`pytest.py` or `pytest/` for `pytest`). It
+    is a deny-list, not a boundary (see the limitations above).
+  - **How:** each scenario gets its own fresh, detached worktree of the head
+    commit. Its files are overlaid there, never through a link the change made:
+    a link in a file's directory path is refused, and a link at the file's own
+    path is replaced. Its command runs in the sandbox the declared checks get,
+    with no network, within `FORGE_HELD_OUT_TIMEOUT_SECONDS` (300 s by default,
+    or the sandbox's own limit if lower). The worktree is removed afterwards, so
+    the overlay never reaches the run branch.
+  - **Pass or fail:** a scenario passes when its command exits `0` in time. One
+    that times out (`timed_out`), cannot start (`could_not_start`: the overlay
+    was refused, the sandbox failed, or the shell exited `126` or `127`) or
+    exits otherwise (`exited_nonzero`) fails, with that reason.
+  - **Where the results go:** each scenario's outcome (pass or fail, exit status,
+    whether it timed out, duration, reason, the run, attempt and head commit) is
+    a `held_out.ran` entry in the audit log, by scenario id, written as the
+    scenario finishes. The output is not kept.
+    `GET /tasks/{task_id}/held-out-scenarios/results` (optionally
+    `?workflow_run_id=`) reads them back by scenario id and title, for people
+    with write access only. They are not on the workflow run: its context, which
+    `GET /workflow/runs/{id}` serves to readers, keeps only the check and, on
+    each check attempt, the counts `held_out: {verdict, defined, passed, failed}`.
+    `defined` counts the run's scenarios that are not withdrawn, whatever their
+    state.
+  - **No approved scenario:** with none, the check attempt records `held_out`
+    with the verdict `none_defined`; with only undecided or rejected ones,
+    `none_approved`. The run proceeds, and no check reports a pass. The run's own
+    `held_out` stays the drafting step's reason (#258).
+  - **What the builder learns:** the failing check is left out of the feedback
+    its next attempt gets (`failing_checks`); the objective carries only
+    `held_out_failed`, the number of scenarios that failed.
+  - **The attestation:** the pull request's verification summary records
+    `held_out` as the verdict and the counts `defined`, `passed` and `failed`,
+    never a scenario id or title.
 
 ---
 
@@ -463,7 +534,10 @@ Forge-Run: 6f1c...  (the agent run id)
 - **`checks`:** each declared check's id and outcome, with a `checks_verdict`;
 - **`ci`:** `not_run` until CI is read back (#280);
 - **`reviewer`:** the independent reviewer's verdict and model;
-- **`red_team`:** the verdict and model of a scan at the `pr` phase.
+- **`red_team`:** the verdict and model of a scan at the `pr` phase;
+- **`held_out`:** the held-out scenarios' verdict (`passed`, `failed`,
+  `none_defined` or `none_approved`) and the counts `defined`, `passed` and
+  `failed`, never a scenario id or title (#286).
 
 A stage that did not run reads `not_run`: never omitted, never a pass.
 Attestations made before #175 have none of these fields and still verify.

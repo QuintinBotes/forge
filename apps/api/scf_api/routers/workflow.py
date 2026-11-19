@@ -7,6 +7,7 @@ Serves the FSM workflow surface over HTTP:
 * ``POST /workflow/runs/{run_id}/transition``— apply an FSM event and return the run.
 * ``GET  /workflow/runs/{run_id}/red-team``  — Red-Team Gate verdict + evidence.
 * ``POST /workflow/runs/{run_id}/red-team``  — trigger a Red-Team scan for a run.
+* ``GET  /workflow/runs/{run_id}/stations``  — a line run's station visits.
 
 Handlers delegate to a process-wide :class:`~scf_workflow.WorkflowEngineImpl`
 backed by an in-memory run store (the SQLAlchemy-backed store is swapped in
@@ -38,11 +39,13 @@ import re
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Any
 
 import anyio.from_thread
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from scf_api.auth.rbac import Permission
@@ -66,7 +69,7 @@ from scf_api.services.workflow_gate_hook import (
 from scf_approval import ApprovalService
 from scf_approval.models import GateStatus, GateType
 from scf_contracts import LineDefinition, WorkflowRun, WorkflowState
-from scf_db.models import Task
+from scf_db.models import Task, WorkflowStationVisit
 from scf_db.redteam import RedTeamRepository
 from scf_workflow import (
     AmbiguousTransitionError,
@@ -195,6 +198,31 @@ class TransitionRequest(BaseModel):
     """Body for ``POST /workflow/runs/{run_id}/transition``."""
 
     event: str
+
+
+class StationVisitOut(BaseModel):
+    """One station visit of a line run (spec K §4.3); outputs and errors are stored redacted."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    definition_revision_id: uuid.UUID
+    state: str
+    visit: int
+    kind: str
+    status: str
+    outcome: str | None
+    outputs: dict[str, Any]
+    error_code: str | None
+    error_message: str | None
+    service_name: str | None
+    agent_run_id: uuid.UUID | None
+    approval_request_id: uuid.UUID | None
+    tokens_used: int
+    cost_usd: float | None
+    priced: bool
+    started_at: datetime
+    finished_at: datetime | None
 
 
 # --------------------------------------------------------------------------- #
@@ -602,6 +630,28 @@ def _expire_open_gate(
     asyncio.run(approvals.expire(request, actor=f"user:{principal.user_id}", reason=reason))
 
 
+@router.get("/runs/{run_id}/stations", response_model=list[StationVisitOut])
+def list_run_stations(
+    engine: EngineDep, session: SessionDep, principal: ReaderDep, run_id: uuid.UUID
+) -> list[StationVisitOut]:
+    """A run's station visits in the order they started (spec K §4.3).
+
+    A run that is not a line has none. Unknown or foreign runs read as ``404`` (no
+    existence leak).
+    """
+    with _workflow_errors():
+        engine.get_run(run_id)
+    stmt = (
+        select(WorkflowStationVisit)
+        .where(
+            WorkflowStationVisit.workspace_id == principal.workspace_id,
+            WorkflowStationVisit.workflow_run_id == run_id,
+        )
+        .order_by(WorkflowStationVisit.started_at, WorkflowStationVisit.visit)
+    )
+    return [StationVisitOut.model_validate(row) for row in session.scalars(stmt)]
+
+
 @router.get("/runs/{run_id}/red-team", response_model=RedTeamGateOut)
 def get_run_red_team(
     session: SessionDep, principal: ReaderDep, run_id: uuid.UUID
@@ -679,6 +729,7 @@ def trigger_run_red_team(
 __all__ = [
     "StartRunRequest",
     "StartTrigger",
+    "StationVisitOut",
     "TransitionRequest",
     "get_red_team_fn",
     "get_workflow_engine",

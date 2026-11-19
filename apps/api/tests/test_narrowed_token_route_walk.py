@@ -91,6 +91,14 @@ UNGUARDED: dict[str, str] = {
     "POST /auth/logout": "Revokes only the key in the session cookie; reads no header token",
     "POST /auth/personal-tokens": "Refuses every narrowed key, so no token mints a token "
     "(called below)",
+    "POST /auth/device/code": "Device sign-in (#207): reads no credential and returns only "
+    "a pending request's codes; nothing is issued until a person approves it",
+    "POST /auth/device/token": "Device sign-in: reads no credential; returns a token only for "
+    "a request a person approved, once, to the holder of its device code",
+    "POST /auth/device/approve": "Refuses every narrowed key, as minting a personal token does, "
+    "so no token approves a device (called below)",
+    "POST /auth/device/preview": "Refuses every narrowed key, as approving does, and changes "
+    "nothing but the wrong-code count (called below)",
     **dict.fromkeys(
         [
             "POST /integration/github/webhooks",
@@ -280,6 +288,8 @@ def _refused(client: TestClient, admin: str, kind: str) -> list[tuple[str, str, 
     access = {"team_id": team_id, "access_level": "write"}
     calls: list[tuple[str, str, Any]] = [
         ("POST", "/auth/personal-tokens", {"name": "t", "surface": "cli"}),
+        ("POST", "/auth/device/approve", {"user_code": "BCDF-GHJK"}),
+        ("POST", "/auth/device/preview", {"user_code": "BCDF-GHJK"}),
         ("POST", "/teams", {"key": "OPS", "name": "Ops"}),
         ("PATCH", f"/teams/{team_id}", {"name": "renamed"}),
         ("POST", f"/teams/{team_id}/archive", None),

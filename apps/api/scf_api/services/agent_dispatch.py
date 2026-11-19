@@ -60,6 +60,7 @@ SERVER_OWNED_CONTEXT = frozenset(
         "role",
         "workflow_run_id",
         "failing_checks",
+        "held_out_failed",
     }
 )
 
