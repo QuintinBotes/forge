@@ -45,38 +45,26 @@ binds every activity except `forge.resume_agent`:
   `CHECKS_ACTIVITY_TIMEOUT` (30 minutes by default).
 - **The diff gates** (#187) run beside the declared checks, in the worker, on the
   diff from the merge base to the head commit (`apps/worker/scf_worker/diff_gates.py`
-  over `scf_policy`'s `secret_gate`, `dependency_gate` and `sast_gate`). Each is
-  one check, recorded like the others with a finding per line (file, line, rule),
-  and fails on a finding or when it could not verify the change
-  (`could_not_verify`, with the reason). A failed gate means no review and no pull
-  request. A gate the worker could not run (no `bandit`, a registry that errors or
-  times out) pauses the run for a person with the reason, instead of spending the
-  builder's retries. What they allow comes from the default branch's `diff_gates` policy
-  block, so a change cannot loosen its own gates. Nothing from the change runs.
-  - **`secret_scan`** matches the lines each commit adds, and each commit
-    message, against a small set of
-    high-precision credential shapes (private keys; AWS, GitHub, GitLab, Slack,
-    Stripe, Google, Anthropic, OpenAI, npm and PyPI tokens). A finding never holds
-    the value. `secret_allowed_files` allows matches in named files only (no
-    wildcard; a path is matched exactly), never in a commit message; allowed
-    matches are recorded as `allowed by policy`.
-  - **`dependency_check`** compares each changed `pyproject.toml`, pip
-    requirements or constraints file (`.txt`, `.in`) and `package.json`, and the
-    `uv.lock` or `package-lock.json` beside a changed manifest, before and after,
-    and asks PyPI's or npm's public registry about each dependency or locked
-    version added: an unknown name or version fails, and so does a version
-    younger than `min_dependency_age_days` (7 by default) unless
-    `allowed_packages` names the package. A range is judged by the package's
-    newest final release (no pre-release or yanked one). Workspace and path
-    packages are local. A URL, path, VCS or option requirement, a change to
-    `[tool.uv]`, `[tool.poetry]`, `[tool.hatch]` and similar tables, `overrides`
-    or `resolutions`, another ecosystem's manifest or an installer's config
-    (`uv.toml`, `.npmrc`, `pip.ini`), a lockfile without its manifest beside it,
-    and a `pnpm`, `yarn`, `bun` or `poetry` lockfile cannot be verified.
+  over `scf_policy`'s `secret_gate` and `sast_gate`). Each is one check, recorded
+  like the others with a finding per line (file, line, rule), and fails on a
+  finding or when it could not verify the change (`could_not_verify`, with the
+  reason). A failed gate means no review and no pull request. A gate the worker
+  could not run (no `bandit`) pauses the run for a person with the reason, instead
+  of spending the builder's retries. What they allow comes from the default
+  branch's `diff_gates` policy block, so a change cannot loosen its own gates.
+  Nothing from the change runs. The dependency gate follows in #316.
+  - **`secret_scan`** matches the lines each commit adds, each commit message and
+    each path a commit adds or renames against a small set of high-precision
+    credential shapes (private keys; AWS, GitHub, GitLab, Slack, Stripe, Google,
+    Anthropic, OpenAI, npm and PyPI tokens). A finding never holds the value, and
+    a path that holds one is masked in every gate's recorded output.
+    `secret_allowed_files` allows matches in named files only (no wildcard; a path
+    is matched exactly), never in a commit message or a path; allowed matches are
+    recorded as `allowed by policy`.
   - **`sast`** runs `bandit` over the changed Python files, ignoring `# nosec`,
     and fails on a finding at or above `sast_severity` (`high` by default; `low`
-    and `medium` are stricter). A worker without `bandit` cannot verify a change
-    to a Python file.
+    and `medium` are stricter). A changed Python path that is a symlink or not a
+    regular file, and a worker without `bandit`, cannot be verified.
 - **The independent reviewer** (#173) judges a change whose checks all pass,
   before its pull request. It is an agent run with role `reviewer` on the
   workflow run, with read-only tools (`read_file`, `list_dir`, `search_code`).
@@ -229,10 +217,7 @@ binds every activity except `forge.resume_agent`:
 - **The diff gates have limits (#187).** `sast` reads Python only; the worker
   image installs no `bandit` (`uv sync --no-dev`), so until it does (#311) every
   Python change fails `sast` as `could_not_verify` and the run pauses for a
-  person. `dependency_check` needs the worker
-  to reach `pypi.org` and `registry.npmjs.org` (no private registry or mirror
-  yet); a PyPI pin matches its release ignoring trailing `.0` only (no full PEP
-  440 normalisation); and `secret_scan` finds only the shapes it names.
+  person. `secret_scan` finds only the shapes it names.
 - **Drafts stored before migration `0051` name no run (#288).** The spec gate
   does not list, wait on or withdraw them; decide them through the scenario
   routes.

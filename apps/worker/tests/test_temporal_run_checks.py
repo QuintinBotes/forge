@@ -46,7 +46,7 @@ REPO = "acme/app"
 BRANCH = "scf/run-0123456789ab"
 POLICY = 'repo_id: app\ncommands:\n  marker: "test -f MARKER"\n  lint: "true"\n'
 #: The gates on the diff (#187) beside the declared checks, passing on this change.
-GATES = {"secret_scan": True, "dependency_check": True, "sast": True}
+GATES = {"secret_scan": True, "sast": True}
 
 
 @pytest.fixture
@@ -243,6 +243,60 @@ async def test_a_run_outside_the_workspace_is_refused(
         await _checks(factory, uuid.uuid4())
 
     assert caught.value.type == "WorkflowRunNotFound"
+
+
+async def test_the_token_the_checks_mint_is_audited_under_their_workflow_run(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#186: the mirror fetch before the checks mints a token; its audit names the run."""
+    import json
+
+    import httpx
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    from scf_api.auth.crypto import FernetCipher
+    from scf_api.auth.vault import SecretVault
+    from scf_contracts.enums import APIKeyKind
+    from scf_db.models import AuditLog
+    from scf_integrations.github_auth import WORKSPACE_SECRET_NAME, InstallationTokenProvider
+    from scf_worker import dispatch, finalizer
+
+    _, mirror = repo
+    pem = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        .decode()
+    )
+    vault = SecretVault(cipher=FernetCipher(b"c" * 32))
+    vault.put_secret(
+        workspace_id=WS,
+        name=WORKSPACE_SECRET_NAME,
+        secret=json.dumps({"app_id": "7", "installation_id": "70", "private_key_pem": pem}),
+        kind=APIKeyKind.INTEGRATION_TOKEN,
+    )
+    tokens = httpx.MockTransport(
+        lambda _: httpx.Response(201, json={"token": "ghs_" + "c" * 36, "expires_at": None})
+    )
+    monkeypatch.setattr(finalizer, "_workspace_vault", lambda: vault)
+    monkeypatch.setattr(finalizer, "create_session_factory", lambda: factory)
+    monkeypatch.setattr(
+        finalizer,
+        "InstallationTokenProvider",
+        lambda **kw: InstallationTokenProvider(**{**kw, "transport": tokens}),
+    )
+    monkeypatch.setattr(dispatch, "ensure_mirror", lambda *_, **__: mirror)  # no fetch
+    run_id = _seed(factory, _git(mirror, "rev-parse", BRANCH))
+
+    await _checks(factory, run_id)
+
+    with factory() as s:
+        issued = list(s.query(AuditLog).filter(AuditLog.action == "github.token_issued"))
+    assert issued and {row.details["run_id"] for row in issued} == {str(run_id)}
 
 
 def _recorded(factory: sessionmaker[Session], run_id: uuid.UUID) -> list[dict[str, Any]]:

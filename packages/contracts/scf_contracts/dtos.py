@@ -526,11 +526,6 @@ class PolicySandboxBlock(_Model):
     vm_memory: str | None = None  # guest RAM, e.g. "4g" (isolation: microvm)
 
 
-#: The youngest a dependency version a diff adds may be, in days (spec 003 FR-018:
-#: no default was chosen; seven days is the working assumption).
-MIN_DEPENDENCY_AGE_DAYS = 7
-
-
 class DiffGateRules(_Model):
     """The ``diff_gates`` block: what the gates on an agent's diff allow (#187).
 
@@ -542,9 +537,6 @@ class DiffGateRules(_Model):
 
     model_config = ConfigDict(extra="forbid")
 
-    min_dependency_age_days: int = Field(default=MIN_DEPENDENCY_AGE_DAYS, ge=0)
-    #: Packages the age check lets through by name; they must still exist.
-    allowed_packages: list[str] = Field(default_factory=list)
     secret_allowed_files: list[str] = Field(default_factory=list)
     sast_analyzer: Literal["bandit"] = "bandit"
     sast_severity: Literal["low", "medium", "high"] = "high"
@@ -1306,7 +1298,6 @@ class ModelStreamEvent(_Model):
 
 __all__ = [
     "ADR",
-    "MIN_DEPENDENCY_AGE_DAYS",
     "PROVIDER_FAILURE_STOP_REASONS",
     "AcceptanceCriterion",
     "AgentObjective",

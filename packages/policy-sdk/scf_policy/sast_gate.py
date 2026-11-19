@@ -34,10 +34,13 @@ def run_sast(
 ) -> GateResult:
     """Analyse ``files`` (``{path: text}`` of the changed files) with ``analyzer``.
 
-    ``None`` is a file the caller could not read: it cannot be verified.
+    ``None`` is a file the caller could not read as a regular file (a symlink, a
+    submodule, an unreadable path): it cannot be verified.
     """
     targets = {path: text for path, text in files.items() if path.endswith(SAST_SUFFIXES)}
-    unread = [f"{path}: not read" for path, text in targets.items() if text is None]
+    unread = [
+        f"{path}: not read as a regular file" for path, text in targets.items() if text is None
+    ]
     if unread or not targets:
         return gate_result([], reasons=unread)
     binary = shutil.which(analyzer)

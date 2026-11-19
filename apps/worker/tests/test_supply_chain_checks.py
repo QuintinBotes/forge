@@ -1,8 +1,8 @@
 """#187 criteria 6 and 7: the gates on the diff join ``forge.run_checks``'s check set.
 
 On a local bare mirror and the worktree sandbox (tests only), as #251's tests run
-the checks. The registry is a fake, so nothing reaches the network; bandit is a
-dev dependency. The credential below is fake and split, so no source line holds one.
+the checks; bandit is a dev dependency. The credential below is fake and split, so
+no source line holds one.
 """
 
 from __future__ import annotations
@@ -12,11 +12,9 @@ import os
 import subprocess
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -27,7 +25,6 @@ from scf_db.base import Base
 from scf_db.models import AgentRun, Project, RepositoryConnection, Task, WorkflowRun, Workspace
 from scf_db.models.enums import RunStatus
 from scf_db.models.role_config import AgentRoleConfig
-from scf_worker.diff_gates import PublicRegistry
 from scf_worker.temporal_services import run_checks_service
 from scf_workflow.temporal.payloads import ChecksResult, RunChecksInput
 
@@ -36,23 +33,11 @@ REPO = "acme/app"
 BRANCH = "scf/run-0123456789cd"
 POLICY = 'repo_id: app\ncommands:\n  lint: "true"\n'
 FAKE_KEY = "AKIA" + "QZ7X" * 4
-OLD = datetime.now(UTC) - timedelta(days=400)
+#: A shape the stored output's own redaction does not catch: only the gate masks it.
+FAKE_GOOGLE_KEY = "AIza" + "Sy" + "B7" * 16 + "x"
 SHELL = (
     "import subprocess\n\n\ndef run(command):\n    return subprocess.Popen(command, shell=True)\n"
 )
-
-
-class FakeRegistry:
-    def __init__(self, known: dict[tuple[str, str, str | None], datetime | Exception]) -> None:
-        self.known = known
-        self.asked: list[tuple[str, str, str | None]] = []
-
-    def published(self, ecosystem: str, name: str, version: str | None) -> datetime | None:
-        self.asked.append((ecosystem, name, version))
-        answer = self.known.get((ecosystem, name, version))
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
 
 
 class Reviewer:
@@ -164,10 +149,8 @@ def _seed(factory: sessionmaker[Session], head: str) -> uuid.UUID:
         return run.id
 
 
-def _checks(
-    factory: sessionmaker[Session], run_id: uuid.UUID, registry: FakeRegistry, reviewer: Reviewer
-) -> ChecksResult:
-    service = run_checks_service(factory, reviewer=reviewer, registry=registry)
+def _checks(factory: sessionmaker[Session], run_id: uuid.UUID, reviewer: Reviewer) -> ChecksResult:
+    service = run_checks_service(factory, reviewer=reviewer)
     return service(
         RunChecksInput(workflow_run_id=run_id, workspace_id=WS, attempt=0, idempotency_key="c0")
     )
@@ -185,7 +168,6 @@ def _recorded(factory: sessionmaker[Session], run_id: uuid.UUID) -> dict[str, An
     ("files", "failed", "finding"),
     [
         ({"app/settings.py": f'KEY = "{FAKE_KEY}"\n'}, "secret_scan", "app/settings.py:1 [aws"),
-        ({"requirements.txt": "not-on-pypi==1.0\n"}, "dependency_check", "requirements.txt:1 ["),
         ({"app/run.py": SHELL}, "sast", "app/run.py:5 [B602]"),
     ],
 )
@@ -200,9 +182,9 @@ def test_a_change_that_fails_a_gate_is_not_offered_for_review(
     run_id = _seed(factory, _agent_commits(work, mirror, files))
     reviewer = Reviewer()
 
-    result = _checks(factory, run_id, FakeRegistry({}), reviewer)
+    result = _checks(factory, run_id, reviewer)
 
-    gates = {"secret_scan": True, "dependency_check": True, "sast": True}
+    gates = {"secret_scan": True, "sast": True}
     assert result.results == {"lint": True, **gates, failed: False}
     assert not result.all_passed and result.pause_reason is None
     assert reviewer.models == [], "a change that fails a gate is never reviewed"
@@ -216,31 +198,12 @@ def test_the_stored_result_never_holds_the_secret(
     work, mirror = repo
     run_id = _seed(factory, _agent_commits(work, mirror, {"app/k.py": f'K = "{FAKE_KEY}"\n'}))
 
-    _checks(factory, run_id, FakeRegistry({}), Reviewer())
+    _checks(factory, run_id, Reviewer())
 
     with factory() as s:
         run = s.get(WorkflowRun, run_id)
         assert run is not None
         assert FAKE_KEY not in json.dumps(run.context)
-
-
-def test_a_registry_that_cannot_answer_blocks_the_change(
-    factory: sessionmaker[Session], repo: tuple[Path, Path]
-) -> None:
-    work, mirror = repo
-    run_id = _seed(factory, _agent_commits(work, mirror, {"requirements.txt": "rich==13.7.1\n"}))
-    registry = FakeRegistry({("pypi", "rich", "13.7.1"): TimeoutError("read timed out")})
-
-    result = _checks(factory, run_id, registry, Reviewer())
-
-    assert result.results["dependency_check"] is False and not result.all_passed
-    assert _recorded(factory, run_id)["dependency_check"]["output_tail"].startswith(
-        "could_not_verify"
-    )
-    # the worker's fault: a person is asked, the builder's retries are not spent
-    assert result.pause_reason == (
-        "dependency_check could not verify: requirements.txt:1: pypi did not answer (TimeoutError)"
-    )
 
 
 def test_a_worker_without_bandit_pauses_for_a_person(
@@ -251,7 +214,7 @@ def test_a_worker_without_bandit_pauses_for_a_person(
     paths = os.environ["PATH"].split(os.pathsep)
     monkeypatch.setenv("PATH", os.pathsep.join(p for p in paths if not Path(p, "bandit").exists()))
 
-    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+    result = _checks(factory, run_id, Reviewer())
 
     assert result.results["sast"] is False
     assert result.pause_reason == "sast could not verify: bandit is not installed on this worker"
@@ -264,7 +227,7 @@ def test_a_secret_added_then_removed_in_a_later_commit_is_found(
     first = _agent_commits(work, mirror, {"app/k.py": f'K = "{FAKE_KEY}"\n'})
     run_id = _seed(factory, _commit(work, mirror, BRANCH, {"app/k.py": "K = None\n"}))
 
-    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+    result = _checks(factory, run_id, Reviewer())
 
     assert result.results["secret_scan"] is False
     stored = _recorded(factory, run_id)["secret_scan"]["output_tail"]
@@ -279,7 +242,7 @@ def test_a_secret_in_a_commit_message_is_found(
     head = _commit(work, mirror, BRANCH, {"a.txt": "a\n"}, message=f"fix\n\nkey {FAKE_KEY}")
     run_id = _seed(factory, head)
 
-    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+    result = _checks(factory, run_id, Reviewer())
 
     assert result.results["secret_scan"] is False
     with factory() as s:
@@ -294,40 +257,61 @@ def test_a_python_file_whose_name_holds_a_space_is_analysed(
     work, mirror = repo
     run_id = _seed(factory, _agent_commits(work, mirror, {"deploy tool.py": SHELL}))
 
-    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+    result = _checks(factory, run_id, Reviewer())
 
     assert result.results["sast"] is False
 
 
-def test_a_workspace_package_the_root_declares_is_not_looked_up(
+def test_a_python_path_that_is_a_symlink_cannot_be_verified(
+    factory: sessionmaker[Session], repo: tuple[Path, Path]
+) -> None:
+    """``import tool`` runs tool.dat; git's blob for tool.py is only the link's text."""
+    work, mirror = repo
+    _git(work, "branch", BRANCH, "main")
+    (work / "tool.py").symlink_to("tool.dat")
+    run_id = _seed(factory, _commit(work, mirror, BRANCH, {"tool.dat": SHELL}))
+
+    result = _checks(factory, run_id, Reviewer())
+
+    assert result.results["sast"] is False
+    assert result.pause_reason is None, "the change's to fix, not the worker's"
+    stored = _recorded(factory, run_id)["sast"]["output_tail"]
+    assert stored.startswith("could_not_verify") and "tool.py: not read as a regular file" in stored
+
+
+def test_a_credential_in_a_file_path_is_found_and_never_stored(
     factory: sessionmaker[Session], repo: tuple[Path, Path]
 ) -> None:
     work, mirror = repo
-    root = "[tool.uv.sources]\nscf-board = { workspace = true }\n"
-    _commit(work, mirror, "main", {"pyproject.toml": root})
-    member = '[project]\nname = "app"\ndependencies = ["scf-board"]\n'
-    run_id = _seed(factory, _agent_commits(work, mirror, {"apps/x/pyproject.toml": member}))
-    registry = FakeRegistry({})
+    head = _agent_commits(work, mirror, {f"keys/{FAKE_GOOGLE_KEY}.py": SHELL})
+    run_id = _seed(factory, head)
 
-    result = _checks(factory, run_id, registry, Reviewer())
+    result = _checks(factory, run_id, Reviewer())
 
-    assert result.results["dependency_check"] is True and registry.asked == []
+    assert result.results["secret_scan"] is False and result.results["sast"] is False
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None and FAKE_GOOGLE_KEY not in json.dumps(run.context)
+    stored = _recorded(factory, run_id)
+    assert (
+        f"file path:1 [google-api-key] in commit {head[:12]}"
+        in stored["secret_scan"]["output_tail"]
+    )
+    assert "[B602]" in stored["sast"]["output_tail"]
 
 
 def test_a_change_that_passes_every_gate_goes_on_to_review(
     factory: sessionmaker[Session], repo: tuple[Path, Path]
 ) -> None:
     work, mirror = repo
-    run_id = _seed(factory, _agent_commits(work, mirror, {"requirements.txt": "rich==13.7.1\n"}))
-    registry = FakeRegistry({("pypi", "rich", "13.7.1"): OLD})
+    run_id = _seed(factory, _agent_commits(work, mirror, {"app/ok.py": "VALUE = 1\n"}))
     reviewer = Reviewer()
 
-    result = _checks(factory, run_id, registry, reviewer)
+    result = _checks(factory, run_id, reviewer)
 
     assert result.results == {
         "lint": True,
         "secret_scan": True,
-        "dependency_check": True,
         "sast": True,
         "independent_review": True,
     }
@@ -344,7 +328,7 @@ def test_a_secret_the_default_branch_allows_is_recorded_as_allowed(
         factory, _agent_commits(work, mirror, {"tests/fixture.py": f'K = "{FAKE_KEY}"\n'})
     )
 
-    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+    result = _checks(factory, run_id, Reviewer())
 
     assert result.results["secret_scan"] is True
     stored = _recorded(factory, run_id)["secret_scan"]["output_tail"]
@@ -359,72 +343,6 @@ def test_a_change_cannot_allow_its_own_secret(
     files = {".forge/policy.yaml": allowing, "tests/fixture.py": f'K = "{FAKE_KEY}"\n'}
     run_id = _seed(factory, _agent_commits(work, mirror, files))
 
-    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+    result = _checks(factory, run_id, Reviewer())
 
     assert result.results["secret_scan"] is False
-
-
-# --------------------------------------------------------------------------- #
-# The worker's registry client, over a mock transport                         #
-# --------------------------------------------------------------------------- #
-
-PYPI = {
-    "releases": {
-        "1.0": [{"upload_time_iso_8601": "2020-01-02T00:00:00Z"}],
-        "2.0.0": [
-            {"upload_time_iso_8601": "2026-11-18T10:00:00Z"},
-            {"upload_time_iso_8601": "2026-11-18T09:00:00Z"},
-        ],
-        "2.1": [{"upload_time_iso_8601": "2026-11-19T00:00:00Z", "yanked": True}],
-        "3.0rc1": [{"upload_time_iso_8601": "2026-11-19T01:00:00Z"}],
-    }
-}
-NPM = {
-    "versions": {"1.0.0": {}, "1.1.0": {}, "2.0.0-nightly.1": {}},
-    "time": {
-        "created": "2019-01-01T00:00:00.000Z",
-        "modified": "2026-11-19T00:00:00.000Z",
-        "1.0.0": "2019-01-01T00:00:00.000Z",
-        "1.1.0": "2026-11-17T00:00:00.000Z",
-        "2.0.0-nightly.1": "2026-11-19T00:00:00.000Z",
-        "9.9.9": "2026-11-18T00:00:00.000Z",
-    },
-}
-
-
-def _registry(seen: list[str]) -> PublicRegistry:
-    def answer(request: httpx.Request) -> httpx.Response:
-        seen.append(str(request.url))
-        if request.url.path == "/pypi/httpx/json":
-            return httpx.Response(200, json=PYPI)
-        if request.url.raw_path == b"/@acme%2Fwidgets":
-            return httpx.Response(200, json=NPM)
-        if request.url.path == "/pypi/flaky/json":
-            return httpx.Response(503)
-        return httpx.Response(404)
-
-    return PublicRegistry(transport=httpx.MockTransport(answer))
-
-
-def test_the_public_registry_reads_publication_times() -> None:
-    seen: list[str] = []
-    registry = _registry(seen)
-
-    assert registry.published("pypi", "httpx", "1.0") == datetime(2020, 1, 2, tzinfo=UTC)
-    assert registry.published("pypi", "httpx", "2.0") == datetime(2026, 11, 18, 9, tzinfo=UTC)
-    # a range: the newest final release, not a yanked one or a pre-release
-    assert registry.published("pypi", "httpx", None) == datetime(2026, 11, 18, 10, tzinfo=UTC)
-    assert registry.published("pypi", "httpx", "3.0") is None
-    assert registry.published("pypi", "not-on-pypi", None) is None
-    assert registry.published("npm", "@acme/widgets", "1.0.0") == datetime(2019, 1, 1, tzinfo=UTC)
-    assert registry.published("npm", "@acme/widgets", None) == datetime(2026, 11, 17, tzinfo=UTC)
-    assert registry.published("npm", "@acme/widgets", "9.9.9") is None, "unpublished"
-    assert registry.published("pypi", "httpx", "1.0.0") == datetime(2020, 1, 2, tzinfo=UTC)
-    assert registry.published("pypi", "httpx", "1") == datetime(2020, 1, 2, tzinfo=UTC)
-    assert seen[0] == "https://pypi.org/pypi/httpx/json"
-    assert seen[5] == "https://registry.npmjs.org/@acme%2Fwidgets"
-
-
-def test_the_public_registry_raises_when_it_cannot_answer() -> None:
-    with pytest.raises(httpx.HTTPStatusError):
-        _registry([]).published("pypi", "flaky", None)

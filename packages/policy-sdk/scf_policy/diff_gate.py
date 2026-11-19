@@ -1,9 +1,9 @@
 """What the gates on an agent's diff share (#187): their result and the diff's added lines.
 
-The secret, dependency and SAST gates (:mod:`scf_policy.secret_gate`,
-:mod:`scf_policy.dependency_gate`, :mod:`scf_policy.sast_gate`) judge a change on
-the service side before it is offered for review. Like :mod:`scf_policy.static_gate`
-they take content, not a filesystem: the caller reads the diff and the files.
+The secret and SAST gates (:mod:`scf_policy.secret_gate`, :mod:`scf_policy.sast_gate`)
+judge a change on the service side before it is offered for review. Like
+:mod:`scf_policy.static_gate` they take content, not a filesystem: the caller reads
+the diff and the files.
 
 A gate that cannot finish says so: ``could_not_verify`` counts as failed (spec 003
 FR-020). A finding names the file, line and rule, never the text it matched.

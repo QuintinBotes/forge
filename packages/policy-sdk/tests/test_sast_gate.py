@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pydantic
 import pytest
 
+from scf_contracts import Policy
+from scf_policy.loader import load_policy
 from scf_policy.sast_gate import run_sast
 
 SHELL = (
@@ -71,7 +74,8 @@ def test_a_file_the_analyser_cannot_read_cannot_verify() -> None:
 def test_a_changed_file_that_could_not_be_read_cannot_verify() -> None:
     result = run_sast({"app/run.py": None})
 
-    assert (result.status, result.reasons) == ("could_not_verify", ["app/run.py: not read"])
+    assert result.status == "could_not_verify"
+    assert result.reasons == ["app/run.py: not read as a regular file"]
 
 
 def test_a_path_bandit_excludes_by_default_is_still_analysed() -> None:
@@ -92,3 +96,20 @@ def test_a_file_the_analyser_did_not_report_on_cannot_verify(
 
     assert result.status == "could_not_verify"
     assert result.unavailable == ["app/run.py: bandit did not analyse it"]
+
+
+def test_the_severity_and_analyser_are_policy_fields_with_a_default(tmp_path: Path) -> None:
+    default = Policy(repo_id="r").diff_gates
+    assert (default.sast_analyzer, default.sast_severity) == ("bandit", "high")
+    (tmp_path / "policy.yaml").write_text("repo_id: r\ndiff_gates:\n  sast_severity: medium\n")
+    assert load_policy(tmp_path / "policy.yaml").diff_gates.sast_severity == "medium"
+
+
+@pytest.mark.parametrize(
+    "block", ["sast_severity: critical", "sast_analyzer: semgrep", "sast_severities: low"]
+)
+def test_an_invalid_gate_block_is_refused_when_the_policy_loads(tmp_path: Path, block: str) -> None:
+    (tmp_path / "policy.yaml").write_text(f"repo_id: r\ndiff_gates:\n  {block}\n")
+
+    with pytest.raises(pydantic.ValidationError):
+        load_policy(tmp_path / "policy.yaml")
