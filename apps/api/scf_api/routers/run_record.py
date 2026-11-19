@@ -1,0 +1,88 @@
+"""The run record a run process reaches through SCF's API (#256, spec 011 FR-011, FR-013).
+
+One route per method of the run-record port (``scf_worker.run_record.RunRecord``, #238):
+read the run's stored inputs, append an event (``emit``; ``on_step`` appends the events
+``events_for_step`` makes of a step) and record the handoff. Each accepts only the live
+run token of the run in its path (:func:`~scf_api.auth.run_token.require_run_token`) and
+refuses every other credential. Events and the handoff are stored by the same code the
+worker's in-process record uses (``scf_api.services.run_record``).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy.orm import Session
+
+from scf_api.auth.run_token import RunCaller, audit_run, require_run_token
+from scf_api.deps import DbSession
+from scf_api.observability.redaction import redact_text
+from scf_api.services.run_record import RunEventSink, record_handoff
+from scf_contracts import AgentRunResult, RunEventDraft
+from scf_db.models import AgentRun
+
+router = APIRouter(prefix="/agent/runs/{run_id}/record", tags=["run-record"])
+
+RunCallerDep = Annotated[RunCaller, Depends(require_run_token)]
+
+
+def _factory(session: Session) -> Callable[[], Session]:
+    """Fresh sessions on the request's database, as the worker's record opens its own."""
+    bind = session.get_bind()
+    return lambda: Session(bind)
+
+
+@router.get("/inputs", summary="The run's stored objective (run token only).")
+def read_inputs(caller: RunCallerDep, session: DbSession) -> dict[str, Any]:
+    row = session.get(AgentRun, caller.run_id)
+    return dict(row.inputs or {}) if row is not None else {}
+
+
+@router.post(
+    "/events",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Append one event to the run (run token only).",
+)
+def append_event(
+    draft: RunEventDraft,
+    caller: RunCallerDep,
+    session: DbSession,
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1, max_length=200)
+    ] = None,
+) -> None:
+    """Numbered, redacted and truncated by SCF; a repeated ``Idempotency-Key`` stores once.
+
+    Only the draft's type, summary and payload are read: the sequence number, time and
+    provenance (``enforcement``, ``observed_by``, ``enforceable``) are SCF's.
+    """
+    sink = RunEventSink(
+        caller.run_id, caller.workspace_id, session_factory=_factory(session), redact=redact_text
+    )
+    if not sink.emit(draft, idempotency_key=idempotency_key):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="the event was not stored; retry it with the same Idempotency-Key",
+        )
+
+
+@router.post(
+    "/handoff",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Record the run's handoff for close-out, once (run token only).",
+)
+def record_run_handoff(result: AgentRunResult, caller: RunCallerDep, session: DbSession) -> None:
+    result = result.model_copy(update={"run_id": caller.run_id})
+    with _factory(session)() as writer:
+        if not record_handoff(writer, caller.run_id, caller.workspace_id, result):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail="this run's handoff is already recorded or closed out",
+            )
+        audit_run(writer, "agent_run.handoff_recorded", caller, actor_type="agent_runner")
+        writer.commit()
+
+
+__all__ = ["router"]

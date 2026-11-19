@@ -3,7 +3,9 @@
 An agent's token (``mint_agent_token``) keeps the scopes of the person it is bound to,
 capped at what an agent-runner holds, so it manages no team and no project. A person
 signed in with the agent-runner role keeps their own grants and team memberships.
-``GET /access/effective`` reports what the routes enforce for the same caller.
+``GET /access/effective`` reports what the routes enforce for the same caller. An agent's
+token bound to a person works only while that person may run agents, and ``role.grant``
+never joins an agent's cap (#188's review, closed with #256).
 """
 
 from __future__ import annotations
@@ -17,13 +19,24 @@ import pytest
 from fastapi.testclient import TestClient
 
 import scf_api.auth.service as auth_service_module
+import scf_api.authz.deps as authz_deps
 from scf_api.auth.service import AuthService
+from scf_api.deps import Principal
 from scf_api.main import create_app
 from scf_api.settings import Settings
 from scf_auth.tokens import encode_session_jwt
 from scf_authz.permissions import ROLE_PERMISSIONS
 from scf_contracts.auth import SessionClaims
-from scf_contracts.authz import AccessLevel, PrincipalType, ProjectVisibility, Role, ScopeType
+from scf_contracts.authz import (
+    AccessLevel,
+    Permission,
+    PrincipalContext,
+    PrincipalRef,
+    PrincipalType,
+    ProjectVisibility,
+    Role,
+    ScopeType,
+)
 from scf_contracts.enums import UserRole
 from scf_db.models import (
     Project,
@@ -144,3 +157,48 @@ def test_an_agent_token_keeps_its_owners_scopes_capped_at_agent_runner(
     # What /access/effective reports is what the routes above enforced.
     assert _effective(client, agent, WALLED) <= AGENT_RUNNER
     assert "project.read" in _effective(client, agent, WALLED)
+
+
+def test_an_agent_token_acts_only_while_its_owner_may_run_agents(
+    client: TestClient, workflow_db: Any
+) -> None:
+    viewer = uuid.uuid4()
+    with workflow_db.factory() as s:
+        s.add(User(id=viewer, workspace_id=WS, email="v@acme.test", role=UserRole.VIEWER))
+        s.commit()
+    service = auth_service_module.get_auth_service()
+    of_viewer = service.mint_agent_token(workspace_id=WS, name="run", user_id=viewer)[1]
+    of_mate = service.mint_agent_token(workspace_id=WS, name="run", user_id=MATE)[1]
+    unbound = service.mint_agent_token(workspace_id=WS, name="run")[1]
+
+    # Without the owner's check a viewer's agent token is an agent-runner: run_agent.
+    assert client.get("/board/tasks", headers=bearer(of_viewer)).status_code == 401
+    assert client.get("/board/tasks", headers=bearer(of_mate)).status_code == 200
+    assert client.get("/board/tasks", headers=bearer(unbound)).status_code == 200
+    with workflow_db.factory() as s:
+        mate = s.get(User, MATE)
+        assert mate is not None
+        mate.role = UserRole.VIEWER
+        s.commit()
+    assert client.get("/board/tasks", headers=bearer(of_mate)).status_code == 401
+
+
+def test_role_grant_never_joins_an_agents_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    # AuthzService ranks a granting actor by its uncapped roles, so the cap must never
+    # carry role.grant, even if the agent-runner role were given it.
+    shipped = ROLE_PERMISSIONS[Role.AGENT_RUNNER]
+    widened = {**ROLE_PERMISSIONS, Role.AGENT_RUNNER: shipped | {Permission.ROLE_GRANT}}
+    monkeypatch.setattr(authz_deps, "ROLE_PERMISSIONS", widened)
+    agent = Principal(user_id=PERSON, workspace_id=WS, role=UserRole.AGENT_RUNNER, agent=True)
+
+    class _Contexts:
+        def load_principal_context(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Any:
+            who = PrincipalRef(type=PrincipalType.USER, id=user_id)
+            return PrincipalContext(
+                principal=who, workspace_id=workspace_id, grants=(), team_memberships=()
+            )
+
+    ctx = authz_deps.get_principal_context(agent, _Contexts())  # type: ignore[arg-type]
+
+    assert Permission.ROLE_GRANT not in shipped
+    assert ctx.permission_cap == shipped

@@ -141,6 +141,16 @@ UNGUARDED: dict[str, str] = {
         ],
         _READ,
     ),
+    **dict.fromkeys(
+        [
+            "GET /agent/runs/{run_id}/record/inputs",
+            "POST /agent/runs/{run_id}/record/events",
+            "POST /agent/runs/{run_id}/record/handoff",
+        ],
+        "Run record (#256): require_run_token accepts only the live run token of the run in "
+        "the path; every API key, session and personal token gets 401 "
+        "(apps/api/tests/test_run_token.py)",
+    ),
     "WS /ws": "Pushes the workspace's events to the caller; what the client sends is ignored",
     "WS /ws/spec/{spec_id}": "Closes a socket that sends an edit without write "
     "(can(principal.role, WRITE)); neither token holds write",
