@@ -131,6 +131,18 @@ def _failed_checks_section(context: dict[str, Any]) -> list[str]:
     ]
 
 
+def _held_out_section(context: dict[str, Any]) -> list[str]:
+    """How many held-out scenarios the previous attempt failed: a count, nothing else (#286)."""
+    failed = context.get("held_out_failed")
+    if isinstance(failed, bool) or not isinstance(failed, int) or failed <= 0:
+        return []
+    return [
+        "# Held-out scenarios your previous attempt failed\n\n"
+        f"{failed} held-out acceptance scenario(s) failed. They are hidden from you by "
+        "design: make the change meet its acceptance criteria."
+    ]
+
+
 def build_system_prompt(
     objective: AgentObjective,
     *,
@@ -190,6 +202,7 @@ def build_system_prompt(
         )
     parts.extend(_knowledge_section(context))
     parts.extend(_failed_checks_section(context))
+    parts.extend(_held_out_section(context))
     parts.extend(_review_section(context))
     parts.extend(_spec_section(context))
     if agents_md:
