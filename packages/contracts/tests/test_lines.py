@@ -710,6 +710,8 @@ def test_line_name_key_is_workflow() -> None:
         ({"work": {**AGENT, "timeout_seconds": 14401}}, {}),
         ({"work": {**AGENT, "decisions": ["failed"]}}, {}),
         ({"work": {**AGENT, "decisions": ["ship", "ship"]}}, {}),
+        # A visit records its outcome in 48 characters (workflow_station_visit.outcome).
+        ({"work": {**AGENT, "decisions": ["d" * 49]}}, {}),
         ({"work": {**AGENT, "role": "overlord"}}, {}),
         ({"work": {**AGENT, "network": True}}, {}),
         ({"work": {**GATE, "required_approvals": 0}}, {}),
@@ -735,6 +737,7 @@ def test_line_name_key_is_workflow() -> None:
         "agent-timeout",
         "decision-reuses-outcome",
         "decision-duplicate",
+        "decision-over-48",
         "unknown-role",
         "no-network-field",
         "approvals-0",

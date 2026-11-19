@@ -16,6 +16,7 @@ stations are #180's: a line that holds one fails at that station.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from contextlib import suppress
 from datetime import timedelta
 from typing import Any
@@ -88,8 +89,13 @@ def load_line(dsl_yaml: str) -> LineDefinition:
 
 
 def _label(path: str, value: object) -> str:
-    """A value substituted into a prompt, with its source (ADR-0014)."""
-    return f"[source: {path}] {value} [end of {path}]"
+    """A value substituted into a prompt, with its source (ADR-0014).
+
+    The markers carry a hash of the value, so the value cannot contain its own end.
+    """
+    text = str(value)
+    tag = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:12]
+    return f"[source: {path} {tag}] {text} [end of {path} {tag}]"
 
 
 @workflow.defn(name="forge.StationWorkflow")
@@ -262,6 +268,7 @@ class StationWorkflow:
             )
         except ActivityError as exc:
             _record_error(rec, exc)
+            self._tokens += cap  # what it spent is unknown: charge the whole cap
             return
         self._tokens += result.tokens_used
         rec.agent_run_id = result.agent_run_id

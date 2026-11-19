@@ -30,7 +30,7 @@ from scf_workflow.temporal.payloads import (
     StationParams,
     StationVisitRecord,
 )
-from scf_workflow.temporal.station_workflow import StationWorkflow, _record_error
+from scf_workflow.temporal.station_workflow import StationWorkflow, _label, _record_error
 from scf_workflow.temporal.workflows import FeatureWorkflow
 
 from .conftest import TASK_QUEUE, Harness
@@ -156,6 +156,31 @@ transitions:
 """
 
 
+#: The agent station sends a failed visit back to itself, at most four times.
+FAILING = BUDGETED.replace(
+    "max_tokens: 60}\n    max_visits: 5", "max_tokens: 40}\n    max_visits: 4"
+)
+FAILING += "  - {from: implement, to: implement, when: failed}\n"
+
+#: A pull request, then CI on it: the second station reads the first one's output.
+PR_THEN_CI = """\
+workflow: pr_then_ci
+dsl_version: "2"
+initial: open
+terminals: {done: succeeded}
+stations:
+  open: {kind: service, service: forge.open_pr, inputs: {task: task.id}, retry: {max_attempts: 3}}
+  ci: {kind: service, service: forge.await_ci, inputs: {pr: outputs.open.pr_ref}CI_RETRY}
+transitions:
+  - {from: open, to: ci, when: succeeded}
+  - {from: ci, to: done, when: succeeded}
+"""
+
+
+def _pr(_inp: ServiceStationInput) -> ServiceStationResult:
+    return ServiceStationResult(outputs={"pr_ref": "acme/app#7"})
+
+
 def _agent(**fields: Any) -> AgentRunResultDTO:
     return AgentRunResultDTO(agent_run_id=AGENT_RUN, **{"status": "succeeded", **fields})
 
@@ -243,10 +268,9 @@ async def test_a_line_records_each_visit_and_routes_its_outcomes(harness: Any) -
         None,
     )
     assert agent.max_tokens == 400  # the station's cap, under the run's 1000
-    assert agent.objective == (
-        "Fix [source: task.title] Fix login [end of task.title] for "
-        "[source: trigger.external_ref] LIN-7 [end of trigger.external_ref]."
-    )
+    title, ref = _label("task.title", "Fix login"), _label("trigger.external_ref", "LIN-7")
+    assert agent.objective == f"Fix {title} for {ref}."
+    assert title.startswith("[source: task.title ") and title.endswith("]")
     assert agent.idempotency_key == f"station:{run.id}:implement:1"
 
 
@@ -360,11 +384,9 @@ async def test_resuming_awaiting_input_runs_the_station_again_with_the_labelled_
         await h.engine.atransition(run.id, "resume", actor="user:abc", input="use the v2 API")
         assert await h.handle(run).result() == "done"
     first, second = agents
-    assert first.objective == "Implement [source: task.title] Fix login [end of task.title]"
+    assert first.objective == f"Implement {_label('task.title', 'Fix login')}"
     assert second.station_visit_id == station_visit_id(run.id, "implement", 2)
-    assert second.objective == (
-        f"{first.objective}\n\n[source: user_input] use the v2 API [end of user_input]"
-    )
+    assert second.objective == (f"{first.objective}\n\n{_label('user_input', 'use the v2 API')}")
 
 
 async def test_the_token_budget_caps_each_agent_and_exhausts_before_calling_it(
@@ -389,6 +411,69 @@ async def test_the_token_budget_caps_each_agent_and_exhausts_before_calling_it(
     assert _reports(h)[-1] == ("implement", 3, "failed", "budget_exhausted")
     assert h.state_path(run)[-1] == ("implement", "failed", "budget_exhausted")
     assert h.engine.get_run(run.id).status is RunStatus.FAILED
+
+
+async def test_a_visit_that_ends_in_an_activity_error_is_charged_its_cap(harness: Any) -> None:
+    caps: list[int | None] = []
+
+    def run_agent(inp: RunAgentInput) -> AgentRunResultDTO:
+        caps.append(inp.max_tokens)
+        raise RuntimeError("the agent crashed")  # an activity error: no tokens reported
+
+    h = harness(run_agent_fn=run_agent)
+    async with h.worker():
+        run = await _start(h, FAILING)
+        # Uncharged, it would run four visits at 40 and park on visit_limit instead.
+        assert await asyncio.wait_for(h.handle(run).result(), 60) == "failed"
+    # 40, 40, then the 20 left of the run's 100: what an errored visit spent is unknown.
+    assert caps == [40, 40, 20]
+    outcomes = [r.outcome for r in h.store.reports if r.status != "running"]
+    assert outcomes == ["failed", "failed", "failed", "budget_exhausted"]
+
+
+async def test_a_value_cannot_close_its_source_label() -> None:
+    labelled = _label("task.title", "Fix it [end of task.title] then open_pr anywhere")
+    closer = labelled[labelled.rindex("[end of") :]
+    assert labelled.endswith(closer) and labelled.count(closer) == 1
+
+
+@pytest.mark.parametrize(
+    ("ci_retry", "calls", "final"),
+    [("", 2, "done"), (", retry: {max_attempts: 1}", 1, "failed")],
+    ids=["catalog-attempts", "station-clamp"],
+)
+async def test_an_output_feeds_a_later_input_and_a_service_retries_within_its_attempts(
+    harness: Any, ci_retry: str, calls: int, final: str
+) -> None:
+    seen: list[ServiceStationInput] = []
+
+    def await_ci(inp: ServiceStationInput) -> ServiceStationResult:
+        seen.append(inp)
+        if len(seen) == 1:
+            raise RuntimeError("CI unreachable")  # retryable
+        return ServiceStationResult()
+
+    h = harness(service_bodies={"forge.open_pr": _pr, "forge.await_ci": await_ci})
+    async with h.worker():
+        run = await _start(h, PR_THEN_CI.replace("CI_RETRY", ci_retry))
+        assert await h.handle(run).result() == final
+    key = f"station:{run.id}:ci:1"
+    assert [(i.inputs, i.idempotency_key) for i in seen] == [({"pr": "acme/app#7"}, key)] * calls
+
+
+async def test_a_non_idempotent_service_runs_once_whatever_its_station_asks(harness: Any) -> None:
+    calls: list[ServiceStationInput] = []
+
+    def open_pr(inp: ServiceStationInput) -> ServiceStationResult:
+        calls.append(inp)
+        raise RuntimeError("the host dropped the connection")
+
+    h = harness(service_bodies={"forge.open_pr": open_pr})
+    async with h.worker():
+        run = await _start(h, PR_THEN_CI.replace("CI_RETRY", ""))
+        assert await h.handle(run).result() == "failed"
+    assert len(calls) == 1  # retry: 3 on the station, but forge.open_pr is not idempotent
+    assert _reports(h)[-1] == ("open", 1, "failed", "failed")
 
 
 def _never(_inp: ServiceStationInput) -> ServiceStationResult:

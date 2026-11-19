@@ -14,24 +14,29 @@ than the bundled ``default_feature`` (503).
 
 from __future__ import annotations
 
+import threading
+import time
 import uuid
 from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import Engine, func, select
+from sqlalchemy.orm import Session, sessionmaker
 
 from scf_api.deps import Principal
 from scf_api.main import create_app
 from scf_api.services import workflow_engine
 from scf_contracts import UserRole
-from scf_db.models import Task
+from scf_db.base import Base
+from scf_db.models import Project, Task, Workspace
 from scf_db.models.runs import WorkflowRun as DbWorkflowRun
 from scf_db.models.workflow_editor import (
     RevisionValidationStatus,
     WorkflowDefinitionSource,
 )
+from scf_db.models.workflow_editor import WorkflowDefinition as DbDefinition
 from scf_workflow.editor.errors import UnknownDefinitionError
 from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
 from scf_workflow.editor.schemas import ImportRequest
@@ -71,6 +76,11 @@ FUTURE_LINE = LINE + 'schedule: {cron: "0 * * * *"}\n'
 
 #: Parses, but ``validate_line`` refuses it (a dead end; ``done`` unreachable).
 INVALID_LINE = LINE.replace("to: done", "to: nowhere")
+
+#: Reads ``task.repo``, which a task with no single repository cannot give.
+REPO_LINE = LINE.replace(
+    "forge.prepare_worktree}", "forge.prepare_worktree, inputs: {repo: task.repo}}"
+)
 
 #: Valid, but names a model, which no workspace allowlist admits yet.
 MODEL_LINE = """\
@@ -360,8 +370,9 @@ def test_line_starts_as_a_station_run_on_the_temporal_engine(
         (INVALID_LINE, "line_invalid"),
         (FUTURE_LINE, "line_invalid"),
         (MODEL_LINE, "model_not_allowed"),
+        (REPO_LINE, "repo_target_ambiguous"),  # the seeded task has no repository
     ],
-    ids=["invalid", "unparseable", "model"],
+    ids=["invalid", "unparseable", "model", "no_single_repo"],
 )
 def test_temporal_refuses_a_line_it_must_not_run_before_connecting(
     client, workflow_db, dsl: str, detail: str
@@ -407,26 +418,95 @@ def test_a_station_run_takes_only_resume_and_cancel(
     assert (signal, args) == ("signal", ["cancelled", event.actor])
 
 
-def test_a_viewer_cannot_resume_or_cancel_a_station_run(
-    client, authenticate_app, workflow_db, line_client: _LineClient
+@pytest.mark.parametrize(
+    ("role", "auth_method"),
+    [(UserRole.VIEWER, "test"), (UserRole.MEMBER, "api_key")],
+    ids=["viewer", "member_key_bound_to_no_person"],
+)
+def test_only_a_person_who_may_write_resumes_or_cancels_a_station_run(
+    client, authenticate_app, workflow_db, line_client: _LineClient, role, auth_method
 ) -> None:
     _publish_line(workflow_db)
     run_id = _start(client, workflow_db.seed_task(), definition="tiny_line").json()["id"]
-    viewer = Principal(
-        user_id=uuid.uuid4(),
+    caller = Principal(
+        user_id=uuid.uuid4(),  # an unbound key's principal carries the key's own id
         workspace_id=TEST_WORKSPACE_ID,
-        role=UserRole.VIEWER,
-        email="viewer@acme.test",
-        auth_method="test",
+        role=role,
+        auth_method=auth_method,
         scopes=["*"],
     )
     app = workflow_db.install(create_app())
-    authenticate_app(app, viewer)
+    authenticate_app(app, caller)
     with TestClient(app) as as_viewer:
         for event in ("resume", "cancel"):
             resp = as_viewer.post(f"/workflow/runs/{run_id}/transition", json={"event": event})
             assert resp.status_code == 403, resp.text
     assert line_client.sent == []
+
+
+def test_a_line_row_whose_workflow_never_started_is_started_again(
+    client, workflow_db, line_client: _LineClient
+) -> None:
+    """The API died between committing the row and starting it: the next start recovers it.
+
+    Temporal refuses a second ``wf-<id>`` when the first one is live (REJECT_DUPLICATE).
+    """
+    _publish_raw(workflow_db, dsl=LINE + "concurrency: {max_active_runs: 1}\n")
+    task_id = workflow_db.seed_task()
+    first = _start(client, task_id, definition="tiny_line").json()["id"]
+    again = _start(client, task_id, definition="tiny_line")
+    assert again.status_code == 201, again.text
+    assert again.json()["id"] == first  # its own slot, not a second one
+    assert [str(p.workflow_run_id) for p in line_client.started] == [first, first]  # type: ignore[attr-defined]
+    assert _run_rows(workflow_db) == 1
+
+
+def test_racing_line_starts_count_one_at_a_time(pg_engine: Engine) -> None:
+    """The definition row lock serialises the count: two starts never both see a free slot."""
+    from scf_api.services.workflow_engine import active_line_runs
+
+    Base.metadata.create_all(pg_engine)
+    factory = sessionmaker(bind=pg_engine, expire_on_commit=False, class_=Session)
+    ws = uuid.uuid4()
+    try:
+        with factory() as s:
+            s.add(Workspace(id=ws, name="WS", slug=f"ws-{ws.hex}"))
+            s.flush()
+            s.add(Project(workspace_id=ws, name="Core", key="CORE"))
+            s.add(DbDefinition(workspace_id=ws, name="tiny_line", title="t", source="marketplace"))
+            s.flush()
+            project = s.scalar(select(Project.id).where(Project.workspace_id == ws))
+            tasks = [
+                Task(workspace_id=ws, project_id=project, key=f"T-{i}", title="t") for i in (1, 2)
+            ]
+            s.add_all(tasks)
+            s.commit()
+        counts: list[int] = []
+        first_counted = threading.Event()
+
+        def start(task_id: uuid.UUID, first: bool) -> None:
+            with factory() as s:
+                active = active_line_runs(s, workspace_id=ws, name="tiny_line", task_id=task_id)
+                if first:
+                    first_counted.set()
+                    time.sleep(0.5)  # the other start counts now, unless the lock holds it
+                if active < 1:
+                    s.add(
+                        DbWorkflowRun(workspace_id=ws, task_id=task_id, workflow_name="tiny_line")
+                    )
+                s.commit()
+                counts.append(active)
+
+        a = threading.Thread(target=start, args=(tasks[0].id, True))
+        a.start()
+        assert first_counted.wait(5)
+        b = threading.Thread(target=start, args=(tasks[1].id, False))
+        b.start()
+        a.join(10)
+        b.join(10)
+        assert counts == [0, 1]
+    finally:
+        Base.metadata.drop_all(pg_engine)
 
 
 @pytest.mark.usefixtures("temporal")

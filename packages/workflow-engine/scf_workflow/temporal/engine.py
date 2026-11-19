@@ -19,8 +19,8 @@ time-skipping ``WorkflowEnvironment``) can drive the engine without a nested loo
   An active row no workflow has reported to (no ``temporal_run_id``) is started
   again under its own ``wf-<id>`` rather than refused, so a start that died after
   its commit cannot block the task; Temporal refuses it if that workflow exists.
-  A line run is never reused that way: it reports no transition until its first
-  station finishes, so an unreported line row may well be live.
+  A line row is reused only for a start of its own revision; a live one reports no
+  transition until its first station finishes, and Temporal refuses its ``wf-<id>``.
 * ``transition`` is a synchronous Workflow **Update** (cancel is a **Signal**), and
   returns a line run's state as ``str`` (its states are the line's own); an
   invalid event / failed guard surfaces as ``InvalidTransitionError`` /
@@ -159,11 +159,13 @@ class TemporalWorkflowEngine:
         if line is not None and definition_revision_id is None:
             raise WorkflowError("a line run needs its definition revision")
         active = self._store.find_active_by_task(task_id)
+        pinned = str(definition_revision_id) if line is not None else None
         if active is not None and (
             active.context.get("engine_backend") != "temporal"
             or active.context.get("temporal_run_id")
-            or active.context.get("dsl_version") == "2"
-            or line is not None
+            # Restart only a start of the same kind: a line row with its own revision.
+            or (active.context.get("dsl_version") == "2") != (line is not None)
+            or (line is not None and active.context.get(DEFINITION_REVISION_KEY) != pinned)
         ):
             raise DuplicateRunError(task_id)
         client = await self._get_client()

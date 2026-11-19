@@ -48,6 +48,8 @@ PLACEHOLDER_RE = re.compile(r"\{\{([^{}]*)\}\}")
 _CONDITION_RE = re.compile(rf"^(?P<state>{_NAME})\.(?P<key>{_NAME})$")
 
 OBJECTIVE_MAX_BYTES = 8 * 1024
+#: ``workflow_station_visit.outcome`` is 48 characters, so a decision is too.
+OUTCOME_MAX_CHARS = 48
 
 SUCCEEDED = "succeeded"
 APPROVED = "approved"
@@ -168,6 +170,11 @@ class AgentStation(_StationBase):
             reserved = sorted(set(value) & _RESERVED_OUTCOMES)
             if reserved:
                 raise ValueError(f"decisions cannot reuse outcome names: {reserved}")
+            if long := [d for d in value if len(d) > OUTCOME_MAX_CHARS]:
+                raise ValueError(
+                    f"decisions are at most {OUTCOME_MAX_CHARS} characters (a visit's "
+                    f"recorded outcome): {long}"
+                )
         return value
 
 

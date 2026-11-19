@@ -55,7 +55,7 @@ from scf_api.realtime import approval_events
 from scf_api.realtime.broadcaster import Broadcaster, emit_event, get_broadcaster
 from scf_api.routers._rbac import require_permission
 from scf_api.schemas.red_team import RedTeamGateOut, RedTeamRecordOut, RedTeamTriggerOut
-from scf_api.services.approval_service import get_approval_service
+from scf_api.services.approval_service import get_approval_service, to_approval_principal
 from scf_api.services.workflow_gate_hook import (
     EVENT_CANCEL,
     GATE_BY_STATE,
@@ -69,7 +69,7 @@ from scf_api.services.workflow_gate_hook import (
 from scf_approval import ApprovalService
 from scf_approval.models import GateStatus, GateType
 from scf_contracts import LineDefinition, WorkflowDefinition, WorkflowRun, WorkflowState
-from scf_contracts.lines import AgentStation, validate_line
+from scf_contracts.lines import PLACEHOLDER_RE, AgentStation, validate_line
 from scf_db.models import Task, WorkflowStationVisit
 from scf_db.redteam import RedTeamRepository
 from scf_workflow import (
@@ -510,13 +510,17 @@ def _start_line(
     """
     from scf_api.services.workflow_engine import active_line_runs, revision_text
 
-    active = active_line_runs(session, workspace_id=task.workspace_id, name=line.name)
-    if active >= line.concurrency.max_active_runs:
-        raise _line_conflict("line_concurrency_exceeded")
     snapshot = {"key": task.key, "title": task.title, "description": task.description or ""}
     targets = task.repo_targets or []
     if len(targets) == 1 and isinstance(targets[0], dict) and targets[0].get("repo"):
         snapshot["repo"] = str(targets[0]["repo"])
+    elif _reads_task_repo(line):  # spec K §4.1: no target or several
+        raise _line_conflict("repo_target_ambiguous")
+    active = active_line_runs(
+        session, workspace_id=task.workspace_id, name=line.name, task_id=task.id
+    )
+    if active >= line.concurrency.max_active_runs:
+        raise _line_conflict("line_concurrency_exceeded")
     return engine.start(
         task.id,
         line.name,
@@ -525,6 +529,15 @@ def _start_line(
         dsl_yaml=revision_text(session, revision_id),
         task=snapshot,
     )
+
+
+def _reads_task_repo(line: LineDefinition) -> bool:
+    """True when a station's objective, summary or inputs name ``task.repo``."""
+    for st in line.stations.values():
+        text = getattr(st, "objective", None) or getattr(st, "summary", None) or ""
+        if "task.repo" in [*PLACEHOLDER_RE.findall(text), *getattr(st, "inputs", {}).values()]:
+            return True
+    return False
 
 
 @router.get("/runs/{run_id}", response_model=WorkflowRun)
@@ -582,6 +595,10 @@ def transition(
             # cancels it (spec K §4.2), and its states are not feature gates.
             if request.event not in (EVENT_RESUME, EVENT_CANCEL):
                 raise _line_conflict("station_run_not_event_driven")
+            if to_approval_principal(principal).kind != "user":
+                # Only a person moves a parked line on, the approvals rule (spec K §4.2):
+                # an agent, or a key bound to no person, does not.
+                raise HTTPException(status.HTTP_403_FORBIDDEN, detail="person_required")
             left_gate = None
             if request.input is not None:
                 payload["input"] = request.input

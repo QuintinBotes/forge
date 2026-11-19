@@ -60,11 +60,15 @@ def published_revision_is_line(session: Session, *, workspace_id: uuid.UUID, nam
     return isinstance(raw, dict) and raw.get("dsl_version") == "2"
 
 
-def active_line_runs(session: Session, *, workspace_id: uuid.UUID, name: str) -> int:
+def active_line_runs(
+    session: Session, *, workspace_id: uuid.UUID, name: str, task_id: uuid.UUID
+) -> int:
     """The workspace's unfinished runs of the line ``name``, counted under a row lock.
 
     The lock is on the definition row (spec K §4.11), so two starts of one line
-    count one at a time; the caller's commit of its new run releases it.
+    count one at a time; the caller's commit of its new run releases it. The task's
+    own run is not counted: a start either reuses it (one that never started) or
+    is refused as a duplicate.
     """
     from sqlalchemy import func, select
 
@@ -85,6 +89,7 @@ def active_line_runs(session: Session, *, workspace_id: uuid.UUID, name: str) ->
             DbWorkflowRun.workspace_id == workspace_id,
             DbWorkflowRun.workflow_name == name,
             DbWorkflowRun.status.notin_(finished),
+            DbWorkflowRun.task_id != task_id,
         )
     )
     return count or 0
