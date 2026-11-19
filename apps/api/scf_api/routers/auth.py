@@ -21,7 +21,7 @@ from typing import Annotated
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response, status
 
 from scf_api.auth import sign_in_link
-from scf_api.auth.apikeys import APPROVALS_DECIDE, APIKeyInfo
+from scf_api.auth.apikeys import APPROVALS_DECIDE, RUNS_EXECUTE, APIKeyInfo
 from scf_api.auth.models import (
     APIKeyCreated,
     APIKeyCreateRequest,
@@ -39,7 +39,7 @@ from scf_api.auth.oauth import (
     OAuthStateError,
     UnsupportedOAuthProviderError,
 )
-from scf_api.auth.rbac import Permission
+from scf_api.auth.rbac import Permission, can
 from scf_api.auth.service import (
     AuthedPrincipal,
     AuthenticationError,
@@ -264,7 +264,9 @@ def create_personal_token(
     A session or a person-bound unscoped key (the web's credential) may mint one;
     a narrowed or unbound key may not, so a token never mints a token (spec L
     §6a). It reads as a viewer (plus ``approvals:decide`` when asked, deciding
-    with its owner's current role) and expires.
+    with its owner's current role) and expires. With ``start_runs`` it acts as an
+    agent-runner instead, minted only while both the minting credential and its
+    owner's current role grant ``run_agent`` (spec L §6b).
     """
     if not principal.decides or principal.narrowed:  # a session or a person-bound unscoped key
         raise HTTPException(
@@ -283,13 +285,26 @@ def create_personal_token(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="a deciding token is minted by a credential with your full role",
         )
+    if body.start_runs and not (
+        can(principal.role, Permission.RUN_AGENT) and can(current, Permission.RUN_AGENT)
+    ):
+        # The token starts runs as an agent-runner: never more than its minter or owner may.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="a token that starts runs needs run_agent in your current role",
+        )
+    scopes = ["read"]
+    if body.decide:
+        scopes.append(APPROVALS_DECIDE)
+    if body.start_runs:
+        scopes.append(RUNS_EXECUTE)
     info, token = service.api_keys.mint(
         workspace_id=principal.workspace_id,
         name=body.name,
         role=UserRole.VIEWER,
         user_id=principal.user_id,
         expires_at=datetime.now(UTC) + timedelta(days=body.expires_in_days),
-        scopes=["read", APPROVALS_DECIDE] if body.decide else ["read"],
+        scopes=scopes,
         surface=body.surface,
     )
     service.audit.emit(

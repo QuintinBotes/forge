@@ -69,8 +69,9 @@ class PlatformAPIKey(WorkspaceScopedModel):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Non-null ⇒ rejected immediately; rows are kept for audit.
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    #: NULL = the key acts with its full role; otherwise a narrowed scope set
-    #: (``["read"]`` or ``["approvals:decide", "read"]``, spec L §6a, migration 0046).
+    #: NULL = the key acts with its full role; otherwise a narrowed scope set:
+    #: ``["read"]`` or ``["approvals:decide", "read"]`` (a viewer, spec L §6a, migration
+    #: 0046), or ``["read", "runs:execute"]`` (an agent-runner, spec L §6b).
     #: ``none_as_null``: ``None`` is stored as SQL NULL (like every pre-0046 row),
     #: never as a JSON ``null``, so ``scopes IS NULL`` finds every unscoped key.
     scopes: Mapped[list[str] | None] = mapped_column(

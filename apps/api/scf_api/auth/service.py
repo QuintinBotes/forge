@@ -30,17 +30,26 @@ from typing import Annotated
 from urllib.parse import urlencode, urlsplit
 
 from fastapi import Cookie, Depends, Header, HTTPException, status
+from sqlalchemy.orm import Session
 
-from scf_api.auth.apikeys import APPROVALS_DECIDE, APIKeyBackend, APIKeyInfo, APIKeyStore
+from scf_api.auth.apikeys import (
+    APPROVALS_DECIDE,
+    RUNS_EXECUTE,
+    APIKeyBackend,
+    APIKeyInfo,
+    APIKeyStore,
+)
 from scf_api.auth.crypto import EnvelopeCipher, default_cipher
 from scf_api.auth.keyring import KeyRing
 from scf_api.auth.models import OAuthChallenge, OAuthResult
 from scf_api.auth.oauth import OAuthClient, UnsupportedOAuthProviderError
 from scf_api.auth.providers import get_default_provider, resolve_secret
-from scf_api.auth.rbac import Permission, PermissionDeniedError, ensure
+from scf_api.auth.rbac import Permission, PermissionDeniedError, can, ensure
 from scf_api.auth.vault import SecretStore, SecretVault
+from scf_api.db import get_db
 from scf_api.deps import SESSION_COOKIE, Principal, request_method
 from scf_api.observability.redaction import redact_text
+from scf_api.services.approval_service import owner_role
 from scf_api.services.auth_audit import AuthAuditEmitter
 from scf_auth.errors import AuthenticationError as SdkAuthenticationError
 from scf_auth.rbac import has_at_least
@@ -310,10 +319,14 @@ class AuthService:
             raise AuthenticationError("invalid or expired API key")
 
         # A narrowed key acts as a viewer, so every existing role check confines it to reads
-        # (and its role column is VIEWER too). shortcut: narrowing supports read(+decide)
-        # only; general subsets need scope checks at each role check.
+        # (and its role column is VIEWER too); with runs:execute it acts as an agent-runner
+        # (read + run_agent), which never decides. shortcut: narrowing supports the three
+        # fixed sets only; general subsets need scope checks at each role check.
         narrowed = record.scopes is not None
-        role = UserRole.VIEWER if narrowed else record.role
+        role = record.role
+        if narrowed:
+            runs = RUNS_EXECUTE in (record.scopes or ())
+            role = UserRole.AGENT_RUNNER if runs else UserRole.VIEWER
         # Spec L §6a: only a key bound to a person decides (as that person); agents never.
         decides = (
             record.user_id is not None
@@ -572,11 +585,14 @@ def get_authenticated_principal(
     origin: Annotated[str | None, Header()] = None,
     sec_fetch_site: Annotated[str | None, Header()] = None,
     method: Annotated[str | None, Depends(request_method)] = None,
+    session: Annotated[Session | None, Depends(get_db)] = None,
 ) -> Principal:
     """Authenticate the request via API key or session cookie; raise 401 if absent/invalid.
 
     A state change the cookie alone authenticates must come from SCF's own origin
     (403 otherwise): a browser attaches the cookie to requests other sites start.
+    A token that starts runs (``runs:execute``) works only while its owner's
+    current role grants ``run_agent`` (spec L §6b), checked here on every call.
     """
     token = _extract_token(authorization, x_api_key, session_cookie)
     if token is None:
@@ -592,13 +608,39 @@ def get_authenticated_principal(
             detail="a session cookie may change something only from SCF's own origin",
         )
     try:
-        return service.authenticate(token)
+        principal = service.authenticate(token)
     except AuthenticationError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid or expired API key",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    try:
+        ensure_run_token_owner(principal, session)
+    except AuthenticationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    return principal
+
+
+def ensure_run_token_owner(principal: Principal, session: Session | None) -> None:
+    """Refuse a run-start token whose owner's current role no longer grants ``run_agent``.
+
+    Spec L §6b: checked on every HTTP call and every socket, so demoting, deactivating
+    or removing the owner stops the token at once. Any other principal passes.
+    """
+    if not (principal.narrowed and principal.role is UserRole.AGENT_RUNNER):
+        return
+    current = None
+    if session is not None:
+        # Its own session: the caller's stays open for a whole event stream or socket.
+        with Session(session.get_bind()) as lookup:
+            current = owner_role(lookup, principal)
+    if current is None or not can(current, Permission.RUN_AGENT):
+        raise AuthenticationError("this token's owner may no longer start runs")
 
 
 AuthedPrincipal = Annotated[Principal, Depends(get_authenticated_principal)]
@@ -653,6 +695,7 @@ __all__ = [
     "AuthServiceDep",
     "AuthedPrincipal",
     "AuthenticationError",
+    "ensure_run_token_owner",
     "get_auth_service",
     "get_authenticated_principal",
     "is_own_origin",

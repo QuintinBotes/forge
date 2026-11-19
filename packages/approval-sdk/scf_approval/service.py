@@ -10,6 +10,7 @@ from __future__ import annotations
 import builtins
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -305,12 +306,14 @@ class ApprovalService:
         *,
         workspace_id: uuid.UUID,
         session: Any = None,
+        before_decision: Callable[[ApprovalRequest], None] | None = None,
     ) -> ApprovalResolution:
         """Record one reviewer's decision and run the gate's resolution hook.
 
         1. load (workspace-scoped; cross-workspace => not-found, never 403);
         2. reject already-resolved gates;
-        3. ``authorizer.check`` — the single policy;
+        3. ``authorizer.check`` — the single policy; then the caller's
+           ``before_decision``, whose exception refuses the decision unrecorded;
         4. persist the (unique-per-approver) decision row;
         5. derive gate status (escalate keeps pending, raises the bar);
         6. invoke the gate's hook; fold its :class:`ResolutionOutcome` in;
@@ -321,6 +324,8 @@ class ApprovalService:
             raise AlreadyResolvedError(approval_id, request.status)
 
         self._authorizer.check(actor, request, decision)
+        if before_decision is not None:
+            before_decision(request)
 
         assert actor.id is not None  # guaranteed: authorizer requires kind == "user"
         await self._repo.add_decision(
