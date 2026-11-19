@@ -46,7 +46,7 @@ REPO = "acme/app"
 BRANCH = "scf/run-0123456789ab"
 POLICY = 'repo_id: app\ncommands:\n  marker: "test -f MARKER"\n  lint: "true"\n'
 #: The gates on the diff (#187) beside the declared checks, passing on this change.
-GATES = {"secret_scan": True, "sast": True}
+GATES = {"secret_scan": True, "dependency_check": True, "sast": True}
 
 
 @pytest.fixture
