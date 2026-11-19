@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from scf_agent.providers import ModelClientError
 from scf_agent.tools import ToolRegistry
 from scf_api.schemas.held_out import HeldOutScenarioCreate
-from scf_api.services.held_out import store_agent_draft
+from scf_api.services.held_out import store_agent_draft, withdraw_run_scenarios
 from scf_contracts import AgentObjective, ModelClient, RunStatus
 from scf_contracts.audit import AuditEvent
 from scf_db.audit.writer import SqlAuditWriter
@@ -124,6 +124,11 @@ def draft_scenarios_service(
                 return DraftScenariosResult(
                     scenario_ids=list(recorded["scenario_ids"]), reason=recorded.get("reason")
                 )
+            # What this run drafted for its earlier spec text is withdrawn (#288).
+            withdraw_run_scenarios(
+                session, workspace_id=inp.workspace_id, workflow_run_id=inp.workflow_run_id
+            )
+            session.commit()
             task = session.get(Task, run.task_id)
             assert task is not None  # workflow_run.task_id is a non-null foreign key
             spec = _spec(run, task)
@@ -197,6 +202,7 @@ def _run_verifier(
                 body=body,
                 drafted_by=f"agent:{run_id}/{model}",
                 agent_run_id=run_id,
+                workflow_run_id=inp.workflow_run_id,
             )
             stored.append({"id": str(row.id), "title": row.title})
         if status != RunStatus.SUCCEEDED:
@@ -264,6 +270,7 @@ def _record(
             "reason": reason,
         }
         context = {**run.context, DRAFTING_KEY: drafting}
+        context.pop("held_out", None)  # an earlier spec's reason no longer applies
         if reason is not None and not scenario_ids:
             context["held_out"] = reason
         run.context = context

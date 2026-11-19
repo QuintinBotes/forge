@@ -2,9 +2,10 @@
 
 A scenario belongs to a task: files overlaid on the change's checkout and a
 command run there. It is a draft until a person other than its drafter approves
-it, and only approved scenarios are run. No agent-facing surface reads this
-table: not the context assembler, the MCP tools, the agent-run routes or the
-builder's objective.
+or rejects it, and only approved scenarios are run. One the verifier drafted for
+a run's spec is withdrawn when that spec goes back for changes (#288). No
+agent-facing surface reads this table: not the context assembler, the MCP tools,
+the agent-run routes or the builder's objective.
 """
 
 from __future__ import annotations
@@ -18,9 +19,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from scf_db.base import WorkspaceScopedModel, json_type
 
-#: A scenario is a draft until a person approves it.
+#: A scenario is a draft until a person approves or rejects it; only a draft is decided.
 SCENARIO_DRAFT = "draft"
 SCENARIO_APPROVED = "approved"
+SCENARIO_REJECTED = "rejected"
+#: Drafted for a spec that went back for changes: never decided, never run (#288).
+SCENARIO_WITHDRAWN = "withdrawn"
 
 
 class HeldOutScenario(WorkspaceScopedModel):
@@ -30,6 +34,13 @@ class HeldOutScenario(WorkspaceScopedModel):
 
     task_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("task.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: The run whose spec the verifier drafted it from; ``None`` for one a person wrote.
+    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("workflow_run.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     #: ``[{"path": <path inside the checkout>, "content": <text>}]``.
@@ -47,4 +58,10 @@ class HeldOutScenario(WorkspaceScopedModel):
         return f"HeldOutScenario(id={self.id!r}, task_id={self.task_id!r}, state={self.state!r})"
 
 
-__all__ = ["SCENARIO_APPROVED", "SCENARIO_DRAFT", "HeldOutScenario"]
+__all__ = [
+    "SCENARIO_APPROVED",
+    "SCENARIO_DRAFT",
+    "SCENARIO_REJECTED",
+    "SCENARIO_WITHDRAWN",
+    "HeldOutScenario",
+]
