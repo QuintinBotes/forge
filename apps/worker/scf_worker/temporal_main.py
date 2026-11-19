@@ -1,10 +1,11 @@
 """Temporal worker process entrypoint (F25).
 
 ``python -m scf_worker.temporal_main`` builds and runs a
-``temporalio.worker.Worker`` registering ``forge.FeatureWorkflow`` + every Activity
-on the configured task queue. It shares the ``apps/worker`` image/dependency
-closure and runs as a *second* process alongside the Celery worker (Celery still
-serves FSM-backed runs and non-workflow jobs — §12).
+``temporalio.worker.Worker`` registering ``forge.FeatureWorkflow``, the line
+interpreter ``forge.StationWorkflow`` and every Activity on the configured task
+queue. It shares the ``apps/worker`` image/dependency closure and runs as a *second*
+process alongside the Celery worker (Celery still serves FSM-backed runs and
+non-workflow jobs — §12).
 
 The ``persist_transition`` Activity writes the Postgres ``workflow_run`` projection
 through a session-per-call store, keeping it byte-faithful for the board timeline,
@@ -169,7 +170,9 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
     too, so cancelling a run reaches ``cancelled`` (spec K §4.11). Issue #250 binds
     ``forge.load_guard_inputs``, ``forge.run_agent`` and ``forge.pause_and_notify``;
     #251 binds ``forge.run_checks`` and #252 the pull request (opened once).
-    ``forge.resume_agent`` still refuses.
+    ``forge.resume_agent`` still refuses, and so does ``forge.run_agent`` for a line's
+    agent station. No line service body is bound yet (#181), so every service
+    station reads ``not_configured``.
     """
     factory = factory or create_session_factory()
     return WorkflowActivities(

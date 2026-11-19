@@ -11,7 +11,7 @@ validate a line without importing ``scf_workflow`` (which pulls in
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
@@ -399,6 +399,17 @@ def station_outcomes(station: Station) -> frozenset[str]:
     return SERVICE_OUTCOMES | (entry.outcomes if entry else frozenset())
 
 
+def station_tools(role: SubAgentRole, skill_allowed: Iterable[str] = ()) -> list[str]:
+    """An agent station's tools: ``ROLE_TOOLS[role]`` ∩ the skill profile, less the write tools.
+
+    An empty ``skill_allowed`` (a profile with no allowlist) does not narrow the role.
+    """
+    tools = set(ROLE_TOOLS.get(role, frozenset()))
+    if allowed := set(skill_allowed):
+        tools &= allowed
+    return sorted(tools - AGENT_STRIPPED_TOOLS)
+
+
 def _success_outcomes(station: Station) -> frozenset[str]:
     if isinstance(station, AgentStation):
         return frozenset(station.decisions or (SUCCEEDED,))
@@ -676,10 +687,7 @@ def validate_line(defn: LineDefinition) -> list[LineError]:
                     state=s,
                 )
             # A skill profile only narrows these, so the role's tools are the bound.
-            write_tools = sorted(
-                (ROLE_TOOLS.get(st.role, frozenset()) - AGENT_STRIPPED_TOOLS)
-                & AGENT_FORBIDDEN_TOOLS
-            )
+            write_tools = sorted(set(station_tools(st.role)) & AGENT_FORBIDDEN_TOOLS)
             if write_tools:
                 err(
                     LineErrorCode.LINE_INVARIANT_VIOLATION,
@@ -886,5 +894,6 @@ __all__ = [
     "Station",
     "parse_line",
     "station_outcomes",
+    "station_tools",
     "validate_line",
 ]

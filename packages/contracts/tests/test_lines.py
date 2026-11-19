@@ -29,6 +29,7 @@ from scf_contracts.lines import (
     ServiceStation,
     parse_line,
     station_outcomes,
+    station_tools,
     validate_line,
 )
 
@@ -560,6 +561,13 @@ def test_agent_no_write_tools(monkeypatch: pytest.MonkeyPatch) -> None:
         ROLE_TOOLS, SubAgentRole.IMPLEMENTER, ROLE_TOOLS[SubAgentRole.IMPLEMENTER] | {"push"}
     )
     assert _invariants(_doc()) == {"agent_no_write_tools"}
+
+
+def test_station_tools_are_the_roles_within_the_profile_without_write_tools() -> None:
+    assert station_tools(SubAgentRole.IMPLEMENTER) == ["read_repo", "run_tests", "write_code"]
+    narrowed = station_tools(SubAgentRole.IMPLEMENTER, ["read_repo", "open_pr", "deploy_prod"])
+    assert narrowed == ["read_repo"]  # the profile narrows; it never adds or keeps open_pr
+    assert station_tools(SubAgentRole.REVIEWER) == ["read_repo", "read_spec"]
 
 
 def test_trusted_inputs() -> None:

@@ -21,9 +21,10 @@ from typing import Any
 import pytest
 
 from scf_contracts import WorkflowRun
-from scf_workflow.store import InMemoryWorkflowStore
+from scf_workflow.store import STATION_STATUS_RANK, InMemoryWorkflowStore
 from scf_workflow.temporal.activities import WorkflowActivities
 from scf_workflow.temporal.engine import TemporalWorkflowEngine
+from scf_workflow.temporal.payloads import StationVisitRecord
 from scf_workflow.temporal.worker import build_temporal_worker
 from scf_workflow.temporal.workflows import FeatureWorkflow
 
@@ -48,6 +49,30 @@ async def time_skip_env() -> Any:
         yield env
     finally:
         await env.shutdown()
+
+
+class StationStore(InMemoryWorkflowStore):
+    """An in-memory store that also records station visits, keeping every report.
+
+    shortcut: status only moves forward, as the SQL store; a ``parked`` report after a
+    finished one is not merged in (the workflow parks with the done report itself).
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reports: list[StationVisitRecord] = []
+        self._visits: dict[tuple[uuid.UUID, str, int], StationVisitRecord] = {}
+
+    def save_station_visit(self, visit: StationVisitRecord) -> None:
+        self.get(visit.workflow_run_id)
+        self.reports.append(visit)
+        key = (visit.workflow_run_id, visit.state, visit.visit)
+        old = self._visits.get(key)
+        if old is None or STATION_STATUS_RANK[visit.status] > STATION_STATUS_RANK[old.status]:
+            self._visits[key] = visit
+
+    def list_station_visits(self, run_id: uuid.UUID) -> list[StationVisitRecord]:
+        return [v for (run, _, _), v in self._visits.items() if run == run_id]
 
 
 @dataclass
@@ -108,7 +133,7 @@ class Harness:
 @pytest.fixture
 def harness(time_skip_env: Any) -> Callable[..., Harness]:
     def _build(**activity_fns: Any) -> Harness:
-        store = InMemoryWorkflowStore()
+        store = StationStore()
         activities = WorkflowActivities(store=store, allow_fakes=True, **activity_fns)
         workspace_id = uuid.uuid4()
         engine = TemporalWorkflowEngine(

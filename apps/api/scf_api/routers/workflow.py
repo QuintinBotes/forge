@@ -68,7 +68,8 @@ from scf_api.services.workflow_gate_hook import (
 )
 from scf_approval import ApprovalService
 from scf_approval.models import GateStatus, GateType
-from scf_contracts import LineDefinition, WorkflowRun, WorkflowState
+from scf_contracts import LineDefinition, WorkflowDefinition, WorkflowRun, WorkflowState
+from scf_contracts.lines import AgentStation, validate_line
 from scf_db.models import Task, WorkflowStationVisit
 from scf_db.redteam import RedTeamRepository
 from scf_workflow import (
@@ -89,6 +90,7 @@ from scf_workflow.red_team_gate import (
     ensure_red_team_verdict,
     run_and_record_red_team,
 )
+from scf_workflow.temporal.payloads import EVENT_RESUME
 
 router = APIRouter(
     prefix="/workflow",
@@ -195,9 +197,13 @@ class StartRunRequest(BaseModel):
 
 
 class TransitionRequest(BaseModel):
-    """Body for ``POST /workflow/runs/{run_id}/transition``."""
+    """Body for ``POST /workflow/runs/{run_id}/transition``.
+
+    ``input`` is a person's answer when a line run parked ``awaiting_input`` resumes.
+    """
 
     event: str
+    input: str | None = Field(default=None, max_length=8192)
 
 
 class StationVisitOut(BaseModel):
@@ -313,18 +319,24 @@ def _durable_engine_required() -> HTTPException:
     )
 
 
+def _line_conflict(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
 def _unparseable_definition(
-    session: Session, *, workspace_id: uuid.UUID, name: str
+    engine: object, session: Session, *, workspace_id: uuid.UUID, name: str
 ) -> HTTPException:
     """The refusal for a published revision this release cannot parse.
 
-    A line (raw ``dsl_version: "2"``) waits for the durable engine like any other
-    line; anything else is a broken definition.
+    A line (raw ``dsl_version: "2"``) is ``line_invalid`` on the durable engine and
+    waits for it on the V1 engine; anything else is a broken definition.
     """
     from scf_api.services.workflow_engine import published_revision_is_line
 
     if published_revision_is_line(session, workspace_id=workspace_id, name=name):
-        return _durable_engine_required()
+        if isinstance(engine, WorkflowEngineImpl):
+            return _durable_engine_required()
+        return _line_conflict("line_invalid")
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="definition_invalid")
 
 
@@ -339,19 +351,24 @@ def _unknown_definition(name: str) -> HTTPException:
 
 def _admit_definition(
     engine: object, session: Session, *, workspace_id: uuid.UUID, name: str
-) -> uuid.UUID | None:
+) -> tuple[uuid.UUID | None, WorkflowDefinition]:
     """Refuse, before anything is created or started, a definition this deployment cannot run.
 
     The name resolves as the engine will resolve it (the workspace's published
     revision over the bundled file); an unknown name never falls back to
-    ``default_feature``. Lines need ``forge.StationWorkflow``, which does not exist
-    yet (spec K §4.6, ADR-0007). The V1 FSM's gates and status mapping speak only
-    :class:`WorkflowState`, so a definition with other states (``incident``) is
-    409. ``FeatureWorkflow`` runs only the bundled ``default_feature``, so anything
-    else on the Temporal engine, a published fork of it included, would start a
-    workflow that can never make progress.
+    ``default_feature``. Lines need ``forge.StationWorkflow``, so the V1 engine
+    refuses them (503, ADR-0007); on the Temporal engine a published line is
+    validated again, since a stricter release may refuse an old one (409
+    ``line_invalid``), and an explicit station ``model`` is refused until a
+    workspace model allowlist exists (409 ``model_not_allowed``, spec K §4.11).
+    The V1 FSM's gates and status mapping speak only :class:`WorkflowState`, so a
+    definition with other states (``incident``) is 409. ``FeatureWorkflow`` runs
+    only the bundled ``default_feature``, so any other v1 definition on the Temporal
+    engine, a published fork of it included, would start a workflow that can never
+    make progress.
 
-    Returns the admitted revision id (``None`` for a bundled definition).
+    Returns the admitted revision id (``None`` for a bundled definition) and the
+    definition.
     """
     from scf_api.services.workflow_engine import build_definition_provider
 
@@ -365,9 +382,19 @@ def _admit_definition(
     except UnknownDefinitionError as exc:
         raise _unknown_definition(name) from exc
     except WorkflowDefinitionError as exc:
-        raise _unparseable_definition(session, workspace_id=workspace_id, name=name) from exc
+        raise _unparseable_definition(
+            engine, session, workspace_id=workspace_id, name=name
+        ) from exc
     if isinstance(definition, LineDefinition):
-        raise _durable_engine_required()
+        if isinstance(engine, WorkflowEngineImpl):
+            raise _durable_engine_required()
+        if revision_id is not None:
+            if validate_line(definition):
+                raise _line_conflict("line_invalid")
+            stations = definition.stations.values()
+            if any(isinstance(s, AgentStation) and s.model is not None for s in stations):
+                raise _line_conflict("model_not_allowed")
+            return revision_id, definition
     if isinstance(engine, WorkflowEngineImpl):
         if not all(
             t.from_state in WorkflowState and t.to_state in WorkflowState
@@ -381,7 +408,7 @@ def _admit_definition(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="definition_unsupported_by_engine",
         )
-    return revision_id
+    return revision_id, definition
 
 
 def _started_as_admitted(session: Session, run: WorkflowRun, admitted: uuid.UUID | None) -> bool:
@@ -431,8 +458,9 @@ def start_run(
         )
     trigger = request.trigger.model_dump(exclude_none=True) if request.trigger else None
     admitted: uuid.UUID | None = None
+    definition: WorkflowDefinition | None = None
     if request.definition is not None:
-        admitted = _admit_definition(
+        admitted, definition = _admit_definition(
             engine, session, workspace_id=principal.workspace_id, name=request.definition
         )
     with _workflow_errors():
@@ -445,13 +473,15 @@ def start_run(
                 raise _unknown_definition(request.definition) from exc
             except WorkflowDefinitionError as exc:  # republished unparseable since admission
                 raise _unparseable_definition(
-                    session, workspace_id=principal.workspace_id, name=request.definition
+                    engine, session, workspace_id=principal.workspace_id, name=request.definition
                 ) from exc
             if not _started_as_admitted(session, run, admitted):
                 session.rollback()
                 raise _durable_engine_required()
         elif isinstance(engine, WorkflowEngineImpl):
             run = engine.start(request.task_id)
+        elif isinstance(definition, LineDefinition) and admitted is not None:
+            run = _start_line(engine, session, task, definition, admitted, trigger)
         else:
             # default_feature on the Temporal engine (the only name it admits). The
             # engine commits the complete row, trigger included, before it starts
@@ -461,6 +491,40 @@ def start_run(
             run = _record_trigger(engine, run, trigger)
     session.commit()
     return run
+
+
+def _start_line(
+    engine: Any,
+    session: Session,
+    task: Task,
+    line: LineDefinition,
+    revision_id: uuid.UUID,
+    trigger: dict[str, object] | None,
+) -> WorkflowRun:
+    """Start a line as a station run on the Temporal engine (spec K §4.2).
+
+    ``concurrency.max_active_runs`` is counted under a lock on the definition row,
+    which the engine's commit of the new run releases (409
+    ``line_concurrency_exceeded``). The workflow gets the revision's text and a
+    snapshot of the task; ``task.repo`` is set only for a task with one repository.
+    """
+    from scf_api.services.workflow_engine import active_line_runs, revision_text
+
+    active = active_line_runs(session, workspace_id=task.workspace_id, name=line.name)
+    if active >= line.concurrency.max_active_runs:
+        raise _line_conflict("line_concurrency_exceeded")
+    snapshot = {"key": task.key, "title": task.title, "description": task.description or ""}
+    targets = task.repo_targets or []
+    if len(targets) == 1 and isinstance(targets[0], dict) and targets[0].get("repo"):
+        snapshot["repo"] = str(targets[0]["repo"])
+    return engine.start(
+        task.id,
+        line.name,
+        trigger=trigger,
+        definition_revision_id=revision_id,
+        dsl_yaml=revision_text(session, revision_id),
+        task=snapshot,
+    )
 
 
 @router.get("/runs/{run_id}", response_model=WorkflowRun)
@@ -510,10 +574,20 @@ def transition(
             detail="gate_events_come_from_approvals",
         )
     with _workflow_errors():
-        left_gate = GATE_BY_STATE.get(engine.get_run(run_id).current_state)
+        before = engine.get_run(run_id)
+        payload: dict[str, str] = {}
+        left_gate = GATE_BY_STATE.get(before.current_state)
+        if before.context.get("dsl_version") == "2":
+            # A line run moves on its stations' outcomes; a person only resumes or
+            # cancels it (spec K §4.2), and its states are not feature gates.
+            if request.event not in (EVENT_RESUME, EVENT_CANCEL):
+                raise _line_conflict("station_run_not_event_driven")
+            left_gate = None
+            if request.input is not None:
+                payload["input"] = request.input
         # The mover is the actor, so a Temporal run's cancel (and the gate it
         # expires there, which this route cannot see open yet) records them too.
-        engine.transition(run_id, request.event, actor=f"user:{principal.user_id}")
+        engine.transition(run_id, request.event, actor=f"user:{principal.user_id}", **payload)
         run = engine.get_run(run_id)
     session.commit()
     if left_gate is not None and (

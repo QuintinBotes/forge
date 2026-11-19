@@ -60,6 +60,44 @@ def published_revision_is_line(session: Session, *, workspace_id: uuid.UUID, nam
     return isinstance(raw, dict) and raw.get("dsl_version") == "2"
 
 
+def active_line_runs(session: Session, *, workspace_id: uuid.UUID, name: str) -> int:
+    """The workspace's unfinished runs of the line ``name``, counted under a row lock.
+
+    The lock is on the definition row (spec K §4.11), so two starts of one line
+    count one at a time; the caller's commit of its new run releases it.
+    """
+    from sqlalchemy import func, select
+
+    from scf_db.models.enums import RunStatus
+    from scf_db.models.runs import WorkflowRun as DbWorkflowRun
+    from scf_db.models.workflow_editor import WorkflowDefinition as DbDefinition
+
+    session.execute(
+        select(DbDefinition.id)
+        .where(DbDefinition.workspace_id == workspace_id, DbDefinition.name == name)
+        .with_for_update()
+    )
+    finished = (RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED)
+    count = session.scalar(
+        select(func.count())
+        .select_from(DbWorkflowRun)
+        .where(
+            DbWorkflowRun.workspace_id == workspace_id,
+            DbWorkflowRun.workflow_name == name,
+            DbWorkflowRun.status.notin_(finished),
+        )
+    )
+    return count or 0
+
+
+def revision_text(session: Session, revision_id: uuid.UUID) -> str:
+    """The DSL text of a definition revision (a line run carries it, spec K §4.2)."""
+    revision = DbWorkflowDefinitionRepository(session).get_revision_by_id(revision_id)
+    if revision is None:  # admission just resolved it
+        raise LookupError(f"no workflow definition revision {revision_id}")
+    return revision.dsl_yaml
+
+
 def select_workflow_engine(
     *,
     session: Session,
@@ -76,8 +114,9 @@ def select_workflow_engine(
     The V1 engine also gets the definition provider, so a run started with an
     explicit definition pins its revision and transitions on it (spec K §4.2).
     The Temporal engine takes no provider: ``FeatureWorkflow`` runs only
-    ``default_feature``. It does take ``session.commit``: it commits the run row
-    before starting the workflow (spec K §4.11).
+    ``default_feature``, and a line run carries its revision's text. It does take
+    ``session.commit``: it commits the run row before starting the workflow (spec K
+    §4.11).
     """
     from scf_workflow.store import SqlAlchemyWorkflowStore
 
@@ -98,8 +137,10 @@ def select_workflow_engine(
 
 
 __all__ = [
+    "active_line_runs",
     "build_definition_provider",
     "published_revision_is_line",
     "resolve_backend",
+    "revision_text",
     "select_workflow_engine",
 ]

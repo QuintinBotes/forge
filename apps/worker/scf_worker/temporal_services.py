@@ -421,6 +421,15 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
     """
 
     def run(inp: RunAgentInput) -> AgentRunResultDTO:
+        if inp.station_visit_id is not None:
+            # shortcut: no station agent body yet (role tools, objective, token cap,
+            # decision), so a line's agent station must not run the task's agent; bind
+            # one here when station agents ship. The station reads ``not_configured``.
+            raise ApplicationError(
+                "forge.run_agent does not serve line station inputs on this worker yet (ADR-0007)",
+                type="ActivityNotConfigured",
+                non_retryable=True,
+            )
         agent_run_id = uuid.uuid5(inp.workflow_run_id, inp.idempotency_key)
         with factory() as session:
             workflow_run = _owned_run(session, inp.workflow_run_id, inp.workspace_id)

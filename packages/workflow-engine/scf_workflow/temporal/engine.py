@@ -11,13 +11,18 @@ time-skipping ``WorkflowEnvironment``) can drive the engine without a nested loo
 * ``start`` writes the ``workflow_run`` projection (``engine_backend=temporal``,
   ``temporal_workflow_id=wf-<id>``), rejects a duplicate active run for the task,
   **commits it**, then starts ``forge.FeatureWorkflow`` with ``REJECT_DUPLICATE``
-  (the worker's ``persist_transition`` must find the row; spec K §4.11). A start
+  (the worker's ``persist_transition`` must find the row; spec K §4.11). Given a
+  line's revision text (``dsl_yaml``), it starts ``forge.StationWorkflow`` instead,
+  on a row in the line's initial state marked ``context.dsl_version = "2"``. A start
   that fails marks the committed row ``failed`` and terminates ``wf-<id>`` in case
   the server started it anyway (the projection then refuses to move that row).
   An active row no workflow has reported to (no ``temporal_run_id``) is started
   again under its own ``wf-<id>`` rather than refused, so a start that died after
   its commit cannot block the task; Temporal refuses it if that workflow exists.
-* ``transition`` is a synchronous Workflow **Update** (cancel is a **Signal**); an
+  A line run is never reused that way: it reports no transition until its first
+  station finishes, so an unreported line row may well be live.
+* ``transition`` is a synchronous Workflow **Update** (cancel is a **Signal**), and
+  returns a line run's state as ``str`` (its states are the line's own); an
   invalid event / failed guard surfaces as ``InvalidTransitionError`` /
   ``GuardFailedError`` (→ HTTP 409), identical to the FSM.
 * ``get_run`` / ``list_runs`` / ``history`` read the **Postgres projection** — never
@@ -53,9 +58,11 @@ from scf_workflow.temporal.payloads import (
     EVENT_CANCEL,
     EscalationPolicyDTO,
     RetryPolicyDTO,
+    StationParams,
     WorkflowEventPayload,
     WorkflowParams,
 )
+from scf_workflow.temporal.station_workflow import StationWorkflow, load_line
 from scf_workflow.temporal.workflows import FeatureWorkflow
 
 if TYPE_CHECKING:
@@ -137,15 +144,26 @@ class TemporalWorkflowEngine:
         trigger: dict[str, object] | None = None,
         definition_revision_id: uuid.UUID | None = None,
         started_by: str = "system",
+        dsl_yaml: str | None = None,
+        task: dict[str, str] | None = None,
     ) -> WorkflowRun:
+        """Start a run; with ``dsl_yaml`` (a line revision's text) a station run.
+
+        ``task`` is a line run's task snapshot (``StationParams.task``).
+        """
         from temporalio.common import WorkflowIDReusePolicy
         from temporalio.exceptions import WorkflowAlreadyStartedError
         from temporalio.service import RPCError
 
+        line = load_line(dsl_yaml) if dsl_yaml is not None else None
+        if line is not None and definition_revision_id is None:
+            raise WorkflowError("a line run needs its definition revision")
         active = self._store.find_active_by_task(task_id)
         if active is not None and (
             active.context.get("engine_backend") != "temporal"
             or active.context.get("temporal_run_id")
+            or active.context.get("dsl_version") == "2"
+            or line is not None
         ):
             raise DuplicateRunError(task_id)
         client = await self._get_client()
@@ -172,11 +190,13 @@ class TemporalWorkflowEngine:
                 context["started_by"] = started_by
             if definition_revision_id is not None:
                 context[DEFINITION_REVISION_KEY] = str(definition_revision_id)
+            if line is not None:
+                context["dsl_version"] = "2"
             run = WorkflowRun(
                 id=run_id,
                 task_id=task_id,
                 workflow_name=definition_name,
-                current_state=WorkflowState.CREATED.value,
+                current_state=line.initial if line else WorkflowState.CREATED.value,
                 status=RunStatus.RUNNING,
                 started_at=_now(),
                 context=context,
@@ -184,7 +204,8 @@ class TemporalWorkflowEngine:
             self._store.create(run)  # DuplicateRunError when a concurrent start won the task
         self._commit()  # the workflow's first persist_transition must find this row
 
-        params = WorkflowParams(
+        workflow_run: Any = FeatureWorkflow.run
+        params: WorkflowParams | StationParams = WorkflowParams(
             workflow_run_id=run_id,
             task_id=task_id,
             workspace_id=self._workspace_id,
@@ -194,9 +215,20 @@ class TemporalWorkflowEngine:
             started_by=started_by,
             checks_timeout_seconds=self._checks_timeout_seconds,
         )
+        if dsl_yaml is not None and definition_revision_id is not None:  # a line run
+            workflow_run = StationWorkflow.run
+            params = StationParams(
+                workflow_run_id=run_id,
+                workspace_id=self._workspace_id,
+                task_id=task_id,
+                definition_revision_id=definition_revision_id,
+                dsl_yaml=dsl_yaml,
+                task=dict(task or {}),
+                trigger=dict(trigger or {}),
+            )
         try:
             handle = await client.start_workflow(
-                FeatureWorkflow.run,
+                workflow_run,
                 params,
                 id=wf_id,
                 task_queue=self._task_queue,
@@ -233,16 +265,18 @@ class TemporalWorkflowEngine:
 
     async def atransition(
         self, run_id: uuid.UUID, event: str, *, actor: str = "system", **payload: Any
-    ) -> WorkflowState:
+    ) -> WorkflowState | str:
         run = self._store.get(run_id)
         wf_id = run.context.get("temporal_workflow_id") or workflow_id(run_id)
         client = await self._get_client()
         handle = client.get_workflow_handle(wf_id)
+        # A line run's states are its own (spec K §4.9); both workflows share these names.
+        state_cast: Any = str if run.context.get("dsl_version") == "2" else WorkflowState
 
         if event == EVENT_CANCEL:
             reason = payload.get("reason", "cancelled")
             await handle.signal(FeatureWorkflow.cancel_run, args=[reason, actor])
-            return WorkflowState(self._store.get(run_id).current_state)
+            return state_cast(self._store.get(run_id).current_state)
 
         try:
             new_state = await handle.execute_update(
@@ -251,7 +285,7 @@ class TemporalWorkflowEngine:
             )
         except Exception as exc:
             raise self._map_update_error(exc, run.current_state, event) from exc
-        return WorkflowState(new_state)
+        return state_cast(new_state)
 
     async def aget_run(self, run_id: uuid.UUID) -> WorkflowRun:
         return self._store.get(run_id)
@@ -267,6 +301,8 @@ class TemporalWorkflowEngine:
         trigger: dict[str, object] | None = None,
         definition_revision_id: uuid.UUID | None = None,
         started_by: str = "system",
+        dsl_yaml: str | None = None,
+        task: dict[str, str] | None = None,
     ) -> WorkflowRun:
         return self._runner(
             self.astart(
@@ -275,12 +311,14 @@ class TemporalWorkflowEngine:
                 trigger=trigger,
                 started_by=started_by,
                 definition_revision_id=definition_revision_id,
+                dsl_yaml=dsl_yaml,
+                task=task,
             )
         )
 
     def transition(
         self, run_id: uuid.UUID, event: str, *, actor: str = "system", **payload: Any
-    ) -> WorkflowState:
+    ) -> WorkflowState | str:
         return self._runner(self.atransition(run_id, event, actor=actor, **payload))
 
     def load_definition(self, source: str | Path) -> WorkflowDefinition:

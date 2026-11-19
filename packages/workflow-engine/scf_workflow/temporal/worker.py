@@ -1,8 +1,9 @@
-"""Build the Temporal worker that runs ``FeatureWorkflow`` + its Activities (F25).
+"""Build the Temporal worker that runs the workflows + their Activities (F25).
 
-The worker registers the single ``forge.FeatureWorkflow`` workflow and every
-bound Activity from a :class:`WorkflowActivities` instance on the configured task
-queue. ``apps/worker/scf_worker/temporal_main.py`` is the process entrypoint.
+The worker registers ``forge.FeatureWorkflow``, the line interpreter
+``forge.StationWorkflow`` (spec K §4.2) and every bound Activity from a
+:class:`WorkflowActivities` instance on the configured task queue.
+``apps/worker/scf_worker/temporal_main.py`` is the process entrypoint.
 
 The workflow sandbox is configured to **pass through** SCF's own packages (and
 pydantic/cryptography) so importing the workflow module never re-executes the
@@ -22,6 +23,7 @@ from temporalio.worker.workflow_sandbox import (
 
 from scf_workflow.temporal.activities import WorkflowActivities
 from scf_workflow.temporal.config import DEFAULT_TASK_QUEUE
+from scf_workflow.temporal.station_workflow import StationWorkflow
 from scf_workflow.temporal.workflows import FeatureWorkflow
 
 #: Modules safe to import directly inside the workflow sandbox (our deterministic
@@ -49,11 +51,11 @@ def build_temporal_worker(
     *,
     task_queue: str = DEFAULT_TASK_QUEUE,
 ) -> Worker:
-    """Construct a :class:`temporalio.worker.Worker` for the feature workflow."""
+    """Construct a :class:`temporalio.worker.Worker` for the feature and station workflows."""
     return Worker(
         client,
         task_queue=task_queue,
-        workflows=[FeatureWorkflow],
+        workflows=[FeatureWorkflow, StationWorkflow],
         activities=activities.register(),
         workflow_runner=feature_workflow_runner(),
     )
