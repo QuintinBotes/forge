@@ -4,7 +4,8 @@ Every route requires an authenticated principal and scopes by
 ``principal.workspace_id``; cross-workspace ids are 404. Reads need READ;
 writes need WRITE, except proposing and decision-recording, which also
 admit RUN_AGENT (agents propose; only people with WRITE — never the
-proposer — decide). Ingest resolves the workspace model client and refuses
+proposer — decide). A personal access token never records a decision, which
+would be stored as its owner's own. Ingest resolves the workspace model client and refuses
 with 503 when none is configured. Every mutation emits exactly one audit
 event (``world.<verb>``) in the same transaction, with fact text clipped to
 200 characters. Domain rules live in ``scf_world``; this module only maps
@@ -113,6 +114,19 @@ def _require_write_or_run_agent(
 
 
 ProposerDep = Annotated[Principal, Depends(_require_write_or_run_agent)]
+
+
+def _require_decision_recorder(principal: ProposerDep) -> Principal:
+    """A narrowed key may not record a decision: it would be stored as its owner's own."""
+    if principal.narrowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="a personal access token cannot record a decision",
+        )
+    return principal
+
+
+RecorderDep = Annotated[Principal, Depends(_require_decision_recorder)]
 
 
 @contextmanager
@@ -894,7 +908,7 @@ def create_relation(principal: WriterDep, service: ServiceDep, body: RelationIn)
 
 
 @router.post("/decisions", response_model=DecisionOut, status_code=status.HTTP_201_CREATED)
-def record_decision(principal: ProposerDep, service: ServiceDep, body: DecisionIn) -> DecisionOut:
+def record_decision(principal: RecorderDep, service: ServiceDep, body: DecisionIn) -> DecisionOut:
     """Record a decision and the facts it rested on (append-only)."""
     with _world_errors():
         decision = service.record_decision(
