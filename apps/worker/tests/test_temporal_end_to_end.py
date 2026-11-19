@@ -58,13 +58,19 @@ from scf_contracts.pm import PMProvider as ContractsProvider
 from scf_db.base import Base
 from scf_db.models import (
     AgentRun,
+    AgentRunEvent,
+    ApprovalRequest,
     Attestation,
+    HeldOutScenario,
     Project,
     RedTeamRecord,
     RepositoryConnection,
+    RunRecording,
     Task,
+    WorkflowRun,
     Workspace,
 )
+from scf_db.models.audit import AuditLog as DbAuditLog
 from scf_db.models.enums import PMConnectionStatus, PMDeliveryStatus
 from scf_db.models.enums import PMProvider as DbPMProvider
 from scf_db.models.pm import PMConnection, PMWebhookDelivery
@@ -289,9 +295,9 @@ def _seed(factory: sessionmaker[Session]) -> uuid.UUID:
         return task.id
 
 
-async def _wait_awaiting(handle: Any, event: str) -> None:
+async def _wait_awaiting(handle: Any, event: str, tries: int = 1200) -> None:
     last: list[str] = []
-    for _ in range(1200):  # the agent, its checks and the pull request run for real
+    for _ in range(tries):  # the agent, its checks and the pull request run for real
         last = await handle.query(FeatureWorkflow.awaiting)
         if event in last:
             return
@@ -452,6 +458,150 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
 
     assert result.final_state.value == "closed"
     assert _git(remotes / "acme" / "app.git", "ls-tree", "--name-only", github.created[0]["head"])
+
+
+#: Placed in the held-out scenario's files and command: it must reach nothing the builder sees.
+MARKER = "HELD-OUT-MARKER-286-e2e-9b0d"
+
+
+@pytest.fixture
+def two_attempts(monkeypatch: pytest.MonkeyPatch) -> list[ScriptedModelClient]:
+    """The builder's first attempt writes ``health()`` alone; its next adds ``ready()``."""
+    builders: list[ScriptedModelClient] = []
+
+    def scripted() -> ScriptedModelClient:
+        body = "def health():\n    return 'ok'\n" + (
+            "\n\ndef ready():\n    return 1\n" * bool(builders)
+        )
+        builders.append(
+            ScriptedModelClient(
+                responses=[
+                    tool_response("write_file", {"path": "health.py", "content": body}),
+                    tool_response("git_commit", {"message": "Add a health endpoint"}),
+                    finish_response("Added health()", confidence=0.9),
+                ],
+                default=finish_response("Done", confidence=0.9),
+            )
+        )
+        return builders[-1]
+
+    monkeypatch.setattr(agent_runner_module, "_scripted_client", scripted)
+    return builders
+
+
+async def test_a_held_out_scenario_stays_hidden_from_the_builder_through_a_governed_run(
+    time_skip_env: Any,
+    factory: sessionmaker[Session],
+    remotes: Path,
+    github: FakeGitHub,
+    two_attempts: list[ScriptedModelClient],
+    independent_reviewer: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#286 criteria 2 and 5: an approved scenario fails the first attempt, so no pull
+    request opens and the run goes back to the builder, told only how many failed; the
+    second attempt passes and its pull request opens. With a scripted model and a
+    recording tool registry, the scenario's marker is in no model prompt, tool result,
+    context bundle, run event, run step or pull request body."""
+    monkeypatch.setenv("FORGE_RECORD_RUNS", "1")  # the recording tool registry
+    prompts: list[str] = []
+    complete = ScriptedModelClient.complete
+
+    def recorded(self: ScriptedModelClient, request: Any) -> Any:
+        prompts.append(request.model_dump_json())  # every model's: builder, reviewer, adversary
+        return complete(self, request)
+
+    monkeypatch.setattr(ScriptedModelClient, "complete", recorded)
+    task_id = _seed(factory)
+    with factory() as s:
+        s.add(
+            HeldOutScenario(
+                workspace_id=WS,
+                task_id=task_id,
+                title="Ready answers",
+                files=[
+                    {
+                        "path": "held_out/check.sh",
+                        "content": f"# {MARKER}\ngrep -q ready health.py\n",
+                    }
+                ],
+                command=f"sh held_out/check.sh # {MARKER}",
+                drafted_by="user:someone",
+                state="approved",
+            )
+        )
+        s.commit()
+    activities = tm.build_activities(factory)
+    approver = Principal(kind="user", id=uuid.uuid4(), role=Role.MEMBER, workspace_id=WS)
+    approve = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
+
+    with factory() as session:
+        engine = TemporalWorkflowEngine(
+            workspace_id=WS,
+            store=SqlAlchemyWorkflowStore(session, workspace_id=WS),
+            client=time_skip_env.client,
+            task_queue=TASK_QUEUE,
+        )
+        approvals = _approvals(factory, engine)
+        async with build_temporal_worker(time_skip_env.client, activities, task_queue=TASK_QUEUE):
+            run = await engine.astart(task_id)
+            session.commit()
+            assert run.id is not None
+            handle = engine.workflow_handle(run.id)
+            await _wait_awaiting(handle, "spec_approved_by_human")
+            [spec] = await _pending(factory, GateType.SPEC)
+            await approvals.resolve(spec.id, approve, approver, workspace_id=WS)
+            await _wait_awaiting(handle, "plan_approved_by_human")
+            [plan] = await _pending(factory, GateType.PLAN)
+            await approvals.resolve(plan.id, approve, approver, workspace_id=WS)
+            # Two builder attempts, each checked, reviewed and attacked for real.
+            await _wait_awaiting(handle, "review_approved_by_human", tries=3600)
+
+    # Criterion 2: the first attempt's failure opened no pull request; the second did.
+    assert len(two_attempts) == 2 and len(github.created) == 1
+    with factory() as s:
+        outcomes = [
+            row.details["passed"]
+            for row in s.scalars(
+                select(DbAuditLog)
+                .where(DbAuditLog.action == "held_out.ran")
+                .order_by(DbAuditLog.seq)
+            )
+        ]
+        builders = s.scalars(
+            select(AgentRun).where(AgentRun.role == "primary").order_by(AgentRun.created_at)
+        ).all()
+        retry_context = builders[1].inputs["context"]
+        records = [
+            json.dumps([r.inputs, r.output, r.steps, r.context_refs], default=str)
+            for r in s.scalars(select(AgentRun))
+        ]
+        events = [
+            json.dumps([e.summary, e.payload], default=str)
+            for e in s.scalars(select(AgentRunEvent))
+        ]
+        cassettes = [json.dumps(r.cassette) for r in s.scalars(select(RunRecording))]
+        gates = [json.dumps(r.payload, default=str) for r in s.scalars(select(ApprovalRequest))]
+        workflow_run = s.get(WorkflowRun, run.id)
+        assert workflow_run is not None
+        context = json.dumps(workflow_run.context)
+    assert outcomes == [False, True]
+    assert retry_context["held_out_failed"] == 1 and "failing_checks" not in retry_context
+    assert "1 held-out acceptance scenario(s) failed" in (two_attempts[1].requests[0].system or "")
+    assert len(cassettes) == 2 and all("write_file" in c for c in cassettes)
+    assert events and len(prompts) >= 4
+    # Criterion 5: nowhere the builder can look.
+    for seen in [
+        *prompts,
+        *cassettes,
+        *records,
+        *events,
+        *gates,
+        context,
+        github.created[0]["body"],
+    ]:
+        assert MARKER not in seen
+    assert "Ready answers" not in context, "the run's context holds no scenario title"
 
 
 #: The labelled issue, as the tracker returns it when SCF re-fetches it.

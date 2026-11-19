@@ -109,6 +109,8 @@ def _refused(client: TestClient, admin: str, kind: str) -> list[tuple[str, str, 
     """The listed writes that take an API key: each must refuse the token."""
     calls = [
         ("POST", "/auth/personal-tokens", {"name": "t", "surface": "cli"}),
+        ("POST", "/auth/device/approve", {"user_code": "BCDF-GHJK"}),
+        ("POST", "/auth/device/preview", {"user_code": "BCDF-GHJK"}),
         *_administrative(client, admin),
         ("POST", "/world/decisions", {"title": "ship it", "fact_ids": []}),
     ]

@@ -81,6 +81,14 @@ UNGUARDED: dict[str, str] = {
     "POST /auth/logout": "Revokes only the key in the session cookie; reads no header token",
     "POST /auth/personal-tokens": "Refuses every narrowed, unbound or agent key, so no token "
     "mints a token (the token walk calls it)",
+    "POST /auth/device/code": "Device sign-in (#207): reads no credential and returns only "
+    "a pending request's codes; nothing is issued until a person approves it",
+    "POST /auth/device/token": "Device sign-in: reads no credential; returns a token only for "
+    "a request a person approved, once, to the holder of its device code",
+    "POST /auth/device/approve": "Refuses every narrowed or unbound key, as minting a personal "
+    "token does, so no token approves a device (the token walk calls it)",
+    "POST /auth/device/preview": "Refuses every narrowed or unbound key, as approving does, and "
+    "changes nothing but the wrong-code count (the token walk calls it)",
     **dict.fromkeys(
         [
             "POST /integration/github/webhooks",
@@ -264,6 +272,7 @@ DECLARED: dict[str, Permission] = {
             "POST /approvals",
             "POST /tasks/{task_id}/held-out-scenarios",
             "GET /tasks/{task_id}/held-out-scenarios",
+            "GET /tasks/{task_id}/held-out-scenarios/results",
             "POST /tasks/{task_id}/held-out-scenarios/{scenario_id}/approve",
             "POST /tasks/{task_id}/held-out-scenarios/{scenario_id}/reject",
             "DELETE /tasks/{task_id}/held-out-scenarios/{scenario_id}",
