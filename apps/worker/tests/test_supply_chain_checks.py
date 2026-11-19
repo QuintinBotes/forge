@@ -396,7 +396,8 @@ def test_a_workspace_package_the_base_branch_declares_is_not_looked_up(
     factory: sessionmaker[Session], repo: tuple[Path, Path]
 ) -> None:
     work, mirror = repo
-    root = "[tool.uv.sources]\nscf-board = { workspace = true }\n"
+    root = '[tool.uv.workspace]\nmembers = ["apps/*"]\n'
+    root += "[tool.uv.sources]\nscf-board = { workspace = true }\n"
     _commit(work, mirror, "main", {"pyproject.toml": root})
     member = '[project]\nname = "app"\ndependencies = ["scf-board"]\n'
     run_id = _seed(factory, _agent_commits(work, mirror, {"apps/x/pyproject.toml": member}))
@@ -508,7 +509,7 @@ def test_the_public_registry_reads_publication_times() -> None:
     registry = _registry(seen)
 
     assert registry.published("pypi", "httpx", "1.0") == datetime(2020, 1, 2, tzinfo=UTC)
-    assert registry.published("pypi", "httpx", "2.0") == datetime(2026, 11, 10, 9, tzinfo=UTC)
+    assert registry.published("pypi", "httpx", "2.0") == datetime(2026, 11, 10, 10, tzinfo=UTC)
     # a range: the newest upload, not a yanked one
     assert registry.published("pypi", "httpx", None) == datetime(2026, 11, 10, 10, tzinfo=UTC)
     assert registry.published("pypi", "httpx", "3.0") is None
@@ -529,6 +530,18 @@ def test_a_pypi_range_is_dated_by_its_newest_pre_release_too() -> None:
     registry = _registry([], {"releases": {**PYPI["releases"], **rc}})
 
     assert registry.published("pypi", "httpx", None) == datetime(2026, 11, 19, 1, tzinfo=UTC)
+
+
+def test_a_pin_is_dated_by_its_releases_newest_file() -> None:
+    """PyPI takes new files for an old release, and pip and uv install the best match."""
+    late = {"upload_time_iso_8601": "2026-11-18T00:00:00Z"}
+    yanked = {"upload_time_iso_8601": "2026-11-19T00:00:00Z", "yanked": True}
+    releases = {**PYPI["releases"], "1.0": [*PYPI["releases"]["1.0"], late, yanked]}
+    registry = _registry([], {"releases": releases})
+
+    assert registry.published("pypi", "httpx", "1.0") == datetime(2026, 11, 18, tzinfo=UTC)
+    # pip installs a yanked release only when pinned: then its files date it
+    assert registry.published("pypi", "httpx", "2.1") == datetime(2026, 11, 19, tzinfo=UTC)
 
 
 def test_the_public_registry_raises_when_it_cannot_answer() -> None:

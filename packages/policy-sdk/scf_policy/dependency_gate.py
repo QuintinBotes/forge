@@ -8,8 +8,8 @@ know fails, and so does a version younger than the policy's minimum age unless t
 policy allows the package by name. A range is judged by the newest release it may
 install (see :class:`RegistryClient`). A locked package is identified by the files
 it downloads, not by its name. A package is local (not looked up) only when the base
-branch takes it from the workspace or a path in the repository, and the change
-leaves that source as it was.
+branch takes it from the workspace or a directory in the repository (the root's
+sources reach workspace members only), and the change leaves that source as it was.
 
 It is a deny-list over the install inputs it names: what it cannot judge it does
 not pass (``could_not_verify``): a manifest that does not parse or is not a regular
@@ -26,6 +26,7 @@ the registry client.
 
 from __future__ import annotations
 
+import codecs
 import json
 import posixpath
 import re
@@ -49,10 +50,11 @@ Ecosystem = Literal["pypi", "npm"]
 
 class RegistryClient(Protocol):
     def published(self, ecosystem: Ecosystem, name: str, version: str | None) -> datetime | None:
-        """When ``version`` of ``name`` was published. With no version (a range), its
-        newest release a range may install: on PyPI any release not yanked, as pip and
-        uv install a pre-release when no final release matches; on npm a final release,
-        as a range with no pre-release tag never installs one.
+        """When ``version`` of ``name`` was published: on PyPI its newest file, as PyPI
+        takes new files for an old release. With no version (a range), its newest
+        release a range may install: on PyPI any release not yanked, as pip and uv
+        install a pre-release when no final release matches; on npm a final release, as
+        a range with no pre-release tag never installs one. A uv.lock entry is a pin.
 
         ``None`` when the registry knows no such package or version. Raises when it
         cannot answer.
@@ -139,13 +141,19 @@ _PYPROJECT_OTHER = ("poetry", "pdm", "hatch", "rye", "pixi")
 _PYPI = "https://pypi.org/simple"
 _PYPI_FILES = "https://files.pythonhosted.org/packages/"
 _NPM = "https://registry.npmjs.org/"
-#: What pip installs from the working tree when a requirement line ends with it.
+#: What pip installs from the working tree when a requirement line ends with it, and
+#: what a uv path source installs as a file (an archive nobody reviews), not a directory.
 _ARCHIVES = (
     *(".zip", ".whl", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz"),
-    *(".tar.xz", ".txz", ".tar.lz", ".tlz", ".tar.lzma"),
+    *(".tar.xz", ".txz", ".tar.lz", ".tlz", ".tar.lzma", ".tar.zst", ".tzst"),
 )
-#: uv.lock sources that name a place on disk rather than a registry.
-_LOCAL_LOCK_SOURCES = {"editable", "virtual", "directory", "path"}
+#: uv.lock sources that name a directory in the repository (``path`` is an archive).
+_LOCAL_LOCK_SOURCES = {"editable", "virtual", "directory"}
+#: Every install input by its case-folded name: a case-insensitive filesystem opens
+#: ``.NPMRC`` as ``.npmrc``, so only the exact name of a parsed one is read.
+_PARSED_NAMES = {"pyproject.toml", "package.json", *_LOCKFILES}
+_FOLDED_NAMES = {n.casefold() for n in (*_OTHER_MANIFESTS, *_PARSED_NAMES)}
+_PEP263 = re.compile(r"coding[:=]\s*([-\w.]+)", re.ASCII)
 #: The keys of a ``[tool.uv.sources]`` entry that takes a package from the repository.
 _LOCAL_SOURCE_KEYS = {"workspace", "path", "editable", "package"}
 _NPM_NAME = re.compile(r"(?:@[\w-][\w.-]*/)?[\w-][\w.-]*")
@@ -200,8 +208,13 @@ def _local_source(source: Any, directory: str) -> bool:
     if not isinstance(source, dict) or not source.keys() <= _LOCAL_SOURCE_KEYS:
         return False
     if "path" in source:
-        return "workspace" not in source and _inside(directory, source["path"])
+        path = source["path"]
+        return "workspace" not in source and _inside(directory, path) and not _archive(path)
     return source.get("workspace") is True
+
+
+def _archive(path: str) -> bool:
+    return re.sub(r"\[[^\]]*\]$", "", path).lower().endswith(_ARCHIVES)
 
 
 def _uv_sources(text: str | None, directory: str) -> dict[str, tuple[Any, str]]:
@@ -214,7 +227,7 @@ def _uv_sources(text: str | None, directory: str) -> dict[str, tuple[Any, str]]:
 
 def _python(requirement: str) -> Dependency | str:
     spec = requirement.split(";", 1)[0].strip()
-    if re.sub(r"\[[^\]]*\]$", "", spec).lower().endswith(_ARCHIVES):
+    if _archive(spec):
         return "a local file, not a registry requirement"  # how pip reads `stream.zip`
     match = _PEP508.fullmatch(spec)
     if match is None or not _SPECIFIERS.fullmatch(match.group(2)):
@@ -338,9 +351,17 @@ def _entries(kind: str, text: str, origin: dict[str, str], directory: str) -> tu
 def _origin(
     before: str, after: str, root: tuple[str | None, str | None], directory: str
 ) -> dict[str, str]:
-    """Where a pyproject.toml's ``[tool.uv.sources]`` (over the root's) take packages from."""
+    """Where a pyproject.toml's ``[tool.uv.sources]`` (over the root's, for a member of the
+    base branch's workspace only: uv resolves any other project's names from PyPI) take
+    packages from."""
+    workspace = tomllib.loads(root[0] or "").get("tool", {}).get("uv", {}).get("workspace") or {}
+    here = PurePosixPath(directory)
+    member = not directory or (
+        any(here.full_match(g) for g in workspace.get("members", []))
+        and not any(here.full_match(g) for g in workspace.get("exclude", []))
+    )
     was, now = (
-        {**_uv_sources(top, ""), **_uv_sources(text, directory)}
+        {**(_uv_sources(top, "") if member else {}), **_uv_sources(text, directory)}
         for text, top in ((before, root[0]), (after, root[1]))
     )
     origin = {}
@@ -350,6 +371,21 @@ def _origin(
         elif was.get(name) == (source, where):
             origin[name] = "local"  # the base branch's, unchanged: the change cannot add one
     return origin
+
+
+def _pip_decodes_otherwise(text: str) -> bool:
+    """Whether pip may read a requirements file other than as the UTF-8 the gate read: it
+    decodes with a BOM's codec or a PEP 263 ``coding:`` comment's on the first two lines
+    (``utf-7`` can hide a line in a comment), and bytes not UTF-8 are replaced here."""
+    if text.startswith("\ufeff") or "\ufffd" in text:
+        return True
+    for line in text.split("\n")[:2]:
+        if line.startswith("#") and (declared := _PEP263.search(line)):
+            try:
+                return codecs.lookup(declared[1]).name not in ("utf-8", "ascii")
+            except LookupError:
+                return True
+    return False
 
 
 def _line_of(text: str, needle: str) -> int:
@@ -383,9 +419,10 @@ def check_dependencies(
     for path in changed:
         p = PurePosixPath(path)
         paired = p.name in _LOCKFILES and str(p.with_name(_LOCKFILES[p.name])) in changed
+        folded = p.name.casefold()
         if (
-            p.name in _OTHER_MANIFESTS
-            or _OTHER_PATTERN.fullmatch(p.name.lower())
+            (folded in _FOLDED_NAMES and p.name not in _PARSED_NAMES)
+            or _OTHER_PATTERN.fullmatch(folded)
             or (p.name in _LOCKFILES and not paired)
         ):
             reasons.append(f"{path}: the gate does not parse this manifest")
@@ -401,6 +438,9 @@ def check_dependencies(
         before, after = manifests.get(path, (None, None))
         if before is None or after is None:
             reasons.append(f"{path}: not read as a regular file")
+            continue
+        if kind == "requirements" and _pip_decodes_otherwise(after):
+            reasons.append(f"{path}: pip may decode it other than as UTF-8")
             continue
         directory = posixpath.dirname(path)
         try:

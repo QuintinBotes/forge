@@ -344,7 +344,10 @@ def test_npm_optional_and_peer_dependencies_are_read() -> None:
     assert registry.asked == [("npm", "fsevents", "2.3.3"), ("npm", "react", None)]
 
 
-ROOT = "[tool.uv.sources]\nscf_contracts = { workspace = true }\n"
+ROOT = (
+    '[tool.uv.workspace]\nmembers = ["apps/*"]\n'
+    "[tool.uv.sources]\nscf_contracts = { workspace = true }\n"
+)
 
 
 def test_a_workspace_package_is_local_not_looked_up() -> None:
@@ -672,3 +675,100 @@ def test_an_install_input_the_first_gate_missed_cannot_verify(path: str) -> None
 
     assert result.status == "could_not_verify"
     assert result.reasons == [f"{path}: the gate does not parse this manifest"]
+
+
+# --------------------------------------------------------------------------- #
+# #316 review: the bypasses the security review of this gate found            #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "# coding: utf-7\n#+AAo-evil==1.0\n",
+        "# -*- coding: unicode_escape -*-\n#\\nevil==1.0\n",
+        "\n# vim: set fileencoding=utf-16 :\n",
+        "# coding: no-such-codec\n",
+        "\ufeffhttpx==0.27.0\n",
+        "httpx==0.27.0\n\ufffd\n",
+    ],
+    ids=["utf-7", "unicode-escape", "second-line", "unknown-codec", "bom", "not-utf-8"],
+)
+def test_a_requirements_file_pip_may_decode_otherwise_cannot_verify(text: str) -> None:
+    """pip decodes with a BOM's or a PEP 263 ``coding:`` line's codec; the gate reads UTF-8."""
+    registry = FakeRegistry({("pypi", "httpx", "0.27.0"): OLD})
+
+    result = _gate({"requirements.txt": ("", text)}, registry)
+
+    assert result.status == "could_not_verify" and registry.asked == []
+    assert result.reasons == ["requirements.txt: pip may decode it other than as UTF-8"]
+
+
+def test_a_requirements_file_declared_utf_8_is_read() -> None:
+    registry = FakeRegistry({("pypi", "httpx", "0.27.0"): OLD})
+
+    result = _gate({"requirements.txt": ("", "# -*- coding: UTF8 -*-\nhttpx==0.27.0\n")}, registry)
+
+    assert result.passed and registry.asked == [("pypi", "httpx", "0.27.0")]
+
+
+WORKSPACE_ROOT = (
+    '[tool.uv.workspace]\nmembers = ["packages/*"]\nexclude = ["packages/web"]\n'
+    "[tool.uv.sources]\nfoo = { workspace = true }\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("path", "asked"),
+    [
+        ("packages/a/pyproject.toml", False),
+        ("tools/x/pyproject.toml", True),
+        ("packages/web/pyproject.toml", True),
+        ("packages/a/b/pyproject.toml", True),
+    ],
+)
+def test_the_roots_sources_are_local_only_for_its_workspace_members(path: str, asked: bool) -> None:
+    """uv applies the root's sources to members only; elsewhere it resolves from PyPI."""
+    member = ('[project]\nname = "m"\n', '[project]\nname = "m"\ndependencies = ["foo"]\n')
+    manifests = {"pyproject.toml": (WORKSPACE_ROOT, WORKSPACE_ROOT), path: member}
+    registry = FakeRegistry({})
+
+    _gate(manifests, registry, changed=[path])
+
+    assert registry.asked == ([("pypi", "foo", None)] if asked else [])
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        *(".NPMRC", "UV.toml", "PIP.CONF", "Setup.py", "SETUP.CFG", "PIPFILE"),
+        *("web/Package.json", "PyProject.toml", "UV.lock", "Yarn.lock"),
+    ],
+)
+def test_an_install_input_named_in_another_case_cannot_verify(path: str) -> None:
+    """A case-insensitive filesystem opens ``.NPMRC`` as ``.npmrc``."""
+    result = _gate({}, FakeRegistry({}), changed=[path])
+
+    assert result.reasons == [f"{path}: the gate does not parse this manifest"]
+
+
+SIX_WHEEL = "vendor/six-1.16.0-py2.py3-none-any.whl"
+
+
+@pytest.mark.parametrize("path", [SIX_WHEEL, "vendor/six-1.16.0.tar.gz", "vendor/six.ZIP"])
+def test_a_path_source_to_a_committed_archive_is_not_local(path: str) -> None:
+    """The base takes six from PyPI; the change moves it onto a binary nobody reviews."""
+    before = '[project]\nname = "app"\ndependencies = ["six>=1.0"]\n'
+    after = before + f'[tool.uv.sources]\nsix = {{ path = "{path}" }}\n'
+
+    result = _gate({"pyproject.toml": (before, after)}, FakeRegistry({}))
+
+    assert result.status == "could_not_verify"
+
+
+def test_a_locked_archive_in_the_repository_cannot_verify() -> None:
+    after = UV_LOCK.format(name="six", version="1.16.0", source=f'{{ path = "{SIX_WHEEL}" }}')
+
+    result = _locked(_six(), after, FakeRegistry({}))
+
+    assert result.reasons == ["uv.lock:4: six is not from the registry"]

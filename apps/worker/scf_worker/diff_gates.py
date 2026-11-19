@@ -174,9 +174,10 @@ def diff_gate_checks(
 class PublicRegistry:
     """PyPI's and npm's public registries: the worker's :class:`RegistryClient`.
 
-    A version's time is its first upload. With no version (a range), the newest upload
-    a range may install: on PyPI of any release that is not yanked, pre-releases
-    included; on npm of a final release. A PyPI pin matches its release ignoring
+    On PyPI a version's time is its newest file not yanked (PyPI takes new files for an
+    old release, and the installer picks the best match), and a range's the newest
+    such file of any release, pre-releases included. On npm a version's time is its
+    publication, and a range's its newest final release's. A PyPI pin matches its release ignoring
     trailing ``.0`` (``2.31`` is ``2.31.0``; shortcut: not full PEP 440 normalisation,
     which needs ``packaging``). A 404 is an unknown package; any other failure raises.
     """
@@ -198,14 +199,17 @@ class PublicRegistry:
         if ecosystem == "pypi":
             data = self._get(f"https://pypi.org/pypi/{quote(name, safe='')}/json")
             releases: dict[str, list[dict[str, Any]]] = (data or {}).get("releases", {})
-            if version:
-                files = [
-                    f for v, fs in releases.items() if _trimmed(v) == _trimmed(version) for f in fs
-                ]
-            else:  # pip and uv install a pre-release when no final release matches the range
-                files = [f for fs in releases.values() for f in fs if not f.get("yanked")]
+            # a range: every release, as pip and uv fall back to a pre-release
+            files = [
+                f
+                for v, fs in releases.items()
+                if not version or _trimmed(v) == _trimmed(version)
+                for f in fs
+            ]
+            # yanked files count only for a pin, the one case pip installs them
+            files = [f for f in files if not f.get("yanked")] or (files if version else [])
             uploads = [datetime.fromisoformat(f["upload_time_iso_8601"]) for f in files]
-            return (min(uploads) if version else max(uploads)) if uploads else None
+            return max(uploads, default=None)
         data = self._get(f"https://registry.npmjs.org/{quote(name, safe='@')}") or {}
         versions = data.get("versions", {})
         times = {

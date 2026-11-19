@@ -68,19 +68,23 @@ binds every activity except `forge.resume_agent`:
     It asks PyPI or npm about every dependency or locked version the change adds,
     and fails on one the registry does not know or one published less than
     `min_dependency_age_days` ago (7 by default) unless `allowed_packages` names
-    it. A pin is dated by its version; a range by the newest release it may
-    install (on PyPI pre-releases included, as pip and uv fall back to them). A
+    it. A pin is dated by its release's newest file (PyPI takes new files for an
+    old release); a range by the newest release it may install (on PyPI
+    pre-releases included, as pip and uv fall back to them). A
     locked package is identified by what is downloaded: a `uv.lock` entry's files
     must be its release's on `files.pythonhosted.org` and a `package-lock.json`
     entry's `resolved` its own tarball on `registry.npmjs.org`; files or a hash
     that change under the same release cannot be verified. A package counts as
     local (not looked up) only when the base branch's `[tool.uv.sources]` (the
-    root's or the member's) takes it from the workspace or a path in the
-    repository and the change leaves that source as it was.
+    project's own, or the root's for a member of the base branch's workspace)
+    takes it from the workspace or a directory in the repository and the change
+    leaves that source as it was; a path to an archive is not local.
   - **The dependency gate is a deny-list over the install inputs it names, and
     fails closed on anything it cannot read**: a manifest or lockfile that is a
-    symlink or does not parse; a URL, VCS, path or archive requirement (pip reads
-    `stream.zip` as a local file); an option line (`-r`, `--extra-index-url`); an
+    symlink or does not parse; a requirements file pip may decode other than as
+    UTF-8 (a BOM, or a `coding:` comment naming another codec); a URL, VCS, path
+    or archive requirement (pip reads `stream.zip` as a local file); an option
+    line (`-r`, `--extra-index-url`); an
     npm dist-tag (`latest`, `next`), `*`, or a range with a pre-release tag; a
     change to `[tool.uv]`, a `[tool.uv.sources]` entry that is neither a
     workspace member nor a path in the repository, another tool's table
@@ -88,7 +92,8 @@ binds every activity except `forge.resume_agent`:
     `workspaces` or `packageManager`; another installer's or ecosystem's file
     (`uv.toml`, `pip.conf`, `.npmrc`, `pylock.toml`, `requirements.lock`,
     `hatch.toml`, `pixi.toml`, `environment.yml`, `poetry.lock`, `yarn.lock`,
-    `go.mod`...); and a lockfile changed without its manifest. Install inputs
+    `go.mod`...), its name compared case-folded (`.NPMRC`, `Package.json`); and
+    a lockfile changed without its manifest. Install inputs
     outside that list are not seen: a Dockerfile, a CI workflow, `tox.ini`, a
     pre-commit config, or a script that runs an installer.
   - **`sast`** runs `bandit` over the changed Python files, ignoring `# nosec`,
