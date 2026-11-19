@@ -48,9 +48,10 @@ from scf_db.models.enums import RunStatus
 from scf_db.models.held_out import SCENARIO_APPROVED
 from scf_db.models.traceability import TraceabilitySpecRollup
 from scf_integrations.github import GitHubClient
+from scf_policy.dependency_gate import RegistryClient
 from scf_worker.agent_runner import _commits_ahead, configured_model, run_agent_objective
 from scf_worker.approval_activity import make_create_approval_fn
-from scf_worker.diff_gates import diff_gate_checks
+from scf_worker.diff_gates import PublicRegistry, diff_gate_checks
 from scf_worker.dispatch import (
     RepositoryUnavailable,
     objective_for_task,
@@ -571,6 +572,7 @@ def run_checks_service(
     *,
     reviewer: Callable[[str], ModelClient] = reviewer_client,
     adversary: Callable[[str], ModelClient] = reviewer_client,
+    registry: RegistryClient | None = None,
 ) -> RunChecksFn:
     """Run the repository's declared checks on the agent's commit (#251).
 
@@ -578,7 +580,8 @@ def run_checks_service(
     code even if the run branch moved. The commands come from the default branch's
     ``.forge/policy.yaml``, as the pull-request gate's review rules do, so an agent
     cannot change its own checks. A repository that declares none fails. Beside them
-    run the gates on the diff (#187): ``secret_scan`` and ``sast``.
+    run the gates on the diff (#187): ``secret_scan``, ``dependency_check`` (asking
+    ``registry``, PyPI and npm by default, about added dependencies) and ``sast``.
 
     When every check passes, an independent reviewer judges the change (#173): its
     verdict is the check ``independent_review``. When it approves, an adversary
@@ -628,6 +631,7 @@ def run_checks_service(
                 base=target.base_branch,
                 head=str(head),
                 rules=policy.diff_gates,
+                registry=registry or PublicRegistry(),
             )
             runs += gates
         if not runs or not all(r.passed for r in runs):

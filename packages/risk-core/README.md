@@ -24,6 +24,11 @@ risk_rules:
     critical: { approvals: 2, deploy: gated, red_team: true,  self_eval: true }
 ```
 
+- `scf_risk.signals.signals_from_changes(changes)`: the `ChangeSignals` of a diff from
+  its `(path, lines added, lines removed)` entries. A migration or a contract or schema
+  touch is read from the paths alone (a `migrations`/`alembic` directory; a
+  `contracts`/`schemas`/`proto` directory, a `.proto`/`.graphql`/`.avsc` file or an
+  `openapi.*` file).
 - `scf_risk.classifier.derive(signals, rules)`: `max(default, class of every matching
   rule)`, with the ids of the matching rules in policy order; `fallback` when the
   signals are marked unavailable. It never raises.

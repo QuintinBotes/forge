@@ -176,8 +176,21 @@
     },
     "DiffGateRules": {
       "additionalProperties": false,
-      "description": "The ``diff_gates`` block: what the gates on an agent's diff allow (#187).\n\n``secret_allowed_files`` names files whose secret-scan matches are allowed, and\nrecorded as allowed. Each is one file path relative to the repository root,\nmatched exactly: a wildcard, or a path ending in ``/``, is refused when the policy\nloads, and a directory's name matches no file under it.",
+      "description": "The ``diff_gates`` block: what the gates on an agent's diff allow (#187).\n\n``min_dependency_age_days`` is the youngest a dependency the change adds may be;\n``allowed_packages`` names packages exempt from that age (they must still exist).\n\n``secret_allowed_files`` names files whose secret-scan matches are allowed, and\nrecorded as allowed. Each is one file path relative to the repository root,\nmatched exactly: a wildcard, or a path ending in ``/``, is refused when the policy\nloads, and a directory's name matches no file under it.",
       "properties": {
+        "allowed_packages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Packages",
+          "type": "array"
+        },
+        "min_dependency_age_days": {
+          "default": 7,
+          "minimum": 0,
+          "title": "Min Dependency Age Days",
+          "type": "integer"
+        },
         "sast_analyzer": {
           "const": "bandit",
           "default": "bandit",
