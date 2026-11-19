@@ -191,6 +191,9 @@ EXPECTED_MODELS = [
     "HeldOutScenario",
     # #260: one-time sign-in links for a first administrator (token hash only).
     "SignInLink",
+    # #193: append-only risk classifications of agent changes and gate observations.
+    "RiskClassification",
+    "RiskGateObservation",
     # J retrieval (ADR-0017): incrementally maintained BM25 corpus statistics —
     # per-workspace document frequencies + per-workspace corpus totals.
     "RetrievalTermStat",
