@@ -1,8 +1,8 @@
 """#187 criteria 6 and 7: the gates on the diff join ``forge.run_checks``'s check set.
 
 On a local bare mirror and the worktree sandbox (tests only), as #251's tests run
-the checks; bandit is a dev dependency. The credential below is fake and split, so
-no source line holds one.
+the checks. The registry is a fake, so nothing reaches the network; bandit is a
+dev dependency. The credential below is fake and split, so no source line holds one.
 """
 
 from __future__ import annotations
@@ -12,9 +12,11 @@ import os
 import subprocess
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -25,6 +27,7 @@ from scf_db.base import Base
 from scf_db.models import AgentRun, Project, RepositoryConnection, Task, WorkflowRun, Workspace
 from scf_db.models.enums import RunStatus
 from scf_db.models.role_config import AgentRoleConfig
+from scf_worker.diff_gates import PublicRegistry
 from scf_worker.temporal_services import run_checks_service
 from scf_workflow.temporal.payloads import ChecksResult, RunChecksInput
 
@@ -35,9 +38,23 @@ POLICY = 'repo_id: app\ncommands:\n  lint: "true"\n'
 FAKE_KEY = "AKIA" + "QZ7X" * 4
 #: A shape the stored output's own redaction does not catch: only the gate masks it.
 FAKE_GOOGLE_KEY = "AIza" + "Sy" + "B7" * 16 + "x"
+OLD = datetime.now(UTC) - timedelta(days=400)
 SHELL = (
     "import subprocess\n\n\ndef run(command):\n    return subprocess.Popen(command, shell=True)\n"
 )
+
+
+class FakeRegistry:
+    def __init__(self, known: dict[tuple[str, str, str | None], datetime | Exception]) -> None:
+        self.known = known
+        self.asked: list[tuple[str, str, str | None]] = []
+
+    def published(self, ecosystem: str, name: str, version: str | None) -> datetime | None:
+        self.asked.append((ecosystem, name, version))
+        answer = self.known.get((ecosystem, name, version))
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
 
 
 class Reviewer:
@@ -149,8 +166,13 @@ def _seed(factory: sessionmaker[Session], head: str) -> uuid.UUID:
         return run.id
 
 
-def _checks(factory: sessionmaker[Session], run_id: uuid.UUID, reviewer: Reviewer) -> ChecksResult:
-    service = run_checks_service(factory, reviewer=reviewer)
+def _checks(
+    factory: sessionmaker[Session],
+    run_id: uuid.UUID,
+    reviewer: Reviewer,
+    registry: FakeRegistry | None = None,
+) -> ChecksResult:
+    service = run_checks_service(factory, reviewer=reviewer, registry=registry or FakeRegistry({}))
     return service(
         RunChecksInput(workflow_run_id=run_id, workspace_id=WS, attempt=0, idempotency_key="c0")
     )
@@ -168,6 +190,7 @@ def _recorded(factory: sessionmaker[Session], run_id: uuid.UUID) -> dict[str, An
     ("files", "failed", "finding"),
     [
         ({"app/settings.py": f'KEY = "{FAKE_KEY}"\n'}, "secret_scan", "app/settings.py:1 [aws"),
+        ({"requirements.txt": "not-on-pypi==1.0\n"}, "dependency_check", "requirements.txt:1 ["),
         ({"app/run.py": SHELL}, "sast", "app/run.py:5 [B602]"),
     ],
 )
@@ -184,7 +207,7 @@ def test_a_change_that_fails_a_gate_is_not_offered_for_review(
 
     result = _checks(factory, run_id, reviewer)
 
-    gates = {"secret_scan": True, "sast": True}
+    gates = {"secret_scan": True, "dependency_check": True, "sast": True}
     assert result.results == {"lint": True, **gates, failed: False}
     assert not result.all_passed and result.pause_reason is None
     assert reviewer.models == [], "a change that fails a gate is never reviewed"
@@ -204,6 +227,24 @@ def test_the_stored_result_never_holds_the_secret(
         run = s.get(WorkflowRun, run_id)
         assert run is not None
         assert FAKE_KEY not in json.dumps(run.context)
+
+
+def test_a_registry_that_cannot_answer_pauses_for_a_person(
+    factory: sessionmaker[Session], repo: tuple[Path, Path]
+) -> None:
+    work, mirror = repo
+    run_id = _seed(factory, _agent_commits(work, mirror, {"requirements.txt": "rich==13.7.1\n"}))
+    registry = FakeRegistry({("pypi", "rich", "13.7.1"): TimeoutError("read timed out")})
+
+    result = _checks(factory, run_id, Reviewer(), registry)
+
+    assert result.results["dependency_check"] is False and not result.all_passed
+    stored = _recorded(factory, run_id)["dependency_check"]["output_tail"]
+    assert stored.startswith("could_not_verify")
+    # the worker's fault: a person is asked, the builder's retries are not spent
+    assert result.pause_reason == (
+        "dependency_check could not verify: requirements.txt:1: pypi did not answer (TimeoutError)"
+    )
 
 
 def test_a_worker_without_bandit_pauses_for_a_person(
@@ -304,14 +345,17 @@ def test_a_change_that_passes_every_gate_goes_on_to_review(
     factory: sessionmaker[Session], repo: tuple[Path, Path]
 ) -> None:
     work, mirror = repo
-    run_id = _seed(factory, _agent_commits(work, mirror, {"app/ok.py": "VALUE = 1\n"}))
+    files = {"app/ok.py": "VALUE = 1\n", "requirements.txt": "rich==13.7.1\n"}
+    run_id = _seed(factory, _agent_commits(work, mirror, files))
+    registry = FakeRegistry({("pypi", "rich", "13.7.1"): OLD})
     reviewer = Reviewer()
 
-    result = _checks(factory, run_id, reviewer)
+    result = _checks(factory, run_id, reviewer, registry)
 
     assert result.results == {
         "lint": True,
         "secret_scan": True,
+        "dependency_check": True,
         "sast": True,
         "independent_review": True,
     }
@@ -346,3 +390,147 @@ def test_a_change_cannot_allow_its_own_secret(
     result = _checks(factory, run_id, Reviewer())
 
     assert result.results["secret_scan"] is False
+
+
+def test_a_workspace_package_the_base_branch_declares_is_not_looked_up(
+    factory: sessionmaker[Session], repo: tuple[Path, Path]
+) -> None:
+    work, mirror = repo
+    root = "[tool.uv.sources]\nscf-board = { workspace = true }\n"
+    _commit(work, mirror, "main", {"pyproject.toml": root})
+    member = '[project]\nname = "app"\ndependencies = ["scf-board"]\n'
+    run_id = _seed(factory, _agent_commits(work, mirror, {"apps/x/pyproject.toml": member}))
+    registry = FakeRegistry({})
+
+    result = _checks(factory, run_id, Reviewer(), registry)
+
+    assert result.results["dependency_check"] is True and registry.asked == []
+
+
+@pytest.mark.parametrize(
+    ("root", "member", "status"),
+    [
+        ("evil = { workspace = true }\n", "", "failed"),
+        (
+            'evil = { path = "vendor/evil" }\n',
+            '[tool.uv.sources]\nevil = { url = "https://example.com/evil-1.0.tar.gz" }\n',
+            "could_not_verify",
+        ),
+    ],
+    ids=["the-root-adds-a-workspace-source", "the-member-overrides-the-roots-path"],
+)
+def test_the_change_cannot_make_a_package_local(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], root: str, member: str, status: str
+) -> None:
+    """#316 criterion 5: what is local comes from the base branch, not the change."""
+    work, mirror = repo
+    files = {
+        "pyproject.toml": f"[tool.uv.sources]\n{root}",
+        "apps/m/pyproject.toml": f'[project]\nname = "m"\ndependencies = ["evil"]\n{member}',
+    }
+    run_id = _seed(factory, _agent_commits(work, mirror, files))
+
+    result = _checks(factory, run_id, Reviewer(), FakeRegistry({}))  # no PyPI project "evil"
+
+    assert result.results["dependency_check"] is False
+    assert _recorded(factory, run_id)["dependency_check"]["output_tail"].startswith(status)
+
+
+@pytest.mark.parametrize("before", ["rich==13.7.1\n", None], ids=["type-change", "new-link"])
+def test_a_manifest_that_is_a_symlink_cannot_be_verified(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], before: str | None
+) -> None:
+    """#316 criterion 6: pip reads the link's target; git's blob is only the link's text."""
+    work, mirror = repo
+    if before is not None:
+        _commit(work, mirror, "main", {"requirements.txt": before})
+        (work / "requirements.txt").unlink()
+    _git(work, "branch", BRANCH, "main")
+    (work / "requirements.txt").symlink_to("six")
+    target = "--extra-index-url https://example.com/simple\nevil==1.0\n"
+    run_id = _seed(factory, _commit(work, mirror, BRANCH, {"six": target}))
+    registry = FakeRegistry({("pypi", "six", None): OLD})
+
+    result = _checks(factory, run_id, Reviewer(), registry)
+
+    assert result.results["dependency_check"] is False and registry.asked == []
+    assert result.pause_reason is None, "the change's to fix, not the worker's"
+    stored = _recorded(factory, run_id)["dependency_check"]["output_tail"]
+    assert (
+        stored
+        == "could_not_verify\n- could not verify: requirements.txt: not read as a regular file"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The worker's registry client, over a mock transport                         #
+# --------------------------------------------------------------------------- #
+
+PYPI = {
+    "releases": {
+        "1.0": [{"upload_time_iso_8601": "2020-01-02T00:00:00Z"}],
+        "2.0.0": [
+            {"upload_time_iso_8601": "2026-11-10T10:00:00Z"},
+            {"upload_time_iso_8601": "2026-11-10T09:00:00Z"},
+        ],
+        "2.1": [{"upload_time_iso_8601": "2026-11-19T00:00:00Z", "yanked": True}],
+    }
+}
+NPM = {
+    "versions": {"1.0.0": {}, "1.1.0": {}, "2.0.0-nightly.1": {}},
+    "time": {
+        "created": "2019-01-01T00:00:00.000Z",
+        "modified": "2026-11-19T00:00:00.000Z",
+        "1.0.0": "2019-01-01T00:00:00.000Z",
+        "1.1.0": "2026-11-17T00:00:00.000Z",
+        "2.0.0-nightly.1": "2026-11-19T00:00:00.000Z",
+        "9.9.9": "2026-11-18T00:00:00.000Z",
+    },
+}
+
+
+def _registry(seen: list[str], pypi: dict[str, Any] = PYPI) -> PublicRegistry:
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.path == "/pypi/httpx/json":
+            return httpx.Response(200, json=pypi)
+        if request.url.raw_path == b"/@acme%2Fwidgets":
+            return httpx.Response(200, json=NPM)
+        if request.url.path == "/pypi/flaky/json":
+            return httpx.Response(503)
+        return httpx.Response(404)
+
+    return PublicRegistry(transport=httpx.MockTransport(answer))
+
+
+def test_the_public_registry_reads_publication_times() -> None:
+    seen: list[str] = []
+    registry = _registry(seen)
+
+    assert registry.published("pypi", "httpx", "1.0") == datetime(2020, 1, 2, tzinfo=UTC)
+    assert registry.published("pypi", "httpx", "2.0") == datetime(2026, 11, 10, 9, tzinfo=UTC)
+    # a range: the newest upload, not a yanked one
+    assert registry.published("pypi", "httpx", None) == datetime(2026, 11, 10, 10, tzinfo=UTC)
+    assert registry.published("pypi", "httpx", "3.0") is None
+    assert registry.published("pypi", "not-on-pypi", None) is None
+    assert registry.published("npm", "@acme/widgets", "1.0.0") == datetime(2019, 1, 1, tzinfo=UTC)
+    # an npm range without a pre-release tag never installs a pre-release
+    assert registry.published("npm", "@acme/widgets", None) == datetime(2026, 11, 17, tzinfo=UTC)
+    assert registry.published("npm", "@acme/widgets", "9.9.9") is None, "unpublished"
+    assert registry.published("pypi", "httpx", "1.0.0") == datetime(2020, 1, 2, tzinfo=UTC)
+    assert seen[0] == "https://pypi.org/pypi/httpx/json"
+    assert seen[5] == "https://registry.npmjs.org/@acme%2Fwidgets"
+
+
+def test_a_pypi_range_is_dated_by_its_newest_pre_release_too() -> None:
+    """#316 criterion 7: pip and uv install a pre-release when no final release matches
+    (``foo>=3.0`` with only 3.0rc1 out) or when the range names one (``foo>=3.0rc1``)."""
+    rc = {"3.0rc1": [{"upload_time_iso_8601": "2026-11-19T01:00:00Z"}]}
+    registry = _registry([], {"releases": {**PYPI["releases"], **rc}})
+
+    assert registry.published("pypi", "httpx", None) == datetime(2026, 11, 19, 1, tzinfo=UTC)
+
+
+def test_the_public_registry_raises_when_it_cannot_answer() -> None:
+    with pytest.raises(httpx.HTTPStatusError):
+        _registry([]).published("pypi", "flaky", None)
