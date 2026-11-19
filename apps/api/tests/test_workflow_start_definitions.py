@@ -2,34 +2,47 @@
 
 ``POST /workflow/runs`` resolves an explicit ``definition`` through the workspace's
 published definitions over the bundled ones. An unknown name is 404 and never
-falls back to ``default_feature``; a line (DSL v2) is refused with 503 until
-``forge.StationWorkflow`` exists, on both engines, before any run row is written
-or Temporal is contacted. The V1 engine refuses states outside ``WorkflowState``
-(409); the Temporal engine runs only the bundled ``default_feature`` (503).
+falls back to ``default_feature``. A line (DSL v2) is refused with 503 on the V1
+engine; the Temporal engine validates it again (409 ``line_invalid``), refuses an
+explicit station model (409 ``model_not_allowed``) and a start past
+``max_active_runs`` (409 ``line_concurrency_exceeded``), each before any run row is
+written or Temporal is contacted, and otherwise starts ``forge.StationWorkflow``. A
+station run then takes only ``resume`` and ``cancel``. The V1 engine refuses states
+outside ``WorkflowState`` (409); the Temporal engine runs no other v1 definition
+than the bundled ``default_feature`` (503).
 """
 
 from __future__ import annotations
 
+import threading
+import time
 import uuid
 from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import Engine, func, select
+from sqlalchemy.orm import Session, sessionmaker
 
+from scf_api.deps import Principal
 from scf_api.main import create_app
 from scf_api.services import workflow_engine
+from scf_contracts import UserRole
+from scf_db.base import Base
+from scf_db.models import Project, Task, Workspace
 from scf_db.models.runs import WorkflowRun as DbWorkflowRun
 from scf_db.models.workflow_editor import (
     RevisionValidationStatus,
     WorkflowDefinitionSource,
 )
+from scf_db.models.workflow_editor import WorkflowDefinition as DbDefinition
 from scf_workflow.editor.errors import UnknownDefinitionError
 from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
 from scf_workflow.editor.schemas import ImportRequest
 from scf_workflow.editor.service import WorkflowEditorService
 from scf_workflow.editor.store import ResolvingDefinitionProvider
+from scf_workflow.temporal.payloads import StationParams, WorkflowEventPayload
 
 #: The authenticated principal's workspace (conftest's ``TEST_WORKSPACE_ID``).
 TEST_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
@@ -60,6 +73,33 @@ transitions:
 
 #: A line with a key this release's ``LineDefinition`` does not know: it cannot parse.
 FUTURE_LINE = LINE + 'schedule: {cron: "0 * * * *"}\n'
+
+#: Parses, but ``validate_line`` refuses it (a dead end; ``done`` unreachable).
+INVALID_LINE = LINE.replace("to: done", "to: nowhere")
+
+#: Reads ``task.repo``, which a task with no single repository cannot give.
+REPO_LINE = LINE.replace(
+    "forge.prepare_worktree}", "forge.prepare_worktree, inputs: {repo: task.repo}}"
+)
+
+#: Valid, but names a model, which no workspace allowlist admits yet.
+MODEL_LINE = """\
+workflow: tiny_line
+dsl_version: "2"
+initial: implement
+terminals: {done: succeeded}
+budget: {max_tokens: 1000}
+stations:
+  implement:
+    kind: agent
+    role: implementer
+    skill_profile: backend-tdd
+    context_template: implementation
+    objective: Implement it.
+    model: some-model
+transitions:
+  - {from: implement, to: done, when: succeeded}
+"""
 
 #: A v1 document that cannot parse (no transitions).
 BROKEN_V1 = 'workflow: broken\nversion: "1"\ntransitions: []\n'
@@ -106,6 +146,48 @@ def temporal(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "temporal")
     monkeypatch.setattr(workflow_engine, "get_temporal_client", _no_connection)
+
+
+class _LineHandle:
+    result_run_id = "fake-temporal-run"
+
+    def __init__(self, client: _LineClient) -> None:
+        self._client = client
+
+    async def signal(self, _signal: object, args: list[object]) -> None:
+        self._client.sent.append(("signal", args))
+
+    async def execute_update(self, _update: object, event: WorkflowEventPayload) -> str:
+        self._client.sent.append(("update", event))
+        return "prepare"
+
+
+class _LineClient:
+    """Starts nothing; records the params started and what reaches a run's workflow."""
+
+    def __init__(self) -> None:
+        self.started: list[object] = []
+        self.sent: list[tuple[str, object]] = []
+
+    async def start_workflow(self, _workflow: object, params: object, **_kw: object) -> _LineHandle:
+        self.started.append(params)
+        return _LineHandle(self)
+
+    def get_workflow_handle(self, _wf_id: str) -> _LineHandle:
+        return _LineHandle(self)
+
+
+@pytest.fixture
+def line_client(monkeypatch: pytest.MonkeyPatch) -> _LineClient:
+    """Select the Temporal engine over a client that runs nothing."""
+    fake = _LineClient()
+
+    async def _connect(settings: object) -> _LineClient:
+        return fake
+
+    monkeypatch.setenv("WORKFLOW_ENGINE_BACKEND", "temporal")
+    monkeypatch.setattr(workflow_engine, "get_temporal_client", _connect)
+    return fake
 
 
 def _publish_v1(
@@ -245,13 +327,186 @@ def test_line_is_refused_on_the_v1_engine(client, workflow_db) -> None:
     assert _run_rows(workflow_db) == 0
 
 
+def test_line_starts_as_a_station_run_on_the_temporal_engine(
+    client, workflow_db, line_client: _LineClient
+) -> None:
+    revision_id = _publish_line(workflow_db)
+    task_id = workflow_db.seed_task()
+    with workflow_db.factory() as session:
+        task = session.get(Task, task_id)
+        assert task is not None
+        task.repo_targets = [{"repo": "acme/app"}]
+        task_key = task.key
+        session.commit()
+
+    resp = _start(client, task_id, definition="tiny_line", trigger={"external_ref": "LIN-9"})
+
+    assert resp.status_code == 201, resp.text
+    run = resp.json()
+    assert (run["workflow_name"], run["current_state"], run["status"]) == (
+        "tiny_line",
+        "prepare",
+        "running",
+    )
+    assert run["context"]["dsl_version"] == "2"
+    assert _revision_column(workflow_db, run["id"]) == revision_id
+    (params,) = line_client.started
+    assert isinstance(params, StationParams)
+    assert (params.workflow_run_id, params.task_id) == (uuid.UUID(run["id"]), task_id)
+    assert (params.definition_revision_id, params.dsl_yaml) == (revision_id, LINE)
+    assert params.task == {
+        "key": task_key,
+        "title": "workflow task",
+        "description": "",
+        "repo": "acme/app",
+    }
+    assert params.trigger == {"external_ref": "LIN-9"}
+
+
 @pytest.mark.usefixtures("temporal")
-def test_line_is_refused_on_the_temporal_engine_before_connecting(client, workflow_db) -> None:
-    _publish_line(workflow_db)
+@pytest.mark.parametrize(
+    ("dsl", "detail"),
+    [
+        (INVALID_LINE, "line_invalid"),
+        (FUTURE_LINE, "line_invalid"),
+        (MODEL_LINE, "model_not_allowed"),
+        (REPO_LINE, "repo_target_ambiguous"),  # the seeded task has no repository
+    ],
+    ids=["invalid", "unparseable", "model", "no_single_repo"],
+)
+def test_temporal_refuses_a_line_it_must_not_run_before_connecting(
+    client, workflow_db, dsl: str, detail: str
+) -> None:
+    _publish_raw(workflow_db, dsl=dsl)
     resp = _start(client, workflow_db.seed_task(), definition="tiny_line")
-    assert resp.status_code == 503
-    assert resp.json()["detail"] == "durable_engine_required"
+    assert (resp.status_code, resp.json()["detail"]) == (409, detail)
     assert _run_rows(workflow_db) == 0
+
+
+def test_a_line_start_past_max_active_runs_is_refused(
+    client, workflow_db, line_client: _LineClient
+) -> None:
+    _publish_raw(workflow_db, dsl=LINE + "concurrency: {max_active_runs: 1}\n")
+    assert _start(client, workflow_db.seed_task(), definition="tiny_line").status_code == 201
+    refused = _start(client, workflow_db.seed_task(), definition="tiny_line")
+    assert (refused.status_code, refused.json()["detail"]) == (409, "line_concurrency_exceeded")
+    assert _run_rows(workflow_db) == 1
+    assert len(line_client.started) == 1
+
+
+def test_a_station_run_takes_only_resume_and_cancel(
+    client, workflow_db, line_client: _LineClient
+) -> None:
+    _publish_line(workflow_db)
+    run_id = _start(client, workflow_db.seed_task(), definition="tiny_line").json()["id"]
+    for event in ("succeeded", "generate_spec_draft", "start_agent_run"):
+        resp = client.post(f"/workflow/runs/{run_id}/transition", json={"event": event})
+        assert (resp.status_code, resp.json()["detail"]) == (409, "station_run_not_event_driven")
+    assert line_client.sent == []
+
+    resumed = client.post(
+        f"/workflow/runs/{run_id}/transition", json={"event": "resume", "input": "use v2"}
+    )
+    assert resumed.status_code == 200, resumed.text
+    cancelled = client.post(f"/workflow/runs/{run_id}/transition", json={"event": "cancel"})
+    assert cancelled.status_code == 200, cancelled.text
+
+    (kind, event), (signal, args) = line_client.sent
+    assert kind == "update" and isinstance(event, WorkflowEventPayload)
+    assert (event.type, event.payload) == ("resume", {"input": "use v2"})
+    assert event.actor.startswith("user:")
+    assert (signal, args) == ("signal", ["cancelled", event.actor])
+
+
+@pytest.mark.parametrize(
+    ("role", "auth_method"),
+    [(UserRole.VIEWER, "test"), (UserRole.MEMBER, "api_key")],
+    ids=["viewer", "member_key_bound_to_no_person"],
+)
+def test_only_a_person_who_may_write_resumes_or_cancels_a_station_run(
+    client, authenticate_app, workflow_db, line_client: _LineClient, role, auth_method
+) -> None:
+    _publish_line(workflow_db)
+    run_id = _start(client, workflow_db.seed_task(), definition="tiny_line").json()["id"]
+    caller = Principal(
+        user_id=uuid.uuid4(),  # an unbound key's principal carries the key's own id
+        workspace_id=TEST_WORKSPACE_ID,
+        role=role,
+        auth_method=auth_method,
+        scopes=["*"],
+    )
+    app = workflow_db.install(create_app())
+    authenticate_app(app, caller)
+    with TestClient(app) as as_viewer:
+        for event in ("resume", "cancel"):
+            resp = as_viewer.post(f"/workflow/runs/{run_id}/transition", json={"event": event})
+            assert resp.status_code == 403, resp.text
+    assert line_client.sent == []
+
+
+def test_a_line_row_whose_workflow_never_started_is_started_again(
+    client, workflow_db, line_client: _LineClient
+) -> None:
+    """The API died between committing the row and starting it: the next start recovers it.
+
+    Temporal refuses a second ``wf-<id>`` when the first one is live (REJECT_DUPLICATE).
+    """
+    _publish_raw(workflow_db, dsl=LINE + "concurrency: {max_active_runs: 1}\n")
+    task_id = workflow_db.seed_task()
+    first = _start(client, task_id, definition="tiny_line").json()["id"]
+    again = _start(client, task_id, definition="tiny_line")
+    assert again.status_code == 201, again.text
+    assert again.json()["id"] == first  # its own slot, not a second one
+    assert [str(p.workflow_run_id) for p in line_client.started] == [first, first]  # type: ignore[attr-defined]
+    assert _run_rows(workflow_db) == 1
+
+
+def test_racing_line_starts_count_one_at_a_time(pg_engine: Engine) -> None:
+    """The definition row lock serialises the count: two starts never both see a free slot."""
+    from scf_api.services.workflow_engine import active_line_runs
+
+    Base.metadata.create_all(pg_engine)
+    factory = sessionmaker(bind=pg_engine, expire_on_commit=False, class_=Session)
+    ws = uuid.uuid4()
+    try:
+        with factory() as s:
+            s.add(Workspace(id=ws, name="WS", slug=f"ws-{ws.hex}"))
+            s.flush()
+            s.add(Project(workspace_id=ws, name="Core", key="CORE"))
+            s.add(DbDefinition(workspace_id=ws, name="tiny_line", title="t", source="marketplace"))
+            s.flush()
+            project = s.scalar(select(Project.id).where(Project.workspace_id == ws))
+            tasks = [
+                Task(workspace_id=ws, project_id=project, key=f"T-{i}", title="t") for i in (1, 2)
+            ]
+            s.add_all(tasks)
+            s.commit()
+        counts: list[int] = []
+        first_counted = threading.Event()
+
+        def start(task_id: uuid.UUID, first: bool) -> None:
+            with factory() as s:
+                active = active_line_runs(s, workspace_id=ws, name="tiny_line", task_id=task_id)
+                if first:
+                    first_counted.set()
+                    time.sleep(0.5)  # the other start counts now, unless the lock holds it
+                if active < 1:
+                    s.add(
+                        DbWorkflowRun(workspace_id=ws, task_id=task_id, workflow_name="tiny_line")
+                    )
+                s.commit()
+                counts.append(active)
+
+        a = threading.Thread(target=start, args=(tasks[0].id, True))
+        a.start()
+        assert first_counted.wait(5)
+        b = threading.Thread(target=start, args=(tasks[1].id, False))
+        b.start()
+        a.join(10)
+        b.join(10)
+        assert counts == [0, 1]
+    finally:
+        Base.metadata.drop_all(pg_engine)
 
 
 @pytest.mark.usefixtures("temporal")
