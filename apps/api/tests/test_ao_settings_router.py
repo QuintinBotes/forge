@@ -97,7 +97,7 @@ def test_list_role_config_returns_defaults_for_every_role(
     assert resp.status_code == 200
     items = resp.json()["items"]
     roles = {item["role"] for item in items}
-    assert roles == {"planner", "coder", "reviewer", "spec_author", "coordinator"}
+    assert roles == {"planner", "coder", "reviewer", "spec_author", "coordinator", "adversary"}
     assert all(item["source"] == "default" for item in items)
 
 
