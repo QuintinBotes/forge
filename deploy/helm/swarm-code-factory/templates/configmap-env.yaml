@@ -29,6 +29,15 @@ data:
   # --- F27 multi-agent coordinator (supervised runs). Read by CoordinatorSettings;
   #     the worker consumes this ConfigMap via envFrom. Default "false". ---
   MULTI_AGENT_ENABLED: {{ .Values.forge.multiAgentEnabled | quote }}
+  # --- Durable engine (#277). The api, the Celery worker and the Temporal worker
+  #     all read it from here; TEMPORAL_CODEC_KEY is in the Secret only. Off, a
+  #     repository-changing run is refused in production (see values temporal). ---
+  WORKFLOW_ENGINE_BACKEND: {{ ternary "temporal" "postgres_fsm" .Values.temporal.enabled | quote }}
+  {{- if .Values.temporal.enabled }}
+  TEMPORAL_HOST: {{ .Values.temporal.host | quote }}
+  TEMPORAL_NAMESPACE: {{ .Values.temporal.namespace | quote }}
+  TEMPORAL_TASK_QUEUE: {{ .Values.temporal.taskQueue | quote }}
+  {{- end }}
   MCP_GATEWAY_URL: {{ printf "http://%s-mcp-gateway:%d" (include "swarm-code-factory.fullname" .) (int .Values.mcpGateway.service.port) | quote }}
   # --- BYOK vault: the ACTIVE key VERSION is non-secret; the key MATERIAL
   #     (FORGE_VAULT_KEYS) is in the Secret only (F37). ---

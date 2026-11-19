@@ -190,11 +190,26 @@ secret name.
 {{- end -}}
 {{- end -}}
 
+{{/*
+Validate the durable engine: the chart bundles no Temporal server, so enabling it
+needs an external frontend, and a chart-created Secret needs the codec key (an
+existingSecret must carry it; that is the operator's responsibility).
+*/}}
+{{- define "swarm-code-factory.validateTemporal" -}}
+{{- if .Values.temporal.enabled -}}
+{{- $_ := required "temporal.enabled=true requires temporal.host: the host:port of an external Temporal frontend (this chart does not bundle a Temporal server)." .Values.temporal.host -}}
+{{- if and .Values.secrets.create (not (get (.Values.secrets.data | default dict) "TEMPORAL_CODEC_KEY")) -}}
+{{- fail "temporal.enabled=true requires secrets.data.TEMPORAL_CODEC_KEY (workflow payloads are encrypted with it). Generate one (e.g. openssl rand -hex 32) and pass it via --set or a values file." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{/* Run all validations once, from a single included template. */}}
 {{- define "swarm-code-factory.validate" -}}
 {{- include "swarm-code-factory.validateDatastores" . -}}
 {{- include "swarm-code-factory.validateSecrets" . -}}
 {{- include "swarm-code-factory.validateIngress" . -}}
+{{- include "swarm-code-factory.validateTemporal" . -}}
 {{- end -}}
 
 {{/* Non-secret Postgres connection host (bundled service or external host). */}}

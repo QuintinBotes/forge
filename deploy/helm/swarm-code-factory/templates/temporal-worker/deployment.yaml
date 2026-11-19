@@ -1,0 +1,57 @@
+{{- if .Values.temporal.enabled }}
+# The Temporal worker (F25 / #277): runs the durable feature workflow and its
+# activities against the external Temporal frontend. Same image, ConfigMap and
+# Secret as the api and the Celery worker, so it sees the same engine settings,
+# codec key and master key.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "swarm-code-factory.fullname" . }}-temporal-worker
+  labels:
+    {{- include "swarm-code-factory.componentLabels" (dict "ctx" . "component" "temporal-worker") | nindent 4 }}
+spec:
+  replicas: {{ .Values.temporal.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "swarm-code-factory.componentSelectorLabels" (dict "ctx" . "component" "temporal-worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "swarm-code-factory.componentLabels" (dict "ctx" . "component" "temporal-worker") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "swarm-code-factory.serviceAccountName" . }}
+      {{- include "swarm-code-factory.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: temporal-worker
+          image: {{ include "swarm-code-factory.image" (dict "ctx" . "wl" .Values.worker) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          command: ["python", "-m", "scf_worker.temporal_main"]
+          envFrom:
+            {{- include "swarm-code-factory.envFrom" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.temporal.worker.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: worktrees
+              mountPath: /srv/forge/worktrees
+            - name: github-app-key
+              mountPath: /etc/forge/secrets
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: worktrees
+          emptyDir: {}
+        - name: github-app-key
+          secret:
+            secretName: {{ include "swarm-code-factory.secretName" . }}
+            optional: true
+            items:
+              - key: GITHUB_APP_PRIVATE_KEY
+                path: github-app-private-key.pem
+{{- end }}

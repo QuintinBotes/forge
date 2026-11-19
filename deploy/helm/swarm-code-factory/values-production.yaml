@@ -20,8 +20,8 @@ image:
 # Operator-managed Secret carrying every boot-critical + integration key
 # (SECRET_KEY, AUTH_SECRET, FORGE_VAULT_KEYS, API_KEY_PEPPER,
 # INTERNAL_SERVICE_TOKEN, FORGE_DATABASE_URL, FORGE_REDIS_URL, object-store creds,
-# GITHUB_*/SLACK_*, plus the OPTIONAL BYOK FORGE_MODEL_API_KEY — blank runs the
-# offline scripted model). The chart renders NO Secret of its own.
+# GITHUB_*/SLACK_*, TEMPORAL_CODEC_KEY, plus the OPTIONAL BYOK FORGE_MODEL_API_KEY —
+# blank runs the offline scripted model). The chart renders NO Secret of its own.
 secrets:
   create: false
   existingSecret: forge-external
@@ -128,6 +128,14 @@ externalObjectStore:
   bucket: forge-prod
   region: us-east-1
   existingSecret: forge-external
+
+# Durable engine ON against a managed Temporal frontend: without it production
+# refuses every repository-changing run (#277). The codec key is in the Secret.
+temporal:
+  enabled: true
+  host: forge-temporal.managed.example.com:7233
+  worker:
+    replicaCount: 2
 
 ingress:
   enabled: true

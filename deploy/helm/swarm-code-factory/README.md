@@ -81,6 +81,7 @@ retrieval (F05) has the `vector` extension.
 | `redis.enabled` / `externalRedis.host` | bundled on | Bundled XOR external Redis. |
 | `minio.enabled` / `externalObjectStore.endpoint` | bundled on | Bundled XOR external object store. |
 | `reranker.enabled` / `reranker.external.url` | disabled | Self-hosted or external Jina reranker (F05). |
+| `temporal.enabled` / `temporal.host` | disabled | Durable engine on an external Temporal frontend, plus a Temporal worker; needs `TEMPORAL_CODEC_KEY` in the Secret. Off, production refuses repository-changing runs (#277). No bundled Temporal server. |
 | `ingress.enabled` | `true` | Render an `Ingress` (or `HTTPRoute` when `ingress.api: gateway`). |
 | `ingress.tls.certManager.enabled` | `true` | cert-manager-issued TLS. |
 | `ingress.tls.secretName` | `""` | Existing TLS secret (alternative to cert-manager). |

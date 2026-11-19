@@ -252,6 +252,8 @@ secrets:
     # offline scripted model (see forge.modelProvider). Provider-agnostic fallback:
     # ANTHROPIC_API_KEY / OPENAI_API_KEY take precedence if you set them instead.
     FORGE_MODEL_API_KEY: ""
+    # Temporal payload codec key. Required when temporal.enabled=true.
+    TEMPORAL_CODEC_KEY: ""
     # Bundled datastore credentials (used to build FORGE_DATABASE_URL / _REDIS_URL).
     POSTGRES_PASSWORD: "forge"
     REDIS_PASSWORD: ""
@@ -419,10 +421,42 @@ metrics:
     interval: 30s
     labels: {}
 
-# Reserved for the future Temporal slice (F25). No Temporal resources are
-# rendered by this chart.
+# --------------------------------------------------------------------------- #
+# Durable workflow engine (Temporal, F25 / #277).                              #
+# --------------------------------------------------------------------------- #
+# OFF by default. This chart always sets FORGE_ENV=production, and in production
+# a repository-changing agent run is REFUSED while the durable engine is off
+# (`ungoverned_run_refused: the durable engine is not selected`, spec FR-005).
+# Runs that change no repository, the board, specs, approvals and knowledge still
+# work. To run repository-changing runs, set enabled=true and point host at a
+# Temporal frontend you operate (Temporal Cloud or your own cluster).
+#
+# enabled=true writes WORKFLOW_ENGINE_BACKEND=temporal and TEMPORAL_HOST /
+# TEMPORAL_NAMESPACE / TEMPORAL_TASK_QUEUE into the shared ConfigMap, and renders
+# a Temporal worker (`python -m scf_worker.temporal_main`, on the worker image).
+# The api, the Celery worker and the Temporal worker read the same ConfigMap and
+# Secret, so they see the same engine settings and the same master key.
+# TEMPORAL_CODEC_KEY (payload encryption) is a secret: set
+# secrets.data.TEMPORAL_CODEC_KEY, or put it in secrets.existingSecret; mTLS
+# material (TEMPORAL_TLS_CERT / _KEY / _CA) goes in the Secret the same way.
+#
+# The chart does NOT bundle a Temporal server: its persistence (database, schema
+# migrations, retention) is the operator's decision.
 temporal:
   enabled: false
+  # External Temporal frontend, host:port. Required when enabled.
+  host: ""
+  namespace: forge
+  taskQueue: forge-feature
+  worker:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
 
 # --------------------------------------------------------------------------- #
 # F34 — kernel-boundary sandbox isolation (gVisor / Kata-Firecracker).         #
