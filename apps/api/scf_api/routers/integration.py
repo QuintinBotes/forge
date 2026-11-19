@@ -411,9 +411,9 @@ AgentRunStoreDep = Annotated[AgentRunStore, Depends(get_agent_store)]
     response_model=RepoSyncResult,
 )
 def sync_repo(
+    principal: WriterDep,  # first: authorise before the GitHub client is built (501 unconfigured)
     client: GitHubDep,
     store: RepoConnStoreDep,
-    principal: WriterDep,
     connection_id: uuid.UUID,
 ) -> RepoSyncResult:
     """Sync a connected repository (full or incremental by last-synced sha).

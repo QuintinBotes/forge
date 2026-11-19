@@ -195,8 +195,11 @@ binds every activity except `forge.resume_agent`:
     (default `postgres_fsm`) and the `TEMPORAL_*` settings to the API and the
     Celery worker. Set `WORKFLOW_ENGINE_BACKEND=temporal` and start the
     `temporal` profile to run repository changes; without that, a production
-    stack refuses them. The Helm chart renders no Temporal yet, so a Helm
-    production install refuses repository-changing runs until it does (#293).
+    stack refuses them. The Helm chart does the same with `temporal.enabled`
+    and `temporal.host` (an external Temporal frontend; the chart bundles no
+    server) and `TEMPORAL_CODEC_KEY` in its Secret: it renders a Temporal worker
+    and gives the API, the Celery worker and that worker the same settings
+    (#293). With the engine off, a Helm install refuses repository changes too.
 - **A cancel** at a gate expires that gate's open request with the reason
   `run_cancelled`, recorded as whoever cancelled the run. The workflow's own
   cancel path does it again, for a request it opened after the cancel arrived.
@@ -224,11 +227,15 @@ binds every activity except `forge.resume_agent`:
   commands on the worker's host with its network and environment.
 - **Held-out scenarios are stored but not run yet (#286).** See below.
 - **The diff gates have limits (#187).** `sast` reads Python only; the worker
-  image installs no `bandit` (`uv sync --no-dev`), so until it does every Python
-  change fails `sast` as `could_not_verify`. `dependency_check` needs the worker
+  image installs no `bandit` (`uv sync --no-dev`), so until it does (#311) every
+  Python change fails `sast` as `could_not_verify` and the run pauses for a
+  person. `dependency_check` needs the worker
   to reach `pypi.org` and `registry.npmjs.org` (no private registry or mirror
   yet); a PyPI pin matches its release ignoring trailing `.0` only (no full PEP
   440 normalisation); and `secret_scan` finds only the shapes it names.
+- **Drafts stored before migration `0051` name no run (#288).** The spec gate
+  does not list, wait on or withdraw them; decide them through the scenario
+  routes.
 
 ### Held-out acceptance scenarios (#176)
 
@@ -244,12 +251,17 @@ the builder's objective.
 - **Drafts:** a scenario is created as a draft, recording the identity that
   drafted it. A file path that could leave the checkout is refused with `422`:
   an absolute path, a `..` segment, or a `.git` segment.
-- **Approval:** `POST .../{id}/approve` is a person's decision, recorded with who
-  and when. A credential that is not a person (an agent, or an API key that does
-  not decide approvals) is refused, and so is the user who drafted the scenario,
-  through any credential.
-- **Audit:** creating, approving and deleting a scenario are chained into the
-  audit log with who did it, never the files or the command.
+- **Approval and rejection:** `POST .../{id}/approve` and `POST .../{id}/reject`
+  are a person's decision. An approval is recorded with who and when. A
+  credential that is not a person (an agent, or an API key that does not decide
+  approvals) is refused, and so is the user who drafted the scenario, through any
+  credential. Only a draft is decided: approving a rejected or withdrawn
+  scenario, or rejecting an approved or withdrawn one, is refused with `409`, so
+  a rejected or withdrawn scenario can never become approved, and only approved
+  scenarios are run.
+- **Audit:** creating, approving, rejecting, withdrawing and deleting a scenario
+  are chained into the audit log with who did it and, for a verifier's draft, the
+  workflow run, never the files or the command.
 - **Who drafts them (#258):** per the owner decision of 2026-11-15 (spec FR-022),
   a verifier agent drafts scenarios from the spec before the first `spec`
   approval opens (`forge.draft_held_out_scenarios`, behind the patch marker
@@ -279,10 +291,39 @@ the builder's objective.
   - **What is kept out of records:** scenario content. The verifier's agent run
     keeps only ids and titles, with no steps and no events; the workflow run
     keeps only ids and counts; the audit entry keeps only counts and the model.
-- **Who approves them (#288):** the spec gate naming the drafted scenarios,
-  refusing approval while one is undecided, and withdrawing them when the spec
-  changes, is still to come. Until then, scenarios are approved through
-  `POST .../approve` above.
+- **Who approves them (#288):** the person who decides the run's `spec` gate,
+  there, before the spec is approved.
+  - **Where:** the `spec` approval request names the scenarios drafted for the
+    run's spec in `gate_payload.held_out_scenarios`, by id and title only. A
+    person with write access reads each one's files and command through `GET
+    /tasks/{task_id}/held-out-scenarios` and approves or rejects it with the
+    routes above. Each scenario records the run it was drafted for
+    (`workflow_run_id`, migration `0051`); one a person wrote has none.
+  - **An undecided scenario:** approving the `spec` gate is refused with `409`
+    and `{"error": "held_out_scenarios_undecided", "scenario_ids": [...]}` while
+    a scenario drafted for that spec is still a draft. This is a closed default
+    (ADR-0007): an undecided scenario is neither run nor silently dropped; the
+    person decides each one, then approves the spec. Requesting changes or
+    rejecting the spec is never refused. A verifier's draft cannot be deleted
+    (`409`), since deleting it would pass the gate undecided.
+  - **When the spec changes:** each time the `spec` gate returns changes, before
+    the gate opens again, the drafting step runs again (behind the patch marker
+    `held-out-redraft-288`, so recorded histories replay unchanged). It first
+    withdraws every scenario drafted for the run's earlier spec text, whatever
+    its state, an approved one included, each with a `held_out.withdrawn` audit
+    entry by `system`; then the verifier drafts again from the spec text the
+    run now holds. For a run started on a task that is the task's current
+    description and criteria, which a person can revise. A run started from an
+    issue keeps the issue text fetched at dispatch (spec 001), so its redraft
+    reads the same text and its earlier decisions are lost (an open question
+    for the owner on #288). A withdrawn scenario is never decided and never run. If the redraft drafts
+    nothing, the run's `held_out` records why, as for the first draft.
+  - **What the builder can and cannot see:** no agent-facing surface reads a
+    scenario's files or command, whatever its state, and the approval request
+    and audit entries carry none. The titles are on the `spec` approval
+    request, which any reader of the workspace can see, so a title should name
+    the check, not spell it out. The builder learns nothing else about the
+    scenarios until #286 reports only how many failed.
 - **Running them (#286):** running the approved scenarios against the change
   after the checks pass, and returning only a count of failures to the builder,
   is still to come.

@@ -36,15 +36,18 @@ from typing import Annotated
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from sqlalchemy.orm import Session
 
 from scf_api.auth.rbac import Permission, can
 from scf_api.auth.service import (
     AuthenticationError,
     AuthService,
     _extract_token,
+    ensure_run_token_owner,
     get_auth_service,
     is_own_origin,
 )
+from scf_api.db import get_db
 from scf_api.deps import SESSION_COOKIE, Principal
 from scf_api.realtime.manager import ConnectionManager, get_connection_manager
 from scf_api.realtime.spec_room import SpecRoomRegistry, get_spec_room_registry
@@ -121,14 +124,21 @@ def _socket_lifetime(principal: Principal, source: str, lifetime: float) -> floa
     return lifetime
 
 
-def _authenticate_ws(service: AuthService, token: str | None) -> Principal | None:
-    """Resolve a WS token to a :class:`Principal`, or ``None`` when unauthenticated."""
+def _authenticate_ws(
+    service: AuthService, token: str | None, session: Session | None
+) -> Principal | None:
+    """Resolve a WS token to a :class:`Principal`, or ``None`` when unauthenticated.
+
+    A run-start token whose owner may no longer run agents is refused, as over HTTP.
+    """
     if not token:
         return None
     try:
-        return service.authenticate(token)
+        principal = service.authenticate(token)
+        ensure_run_token_owner(principal, session)
     except AuthenticationError:
         return None
+    return principal
 
 
 @router.websocket("/ws")
@@ -137,6 +147,7 @@ async def board_ws(
     manager: Annotated[ConnectionManager, Depends(get_connection_manager)],
     service: Annotated[AuthService, Depends(get_auth_service)],
     api_key_lifetime: Annotated[float, Depends(get_api_key_socket_lifetime)],
+    session: Annotated[Session, Depends(get_db)],
 ) -> None:
     """Authenticated, per-workspace board-push socket.
 
@@ -149,7 +160,7 @@ async def board_ws(
     await websocket.accept()
 
     token, source = _extract_ws_token(websocket)
-    principal = _authenticate_ws(service, token)
+    principal = _authenticate_ws(service, token, session)
     if principal is None:
         # A dependency raising HTTPException does NOT reject a WebSocket, so we
         # close explicitly after accepting.
@@ -180,6 +191,7 @@ async def spec_collab_ws(
     rooms: Annotated[SpecRoomRegistry, Depends(get_spec_room_registry)],
     service: Annotated[AuthService, Depends(get_auth_service)],
     api_key_lifetime: Annotated[float, Depends(get_api_key_socket_lifetime)],
+    session: Annotated[Session, Depends(get_db)],
 ) -> None:
     """Collaborative spec-editing socket (Yjs binary sync protocol).
 
@@ -195,7 +207,7 @@ async def spec_collab_ws(
     A token socket closes (1000) when its lifetime ends, exactly as on ``/ws``.
     """
     token, source = _extract_ws_token(websocket)
-    principal = _authenticate_ws(service, token)
+    principal = _authenticate_ws(service, token, session)
     if principal is None:
         await websocket.accept()
         await websocket.close(code=WS_POLICY_VIOLATION)

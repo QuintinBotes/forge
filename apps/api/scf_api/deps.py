@@ -52,8 +52,9 @@ class Principal(BaseModel):
     #: holds ``approvals:decide``. Unbound keys and agent tokens never decide; the
     #: owner's current role still bounds a key at decision time.
     decides: bool = False
-    #: An API key minted with scopes: a viewer on every role check, and F30 sees
-    #: only a workspace viewer grant, never its owner's grants.
+    #: An API key minted with scopes: a viewer on every role check (an agent-runner
+    #: with ``runs:execute``), and F30 sees only a workspace viewer grant, never its
+    #: owner's grants.
     narrowed: bool = False
     #: Where the credential says the caller is (``web`` for a session, the key's
     #: surface or ``api``); never taken from a request header.
@@ -84,6 +85,7 @@ def get_current_principal(
     origin: Annotated[str | None, Header()] = None,
     sec_fetch_site: Annotated[str | None, Header()] = None,
     method: Annotated[str | None, Depends(request_method)] = None,
+    session: Annotated[Session | None, Depends(get_db)] = None,
 ) -> Principal:
     """Authenticate the caller via API key and return the resolved principal.
 
@@ -106,6 +108,7 @@ def get_current_principal(
         origin=origin,
         sec_fetch_site=sec_fetch_site,
         method=method,
+        session=session,
     )
 
 

@@ -87,6 +87,51 @@ async def test_create_approval_opens_one_workflow_run_request_while_pending(
     assert await create(_input(task_id, run_id, "plan")) != first
 
 
+async def test_the_spec_request_names_the_drafted_scenarios_by_id_and_title(
+    factory: sessionmaker[Session],
+) -> None:
+    """#288 criterion 1: ids and titles only; a withdrawn one is not named, and only
+    the spec gate names them."""
+    from scf_api.schemas.held_out import HeldOutScenarioCreate
+    from scf_api.services.held_out import store_agent_draft
+
+    task_id, run_id = _seed_run(factory)
+    body = HeldOutScenarioCreate.model_validate(
+        {
+            "title": "Refunds settle",
+            "files": [{"path": "t.py", "content": "SECRET"}],
+            "command": "x",
+        }
+    )
+    with factory() as s:
+        withdrawn, drafted = (
+            store_agent_draft(
+                s,
+                workspace_id=WS,
+                task_id=task_id,
+                body=body,
+                drafted_by="agent:verifier/gpt-6-astra",
+                agent_run_id=uuid.uuid4(),
+                workflow_run_id=run_id,
+            )
+            for _ in range(2)
+        )
+        withdrawn.state = "withdrawn"
+        s.commit()
+    create = make_create_approval_fn(factory)
+
+    await create(_input(task_id, run_id))
+    await create(_input(task_id, run_id, "plan"))
+
+    requests = await SqlAlchemyApprovalRepository(factory).list(workspace_id=WS)
+    by_gate = {r.gate_type: r.gate_payload for r in requests}
+    assert by_gate[GateType.SPEC]["held_out_scenarios"] == [
+        {"id": str(drafted.id), "title": "Refunds settle"}
+    ]
+    assert "SECRET" not in str(by_gate[GateType.SPEC])
+    assert "held_out_scenarios" not in by_gate[GateType.PLAN]
+
+
 async def test_the_worker_wires_create_approval_without_fakes(
     factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
 ) -> None:
