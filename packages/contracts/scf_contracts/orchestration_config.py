@@ -5,8 +5,8 @@ same pattern :mod:`scf_contracts.pm` uses): the DTOs, enums, and the
 :class:`RoleConfigStore` Protocol live in their own module namespace and do
 **not** mutate the frozen top-level ``__all__``.
 
-Adaptive Orchestration configures five roles independently (planner, coder,
-reviewer, spec_author, coordinator), each with a ``model_or_tier`` + an
+Adaptive Orchestration configures six roles independently (planner, coder,
+reviewer, spec_author, coordinator, adversary), each with a ``model_or_tier`` + an
 ``effort`` (low/medium/high/max). ``model_or_tier`` holds either a *tier*
 keyword (``junior``/``medior``/``senior`` -- the same vocabulary
 :mod:`scf_orchestration_policy.complexity` sizes tasks into, left for the
@@ -45,13 +45,15 @@ __all__ = [
 
 
 class AgentRole(StrEnum):
-    """The five Adaptive Orchestration roles configured independently."""
+    """The Adaptive Orchestration roles configured independently."""
 
     PLANNER = "planner"
     CODER = "coder"
     REVIEWER = "reviewer"
     SPEC_AUTHOR = "spec_author"
     COORDINATOR = "coordinator"
+    #: The red-team adversary (#283); the model ``off`` turns the scan off.
+    ADVERSARY = "adversary"
 
 
 class Effort(StrEnum):
@@ -110,6 +112,8 @@ DEFAULT_ROLE_CONFIG: dict[AgentRole, RoleModelConfig] = {
     AgentRole.REVIEWER: RoleModelConfig(model_or_tier="senior", effort=Effort.HIGH),
     AgentRole.SPEC_AUTHOR: RoleModelConfig(model_or_tier="medior", effort=Effort.MEDIUM),
     AgentRole.COORDINATOR: RoleModelConfig(model_or_tier="senior", effort=Effort.HIGH),
+    # A tier names no model family, so a run with only this default pauses (#283).
+    AgentRole.ADVERSARY: RoleModelConfig(model_or_tier="senior", effort=Effort.HIGH),
 }
 
 

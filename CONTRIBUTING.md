@@ -114,11 +114,44 @@ make typecheck   # mypy (module-mode, per the Makefile package list)
 make fmt         # auto-format + auto-fix before you push
 ```
 
-Some Python tests need a live pgvector-enabled Postgres; they skip cleanly if
-one is not available (CI runs them against a real `pgvector/pgvector:pg16`
-service). Tests are marked (`postgres`, `integration`, `docker`, `security`,
+Some Python tests need a live pgvector-enabled Postgres or a Redis (CI runs them
+against real `pgvector/pgvector:pg16` and `redis:7.4-alpine` services). Postgres
+tests skip, with the reason, when `FORGE_TEST_DATABASE_URL` is unset, but error
+when it is set and the server is down. Redis tests skip, with the reason, when
+the configured Redis does not answer a ping. With Docker you can run them
+locally too:
+
+```bash
+make test-services-up    # scripts/test-services.sh up: create/start forge-test-pg + forge-test-redis
+make test-full           # start the services, export the two URLs, run uv run pytest
+make test-services-down  # stop and remove the two containers
+```
+
+The services listen on loopback only: Postgres on `127.0.0.1:5432` and Redis on
+`127.0.0.1:6379`. Set `SCF_TEST_PG_PORT` or `SCF_TEST_REDIS_PORT` when a port is
+taken. `eval "$(scripts/test-services.sh env)"` exports `FORGE_TEST_DATABASE_URL`
+and `FORGE_REDIS_URL` for a plain `uv run pytest`; `scripts/test-services.sh status`
+shows whether each container is running.
+
+**The test fixtures drop tables.** Point `FORGE_TEST_DATABASE_URL` only at this
+disposable test database, never at one whose data you want to keep.
+
+Tests are marked (`postgres`, `integration`, `docker`, `security`,
 `kind`, `gvisor`, `firecracker`) so you can select or skip tiers, e.g.
-`uv run pytest -m security`.
+`uv run pytest -m security`. On a machine with only Docker, these lanes still
+skip after `make test-full`, and you opt in to each:
+
+- `docker` (real sandbox containers): `FORGE_SANDBOX_DOCKER_TESTS=1` and a
+  curated `FORGE_SANDBOX_IMAGE_PYTHON`.
+- `kind` (the Helm chart on a kind cluster): `kind`, `helm` and `kubectl` on
+  `PATH` and the images from `make build-images`; `FORGE_KIND_CLUSTER` reuses an
+  existing cluster.
+- `gvisor` and `firecracker` (kernel-boundary sandboxes): the docker opt-in
+  above, plus the `runsc` or `kata-fc` runtime registered with the daemon
+  (`firecracker` also needs `/dev/kvm`).
+- `live_*` (real external services, for example `live_github`, `live_model`,
+  `live_mcp`): the credentials or switch named in each marker's description in
+  `pyproject.toml` (`uv run pytest --markers`).
 
 **Web** (`apps/web`):
 

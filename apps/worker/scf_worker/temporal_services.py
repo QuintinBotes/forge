@@ -22,7 +22,7 @@ from temporalio.exceptions import ApplicationError
 from scf_api.observability.redaction import redact_text
 from scf_api.services.agent_dispatch import STRIPPED_CONTEXT, repo_connected
 from scf_api.services.attestation_service import AttestationService
-from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient
+from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient, Policy
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.review import ReviewVerdict
 from scf_contracts.run_context import (
@@ -61,6 +61,7 @@ from scf_worker.finalizer import (
     workspace_credentials,
 )
 from scf_worker.held_out_drafting import VERIFIER_ROLE
+from scf_worker.red_team import RED_TEAM_CHECK, RED_TEAM_OFF, adversary_model, attack_change
 from scf_worker.review import (
     REVIEWER_ROLE,
     ReviewerRefused,
@@ -72,7 +73,7 @@ from scf_worker.review import (
 from scf_worker.review_rules import default_branch_policy
 from scf_worker.run_events import RunEventSink
 from scf_worker.run_workspace import NO_DECLARED_CHECKS, CheckRun, run_declared_checks
-from scf_workflow.red_team_gate import ensure_red_team_verdict
+from scf_workflow.red_team_gate import REDTEAM_BLOCKED, REDTEAM_NOT_RUN, ensure_red_team_verdict
 from scf_workflow.temporal.activities import (
     ApprovalFn,
     GuardInputsFn,
@@ -546,7 +547,10 @@ def _latest_agent_run(
 
 
 def run_checks_service(
-    factory: sessionmaker[Session], *, reviewer: Callable[[str], ModelClient] = reviewer_client
+    factory: sessionmaker[Session],
+    *,
+    reviewer: Callable[[str], ModelClient] = reviewer_client,
+    adversary: Callable[[str], ModelClient] = reviewer_client,
 ) -> RunChecksFn:
     """Run the repository's declared checks on the agent's commit (#251).
 
@@ -556,8 +560,10 @@ def run_checks_service(
     cannot change its own checks. A repository that declares none fails.
 
     When every check passes, an independent reviewer judges the change (#173): its
-    verdict is the check ``independent_review``. With no reviewer it can use, the
-    result asks the workflow to pause for a person instead.
+    verdict is the check ``independent_review``. When it approves, an adversary
+    attacks the change (#283): its verdict is the check ``red_team``. With no
+    reviewer or adversary it can use, the result asks the workflow to pause for a
+    person instead.
     """
 
     def run(inp: RunChecksInput) -> ChecksResult:
@@ -609,10 +615,92 @@ def run_checks_service(
             _record_review(factory, inp, {"refused": refused.reason, "detail": str(refused)})
             return ChecksResult(results={r.id: r.passed for r in runs}, pause_reason=refused.reason)
         runs = [*runs, review]
+        pause = None
+        if review.passed:
+            scan, pause = _red_team(
+                factory,
+                inp,
+                mirror=mirror,
+                base=target.base_branch,
+                head=str(head),
+                builder=agent_run,
+                task=task,
+                policy=policy,
+                adversary=adversary,
+            )
+            runs += [scan] if scan is not None else []
         _record_checks(factory, inp, head=str(head), runs=runs)
-        return ChecksResult(results={r.id: r.passed for r in runs})
+        return ChecksResult(results={r.id: r.passed for r in runs}, pause_reason=pause)
 
     return run
+
+
+def _red_team(
+    factory: sessionmaker[Session],
+    inp: RunChecksInput,
+    *,
+    mirror: Path,
+    base: str,
+    head: str,
+    builder: AgentRun,
+    task: Task,
+    policy: Policy | None,
+    adversary: Callable[[str], ModelClient],
+) -> tuple[CheckRun | None, str | None]:
+    """Attack the change with an adversary of another model family, once per head commit.
+
+    Returns the check ``red_team`` and the reason to pause for a person, if any. A scan
+    the workspace turned off is no check and no pause; the record says ``not_run``.
+    """
+    started_at = datetime.now(UTC)
+    with factory() as session:
+        model = adversary_model(session, workspace_id=inp.workspace_id, project_id=task.project_id)
+
+        def scan(_: RedTeamInput) -> RedTeamResult:
+            session.commit()  # hold no transaction open while the adversary runs
+            return attack_change(
+                mirror,
+                base=base,
+                head=head,
+                criteria=list((builder.inputs or {}).get("acceptance_criteria") or []),
+                builder_model=str(builder.model or ""),
+                adversary=model,
+                client=adversary,
+                policy=policy,
+                run_id=builder.id,
+                workspace_id=inp.workspace_id,
+            )
+
+        row, _ = ensure_red_team_verdict(
+            session,
+            inp.workspace_id,
+            workflow_run_id=inp.workflow_run_id,
+            task_id=task.id,
+            phase="pr",
+            red_team_fn=scan,
+            head_commit=head,
+        )
+        session.commit()
+        verdict, kind, evidence = row.verdict, row.kind, dict(row.evidence)
+        by = row.adversary_model
+    if verdict == REDTEAM_NOT_RUN:
+        reason = str(evidence.get("reason"))
+        return None, (None if reason == RED_TEAM_OFF else reason)
+    test = evidence.get("failing_test") or {}
+    violation = evidence.get("violation") or {}
+    summary = f"{verdict} ({kind}) by {by}"
+    if test:
+        summary += f": `{test['test_cmd']}` exited {test['exit_code']} ({test['path']})"
+    if violation:
+        summary += f": violates {violation['criterion_id']}"
+    return CheckRun(
+        id=RED_TEAM_CHECK,
+        exit_code=1 if verdict == REDTEAM_BLOCKED else 0,
+        timed_out=False,
+        started_at=started_at,
+        duration_ms=int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+        output_tail="\n".join([summary, str(evidence.get("output") or "")]),
+    ), None
 
 
 def _independent_review(

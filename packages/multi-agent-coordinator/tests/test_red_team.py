@@ -29,6 +29,7 @@ from scf_contracts import (
 )
 from scf_coordinator.red_team import (
     HomogeneousAdversaryError,
+    RedTeamError,
     RedTeamResult,
     run_red_team,
 )
@@ -229,6 +230,23 @@ async def test_homogeneous_adversary_rejected(tmp_git_repo: Path, spec: object) 
         ),
     )
     with pytest.raises(HomogeneousAdversaryError):
+        await run_red_team(
+            diff="+def parse(cfg): ...",
+            spec=spec,
+            adversary_client=adversary,
+            sandbox_provider=LocalSandboxProvider(),
+            coder_model=CODER_MODEL,
+            worktree_path=str(tmp_git_repo),
+        )
+
+
+async def test_an_adversary_run_that_does_not_finish_never_survives(
+    tmp_git_repo: Path, spec: object
+) -> None:
+    # It stops for a person before attacking: it found nothing, so nothing survived (#283).
+    stuck = ModelToolCall(id="tc-1", name="finish", arguments={"output": "?", "needs_human": True})
+    adversary = ScriptedModel(ADVERSARY_MODEL, [ModelResponse(content="", tool_calls=[stuck])])
+    with pytest.raises(RedTeamError, match="did not finish"):
         await run_red_team(
             diff="+def parse(cfg): ...",
             spec=spec,

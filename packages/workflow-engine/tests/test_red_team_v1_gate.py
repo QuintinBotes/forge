@@ -189,6 +189,24 @@ def test_a_record_made_before_phases_counts_as_the_spec_scan(sqlite_session: Ses
     assert created_pr is True
 
 
+def test_a_pr_scan_is_keyed_on_its_head_commit(sqlite_session: Session) -> None:
+    """#283 criterion 6: the same head commit is scanned once; a new head is scanned again."""
+    ws, task, run = _seed(sqlite_session)
+
+    def scan(head: str) -> tuple[uuid.UUID, bool]:
+        row, created = ensure_red_team_verdict(
+            sqlite_session, ws, workflow_run_id=run, task_id=task, phase="pr", head_commit=head
+        )
+        assert row.evidence["head_commit"] == head
+        return row.id, created
+
+    first, created = scan("aaa")
+    assert created is True
+    assert scan("aaa") == (first, False)
+    second, created_again = scan("bbb")
+    assert created_again is True and second != first
+
+
 def test_only_an_adversarys_survive_chains_the_audit_event(sqlite_session: Session) -> None:
     """``not_run`` attests nothing; a survive from a real adversary chains
     ``redteam.survived``."""

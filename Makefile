@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test lint fmt typecheck migrate seed build clean \
+.PHONY: help setup install dev dev-up dev-down dev-logs dev-seed test test-services-up test-services-down test-full lint fmt typecheck migrate seed build clean \
 	compose-build build-images pin-digests sbom smoke security load-smoke perf soak \
 	infra-validate cli-bridge \
 	bump changelog hooks release-readiness source-sbom
@@ -49,6 +49,15 @@ cli-bridge: ## Run the host-side local-CLI bridge (dev/self-host only; see docs/
 
 test: ## Run the python test suite
 	uv run pytest
+
+test-services-up: ## Create/start the loopback Postgres + Redis test services (Docker)
+	scripts/test-services.sh up
+
+test-services-down: ## Stop and remove the loopback Postgres + Redis test services
+	scripts/test-services.sh down
+
+test-full: test-services-up ## Run the whole python suite against the loopback test services
+	eval "$$(scripts/test-services.sh env)" && uv run pytest
 
 lint: ## Lint python sources with ruff (check + format verification)
 	uv run ruff check .
