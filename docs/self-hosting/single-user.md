@@ -46,6 +46,7 @@ Optional variables, read from the same file:
 | Variable | Default | Effect |
 |---|---|---|
 | `SCF_API_PORT` | `8100` | Host port of the API, on `127.0.0.1`. The default avoids port 8000, which the development stack uses |
+| `FORGE_PUBLIC_URL` | `http://127.0.0.1:<SCF_API_PORT>` | The address at which a browser reaches the API. The CLI sign-in link and the cookie checks use it. If you put a proxy in front, set it to the proxy's `https://` address plus the path the proxy serves the API under |
 | `FORGE_MODEL_PROVIDER`, `FORGE_MODEL_NAME` | unset | `anthropic` or `openai`. Unset, the API refuses agent runs (HTTP 503) |
 | `FORGE_MODEL_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | unset | The model key (BYOK) |
 | `FORGE_EMBEDDING_PROVIDER`, `FORGE_EMBEDDING_MODEL`, `FORGE_EMBEDDING_BASE_URL`, `FORGE_EMBEDDING_DIMENSION`, `FORGE_EMBEDDING_API_KEY` | unset | The embedder. Unset, knowledge search is keyword (BM25) only |

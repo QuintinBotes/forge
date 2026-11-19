@@ -32,6 +32,9 @@ Edit `.env` and set, at minimum:
   detected and warned about — see `apps/api/scf_api/cli_secrets.py`.)
 - `POSTGRES_PASSWORD` and `MINIO_ROOT_PASSWORD` — strong unique secrets.
 - `DOMAIN` — the hostname Caddy will serve (use `localhost` for a local trial).
+- `FORGE_PUBLIC_URL` — `https://<DOMAIN>/api`, the address at which the browser
+  reaches the API through Caddy (see
+  [docker-compose.md](docker-compose.md#configuration)).
 - `FORGE_MODEL_PROVIDER` (`anthropic`|`openai`) plus a BYOK key
   (`FORGE_MODEL_API_KEY`, or `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) — SCF is
   provider agnostic; leave `FORGE_MODEL_PROVIDER` unset to run the platform on the

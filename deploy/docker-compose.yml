@@ -182,6 +182,10 @@ services:
       # mounted Docker secret below (FORGE_SECRET_KEY_FILE) over an inline value.
       FORGE_SECRET_KEY: ${FORGE_SECRET_KEY:?set a stable FORGE_SECRET_KEY (see deploy/.env.production.example)}
       FORGE_SECRET_KEY_FILE: /run/secrets/forge_secret_key
+      # #304: the address browsers reach the API at, including the /api prefix Caddy
+      # strips. SSO, SAML and SCIM addresses, the CLI sign-in link, the cookie-write
+      # origin check and the cookie's Secure flag are built from it.
+      FORGE_PUBLIC_URL: ${FORGE_PUBLIC_URL:?set FORGE_PUBLIC_URL to the API address browsers use, e.g. https://<DOMAIN>/api (see docs/self-hosting/docker-compose.md)}
       # Two-tier envelope encryption for BYOK secrets (rotatable, versioned KEK).
       FORGE_ENVELOPE_ENCRYPTION: ${FORGE_ENVELOPE_ENCRYPTION:-true}
       # HARD-02 BYOK model provider. The API resolves a per-workspace model client
