@@ -180,7 +180,7 @@ class FeatureWorkflow:
                     await self._auto("submit_spec_for_review")  # → spec_review
                     if workflow.patched(HELD_OUT_REDRAFT_PATCH):
                         # #288: the earlier spec's scenarios are withdrawn and the
-                        # verifier drafts from the revised text.
+                        # verifier drafts again from the run's current spec text.
                         await self._draft_held_out_scenarios(self._seq)
                     await self._create_approval("spec")
                     continue

@@ -189,6 +189,9 @@ binds every activity except `forge.resume_agent`:
   tiers enforce the no-network sandbox; the default `worktree` tier runs the
   commands on the worker's host with its network and environment.
 - **Held-out scenarios are stored but not run yet (#286).** See below.
+- **Drafts stored before migration `0051` name no run (#288).** The spec gate
+  does not list, wait on or withdraw them; decide them through the scenario
+  routes.
 
 ### Held-out acceptance scenarios (#176)
 
@@ -264,8 +267,12 @@ the builder's objective.
     `held-out-redraft-288`, so recorded histories replay unchanged). It first
     withdraws every scenario drafted for the run's earlier spec text, whatever
     its state, an approved one included, each with a `held_out.withdrawn` audit
-    entry by `system`; then the verifier drafts from the revised text. A
-    withdrawn scenario is never decided and never run. If the redraft drafts
+    entry by `system`; then the verifier drafts again from the spec text the
+    run now holds. For a run started on a task that is the task's current
+    description and criteria, which a person can revise. A run started from an
+    issue keeps the issue text fetched at dispatch (spec 001), so its redraft
+    reads the same text and its earlier decisions are lost (an open question
+    for the owner on #288). A withdrawn scenario is never decided and never run. If the redraft drafts
     nothing, the run's `held_out` records why, as for the first draft.
   - **What the builder can and cannot see:** no agent-facing surface reads a
     scenario's files or command, whatever its state, and the approval request

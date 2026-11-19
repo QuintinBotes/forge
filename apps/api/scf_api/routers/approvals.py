@@ -225,17 +225,27 @@ async def decide_approval(
     one every other surface calls), so accountability cannot be forged. The
     surface recorded with the decision comes from the credential, never a header.
     A run's ``spec`` gate is not approved while a held-out scenario drafted for its
-    spec is undecided (#288): ``409`` ``held_out_scenarios_undecided``.
+    spec is undecided (#288): ``409`` ``held_out_scenarios_undecided``, checked after
+    the gate's status and the authorizer, before the vote is recorded.
     """
+
+    def scenarios_decided(gate: ApprovalRequest) -> None:
+        if (
+            body.decision is ApprovalAction.APPROVE
+            and gate.gate_type is GateType.SPEC
+            and gate.workflow_run_id is not None
+        ):
+            ensure_scenarios_decided(
+                session, workspace_id=gate.workspace_id, workflow_run_id=gate.workflow_run_id
+            )
+
     try:
-        if body.decision is ApprovalAction.APPROVE:
-            gate = await service.get(approval_id, workspace_id=principal.workspace_id)
-            if gate.gate_type is GateType.SPEC and gate.workflow_run_id is not None:
-                ensure_scenarios_decided(
-                    session, workspace_id=gate.workspace_id, workflow_run_id=gate.workflow_run_id
-                )
         resolution = await service.resolve(
-            approval_id, body, actor, workspace_id=principal.workspace_id
+            approval_id,
+            body,
+            actor,
+            workspace_id=principal.workspace_id,
+            before_decision=scenarios_decided,
         )
     except ApprovalNotFoundError:
         raise _not_found(approval_id) from None

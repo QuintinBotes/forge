@@ -81,15 +81,27 @@ def client_as(
     return _client
 
 
-def _person() -> Principal:
+def _person(role: UserRole = UserRole.MEMBER) -> Principal:
     return Principal(
         user_id=uuid.uuid4(),
         workspace_id=WS,
-        role=UserRole.MEMBER,
+        role=role,
         auth_method="session_jwt",
         scopes=["*"],
         decides=True,
     )
+
+
+def _draft(s: Session, task_id: uuid.UUID, run_id: uuid.UUID) -> uuid.UUID:
+    return store_agent_draft(
+        s,
+        workspace_id=WS,
+        task_id=task_id,
+        body=SCENARIO,
+        drafted_by="agent:verifier/gpt-6-astra",
+        agent_run_id=uuid.uuid4(),
+        workflow_run_id=run_id,
+    ).id
 
 
 def _run_with_drafts(factory: sessionmaker[Session], count: int = 2) -> tuple[uuid.UUID, ...]:
@@ -106,18 +118,7 @@ def _run_with_drafts(factory: sessionmaker[Session], count: int = 2) -> tuple[uu
         run = WorkflowRun(workspace_id=WS, task_id=task.id, engine_backend="temporal")
         s.add(run)
         s.flush()
-        ids = [
-            store_agent_draft(
-                s,
-                workspace_id=WS,
-                task_id=task.id,
-                body=SCENARIO,
-                drafted_by="agent:verifier/gpt-6-astra",
-                agent_run_id=uuid.uuid4(),
-                workflow_run_id=run.id,
-            ).id
-            for _ in range(count)
-        ]
+        ids = [_draft(s, task.id, run.id) for _ in range(count)]
         s.commit()
         return task.id, run.id, *ids
 
@@ -200,6 +201,7 @@ def test_the_spec_gate_is_refused_while_a_drafted_scenario_is_undecided(
     assert detail["error"] == "held_out_scenarios_undecided"
     assert set(detail["scenario_ids"]) == {str(first), str(second)}
     assert person.get(f"/approvals/{gate_id}").json()["status"] == "pending"
+    assert person.get(f"/approvals/{gate_id}/decisions").json() == []  # no vote recorded
 
     assert person.post(_url(task_id, first, "/approve")).status_code == 200
     still = person.post(f"/approvals/{gate_id}/decision", json=approve)
@@ -225,6 +227,60 @@ def test_changes_requested_on_the_spec_gate_is_not_refused(
     )
 
     assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.parametrize("role", [UserRole.VIEWER, UserRole.AGENT_RUNNER])
+def test_a_caller_who_may_not_approve_hears_that_before_the_scenarios(
+    factory: sessionmaker[Session],
+    approvals: ApprovalService,
+    client_as: Callable[[Principal], TestClient],
+    role: UserRole,
+) -> None:
+    """The authorizer's 403 wins over the undecided scenarios' 409 (review of #288)."""
+    task_id, run_id, _ = _run_with_drafts(factory, 1)
+    gate_id = _spec_gate(approvals, task_id, run_id)
+
+    resp = client_as(_person(role)).post(
+        f"/approvals/{gate_id}/decision", json={"decision": "approve"}
+    )
+
+    assert resp.status_code == 403, resp.text
+
+
+def test_an_escalated_spec_gate_refuses_a_member_before_the_scenarios(
+    factory: sessionmaker[Session],
+    approvals: ApprovalService,
+    client_as: Callable[[Principal], TestClient],
+) -> None:
+    task_id, run_id, _ = _run_with_drafts(factory, 1)
+    gate_id = _spec_gate(approvals, task_id, run_id)
+    member = client_as(_person())
+    url = f"/approvals/{gate_id}/decision"
+    assert member.post(url, json={"decision": "escalate"}).status_code == 200
+
+    resp = member.post(url, json={"decision": "approve"})
+
+    assert resp.status_code == 403, resp.text
+
+
+def test_a_decided_spec_gate_says_so_before_the_next_rounds_scenarios(
+    factory: sessionmaker[Session],
+    approvals: ApprovalService,
+    client_as: Callable[[Principal], TestClient],
+) -> None:
+    """A stale approve on a gate that returned changes hears that, not the redraft's ids."""
+    task_id, run_id = _run_with_drafts(factory, 0)
+    gate_id = _spec_gate(approvals, task_id, run_id)
+    url = f"/approvals/{gate_id}/decision"
+    assert client_as(_person()).post(url, json={"decision": "request_changes"}).status_code == 200
+    with factory() as s:  # the next round's drafts
+        _draft(s, task_id, run_id)
+        s.commit()
+
+    resp = client_as(_person()).post(url, json={"decision": "approve"})
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"] == f"approval {gate_id} is already changes_requested"
 
 
 def test_a_withdrawn_scenario_is_never_decided_nor_deleted(
