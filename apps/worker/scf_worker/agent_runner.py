@@ -67,7 +67,7 @@ from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_db.session import create_session_factory
 from scf_worker.celery_app import celery_app
 from scf_worker.dispatch import RepositoryUnavailable, resolve_run_repository
-from scf_worker.finalizer import GitHubAppCredentials, push_and_open_pr
+from scf_worker.finalizer import push_and_open_pr, workspace_credentials
 from scf_worker.reliability import ScfTask
 from scf_worker.run_events import RunEventSink, terminal_drafts
 from scf_worker.run_workspace import prepared_workspace
@@ -717,8 +717,9 @@ def _finalize(
     """Open the run's PR when the objective names a GitHub repository (spec G §4).
 
     Records the outcome in ``result.artifacts["pull_request"]``: ``opened`` with
-    the PR, ``no_changes``, ``not_configured`` (no GitHub App credentials), or a
-    failure that fails the run — delivery that did not happen is not success.
+    the PR, ``no_changes``, ``not_configured`` (the workspace has no GitHub App
+    credentials, #186), or a failure that fails the run — delivery that did not
+    happen is not success.
     """
     from scf_api.services.agent_dispatch import ungoverned_runs_allowed
     from scf_api.services.workflow_engine import resolve_backend
@@ -737,7 +738,8 @@ def _finalize(
     if _commits_ahead(repo_path, base, branch) == 0:
         result.artifacts["pull_request"] = {"status": "no_changes"}
         return
-    credentials = GitHubAppCredentials.from_env()
+    workspace_id = uuid.UUID(str(objective.context["workspace_id"]))
+    credentials = workspace_credentials(workspace_id, str(repo_full_name))
     if credentials is None:
         result.artifacts["pull_request"] = {"status": "not_configured"}
         return
@@ -758,9 +760,12 @@ def _finalize(
             title=title,
             body=body,
             credentials=credentials,
+            workspace_id=workspace_id,
+            run_id=run_id,
         )
     except Exception as exc:  # push or API failure: the change was not delivered
-        message = _default_redactor()(f"{type(exc).__name__}: {exc}")
+        # The shared redactor knows no PEM block; the canonical one does (#186).
+        message = SecretRedactor().redact(_default_redactor()(f"{type(exc).__name__}: {exc}"))
         result.status = RunStatus.FAILED
         result.error = f"pull request could not be opened: {message}"
         result.artifacts["pull_request"] = {"status": "failed", "error": message}

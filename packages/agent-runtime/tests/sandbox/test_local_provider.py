@@ -79,3 +79,23 @@ async def test_output_capping_offloads_to_store(tmp_worktree: str) -> None:
 def test_factory_returns_local_for_worktree() -> None:
     provider = build_sandbox_provider(SandboxSettings(kind=SandboxKind.WORKTREE))
     assert isinstance(provider, LocalSandboxProvider)
+
+
+async def test_the_worktree_tier_never_hands_a_command_the_github_app_variables(
+    tmp_worktree: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#186: the worker's FORGE_GITHUB_* variables stay out of every command it runs."""
+    monkeypatch.setenv("FORGE_GITHUB_APP_ID", "99")
+    monkeypatch.setenv("FORGE_GITHUB_INSTALLATION_ID", "999")
+    monkeypatch.setenv("FORGE_GITHUB_APP_PRIVATE_KEY_PATH", "/run/secrets/github-app.pem")
+    monkeypatch.setenv("SCF_UNRELATED", "kept")
+    session = await LocalSandboxProvider().create(_spec(tmp_worktree))
+
+    inherited = await session.run("env", cwd=tmp_worktree, timeout_s=10)
+    explicit = await session.run(
+        "env", cwd=tmp_worktree, timeout_s=10, env={"FORGE_GITHUB_APP_ID": "99", "X": "1"}
+    )
+
+    assert "FORGE_GITHUB_" not in inherited.stdout + explicit.stdout
+    assert "SCF_UNRELATED=kept" in inherited.stdout
+    assert "X=1" in explicit.stdout

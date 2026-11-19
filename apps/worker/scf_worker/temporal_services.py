@@ -43,7 +43,6 @@ from scf_db.models import (
 from scf_db.models.enums import RunStatus
 from scf_db.models.traceability import TraceabilitySpecRollup
 from scf_integrations.github import GitHubClient
-from scf_integrations.github_auth import InstallationTokenProvider
 from scf_worker.agent_runner import _commits_ahead, configured_model, run_agent_objective
 from scf_worker.approval_activity import make_create_approval_fn
 from scf_worker.dispatch import (
@@ -53,7 +52,14 @@ from scf_worker.dispatch import (
     split_repo_name,
     workspace_mirrors,
 )
-from scf_worker.finalizer import GitHubAppCredentials, Pusher, git_push, push_and_open_pr
+from scf_worker.finalizer import (
+    GitHubAppCredentials,
+    Pusher,
+    git_push,
+    mint_token,
+    push_and_open_pr,
+    workspace_credentials,
+)
 from scf_worker.held_out_drafting import VERIFIER_ROLE
 from scf_worker.red_team import RED_TEAM_CHECK, RED_TEAM_OFF, adversary_model, attack_change
 from scf_worker.review import (
@@ -162,7 +168,7 @@ def approval_service(factory: sessionmaker[Session]) -> ApprovalFn:
     return create_for_owned_run
 
 
-def _policy_loads(workspace_id: uuid.UUID, repo: str) -> bool:
+def _policy_loads(workspace_id: uuid.UUID, repo: str, run_id: uuid.UUID) -> bool:
     """The default branch's policy file parses, or there is none and the default applies.
 
     The mirror is fetched first when GitHub App credentials exist, so the file is the
@@ -170,7 +176,11 @@ def _policy_loads(workspace_id: uuid.UUID, repo: str) -> bool:
     """
     objective = AgentObjective(
         objective="guard inputs",
-        context={"repo_full_name": repo, "workspace_id": str(workspace_id)},
+        context={
+            "repo_full_name": repo,
+            "workspace_id": str(workspace_id),
+            "workflow_run_id": str(run_id),
+        },
     )
     try:
         mirror = Path(str(resolve_run_repository(objective).context["repo_path"]))
@@ -196,28 +206,32 @@ class CiUnreadable(RuntimeError):
     """CI could not be read for the run; it does not count as green."""
 
 
-def github_check_runs(repo: str, ref: str) -> list[dict[str, Any]]:
-    """The check runs on commit ``ref``, read with a token for ``repo`` alone."""
-    creds = GitHubAppCredentials.from_env()
+def github_check_runs(
+    repo: str,
+    ref: str,
+    *,
+    workspace_id: uuid.UUID,
+    run_id: uuid.UUID,
+    session_factory: sessionmaker[Session],
+) -> list[dict[str, Any]]:
+    """The check runs on commit ``ref``, read with the workspace's token for ``repo`` alone."""
+    split_repo_name(repo)
+    creds = workspace_credentials(workspace_id, repo, session_factory=session_factory)
     if creds is None:
-        raise CiUnreadable("no GitHub App credentials on this worker")
-    _, name = split_repo_name(repo)
-    provider = InstallationTokenProvider(
-        app_id=creds.app_id,
-        private_key_pem=creds.private_key_pem,
-        installation_id=creds.installation_id,
-        base_url=creds.api_base_url,
-        repositories=[name],
-        permissions=CI_TOKEN_PERMISSIONS,
+        raise CiUnreadable("no GitHub App credentials for this workspace")
+    token = mint_token(
+        creds,
+        repo,
+        CI_TOKEN_PERMISSIONS,
+        workspace_id=workspace_id,
+        run_id=run_id,
+        session_factory=session_factory,
     )
+    client = GitHubClient(token=token, base_url=creds.api_base_url)
     try:
-        client = GitHubClient(token=provider.token(), base_url=creds.api_base_url)
-        try:
-            return client.check_runs_for_ref(repo, ref)
-        finally:
-            client.close()
+        return client.check_runs_for_ref(repo, ref)
     finally:
-        provider.close()
+        client.close()
 
 
 def ci_verdict(runs: list[dict[str, Any]]) -> tuple[bool, str]:
@@ -270,7 +284,14 @@ def _merge_guard(factory: sessionmaker[Session], req: GuardInputsRequest) -> Gua
         green, ci_reason = False, "ci_unreadable: the run has no repository or head commit"
     else:
         try:
-            green, ci_reason = ci_verdict(github_check_runs(target.repo, str(head)))
+            runs = github_check_runs(
+                target.repo,
+                str(head),
+                workspace_id=req.workspace_id,
+                run_id=req.workflow_run_id,
+                session_factory=factory,
+            )
+            green, ci_reason = ci_verdict(runs)
         except Exception as exc:  # an unreadable CI blocks the merge; it never fails the run
             # GitHub's own message names the status (for example a missing checks:read).
             logger.warning("CI could not be read for workflow run %s", req.workflow_run_id)
@@ -333,7 +354,7 @@ def guard_inputs_service(factory: sessionmaker[Session]) -> GuardInputsFn:
             "repo_target_set": connected,
             "policy_loaded": connected
             and target is not None
-            and _policy_loads(req.workspace_id, target.repo),
+            and _policy_loads(req.workspace_id, target.repo, req.workflow_run_id),
             "skill_profile_set": not profiles or skill_profile in profiles,
             "knowledge_synced": all(at is not None for at in synced_at),
         }
@@ -564,7 +585,11 @@ def run_checks_service(
         assert target is not None  # the agent run resolved this repository
         objective = AgentObjective(
             objective="checks",
-            context={"repo_full_name": target.repo, "workspace_id": str(inp.workspace_id)},
+            context={
+                "repo_full_name": target.repo,
+                "workspace_id": str(inp.workspace_id),
+                "workflow_run_id": str(inp.workflow_run_id),
+            },
         )
         mirror = Path(str(resolve_run_repository(objective).context["repo_path"]))
         try:
@@ -831,15 +856,16 @@ def _failing_checks(context: dict[str, Any], before_attempt: int) -> list[dict[s
 def open_pr_service(
     factory: sessionmaker[Session],
     *,
-    credentials: Callable[[], GitHubAppCredentials | None] = GitHubAppCredentials.from_env,
+    credentials: Callable[[uuid.UUID, str], GitHubAppCredentials | None] | None = None,
     transport: httpx.BaseTransport | None = None,
     push: Pusher = git_push,
 ) -> OpenPrFn:
     """Push the run branch and open its pull request, exactly once (#252).
 
     The branch comes from the workspace's mirror, where the agent committed it. A
-    retry finds the pull request the first attempt opened and returns it. Without
-    GitHub App credentials the activity refuses: nothing can be delivered.
+    retry finds the pull request the first attempt opened and returns it. Without the
+    workspace's GitHub App credentials (#186) the activity refuses: nothing can be
+    delivered.
     """
 
     def open_pr(inp: OpenPrInput) -> OpenPrResult:
@@ -849,13 +875,6 @@ def open_pr_service(
             agent_run = _latest_agent_run(session, inp.workflow_run_id, inp.workspace_id)
             artifacts = ((agent_run.output or {}).get("artifacts") or {}) if agent_run else {}
             reviews = [r for r in workflow_run.context.get(REVIEWS_KEY, []) if r.get("verdict")]
-        creds = credentials()
-        if creds is None:
-            raise ApplicationError(
-                "no GitHub App credentials on this worker: the pull request cannot be opened",
-                type="GitHubAppNotConfigured",
-                non_retryable=True,
-            )
         branch = inp.branch_name or artifacts.get("branch")
         head = artifacts.get("head_commit")
         assert task is not None  # workflow_run.task_id is a non-null foreign key
@@ -866,6 +885,17 @@ def open_pr_service(
             raise ApplicationError(
                 f"workflow run {inp.workflow_run_id} has no run branch to deliver",
                 type="AgentRunNotFound",
+                non_retryable=True,
+            )
+        creds = (
+            credentials(inp.workspace_id, target.repo)
+            if credentials
+            else workspace_credentials(inp.workspace_id, target.repo, session_factory=factory)
+        )
+        if creds is None:
+            raise ApplicationError(
+                "this workspace has no GitHub App credentials: the pull request cannot be opened",
+                type="GitHubAppNotConfigured",
                 non_retryable=True,
             )
         owner, name = split_repo_name(target.repo)
@@ -908,6 +938,9 @@ def open_pr_service(
             title=title,
             body=body,
             credentials=creds,
+            workspace_id=inp.workspace_id,
+            run_id=inp.workflow_run_id,
+            session_factory=factory,
             transport=transport,
             push=push,
             reuse_existing=True,
