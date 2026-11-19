@@ -8,10 +8,12 @@ Covers the delta wired on top of the existing Task-1.12 seam:
 * a per-connection rate limit raises a typed, retryable error (NOT a run failure).
 
 Live transport is mocked via :class:`scf_mcp.testing.FakeTransport`. The Redis
-token-bucket test skips cleanly when no Redis server answers (repo convention).
+token-bucket test requests ``redis_url``, so it skips cleanly when no Redis answers.
 """
 
 from __future__ import annotations
+
+import uuid
 
 import pytest
 
@@ -29,8 +31,6 @@ from scf_mcp import (
     redis_rate_limiter,
 )
 from scf_mcp.testing import FakeTransport, sample_connection, sample_transport
-
-_REDIS_URL = "redis://localhost:6379/0"
 
 
 def _approving_client(
@@ -186,12 +186,11 @@ def test_redis_rate_limiter_absent_server_returns_none() -> None:
     assert limiter is None
 
 
-def test_redis_token_bucket_enforces_budget() -> None:
-    limiter = redis_rate_limiter(_REDIS_URL, capacity=2, refill_per_sec=0.001)
-    if limiter is None:
-        pytest.skip("no Redis server available (PARKED per repo convention)")
+def test_redis_token_bucket_enforces_budget(redis_url: str) -> None:
+    limiter = redis_rate_limiter(redis_url, capacity=2, refill_per_sec=0.001)
     assert isinstance(limiter, RedisTokenBucket)
-    key = "test-conn-f40"
+    # Unique per run: a drained bucket outlives the test in a long-lived Redis.
+    key = f"test-conn-f40-{uuid.uuid4().hex}"
     assert limiter.allow(key) is True
     assert limiter.allow(key) is True
     assert limiter.allow(key) is False

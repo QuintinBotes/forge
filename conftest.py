@@ -11,6 +11,10 @@ database in this order:
 
 This keeps the unit suite green in a no-network sandbox while letting Phase 2
 run the same tests against real Postgres (docker compose / CI service).
+
+Tests that need Redis request :func:`redis_url`, which yields ``FORGE_REDIS_URL``
+(or the worker's default) when it answers a ping and skips otherwise.
+``make test-services-up`` starts both services locally (``scripts/test-services.sh``).
 """
 
 from __future__ import annotations
@@ -70,6 +74,39 @@ def postgres_url() -> Iterator[str]:
         yield container.get_connection_url()
     finally:
         container.stop()
+
+
+REDIS_SKIP_REASON = (
+    "PARKED: no Redis answered — set FORGE_REDIS_URL to a reachable Redis, or start "
+    "the local test services with `make test-services-up`."
+)
+
+
+def resolve_test_redis_url() -> str:
+    """The Redis URL the worker would use: ``FORGE_REDIS_URL`` or its default."""
+    return os.environ.get("FORGE_REDIS_URL") or "redis://localhost:6379/0"
+
+
+def redis_url_or_skip() -> str:
+    """Return the test Redis URL if it answers a ping, otherwise skip the test."""
+    url = resolve_test_redis_url()
+    try:
+        import redis
+
+        client = redis.Redis.from_url(url, socket_connect_timeout=1, socket_timeout=1)
+        try:
+            client.ping()
+        finally:
+            client.close()
+    except Exception as exc:
+        pytest.skip(f"{REDIS_SKIP_REASON} ({url}: {exc})")
+    return url
+
+
+@pytest.fixture(scope="session")
+def redis_url() -> str:
+    """A Redis URL that answered a ping, or skip (parked) when none answers."""
+    return redis_url_or_skip()
 
 
 @pytest.fixture(scope="session")
