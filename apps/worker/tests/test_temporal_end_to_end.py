@@ -218,7 +218,7 @@ def github(remotes: Path, monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
         "open_pr_service",
         functools.partial(
             open_pr_service,
-            credentials=lambda: credentials,
+            credentials=lambda *_: credentials,
             transport=httpx.MockTransport(fake.handler),
         ),
     )
@@ -350,7 +350,7 @@ async def test_a_governed_run_reaches_the_pr_gate_and_is_synced_to_its_approval(
     check_runs: list[dict[str, Any]] = [{"name": "tests", "status": "in_progress"}]
     ci_reads: list[str] = []
 
-    def read_check_runs(_repo: str, ref: str) -> list[dict[str, Any]]:
+    def read_check_runs(_repo: str, ref: str, **_: Any) -> list[dict[str, Any]]:
         ci_reads.append(ref)
         return check_runs
 

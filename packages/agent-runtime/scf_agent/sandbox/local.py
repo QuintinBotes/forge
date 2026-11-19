@@ -13,6 +13,7 @@ literal ``policy.commands`` strings, gated upstream by the policy guard).
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from collections.abc import Mapping
@@ -22,6 +23,12 @@ from scf_agent.sandbox.output import cap_output
 from scf_contracts import CommandOutput, SandboxKind, SandboxSpec
 
 _KILL_GRACE_SECONDS = 10
+
+
+def _command_env(env: Mapping[str, str] | None) -> dict[str, str]:
+    """The command's environment, never with the worker's GitHub App variables (#186)."""
+    source = os.environ if env is None else env
+    return {k: v for k, v in source.items() if not k.startswith("FORGE_GITHUB_")}
 
 
 class LocalSandboxSession:
@@ -71,7 +78,7 @@ class LocalSandboxSession:
             "-lc",
             command,
             cwd=cwd,
-            env=dict(env) if env is not None else None,
+            env=_command_env(env),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

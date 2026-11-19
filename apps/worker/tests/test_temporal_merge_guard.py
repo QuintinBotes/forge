@@ -106,7 +106,7 @@ def _seed(factory: sessionmaker[Session], *, spec: str | None = None) -> uuid.UU
 def _reads(monkeypatch: pytest.MonkeyPatch, runs: list[dict[str, Any]]) -> list[Any]:
     calls: list[Any] = []
 
-    def check_runs(repo: str, ref: str) -> list[dict[str, Any]]:
+    def check_runs(repo: str, ref: str, **_: Any) -> list[dict[str, Any]]:
         calls.append((repo, ref))
         return runs
 

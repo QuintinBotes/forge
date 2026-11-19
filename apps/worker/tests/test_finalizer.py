@@ -12,8 +12,11 @@ import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from scf_contracts import AgentObjective, AgentRunResult, PullRequest, RunStatus
+from scf_db.base import Base
 from scf_worker import agent_runner as agent_runner_module
 from scf_worker import finalizer as finalizer_module
 from scf_worker.finalizer import (
@@ -84,6 +87,8 @@ def test_push_and_open_pr_mints_a_one_repo_token_and_opens_the_pr(repo: Path, pe
         return httpx.Response(404)
 
     pushed: list[tuple[Path, str, str, str]] = []
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
     pr = push_and_open_pr(
         repo_path=repo,
         branch="forge/run-1",
@@ -92,6 +97,8 @@ def test_push_and_open_pr_mints_a_one_repo_token_and_opens_the_pr(repo: Path, pe
         title="Add b",
         body="body",
         credentials=GitHubAppCredentials(app_id="1", installation_id="2", private_key_pem=pem),
+        workspace_id=uuid.uuid4(),
+        session_factory=sessionmaker(bind=engine),
         transport=httpx.MockTransport(handler),
         push=lambda *args: pushed.append(args),
     )
@@ -150,7 +157,11 @@ def _objective(repo: Path) -> AgentObjective:
     return AgentObjective(
         objective="Add b",
         key="TASK-9",
-        context={"repo_path": str(repo), "repo_full_name": "acme/widgets"},
+        context={
+            "repo_path": str(repo),
+            "repo_full_name": "acme/widgets",
+            "workspace_id": str(uuid.uuid4()),
+        },
     )
 
 

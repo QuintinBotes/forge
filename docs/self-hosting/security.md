@@ -109,6 +109,58 @@ plaintext), and minted agent-runner tokens auto-expire after
 `FORGE_AGENT_TOKEN_TTL` (default 24h). A 15-minute sweep flags/purges expired
 rows (`secrets sweep-expired`).
 
+## GitHub App credentials per workspace
+
+Agent runs reach GitHub with the GitHub App credentials of **their own
+workspace**, stored encrypted in that workspace's vault. A run never borrows
+another workspace's App, installation or token, so one host can serve several
+workspaces without one workspace's run acting with another's access.
+
+**Set them** (a workspace administrator; the route needs the `manage_keys`
+permission):
+
+```bash
+curl -X PUT "$SCF_API/integration/github/app-credentials" \
+  -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
+  --data "$(jq -n --arg key "$(cat github-app.pem)" \
+    '{app_id: "123456", installation_id: "7890123", private_key: $key}')"
+```
+
+The answer repeats `app_id` and `installation_id` and never the key. Setting again
+replaces the stored credentials; `DELETE` on the same path clears them, after
+which the workspace's runs can neither fetch nor deliver. `GET /auth/secrets`
+lists the entry as `github-app`, without its value.
+
+- **Installation.** When the run's repository connection records an
+  installation id, the run uses it; otherwise the stored `installation_id`.
+  Either must be a number.
+- **One App, many workspaces.** A deployment with one shared GitHub App stores the
+  same App id and key in each workspace, each with that workspace's installation
+  id.
+- **Tokens.** Every step mints its own installation token: one repository, only
+  the step's permissions (`contents: read` to fetch the mirror,
+  `contents: write` and `pull_requests: write` to deliver, `checks: read` for the
+  merge guard), GitHub's one-hour lifetime at most. No run or workspace reuses
+  another's token.
+- **Audit.** Each token issued writes a `github.token_issued` audit record with
+  the workspace, run, repository, installation, permissions and expiry. The
+  token, the App JWT and the private key appear in no audit record, log, run
+  event or error.
+- **Not in the sandbox.** Commands an agent run executes never see a token or a
+  `FORGE_GITHUB_*` variable, on the `worktree` tier as on the container tiers.
+
+**The environment variables are a development fallback only.**
+`FORGE_GITHUB_APP_ID`, `FORGE_GITHUB_INSTALLATION_ID` and
+`FORGE_GITHUB_APP_PRIVATE_KEY_PATH` on the worker are used only when
+`FORGE_ENVIRONMENT=development` and the workspace stored no credentials. In any
+other environment a workspace without stored credentials has none: delivery
+refuses (`GitHubAppNotConfigured`, or `not_configured` on a development run),
+and a repository with no mirror yet is unavailable, even when the variables are
+set. After upgrading, store each workspace's credentials through the route
+above, then remove the variables and the mounted key from the worker. The API's
+own GitHub client for webhooks and repository sync still reads the API
+container's variables.
+
 ## Credential rotation
 
 Rotate on a schedule and immediately after any suspected exposure or staff
@@ -121,7 +173,8 @@ departure.
 | `AUTH_SECRET` | Update `.env`, recreate `api`/`web`; existing sessions are invalidated. |
 | `SECRET_KEY` | Rotate, then re-encrypt the BYOK vault with the new key; recreate `api`/`worker`. |
 | Provider / BYOK keys | Replace in the per-workspace vault through the UI/API; old key stops being used immediately. |
-| GitHub App / Slack secrets | Rotate at the provider, update `.env`, recreate dependent services. |
+| GitHub App key (agent runs) | Generate a new key at GitHub, `PUT /integration/github/app-credentials` for each workspace that uses the App, then revoke the old key at GitHub. |
+| GitHub App (API webhooks and sync) / Slack secrets | Rotate at the provider, update `.env`, recreate dependent services. |
 
 After any rotation, recreate the affected services so they pick up the new
 values:
@@ -308,7 +361,8 @@ locked-down Docker container.
   arbitrary image.
 - **Secrets never enter the sandbox.** The BYOK model key and GitHub App
   credentials are never placed in the sandbox environment or any persisted
-  `sandbox_instance` row.
+  `sandbox_instance` row. The `worktree` tier starts commands from the worker's
+  environment without its `FORGE_GITHUB_*` variables.
 - **No silent downgrade.** If `container` is requested but the daemon/proxy is
   unreachable, the run fails loudly — SCF never quietly executes untrusted code
   on the host when the operator asked for containment.
