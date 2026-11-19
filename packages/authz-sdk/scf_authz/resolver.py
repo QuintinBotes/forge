@@ -185,6 +185,10 @@ class DefaultPermissionResolver:
                 _record(ScopeType.PROJECT, grant.role)
                 sources.add(f"team-grant {grant.scope.id}:{grant.role.value}")
 
+        # 7. A capped principal (an agent's token) holds nothing outside its cap.
+        if principal.permission_cap is not None:
+            perms &= principal.permission_cap
+
         return EffectiveAccess(
             permissions=frozenset(perms),
             roles_by_scope={scope: frozenset(roles) for scope, roles in roles_by_scope.items()},

@@ -107,7 +107,8 @@ def effective_access(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={"error": "forbidden", "missing_permission": Permission.ROLE_GRANT.value},
             )
-        target_ctx = service.load_principal_context(ctx.workspace_id, target_id)
+        # Oneself: the context the routes enforce (a token's narrowing or cap included).
+        target_ctx = ctx if is_self else service.load_principal_context(ctx.workspace_id, target_id)
         if project_id is not None:
             resource = service.project_resource(ctx.workspace_id, project_id)
         else:

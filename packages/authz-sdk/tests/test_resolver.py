@@ -288,3 +288,12 @@ def test_resolve_is_total_and_order_independent(seed: int) -> None:
     eff3 = R.resolve(ctx_shuffled, resource, project_team_access=pta, now=fixed_now)
     assert eff3.permissions == eff.permissions
     assert eff3.granting_sources == eff.granting_sources
+
+
+def test_a_permission_cap_bounds_every_grant_and_membership() -> None:
+    lead = TeamMembership(team_id=BE, team_role=TeamRole.LEAD)
+    cap = frozenset({P.PROJECT_READ, P.TASK_READ})
+    ctx = _ctx([_grant(ScopeType.WORKSPACE, WS, Role.ADMIN)], [lead])
+    ctx = ctx.model_copy(update={"permission_cap": cap})
+    pta = (ProjectTeamAccess(project_id=CORE, team_id=BE, access_level=AccessLevel.ADMIN),)
+    assert R.resolve(ctx, _project(), project_team_access=pta).permissions == cap
