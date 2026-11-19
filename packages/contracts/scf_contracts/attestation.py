@@ -68,6 +68,7 @@ __all__ = [
     "DigestSet",
     "DsseEnvelope",
     "DsseSignature",
+    "HeldOutSummary",
     "StageVerdict",
     "Statement",
     "Subject",
@@ -182,6 +183,21 @@ class StageVerdict(_Model):
     model: str | None = None
 
 
+class HeldOutSummary(_Model):
+    """The held-out scenarios run on the head commit, as counts only (#286).
+
+    ``verdict`` is ``passed`` or ``failed`` over the approved scenarios that ran;
+    ``none_defined`` or ``none_approved`` when none ran, and ``not_run`` when the
+    stage was not reached: none of those is a pass. ``defined`` counts the run's
+    scenarios that are not withdrawn, whatever their state; only approved ones run.
+    """
+
+    verdict: str = "not_run"
+    defined: int = 0
+    passed: int = 0
+    failed: int = 0
+
+
 class Verification(_Model):
     """What SCF verified about the change before a person reviewed it (#175)."""
 
@@ -192,6 +208,7 @@ class Verification(_Model):
     ci: str = "not_run"
     reviewer: StageVerdict
     red_team: StageVerdict
+    held_out: HeldOutSummary = Field(default_factory=HeldOutSummary)
 
 
 #: The agent name SCF writes in each commit's ``Assisted-by:`` trailer (#214).

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,11 +23,14 @@ from temporalio.exceptions import ApplicationError
 from scf_api.observability.redaction import redact_text
 from scf_api.services.agent_dispatch import STRIPPED_CONTEXT, repo_connected
 from scf_api.services.attestation_service import AttestationService
+from scf_api.services.held_out import record_result, scenarios_for_run
 from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient, Policy
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.review import ReviewVerdict
 from scf_contracts.run_context import (
     CHECKS_KEY,
+    HELD_OUT_CHECK,
+    HELD_OUT_KEY,
     INDEPENDENT_REVIEW_CHECK,
     PULL_REQUEST_KEY,
     REVIEWS_KEY,
@@ -41,6 +45,7 @@ from scf_db.models import (
     WorkflowRun,
 )
 from scf_db.models.enums import RunStatus
+from scf_db.models.held_out import SCENARIO_APPROVED
 from scf_db.models.traceability import TraceabilitySpecRollup
 from scf_integrations.github import GitHubClient
 from scf_integrations.github_auth import InstallationTokenProvider
@@ -54,6 +59,7 @@ from scf_worker.dispatch import (
     workspace_mirrors,
 )
 from scf_worker.finalizer import GitHubAppCredentials, Pusher, git_push, push_and_open_pr
+from scf_worker.held_out_check import run_scenario
 from scf_worker.held_out_drafting import VERIFIER_ROLE
 from scf_worker.red_team import RED_TEAM_CHECK, RED_TEAM_OFF, adversary_model, attack_change
 from scf_worker.review import (
@@ -447,6 +453,10 @@ def agent_run_service(factory: sessionmaker[Session]) -> RunAgentFn:
             if failing:
                 # The builder's next attempt sees what failed last time (#172).
                 objective.context["failing_checks"] = failing
+            held_out = (_last_attempt(workflow_run.context, inp.attempt) or {}).get(HELD_OUT_KEY)
+            if held_out and held_out.get("failed"):
+                # Of the held-out scenarios, only how many failed (#286).
+                objective.context["held_out_failed"] = held_out["failed"]
             session.add(
                 AgentRun(
                     id=agent_run_id,
@@ -542,7 +552,8 @@ def run_checks_service(
     verdict is the check ``independent_review``. When it approves, an adversary
     attacks the change (#283): its verdict is the check ``red_team``. With no
     reviewer or adversary it can use, the result asks the workflow to pause for a
-    person instead.
+    person instead. When all of that passes, the run's approved held-out scenarios
+    run on the change (#286): the check ``held_out_scenarios``.
     """
 
     def run(inp: RunChecksInput) -> ChecksResult:
@@ -608,10 +619,97 @@ def run_checks_service(
                 adversary=adversary,
             )
             runs += [scan] if scan is not None else []
-        _record_checks(factory, inp, head=str(head), runs=runs)
+        held_out: dict[str, Any] | None = None
+        if pause is None and all(r.passed for r in runs):
+            hidden, held_out = _held_out(
+                factory,
+                inp,
+                mirror=mirror,
+                head=str(head),
+                builder=agent_run,
+                task=task,
+                policy=policy,
+            )
+            runs += [hidden] if hidden is not None else []
+        _record_checks(factory, inp, head=str(head), runs=runs, held_out=held_out)
         return ChecksResult(results={r.id: r.passed for r in runs}, pause_reason=pause)
 
     return run
+
+
+def _held_out(
+    factory: sessionmaker[Session],
+    inp: RunChecksInput,
+    *,
+    mirror: Path,
+    head: str,
+    builder: AgentRun,
+    task: Task,
+    policy: Policy | None,
+) -> tuple[CheckRun | None, dict[str, Any]]:
+    """Run the run's approved held-out scenarios on the head commit, as one check (#286).
+
+    Returns the check ``held_out_scenarios`` (none when no scenario is approved) and
+    the counts the attempt records. Each scenario's outcome is audited by its id
+    (``held_out.ran``), never put on the run, whose context any reader sees; the run
+    records ``held_out: none_defined`` or ``none_approved`` when none ran.
+    """
+    started_at = datetime.now(UTC)
+    with factory() as session:
+        scenarios = scenarios_for_run(
+            session,
+            workspace_id=inp.workspace_id,
+            task_id=task.id,
+            workflow_run_id=inp.workflow_run_id,
+        )
+    approved = [s for s in scenarios if s.state == SCENARIO_APPROVED]
+    outcomes = [
+        run_scenario(
+            mirror,
+            head,
+            files=s.files,
+            command=s.command,
+            policy=policy,
+            run_id=builder.id,
+            workspace_id=inp.workspace_id,
+        )
+        for s in approved
+    ]
+    failed = sum(not o.passed for o in outcomes)
+    if not approved:
+        verdict = "none_approved" if scenarios else "none_defined"
+    else:
+        verdict = "failed" if failed else "passed"
+    with factory() as session:
+        for scenario, outcome in zip(approved, outcomes, strict=True):
+            record_result(
+                session,
+                scenario,
+                workflow_run_id=inp.workflow_run_id,
+                attempt=inp.attempt,
+                head_commit=head,
+                outcome={**asdict(outcome), "passed": outcome.passed},
+            )
+        workflow_run = _owned_run(session, inp.workflow_run_id, inp.workspace_id)
+        context = {k: v for k, v in workflow_run.context.items() if k != HELD_OUT_KEY}
+        workflow_run.context = context if approved else {**context, HELD_OUT_KEY: verdict}
+        session.commit()
+    counts = {
+        "verdict": verdict,
+        "defined": len(scenarios),
+        "passed": len(outcomes) - failed,
+        "failed": failed,
+    }
+    if not approved:
+        return None, counts
+    return CheckRun(
+        id=HELD_OUT_CHECK,
+        exit_code=1 if failed else 0,
+        timed_out=False,
+        started_at=started_at,
+        duration_ms=int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+        output_tail=f"{failed} of {len(outcomes)} held-out scenarios failed",
+    ), counts
 
 
 def _red_team(
@@ -779,13 +877,19 @@ def _record_review(
 
 
 def _record_checks(
-    factory: sessionmaker[Session], inp: RunChecksInput, *, head: str, runs: list[CheckRun]
+    factory: sessionmaker[Session],
+    inp: RunChecksInput,
+    *,
+    head: str,
+    runs: list[CheckRun],
+    held_out: dict[str, Any] | None = None,
 ) -> None:
     """Record one check attempt on the workflow run, replacing a retry of the same one.
 
     Each check keeps its command id, exit status, start time, duration and a redacted
-    tail of its output; the attempt keeps the commit it checked. ``GET
-    /workflow/runs/{id}`` returns them with the run's context.
+    tail of its output; the attempt keeps the commit it checked and, once the held-out
+    scenarios were reached, their counts (#286). ``GET /workflow/runs/{id}`` returns
+    them with the run's context.
     """
     attempt = {
         "attempt": inp.attempt,
@@ -803,6 +907,7 @@ def _record_checks(
             }
             for run in runs
         ],
+        **({HELD_OUT_KEY: held_out} if held_out is not None else {}),
     }
     with factory() as session:
         workflow_run = _owned_run(session, inp.workflow_run_id, inp.workspace_id)
@@ -813,18 +918,26 @@ def _record_checks(
         session.commit()
 
 
-def _failing_checks(context: dict[str, Any], before_attempt: int) -> list[dict[str, Any]]:
-    """The checks that failed in the attempt just before ``before_attempt`` (#172)."""
+def _last_attempt(context: dict[str, Any], before_attempt: int) -> dict[str, Any] | None:
+    """The check attempt just before ``before_attempt``, if any."""
     attempts = [a for a in context.get(CHECKS_KEY, []) if a.get("attempt", 0) < before_attempt]
-    if not attempts:
+    return max(attempts, key=lambda a: a.get("attempt", 0)) if attempts else None
+
+
+def _failing_checks(context: dict[str, Any], before_attempt: int) -> list[dict[str, Any]]:
+    """The checks that failed in the attempt just before ``before_attempt`` (#172).
+
+    Never the held-out check: the builder learns only how many scenarios failed (#286).
+    """
+    last = _last_attempt(context, before_attempt)
+    if last is None:
         return []
-    last = max(attempts, key=lambda a: a.get("attempt", 0))
     if last.get("no_checks_declared"):
         return [{"id": "no_checks_declared", "exit_code": None, "output_tail": ""}]
     return [
         {"id": c["id"], "exit_code": c["exit_code"], "output_tail": c["output_tail"]}
         for c in last.get("checks", [])
-        if not c.get("passed")
+        if not c.get("passed") and c["id"] != HELD_OUT_CHECK
     ]
 
 

@@ -188,7 +188,13 @@ binds every activity except `forge.resume_agent`:
 - **The checks have network on the worktree tier (#184).** Only the container
   tiers enforce the no-network sandbox; the default `worktree` tier runs the
   commands on the worker's host with its network and environment.
-- **Held-out scenarios are stored but not run yet (#286).** See below.
+- **Held-out scenarios run with network on the worktree tier (#184, #286).**
+  As for the checks, only the container tiers enforce their no-network sandbox.
+- **A retried check attempt runs the held-out scenarios again (#286).** Each run
+  adds its own `held_out.ran` entries; the results route returns them all.
+- **The held-out scenarios share the check stage's time limit (#286).** They run
+  one after another in `forge.run_checks`, each within the sandbox's own time
+  limit, so many slow scenarios can run the stage out of time.
 - **Drafts stored before migration `0051` name no run (#288).** The spec gate
   does not list, wait on or withdraw them; decide them through the scenario
   routes.
@@ -279,10 +285,43 @@ the builder's objective.
     and audit entries carry none. The titles are on the `spec` approval
     request, which any reader of the workspace can see, so a title should name
     the check, not spell it out. The builder learns nothing else about the
-    scenarios until #286 reports only how many failed.
-- **Running them (#286):** running the approved scenarios against the change
-  after the checks pass, and returning only a count of failures to the builder,
-  is still to come.
+    scenarios beyond how many failed (#286).
+- **Running them (#286):** in `forge.run_checks`, once the declared checks, the
+  independent review and the red-team scan pass, the run's approved scenarios
+  run on the change. The result is one more check, `held_out_scenarios`, so a
+  failure takes the existing `checks_failed` route: no pull request, and the
+  run goes back to the builder within the retry budget.
+  - **Which run:** every scenario a person wrote for the task and every one the
+    verifier drafted for this run, approved and not withdrawn. One drafted for
+    another run of the task was decided against that run's spec and does not run.
+  - **How:** each scenario gets its own fresh, detached worktree of the head
+    commit. Its files are overlaid there (a path the change points out of the
+    checkout through a symlink is refused) and its command runs in the sandbox
+    the declared checks get, with no network. The worktree is removed afterwards,
+    so the overlay never reaches the run branch.
+  - **Pass or fail:** a scenario passes when its command exits `0` in time. One
+    that times out (`timed_out`), cannot start (`could_not_start`: the overlay
+    was refused, the sandbox failed, or the shell exited `126` or `127`) or
+    exits otherwise (`exited_nonzero`) fails, with that reason.
+  - **Where the results go:** each scenario's outcome (pass or fail, exit status,
+    whether it timed out, duration, reason, the run, attempt and head commit) is
+    a `held_out.ran` entry in the audit log, by scenario id. The output is not
+    kept. `GET /tasks/{task_id}/held-out-scenarios/results` (optionally
+    `?workflow_run_id=`) reads them back by scenario id and title, for people
+    with write access only. They are not on the workflow run: its context, which
+    `GET /workflow/runs/{id}` serves to readers, keeps only the check and, on
+    each check attempt, the counts `held_out: {verdict, defined, passed, failed}`.
+    `defined` counts the run's scenarios that are not withdrawn, whatever their
+    state.
+  - **No approved scenario:** a run with none records `held_out: none_defined`,
+    and one whose scenarios are all undecided or rejected records `held_out:
+    none_approved`. The run proceeds, and no check reports a pass.
+  - **What the builder learns:** the failing check is left out of the feedback
+    its next attempt gets (`failing_checks`); the objective carries only
+    `held_out_failed`, the number of scenarios that failed.
+  - **The attestation:** the pull request's verification summary records
+    `held_out` as the verdict and the counts `defined`, `passed` and `failed`,
+    never a scenario id or title.
 
 ---
 
@@ -399,7 +438,10 @@ Forge-Run: 6f1c...  (the agent run id)
 - **`checks`:** each declared check's id and outcome, with a `checks_verdict`;
 - **`ci`:** `not_run` until CI is read back (#280);
 - **`reviewer`:** the independent reviewer's verdict and model;
-- **`red_team`:** the verdict and model of a scan at the `pr` phase.
+- **`red_team`:** the verdict and model of a scan at the `pr` phase;
+- **`held_out`:** the held-out scenarios' verdict (`passed`, `failed`,
+  `none_defined` or `none_approved`) and the counts `defined`, `passed` and
+  `failed`, never a scenario id or title (#286).
 
 A stage that did not run reads `not_run`: never omitted, never a pass.
 Attestations made before #175 have none of these fields and still verify.

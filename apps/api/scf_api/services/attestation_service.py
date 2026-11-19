@@ -56,6 +56,7 @@ from scf_contracts.attestation import (
     ChangesetProvenance,
     CheckOutcome,
     DigestSet,
+    HeldOutSummary,
     StageVerdict,
     Statement,
     Subject,
@@ -63,7 +64,12 @@ from scf_contracts.attestation import (
     decode_statement,
 )
 from scf_contracts.audit import AuditEvent, canonical_json
-from scf_contracts.run_context import CHECKS_KEY, INDEPENDENT_REVIEW_CHECK, REVIEWS_KEY
+from scf_contracts.run_context import (
+    CHECKS_KEY,
+    HELD_OUT_KEY,
+    INDEPENDENT_REVIEW_CHECK,
+    REVIEWS_KEY,
+)
 from scf_contracts.sandbox import SandboxKind
 from scf_db.attest.repository import AttestationRepository
 from scf_db.audit.writer import SqlAuditWriter
@@ -358,7 +364,7 @@ class AttestationService:
         return target.primary_repo_target.repo if target.primary_repo_target else None
 
     def _verification(self, run: WorkflowRun, head_commit: str | None) -> Verification:
-        """The checks, CI, reviewer and red-team verdicts recorded on ``run`` (#175).
+        """The checks, CI, reviewer, red-team and held-out verdicts recorded on ``run``.
 
         A stage with nothing recorded is ``not_run``: never omitted, never a pass.
         """
@@ -400,6 +406,8 @@ class AttestationService:
             red_team=StageVerdict(verdict=scans[0].verdict, model=scans[0].adversary_model)
             if scans
             else StageVerdict(verdict="not_run"),
+            # Counts only (#286): the per-scenario results are not on the run.
+            held_out=HeldOutSummary.model_validate((last or {}).get(HELD_OUT_KEY) or {}),
         )
 
     def _representative_agent_run(

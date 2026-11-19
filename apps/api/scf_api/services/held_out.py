@@ -5,24 +5,28 @@ person approves or rejects it, and the identity that drafted it cannot. One the
 verifier drafted for a run's spec is withdrawn when that spec goes back for
 changes, and the run's ``spec`` gate cannot be approved while one is undecided.
 Each change is chained into the audit log with who made it and the run; the
-files and the command are not.
+files and the command are not. So is each scenario's run on a change (#286): its
+outcome by scenario id, never its content or output, read back by id and title.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from scf_api.deps import Principal
-from scf_api.schemas.held_out import HeldOutScenarioCreate
+from scf_api.schemas.held_out import HeldOutResultOut, HeldOutScenarioCreate
 from scf_api.services.approval_service import to_decider
 from scf_contracts import UserRole
 from scf_contracts.audit import AuditEvent
 from scf_db.audit.writer import SqlAuditWriter
 from scf_db.models import Task
+from scf_db.models.audit import AuditLog
 from scf_db.models.held_out import (
     SCENARIO_APPROVED,
     SCENARIO_DRAFT,
@@ -32,6 +36,7 @@ from scf_db.models.held_out import (
 )
 
 __all__ = [
+    "RESULT_ACTION",
     "ApprovalRefused",
     "ScenarioNotFound",
     "ScenarioNotOpen",
@@ -41,12 +46,18 @@ __all__ = [
     "delete_scenario",
     "drafted_for_run",
     "ensure_scenarios_decided",
+    "list_results",
     "list_scenarios",
+    "record_result",
     "reject_scenario",
+    "scenarios_for_run",
     "store_agent_draft",
     "store_draft",
     "withdraw_run_scenarios",
 ]
+
+#: The audit action recording one scenario's run on a change (#286).
+RESULT_ACTION = "held_out.ran"
 
 
 class ScenarioNotFound(LookupError):
@@ -98,7 +109,7 @@ def _emit(
     *,
     actor_id: uuid.UUID | None,
     actor_type: str,
-    extra: dict[str, str | None] | None = None,
+    extra: Mapping[str, Any] | None = None,
 ) -> None:
     """Chain ``action`` on ``row`` into the audit log: who, never the content."""
     SqlAuditWriter(session).emit(
@@ -330,3 +341,100 @@ def withdraw_run_scenarios(
         _emit(session, row, "held_out.withdrawn", actor_id=None, actor_type="system")
     session.flush()
     return rows
+
+
+def scenarios_for_run(
+    session: Session, *, workspace_id: uuid.UUID, task_id: uuid.UUID, workflow_run_id: uuid.UUID
+) -> list[HeldOutScenario]:
+    """The scenarios that apply to a run of the task (#286): every one a person wrote
+    for the task and every one the verifier drafted for this run, not withdrawn.
+
+    One drafted for another run of the task was decided against that run's spec,
+    so it does not apply. Only the approved ones are run.
+    """
+    return list(
+        session.scalars(
+            select(HeldOutScenario)
+            .where(
+                HeldOutScenario.workspace_id == workspace_id,
+                HeldOutScenario.task_id == task_id,
+                or_(
+                    HeldOutScenario.workflow_run_id.is_(None),
+                    HeldOutScenario.workflow_run_id == workflow_run_id,
+                ),
+                HeldOutScenario.state != SCENARIO_WITHDRAWN,
+            )
+            .order_by(HeldOutScenario.created_at, HeldOutScenario.id)
+        )
+    )
+
+
+def record_result(
+    session: Session,
+    row: HeldOutScenario,
+    *,
+    workflow_run_id: uuid.UUID,
+    attempt: int,
+    head_commit: str,
+    outcome: Mapping[str, Any],
+) -> None:
+    """Chain one scenario's run on ``head_commit`` into the audit log (#286).
+
+    ``outcome`` is ``passed``, ``exit_code``, ``timed_out``, ``duration_ms`` and
+    ``reason``: never the files, the command or the output. ``workflow_run_id``
+    names the run it ran in, not the one it was drafted for.
+    """
+    _emit(
+        session,
+        row,
+        RESULT_ACTION,
+        actor_id=None,
+        actor_type="system",
+        extra={
+            **outcome,
+            "workflow_run_id": str(workflow_run_id),
+            "attempt": attempt,
+            "head_commit": head_commit,
+        },
+    )
+
+
+def list_results(
+    session: Session,
+    principal: Principal,
+    task_id: uuid.UUID,
+    workflow_run_id: uuid.UUID | None = None,
+) -> list[HeldOutResultOut]:
+    """Each scenario run on the task's changes, oldest first, by id and title only."""
+    _task(session, principal, task_id)
+    titles = dict(
+        session.execute(
+            select(HeldOutScenario.id, HeldOutScenario.title).where(
+                HeldOutScenario.workspace_id == principal.workspace_id,
+                HeldOutScenario.task_id == task_id,
+            )
+        ).all()
+    )
+    rows = session.scalars(
+        select(AuditLog)
+        .where(
+            AuditLog.workspace_id == principal.workspace_id,
+            AuditLog.action == RESULT_ACTION,
+            AuditLog.scope_type == "task",
+            AuditLog.scope_id == task_id,
+        )
+        .order_by(AuditLog.seq)
+    )
+    results = [
+        HeldOutResultOut.model_validate(
+            {
+                **row.details,
+                "title": titles.get(uuid.UUID(row.details["scenario_id"])),
+                "recorded_at": row.created_at,
+            }
+        )
+        for row in rows
+    ]
+    if workflow_run_id is None:
+        return results
+    return [r for r in results if r.workflow_run_id == workflow_run_id]
