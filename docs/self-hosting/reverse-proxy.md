@@ -182,6 +182,10 @@ caddy:
     # server for that port.
 ```
 
+nginx serves the API under `/api` as Caddy does, so `FORGE_PUBLIC_URL` stays
+`https://<DOMAIN>/api`. For a proxy that routes the API under a different path,
+see [docker-compose.md](docker-compose.md#configuration).
+
 Validate the syntax before rolling it out:
 
 ```bash

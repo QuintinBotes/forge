@@ -141,6 +141,7 @@ def test_compose_config_validates_with_profile() -> None:
         pytest.skip("docker CLI not available")
     env = dict(os.environ)
     env.setdefault("FORGE_SECRET_KEY", "x" * 48)
+    env.setdefault("FORGE_PUBLIC_URL", "https://scf.example/api")  # required since #304
     proc = subprocess.run(
         ["docker", "compose", "-f", str(COMPOSE), "--profile", "observability", "config"],
         capture_output=True,

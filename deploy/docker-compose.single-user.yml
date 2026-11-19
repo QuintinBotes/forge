@@ -103,6 +103,8 @@ services:
     environment:
       <<: *python-env
       FORGE_READINESS_REQUIRE_DEPS: "true"
+      # #304: the address browsers reach the API at; no edge proxy, so no /api prefix.
+      FORGE_PUBLIC_URL: ${FORGE_PUBLIC_URL:-http://127.0.0.1:${SCF_API_PORT:-8100}}
     volumes:
       - specs:/srv/forge/specs
     # The only published port, on loopback: nothing else on the network reaches it.

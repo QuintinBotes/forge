@@ -462,17 +462,21 @@ it sets the same session cookie an SSO sign-in sets (12 hours) and redirects to
 the app.
 
 The link is built from `FORGE_PUBLIC_URL`: the address at which the browser
-reaches the API. The Docker Compose stacks do not set it for the API, so pass it
-to the command, or it prints a `http://localhost:8000` link that does not work.
-Behind the edge proxy the value must include the `/api` prefix the proxy serves:
+reaches the API. The Docker Compose stacks set it for the API. The full stack
+requires it, and behind the edge proxy it ends in the `/api` prefix the proxy
+serves (`https://<DOMAIN>/api`, see
+[docker-compose.md](docker-compose.md#configuration)). The single-user profile
+defaults it to `http://127.0.0.1:<SCF_API_PORT>` (port `8100` unless you changed
+it), with no `/api`, because it has no edge proxy. Run the command in the `api`
+container:
 
 ```bash
-# Full stack: the edge proxy serves the API under /api, so the value ends in /api.
-docker compose -f deploy/docker-compose.yml exec -e FORGE_PUBLIC_URL=https://<host>/api \
+# Full stack
+docker compose -f deploy/docker-compose.yml exec \
   api scf-cli admin sign-in-link --workspace <slug> --email <address>
 
-# Single-user profile: no edge proxy, the API is at http://127.0.0.1:8100 (no /api).
-docker compose -f deploy/docker-compose.single-user.yml exec -e FORGE_PUBLIC_URL=http://127.0.0.1:8100 \
+# Single-user profile
+docker compose -p scf-single-user exec \
   api scf-cli admin sign-in-link --workspace <slug> --email <address>
 ```
 

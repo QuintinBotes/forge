@@ -229,7 +229,12 @@ def test_docker_compose_config_validates() -> None:
         pytest.skip("PARKED: docker CLI unavailable in this sandbox")
     # HARD-13: FORGE_SECRET_KEY is fail-closed (${...:?...}) in the production
     # compose, so a valid render must supply it — mirror an operator's .env.
-    env = {**os.environ, "FORGE_SECRET_KEY": "compose-config-validation-key-000"}
+    # #304: so is FORGE_PUBLIC_URL.
+    env = {
+        **os.environ,
+        "FORGE_SECRET_KEY": "compose-config-validation-key-000",
+        "FORGE_PUBLIC_URL": "https://scf.example/api",
+    }
     result = subprocess.run(
         ["docker", "compose", "-f", str(COMPOSE), "config"],
         capture_output=True,

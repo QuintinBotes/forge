@@ -91,6 +91,21 @@ in the repo root. Compose substitutes them at `up` time. See
 [../../.env.example](../../.env.example) for the full list and
 [security.md](security.md) for which values must be treated as secrets.
 
+`FORGE_PUBLIC_URL` is required: Compose refuses every command on this file
+without it (`up`, `build`, `config`, `exec`). It is the address at which a
+browser reaches the API, including the path prefix the edge proxy serves the API
+under. The API builds the SSO callback, the SAML and SCIM
+addresses and the CLI sign-in link from it. It also uses it for the same-origin
+check on cookie writes and to decide whether the session cookie is `Secure`.
+
+- **Behind the bundled Caddy** (or the bundled nginx alternative), the API is
+  served under `/api`, so set `FORGE_PUBLIC_URL=https://<DOMAIN>/api`, with the
+  same host as `DOMAIN`.
+- **Behind another proxy**, set it to the external `https://` origin browsers
+  use plus the path prefix under which that proxy forwards to the API. The
+  proxy must strip that prefix, as Caddy does. For example,
+  `https://scf.example.com/api` when it forwards `/api/*` to `api:8000` as `/*`.
+
 ## Known follow-ups
 
 - **Image digests:** images are pinned to version tags, not immutable
