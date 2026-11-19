@@ -572,9 +572,15 @@ eval "$(scf-cli login --token-env FORGE_TOKEN)"
 
 `scf-cli login` prints the code and where to approve it to standard error, waits,
 and prints only `export FORGE_TOKEN=<token>` to standard output. The token lives in
-that shell's environment; the command writes it nowhere. While signed in, approve
-the code with your browser session or your own unscoped key (there is no web page
-for it yet), or deny it with `"decision": "deny"`:
+that shell's environment; the command writes it nowhere. The approve address it
+prints is on the server it reached (`FORGE_URL` or `--url`). It keeps polling
+through a dropped connection, a `429` (after its `Retry-After`) or a `5xx`, until
+the server gives a final answer or the code expires.
+
+While signed in, first see who asked: `POST /auth/device/preview` with the same body
+answers the client name, the address and user agent the request came from, and
+when. Then approve the code with your browser session or your own unscoped key
+(there is no web page for it yet), or deny it with `"decision": "deny"`:
 
 ```bash
 curl -fsS -X POST https://<host>/api/auth/device/approve \
@@ -601,32 +607,45 @@ curl -fsS -X POST https://<host>/api/auth/device/approve \
 - **Once.** The token is returned to the first poll after approval; every later
   poll gets `invalid_grant`. A retry with an `Idempotency-Key` is not replayed.
 - **Guessing.** The user code is 8 letters from 20 consonants (20^8, about
-  2.6 × 10^10 codes). Its first half names the request; 5 wrong codes that name a
-  request end it. An unknown code and a wrong one get the same answer, and only a
+  2.6 × 10^10 codes), unique among pending requests. Its first half names the
+  request; 5 wrong codes that name a request end it, whether sent to approve or to
+  preview. An unknown code and a wrong one get the same answer, and only a
   signed-in person can try codes, at the per-caller rate limit (default 120 a
   minute per API process): in a request's 10 minutes one credential tries at most
   1,200 codes per process, which hit any of 100 pending requests with a chance of
-  about 5 in a million. The device code is 32 random bytes. The two routes that
-  take no credential, `POST /auth/device/code` and `POST /auth/device/token`, are
-  limited per client IP by the same limiter.
+  about 5 in a million. The device code is 32 random bytes.
+- **Flooding.** The two routes that take no credential, `POST /auth/device/code`
+  and `POST /auth/device/token`, are rate-limited by the client address the API
+  sees, whatever headers a caller sends. One address may hold at most 20 pending
+  requests; a further one gets `429` and is not stored. Behind a proxy that the
+  API server does not trust to name the client (uvicorn trusts forwarded headers
+  only from `127.0.0.1` by default), every client has the proxy's address and
+  shares that budget and that cap.
 - **What is stored.** Only SHA-256 hashes of the device code and the user code,
-  the user code's first half and the client name; never the token. Neither code
+  the user code's first half, the client name, and the address and user agent
+  the request came from; never the token. Neither code
   nor the token is in any audit entry or log line SCF writes; both travel only in
   request and response bodies, which are marked `Cache-Control: no-store`.
 - **Audit.** When a person decides, the workspace records
   `auth.device_code_requested` and `auth.device_code_approved` or
   `auth.device_code_denied`; when the client collects its token,
   `auth.device_token_issued` (with the token's key id, or `result: denied`).
-  Each names the client and has the deciding person as the actor. A request
-  nobody decides belongs to no workspace yet, so it is only in the API log, by
-  id and client name. Requests that ended more than a day ago are deleted.
+  Each names the client and the address and user agent it asked from, and has
+  the deciding person as the actor. A request nobody decides belongs to no
+  workspace yet, so it is only in the API log, by id and client name. Requests
+  that ended more than a day ago are deleted. The token is marked taken before
+  it is minted, so a failure part-way costs the client an `invalid_grant`, never
+  a second token; a token minted just before such a failure exists without its
+  `auth.device_token_issued` entry and shows in `GET /auth/api-keys`.
 - **Approve only a code your own client printed.** Whoever started the request
   gets the token. Someone who sends you a code and gets you to approve it can
-  start runs as you until you revoke the token.
+  start runs as you until you revoke the token. The preview's address and time
+  help you check, but the client name is whatever the requester chose.
 - **Other clients.** The routes follow RFC 8628 with JSON bodies:
   `POST /auth/device/code` with `{"client_name": ...}` returns `device_code`,
   `user_code`, `verification_uri` (built from `FORGE_PUBLIC_URL`, as for a
-  [sign-in link](#first-administrator-a-sign-in-link-from-the-cli)),
+  [sign-in link](#first-administrator-a-sign-in-link-from-the-cli), so wrong
+  where that is unset; `scf-cli login` does not use it),
   `expires_in`, `interval` and `scope`; `POST /auth/device/token` with
   `{"device_code": ...}` returns `access_token`, or `400` with `error`
   `authorization_pending`, `slow_down`, `access_denied`, `expired_token` or

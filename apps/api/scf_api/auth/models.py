@@ -65,10 +65,25 @@ class DeviceCodeResponse(BaseModel):
     client_name: str
 
 
-class DeviceApproveRequest(BaseModel):
-    """Body for approving or denying a device sign-in by the user code its client shows."""
+class DeviceCodeLookup(BaseModel):
+    """Body naming a device sign-in by the user code its client shows."""
 
     user_code: str = Field(min_length=1, max_length=32)
+
+
+class DevicePreview(BaseModel):
+    """Who asked for a device sign-in, as the API saw them, for the person deciding."""
+
+    client_name: str
+    requester_address: str
+    requester_agent: str | None
+    requested_at: datetime
+    expires_at: datetime
+
+
+class DeviceApproveRequest(DeviceCodeLookup):
+    """Body for approving or denying a device sign-in."""
+
     decision: Literal["approve", "deny"] = "approve"
 
 

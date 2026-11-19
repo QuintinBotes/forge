@@ -20,7 +20,17 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Cookie,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -30,9 +40,11 @@ from scf_api.auth.models import (
     APIKeyCreated,
     APIKeyCreateRequest,
     DeviceApproveRequest,
+    DeviceCodeLookup,
     DeviceCodeRequest,
     DeviceCodeResponse,
     DeviceDecision,
+    DevicePreview,
     DeviceTokenRequest,
     LoginRequest,
     OAuthCallbackRequest,
@@ -63,6 +75,7 @@ from scf_api.services.approval_service import owner_role
 from scf_auth.rbac import has_at_least
 from scf_authz import ROLE_RANK
 from scf_contracts.enums import UserRole
+from scf_db.models import DeviceAuthorization
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -360,10 +373,31 @@ def _ensure_may_start_runs(principal: Principal, current: UserRole) -> None:
     summary="Start a device sign-in for a client with no browser (no credential).",
 )
 def start_device_sign_in(
-    body: DeviceCodeRequest, session: DbSession, settings: SettingsDep, response: Response
+    body: DeviceCodeRequest,
+    session: DbSession,
+    settings: SettingsDep,
+    http: Request,
+    response: Response,
 ) -> DeviceCodeResponse:
-    """RFC 8628 §3.1: public by design; it hands out only codes until a person approves."""
-    request, code, user_code = device_code.start(session, client_name=body.client_name)
+    """RFC 8628 §3.1: public by design; it hands out only codes until a person approves.
+
+    The rate limiter keys this route by client address; an address that already holds
+    ``MAX_PENDING_PER_ADDRESS`` pending requests is refused.
+    """
+    address = http.client.host if http.client else "unknown"
+    started = device_code.start(
+        session,
+        client_name=body.client_name,
+        address=address,
+        agent=http.headers.get("user-agent"),
+    )
+    if started is None:
+        logger.warning("device sign-in refused: too many pending from %s", address)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many pending device sign-ins from this address; try again later",
+        )
+    request, code, user_code = started
     logger.info("device sign-in requested id=%s client=%r", request.id, request.client_name)
     response.headers.update(_NO_STORE)
     return DeviceCodeResponse(
@@ -374,6 +408,39 @@ def start_device_sign_in(
         interval=int(device_code.INTERVAL.total_seconds()),
         scope=" ".join(device_code.SCOPES),
         client_name=request.client_name,
+    )
+
+
+def _device_request(session: Session, user_code: str) -> DeviceAuthorization:
+    request = device_code.find(session, user_code)
+    if request is None:
+        logger.warning("device code refused")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="this code is not valid"
+        )
+    return request
+
+
+@router.post(
+    "/device/preview",
+    response_model=DevicePreview,
+    summary="See who asked for a device sign-in before deciding (a person only).",
+)
+def preview_device_sign_in(
+    body: DeviceCodeLookup, principal: AuthedPrincipal, session: DbSession
+) -> DevicePreview:
+    """Read-only, as approving's authentication; a wrong code counts here as there.
+
+    A POST, so the user code stays out of the access log's request line.
+    """
+    _minter_role(principal, session)
+    request = _device_request(session, body.user_code)
+    return DevicePreview(
+        client_name=request.client_name,
+        requester_address=request.requester_address,
+        requester_agent=request.requester_agent,
+        requested_at=request.created_at,
+        expires_at=request.expires_at,
     )
 
 
@@ -393,11 +460,11 @@ def decide_device_sign_in(
     expired or already decided code gets one answer.
     """
     current = _minter_role(principal, session)
-    request = device_code.find(session, body.user_code)
+    request = _device_request(session, body.user_code)
     approve = body.decision == "approve"
-    if request is not None and approve:
+    if approve:
         _ensure_may_start_runs(principal, current)
-    if request is None or not device_code.decide(session, request, principal, approve=approve):
+    if not device_code.decide(session, request, principal, approve=approve):
         logger.warning("device code refused user=%s", principal.user_id)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="this code is not valid"

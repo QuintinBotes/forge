@@ -14,6 +14,7 @@ import io
 import json
 import logging
 import re
+import secrets
 import shlex
 import subprocess
 import time
@@ -26,7 +27,7 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 import scf_api.auth.service as auth_service_module
 from scf_api import cli as cli_mod
@@ -36,7 +37,7 @@ from scf_api.auth.service import AuthService
 from scf_api.main import create_app
 from scf_api.observability.redaction import redact_mapping
 from scf_api.services.approval_service import build_gate_registry, get_approval_service
-from scf_api.settings import get_settings
+from scf_api.settings import Settings, get_settings
 from scf_approval import ApprovalAuthorizer, ApprovalService, InMemoryApprovalRepository
 from scf_approval.providers import InMemoryGrantStore
 from scf_auth.tokens import encode_session_jwt
@@ -501,6 +502,7 @@ def test_request_approval_and_issue_are_audited_with_client_and_approver(
     for row in rows:
         assert (row.workspace_id, row.actor_id, row.result) == (WS, MEMBER, "success")
         assert row.details["client_name"] == "laptop cli"
+        assert row.details["requester_address"] == "testclient"
     request = only_request(db)
     assert [r.target_id for r in rows] == [request.id, request.id, uuid.UUID(issued["key_id"])]
     assert rows[2].details["scopes"] == ["read", "runs:execute"]
@@ -592,6 +594,119 @@ def test_a_retried_poll_never_replays_the_token(client: TestClient, db: Any) -> 
     assert "idempotency-replayed" not in second.headers
 
 
+def test_a_failure_after_the_token_is_taken_never_mints_a_second(
+    client: TestClient, db: Any, auth: AuthService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = start(client)
+    assert approve(client, member(), started["user_code"]).status_code == 200
+    real = device_code.emit_sso_audit
+
+    def audit_store_down(session: Any, **event: Any) -> None:
+        if event["action"] == "auth.device_token_issued":
+            raise RuntimeError("audit store down")
+        real(session, **event)
+
+    monkeypatch.setattr(device_code, "emit_sso_audit", audit_store_down)
+    with db.factory() as s, pytest.raises(RuntimeError):
+        device_code.collect(s, started["device_code"], auth.api_keys)
+    monkeypatch.setattr(device_code, "emit_sso_audit", real)
+
+    assert error_of(poll(client, db, started["device_code"])) == "invalid_grant"
+    assert len(auth.api_keys.list_keys(WS)) <= 1
+
+
+# --------------------------------------------------------------------------- #
+# Abuse: rate limit, a flood of requests, colliding codes, a blind approval    #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [("/auth/device/code", {"client_name": "x"}), ("/auth/device/token", {"device_code": "x"})],
+)
+def test_the_credential_free_routes_are_limited_per_address_whatever_the_headers(
+    db: Any, auth: AuthService, path: str, body: dict[str, str]
+) -> None:
+    app = db.install(create_app(Settings(ratelimit_rpm=1, ratelimit_burst=2)))
+    with TestClient(app) as c:
+        answers = [
+            c.post(path, json=body, headers=bearer(f"junk-{i}")).status_code for i in range(3)
+        ]
+
+    assert answers[2] == 429 and 429 not in answers[:2], answers
+
+
+def test_a_flood_of_requests_from_one_address_is_refused_not_stored(
+    client: TestClient, db: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(device_code, "MAX_PENDING_PER_ADDRESS", 2)
+    start(client)
+    start(client)
+
+    assert client.post("/auth/device/code", json={"client_name": "x"}).status_code == 429
+    with db.factory() as s:
+        assert len(s.scalars(select(DeviceAuthorization)).all()) == 2
+    _expire(db)  # requests that have ended no longer count
+    start(client)
+
+
+def _draw(monkeypatch: pytest.MonkeyPatch, *codes: str) -> None:
+    """The next user codes drawn are ``codes``; random ones follow."""
+    letters = iter("".join(codes))
+    real = secrets.choice
+    monkeypatch.setattr(device_code.secrets, "choice", lambda seq: next(letters, None) or real(seq))
+
+
+def test_a_user_code_a_pending_request_holds_is_drawn_again(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _draw(monkeypatch, "BBBBBBBB", "BBBBBBBB", "CCCCCCCC")
+
+    assert start(client)["user_code"] == "BBBB-BBBB"
+    assert start(client)["user_code"] == "CCCC-CCCC"
+
+
+def test_an_ambiguous_user_code_approves_nothing(
+    client: TestClient, db: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with db.factory() as s:  # as if two pending requests held one code despite the index
+        s.execute(text("DROP INDEX uq_device_authorization_pending_user_code"))
+        s.commit()
+    _draw(monkeypatch, "BBBBBBBB", "BBBBBBBB")
+    start(client)
+    start(client)
+
+    assert approve(client, member(), "BBBB-BBBB").json() == NOT_VALID
+    with db.factory() as s:
+        assert {r.status for r in s.scalars(select(DeviceAuthorization))} == {"pending"}
+
+
+def test_a_person_sees_who_asked_before_deciding(client: TestClient, db: Any) -> None:
+    resp = client.post(
+        "/auth/device/code", json={"client_name": "laptop cli"}, headers={"User-Agent": "cli/1"}
+    )
+    user_code = resp.json()["user_code"]
+
+    seen = client.post(
+        "/auth/device/preview", headers=bearer(member()), json={"user_code": user_code}
+    )
+
+    assert seen.status_code == 200, seen.text
+    body = seen.json()
+    assert (body["client_name"], body["requester_address"], body["requester_agent"]) == (
+        "laptop cli",
+        "testclient",
+        "cli/1",
+    )
+    assert body["requested_at"] < body["expires_at"]
+    assert only_request(db).status == "pending"  # a preview decides nothing
+    wrong = {"user_code": wrong_code(user_code)}
+    assert client.post("/auth/device/preview", headers=bearer(member()), json=wrong).json() == (
+        NOT_VALID
+    )
+    assert only_request(db).failed_attempts == 1  # a wrong code counts here too
+
+
 # --------------------------------------------------------------------------- #
 # Criterion 7: scf-cli login                                                   #
 # --------------------------------------------------------------------------- #
@@ -652,31 +767,40 @@ def test_login_prints_only_a_shell_line_that_sets_the_named_variable(
     me = client.get("/auth/me", headers=bearer(token)).json()
     assert (me["user_id"], me["role"]) == (str(MEMBER), "agent-runner")
     shown = err.getvalue()
-    assert USER_CODE.search(shown) and "/auth/device/approve" in shown
+    # The address the client reached, not the server's public_url (localhost:8000 here).
+    assert USER_CODE.search(shown) and "http://testserver/auth/device/approve" in shown
     assert token not in shown
     written = [p for p in tmp_path.rglob("*") if p.is_file()]
     assert all(token not in p.read_text(errors="ignore") for p in written)
 
 
-def test_login_slows_down_when_told_and_stops_on_a_denial() -> None:
-    answers = iter(["authorization_pending", "slow_down", "authorization_pending", "access_denied"])
-    started = {
-        "device_code": "dc",
-        "user_code": "BCDF-GHJK",
-        "verification_uri": "http://testserver/auth/device/approve",
-        "expires_in": 600,
-        "interval": 5,
-    }
+#: What a scripted server answers ``/auth/device/code`` with; its approve address is wrong.
+STARTED = {
+    "device_code": "dc",
+    "user_code": "BCDF-GHJK",
+    "verification_uri": "http://elsewhere.invalid/auth/device/approve",
+    "expires_in": 600,
+    "interval": 5,
+}
+
+
+def _scripted_login(
+    *polls: httpx.Response | Exception, started: httpx.Response | None = None
+) -> tuple[int, str, str, list[float]]:
+    """Run ``scf-cli login`` against a server that answers each poll with the next of ``polls``."""
+    answers = iter(polls)
 
     def handle(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/auth/device/code":
-            return httpx.Response(200, json=started)
+            return started or httpx.Response(200, json=STARTED)
         assert json.loads(request.content) == {"device_code": "dc"}
-        return httpx.Response(400, json={"error": next(answers)})
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
 
     slept: list[float] = []
     out, err = io.StringIO(), io.StringIO()
-
     code = cli_remote.login(
         _login_args("--token-env", "SCF_TOKEN"),
         env={},
@@ -685,11 +809,70 @@ def test_login_slows_down_when_told_and_stops_on_a_denial() -> None:
         transport=httpx.MockTransport(handle),
         sleep=slept.append,
     )
+    return code, out.getvalue(), err.getvalue(), slept
+
+
+def _poll_error(error: str) -> httpx.Response:
+    return httpx.Response(400, json={"error": error})
+
+
+def test_login_slows_down_when_told_and_stops_on_a_denial() -> None:
+    errors = ["authorization_pending", "slow_down", "authorization_pending", "access_denied"]
+
+    code, out, err, slept = _scripted_login(*map(_poll_error, errors))
 
     assert code == cli_remote.EXIT_HTTP
     assert slept == [5, 5, 10, 10]
-    assert out.getvalue() == ""
-    assert "access_denied" in err.getvalue()
+    assert out == ""
+    assert "access_denied" in err
+    # The approve address is on the server the client reached, whatever the server says.
+    assert "http://testserver/auth/device/approve" in err and "elsewhere" not in err
+
+
+def test_login_rides_out_a_dropped_connection_a_429_and_a_5xx() -> None:
+    code, out, err, slept = _scripted_login(
+        httpx.ConnectError("connection dropped"),
+        httpx.Response(429, headers={"Retry-After": "30"}, json={"detail": "Too Many Requests"}),
+        httpx.Response(503, text="restarting"),
+        _poll_error("authorization_pending"),
+        httpx.Response(200, json={"access_token": "tok"}),
+    )
+
+    assert code == 0, err
+    assert slept == [5, 5, 30, 5, 5]
+    assert out == "export SCF_TOKEN=tok\n"
+
+
+def test_login_stops_when_the_code_expires_unanswered() -> None:
+    expiring = httpx.Response(200, json={**STARTED, "expires_in": 12})
+
+    code, out, err, slept = _scripted_login(*[httpx.Response(503)] * 3, started=expiring)
+
+    assert (code, out, slept) == (cli_remote.EXIT_HTTP, "", [5, 5, 5])
+    assert "expired" in err
+
+
+def test_login_fails_at_once_when_it_cannot_start() -> None:
+    code, out, _err, slept = _scripted_login(started=httpx.Response(503))
+
+    assert (code, out, slept) == (cli_remote.EXIT_HTTP, "", [])
+
+
+def test_the_printed_line_quotes_the_token_for_the_shell(tmp_path: Path) -> None:
+    token = "a'b; touch pwned $(id) `x`"
+
+    code, out, err, _ = _scripted_login(httpx.Response(200, json={"access_token": token}))
+
+    assert code == 0, err
+    shell = subprocess.run(
+        ["sh", "-c", f'{out}printf %s "$SCF_TOKEN"'],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert shell.stdout == token
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize("name", ["X; rm -rf ~", "$(id)", "1TOKEN", "A-B", ""])

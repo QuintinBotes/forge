@@ -19,7 +19,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, Update, delete, select, update
+from sqlalchemy import CursorResult, Update, delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from scf_api.auth.apikeys import RUNS_EXECUTE, APIKeyInfo, APIKeyStore
@@ -37,6 +38,8 @@ LIFETIME = timedelta(minutes=10)
 INTERVAL = timedelta(seconds=5)
 #: Wrong user codes naming one request (by their first half) that end it.
 MAX_WRONG_CODES = 5
+#: Pending requests one address may hold: a flood is refused, not stored.
+MAX_PENDING_PER_ADDRESS = 20
 #: How long the issued token works.
 TOKEN_LIFETIME = timedelta(days=1)
 #: The run-start scope set of #206, the only one this flow issues.
@@ -68,27 +71,54 @@ def _update() -> Update:
 
 
 def start(
-    session: Session, *, client_name: str, now: datetime | None = None
-) -> tuple[DeviceAuthorization, str, str]:
-    """Store a pending request; return it, its device code and its user code (``XXXX-XXXX``)."""
+    session: Session,
+    *,
+    client_name: str,
+    address: str,
+    agent: str | None,
+    now: datetime | None = None,
+) -> tuple[DeviceAuthorization, str, str] | None:
+    """Store a pending request; return it, its device code and its user code (``XXXX-XXXX``).
+
+    ``None`` when ``address`` already holds :data:`MAX_PENDING_PER_ADDRESS` pending
+    requests. A user code a pending request holds is drawn again.
+    """
     now = now or datetime.now(UTC)
     # Anyone may start a request, so requests that ended a day ago are dropped here.
     session.execute(
         delete(DeviceAuthorization).where(DeviceAuthorization.expires_at < now - timedelta(days=1))
     )
-    device_code = secrets.token_urlsafe(32)
-    user_code = "".join(secrets.choice(ALPHABET) for _ in range(2 * _HALF))
-    request = DeviceAuthorization(
-        device_code_hash=_hash(device_code),
-        user_code_selector=user_code[:_HALF],
-        user_code_hash=_hash(user_code),
-        client_name=client_name,
-        status=PENDING,
-        expires_at=now + LIFETIME,
-    )
-    session.add(request)
     session.commit()
-    return request, device_code, f"{user_code[:_HALF]}-{user_code[_HALF:]}"
+    pending = session.scalar(
+        select(func.count()).where(
+            DeviceAuthorization.requester_address == address,
+            DeviceAuthorization.status == PENDING,
+            DeviceAuthorization.expires_at > now,
+        )
+    )
+    if (pending or 0) >= MAX_PENDING_PER_ADDRESS:
+        return None
+    for _ in range(5):
+        device_code = secrets.token_urlsafe(32)
+        user_code = "".join(secrets.choice(ALPHABET) for _ in range(2 * _HALF))
+        request = DeviceAuthorization(
+            device_code_hash=_hash(device_code),
+            user_code_selector=user_code[:_HALF],
+            user_code_hash=_hash(user_code),
+            client_name=client_name,
+            status=PENDING,
+            expires_at=now + LIFETIME,
+            requester_address=address[:64],
+            requester_agent=agent[:255] if agent else None,
+        )
+        session.add(request)
+        try:
+            session.commit()
+        except IntegrityError:  # a pending request holds this user code
+            session.rollback()
+            continue
+        return request, device_code, f"{user_code[:_HALF]}-{user_code[_HALF:]}"
+    raise RuntimeError("no free user code after 5 draws")
 
 
 def find(
@@ -98,7 +128,8 @@ def find(
 
     The first half selects the request and the whole code is compared with its hash in
     constant time. A wrong code counts against the request its first half selects,
-    which ends after :data:`MAX_WRONG_CODES`. An unknown code changes nothing.
+    which ends after :data:`MAX_WRONG_CODES`. An unknown code changes nothing, and a
+    code more than one pending request holds names none of them.
     """
     now = now or datetime.now(UTC)
     code = "".join(c for c in user_code.upper() if c in ALPHABET)
@@ -109,12 +140,9 @@ def find(
     )
     requests = session.scalars(select(DeviceAuthorization).where(*live)).all()
     digest = _hash(code)
-    match = None
-    for request in requests:
-        if hmac.compare_digest(request.user_code_hash, digest):
-            match = request
-    if match is not None or not requests:
-        return match
+    matches = [r for r in requests if hmac.compare_digest(r.user_code_hash, digest)]
+    if matches or not requests:
+        return matches[0] if len(matches) == 1 else None
     session.execute(
         _update().where(*live).values(failed_attempts=DeviceAuthorization.failed_attempts + 1)
     )
@@ -148,7 +176,12 @@ def _audit(
         target_type=target_type,
         target_id=target_id or request.id,
         result=result,
-        details={"client_name": request.client_name, **details},
+        details={
+            "client_name": request.client_name,
+            "requester_address": request.requester_address,
+            "requester_agent": request.requester_agent,
+            **details,
+        },
     )
 
 
@@ -201,7 +234,8 @@ def collect(
     """The token for the approved request ``device_code`` names, once; else an RFC 8628 error.
 
     The token is minted only here, so no plaintext token is ever stored: one
-    conditional UPDATE consumes the request, so of concurrent polls one gets it.
+    conditional UPDATE consumes the request and commits before the mint, so of
+    concurrent or retried polls at most one gets a token.
     """
     now = now or datetime.now(UTC)
     request = session.scalar(
@@ -221,20 +255,20 @@ def collect(
         return "authorization_pending"
     if request.status == DENIED:
         return "access_denied"
-    consumed = session.execute(
-        update(DeviceAuthorization)
-        .where(DeviceAuthorization.id == request.id, DeviceAuthorization.status == APPROVED)
-        .values(status=ISSUED)
-    )
-    if _rowcount(consumed) != 1:
-        session.rollback()
-        return "invalid_grant"
     assert request.workspace_id is not None and request.user_id is not None  # set on approval
     owner = Principal(user_id=request.user_id, workspace_id=request.workspace_id)
     current = owner_role(session, owner)
-    if current is None or not can(current, Permission.RUN_AGENT):
-        # Demoted, deactivated or removed since approving: the token would not work.
-        request.status = DENIED
+    # Demoted, deactivated or removed since approving: the token would not work.
+    allowed = current is not None and can(current, Permission.RUN_AGENT)
+    taken = session.execute(
+        update(DeviceAuthorization)
+        .where(DeviceAuthorization.id == request.id, DeviceAuthorization.status == APPROVED)
+        .values(status=ISSUED if allowed else DENIED)
+    )
+    if _rowcount(taken) != 1:
+        session.rollback()
+        return "invalid_grant"
+    if not allowed:
         _audit(
             session,
             request,
@@ -245,6 +279,9 @@ def collect(
         )
         session.commit()
         return "access_denied"
+    # Taken before minting: a failure from here costs the client an invalid_grant, never a
+    # second key (the database key store commits a key on its own).
+    session.commit()
     info, token = api_keys.mint(
         workspace_id=request.workspace_id,
         name=request.client_name,

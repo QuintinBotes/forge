@@ -3,8 +3,10 @@
 Adds ``device_authorization``: per request SHA-256 hashes of the device code and
 the user code (never the codes), the user code's first half, the client's name,
 its state, when it expires and was last polled, how many wrong user codes named
-it, and, once someone approves or denies it, the workspace and the person. Not
-workspace-scoped: the workspace is unknown until a person approves.
+it, the requester's address and user agent, and, once someone approves or denies
+it, the workspace and the person. A partial unique index keeps a pending request's
+user code unique. Not workspace-scoped: the workspace is unknown until a person
+approves.
 
 Idempotent like 0050: the baseline is metadata-driven, so on a fresh chain the
 table already exists and ``upgrade`` changes nothing.

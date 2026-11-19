@@ -175,25 +175,43 @@ def _post(client: httpx.Client, path: str, body: dict[str, Any]) -> httpx.Respon
 def _device_sign_in(
     client: httpx.Client, client_name: str, err: TextIO, sleep: Callable[[float], None]
 ) -> str:
-    """RFC 8628: show the person the user code, then poll until they approve or deny it."""
+    """RFC 8628: show the person the user code, then poll until they approve or deny it.
+
+    A dropped connection, a 429 (after its ``Retry-After``) or a 5xx while polling is
+    retried until the server gives a final answer or the code expires.
+    """
     resp = _post(client, "/auth/device/code", {"client_name": client_name})
     if resp.status_code != 200:
         raise RemoteError(f"/auth/device/code returned {resp.status_code}", EXIT_HTTP)
     started = resp.json()
     user_code = started["user_code"]
+    # The address this client reached: the server's own idea of it may be wrong behind a proxy.
+    approve_at = f"{str(client.base_url).rstrip('/')}/auth/device/approve"
     err.write(
         f"To let {client_name!r} start runs as you, approve code {user_code} within "
         f"{started['expires_in'] // 60} minutes. While signed in to SCF, send\n"
-        f'  POST {started["verification_uri"]}  {{"user_code": "{user_code}"}}\n'
+        f'  POST {approve_at}  {{"user_code": "{user_code}"}}\n'
         "Approve only a code this command printed for you.\n"
     )
-    interval = float(started["interval"])
-    while True:
-        sleep(interval)
-        resp = _post(client, "/auth/device/token", {"device_code": started["device_code"]})
+    interval = delay = float(started["interval"])
+    remaining = float(started["expires_in"])
+    while remaining > 0:
+        sleep(delay)
+        remaining -= delay
+        delay = interval
+        try:
+            resp = client.post("/auth/device/token", json={"device_code": started["device_code"]})
+        except httpx.HTTPError:
+            continue
         if resp.status_code == 200:
             err.write("Approved.\n")
             return str(resp.json()["access_token"])
+        if resp.status_code == 429:
+            retry_after = resp.headers.get("retry-after", "")
+            delay = max(interval, float(retry_after)) if retry_after.isdigit() else interval
+            continue
+        if resp.status_code >= 500:
+            continue
         answer: dict[str, Any] = {}
         with contextlib.suppress(ValueError):
             answer = resp.json()
@@ -201,10 +219,11 @@ def _device_sign_in(
         if error == "authorization_pending":
             continue
         if error == "slow_down":
-            interval += 5  # RFC 8628 §3.5
+            interval = delay = interval + 5  # RFC 8628 §3.5
             continue
         detail = answer.get("error_description", "")
         raise RemoteError(f"no token: {error or resp.status_code} {detail}".strip(), EXIT_HTTP)
+    raise RemoteError("no token: the code expired before anyone approved it", EXIT_HTTP)
 
 
 def login(
