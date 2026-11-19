@@ -13,10 +13,13 @@ ends the run: the hook cancels it with the decider as actor and the reason
 ``gate_<gate>_<status>`` (spec K §4.11); ``spec`` keeps its
 ``spec_changes_requested`` edge.
 
-Failure contract: a failed submit is logged and recorded on the request
-(``gate_payload.workflow_event``), never raised, and never rolls back the
-recorded decision. ``POST /workflow/runs/{id}/gates/{gate}/sync`` is the
-recovery path and shares :func:`submit_gate_event` with the hook. When the
+Failure contract: a failed submit is logged, recorded on the request
+(``gate_payload.workflow_event``) and in the audit log (an ``approval`` entry
+with status ``workflow_event_failed``), never raised, and never rolls back the
+recorded decision; a failed audit write is itself only logged.
+``POST /workflow/runs/{id}/gates/{gate}/sync`` is the recovery path and shares
+:func:`submit_gate_event` with the hook; applying the event there adds a
+``workflow_event_synced`` entry naming who ran the sync. When the
 wrapped hook (the ``pr`` attestation) raises, the gate is ``blocked``: no event
 is submitted and the error reaches the approval service (which reports it).
 Sync merges an approved ``pr`` gate only on proof of attestation
@@ -31,6 +34,7 @@ from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from scf_approval.audit import ApprovalAuditSink
 from scf_approval.models import (
     ApprovalAction,
     ApprovalDecisionRequest,
@@ -60,6 +64,11 @@ EVENT_CANCEL = "cancel"
 
 #: ``gate_payload.workflow_event.status`` of a gate whose wrapped hook failed.
 GATE_BLOCKED = "blocked"
+
+#: Audit status of a resolved gate whose event the run's engine refused.
+SUBMIT_FAILED = "workflow_event_failed"
+#: Audit status of a resolved gate whose event gate sync applied later.
+SUBMIT_SYNCED = "workflow_event_synced"
 
 #: Events only an approval resolution may produce. ``/transition`` refuses all
 #: four; automations already refuse the three ``*_by_human`` approvals.
@@ -209,7 +218,10 @@ async def sync_gate_event(
     was nothing to apply: the gate is pending, or the run already left it. An
     approved ``pr`` gate merges only on proof of attestation; without one it raises
     :class:`GateBlocked`. Once applied, the request's ``workflow_event`` reads
-    ``submitted``, so it no longer shows the gate as unsynced.
+    ``submitted``, so it no longer shows the gate as unsynced, and the approval
+    service's audit log gets a ``workflow_event_synced`` entry naming
+    ``fallback_user_id`` (the user running the sync, and the transition actor
+    only when the request names no resolver).
     """
     gate = request.gate_type
     event = event_for_resolution(gate, request.status)
@@ -228,7 +240,42 @@ async def sync_gate_event(
     new_state = await submit_gate_event(engine, request=request, actor_ref=actor_ref)
     mark_submitted(request, event=event, actor_ref=actor_ref, new_state=new_state)
     await approvals.save_gate_payload(request)
+    _audit_gate_event(
+        approvals.audit_sink,
+        request,
+        status=SUBMIT_SYNCED,
+        actor=f"user:{fallback_user_id}",
+        metadata={"event": event, "transition_actor": actor_ref, "to_state": new_state},
+    )
     return new_state
+
+
+def _audit_gate_event(
+    audit: ApprovalAuditSink,
+    request: ApprovalRequest,
+    *,
+    status: str,
+    actor: str,
+    metadata: dict[str, Any],
+    detail: str | None = None,
+) -> None:
+    """Audit what happened to ``request``'s workflow event. A failed write is
+    logged, never raised: the decision and the run's move already stand."""
+    try:
+        audit.record_approval(
+            request.gate_type.value,
+            status=status,
+            actor=actor,
+            run_id=request.workflow_run_id,
+            request_id=request.id,
+            workspace_id=request.workspace_id,
+            detail=detail,
+            metadata=metadata,
+        )
+    except Exception:
+        logger.exception(
+            "auditing %s for gate %s of run %s failed", status, request.id, request.workflow_run_id
+        )
 
 
 def _merge_signals(request: ApprovalRequest) -> dict[str, bool]:
@@ -309,9 +356,11 @@ class _WorkflowRunGateHook:
         *,
         wrapped: GateResolutionHook | None = None,
         engine_factory: EngineFactory | None = None,
+        audit: ApprovalAuditSink,
     ) -> None:
         self._wrapped = wrapped
         self._engine_factory = engine_factory or _default_engine_factory
+        self._audit = audit
 
     async def on_resolved(
         self,
@@ -365,19 +414,28 @@ class _WorkflowRunGateHook:
                 request.workflow_run_id,
                 request.gate_type.value,
             )
+            error = f"{type(exc).__name__}: {exc}"
             request.gate_payload = {
                 **request.gate_payload,
                 "workflow_event": {
                     "status": "failed",
                     "event": event,
                     "actor": actor.actor_ref,
-                    "error": f"{type(exc).__name__}: {exc}",
+                    "error": error,
                 },
             }
+            _audit_gate_event(
+                self._audit,
+                request,
+                status=SUBMIT_FAILED,
+                actor=actor.actor_ref,
+                detail=error,
+                metadata={"event": event},
+            )
             outcome.details = {
                 **outcome.details,
                 "workflow_event": event,
-                "workflow_event_error": f"{type(exc).__name__}: {exc}",
+                "workflow_event_error": error,
             }
             if self._wrapped is None:
                 outcome.completed = False
