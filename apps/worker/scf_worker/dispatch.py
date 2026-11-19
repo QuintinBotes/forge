@@ -21,8 +21,7 @@ from typing import Any
 
 from scf_contracts import AgentObjective
 from scf_db.models import Task
-from scf_integrations.github_auth import InstallationTokenProvider
-from scf_worker.finalizer import GitHubAppCredentials
+from scf_worker.finalizer import GitHubAppCredentials, mint_token, workspace_credentials
 
 #: The only permission a mirror-fetch token carries.
 MIRROR_TOKEN_PERMISSIONS: dict[str, str] = {"contents": "read"}
@@ -65,9 +64,9 @@ def resolve_run_repository(
 
     ``repo_full_name`` and ``workspace_id`` are server-owned context keys (the API strips
     callers' values and checks the repository is connected to the workspace). The path is
-    always derived here, never taken from the caller. With GitHub App credentials the
-    mirror is cloned or fetched with a read-only one-repo token; without them an existing
-    mirror is used as is, and a missing one refuses.
+    always derived here, never taken from the caller. With the workspace's GitHub App
+    credentials (#186) the mirror is cloned or fetched with a read-only one-repo token;
+    without them an existing mirror is used as is, and a missing one refuses.
     """
     context = objective.context
     full_name = context.get("repo_full_name")
@@ -80,9 +79,20 @@ def resolve_run_repository(
         raise RepositoryUnavailable(str(exc)) from exc
     root = workspace_mirrors(workspace_id)
     path = root / owner / name
-    creds = credentials if credentials is not None else GitHubAppCredentials.from_env()
+    creds = credentials or workspace_credentials(workspace_id, str(full_name))
     if creds is not None:
-        token = (minter or read_token_minter)(creds)(name)
+        run = context.get("agent_run_id") or context.get("workflow_run_id")
+        token = (
+            minter(creds)(name)
+            if minter
+            else mint_token(
+                creds,
+                f"{owner}/{name}",
+                MIRROR_TOKEN_PERMISSIONS,
+                workspace_id=workspace_id,
+                run_id=uuid.UUID(str(run)) if run else None,
+            )
+        )
         path = ensure_mirror(
             str(full_name),
             root=root,
@@ -94,26 +104,6 @@ def resolve_run_repository(
             f"no mirror of {full_name} for this workspace and no GitHub App credentials to fetch it"
         )
     return objective.model_copy(update={"context": {**context, "repo_path": str(path)}})
-
-
-def read_token_minter(credentials: GitHubAppCredentials) -> TokenMinter:
-    """Mint a ``contents:read`` token for one repository name."""
-
-    def mint(repo_name: str) -> str:
-        provider = InstallationTokenProvider(
-            app_id=credentials.app_id,
-            private_key_pem=credentials.private_key_pem,
-            installation_id=credentials.installation_id,
-            base_url=credentials.api_base_url,
-            repositories=[repo_name],
-            permissions=MIRROR_TOKEN_PERMISSIONS,
-        )
-        try:
-            return provider.token()
-        finally:
-            provider.close()
-
-    return mint
 
 
 def _git_env(token: str | None) -> dict[str, str]:
@@ -204,7 +194,6 @@ __all__ = [
     "ensure_mirror",
     "mirrors_dir",
     "objective_for_task",
-    "read_token_minter",
     "resolve_run_repository",
     "split_repo_name",
     "workspace_mirrors",

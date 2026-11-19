@@ -174,3 +174,35 @@ def test_factory_returns_container_for_container_kind() -> None:
         SandboxSettings(kind=SandboxKind.CONTAINER), docker_client=FakeDockerClient()
     )
     assert isinstance(provider, ContainerSandboxProvider)
+
+
+@pytest.mark.parametrize("tier", ["container", "gvisor", "microvm"])
+async def test_the_container_tiers_never_hand_a_command_the_github_app_variables(
+    fake_docker_client: FakeDockerClient,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+    tier: str,
+) -> None:
+    """#186: the worker's FORGE_GITHUB_* variables reach neither the container nor an exec."""
+    from scf_agent.sandbox import GvisorSandboxProvider, MicroVMSandboxProvider
+    from scf_agent.sandbox import microvm as microvm_module
+
+    monkeypatch.setattr(microvm_module, "kvm_present", lambda device: True)
+    monkeypatch.setenv("FORGE_GITHUB_APP_ID", "99")
+    monkeypatch.setenv("FORGE_GITHUB_APP_PRIVATE_KEY_PATH", "/run/secrets/github-app.pem")
+    fake_docker_client.registered_runtimes = ("runc", "runsc", "kata-fc")
+    provider, spec = {
+        "container": (ContainerSandboxProvider, "container_spec"),
+        "gvisor": (GvisorSandboxProvider, "gvisor_spec"),
+        "microvm": (MicroVMSandboxProvider, "microvm_spec"),
+    }[tier]
+    session = await provider(client=fake_docker_client).create(request.getfixturevalue(spec))
+
+    await session.run("env", cwd="/workspace", timeout_s=10)
+
+    environments = [
+        fake_docker_client.create_kwargs["environment"],
+        *(call["kwargs"].get("environment") or {} for call in fake_docker_client.exec_create_calls),
+    ]
+    assert fake_docker_client.exec_create_calls, "the command ran"
+    assert not [name for env in environments for name in env if name.startswith("FORGE_GITHUB_")]

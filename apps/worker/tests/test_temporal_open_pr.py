@@ -11,6 +11,7 @@ import subprocess
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -143,6 +144,7 @@ class FakeGitHub:
     def __init__(self) -> None:
         self.created: list[dict[str, object]] = []
         self.lookups: list[httpx.QueryParams] = []
+        self.mints: list[str] = []
 
     def _pr(self, number: int) -> dict[str, object]:
         return {
@@ -156,6 +158,7 @@ class FakeGitHub:
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/access_tokens"):
+            self.mints.append(request.url.path)
             return httpx.Response(201, json={"token": TOKEN, "expires_at": "2099-01-01T00:00:00Z"})
         if request.url.path == "/repos/acme/app/pulls" and request.method == "GET":
             self.lookups.append(request.url.params)
@@ -173,7 +176,7 @@ def _activities(
         app_id="1", installation_id="2", private_key_pem=pem, git_base_url=remotes.as_uri()
     )
     service = open_pr_service(
-        factory, credentials=lambda: credentials, transport=httpx.MockTransport(github.handler)
+        factory, credentials=lambda *_: credentials, transport=httpx.MockTransport(github.handler)
     )
     return WorkflowActivities(open_pr_fn=service)
 
@@ -286,6 +289,98 @@ async def test_without_github_app_credentials_the_activity_refuses(
 
     assert caught.value.type == "GitHubAppNotConfigured"
     assert caught.value.non_retryable is True
+
+
+@pytest.fixture
+def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    from scf_api.settings import get_settings
+
+    monkeypatch.setenv("FORGE_ENVIRONMENT", "production")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def vault(monkeypatch: pytest.MonkeyPatch) -> Any:
+    from scf_api.auth.crypto import FernetCipher
+    from scf_api.auth.vault import SecretVault
+    from scf_worker import finalizer
+
+    vault = SecretVault(cipher=FernetCipher(b"o" * 32))
+    monkeypatch.setattr(finalizer, "_workspace_vault", lambda: vault)
+    return vault
+
+
+async def test_in_production_delivery_uses_only_the_workspaces_own_credentials(
+    factory: sessionmaker[Session],
+    remotes: Path,
+    pem: str,
+    production: None,
+    vault: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#186 criteria 1 and 2: the delivery step resolves the run's workspace's vault
+    credentials, never a process-wide lookup, and audits the token it issues."""
+    from scf_contracts.enums import APIKeyKind
+    from scf_db.models import AuditLog
+    from scf_integrations.github_auth import WORKSPACE_SECRET_NAME
+
+    def refuse(cls: type, env: Any = None) -> None:
+        raise AssertionError("a process-wide credential lookup outside development")
+
+    monkeypatch.setattr(GitHubAppCredentials, "from_env", classmethod(refuse))
+    payload = {"app_id": "7", "installation_id": "4242", "private_key_pem": pem}
+    vault.put_secret(
+        workspace_id=WS,
+        name=WORKSPACE_SECRET_NAME,
+        secret=json.dumps(payload),
+        kind=APIKeyKind.INTEGRATION_TOKEN,
+    )
+    run_id = _seed(factory)
+    github, pushed = FakeGitHub(), []
+    service = open_pr_service(
+        factory, transport=httpx.MockTransport(github.handler), push=lambda *a: pushed.append(a)
+    )
+
+    result = await ActivityEnvironment().run(
+        WorkflowActivities(open_pr_fn=service).open_pr_with_spec_traceability, _input(run_id)
+    )
+
+    assert result.pr_number == 1
+    assert github.mints == ["/app/installations/4242/access_tokens"]
+    assert [token for *_, token in pushed] == [TOKEN]
+    with factory() as s:
+        [issued] = s.query(AuditLog).filter(AuditLog.action == "github.token_issued")
+        assert issued.workspace_id == WS and issued.details["run_id"] == str(run_id)
+
+
+async def test_in_production_a_workspace_without_credentials_refuses_despite_the_env(
+    factory: sessionmaker[Session],
+    remotes: Path,
+    pem: str,
+    production: None,
+    vault: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """#186 criterion 3: the FORGE_GITHUB_* variables are not a fallback outside development."""
+    key = tmp_path / "app.pem"
+    key.write_text(pem)
+    monkeypatch.setenv("FORGE_GITHUB_APP_ID", "1")
+    monkeypatch.setenv("FORGE_GITHUB_INSTALLATION_ID", "2")
+    monkeypatch.setenv("FORGE_GITHUB_APP_PRIVATE_KEY_PATH", str(key))
+    run_id = _seed(factory)
+    github = FakeGitHub()
+    service = open_pr_service(factory, transport=httpx.MockTransport(github.handler))
+
+    with pytest.raises(ApplicationError) as caught:
+        await ActivityEnvironment().run(
+            WorkflowActivities(open_pr_fn=service).open_pr_with_spec_traceability, _input(run_id)
+        )
+
+    assert caught.value.type == "GitHubAppNotConfigured"
+    assert github.mints == [] and github.created == []
 
 
 async def test_a_run_outside_the_workspace_is_refused(

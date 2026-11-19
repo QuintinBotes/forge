@@ -190,7 +190,9 @@ async def test_a_repository_the_workspace_has_not_connected_is_not_a_target_and_
     import scf_worker.temporal_services as services
 
     fetched: list[str] = []
-    monkeypatch.setattr(services, "_policy_loads", lambda _ws, repo: fetched.append(repo) or True)
+    monkeypatch.setattr(
+        services, "_policy_loads", lambda _ws, repo, _run: fetched.append(repo) or True
+    )
     run_id = _seed(factory, connected=False)
 
     guard = await _load(factory, run_id)

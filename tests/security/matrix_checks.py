@@ -124,6 +124,26 @@ def check_rbac_wired_403() -> None:
         resp = client.get("/auth/api-keys")
     assert resp.status_code == 200, resp.status_code
 
+    # The workspace's GitHub App credentials (#186): MANAGE_KEYS too.
+    route = "/integration/github/app-credentials"
+    body = {"app_id": "1", "installation_id": "2", "private_key": _github_app_key()}
+    for role in (UserRole.VIEWER, UserRole.AGENT_RUNNER, UserRole.MEMBER):
+        with _client(role) as client:
+            assert client.put(route, json=body).status_code == 403, role
+            assert client.delete(route).status_code == 403, role
+    with _client(UserRole.ADMIN) as client:
+        assert client.delete(route).status_code == 204
+
+
+def _github_app_key() -> str:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode()
+
 
 #: Whole routers that are a pre-authentication protocol surface (no API-key
 #: auth anywhere), so they legitimately expose no 401 route.
@@ -366,6 +386,26 @@ def check_tenant_isolation() -> None:
     with pytest.raises(SecretNotFoundError):
         vault.get_secret(ws_b, info.id)
     assert vault.get_secret(ws_a, info.id) == "a-secret"
+
+    # Wired (#186): workspace B's admin can neither see nor clear A's GitHub App.
+    from scf_api.auth.service import get_auth_service
+
+    route = "/integration/github/app-credentials"
+    body = {"app_id": "1", "installation_id": "2", "private_key": _github_app_key()}
+    service = get_auth_service()
+    clients = {}
+    for ws in (ws_a, ws_b):
+        app = create_app(Settings())
+        admin = Principal(user_id=USER_ID, workspace_id=ws, role=UserRole.ADMIN)
+        app.dependency_overrides[get_current_principal] = lambda admin=admin: admin
+        clients[ws] = TestClient(app)
+    try:
+        assert clients[ws_a].put(route, json=body).status_code == 200
+        assert clients[ws_b].delete(route).status_code == 204
+        assert [s.name for s in service.vault.list_secrets(ws_a)] == ["github-app"]
+        assert service.vault.list_secrets(ws_b) == []
+    finally:
+        clients[ws_a].delete(route)
 
 
 def check_crypto_default_fernet() -> None:
