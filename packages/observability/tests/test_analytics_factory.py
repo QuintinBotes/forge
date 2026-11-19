@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -128,22 +129,8 @@ def test_attempts_are_selected_by_settle_time_and_unsettled_ones_are_left_out() 
     before = _attempt(landed_after_hours=1, created_at=SINCE - timedelta(days=3))
     # Created before the window but landed inside it: it settles in the window.
     landed_in_window = _attempt(landed_after_hours=72, created_at=SINCE - timedelta(days=2))
-    open_pr = Attempt(
-        run_id=uuid.uuid4(),
-        created_at=T0,
-        ended_at=T0 + timedelta(hours=1),
-        produced_change=True,
-        outcome=None,
-        outcome_at=None,
-    )
-    running = Attempt(
-        run_id=uuid.uuid4(),
-        created_at=T0,
-        ended_at=None,
-        produced_change=False,
-        outcome=None,
-        outcome_at=None,
-    )
+    open_pr = replace(_attempt(), produced_change=True)
+    running = replace(_attempt(), ended_at=None)
     report = compute_factory_metrics(
         [before, landed_in_window, open_pr, running], since=SINCE, until=UNTIL, now=NOW
     )
@@ -197,19 +184,7 @@ def test_a_window_whose_newest_landing_is_younger_than_the_period_is_provisional
 
 
 def test_unpriced_cost_events_are_summed_into_the_report() -> None:
-    attempts = [
-        Attempt(
-            run_id=uuid.uuid4(),
-            created_at=T0,
-            ended_at=T0,
-            produced_change=False,
-            outcome=None,
-            outcome_at=None,
-            cost_usd=Decimal("1.5"),
-            cost_events=3,
-            unpriced_cost_events=2,
-        )
-    ]
+    attempts = [replace(_attempt(cost="1.5"), cost_events=3, unpriced_cost_events=2)]
     report = compute_factory_metrics(attempts, since=SINCE, until=UNTIL, now=NOW)
     assert report.cost_per_merged_change.cost_events == 3
     assert report.cost_per_merged_change.unpriced_cost_events == 2
@@ -239,12 +214,11 @@ def factory(request: pytest.FixtureRequest) -> Iterator[sessionmaker[Session]]:
             [Workspace(id=WS, name="A", slug="a"), Workspace(id=WS2, name="B", slug="b")]
         )
         session.commit()
-    try:
-        yield sf
-    finally:
+    yield sf
+    if request.param == "postgres":
         Base.metadata.drop_all(engine)
-        if request.param == "sqlite":
-            engine.dispose()
+    else:
+        engine.dispose()
 
 
 def _run(
@@ -313,6 +287,7 @@ def _report(factory: sessionmaker[Session], **filters: str) -> FactoryMetricsRep
     )
 
 
+@pytest.mark.filterwarnings("error::DeprecationWarning")  # the reader uses no deprecated API
 def test_sub_agent_runs_add_cost_to_their_parent_and_are_never_attempts(factory) -> None:
     with factory() as session:
         price = ModelPrice(provider="anthropic", model="m", effective_from=T0)
@@ -351,7 +326,9 @@ def test_gate_rejections_and_escalations_are_interventions_and_approvals_are_not
         task = Task(workspace_id=WS, project_id=project.id, key="P-1", title="T")
         session.add(task)
         session.flush()
-        workflow = WorkflowRun(workspace_id=WS, task_id=task.id)
+        workflow = WorkflowRun(
+            workspace_id=WS, task_id=task.id, status=RunStatus.SUCCEEDED, completed_at=T0
+        )
         session.add(workflow)
         session.flush()
         rejected = _run(session, landed=True)

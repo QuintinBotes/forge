@@ -9,7 +9,7 @@ Idempotent like 0052: the baseline is metadata-driven, so on a fresh chain the
 tables already exist and ``upgrade`` changes nothing.
 
 Revision ID: 0054_factory_metrics
-Revises: 0052_device_authorization
+Revises: 0053_risk_classification
 Create Date: 2026-11-19
 """
 
@@ -25,7 +25,7 @@ from scf_db.base import Base
 
 # revision identifiers, used by Alembic.
 revision: str = "0054_factory_metrics"
-down_revision: str | None = "0052_device_authorization"
+down_revision: str | None = "0053_risk_classification"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

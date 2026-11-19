@@ -4,8 +4,8 @@ Called by the GitHub webhook after its signature check, beside the PR outcome
 feedback of spec J. Every write is keyed so a redelivery writes nothing new:
 
 * ``pull_request`` ``closed`` stores the run's outcome (landed or closed) and its
-  time. A later outcome replaces an earlier close (a reopened pull request that
-  lands ends landed); a landing is never replaced.
+  time. A later outcome replaces an earlier close; a landing is never replaced.
+  ``reopened`` removes a close it follows: the pull request is open again.
 * A landed pull request whose body carries GitHub's revert reference
   (``Reverts owner/repo#N``) marks change ``N`` of the same repository reverted.
 * ``pull_request_review`` ``submitted`` with state ``changes_requested`` records a
@@ -25,7 +25,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from scf_api.services.context_service import resolve_run_for_pull_request
 from scf_db.models import AgentRun, ChangeOutcome, RunIntervention
 from scf_db.models.factory_metrics import CHANGE_CLOSED, CHANGE_LANDED
 from scf_obs.analytics.factory import FOREIGN_COMMIT, REVIEW_CHANGES_REQUESTED
@@ -40,14 +39,10 @@ _SHA_RE = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 def _time(raw: object) -> datetime:
     """A delivery's ISO 8601 time; now when it is absent or malformed."""
-    if isinstance(raw, str):
-        try:
-            parsed = datetime.fromisoformat(raw)
-        except ValueError:
-            pass
-        else:
-            return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-    return datetime.now(UTC)
+    try:
+        return _utc(datetime.fromisoformat(raw)) if isinstance(raw, str) else datetime.now(UTC)
+    except ValueError:
+        return datetime.now(UTC)
 
 
 def _utc(value: datetime) -> datetime:
@@ -62,61 +57,56 @@ def _login(value: object) -> str | None:
 def record_change_event(
     session: Session,
     *,
+    run: AgentRun | None,
     event_type: str,
     payload: dict[str, Any],
     repo_full_name: str | None,
     number: int | None,
-    head_ref: str | None,
 ) -> None:
-    """Record what this delivery says about a run's change; commits the session."""
+    """Record what this delivery says about ``run``'s change; commits the session.
+
+    ``run`` is :func:`resolve_run_for_pull_request`'s answer for the delivery. With
+    none, only a revert is recorded, against the change it names.
+    """
     pull_request = payload.get("pull_request")
     if not isinstance(pull_request, dict):
         return
     action = payload.get("action")
-
-    def run() -> AgentRun | None:
-        return resolve_run_for_pull_request(
-            session, repo_full_name=repo_full_name, number=number, head_ref=head_ref
-        )
-
     if event_type == "pull_request" and action == "closed":
         merged = pull_request.get("merged") is True
         at = _time(pull_request.get("merged_at" if merged else "closed_at"))
         if merged:
             _mark_reverted(session, pull_request.get("body"), repo_full_name, number, at)
-        found = run()
-        if found is not None and repo_full_name and number is not None:
+        if run is not None and repo_full_name and number is not None:
             outcome = CHANGE_LANDED if merged else CHANGE_CLOSED
-            _record_outcome(session, found, repo_full_name, number, outcome, at)
+            _record_outcome(session, run, repo_full_name, number, outcome, at)
+    elif run is None:
+        return
+    elif event_type == "pull_request" and action == "reopened":
+        # Open again until it closes again: the close it undid no longer settles the run.
+        existing = session.scalar(select(ChangeOutcome).where(ChangeOutcome.agent_run_id == run.id))
+        reopened_at = _time(pull_request.get("updated_at"))
+        if (
+            existing
+            and existing.outcome == CHANGE_CLOSED
+            and reopened_at > _utc(existing.outcome_at)
+        ):
+            session.delete(existing)
     elif event_type == "pull_request" and action == "synchronize":
         sender, author = _login(payload.get("sender")), _login(pull_request.get("user"))
         after = payload.get("after")
         is_sha = isinstance(after, str) and _SHA_RE.fullmatch(after) is not None
         if sender and author and is_sha and sender.casefold() != author.casefold():
-            found = run()
-            if found is not None:
-                _record_intervention(
-                    session,
-                    found,
-                    FOREIGN_COMMIT,
-                    f"commit:{after}",
-                    _time(pull_request.get("updated_at")),
-                )
+            at = _time(pull_request.get("updated_at"))
+            _record_intervention(session, run, FOREIGN_COMMIT, f"commit:{after}", at)
     elif event_type == "pull_request_review" and action == "submitted":
         review = payload.get("review")
         review = review if isinstance(review, dict) else {}
         state = str(review.get("state") or "").lower()
         review_id = review.get("id")
         if state == "changes_requested" and type(review_id) is int:
-            found = run()
-            if found is not None:
-                _record_intervention(
-                    session,
-                    found,
-                    REVIEW_CHANGES_REQUESTED,
-                    f"review:{review_id}",
-                    _time(review.get("submitted_at")),
-                )
+            at = _time(review.get("submitted_at"))
+            _record_intervention(session, run, REVIEW_CHANGES_REQUESTED, f"review:{review_id}", at)
     try:
         session.commit()
     except IntegrityError:  # a concurrent redelivery wrote the same row first

@@ -132,21 +132,14 @@ class FactoryMetricsReport(BaseModel):
 
 
 def _ratio(numerator: int, denominator: int, *, sample: int, reason: str) -> dict[str, Any]:
-    if denominator == 0:
-        return {
-            "value": None,
-            "numerator": numerator,
-            "denominator": 0,
-            "sample_size": sample,
-            "available": False,
-            "reason": reason,
-        }
+    available = denominator > 0
     return {
-        "value": numerator / denominator,
+        "value": numerator / denominator if available else None,
         "numerator": numerator,
         "denominator": denominator,
         "sample_size": sample,
-        "available": True,
+        "available": available,
+        "reason": None if available else reason,
     }
 
 
@@ -269,15 +262,18 @@ class SqlFactoryMetricsReader:
             RunIntervention,
             RunStatus,
             SubAgentRun,
+            WorkflowRun,
         )
 
-        terminal = [
-            RunStatus.SUCCEEDED,
-            RunStatus.FAILED,
-            RunStatus.CANCELLED,
-            RunStatus.ESCALATED,
-        ]
-        ended = func.coalesce(AgentRun.completed_at, AgentRun.updated_at)
+        done = [RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED]
+        # A run inside a workflow run ends when its workflow run does: the workflow,
+        # not the run, opens the pull request.
+        ended = func.coalesce(
+            WorkflowRun.completed_at,
+            WorkflowRun.updated_at,
+            AgentRun.completed_at,
+            AgentRun.updated_at,
+        )
         with self._session_factory() as session:
             parent_of: dict[UUID, UUID] = {
                 child: parent
@@ -286,7 +282,7 @@ class SqlFactoryMetricsReader:
                         SubAgentRun.workspace_id == workspace_id,
                         SubAgentRun.agent_run_id.is_not(None),
                     )
-                ).tuples()
+                )
                 if child is not None
             }
             # settled_at = max(ended, outcome_at): in the window only if both are
@@ -294,24 +290,37 @@ class SqlFactoryMetricsReader:
             # shortcut: the repository and source filters run in Python over this
             # window's runs; push them into SQL if a window grows past a few thousand.
             rows = [
-                (run, outcome)
-                for run, outcome in session.execute(
-                    select(AgentRun, ChangeOutcome)
+                (run, outcome, flow)
+                for run, outcome, flow in session.execute(
+                    select(AgentRun, ChangeOutcome, WorkflowRun)
                     .outerjoin(ChangeOutcome, ChangeOutcome.agent_run_id == AgentRun.id)
+                    .outerjoin(WorkflowRun, WorkflowRun.id == AgentRun.workflow_run_id)
                     .where(
                         AgentRun.workspace_id == workspace_id,
                         # A governed run's verifier and reviewer runs are checks, not attempts.
                         AgentRun.role == PRIMARY_ROLE,
-                        AgentRun.status.in_(terminal),
+                        AgentRun.status.in_([*done, RunStatus.ESCALATED]),
+                        or_(WorkflowRun.id.is_(None), WorkflowRun.status.in_(done)),
                         ended < until,
                         or_(ChangeOutcome.outcome_at.is_(None), ChangeOutcome.outcome_at < until),
                         or_(ended >= since, ChangeOutcome.outcome_at >= since),
                     )
-                ).tuples()
+                )
                 if run.id not in parent_of
                 and _matches(run.inputs, outcome, repository=repository, source=source)
             ]
-            ids = {run.id for run, _ in rows}
+            ids = {run.id for run, _, _ in rows}
+            # The workflow delivers its newest builder run's branch (``_latest_agent_run``).
+            newest = dict(
+                session.execute(
+                    select(AgentRun.workflow_run_id, func.max(AgentRun.created_at))
+                    .where(
+                        AgentRun.workflow_run_id.in_({f.id for _, _, f in rows if f is not None}),
+                        AgentRun.role == PRIMARY_ROLE,
+                    )
+                    .group_by(AgentRun.workflow_run_id)
+                ).all()
+            )
 
             def root(run_id: UUID) -> UUID:
                 for _ in range(len(parent_of) + 1):  # bounded: a cycle cannot loop forever
@@ -331,7 +340,7 @@ class SqlFactoryMetricsReader:
                 )
                 .where(CostEvent.workspace_id == workspace_id, CostEvent.agent_run_id.in_(members))
                 .group_by(CostEvent.agent_run_id)
-            ).tuples():
+            ):
                 entry = cost[root(run_id)]  # type: ignore[arg-type]
                 entry[0] += Decimal(str(total or 0))
                 entry[1] += events
@@ -343,11 +352,11 @@ class SqlFactoryMetricsReader:
                     RunIntervention.workspace_id == workspace_id,
                     RunIntervention.agent_run_id.in_(members),
                 )
-            ).tuples():
+            ):
                 kinds[root(run_id)].append(kind)
 
             by_workflow: dict[UUID, list[UUID]] = defaultdict(list)
-            for run, _ in rows:
+            for run, _, _ in rows:
                 if run.workflow_run_id is not None:
                     by_workflow[run.workflow_run_id].append(run.id)
             for gate_run_id, gate_workflow_id in session.execute(
@@ -361,7 +370,7 @@ class SqlFactoryMetricsReader:
                         ApprovalRequest.workflow_run_id.in_(list(by_workflow)),
                     ),
                 )
-            ).tuples():
+            ):
                 if gate_run_id is not None and gate_run_id in members:
                     targets = [root(gate_run_id)]
                 else:
@@ -370,24 +379,28 @@ class SqlFactoryMetricsReader:
                     kinds[target].append(GATE_DECISION)
 
         attempts = []
-        for run, outcome in rows:
+        for run, outcome, flow in rows:
             spent, events, unpriced = cost.get(run.id, (Decimal(0), 0, 0))
             run_kinds = kinds.get(run.id, [])
             if run.status == RunStatus.ESCALATED:
                 run_kinds = [*run_kinds, ESCALATED]
+            end: Any = flow if flow is not None else run
+            reverted = outcome.reverted_at if outcome is not None else None
             attempts.append(
                 Attempt(
                     run_id=run.id,
                     created_at=_utc(run.created_at),
-                    ended_at=_utc(run.completed_at or run.updated_at),
-                    produced_change=outcome is not None or _opened_pr(run.output),
+                    ended_at=_utc(end.completed_at or end.updated_at),
+                    produced_change=outcome is not None
+                    or _has_pr((run.output or {}).get("artifacts"))
+                    or (
+                        flow is not None
+                        and _has_pr(flow.context)
+                        and newest.get(flow.id) == run.created_at
+                    ),
                     outcome=outcome.outcome if outcome is not None else None,
                     outcome_at=_utc(outcome.outcome_at) if outcome is not None else None,
-                    reverted_at=(
-                        _utc(outcome.reverted_at)
-                        if outcome is not None and outcome.reverted_at is not None
-                        else None
-                    ),
+                    reverted_at=_utc(reverted) if reverted is not None else None,
                     interventions=tuple(run_kinds),
                     cost_usd=spent,
                     cost_events=events,
@@ -402,9 +415,9 @@ def _context(inputs: Any) -> dict[str, Any]:
     return context if isinstance(context, dict) else {}
 
 
-def _opened_pr(output: Any) -> bool:
-    artifacts = output.get("artifacts") if isinstance(output, dict) else None
-    pull_request = artifacts.get("pull_request") if isinstance(artifacts, dict) else None
+def _has_pr(holder: Any) -> bool:
+    """A run's artifacts or a workflow run's context name an opened pull request."""
+    pull_request = holder.get("pull_request") if isinstance(holder, dict) else None
     return isinstance(pull_request, dict) and pull_request.get("number") is not None
 
 

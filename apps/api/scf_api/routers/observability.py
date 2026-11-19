@@ -270,7 +270,7 @@ def factory_metrics(
     """Defined in ``docs/metrics/factory-metrics.md``; the window defaults to the last 30 days."""
     # A time without an offset is UTC, so naive and aware bounds compare.
     since, until = (t.replace(tzinfo=UTC) if t and t.tzinfo is None else t for t in (since, until))
-    if since is not None and until is not None and since >= until:
+    if since is not None and since >= (until or datetime.now(UTC)):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="since must precede until"
         )

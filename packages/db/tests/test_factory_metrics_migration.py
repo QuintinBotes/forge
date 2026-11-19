@@ -33,7 +33,7 @@ def test_migration_0054_creates_and_drops_the_factory_metrics_tables(tmp_path: P
             i["column_names"] for i in inspector.get_indexes("run_intervention") if i["unique"]
         ]
 
-        command.downgrade(cfg, "0052_device_authorization")
+        command.downgrade(cfg, "0053_risk_classification")
         assert not TABLES & set(inspect(engine).get_table_names())
 
         command.upgrade(cfg, "head")

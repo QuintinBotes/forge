@@ -13,11 +13,11 @@ These numbers are measurements. Nothing here changes how or whether a change lan
 
 **Attempt.** One top-level agent run: an `agent_run` row with role `primary`. A sub-agent run of a supervised run (an `agent_run` named by `sub_agent_run.agent_run_id`) is never an attempt: its cost and interventions belong to the attempt at the top of its parent chain. The verifier and reviewer runs of a governed workflow (roles `verifier` and `reviewer`) check an attempt's work and are not attempts; their cost is not attributed to one.
 
-**Change.** The pull request an attempt opened (`output.artifacts.pull_request.number`). An attempt has at most one change.
+**Change.** The pull request an attempt opened: `output.artifacts.pull_request.number` on the run, or, for a governed run, `context.pull_request.number` on its workflow run, which delivers its newest builder run (the newest role `primary` run in it). An attempt has at most one change.
 
-**Terminal.** A run whose status is `succeeded`, `failed`, `cancelled` or `escalated`. Its end time is `completed_at`, or the row's last update when `completed_at` was never written (a run that failed before it started).
+**Terminal.** A run whose status is `succeeded`, `failed`, `cancelled` or `escalated`. Its end time is `completed_at`, or the row's last update when `completed_at` was never written (a run that failed before it started). A run inside a workflow run is terminal only once its workflow run is `succeeded`, `failed` or `cancelled`, and ends when the workflow run does, because the workflow run, not the run, opens the pull request.
 
-**Final outcome.** A change has a final outcome when its pull request was merged (*landed*) or closed without being merged (*closed*). A pull request that is closed, reopened and then merged ends *landed*; the attempt is counted once.
+**Final outcome.** A change has a final outcome when its pull request was merged (*landed*) or closed without being merged (*closed*). A reopened pull request is open again until it next closes; one that is closed, reopened and then merged ends *landed*, and the attempt is counted once.
 
 **Settled.** An attempt is settled when it is terminal and its change, if it opened one, has a final outcome. Its **settle time** is its end time when it opened no pull request, else the later of its end time and its change's outcome time. An attempt whose pull request is still open is not settled and is in no window.
 
@@ -144,13 +144,14 @@ Every value can be recomputed from these rows of one workspace:
 | Table | What it holds |
 | --- | --- |
 | `agent_run` | attempts: `id`, `role`, `status`, `created_at`, `completed_at`, `workflow_run_id`, `inputs.context.repo_full_name`, `inputs.context.source`, `output.artifacts.pull_request.number` |
+| `workflow_run` | a governed attempt's `status`, `completed_at` and `context.pull_request.number` |
 | `sub_agent_run` | `agent_run_id` (the sub-agent run) and `parent_agent_run_id` |
 | `change_outcome` | one row per attempt whose pull request closed: `outcome` (`landed` or `closed`), `outcome_at`, `repo_full_name`, `pr_number`, `reverted_at`, `reverted_by_pr_number` |
 | `run_intervention` | interventions from GitHub deliveries: `agent_run_id`, `kind`, `source_key` (the review id or pushed head), `occurred_at` |
 | `approval_request` | gate outcomes: `agent_run_id`, `workflow_run_id`, `status` |
 | `cost_event` | `agent_run_id`, `cost_usd`, `price_id` (empty when unpriced) |
 
-`change_outcome` and `run_intervention` are written by the GitHub webhook (`POST /integration/github/webhooks`) after its signature check. A redelivery writes nothing new. A pull request from a fork never resolves to a run through its branch name.
+`change_outcome` and `run_intervention` are written by the GitHub webhook (`POST /integration/github/webhooks`) after its signature check. A redelivery writes nothing new. Neither a pull request from a fork nor one from the `revert-…` branch GitHub's Revert button makes resolves to a run through its branch name.
 
 ## Not measured here
 

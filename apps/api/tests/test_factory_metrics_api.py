@@ -1,10 +1,4 @@
-"""Factory metrics evidence from GitHub deliveries, and the report route (#196).
-
-Hermetic SQLite, the signed webhook route and the analytics route, as in
-``test_context_api.py``: outcomes, reverts and interventions are recorded once
-from deliveries, and ``GET /observability/analytics/factory`` reports them for the
-caller's workspace only.
-"""
+"""Factory metrics evidence from signed GitHub deliveries, and the report route (#196)."""
 
 from __future__ import annotations
 
@@ -34,8 +28,11 @@ from scf_db.models import (
     ApprovalRequest,
     ApprovalStatus,
     ChangeOutcome,
+    Project,
     RunIntervention,
     RunStatus,
+    Task,
+    WorkflowRun,
     Workspace,
 )
 from scf_integrations import sign_github_payload
@@ -99,15 +96,7 @@ def _run(
             completed_at=T0,
         )
         if number is not None:
-            run.output = {
-                "artifacts": {
-                    "pull_request": {
-                        "status": "opened",
-                        "number": number,
-                        "url": f"https://github.com/{REPO}/pull/{number}",
-                    }
-                }
-            }
+            run.output = {"artifacts": {"pull_request": {"status": "opened", "number": number}}}
         session.add(run)
         session.commit()
         return run.id
@@ -334,14 +323,9 @@ def test_the_route_reports_five_metrics_for_the_callers_workspace_only(factory, 
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["since"].startswith("2026-06-01") and body["until"].startswith("2026-07-01")
-    for name in (
-        "autonomous_merge_rate",
-        "cost_per_merged_change",
-        "revert_rate",
-        "human_intervention_rate",
-        "cycle_time",
-    ):
-        assert {"value", "numerator", "denominator", "sample_size"} <= body[name].keys()
+    metrics = [value for value in body.values() if isinstance(value, dict)]
+    assert len(metrics) == 5  # the five metrics, each with what it was computed from
+    assert all({"value", "numerator", "denominator", "sample_size"} <= m.keys() for m in metrics)
     amr = body["autonomous_merge_rate"]
     assert (amr["value"], amr["numerator"], amr["denominator"]) == (0.5, 1, 2)
 
@@ -377,3 +361,106 @@ def test_the_route_applies_repository_and_source_filters(factory, client) -> Non
     )
     assert naive.status_code == 200
     assert naive.json()["autonomous_merge_rate"]["denominator"] == 1
+    future = client.get(
+        "/observability/analytics/factory", params={"since": "2999-01-01T00:00:00Z"}
+    )
+    assert future.status_code == 422
+
+
+# --- review fixes ------------------------------------------------------------- #
+
+
+def _settled(client: TestClient) -> tuple[int, int]:
+    body = client.get("/observability/analytics/factory", params=WINDOW).json()
+    return body["autonomous_merge_rate"]["numerator"], body["autonomous_merge_rate"]["denominator"]
+
+
+WINDOW = {"since": "2026-06-01T00:00:00Z", "until": "2026-07-01T00:00:00Z"}
+
+
+def _governed(factory: sessionmaker[Session], *, pr: int | None) -> tuple[uuid.UUID, str]:
+    """A governed builder run, a retry before it, and the workflow run that opens the PR."""
+    with factory() as session:
+        project = Project(workspace_id=WS, name="P", key=f"G{uuid.uuid4().hex[:6]}")
+        session.add(project)
+        session.flush()
+        task = Task(workspace_id=WS, project_id=project.id, key="G-1", title="T")
+        session.add(task)
+        session.flush()
+        context = {"pull_request": {"number": pr, "url": "u"}} if pr else {}
+        workflow = WorkflowRun(workspace_id=WS, task_id=task.id, context=context)
+        session.add(workflow)
+        session.flush()
+        for minutes in (0, 5):  # the retry, then the run the workflow delivers
+            run = AgentRun(
+                workspace_id=WS,
+                workflow_run_id=workflow.id,
+                status=RunStatus.SUCCEEDED,
+                inputs={"context": {"repo_full_name": REPO}},
+                created_at=T0.replace(minute=minutes),
+                completed_at=T0,
+            )
+            session.add(run)
+            session.flush()
+        session.commit()
+        return run.id, f"scf/run-{run.id.hex[:12]}"
+
+
+def _end_workflow(factory: sessionmaker[Session]) -> None:
+    with factory() as session:
+        for workflow in session.scalars(select(WorkflowRun)):
+            workflow.status, workflow.completed_at = RunStatus.SUCCEEDED, T0
+        session.commit()
+
+
+def test_a_governed_attempt_settles_only_when_its_workflow_and_pull_request_close(
+    factory, client
+) -> None:
+    run_id, branch = _governed(factory, pr=7)
+    assert _settled(client) == (0, 0)  # the workflow run is still running
+    _end_workflow(factory)
+    assert _settled(client) == (0, 1)  # the retry settled; the delivered PR is open
+    landed = _closed(7, merged=True)
+    landed["pull_request"]["head"] = {"ref": branch}
+    _deliver(client, "pull_request", landed)
+    assert [r.agent_run_id for r in _rows(factory, ChangeOutcome)] == [run_id]
+    assert _settled(client) == (1, 2)
+
+
+def test_a_revert_branch_never_resolves_to_the_run_it_reverts(factory, client) -> None:
+    run_id, branch = _governed(factory, pr=None)
+    for number, ref in ((30, f"revert-7-{branch}"), (7, branch)):
+        review = _review(number, state="changes_requested", review_id=number)
+        review["pull_request"]["head"] = {"ref": ref}
+        _deliver(client, "pull_request_review", review)
+    assert [(r.agent_run_id, r.source_key) for r in _rows(factory, RunIntervention)] == [
+        (run_id, "review:7")
+    ]
+
+
+def test_a_reopened_pull_request_is_open_until_it_closes_again(factory, client) -> None:
+    _run(factory, number=9)
+    pull_request = {"number": 9, "head": {"ref": "x"}, "updated_at": "2026-06-12T10:00:00Z"}
+    reopen = {"action": "reopened", "pull_request": pull_request}
+    _deliver(client, "pull_request", _closed(9, merged=False, at="2026-06-11T10:00:00Z"))
+    _deliver(client, "pull_request", reopen)
+    assert _rows(factory, ChangeOutcome) == []
+    assert _settled(client) == (0, 0)
+    _deliver(client, "pull_request", _closed(9, merged=False, at="2026-06-13T10:00:00Z"))
+    _deliver(client, "pull_request", reopen)  # a late redelivery of the reopen
+    (row,) = _rows(factory, ChangeOutcome)
+    assert row.outcome_at.replace(tzinfo=UTC) == datetime(2026, 6, 13, 10, tzinfo=UTC)
+
+
+def test_a_delivery_looks_its_run_up_once(factory, client, monkeypatch) -> None:
+    from scf_api.routers import integration
+    from scf_api.services import change_outcomes, context_service
+
+    calls: list[object] = []
+    real = context_service.resolve_run_for_pull_request
+    spy = lambda *a, **k: calls.append(k) or real(*a, **k)  # noqa: E731
+    for module in (context_service, change_outcomes, integration):
+        monkeypatch.setattr(module, "resolve_run_for_pull_request", spy, raising=False)
+    _run(factory, number=7)
+    _deliver(client, "pull_request", _closed(7, merged=True))
+    assert len(calls) == 1

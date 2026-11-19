@@ -42,7 +42,10 @@ from scf_api.observability.redaction import redact_mapping, redact_text
 from scf_api.routers._rbac import require_permission
 from scf_api.routers.agent import AgentRunStore, get_agent_store
 from scf_api.services.change_outcomes import record_change_event
-from scf_api.services.context_service import record_pull_request_outcome
+from scf_api.services.context_service import (
+    record_pull_request_outcome,
+    resolve_run_for_pull_request,
+)
 from scf_api.settings import Settings, get_settings
 from scf_contracts import (
     ApprovalRequest,
@@ -579,6 +582,7 @@ def github_health(client: GitHubOptionalDep) -> HealthResult:
 _CHANGE_DELIVERIES = frozenset(
     {
         ("pull_request", "closed"),
+        ("pull_request", "reopened"),
         ("pull_request", "synchronize"),
         ("pull_request_review", "submitted"),
     }
@@ -588,9 +592,9 @@ _CHANGE_DELIVERIES = frozenset(
 def _record_pr_feedback(factory: sessionmaker[Session], event: WebhookEvent) -> None:
     """Write what a run's PR delivery says (spec J §2.5, spec 005 FR-009); else no-op.
 
-    A ``pull_request`` ``closed``/``synchronize`` or ``pull_request_review``
-    ``submitted`` delivery resolves to an agent run (recorded repo + PR
-    number, else the head branch). On ``closed``, ``merged`` reinforces every
+    A ``pull_request`` ``closed``/``reopened``/``synchronize`` or
+    ``pull_request_review`` ``submitted`` delivery resolves, once, to an agent run
+    (recorded repo + PR number, else the head branch). On ``closed``, ``merged`` reinforces every
     fact/memory in the run's ``context_refs`` and an unmerged close weakens
     them, idempotent per ``(run_id, fact_id)``. Every such delivery then records
     the change outcome, a revert or an intervention (``change_outcomes``),
@@ -630,21 +634,18 @@ def _record_pr_feedback(factory: sessionmaker[Session], event: WebhookEvent) -> 
         effective_head_ref = None
     repo = repo_full_name if isinstance(repo_full_name, str) else None
     with factory() as session:
+        run = resolve_run_for_pull_request(
+            session, repo_full_name=repo, number=number, head_ref=effective_head_ref
+        )
         if payload.get("action") == "closed":
-            record_pull_request_outcome(
-                session,
-                repo_full_name=repo,
-                number=number,
-                merged=pull_request.get("merged") is True,
-                head_ref=effective_head_ref,
-            )
+            record_pull_request_outcome(session, run=run, merged=pull_request.get("merged") is True)
         record_change_event(
             session,
+            run=run,
             event_type=event_type,
             payload=payload,
             repo_full_name=repo,
             number=number,
-            head_ref=effective_head_ref,
         )
 
 
