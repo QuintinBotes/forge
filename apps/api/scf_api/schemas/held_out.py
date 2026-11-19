@@ -73,6 +73,8 @@ class HeldOutScenarioOut(BaseModel):
 
     id: uuid.UUID
     task_id: uuid.UUID
+    #: The run whose spec the verifier drafted it for; ``None`` for one a person wrote.
+    workflow_run_id: uuid.UUID | None = None
     title: str
     files: list[ScenarioFile]
     command: str

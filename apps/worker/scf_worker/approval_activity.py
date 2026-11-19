@@ -13,8 +13,10 @@ database audit chain (issue #170).
 
 A ``pr`` gate carries the repository's review rules from the default branch
 (:mod:`scf_worker.review_rules`, spec K §4.11), so repo policy can raise its
-quorum. The opened gate is announced on ``/ws`` through the Redis channel the
-API relays (spec L §6a), when the Redis realtime backend is selected.
+quorum. A ``spec`` gate names the held-out scenarios the verifier drafted for
+the run's spec, by id and title only (#288). The opened gate is announced on
+``/ws`` through the Redis channel the API relays (spec L §6a), when the Redis
+realtime backend is selected.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from scf_api.observability.audit_db import DbAuditStore
 from scf_api.observability.redaction import redact_mapping
 from scf_api.realtime.approval_events import create_published, relay_url
 from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
+from scf_api.services.held_out import drafted_for_run
 from scf_api.services.workflow_gate_hook import WORKFLOW_RUN_SUBJECT, agent_actor_for_run
 from scf_approval import ApprovalAuthorizer, ApprovalService, GateRegistry
 from scf_approval.models import GateType
@@ -123,6 +126,13 @@ def make_create_approval_fn(
             if existing is not None:
                 return existing
             task = session.get(Task, inp.task_id)
+            scenarios = (
+                drafted_for_run(
+                    session, workspace_id=inp.workspace_id, workflow_run_id=inp.workflow_run_id
+                )
+                if inp.gate == GateType.SPEC.value
+                else []
+            )
         title = (
             (task.title if task is not None else None)
             or inp.summary
@@ -130,6 +140,8 @@ def make_create_approval_fn(
         )
         payload: dict[str, object] = {"summary": inp.summary} if inp.summary else {}
         payload["idempotency_key"] = inp.idempotency_key
+        if scenarios:  # ids and titles: the content is read through the scenario route
+            payload["held_out_scenarios"] = [{"id": str(r.id), "title": r.title} for r in scenarios]
         if inp.gate == GateType.PR.value:
             payload |= review_rules_stamp(
                 factory, workspace_id=inp.workspace_id, task_id=inp.task_id

@@ -28,6 +28,8 @@ _FIXTURES = Path(__file__).parent / "fixtures"
 _FIXTURE = _FIXTURES / "feature_happy_path.json"
 #: A cancel recorded while ``cancel_run`` took only a reason (the actor came later).
 _CANCEL = _FIXTURES / "feature_cancel_signal.json"
+#: One spec-changes round recorded before #288 drafted again on it (no redraft step).
+_SPEC_CHANGES = _FIXTURES / "feature_spec_changes.json"
 
 
 def _history() -> WorkflowHistory:
@@ -48,6 +50,13 @@ async def test_frozen_feature_happy_path_replays() -> None:
 
 async def test_a_one_argument_cancel_history_replays() -> None:
     history = WorkflowHistory.from_json("wf-frozen-feature-cancel", _CANCEL.read_text())
+    await _replayer().replay_workflow(history)
+
+
+async def test_a_spec_changes_round_from_before_the_redraft_replays() -> None:
+    """The ``held-out-redraft-288`` patch keeps this history's command order."""
+    text = _SPEC_CHANGES.read_text()
+    history = WorkflowHistory.from_json("wf-frozen-feature-spec-changes", text)
     await _replayer().replay_workflow(history)
 
 
