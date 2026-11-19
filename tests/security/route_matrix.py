@@ -386,6 +386,7 @@ DECLARED: dict[str, Permission] = {
             "GET /incidents/{incident_id}/postmortem",
             "GET /observability/analytics/incidents/reliability",
             "GET /observability/analytics/dora",
+            "GET /observability/analytics/factory",
             "GET /observability/analytics/budgets/{budget_id}/status",
             "GET /observability/analytics/budgets",
             "GET /observability/analytics/coverage/trend",

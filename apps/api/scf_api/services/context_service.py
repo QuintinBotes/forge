@@ -723,6 +723,9 @@ def _recorded_pr(run: AgentRun) -> Mapping[str, Any]:
     output = run.output if isinstance(run.output, Mapping) else {}
     artifacts = output.get("artifacts") if isinstance(output, Mapping) else None
     pull_request = artifacts.get("pull_request") if isinstance(artifacts, Mapping) else None
+    if not isinstance(pull_request, Mapping) and run.workflow_run is not None:
+        # A governed run's workflow run opens its pull request and records it.
+        pull_request = run.workflow_run.context.get("pull_request")
     return pull_request if isinstance(pull_request, Mapping) else {}
 
 
@@ -773,7 +776,9 @@ def resolve_run_for_pull_request(
     recorded PR number is absent or equal — a spoofed or fork branch
     naming another run (run ids leak via public branch names) can never
     write that run's one-shot feedback first. Callers additionally
-    withhold ``head_ref`` for fork PRs (head repo ≠ base repo).
+    withhold ``head_ref`` for fork PRs (head repo ≠ base repo). The branch
+    GitHub's Revert button makes, ``revert-<N>-<head ref>``, names the run
+    it reverts and is never accepted.
     """
     if not repo_full_name:
         return None
@@ -790,7 +795,7 @@ def resolve_run_for_pull_request(
             return rows[0]
         # Zero or ambiguous (≥2): primary accepts nothing; the branch
         # fallback below may still identify one specific run.
-    if head_ref:
+    if head_ref and not head_ref.startswith("revert-"):
         match = _RUN_BRANCH_RE.search(head_ref)
         if match:
             # Run branches carry the first 12 hex digits of the run id: a range
@@ -812,23 +817,14 @@ def resolve_run_for_pull_request(
     return None
 
 
-def record_pull_request_outcome(
-    session: Session,
-    *,
-    repo_full_name: str | None,
-    number: int | None,
-    merged: bool,
-    head_ref: str | None,
-) -> int:
+def record_pull_request_outcome(session: Session, *, run: AgentRun | None, merged: bool) -> int:
     """Reinforce/weaken every fact a closed PR's run consumed; rows written.
 
+    ``run`` is :func:`resolve_run_for_pull_request`'s answer for the delivery.
     Idempotent per ``(run_id, fact_id)`` — a replay returns 0. A PR that
     maps to no run is ignored (0). Commits the session: the webhook owns
     the transaction for this side effect and nothing else.
     """
-    run = resolve_run_for_pull_request(
-        session, repo_full_name=repo_full_name, number=number, head_ref=head_ref
-    )
     if run is None:
         return 0
     fact_ids: list[uuid.UUID] = []
