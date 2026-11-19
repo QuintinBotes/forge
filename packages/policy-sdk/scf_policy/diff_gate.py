@@ -36,8 +36,10 @@ class GateResult(BaseModel):
     findings: list[GateFinding] = Field(default_factory=list)
     #: Matches the repository policy allows: recorded, not failed.
     allowed: list[GateFinding] = Field(default_factory=list)
-    #: Why the gate could not verify the change.
+    #: Why the gate could not verify the change: the builder can fix these.
     reasons: list[str] = Field(default_factory=list)
+    #: Why the worker could not verify it (no analyser, no registry): a person fixes these.
+    unavailable: list[str] = Field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -45,7 +47,8 @@ class GateResult(BaseModel):
 
     def report(self) -> str:
         """The result as the builder's next attempt and the reviewer read it."""
-        lines = [self.status, *(f"- could not verify: {r}" for r in self.reasons)]
+        why = [*self.unavailable, *self.reasons]
+        lines = [self.status, *(f"- could not verify: {r}" for r in why)]
         lines += [f"- {f.file}:{f.line} [{f.rule}] {f.message}".rstrip() for f in self.findings]
         lines += [f"- allowed by policy: {f.file}:{f.line} [{f.rule}]" for f in self.allowed]
         return "\n".join(lines)
@@ -56,11 +59,14 @@ def gate_result(
     *,
     allowed: Iterable[GateFinding] = (),
     reasons: Iterable[str] = (),
+    unavailable: Iterable[str] = (),
 ) -> GateResult:
     """``could_not_verify`` with any reason, else ``failed`` with any finding."""
-    found, why = list(findings), list(reasons)
-    status: GateStatus = "could_not_verify" if why else "failed" if found else "passed"
-    return GateResult(status=status, findings=found, allowed=list(allowed), reasons=why)
+    found, why, down = list(findings), list(reasons), list(unavailable)
+    status: GateStatus = "could_not_verify" if why or down else "failed" if found else "passed"
+    return GateResult(
+        status=status, findings=found, allowed=list(allowed), reasons=why, unavailable=down
+    )
 
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
@@ -79,8 +85,9 @@ def added_lines(diff: str) -> dict[str, list[tuple[int, str]]]:
         if line.startswith("diff --git "):
             current, in_header = None, True
         elif in_header and line.startswith("+++ "):
-            # shortcut: a quoted path keeps git's escapes, so a policy allowance never matches it
-            target = line[4:].strip('"')
+            # git ends a name holding a space with a TAB. shortcut: a quoted name keeps git's
+            # escapes, so an allowance never matches it; the other gates read -z paths
+            target = line[4:].rstrip("\t").strip('"')
             current = None if target == "/dev/null" else files.setdefault(target[2:], [])
         elif hunk := _HUNK.match(line):
             in_header, number = False, int(hunk.group(1))

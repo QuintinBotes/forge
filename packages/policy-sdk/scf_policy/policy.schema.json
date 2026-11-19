@@ -176,7 +176,7 @@
     },
     "DiffGateRules": {
       "additionalProperties": false,
-      "description": "The ``diff_gates`` block: what the gates on an agent's diff allow (#187).\n\n``secret_allowed_files`` names files whose secret-scan matches are allowed, and\nrecorded as allowed. Each is one file path relative to the repository root:\na wildcard or a directory is refused when the policy loads.",
+      "description": "The ``diff_gates`` block: what the gates on an agent's diff allow (#187).\n\n``secret_allowed_files`` names files whose secret-scan matches are allowed, and\nrecorded as allowed. Each is one file path relative to the repository root,\nmatched exactly: a wildcard, or a path ending in ``/``, is refused when the policy\nloads, and a directory's name matches no file under it.",
       "properties": {
         "allowed_packages": {
           "items": {

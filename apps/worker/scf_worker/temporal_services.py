@@ -581,18 +581,20 @@ def run_checks_service(
         runs = run_declared_checks(
             mirror, str(head), policy, run_id=agent_run.id, workspace_id=inp.workspace_id
         )
+        gates_pause: str | None = None  # a gate the worker could not run asks a person
         if runs and policy is not None:  # none declared still fails as no_checks_declared
-            runs += diff_gate_checks(
+            gates, gates_pause = diff_gate_checks(
                 mirror,
                 base=target.base_branch,
                 head=str(head),
                 rules=policy.diff_gates,
                 registry=registry,
             )
+            runs += gates
         if not runs or not all(r.passed for r in runs):
             _record_checks(factory, inp, head=str(head), runs=runs)
             results = {r.id: r.passed for r in runs} or dict(NO_DECLARED_CHECKS)
-            return ChecksResult(results=results)
+            return ChecksResult(results=results, pause_reason=gates_pause)
         try:
             review = _independent_review(
                 factory,

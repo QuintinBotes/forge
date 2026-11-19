@@ -49,23 +49,30 @@ binds every activity except `forge.resume_agent`:
   one check, recorded like the others with a finding per line (file, line, rule),
   and fails on a finding or when it could not verify the change
   (`could_not_verify`, with the reason). A failed gate means no review and no pull
-  request. What they allow comes from the default branch's `diff_gates` policy
+  request. A gate the worker could not run (no `bandit`, a registry that errors or
+  times out) pauses the run for a person with the reason, instead of spending the
+  builder's retries. What they allow comes from the default branch's `diff_gates` policy
   block, so a change cannot loosen its own gates. Nothing from the change runs.
-  - **`secret_scan`** matches the added lines against a small set of
+  - **`secret_scan`** matches the lines each commit adds, and each commit
+    message, against a small set of
     high-precision credential shapes (private keys; AWS, GitHub, GitLab, Slack,
     Stripe, Google, Anthropic, OpenAI, npm and PyPI tokens). A finding never holds
     the value. `secret_allowed_files` allows matches in named files only (no
-    wildcard or directory); allowed matches are recorded as `allowed by policy`.
-  - **`dependency_check`** compares each changed `pyproject.toml`,
-    `requirements*.txt` (or `requirements/*.txt`) and `package.json` before and
-    after, and asks PyPI's or npm's public registry about each dependency added:
-    an unknown name or version fails, and so does a version younger than
-    `min_dependency_age_days` (7 by default) unless `allowed_packages` names the
-    package. A range is judged by the package's newest release. A registry that
-    errors or times out, a URL, path or option requirement, a change to
-    `[tool.uv]`, `[tool.poetry]`, `overrides` or `resolutions`, another
-    ecosystem's manifest, or a lockfile changed without its manifest cannot be
-    verified.
+    wildcard; a path is matched exactly), never in a commit message; allowed
+    matches are recorded as `allowed by policy`.
+  - **`dependency_check`** compares each changed `pyproject.toml`, pip
+    requirements or constraints file (`.txt`, `.in`) and `package.json`, and the
+    `uv.lock` or `package-lock.json` beside a changed manifest, before and after,
+    and asks PyPI's or npm's public registry about each dependency or locked
+    version added: an unknown name or version fails, and so does a version
+    younger than `min_dependency_age_days` (7 by default) unless
+    `allowed_packages` names the package. A range is judged by the package's
+    newest final release (no pre-release or yanked one). Workspace and path
+    packages are local. A URL, path, VCS or option requirement, a change to
+    `[tool.uv]`, `[tool.poetry]`, `[tool.hatch]` and similar tables, `overrides`
+    or `resolutions`, another ecosystem's manifest or an installer's config
+    (`uv.toml`, `.npmrc`, `pip.ini`), a lockfile without its manifest beside it,
+    and a `pnpm`, `yarn`, `bun` or `poetry` lockfile cannot be verified.
   - **`sast`** runs `bandit` over the changed Python files, ignoring `# nosec`,
     and fails on a finding at or above `sast_severity` (`high` by default; `low`
     and `medium` are stricter). A worker without `bandit` cannot verify a change
@@ -220,8 +227,8 @@ binds every activity except `forge.resume_agent`:
   image installs no `bandit` (`uv sync --no-dev`), so until it does every Python
   change fails `sast` as `could_not_verify`. `dependency_check` needs the worker
   to reach `pypi.org` and `registry.npmjs.org` (no private registry or mirror
-  yet), checks direct dependencies only (not what a lockfile pins transitively),
-  and `secret_scan` finds only the shapes it names.
+  yet); a PyPI pin matches its release ignoring trailing `.0` only (no full PEP
+  440 normalisation); and `secret_scan` finds only the shapes it names.
 
 ### Held-out acceptance scenarios (#176)
 

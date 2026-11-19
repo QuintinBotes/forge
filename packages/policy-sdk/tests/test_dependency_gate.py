@@ -36,7 +36,7 @@ class FakeRegistry:
 
 
 def _gate(
-    manifests: dict[str, tuple[str, str]],
+    manifests: dict[str, tuple[str | None, str | None]],
     registry: FakeRegistry,
     *,
     changed: list[str] | None = None,
@@ -186,10 +186,25 @@ def test_a_registry_that_errors_or_times_out_cannot_verify(error: Exception) -> 
     result = _gate({"requirements.txt": ("", "httpx==0.28.0\n")}, registry)
 
     assert result.status == "could_not_verify" and not result.passed
-    assert result.reasons == [f"requirements.txt:1: pypi did not answer ({type(error).__name__})"]
+    # the worker's fault, not the change's: a person fixes it, not the builder
+    assert result.unavailable == [
+        f"requirements.txt:1: pypi did not answer ({type(error).__name__})"
+    ]
+    assert result.reasons == []
 
 
-@pytest.mark.parametrize("changed", [["uv.lock"], ["web/pnpm-lock.yaml"], ["go.mod"], [".npmrc"]])
+@pytest.mark.parametrize(
+    "changed",
+    [
+        ["uv.lock"],
+        ["web/pnpm-lock.yaml"],
+        ["go.mod"],
+        [".npmrc"],
+        ["uv.toml"],
+        ["web/.yarnrc.yml"],
+        ["pip.ini"],
+    ],
+)
 def test_a_manifest_the_gate_does_not_parse_cannot_verify(changed: list[str]) -> None:
     result = _gate({}, FakeRegistry({}), changed=changed)
 
@@ -197,11 +212,151 @@ def test_a_manifest_the_gate_does_not_parse_cannot_verify(changed: list[str]) ->
     assert result.reasons == [f"{changed[0]}: the gate does not parse this manifest"]
 
 
-def test_a_lockfile_changed_with_a_manifest_it_pairs_with_is_not_refused() -> None:
-    registry = FakeRegistry({("pypi", "rich", "13.7.1"): OLD})
-    manifests = {"pyproject.toml": ("", '[project]\ndependencies = ["rich==13.7.1"]\n')}
+@pytest.mark.parametrize(
+    "changed", [["uv.lock", "web/package.json"], ["sub/uv.lock", "pyproject.toml"]]
+)
+def test_a_lockfile_pairs_only_with_its_own_ecosystems_manifest_beside_it(
+    changed: list[str],
+) -> None:
+    result = _gate(dict.fromkeys(changed[1:], ("", "")), FakeRegistry({}), changed=changed)
 
-    assert _gate(manifests, registry, changed=["pyproject.toml", "uv.lock"]).passed
+    assert result.reasons == [f"{changed[0]}: the gate does not parse this manifest"]
+
+
+def test_a_lockfile_whose_versions_the_gate_does_not_read_cannot_verify() -> None:
+    changed = ["web/package.json", "web/pnpm-lock.yaml"]
+
+    result = _gate({"web/package.json": ("", "{}")}, FakeRegistry({}), changed=changed)
+
+    assert result.reasons == ["web/pnpm-lock.yaml: the gate does not read its locked versions"]
+
+
+UV_LOCK = 'version = 1\n\n[[package]]\nname = "{name}"\nversion = "{version}"\nsource = {source}\n'
+PYPI_SOURCE = '{ registry = "https://pypi.org/simple" }'
+
+
+def test_a_locked_version_is_checked_like_an_added_dependency() -> None:
+    before = UV_LOCK.format(name="httpx", version="0.27.0", source=PYPI_SOURCE)
+    after = UV_LOCK.format(name="httpx", version="0.28.1", source=PYPI_SOURCE)
+    registry = FakeRegistry({("pypi", "httpx", "0.28.1"): NEW})
+    manifests = {"pyproject.toml": ("", "[project]\n"), "uv.lock": (before, after)}
+
+    result = _gate(manifests, registry)
+
+    assert registry.asked == [("pypi", "httpx", "0.28.1")]
+    [finding] = result.findings
+    assert (finding.file, finding.line, finding.rule) == ("uv.lock", 4, "dependency-too-new")
+
+
+@pytest.mark.parametrize(
+    "source",
+    ['{ git = "https://example.com/h.git" }', '{ registry = "https://example.com/simple" }'],
+)
+def test_a_locked_package_from_elsewhere_cannot_verify(source: str) -> None:
+    after = UV_LOCK.format(name="httpx", version="0.28.1", source=source)
+    manifests = {"pyproject.toml": ("", "[project]\n"), "uv.lock": ("", after)}
+
+    result = _gate(manifests, FakeRegistry({}))
+
+    assert result.reasons == ["uv.lock:4: httpx is not from the registry"]
+
+
+def test_a_locked_workspace_package_is_local() -> None:
+    after = UV_LOCK.format(name="scf-board", version="0.1.0", source='{ editable = "." }')
+    manifests = {"pyproject.toml": ("", "[project]\n"), "uv.lock": ("", after)}
+
+    assert _gate(manifests, FakeRegistry({})).passed
+
+
+def test_an_npm_lockfile_is_checked() -> None:
+    after = json.dumps(
+        {
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "web"},
+                "node_modules/left-pad": {
+                    "version": "1.3.0",
+                    "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+                },
+                "node_modules/evil": {"version": "1.0.0", "resolved": "git+ssh://x/evil.git"},
+                "node_modules/shared": {"resolved": "packages/shared", "link": True},
+            },
+        },
+        indent=2,
+    )
+    manifests = {"package.json": ("", "{}"), "package-lock.json": ("", after)}
+    registry = FakeRegistry({})
+
+    result = _gate(manifests, registry)
+
+    assert registry.asked == [("npm", "left-pad", "1.3.0")]
+    assert [(f.file, f.rule) for f in result.findings] == [
+        ("package-lock.json", "unknown-dependency")
+    ]
+    assert result.reasons == ["package-lock.json:11: evil is not from the registry"]
+
+
+@pytest.mark.parametrize(
+    "path", ["dev-requirements.txt", "requirements.in", "constraints.txt", "requirements/ci.txt"]
+)
+def test_every_pip_requirements_file_is_read(path: str) -> None:
+    result = _gate({path: ("", "not-on-pypi==1.0\n")}, FakeRegistry({}))
+
+    assert [f.rule for f in result.findings] == ["unknown-dependency"]
+
+
+def test_optional_build_and_marked_dependencies_are_read() -> None:
+    after = (
+        '[build-system]\nrequires = ["hatchling==1.25.0"]\n'
+        "[project]\ndependencies = ['tomli==2.0.1; python_version < \"3.11\"']\n"
+        '[project.optional-dependencies]\nfast = ["orjson==3.10.0"]\n'
+    )
+    registry = FakeRegistry({})
+
+    _gate({"pyproject.toml": ("", after)}, registry)
+
+    assert registry.asked == [
+        ("pypi", "tomli", "2.0.1"),
+        ("pypi", "hatchling", "1.25.0"),
+        ("pypi", "orjson", "3.10.0"),
+    ]
+
+
+def test_npm_optional_and_peer_dependencies_are_read() -> None:
+    after = json.dumps(
+        {"optionalDependencies": {"fsevents": "2.3.3"}, "peerDependencies": {"react": "^18"}}
+    )
+    registry = FakeRegistry({})
+
+    _gate({"package.json": ("", after)}, registry)
+
+    assert registry.asked == [("npm", "fsevents", "2.3.3"), ("npm", "react", None)]
+
+
+def test_a_workspace_package_is_local_not_looked_up() -> None:
+    after = (
+        '[project]\ndependencies = ["scf-board", "scf-contracts", "local-lib"]\n'
+        '[tool.uv.sources]\nscf-board = { workspace = true }\nlocal-lib = { path = "../lib" }\n'
+    )
+    registry = FakeRegistry({})
+
+    result = check_dependencies(
+        ["pyproject.toml"],
+        {"pyproject.toml": ("", after)},
+        registry,
+        min_age_days=MIN_DEPENDENCY_AGE_DAYS,
+        allowed_packages=[],
+        local_packages=["scf_contracts"],
+        now=NOW,
+    )
+
+    assert result.passed and registry.asked == []
+
+
+def test_a_manifest_that_could_not_be_read_cannot_verify() -> None:
+    result = _gate({"pyproject.toml": ("", None)}, FakeRegistry({}))
+
+    assert result.reasons == ["pyproject.toml: not read"]
 
 
 @pytest.mark.parametrize(
@@ -211,7 +366,15 @@ def test_a_lockfile_changed_with_a_manifest_it_pairs_with_is_not_refused() -> No
         ("requirements.txt", "-e git+https://example.com/evil.git#egg=evil\n"),
         ("requirements.txt", "--extra-index-url https://example.com/simple\n"),
         ("package.json", '{"dependencies": {"evil": "github:someone/evil"}}'),
+        ("requirements.txt", "http://example.com/evil-1.0.tar.gz\n"),
+        ("requirements.txt", "git+https://example.com/evil.git\n"),
+        ("requirements.txt", "./vendor/evil\n"),
+        ("requirements.txt", "file:///tmp/evil-1.0-py3-none-any.whl\n"),
         ("pyproject.toml", '[tool.uv.sources]\nhttpx = { git = "https://example.com/h" }\n'),
+        ("pyproject.toml", '[tool.hatch.envs.default]\ndependencies = ["evil==1.0"]\n'),
+        ("pyproject.toml", '[tool.rye]\ndev-dependencies = ["evil==1.0"]\n'),
+        ("pyproject.toml", '[tool.pixi.dependencies]\nevil = "==1.0"\n'),
+        ("pyproject.toml", '[tool.setuptools.dynamic]\ndependencies = { file = "r.txt" }\n'),
         ("package.json", '{"overrides": {"react": "0.0.1-evil"}}'),
         ("pyproject.toml", "[project\n"),
         ("package.json", "{"),

@@ -535,8 +535,9 @@ class DiffGateRules(_Model):
     """The ``diff_gates`` block: what the gates on an agent's diff allow (#187).
 
     ``secret_allowed_files`` names files whose secret-scan matches are allowed, and
-    recorded as allowed. Each is one file path relative to the repository root:
-    a wildcard or a directory is refused when the policy loads.
+    recorded as allowed. Each is one file path relative to the repository root,
+    matched exactly: a wildcard, or a path ending in ``/``, is refused when the policy
+    loads, and a directory's name matches no file under it.
     """
 
     model_config = ConfigDict(extra="forbid")

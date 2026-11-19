@@ -8,6 +8,7 @@ dev dependency. The credential below is fake and split, so no source line holds 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import uuid
 from collections.abc import Iterator
@@ -105,13 +106,15 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     return work, mirror
 
 
-def _commit(work: Path, mirror: Path, branch: str, files: dict[str, str]) -> str:
+def _commit(
+    work: Path, mirror: Path, branch: str, files: dict[str, str], message: str = "change"
+) -> str:
     _git(work, "checkout", "-q", branch)
     for path, text in files.items():
         (work / path).parent.mkdir(parents=True, exist_ok=True)
         (work / path).write_text(text)
     _git(work, "add", "-A")
-    _git(work, "commit", "-q", "-m", f"change on {branch}")
+    _git(work, "commit", "-q", "-m", message)
     _git(work, "push", "-q", str(mirror), branch)
     _git(work, "checkout", "-q", "main")
     return _git(mirror, "rev-parse", branch)
@@ -234,6 +237,81 @@ def test_a_registry_that_cannot_answer_blocks_the_change(
     assert _recorded(factory, run_id)["dependency_check"]["output_tail"].startswith(
         "could_not_verify"
     )
+    # the worker's fault: a person is asked, the builder's retries are not spent
+    assert result.pause_reason == (
+        "dependency_check could not verify: requirements.txt:1: pypi did not answer (TimeoutError)"
+    )
+
+
+def test_a_worker_without_bandit_pauses_for_a_person(
+    factory: sessionmaker[Session], repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work, mirror = repo
+    run_id = _seed(factory, _agent_commits(work, mirror, {"app/run.py": "VALUE = 1\n"}))
+    paths = os.environ["PATH"].split(os.pathsep)
+    monkeypatch.setenv("PATH", os.pathsep.join(p for p in paths if not Path(p, "bandit").exists()))
+
+    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+
+    assert result.results["sast"] is False
+    assert result.pause_reason == "sast could not verify: bandit is not installed on this worker"
+
+
+def test_a_secret_added_then_removed_in_a_later_commit_is_found(
+    factory: sessionmaker[Session], repo: tuple[Path, Path]
+) -> None:
+    work, mirror = repo
+    first = _agent_commits(work, mirror, {"app/k.py": f'K = "{FAKE_KEY}"\n'})
+    run_id = _seed(factory, _commit(work, mirror, BRANCH, {"app/k.py": "K = None\n"}))
+
+    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+
+    assert result.results["secret_scan"] is False
+    stored = _recorded(factory, run_id)["secret_scan"]["output_tail"]
+    assert f"app/k.py:1 [aws-access-token] in commit {first[:12]}" in stored
+
+
+def test_a_secret_in_a_commit_message_is_found(
+    factory: sessionmaker[Session], repo: tuple[Path, Path]
+) -> None:
+    work, mirror = repo
+    _git(work, "branch", BRANCH, "main")
+    head = _commit(work, mirror, BRANCH, {"a.txt": "a\n"}, message=f"fix\n\nkey {FAKE_KEY}")
+    run_id = _seed(factory, head)
+
+    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+
+    assert result.results["secret_scan"] is False
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None and FAKE_KEY not in json.dumps(run.context)
+    assert f"commit message:3 [aws-access-token] in commit {head[:12]}" in json.dumps(run.context)
+
+
+def test_a_python_file_whose_name_holds_a_space_is_analysed(
+    factory: sessionmaker[Session], repo: tuple[Path, Path]
+) -> None:
+    work, mirror = repo
+    run_id = _seed(factory, _agent_commits(work, mirror, {"deploy tool.py": SHELL}))
+
+    result = _checks(factory, run_id, FakeRegistry({}), Reviewer())
+
+    assert result.results["sast"] is False
+
+
+def test_a_workspace_package_the_root_declares_is_not_looked_up(
+    factory: sessionmaker[Session], repo: tuple[Path, Path]
+) -> None:
+    work, mirror = repo
+    root = "[tool.uv.sources]\nscf-board = { workspace = true }\n"
+    _commit(work, mirror, "main", {"pyproject.toml": root})
+    member = '[project]\nname = "app"\ndependencies = ["scf-board"]\n'
+    run_id = _seed(factory, _agent_commits(work, mirror, {"apps/x/pyproject.toml": member}))
+    registry = FakeRegistry({})
+
+    result = _checks(factory, run_id, registry, Reviewer())
+
+    assert result.results["dependency_check"] is True and registry.asked == []
 
 
 def test_a_change_that_passes_every_gate_goes_on_to_review(
@@ -293,19 +371,22 @@ def test_a_change_cannot_allow_its_own_secret(
 PYPI = {
     "releases": {
         "1.0": [{"upload_time_iso_8601": "2020-01-02T00:00:00Z"}],
-        "2.0": [
+        "2.0.0": [
             {"upload_time_iso_8601": "2026-11-18T10:00:00Z"},
             {"upload_time_iso_8601": "2026-11-18T09:00:00Z"},
         ],
+        "2.1": [{"upload_time_iso_8601": "2026-11-19T00:00:00Z", "yanked": True}],
+        "3.0rc1": [{"upload_time_iso_8601": "2026-11-19T01:00:00Z"}],
     }
 }
 NPM = {
-    "versions": {"1.0.0": {}, "1.1.0": {}},
+    "versions": {"1.0.0": {}, "1.1.0": {}, "2.0.0-nightly.1": {}},
     "time": {
         "created": "2019-01-01T00:00:00.000Z",
         "modified": "2026-11-19T00:00:00.000Z",
         "1.0.0": "2019-01-01T00:00:00.000Z",
         "1.1.0": "2026-11-17T00:00:00.000Z",
+        "2.0.0-nightly.1": "2026-11-19T00:00:00.000Z",
         "9.9.9": "2026-11-18T00:00:00.000Z",
     },
 }
@@ -331,12 +412,15 @@ def test_the_public_registry_reads_publication_times() -> None:
 
     assert registry.published("pypi", "httpx", "1.0") == datetime(2020, 1, 2, tzinfo=UTC)
     assert registry.published("pypi", "httpx", "2.0") == datetime(2026, 11, 18, 9, tzinfo=UTC)
+    # a range: the newest final release, not a yanked one or a pre-release
     assert registry.published("pypi", "httpx", None) == datetime(2026, 11, 18, 10, tzinfo=UTC)
     assert registry.published("pypi", "httpx", "3.0") is None
     assert registry.published("pypi", "not-on-pypi", None) is None
     assert registry.published("npm", "@acme/widgets", "1.0.0") == datetime(2019, 1, 1, tzinfo=UTC)
     assert registry.published("npm", "@acme/widgets", None) == datetime(2026, 11, 17, tzinfo=UTC)
     assert registry.published("npm", "@acme/widgets", "9.9.9") is None, "unpublished"
+    assert registry.published("pypi", "httpx", "1.0.0") == datetime(2020, 1, 2, tzinfo=UTC)
+    assert registry.published("pypi", "httpx", "1") == datetime(2020, 1, 2, tzinfo=UTC)
     assert seen[0] == "https://pypi.org/pypi/httpx/json"
     assert seen[5] == "https://registry.npmjs.org/@acme%2Fwidgets"
 

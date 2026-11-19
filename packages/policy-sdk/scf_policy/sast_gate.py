@@ -30,15 +30,19 @@ _RANK = {"low": 0, "medium": 1, "high": 2}
 
 
 def run_sast(
-    files: dict[str, str], *, analyzer: str = "bandit", severity: str = "high"
+    files: dict[str, str | None], *, analyzer: str = "bandit", severity: str = "high"
 ) -> GateResult:
-    """Analyse ``files`` (``{path: text}`` of the changed files) with ``analyzer``."""
+    """Analyse ``files`` (``{path: text}`` of the changed files) with ``analyzer``.
+
+    ``None`` is a file the caller could not read: it cannot be verified.
+    """
     targets = {path: text for path, text in files.items() if path.endswith(SAST_SUFFIXES)}
-    if not targets:
-        return gate_result([])
+    unread = [f"{path}: not read" for path, text in targets.items() if text is None]
+    if unread or not targets:
+        return gate_result([], reasons=unread)
     binary = shutil.which(analyzer)
     if binary is None:
-        return gate_result([], reasons=[f"{analyzer} is not installed on this worker"])
+        return gate_result([], unavailable=[f"{analyzer} is not installed on this worker"])
     with tempfile.TemporaryDirectory(prefix="scf-sast-") as tmp:
         root = Path(tmp).resolve()
         written: dict[str, str] = {}
@@ -47,21 +51,26 @@ def run_sast(
             if not target.is_relative_to(root):
                 return gate_result([], reasons=[f"{path}: not a path inside the repository"])
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text, encoding="utf-8")
+            target.write_text(text or "", encoding="utf-8")
             written[str(target)] = path
-        argv = [binary, "--format", "json", "--quiet", "--ignore-nosec", *written]
+        # --exclude "": by default bandit skips any path holding ".git", "CVS", "__pycache__"
+        argv = [binary, "--format", "json", "--quiet", "--ignore-nosec", "--exclude", "", *written]
         try:
             done = subprocess.run(
                 argv, cwd=root, capture_output=True, text=True, timeout=SAST_TIMEOUT_SECONDS
             )
             report = json.loads(done.stdout)
         except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
-            return gate_result([], reasons=[f"{analyzer} did not finish ({type(exc).__name__})"])
+            down = [f"{analyzer} did not finish ({type(exc).__name__})"]
+            return gate_result([], unavailable=down)
     if done.returncode not in (0, 1):
-        return gate_result([], reasons=[f"{analyzer} exited {done.returncode}"])
-    reasons = [
-        f"{written.get(e.get('filename'), e.get('filename'))}: {analyzer} could not read it"
-        for e in report.get("errors", [])
+        return gate_result([], unavailable=[f"{analyzer} exited {done.returncode}"])
+    errored = [e.get("filename") for e in report.get("errors", [])]
+    reasons = [f"{written.get(f, f)}: {analyzer} could not read it" for f in errored]
+    skipped = [
+        f"{path}: {analyzer} did not analyse it"
+        for name, path in written.items()
+        if name not in report.get("metrics", {}) and name not in errored
     ]
     floor = _RANK[severity]
     findings = [
@@ -75,4 +84,4 @@ def run_sast(
         for r in report.get("results", [])
         if _RANK.get(str(r.get("issue_severity")).lower(), 2) >= floor
     ]
-    return gate_result(findings, reasons=reasons)
+    return gate_result(findings, reasons=reasons, unavailable=skipped)

@@ -109,6 +109,12 @@ def test_a_line_that_starts_with_plus_signs_is_content_not_a_header() -> None:
     assert added_lines(diff) == {"notes.md": [(1, "++ heading"), (2, FAKE["github-token"])]}
 
 
+def test_a_name_holding_a_space_keeps_no_trailing_tab() -> None:
+    diff = "diff --git a/my app.py b/my app.py\n+++ b/my app.py\t\n@@ -0,0 +1 @@\n+x = 1\n"
+
+    assert added_lines(diff) == {"my app.py": [(1, "x = 1")]}
+
+
 def test_a_policy_can_allow_a_match_in_one_named_file_and_the_result_says_so() -> None:
     added = added_lines(_diff(FAKE["aws-access-token"]))
     rules = Policy.model_validate(

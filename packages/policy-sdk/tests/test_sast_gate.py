@@ -49,7 +49,8 @@ def test_an_analyser_that_is_not_installed_cannot_verify(
     result = run_sast({"app/run.py": SHELL})
 
     assert result.status == "could_not_verify" and not result.passed
-    assert result.reasons == ["bandit is not installed on this worker"]
+    # the worker's fault, not the change's: a person fixes it, not the builder
+    assert (result.unavailable, result.reasons) == (["bandit is not installed on this worker"], [])
 
 
 def test_a_change_with_no_file_to_analyse_needs_no_analyser(
@@ -65,3 +66,29 @@ def test_a_file_the_analyser_cannot_read_cannot_verify() -> None:
 
     assert result.status == "could_not_verify"
     assert result.reasons == ["app/broken.py: bandit could not read it"]
+
+
+def test_a_changed_file_that_could_not_be_read_cannot_verify() -> None:
+    result = run_sast({"app/run.py": None})
+
+    assert (result.status, result.reasons) == ("could_not_verify", ["app/run.py: not read"])
+
+
+def test_a_path_bandit_excludes_by_default_is_still_analysed() -> None:
+    result = run_sast({".github/scripts/ci.py": SHELL, "tools/CVSsync.py": SHELL})
+
+    assert sorted(f.file for f in result.findings) == [".github/scripts/ci.py", "tools/CVSsync.py"]
+
+
+def test_a_file_the_analyser_did_not_report_on_cannot_verify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = tmp_path / "bandit"
+    fake.write_text('#!/bin/sh\necho \'{"errors": [], "results": [], "metrics": {}}\'\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    result = run_sast({"app/run.py": SHELL})
+
+    assert result.status == "could_not_verify"
+    assert result.unavailable == ["app/run.py: bandit did not analyse it"]
