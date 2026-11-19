@@ -32,6 +32,7 @@ from scf_api.observability.service import get_observability_service
 from scf_api.services.authz_service import AuthzService
 from scf_api.services.workflow_gate_hook import EngineFactory
 from scf_approval import (
+    ApprovalAuditSink,
     ApprovalAuthorizer,
     ApprovalRepository,
     ApprovalService,
@@ -59,9 +60,16 @@ from scf_db.models.role_grant import RoleGrant
 
 
 def build_gate_registry(
-    grants: GrantStore, *, engine_factory: EngineFactory | None = None
+    grants: GrantStore,
+    *,
+    engine_factory: EngineFactory | None = None,
+    audit: ApprovalAuditSink | None = None,
 ) -> GateRegistry:
-    """Register every available provider/hook (the F36 composition root)."""
+    """Register every available provider/hook (the F36 composition root).
+
+    ``audit`` is where the workflow gate hooks record a failed submit; it
+    defaults to the process audit log, the approval service's own sink.
+    """
     from scf_api.services.attestation_service import PrAttestationResolutionHook
     from scf_api.services.workflow_gate_hook import (
         PlanWorkflowGateHook,
@@ -85,10 +93,11 @@ def build_gate_registry(
         PrWorkflowGateHook(
             wrapped=PrAttestationResolutionHook(_attestation_session),
             engine_factory=engine_factory,
+            audit=audit,
         )
     )
-    registry.register_hook(SpecWorkflowGateHook(engine_factory=engine_factory))
-    registry.register_hook(PlanWorkflowGateHook(engine_factory=engine_factory))
+    registry.register_hook(SpecWorkflowGateHook(engine_factory=engine_factory, audit=audit))
+    registry.register_hook(PlanWorkflowGateHook(engine_factory=engine_factory, audit=audit))
     return registry
 
 

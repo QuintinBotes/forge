@@ -26,11 +26,12 @@ import scf_api.db
 from scf_api.db import get_db
 from scf_api.deps import Principal, get_current_principal
 from scf_api.main import create_app
+from scf_api.observability.audit import AuditCategory, AuditLog
 from scf_api.observability.redaction import redact_mapping
 from scf_api.services.approval_service import build_gate_registry, get_approval_service
 from scf_api.services.workflow_engine import select_workflow_engine
 from scf_approval import ApprovalAuthorizer, ApprovalService, InMemoryApprovalRepository
-from scf_approval.audit import RecordingAuditSink
+from scf_approval.audit import ApprovalAuditSink, RecordingAuditSink
 from scf_approval.authorizer import DefaultPolicyReader
 from scf_approval.events import APPROVAL_RESOLVED_TOPIC, InMemoryActivityBus
 from scf_approval.models import ApprovalRequest, GateStatus
@@ -81,19 +82,25 @@ def _principal(
 class Harness:
     """Apps (one per principal) over one database and one approval service."""
 
-    def __init__(self, factory: sessionmaker[Session], authorizer: ApprovalAuthorizer) -> None:
+    def __init__(
+        self,
+        factory: sessionmaker[Session],
+        authorizer: ApprovalAuthorizer,
+        audit: ApprovalAuditSink | None = None,
+    ) -> None:
         self.factory = factory
         self.repo = InMemoryApprovalRepository()
         #: Submits the gate hook's engine factory refuses before it opens an engine.
         self.failing_submits = 0
         self.audit = RecordingAuditSink()
+        sink = audit if audit is not None else self.audit
         self.events = InMemoryActivityBus()
         self.approvals = ApprovalService(
             self.repo,
-            build_gate_registry(InMemoryGrantStore(), engine_factory=self._engine_for),
+            build_gate_registry(InMemoryGrantStore(), engine_factory=self._engine_for, audit=sink),
             authorizer,
             events=self.events,
-            audit=self.audit,
+            audit=sink,
             redactor=redact_mapping,
         )
 
@@ -191,8 +198,10 @@ def make_harness(factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(scf_api.db, "get_session_factory", lambda: factory)
     monkeypatch.delenv("FORGE_ATTEST_SIGNING_KEY", raising=False)
 
-    def _make(authorizer: ApprovalAuthorizer | None = None) -> Harness:
-        return Harness(factory, authorizer or ApprovalAuthorizer())
+    def _make(
+        authorizer: ApprovalAuthorizer | None = None, audit: ApprovalAuditSink | None = None
+    ) -> Harness:
+        return Harness(factory, authorizer or ApprovalAuthorizer(), audit)
 
     return _make
 
@@ -581,6 +590,34 @@ def test_failed_submit_is_recorded_and_sync_recovers_it_once(
     assert again.json() == synced.json()
 
 
+def test_a_failed_submit_is_audited_beside_the_decision(
+    make_harness, decider_id: uuid.UUID
+) -> None:
+    """The failure reaches the audit log as well as the request (#182), on the
+    hash-chained log the composition root uses."""
+    audit = AuditLog()
+    h = make_harness(audit=audit)
+    member, decider = h.client(_principal()), h.client(_principal(user_id=decider_id))
+    run_id = _to_gate(h, member, decider, "spec")
+    request = _the_pending(h, run_id, "spec")
+    h.failing_submits = 1
+
+    _decide(decider, request.id, "approve")
+
+    rows = audit.query(category=AuditCategory.APPROVAL, run_id=uuid.UUID(run_id))
+    assert [(r.action, r.status) for r in rows] == [
+        ("spec", "requested"),
+        ("spec", "workflow_event_failed"),
+        ("spec", "approved"),
+    ]
+    failed = rows[1]
+    assert failed.actor == f"user:{decider_id}"
+    assert failed.workspace_id == WS
+    assert failed.detail == "RuntimeError: engine unavailable"
+    assert failed.metadata == {"request_id": str(request.id), "event": "spec_approved_by_human"}
+    assert audit.verify_integrity()
+
+
 def test_sync_uses_the_latest_request_for_the_gate(
     h: Harness, member: TestClient, decider: TestClient
 ) -> None:
@@ -818,6 +855,10 @@ def test_pr_approval_without_merge_signals_is_recorded_and_synced_later(
     _decide(decider, request.id, "approve")
 
     assert h.request(request.id).gate_payload["workflow_event"]["status"] == "failed"
+    failed = [r for r in h.audit.records if r["status"] == "workflow_event_failed"]
+    assert [(r["gate"], r["metadata"]["event"]) for r in failed] == [
+        ("pr", "review_approved_by_human")
+    ]
     assert _run(member, run_id)["current_state"] == "awaiting_review"
     assert _attestations(h, run_id) == 1  # the approval attested before the guard refused
 
