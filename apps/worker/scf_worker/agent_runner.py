@@ -18,6 +18,10 @@ or a live model provider:
   :class:`~scf_db.models.RunRecording` row.
 * :func:`run_agent_task` — the thin Celery task that builds the runner, runs,
   and (best-effort) persists the recording when enabled.
+* :func:`prepare_run`, :func:`execute_run`, :func:`close_out_run` — the run's
+  three phases (#238). Prepare and close-out need privileged credentials and stay
+  in the worker; execute is the loop a separate run process can own
+  (``scf_worker.run_main``).
 """
 
 from __future__ import annotations
@@ -27,7 +31,9 @@ import logging
 import os
 import subprocess
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -69,12 +75,17 @@ from scf_worker.celery_app import celery_app
 from scf_worker.dispatch import RepositoryUnavailable, resolve_run_repository
 from scf_worker.finalizer import GitHubAppCredentials, push_and_open_pr
 from scf_worker.reliability import ScfTask
-from scf_worker.run_events import RunEventSink, terminal_drafts
+from scf_worker.run_events import terminal_drafts
+from scf_worker.run_record import InProcessRunRecord, RunRecord
 from scf_worker.run_workspace import prepared_workspace
 
 __all__ = [
+    "PreparedRun",
     "build_agent_runner",
+    "close_out_run",
+    "execute_run",
     "persist_run_recording",
+    "prepare_run",
     "run_agent_task",
     "run_objective",
 ]
@@ -470,16 +481,40 @@ def run_agent_objective(
 ) -> tuple[AgentRunResult, AgentObjective]:
     """Run one agent objective: the body the Celery task and ``forge.run_agent`` share.
 
-    A persisted run (``context["agent_run_id"]``) is marked started, streams its
-    events and is closed out (terminal events, outcome, tracker write-back). The
-    agent works in a per-run worktree of the resolved repository. ``deliver`` pushes
-    the branch and opens the pull request; a workflow run opens its own through
-    ``forge.open_pr_with_spec_traceability``. Returns the result and the objective
-    with its repository resolved. A failure, or Celery's soft time limit, is
-    recorded on the run and then re-raised.
+    The three phases in order (#238): :func:`prepare_run`, :func:`execute_run` and
+    :func:`close_out_run`. ``deliver`` pushes the branch and opens the pull request;
+    a workflow run opens its own through ``forge.open_pr_with_spec_traceability``.
+    Returns the result and the objective with its repository resolved. A failure,
+    or Celery's soft time limit, is recorded on the run and then re-raised.
     """
-    from celery.exceptions import SoftTimeLimitExceeded
+    run, refused = prepare_run(parsed)
+    result = refused
+    if result is None:
+        with _closed_out_on_failure(run):
+            result = execute_run(run)
+    close_out_run(run, result, deliver=deliver)
+    return result, run.objective
 
+
+@dataclass
+class PreparedRun:
+    """A run the worker has prepared: its identity, repository and event stream."""
+
+    objective: AgentObjective
+    run_id: uuid.UUID
+    workspace_id: uuid.UUID
+    persisted_row: bool
+    events: RunRecord | None
+
+
+def prepare_run(parsed: AgentObjective) -> tuple[PreparedRun, AgentRunResult | None]:
+    """Before the loop, in the worker: the started stamp and the run's repository.
+
+    A persisted run (``context["agent_run_id"]``) is marked started and streams its
+    events. Resolving the repository fetches the mirror with source-control
+    application credentials, so it stays here. Returns the refusal to close out
+    when the repository is unavailable.
+    """
     context = parsed.context
     persisted_row = context.get("agent_run_id") is not None
     run_id = _opt_uuid(context.get("agent_run_id")) or uuid.uuid4()
@@ -487,85 +522,117 @@ def run_agent_objective(
     if persisted_row:
         _mark_started(run_id, workspace_id)
     events = _event_sink(run_id, workspace_id) if persisted_row else None
-    try:
+    run = PreparedRun(parsed, run_id, workspace_id, persisted_row, events)
+    with _closed_out_on_failure(run):
         try:
-            parsed = resolve_run_repository(parsed)
+            run.objective = resolve_run_repository(parsed)
         except RepositoryUnavailable as exc:
-            refused = AgentRunResult(
+            return run, AgentRunResult(
                 run_id=run_id, task_id=parsed.task_id, status=RunStatus.FAILED, error=str(exc)
             )
-            _record_terminal(
-                parsed, run_id, workspace_id, refused, events=events, persisted_row=persisted_row
-            )
-            return refused, parsed
-        # Resolved first, so each commit names the model this client runs (#214).
-        client = _resolve_model_client(None)
-        with prepared_workspace(
-            parsed,
-            run_id=run_id,
-            workspace_id=workspace_id,
-            model=assisted_model(client, parsed.model),
-        ) as workspace:
-            if events is not None:
-                events.emit(
-                    RunEventDraft(
-                        type=RunEventType.THREAD_STARTED,
-                        summary=parsed.objective[:120],
-                        payload={
-                            "repo": parsed.context.get("repo_full_name"),
-                            "branch": workspace.branch if workspace else None,
-                        },
-                    )
+    return run, None
+
+
+def execute_run(run: PreparedRun, *, persist_recording: bool = True) -> AgentRunResult:
+    """The loop: workspace, model loop, step events and (best effort) recording.
+
+    Needs model access, the run's event stream and the sandbox, never source-control
+    application credentials. The agent works in a per-run worktree of the resolved
+    repository; the run branch outlives it for close-out to deliver.
+    """
+    parsed, events = run.objective, run.events
+    # Resolved first, so each commit names the model this client runs (#214).
+    client = _resolve_model_client(None)
+    with prepared_workspace(
+        parsed,
+        run_id=run.run_id,
+        workspace_id=run.workspace_id,
+        model=assisted_model(client, parsed.model),
+    ) as workspace:
+        if events is not None:
+            events.emit(
+                RunEventDraft(
+                    type=RunEventType.THREAD_STARTED,
+                    summary=parsed.objective[:120],
+                    payload={
+                        "repo": parsed.context.get("repo_full_name"),
+                        "branch": workspace.branch if workspace else None,
+                    },
                 )
-            runner = build_agent_runner(
-                model_client=client,
-                tools=workspace.tools if workspace else None,
-                repo_root=workspace.path if workspace else None,
-                token_budget=_run_token_budget(),
-                on_step=events.on_step if events is not None else None,
             )
-            result = run_objective(runner, parsed)
-            if workspace is not None:
-                # The branch outlives the worktree; the finalizer pushes it below.
-                result.artifacts["branch"] = workspace.branch
-                head = _git(workspace.path, "rev-parse", "HEAD").stdout.strip()
-                result.artifacts["head_commit"] = head
-                result.artifacts["base_commit"] = workspace.base_commit
-        if deliver and workspace is not None and result.status == RunStatus.SUCCEEDED:
-            _finalize(parsed, result, branch=workspace.branch, run_id=run_id)
-    except SoftTimeLimitExceeded:
-        # A runaway loop tripped the soft time limit: record a terminal ESCALATED
-        # outcome (so the run does not stay PENDING and block its issue / cap slot
-        # forever) and write back before the caller turns it into its marker.
-        escalated = AgentRunResult(
+        runner = build_agent_runner(
+            model_client=client,
+            tools=workspace.tools if workspace else None,
+            repo_root=workspace.path if workspace else None,
+            token_budget=_run_token_budget(),
+            on_step=events.on_step if events is not None else None,
+        )
+        result = run_objective(runner, parsed)
+        if workspace is not None:
+            # The branch outlives the worktree; close-out delivers it.
+            result.artifacts["branch"] = workspace.branch
+            head = _git(workspace.path, "rev-parse", "HEAD").stdout.strip()
+            result.artifacts["head_commit"] = head
+            result.artifacts["base_commit"] = workspace.base_commit
+    if persist_recording:
+        _maybe_persist_recording(runner, parsed.model_dump(mode="json"))
+    return result
+
+
+def close_out_run(run: PreparedRun, result: AgentRunResult, *, deliver: bool = True) -> None:
+    """After the loop, in the worker: delivery, terminal events, outcome, tracker write-back."""
+    branch = result.artifacts.get("branch")
+    if deliver and branch and result.status == RunStatus.SUCCEEDED:
+        with _closed_out_on_failure(run):
+            _finalize(run.objective, result, branch=str(branch), run_id=run.run_id)
+    _record_terminal(
+        run.objective,
+        run.run_id,
+        run.workspace_id,
+        result,
+        events=run.events,
+        persisted_row=run.persisted_row,
+    )
+
+
+def failure_result(
+    run_id: uuid.UUID, task_id: uuid.UUID | None, exc: BaseException
+) -> AgentRunResult:
+    """The result a failure leaves: Celery's soft time limit escalates, anything else fails."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    if isinstance(exc, SoftTimeLimitExceeded):
+        return AgentRunResult(
             run_id=run_id,
-            task_id=parsed.task_id,
+            task_id=task_id,
             status=RunStatus.ESCALATED,
             error="soft_time_limit_exceeded",
         )
-        _record_terminal(
-            parsed, run_id, workspace_id, escalated, events=events, persisted_row=persisted_row
-        )
-        raise
-    except Exception as exc:
-        # Any other unhandled failure: still close the persisted run out
-        # (terminal events, outcome, tracker write-back), then re-raise so the
-        # caller's own failure semantics apply unchanged.
-        failed = AgentRunResult(
-            run_id=run_id,
-            task_id=parsed.task_id,
-            status=RunStatus.FAILED,
-            error=type(exc).__name__,
-        )
-        _record_terminal(
-            parsed, run_id, workspace_id, failed, events=events, persisted_row=persisted_row
-        )
-        raise
-    _record_terminal(
-        parsed, run_id, workspace_id, result, events=events, persisted_row=persisted_row
+    return AgentRunResult(
+        run_id=run_id, task_id=task_id, status=RunStatus.FAILED, error=type(exc).__name__
     )
-    _maybe_persist_recording(runner, parsed.model_dump(mode="json"))
-    return result, parsed
+
+
+@contextmanager
+def _closed_out_on_failure(run: PreparedRun) -> Iterator[None]:
+    """Close the run out on a failure, then re-raise so the caller's own semantics apply.
+
+    A runaway loop that trips the soft time limit is recorded ESCALATED, so the run
+    does not stay PENDING and block its issue or cap slot; the caller turns it into
+    its marker.
+    """
+    try:
+        yield
+    except Exception as exc:
+        _record_terminal(
+            run.objective,
+            run.run_id,
+            run.workspace_id,
+            failure_result(run.run_id, run.objective.task_id, exc),
+            events=run.events,
+            persisted_row=run.persisted_row,
+        )
+        raise
 
 
 def _record_terminal(
@@ -574,7 +641,7 @@ def _record_terminal(
     workspace_id: uuid.UUID,
     result: AgentRunResult,
     *,
-    events: RunEventSink | None,
+    events: RunRecord | None,
     persisted_row: bool,
 ) -> None:
     """Close a run out: terminal events, outcome, then tracker write-back.
@@ -606,8 +673,8 @@ def _mark_started(run_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
         logger.exception("could not mark agent run %s started", run_id)
 
 
-def _event_sink(run_id: uuid.UUID, workspace_id: uuid.UUID) -> RunEventSink:
-    return RunEventSink(
+def _event_sink(run_id: uuid.UUID, workspace_id: uuid.UUID) -> RunRecord:
+    return InProcessRunRecord(
         run_id,
         workspace_id,
         session_factory=create_session_factory(),
@@ -615,7 +682,7 @@ def _event_sink(run_id: uuid.UUID, workspace_id: uuid.UUID) -> RunEventSink:
     )
 
 
-def _emit_terminal(events: RunEventSink | None, result: AgentRunResult) -> None:
+def _emit_terminal(events: RunRecord | None, result: AgentRunResult) -> None:
     if events is None:
         return
     for draft in terminal_drafts(result):
