@@ -10,10 +10,13 @@ no DB, no external creds (live-db rows live in ``test_enforcement_matrix.py``).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session, sessionmaker
 
 from scf_api.deps import Principal, get_current_principal
 from scf_api.main import create_app
@@ -48,21 +51,56 @@ def _principal(role: UserRole) -> Principal:
     )
 
 
-def _client(role: UserRole | None = None, settings: Settings | None = None) -> TestClient:
+def _app(
+    role: UserRole | None = None,
+    settings: Settings | None = None,
+    db: sessionmaker[Session] | None = None,
+) -> FastAPI:
     """A wired app; ``role=None`` leaves the app unauthenticated.
 
     Both authentication dependencies are overridden: the router-level
     ``scf_api.deps.get_current_principal`` and the auth service's own
     ``get_authenticated_principal`` (the /auth router keys off the latter).
+    ``db`` serves the request sessions, so a handler past its guard runs offline.
     """
     from scf_api.auth.service import get_authenticated_principal
+    from scf_api.db import get_db
 
     app = create_app(settings or Settings())
     if role is not None:
         resolved = _principal(role)
         app.dependency_overrides[get_current_principal] = lambda: resolved
         app.dependency_overrides[get_authenticated_principal] = lambda: resolved
-    return TestClient(app)
+    if db is not None:
+
+        def _session() -> Iterator[Session]:
+            with db() as session:
+                yield session
+
+        app.dependency_overrides[get_db] = _session
+    return app
+
+
+def _client(role: UserRole | None = None, settings: Settings | None = None) -> TestClient:
+    return TestClient(_app(role, settings))
+
+
+def _sqlite() -> sessionmaker[Session]:
+    """An in-memory database with the whole schema and this module's workspace."""
+    from sqlalchemy import StaticPool, create_engine
+
+    from scf_db.base import Base
+    from scf_db.models import Workspace
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
+    with db() as session:
+        session.add(Workspace(id=WORKSPACE_ID, name="Matrix", slug="matrix"))
+        session.commit()
+    return db
 
 
 # --------------------------------------------------------------------------- #
@@ -191,6 +229,123 @@ def check_auth_required_401() -> None:
     tags = {str(r.tags[0]) for r in FEATURE_ROUTERS if r.tags}
     missing = tags - saw_401 - set(PUBLIC_BY_DESIGN_ROUTERS)
     assert not missing, f"routers with no sampled 401 (auth wiring suspect): {missing}"
+
+
+def check_route_role_matrix() -> None:
+    from route_matrix import DECLARED, UNGUARDED, routes, url
+
+    from scf_api.auth.rbac import permissions_for
+
+    # A 429 partway through the sweep would mask the status under test.
+    settings = Settings(ratelimit_enabled=False)
+    walked = {f"{method} {path}": needs for method, path, needs in routes(create_app(settings))}
+    # Every route and method of the running app is declared once: guarded, or with a reason.
+    undeclared = sorted(walked.keys() - DECLARED.keys() - UNGUARDED.keys())
+    assert not undeclared, f"routes with no declared expectation: {undeclared}"
+    stale = sorted((DECLARED.keys() | UNGUARDED.keys()) - walked.keys())
+    assert not stale, f"declared routes the app does not serve: {stale}"
+    twice = sorted(DECLARED.keys() & UNGUARDED.keys())
+    assert not twice, f"routes declared twice: {twice}"
+    drift = [
+        k for k, needs in walked.items() if needs != ({DECLARED[k]} if k in DECLARED else None)
+    ]
+    assert drift == [], f"guards other than declared: {drift}"
+
+    # Every role that lacks the permission gets 403; every role that holds it gets past.
+    db = _sqlite()
+    wrong: list[str] = []
+    for role in UserRole:
+        held = permissions_for(role)
+        with TestClient(_app(role, settings, db), raise_server_exceptions=False) as client:
+            for key, permission in DECLARED.items():
+                method, path = key.split(" ", 1)
+                status = client.request(method, url(path)).status_code
+                if status == 401 or (status == 403) is (permission in held):
+                    wrong.append(f"{role.value}: {key} -> {status}")
+    assert wrong == [], f"routes answering against the declared permission: {wrong}"
+
+
+#: A body each workspace-selector route accepts, so the call reaches its handler.
+_SELECTOR_BODIES: dict[str, Any] = {
+    "PUT /workspaces/{workspace_id}/sso": {},
+    "PUT /workspaces/{workspace_id}/oidc": {"issuer": "https://idp.example", "client_id": "c"},
+    "POST /workspaces/{workspace_id}/sso/test": {"saml_response": "x"},
+    "POST /workspaces/{workspace_id}/scim/tokens": {"name": "t"},
+}
+
+
+def check_workspace_selector_scoped() -> None:
+    import os
+    from unittest import mock
+
+    from fastapi.routing import APIRoute, iter_route_contexts
+
+    from scf_api.auth.service import get_authenticated_principal
+    from scf_db.models import OidcConfiguration, ScimToken, SsoConfiguration, Workspace
+
+    # Another workspace with something behind every selector route.
+    other = uuid.uuid4()
+    db = _sqlite()
+    with db() as session:
+        session.add(Workspace(id=other, name="Other", slug="other"))
+        session.flush()
+        token = ScimToken(workspace_id=other, name="t", token_hash="0" * 64, token_prefix="t")
+        sso = SsoConfiguration(
+            workspace_id=other,
+            idp_entity_id="e",
+            idp_sso_url="u",
+            idp_x509_certs=["c"],
+            sp_entity_id="e",
+            sp_private_key_encrypted=b"k",
+            sp_cert_pem="c",
+        )
+        oidc = OidcConfiguration(
+            workspace_id=other,
+            issuer="i",
+            client_id="c",
+            client_secret_ref="r",
+            client_secret_encrypted=b"s",
+        )
+        session.add_all([token, sso, oidc])
+        session.commit()
+    fill = {"workspace_id": str(other), "token_id": str(token.id)}
+
+    app = _app(UserRole.ADMIN, Settings(ratelimit_enabled=False), db)
+    authenticators = {get_current_principal, get_authenticated_principal}
+    seen: list[str] = []
+    wrong: list[str] = []
+    # The SSO config service keeps its keys under the master key.
+    master_key = {"FORGE_SECRET_KEY": "matrix-selector-master-key-0123456789"}
+    with (
+        mock.patch.dict(os.environ, master_key),
+        TestClient(app, raise_server_exceptions=False) as client,
+    ):
+        for route in iter_route_contexts(app.routes):
+            if not isinstance(route.original_route, APIRoute):
+                continue
+            stack, deps = [route.dependant], []
+            while stack:
+                deps.append(stack.pop())
+                stack.extend(deps[-1].dependencies)
+            # A route that reads no principal (a webhook) has no caller's workspace to keep.
+            if not any(dep.call in authenticators for dep in deps):
+                continue
+            params = [p for d in deps for p in (*d.path_params, *d.query_params, *d.header_params)]
+            named = {p.alias: str(other) for p in params if "workspace" in p.alias.lower()}
+            if not named:
+                continue
+            probe = route.path
+            for param in route.param_convertors:
+                probe = probe.replace("{" + param + "}", fill.get(param, str(uuid.uuid4())))
+            for method in sorted((route.methods or set()) - {"HEAD"}):
+                key = f"{method} {route.path}"
+                seen.append(key)
+                body = _SELECTOR_BODIES.get(key)
+                resp = client.request(method, probe, params=named, headers=named, json=body)
+                if resp.status_code not in (403, 404):
+                    wrong.append(f"{key} -> {resp.status_code}")
+    assert len(seen) >= 11, f"the selector walk found too few routes: {seen}"
+    assert wrong == [], f"routes acting on another workspace: {wrong}"
 
 
 # --------------------------------------------------------------------------- #

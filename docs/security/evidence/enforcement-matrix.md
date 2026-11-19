@@ -12,6 +12,8 @@
 | `rbac-default-deny` | RBAC role matrix is least-privilege / default-deny | offline | SCF_SPEC Security: "RBAC — admin, member, viewer, agent-runner roles per workspace" | `check_rbac_default_deny` |
 | `rbac-wired-403` | Wired routes return 403 for under-privileged roles | offline | SCF_SPEC Security (RBAC) / Task 2.3-fix-r2 | `check_rbac_wired_403` |
 | `auth-required-401` | Every feature router rejects unauthenticated calls | offline | SCF_SPEC Security (auth wired) | `check_auth_required_401` |
+| `rbac-route-matrix` | Every route and method answers its declared permission for every role | offline | specs/003-containment FR-022, FR-024 (PT-01) | `check_route_role_matrix` |
+| `workspace-selector-scoped` | A workspace selector naming another workspace is refused | offline | specs/003-containment FR-022 (PT-01) | `check_workspace_selector_scoped` |
 | `mcp-write-default-deny` | MCP tools are read-only by default; writes fail closed | offline | SCF_SPEC MCP Security Rules | `check_mcp_write_default_deny` |
 | `policy-default-deny` | Repo policy evaluation is default-deny | offline | SCF_SPEC Repo Policy System | `check_policy_default_deny` |
 | `agent-policy-gate` | Agent dispatch never executes a policy-denied tool | offline | SCF_SPEC Security / Repo Policy System | `check_agent_policy_gate` |
@@ -45,6 +47,14 @@ Through create_app() with an authenticated principal per role: viewer and agent-
 ### `auth-required-401`
 
 For every mounted feature router, every route (except the reviewed public-by-design set) returns 401/403/405/422-without-2xx when called with no credentials, and at least one route per router returns exactly 401.
+
+### `rbac-route-matrix`
+
+Walks every route and method of create_app() and finds each in tests/security/route_matrix.py exactly once: DECLARED gives the permission its require_permission guard must need, UNGUARDED the reviewed reason it has none. An undeclared route, a stale entry or a guard needing another permission fails. Then, per role (admin, member, viewer, agent-runner), every DECLARED route answers 403 to a role lacking the permission and neither 401 nor 403 to a role holding it.
+
+### `workspace-selector-scoped`
+
+Walks every route of create_app() that authenticates a principal and takes a path, query or header parameter naming a workspace. An admin of one workspace names another workspace that has an SSO, OIDC and SCIM configuration behind every such route, and each call answers 403 or 404.
 
 ### `mcp-write-default-deny`
 

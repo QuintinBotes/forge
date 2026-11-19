@@ -44,6 +44,31 @@ controls:
       public-by-design set) returns 401/403/405/422-without-2xx when called
       with no credentials, and at least one route per router returns exactly 401.
 
+  - id: rbac-route-matrix
+    title: Every route and method answers its declared permission for every role
+    spec: specs/003-containment FR-022, FR-024 (PT-01)
+    mode: offline
+    check: check_route_role_matrix
+    asserts: >
+      Walks every route and method of create_app() and finds each in
+      tests/security/route_matrix.py exactly once: DECLARED gives the permission
+      its require_permission guard must need, UNGUARDED the reviewed reason it has
+      none. An undeclared route, a stale entry or a guard needing another
+      permission fails. Then, per role (admin, member, viewer, agent-runner), every
+      DECLARED route answers 403 to a role lacking the permission and neither 401
+      nor 403 to a role holding it.
+
+  - id: workspace-selector-scoped
+    title: A workspace selector naming another workspace is refused
+    spec: specs/003-containment FR-022 (PT-01)
+    mode: offline
+    check: check_workspace_selector_scoped
+    asserts: >
+      Walks every route of create_app() that authenticates a principal and takes a
+      path, query or header parameter naming a workspace. An admin of one workspace
+      names another workspace that has an SSO, OIDC and SCIM configuration behind
+      every such route, and each call answers 403 or 404.
+
   - id: mcp-write-default-deny
     title: MCP tools are read-only by default; writes fail closed
     spec: SCF_SPEC MCP Security Rules #1

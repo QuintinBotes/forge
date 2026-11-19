@@ -66,23 +66,24 @@ def get_principal_context(
 ) -> PrincipalContext:
     """Load the caller's :class:`PrincipalContext` (grants + memberships) once.
 
-    A narrowed API key (spec L §6a) is a workspace viewer here, holding none of
+    A narrowed API key (spec L §6a) is a workspace viewer here, and an agent-runner
+    (an agent's token included) a workspace agent-runner (PT-01, #188): neither holds
     its owner's grants or team memberships.
     """
-    if principal.narrowed:
+    if principal.narrowed or principal.role is UserRole.AGENT_RUNNER:
         workspace = ScopeRef(type=ScopeType.WORKSPACE, id=principal.workspace_id)
         who = PrincipalRef(type=PrincipalType.USER, id=principal.user_id)
-        viewer = RoleGrant(
+        grant = RoleGrant(
             id=principal.credential_id or principal.user_id,
             workspace_id=principal.workspace_id,
             principal=who,
             scope=workspace,
-            role=UserRole.VIEWER,
+            role=UserRole.VIEWER if principal.narrowed else UserRole.AGENT_RUNNER,
         )
         return PrincipalContext(
             principal=who,
             workspace_id=principal.workspace_id,
-            grants=(viewer,),
+            grants=(grant,),
             team_memberships=(),
         )
     return service.load_principal_context(principal.workspace_id, principal.user_id)

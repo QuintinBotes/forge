@@ -374,7 +374,6 @@ class AuthService:
         *,
         workspace_id: uuid.UUID,
         name: str,
-        role: UserRole,
         user_id: uuid.UUID | None = None,
         ttl_seconds: int | None = None,
         now: datetime | None = None,
@@ -384,14 +383,15 @@ class AuthService:
         Satisfies the spec's "automatic expiry for agent tokens": every minted
         agent token carries ``expires_at = now + FORGE_AGENT_TOKEN_TTL`` (default
         24h) so a dormant token cannot outlive its run. ``apikeys.verify`` rejects
-        it once expired.
+        it once expired. The role is always ``agent-runner``, whoever ``user_id`` is
+        (PT-01, #188).
         """
         seconds = ttl_seconds if ttl_seconds is not None else _agent_token_ttl_seconds()
         reference = now or datetime.now(UTC)
         return self.api_keys.mint(
             workspace_id=workspace_id,
             name=name,
-            role=role,
+            role=UserRole.AGENT_RUNNER,
             kind=APIKeyKind.SYSTEM,
             user_id=user_id,
             expires_at=reference + timedelta(seconds=seconds),
