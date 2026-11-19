@@ -1,0 +1,46 @@
+cases:
+  - id: ffb-id-generator-class
+    kind: agent_task
+    tags: [agent_task, refactor]
+    expected_ids: [REQ-IDS-1]
+    query: |
+      Identifier counter is a module global
+
+      next_id() keeps its counter in a module global, so two parts of a program cannot
+      number things independently. Move the counter into a class IdGenerator with a
+      method next_id(prefix="id"); each instance counts from 1 on its own. The
+      module-level next_id() must keep working exactly as before.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: ids.py
+          content: |
+            _counter = 0
+
+
+            def next_id(prefix="id"):
+                """The next identifier: ``id-1``, then ``id-2``, and so on."""
+                global _counter
+                _counter += 1
+                return f"{prefix}-{_counter}"
+      held_out:
+        - path: tests/test_ids.py
+          content: |
+            from ids import next_id
+
+
+            def test_generators_count_independently():
+                from ids import IdGenerator
+
+                first, second = IdGenerator(), IdGenerator()
+                assert first.next_id() == "id-1"
+                assert first.next_id("job") == "job-2"
+                assert second.next_id() == "id-1"
+
+
+            def test_module_function_counts_up():
+                assert next_id() == "id-1"
+                assert next_id("job") == "job-2"
+                assert next_id() == "id-3"
+      fail_to_pass: [tests/test_ids.py::test_generators_count_independently]
+      pass_to_pass: [tests/test_ids.py::test_module_function_counts_up]

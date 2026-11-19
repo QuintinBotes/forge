@@ -1,0 +1,71 @@
+cases:
+  - id: ffb-negative-cents
+    kind: agent_task
+    tags: [agent_task, new_test]
+    expected_ids: [REQ-CENTS-1]
+    query: |
+      format_cents() is wrong for negative amounts, and no test caught it
+
+      format_cents(-150) returns "-2.50"; it must be "-1.50", and format_cents(-5) must
+      be "-0.05". Fix it, and add a test to tests/test_money.py that fails on the
+      current code, so the bug cannot come back. Positive amounts are unchanged.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: money.py
+          content: |
+            def format_cents(cents):
+                """``cents`` as a decimal amount: 1234 is "12.34"."""
+                return f"{cents // 100}.{cents % 100:02d}"
+        - path: tests/test_money.py
+          content: |
+            from money import format_cents
+
+
+            def test_whole_and_part_amounts():
+                assert format_cents(1234) == "12.34"
+                assert format_cents(5) == "0.05"
+      held_out:
+        - path: tests/test_money_guard.py
+          content: |
+            import shutil
+            import subprocess
+            import sys
+            from pathlib import Path
+
+            from money import format_cents
+
+            ROOT = Path(__file__).resolve().parents[1]
+            #: money.py exactly as the issue found it.
+            BEFORE = (
+                "def format_cents(cents):\n"
+                '    """``cents`` as a decimal amount: 1234 is "12.34"."""\n'
+                '    return f"{cents // 100}.{cents % 100:02d}"\n'
+            )
+
+
+            def _repository_tests(tmp_path, source):
+                """pytest's exit code for tests/test_money.py run against ``source``."""
+                shutil.copy(ROOT / "tests" / "test_money.py", tmp_path)
+                (tmp_path / "money.py").write_text(source)
+                command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+                return subprocess.run(command, cwd=tmp_path, capture_output=True).returncode
+
+
+            def test_negative_cents_keep_one_sign():
+                assert format_cents(-150) == "-1.50"
+                assert format_cents(-5) == "-0.05"
+                assert format_cents(-200) == "-2.00"
+
+
+            def test_repository_tests_fail_before_the_fix(tmp_path):
+                assert _repository_tests(tmp_path, BEFORE) == 1
+
+
+            def test_repository_tests_pass_after_the_change(tmp_path):
+                assert _repository_tests(tmp_path, (ROOT / "money.py").read_text()) == 0
+                assert format_cents(1234) == "12.34"
+      fail_to_pass:
+        - tests/test_money_guard.py::test_negative_cents_keep_one_sign
+        - tests/test_money_guard.py::test_repository_tests_fail_before_the_fix
+      pass_to_pass: [tests/test_money_guard.py::test_repository_tests_pass_after_the_change]

@@ -1,0 +1,51 @@
+cases:
+  - id: ffb-unit-table
+    kind: agent_task
+    tags: [agent_task, refactor]
+    expected_ids: [REQ-UNITS-1]
+    query: |
+      Make to_metres() table-driven
+
+      to_metres() names every unit in an if/elif chain, so adding a unit means editing
+      the function. Replace the chain with a module-level dict FACTORS that maps each
+      unit to its size in metres, so a unit is added by adding an entry. The results,
+      and the ValueError for an unknown unit, must not change.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: lengths.py
+          content: |
+            def to_metres(value, unit):
+                """``value`` in ``unit`` ("mm", "cm", "m" or "km"), as metres."""
+                if unit == "mm":
+                    return value / 1000
+                elif unit == "cm":
+                    return value / 100
+                elif unit == "m":
+                    return value
+                elif unit == "km":
+                    return value * 1000
+                raise ValueError(f"unknown unit: {unit}")
+      held_out:
+        - path: tests/test_lengths.py
+          content: |
+            import pytest
+
+            import lengths
+
+
+            def test_units_come_from_the_factor_table(monkeypatch):
+                assert lengths.FACTORS["km"] == 1000
+                monkeypatch.setitem(lengths.FACTORS, "ft", 0.3048)
+                assert lengths.to_metres(10, "ft") == pytest.approx(3.048)
+
+
+            def test_known_and_unknown_units():
+                assert lengths.to_metres(1500, "mm") == pytest.approx(1.5)
+                assert lengths.to_metres(250, "cm") == pytest.approx(2.5)
+                assert lengths.to_metres(7, "m") == 7
+                assert lengths.to_metres(2, "km") == 2000
+                with pytest.raises(ValueError):
+                    lengths.to_metres(1, "mi")
+      fail_to_pass: [tests/test_lengths.py::test_units_come_from_the_factor_table]
+      pass_to_pass: [tests/test_lengths.py::test_known_and_unknown_units]

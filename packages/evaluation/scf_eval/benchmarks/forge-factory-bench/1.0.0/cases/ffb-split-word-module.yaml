@@ -1,0 +1,49 @@
+cases:
+  - id: ffb-split-word-module
+    kind: agent_task
+    tags: [agent_task, refactor]
+    expected_ids: [REQ-SPLIT-1]
+    query: |
+      Move count_words() into its own module
+
+      Other modules need count_words() without the rest of textstats. Move it into a
+      new module, words.py, unchanged. textstats must keep working, and existing code
+      that imports count_words from textstats must get the same function.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: textstats.py
+          content: |
+            WORDS_PER_MINUTE = 200
+
+
+            def count_words(text):
+                """The number of whitespace-separated words in ``text``."""
+                return len(text.split())
+
+
+            def reading_minutes(text):
+                """Whole minutes to read ``text``, rounded up."""
+                return -(-count_words(text) // WORDS_PER_MINUTE)
+      held_out:
+        - path: tests/test_textstats.py
+          content: |
+            from textstats import count_words, reading_minutes
+
+
+            def test_word_counting_has_its_own_module():
+                import textstats
+                import words
+
+                assert words.count_words("one two  three") == 3
+                assert textstats.count_words is words.count_words
+                assert words.count_words.__module__ == "words"
+
+
+            def test_counts_and_reading_time():
+                assert count_words("  a b\nc ") == 3
+                assert count_words("") == 0
+                assert reading_minutes("word " * 200) == 1
+                assert reading_minutes("word " * 201) == 2
+      fail_to_pass: [tests/test_textstats.py::test_word_counting_has_its_own_module]
+      pass_to_pass: [tests/test_textstats.py::test_counts_and_reading_time]

@@ -1,0 +1,89 @@
+cases:
+  - id: ffb-flag-case
+    kind: agent_task
+    tags: [agent_task, new_test]
+    expected_ids: [REQ-FLAG-1]
+    query: |
+      parse_flag() refuses "TRUE" and " yes "
+
+      Flags read from environment variables arrive in any case and with spaces around
+      them, and parse_flag() raises ValueError for them. Ignore case and surrounding
+      whitespace, so "TRUE" and " yes " are True and "No\n" is False. Words that are
+      not flags must still raise ValueError. Add a test to tests/test_flags.py that
+      fails on the current code.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: flags.py
+          content: |
+            def parse_flag(text):
+                """Read a flag: true, yes and 1 are True; false, no and 0 are False."""
+                if text in ("true", "yes", "1"):
+                    return True
+                if text in ("false", "no", "0"):
+                    return False
+                raise ValueError(f"not a flag: {text!r}")
+        - path: tests/test_flags.py
+          content: |
+            import pytest
+
+            from flags import parse_flag
+
+
+            def test_lower_case_words():
+                assert parse_flag("yes") is True
+                assert parse_flag("0") is False
+                with pytest.raises(ValueError):
+                    parse_flag("maybe")
+      held_out:
+        - path: tests/test_flags_guard.py
+          content: |
+            import shutil
+            import subprocess
+            import sys
+            from pathlib import Path
+
+            import pytest
+
+            from flags import parse_flag
+
+            ROOT = Path(__file__).resolve().parents[1]
+            #: flags.py exactly as the issue found it.
+            BEFORE = (
+                "def parse_flag(text):\n"
+                '    """Read a flag: true, yes and 1 are True; false, no and 0 are False."""\n'
+                '    if text in ("true", "yes", "1"):\n'
+                "        return True\n"
+                '    if text in ("false", "no", "0"):\n'
+                "        return False\n"
+                '    raise ValueError(f"not a flag: {text!r}")\n'
+            )
+
+
+            def _repository_tests(tmp_path, source):
+                """pytest's exit code for tests/test_flags.py run against ``source``."""
+                shutil.copy(ROOT / "tests" / "test_flags.py", tmp_path)
+                (tmp_path / "flags.py").write_text(source)
+                command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+                return subprocess.run(command, cwd=tmp_path, capture_output=True).returncode
+
+
+            def test_case_and_spaces_are_ignored():
+                assert parse_flag("TRUE") is True
+                assert parse_flag(" yes ") is True
+                assert parse_flag("No\n") is False
+                with pytest.raises(ValueError):
+                    parse_flag(" maybe ")
+
+
+            def test_repository_tests_fail_before_the_fix(tmp_path):
+                assert _repository_tests(tmp_path, BEFORE) == 1
+
+
+            def test_repository_tests_pass_after_the_change(tmp_path):
+                assert _repository_tests(tmp_path, (ROOT / "flags.py").read_text()) == 0
+                assert parse_flag("false") is False
+      fail_to_pass:
+        - tests/test_flags_guard.py::test_case_and_spaces_are_ignored
+        - tests/test_flags_guard.py::test_repository_tests_fail_before_the_fix
+      pass_to_pass: [tests/test_flags_guard.py::test_repository_tests_pass_after_the_change]

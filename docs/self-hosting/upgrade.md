@@ -66,6 +66,10 @@ old containers tolerate the new schema during the brief window in step 3-4.
 Avoid destructive column drops in the same release that deploys the code which
 stops using them — split them across two releases.
 
+On the Temporal engine, upgrade the Temporal workers before the API: a worker from
+before automation lines (#179) would run a line's agent station as the task's own
+agent, so no API that starts lines may run beside one.
+
 ## Verify after upgrading
 
 - `GET /health` returns 200 on `api` and `mcp-gateway`.
