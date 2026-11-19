@@ -43,6 +43,6 @@ spec:
                 values: [{{ .Release.Name }}]
               - key: app.kubernetes.io/component
                 operator: In
-                values: [api, worker]
+                values: [api, worker{{ if .Values.temporal.enabled }}, temporal-worker{{ end }}]
 {{- end }}
 {{- end }}

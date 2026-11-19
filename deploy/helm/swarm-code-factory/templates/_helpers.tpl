@@ -116,6 +116,35 @@ imagePullSecrets:
 {{- end -}}
 
 {{/*
+Pod-template annotations summing the env a pod reads at start. envFrom is not
+re-read, so a changed ConfigMap (or chart-created Secret) must change the pod
+template for `helm upgrade` to roll it; the engine workloads must roll together.
+*/}}
+{{- define "swarm-code-factory.envChecksums" -}}
+checksum/config: {{ include "swarm-code-factory.configEnv" . | sha256sum }}
+{{- if .Values.secrets.create }}
+{{- /* The Secret is secrets.data plus URLs built from it and from ConfigMap values. */}}
+checksum/secret: {{ toYaml .Values.secrets.data | sha256sum }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Explicit env of the engine workloads (temporal.enabled): the codec key by a
+required secretKeyRef. The chart cannot read an existingSecret, so a Secret
+without the key must stop the pod from starting rather than let the process run
+without the codec (payloads to Temporal unencrypted and unredacted).
+*/}}
+{{- define "swarm-code-factory.engineEnv" -}}
+env:
+  - name: TEMPORAL_CODEC_KEY
+    valueFrom:
+      secretKeyRef:
+        name: {{ include "swarm-code-factory.secretName" . }}
+        key: TEMPORAL_CODEC_KEY
+        optional: false
+{{- end -}}
+
+{{/*
 envFrom block shared by every workload + hook: non-secret ConfigMap then Secret.
 */}}
 {{- define "swarm-code-factory.envFrom" -}}
@@ -190,11 +219,26 @@ secret name.
 {{- end -}}
 {{- end -}}
 
+{{/*
+Validate the durable engine: the chart bundles no Temporal server, so enabling it
+needs an external frontend, and a chart-created Secret needs the codec key (an
+existingSecret must carry it; that is the operator's responsibility).
+*/}}
+{{- define "swarm-code-factory.validateTemporal" -}}
+{{- if .Values.temporal.enabled -}}
+{{- $_ := required "temporal.enabled=true requires temporal.host: the host:port of an external Temporal frontend (this chart does not bundle a Temporal server)." .Values.temporal.host -}}
+{{- if and .Values.secrets.create (not (get (.Values.secrets.data | default dict) "TEMPORAL_CODEC_KEY")) -}}
+{{- fail "temporal.enabled=true requires secrets.data.TEMPORAL_CODEC_KEY (workflow payloads are encrypted with it). Generate one (e.g. openssl rand -hex 32) and pass it via --set or a values file." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{/* Run all validations once, from a single included template. */}}
 {{- define "swarm-code-factory.validate" -}}
 {{- include "swarm-code-factory.validateDatastores" . -}}
 {{- include "swarm-code-factory.validateSecrets" . -}}
 {{- include "swarm-code-factory.validateIngress" . -}}
+{{- include "swarm-code-factory.validateTemporal" . -}}
 {{- end -}}
 
 {{/* Non-secret Postgres connection host (bundled service or external host). */}}

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from scf_api.auth.apikeys import APIKeyInfo
 from scf_contracts.enums import APIKeyKind, UserRole
@@ -27,16 +27,24 @@ class APIKeyCreated(APIKeyInfo):
 
 
 class PersonalTokenCreateRequest(BaseModel):
-    """Body for minting your own personal access token (spec L §6a).
+    """Body for minting your own personal access token (spec L §6a, §6b).
 
     The token is bound to the caller with the caller's role, narrowed to reads,
-    plus ``approvals:decide`` when ``decide`` is set.
+    plus ``approvals:decide`` when ``decide`` is set or ``runs:execute`` when
+    ``start_runs`` is set; never both.
     """
 
     name: str = Field(min_length=1, max_length=255)
     surface: Literal["tervin", "cli"]
     decide: bool = False
+    start_runs: bool = False
     expires_in_days: int = Field(default=90, ge=1, le=365)
+
+    @model_validator(mode="after")
+    def _starts_or_decides(self) -> PersonalTokenCreateRequest:
+        if self.decide and self.start_runs:
+            raise ValueError("a token that starts runs cannot decide approvals")
+        return self
 
 
 class SecretCreateRequest(BaseModel):

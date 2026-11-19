@@ -22,7 +22,7 @@ spec:
                 values: [{{ .Release.Name }}]
               - key: app.kubernetes.io/component
                 operator: In
-                values: [api, worker]
+                values: [api, worker{{ if .Values.temporal.enabled }}, temporal-worker{{ end }}]
       ports:
         - protocol: TCP
           port: {{ .Values.mcpGateway.service.port }}
