@@ -45,6 +45,8 @@ WS = uuid.UUID("00000000-0000-0000-0000-0000000000a7")
 REPO = "acme/app"
 BRANCH = "scf/run-0123456789ab"
 POLICY = 'repo_id: app\ncommands:\n  marker: "test -f MARKER"\n  lint: "true"\n'
+#: The gates on the diff (#187) beside the declared checks, passing on this change.
+GATES = {"secret_scan": True, "dependency_check": True, "sast": True}
 
 
 @pytest.fixture
@@ -154,7 +156,7 @@ async def test_each_declared_command_runs_on_the_agents_commit(
 
     result = await _checks(factory, run_id)
 
-    assert result.results == {"marker": True, "lint": True}
+    assert result.results == {"marker": True, "lint": True, **GATES}
     assert _worktrees(mirror) == 1, "the checks' worktree is removed"
 
 
@@ -166,7 +168,7 @@ async def test_a_failing_command_fails_only_its_own_check(
 
     result = await _checks(factory, run_id)
 
-    assert result.results == {"marker": False, "lint": True}
+    assert result.results == {"marker": False, "lint": True, **GATES}
     assert not result.all_passed
 
 
@@ -185,7 +187,7 @@ async def test_a_retry_checks_the_same_commit_after_the_branch_moved(
 
     again = await _checks(factory, run_id)
 
-    assert first.results == again.results == {"marker": True, "lint": True}
+    assert first.results == again.results == {"marker": True, "lint": True, **GATES}
     assert _worktrees(mirror) == 1
 
 
@@ -217,7 +219,7 @@ async def test_the_agent_cannot_change_its_own_checks(
 
     result = await _checks(factory, run_id)
 
-    assert result.results == {"marker": False, "lint": True}
+    assert result.results == {"marker": False, "lint": True, **GATES}
 
 
 async def test_without_an_agent_run_the_checks_refuse(
@@ -273,7 +275,7 @@ async def test_each_check_is_recorded_on_the_run_and_a_retry_replaces_it(
     assert (attempt["attempt"], attempt["head_commit"]) == (0, head)
     assert attempt["no_checks_declared"] is False
     by_id = {c["id"]: c for c in attempt["checks"]}
-    assert set(by_id) == {"marker", "lint"}
+    assert set(by_id) == {"marker", "lint", *GATES}
     assert (by_id["marker"]["exit_code"], by_id["marker"]["passed"]) == (0, True)
     assert by_id["marker"]["started_at"] and by_id["marker"]["duration_ms"] >= 0
 
@@ -293,9 +295,10 @@ async def test_a_checks_output_is_kept_as_a_redacted_tail(
 
     result = await _checks(factory, run_id)
 
-    assert result.results == {"noisy": False}
+    assert result.results == {"noisy": False, **GATES}
     [attempt] = _recorded(factory, run_id)
-    [noisy] = attempt["checks"]
+    noisy, *gates = attempt["checks"]
+    assert [g["id"] for g in gates] == list(GATES)
     assert noisy["exit_code"] == 3
     lines = noisy["output_tail"].splitlines()
     assert len(lines) == 400 and lines[0] == "line102"
@@ -335,7 +338,7 @@ async def test_checks_run_on_a_clean_checkout_with_no_network(
 
     result = await _checks(factory, run_id)
 
-    assert result.results == {"clean": True}
+    assert result.results == {"clean": True, **GATES}
     assert [str(n) for n in networks] == ["none"]
 
 
@@ -358,7 +361,8 @@ async def test_a_long_output_keeps_the_last_lines_of_each_stream(
     await _checks(factory, run_id)
 
     [attempt] = _recorded(factory, run_id)
-    [suite] = attempt["checks"]
+    suite, *gates = attempt["checks"]
+    assert [g["id"] for g in gates] == list(GATES)
     assert suite["exit_code"] == 1
     lines = suite["output_tail"].splitlines()
     assert "3 failed" in lines and "out900" in lines and "err900" in lines
@@ -454,7 +458,7 @@ async def test_a_change_that_passes_its_checks_is_reviewed_before_its_pull_reque
 
     result = await _checks(factory, run_id)
 
-    assert result.results == {"marker": True, "lint": True, "independent_review": True}
+    assert result.results == {"marker": True, "lint": True, **GATES, "independent_review": True}
     assert result.pause_reason is None
     assert reviewer.models == ["gpt-6-astra"]
     [request] = reviewer.clients[0].requests
@@ -681,6 +685,7 @@ async def test_a_reviewed_change_is_attacked_on_its_head_commit_before_its_pull_
     assert result.results == {
         "marker": True,
         "lint": True,
+        **GATES,
         "independent_review": True,
         "red_team": True,
     }

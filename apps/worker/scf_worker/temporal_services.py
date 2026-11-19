@@ -44,8 +44,10 @@ from scf_db.models.enums import RunStatus
 from scf_db.models.traceability import TraceabilitySpecRollup
 from scf_integrations.github import GitHubClient
 from scf_integrations.github_auth import InstallationTokenProvider
+from scf_policy.dependency_gate import RegistryClient
 from scf_worker.agent_runner import _commits_ahead, configured_model, run_agent_objective
 from scf_worker.approval_activity import make_create_approval_fn
+from scf_worker.diff_gates import PublicRegistry, diff_gate_checks
 from scf_worker.dispatch import (
     RepositoryUnavailable,
     objective_for_task,
@@ -530,13 +532,16 @@ def run_checks_service(
     *,
     reviewer: Callable[[str], ModelClient] = reviewer_client,
     adversary: Callable[[str], ModelClient] = reviewer_client,
+    registry: RegistryClient | None = None,
 ) -> RunChecksFn:
     """Run the repository's declared checks on the agent's commit (#251).
 
     The commit is the head the latest agent run recorded, so a retry checks the same
     code even if the run branch moved. The commands come from the default branch's
     ``.forge/policy.yaml``, as the pull-request gate's review rules do, so an agent
-    cannot change its own checks. A repository that declares none fails.
+    cannot change its own checks. A repository that declares none fails. Beside them
+    run the gates on the diff (#187): ``secret_scan``, ``dependency_check`` and
+    ``sast``, asking ``registry`` (PyPI and npm by default) about added dependencies.
 
     When every check passes, an independent reviewer judges the change (#173): its
     verdict is the check ``independent_review``. When it approves, an adversary
@@ -544,6 +549,8 @@ def run_checks_service(
     reviewer or adversary it can use, the result asks the workflow to pause for a
     person instead.
     """
+
+    registry = registry or PublicRegistry()
 
     def run(inp: RunChecksInput) -> ChecksResult:
         with factory() as session:
@@ -574,6 +581,14 @@ def run_checks_service(
         runs = run_declared_checks(
             mirror, str(head), policy, run_id=agent_run.id, workspace_id=inp.workspace_id
         )
+        if runs and policy is not None:  # none declared still fails as no_checks_declared
+            runs += diff_gate_checks(
+                mirror,
+                base=target.base_branch,
+                head=str(head),
+                rules=policy.diff_gates,
+                registry=registry,
+            )
         if not runs or not all(r.passed for r in runs):
             _record_checks(factory, inp, head=str(head), runs=runs)
             results = {r.id: r.passed for r in runs} or dict(NO_DECLARED_CHECKS)

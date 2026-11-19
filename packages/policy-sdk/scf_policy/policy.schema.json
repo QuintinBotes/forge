@@ -174,6 +174,50 @@
       "title": "DeployRules",
       "type": "object"
     },
+    "DiffGateRules": {
+      "additionalProperties": false,
+      "description": "The ``diff_gates`` block: what the gates on an agent's diff allow (#187).\n\n``secret_allowed_files`` names files whose secret-scan matches are allowed, and\nrecorded as allowed. Each is one file path relative to the repository root:\na wildcard or a directory is refused when the policy loads.",
+      "properties": {
+        "allowed_packages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Packages",
+          "type": "array"
+        },
+        "min_dependency_age_days": {
+          "default": 7,
+          "minimum": 0,
+          "title": "Min Dependency Age Days",
+          "type": "integer"
+        },
+        "sast_analyzer": {
+          "const": "bandit",
+          "default": "bandit",
+          "title": "Sast Analyzer",
+          "type": "string"
+        },
+        "sast_severity": {
+          "default": "high",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Sast Severity",
+          "type": "string"
+        },
+        "secret_allowed_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Secret Allowed Files",
+          "type": "array"
+        }
+      },
+      "title": "DiffGateRules",
+      "type": "object"
+    },
     "KnowledgeRules": {
       "properties": {
         "exclude_paths": {
@@ -608,6 +652,9 @@
     },
     "deploy_rules": {
       "$ref": "#/$defs/DeployRules"
+    },
+    "diff_gates": {
+      "$ref": "#/$defs/DiffGateRules"
     },
     "entrypoints": {
       "items": {
