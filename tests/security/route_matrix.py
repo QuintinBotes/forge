@@ -327,6 +327,7 @@ DECLARED: dict[str, Permission] = {
             "POST /context/assemble",
             "GET /workflow/runs/{run_id}",
             "GET /workflow/runs/{run_id}/red-team",
+            "GET /workflow/runs/{run_id}/stations",
             "GET /workflow/editor/catalog",
             "GET /workflow/editor/definitions",
             "GET /workflow/editor/definitions/{name}",
