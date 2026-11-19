@@ -333,3 +333,69 @@ def test_the_builders_run_is_never_the_verifiers(factory: sessionmaker[Session])
     with factory() as s:
         assert s.scalars(select(AgentRun)).one().role == "verifier"
         assert _latest_agent_run(s, run_id, WS) is None
+
+
+def test_drafting_again_withdraws_the_earlier_specs_scenarios(
+    factory: sessionmaker[Session],
+) -> None:
+    """#288 criterion 3: when the spec gate returns changes the verifier drafts again
+    from the revised text, and what it drafted for the earlier text is withdrawn,
+    whatever its state; the withdrawal is audited with the run, never the content."""
+    run_id = _seed(factory)
+    first = _draft(factory, run_id, Verifier(json.dumps({"scenarios": [SCENARIO, SCENARIO]})))
+    with factory() as s:
+        approved = s.get(HeldOutScenario, uuid.UUID(first.scenario_ids[0]))
+        assert approved is not None and approved.workflow_run_id == run_id
+        approved.state = "approved"
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        task = s.get(Task, run.task_id)
+        assert task is not None
+        task.description = "Refund a payment, in part or in full."
+        task_id = task.id
+        s.commit()
+    verifier = Verifier(json.dumps({"scenarios": [{**SCENARIO, "title": "A partial refund"}]}))
+
+    again = draft_scenarios_service(factory, verifier=verifier)(
+        DraftScenariosInput(
+            workflow_run_id=run_id, workspace_id=WS, task_id=task_id, idempotency_key="d7"
+        )
+    )
+
+    [request] = verifier.clients[0].requests
+    assert request.system is not None and "in part or in full" in request.system
+    with factory() as s:
+        states = {str(r.id): r.state for r in s.scalars(select(HeldOutScenario))}
+        withdrawals = list(
+            s.scalars(select(AuditLog).where(AuditLog.action == "held_out.withdrawn"))
+        )
+    assert {states[i] for i in first.scenario_ids} == {"withdrawn"}
+    assert [states[i] for i in again.scenario_ids] == ["draft"]
+    assert sorted(w.details["scenario_id"] for w in withdrawals) == sorted(first.scenario_ids)
+    assert all(w.details["workflow_run_id"] == str(run_id) for w in withdrawals)
+    assert not any(MARKER in json.dumps(w.details) for w in withdrawals)
+
+
+def test_drafting_again_withdraws_even_when_nothing_new_is_drafted(
+    factory: sessionmaker[Session],
+) -> None:
+    """A redraft that drafts nothing still withdraws, and says why nothing was drafted."""
+    run_id = _seed(factory)
+    first = _draft(factory, run_id, Verifier(json.dumps({"scenarios": [SCENARIO]})))
+    assert "held_out" not in _context(factory, run_id)
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        task_id = run.task_id
+
+    again = draft_scenarios_service(factory, verifier=Verifier("not json"))(
+        DraftScenariosInput(
+            workflow_run_id=run_id, workspace_id=WS, task_id=task_id, idempotency_key="d9"
+        )
+    )
+
+    assert again.reason == "unparseable_scenarios"
+    assert _context(factory, run_id)["held_out"] == "unparseable_scenarios"
+    with factory() as s:
+        scenario = s.get(HeldOutScenario, uuid.UUID(first.scenario_ids[0]))
+        assert scenario is not None and scenario.state == "withdrawn"

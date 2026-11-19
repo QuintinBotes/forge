@@ -446,3 +446,40 @@ async def test_held_out_scenarios_are_drafted_before_the_spec_gate_opens(harness
     assert calls == ["draft", "approval:spec"]
     states = [t["to_state"] for t in h.transitions(run)]
     assert states[-1] == "spec_review"
+
+
+async def test_the_verifier_drafts_again_each_time_the_spec_returns_for_changes(
+    harness: Any,
+) -> None:
+    """#288 criterion 3: after the spec gate returns changes and before it opens again,
+    the drafting step runs with a key of its own (it withdraws the earlier drafts)."""
+    import uuid as _uuid
+
+    from scf_workflow.temporal.payloads import (
+        ApprovalInput,
+        DraftScenariosInput,
+        DraftScenariosResult,
+    )
+
+    calls: list[str] = []
+    keys: list[str] = []
+
+    def draft(inp: DraftScenariosInput) -> DraftScenariosResult:
+        calls.append("draft")
+        keys.append(inp.idempotency_key)
+        return DraftScenariosResult(scenario_ids=[f"s-{len(keys)}"])
+
+    def approval(inp: ApprovalInput) -> _uuid.UUID:
+        calls.append(f"approval:{inp.gate}")
+        return _uuid.uuid4()
+
+    h = harness(draft_scenarios_fn=draft, approval_fn=approval)
+    async with h.worker():
+        run = await h.start()
+        for _ in range(2):
+            await h.wait_awaiting(run, {"spec_approved_by_human"})
+            await h.engine.atransition(run.id, "spec_changes_requested")
+        await h.wait_awaiting(run, {"spec_approved_by_human"})
+
+    assert calls == ["draft", "approval:spec"] * 3
+    assert keys[0].endswith(":draft_held_out:0") and len(set(keys)) == 3

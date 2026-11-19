@@ -79,6 +79,8 @@ _DRAFTING_TIMEOUT = timedelta(seconds=900)  # a verifier agent drafts scenarios
 #: Marks histories that draft held-out scenarios before the spec gate (#258); a
 #: history recorded before it replays without the step.
 HELD_OUT_DRAFTING_PATCH = "held-out-drafting-258"
+#: Marks histories that draft again each time the spec gate returns changes (#288).
+HELD_OUT_REDRAFT_PATCH = "held-out-redraft-288"
 #: #280: the merge gate reads CI and the spec itself; earlier histories used the payload.
 CI_READ_BACK_PATCH = "ci-read-back-280"
 #: #278: an activity error that ends the execution is first recorded as ``failed``.
@@ -176,6 +178,10 @@ class FeatureWorkflow:
                 if ev.type == EVENT_SPEC_CHANGES:
                     await self._apply_event(ev)  # spec_review → clarification
                     await self._auto("submit_spec_for_review")  # → spec_review
+                    if workflow.patched(HELD_OUT_REDRAFT_PATCH):
+                        # #288: the earlier spec's scenarios are withdrawn and the
+                        # verifier drafts from the revised text.
+                        await self._draft_held_out_scenarios(self._seq)
                     await self._create_approval("spec")
                     continue
                 await self._apply_event(ev)  # → spec_approved
@@ -667,7 +673,7 @@ class FeatureWorkflow:
             retry_policy=_FIVE,
         )
 
-    async def _draft_held_out_scenarios(self) -> DraftScenariosResult:
+    async def _draft_held_out_scenarios(self, round_: int = 0) -> DraftScenariosResult:
         assert self._params is not None
         return await workflow.execute_activity(
             "forge.draft_held_out_scenarios",
@@ -675,7 +681,7 @@ class FeatureWorkflow:
                 workflow_run_id=self._params.workflow_run_id,
                 workspace_id=self._params.workspace_id,
                 task_id=self._params.task_id,
-                idempotency_key=f"{self._params.workflow_run_id}:draft_held_out:0",
+                idempotency_key=f"{self._params.workflow_run_id}:draft_held_out:{round_}",
             ),
             start_to_close_timeout=_DRAFTING_TIMEOUT,
             heartbeat_timeout=_AGENT_HEARTBEAT,

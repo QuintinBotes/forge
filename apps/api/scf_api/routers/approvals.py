@@ -38,6 +38,7 @@ from scf_api.services.approval_service import (
     get_approval_service,
     to_decider,
 )
+from scf_api.services.held_out import ScenariosUndecided, ensure_scenarios_decided
 from scf_api.services.workflow_gate_hook import APPROVED_EVENT_BY_GATE, WORKFLOW_RUN_SUBJECT
 from scf_approval import (
     AlreadyResolvedError,
@@ -211,6 +212,7 @@ async def list_approval_decisions(
 async def decide_approval(
     service: ServiceDep,
     principal: ReaderDep,
+    session: DbSession,
     actor: DeciderDep,
     broadcaster: BroadcasterDep,
     approval_id: uuid.UUID,
@@ -222,8 +224,16 @@ async def decide_approval(
     body — and authorization is the domain ``ApprovalAuthorizer`` (the same
     one every other surface calls), so accountability cannot be forged. The
     surface recorded with the decision comes from the credential, never a header.
+    A run's ``spec`` gate is not approved while a held-out scenario drafted for its
+    spec is undecided (#288): ``409`` ``held_out_scenarios_undecided``.
     """
     try:
+        if body.decision is ApprovalAction.APPROVE:
+            gate = await service.get(approval_id, workspace_id=principal.workspace_id)
+            if gate.gate_type is GateType.SPEC and gate.workflow_run_id is not None:
+                ensure_scenarios_decided(
+                    session, workspace_id=gate.workspace_id, workflow_run_id=gate.workflow_run_id
+                )
         resolution = await service.resolve(
             approval_id, body, actor, workspace_id=principal.workspace_id
         )
@@ -240,6 +250,15 @@ async def decide_approval(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="this approver has already voted on this gate",
+        ) from None
+    except ScenariosUndecided as err:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "held_out_scenarios_undecided",
+                "message": str(err),
+                "scenario_ids": [str(i) for i in err.scenario_ids],
+            },
         ) from None
 
     request = await service.get(approval_id, workspace_id=principal.workspace_id)
