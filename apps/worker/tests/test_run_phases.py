@@ -8,6 +8,7 @@ entry point always gets an explicit environment mapping: the root conftest sets
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator
@@ -447,6 +448,31 @@ def test_a_denied_name_stops_the_process_naming_it_not_its_value(
     assert name in err and "value-that-must-not-print" not in err
 
 
+@pytest.mark.parametrize(
+    "name",
+    # The chart's names for the same secrets, and a retained versioned master key.
+    ["GITHUB_APP_PRIVATE_KEY", "FORGE_VAULT_KEYS", "TEMPORAL_CODEC_KEY", "FORGE_SECRET_KEY_V2"],
+)
+def test_the_charts_secret_names_and_versioned_keys_stop_the_process(
+    name: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = main([str(uuid.uuid4()), str(WS)], env={name: "value-that-must-not-print"})
+
+    err = capsys.readouterr().err
+    assert code == 2 and name in err and "value-that-must-not-print" not in err
+
+
+def test_off_the_main_thread_the_process_refuses_to_start() -> None:
+    # The wall-clock limit is a SIGALRM, which only the main thread can set.
+    codes: list[int] = []
+    worker = threading.Thread(
+        target=lambda: codes.append(main([str(uuid.uuid4()), str(WS)], env={}))
+    )
+    worker.start()
+    worker.join()
+    assert codes == [2]
+
+
 # --------------------------------------------------------------------------- #
 # Criterion 7: the wall-clock limit                                           #
 # --------------------------------------------------------------------------- #
@@ -474,7 +500,7 @@ def test_the_wall_clock_limit_hands_off_an_escalated_run(
     assert row.status is DbRunStatus.PENDING and row.completed_at is None
 
 
-@pytest.mark.parametrize("value", ["0", "-5", "soon"])
+@pytest.mark.parametrize("value", ["0", "-5", "soon", "inf", "nan", "1e12"])
 def test_an_unusable_time_limit_stops_the_process(value: str) -> None:
     assert main([str(uuid.uuid4()), str(WS)], env={RUN_TIME_LIMIT_ENV: value}) == 2
 

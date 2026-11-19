@@ -23,6 +23,7 @@ import argparse
 import os
 import signal
 import sys
+import threading
 import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -136,8 +137,29 @@ RUN_PROCESS_DENIED_ENV = frozenset(
         "FORGE_GRAFANA_WEBHOOK_SECRET",
         # The database credential.
         "FORGE_DATABASE_URL",
+        # The Helm chart's names for these and the other platform secrets it shares
+        # with every workload through one envFrom block.
+        "GITHUB_APP_ID",
+        "GITHUB_APP_PRIVATE_KEY",
+        "GITHUB_APP_PRIVATE_KEY_PATH",
+        "GITHUB_APP_CLIENT_SECRET",
+        "GITHUB_APP_WEBHOOK_SECRET",
+        "SLACK_SIGNING_SECRET",
+        "SLACK_BOT_TOKEN",
+        "POSTGRES_PASSWORD",
+        "REDIS_PASSWORD",
+        "MINIO_ROOT_PASSWORD",
+        "FORGE_VAULT_KEYS",
+        "TEMPORAL_CODEC_KEY",
+        "INTERNAL_SERVICE_TOKEN",
+        "AUTH_SECRET",
+        "API_KEY_PEPPER",
     }
 )
+#: Retained master keys are ``FORGE_SECRET_KEY_V<n>`` (``scf_api.auth.keyring``).
+RUN_PROCESS_DENIED_PREFIXES = ("FORGE_SECRET_KEY_V",)
+#: setitimer cannot hold much more; a week is far beyond any run.
+MAX_RUN_TIME_LIMIT = 7 * 24 * 3600.0
 
 RecordFactory = Callable[[uuid.UUID, uuid.UUID], RunRecord]
 
@@ -152,7 +174,12 @@ class RunTimeLimitExceeded(BaseException):
 
 @contextmanager
 def _wall_clock(seconds: float) -> Iterator[None]:
-    """Raise :class:`RunTimeLimitExceeded` in the loop once ``seconds`` pass."""
+    """Raise :class:`RunTimeLimitExceeded` in the loop once ``seconds`` pass.
+
+    shortcut: a signal reaches only the main thread, so a supervised run's parallel
+    children finish their current loop before the limit is seen; the executor that
+    launches run processes (#239) is the hard stop.
+    """
 
     def expire(_signum: int, _frame: FrameType | None) -> None:
         raise RunTimeLimitExceeded
@@ -238,7 +265,14 @@ def main(
     from (``os.environ`` by default). ``record`` builds the run's record port.
     """
     environ = os.environ if env is None else env
-    held = sorted(RUN_PROCESS_DENIED_ENV.intersection(environ))
+    if threading.current_thread() is not threading.main_thread():
+        print("run process refused to start: it must run on the main thread", file=sys.stderr)
+        return 2
+    held = sorted(
+        name
+        for name in environ
+        if name in RUN_PROCESS_DENIED_ENV or name.startswith(RUN_PROCESS_DENIED_PREFIXES)
+    )
     if held:
         # Names only: the values are secrets.
         print(f"run process refused to start: it must not hold {', '.join(held)}", file=sys.stderr)
@@ -247,9 +281,10 @@ def main(
         time_limit = float(environ.get(RUN_TIME_LIMIT_ENV) or DEFAULT_RUN_TIME_LIMIT)
     except ValueError:
         time_limit = 0.0
-    if not time_limit > 0:
+    if not 0 < time_limit <= MAX_RUN_TIME_LIMIT:  # also refuses inf and nan
         print(
-            f"run process refused to start: {RUN_TIME_LIMIT_ENV} must be seconds > 0",
+            f"run process refused to start: {RUN_TIME_LIMIT_ENV} must be seconds,"
+            f" > 0 and at most {MAX_RUN_TIME_LIMIT:.0f}",
             file=sys.stderr,
         )
         return 2
