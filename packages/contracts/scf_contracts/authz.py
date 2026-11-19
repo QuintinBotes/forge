@@ -192,6 +192,9 @@ class PrincipalContext(BaseModel):
     workspace_id: UUID
     grants: tuple[RoleGrant, ...]
     team_memberships: tuple[TeamMembership, ...]
+    #: When set, the resolver grants nothing outside it, whatever the grants and
+    #: memberships give (an agent's token: its owner's scopes, agent-runner's powers).
+    permission_cap: frozenset[Permission] | None = None
 
 
 class EffectiveAccess(BaseModel):

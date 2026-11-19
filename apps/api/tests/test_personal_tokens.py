@@ -169,9 +169,7 @@ def test_a_bound_unscoped_key_decides_as_its_owner(client: TestClient, auth: Aut
 
 
 def test_an_agent_runner_token_is_an_agent(client: TestClient, auth: AuthService) -> None:
-    _, key = auth.mint_agent_token(
-        workspace_id=WS, name="run", role=UserRole.AGENT_RUNNER, user_id=MEMBER
-    )
+    _, key = auth.mint_agent_token(workspace_id=WS, name="run", user_id=MEMBER)
     approval_id = open_gate(client, session_jwt(ADMIN, UserRole.ADMIN))
 
     resp = decide(client, key, approval_id)
@@ -395,9 +393,7 @@ def test_the_webs_unscoped_key_mints_a_personal_token(
 def test_narrowed_unbound_and_agent_keys_cannot_mint(client: TestClient, auth: AuthService) -> None:
     _, unbound = auth.bootstrap_key(workspace_id=WS, name="ci", role=UserRole.ADMIN)
     # An agent's token bound to the person who started its run must not mint them a decider.
-    _, agent = auth.mint_agent_token(
-        workspace_id=WS, name="run", role=UserRole.AGENT_RUNNER, user_id=MEMBER
-    )
+    _, agent = auth.mint_agent_token(workspace_id=WS, name="run", user_id=MEMBER)
     session = session_jwt(MEMBER, UserRole.MEMBER)
     narrowed = [mint_personal(client, session, decide=d).json()["token"] for d in (True, False)]
 

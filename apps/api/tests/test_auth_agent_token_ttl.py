@@ -22,9 +22,8 @@ def _service() -> AuthService:
 
 def test_minted_agent_token_gets_default_ttl() -> None:
     svc = _service()
-    info, token = svc.mint_agent_token(
-        workspace_id=uuid.uuid4(), name="agent-run", role=UserRole.MEMBER
-    )
+    info, token = svc.mint_agent_token(workspace_id=uuid.uuid4(), name="agent-run")
+    assert info.role is UserRole.AGENT_RUNNER  # whoever it is bound to (#188)
     assert info.expires_at is not None
     delta = (info.expires_at - datetime.now(UTC)).total_seconds()
     assert 86_000 < delta <= 86_400  # ~24h default
@@ -35,9 +34,7 @@ def test_minted_agent_token_gets_default_ttl() -> None:
 def test_agent_token_ttl_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FORGE_AGENT_TOKEN_TTL", "3600")
     svc = _service()
-    info, _ = svc.mint_agent_token(
-        workspace_id=uuid.uuid4(), name="agent-run", role=UserRole.MEMBER
-    )
+    info, _ = svc.mint_agent_token(workspace_id=uuid.uuid4(), name="agent-run")
     assert info.expires_at is not None
     delta = (info.expires_at - datetime.now(UTC)).total_seconds()
     assert 3_500 < delta <= 3_600
@@ -48,7 +45,6 @@ def test_expired_agent_token_is_rejected_by_verify() -> None:
     _, token = svc.mint_agent_token(
         workspace_id=uuid.uuid4(),
         name="stale-agent",
-        role=UserRole.MEMBER,
         ttl_seconds=1,
         now=datetime.now(UTC) - timedelta(hours=1),  # expiry already in the past
     )

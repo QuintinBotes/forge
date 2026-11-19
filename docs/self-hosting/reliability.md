@@ -94,6 +94,64 @@ re-queued and re-run without a double effect.
 | `FORGE_TASK_SOFT_TIME_LIMIT` / `FORGE_TASK_TIME_LIMIT` | `300` / `360` | runaway-task limits (s) |
 | `FORGE_TASK_MAX_RETRIES` | `3` | transient-error retry budget (exp. backoff + jitter) |
 
+## Run executor
+
+`FORGE_RUN_EXECUTOR` chooses where an agent run's loop runs: `inline` (inside the
+worker's Celery task, under the soft time limit above), `docker` (one container
+per run) or `kubernetes` (one Job per run). Unset means `inline` for now. The
+`docker` and `kubernetes` executors are not built yet: until they are, every run
+fails with an error that names the executor. The worker never runs the loop
+itself in place of a failed executor.
+
+The worker refuses to start when the value is unknown, when a non-inline executor
+is combined with the `worktree` sandbox tier, when the executor and
+`FORGE_SANDBOX_BACKEND` name different platforms (an unset backend means
+`docker`), or when `FORGE_RUN_TIME_LIMIT` or `FORGE_RUN_RECONCILE_GRACE_SECONDS`
+is not a usable number of seconds.
+
+With a non-inline executor, `forge.agent.run` prepares the run in the worker,
+launches one unit for it, records the executor and unit under the run's
+`output.executor`, and returns without waiting. A redelivered message launches
+nothing. The unit is given only the environment a run process may hold, never
+the database credential. Close-out (`agent.close_out_run`) reads the handoff the
+unit recorded, delivers the change, records the terminal events and the outcome,
+writes back to the tracker and removes the unit. Close-out is claimed under the
+run's row lock, so it happens once however often it is triggered. For now the
+reconciler below triggers it, on its first pass after the unit exits.
+
+A close-out is done only when the run's outcome is recorded. If its worker is
+killed part way, or the outcome cannot be written, the claim expires after the
+hard task time limit (`FORGE_TASK_TIME_LIMIT`) plus a minute and the reconciler
+closes the run out again. A retry delivers to the pull request the first attempt
+may already have opened. Terminal events the first attempt stored can appear
+twice. A handoff or stored objective that cannot be read fails the run with
+`run_record_unreadable`.
+
+A reconciler (`agent.reconcile_launched_runs`, on beat) checks every launched run
+that is not closed out. A handoff recorded by the time it takes the run's row
+lock always wins over its own verdict:
+
+- a unit that exited with a handoff is closed out from it;
+- a unit that exited without a handoff, or is missing, leaves the run failed with
+  the reason `executor_lost`;
+- a unit still running past `FORGE_RUN_TIME_LIMIT` plus the grace period is
+  stopped, and the run is recorded escalated (`wall_clock_limit_exceeded`);
+- when the executor cannot be reached, nothing is decided until that same
+  deadline. After it, the run is recorded escalated
+  (`executor_unreachable: the unit may still exist`).
+
+Launch and close-out each write one audit event (`agent_run.launched`,
+`agent_run.closed_out`) with the workspace, run, executor, unit and outcome, and
+no environment value. A failed audit write does not fail the run.
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `FORGE_RUN_EXECUTOR` | `inline` | where the agent loop runs: `inline`, `docker` or `kubernetes` |
+| `FORGE_SANDBOX_BACKEND` | `docker` | the platform the executor must match |
+| `FORGE_RUN_TIME_LIMIT` | `3600` | a run's wall-clock limit (s), in the run process and the reconciler |
+| `FORGE_RUN_RECONCILE_INTERVAL_SECONDS` | `60` | how often the reconciler runs |
+| `FORGE_RUN_RECONCILE_GRACE_SECONDS` | `300` | how long past the wall-clock limit a unit may run before it is stopped |
+
 ## Related
 
 - [performance.md](performance.md) — load/perf budgets and the multi-tenant soak.

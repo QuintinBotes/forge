@@ -56,6 +56,9 @@ class Principal(BaseModel):
     #: with ``runs:execute``), and F30 sees only a workspace viewer grant, never its
     #: owner's grants.
     narrowed: bool = False
+    #: An agent's token (``mint_agent_token``; PT-01, #188): F30 caps its owner's
+    #: grants at what an agent-runner holds, and it never records a world decision.
+    agent: bool = False
     #: Where the credential says the caller is (``web`` for a session, the key's
     #: surface or ``api``); never taken from a request header.
     surface: str | None = None

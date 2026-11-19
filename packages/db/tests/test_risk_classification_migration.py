@@ -61,6 +61,9 @@ def test_migration_0053_creates_and_drops_the_risk_tables(tmp_path: Path) -> Non
             assert columns <= {c["name"] for c in inspector.get_columns(table)}
             fks = {fk["referred_table"] for fk in inspector.get_foreign_keys(table)}
             assert "workspace" in fks
+        indexes = inspector.get_indexes("risk_classification")
+        unique = [i["column_names"] for i in indexes if i["unique"]]
+        assert ["agent_run_id"] in unique  # one classification per agent run
         observation_fks = inspector.get_foreign_keys("risk_gate_observation")
         assert {"risk_classification"} <= {fk["referred_table"] for fk in observation_fks}
 

@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 from sqlalchemy.orm import Session
 
 from scf_api.auth.rbac import Permission
@@ -33,6 +33,13 @@ router = APIRouter(prefix="/risk", tags=["risk"], dependencies=[Depends(get_curr
 
 ReaderDep = Annotated[Principal, Depends(require_permission(Permission.READ))]
 SessionDep = Annotated[Session, Depends(get_db)]
+
+#: Bounds on a dry run's caller-supplied rules, checked before they validate, so that a
+#: reader cannot hold the API with them (validation and matching are CPU-bound).
+_MAX_RULES = 500
+_MAX_GLOBS = 2_000
+_MAX_GLOB_LENGTH = 1_024
+_MAX_PATH_GLOB_PAIRS = 200_000
 
 
 class RiskClassificationOut(BaseModel):
@@ -82,6 +89,28 @@ class ClassifyRequest(BaseModel):
     changes: list[ChangedPath] = Field(max_length=10_000)
     #: Without rules nothing is classified, as for a policy with no ``risk_rules``.
     rules: RiskRules | None = None
+
+    @field_validator("rules", mode="before")
+    @classmethod
+    def _bounded(cls, rules: Any, info: ValidationInfo) -> Any:
+        derive = rules.get("derive") if isinstance(rules, dict) else None
+        if not isinstance(derive, list):
+            return rules  # no globs to match; validation reports any other shape
+        if len(derive) > _MAX_RULES:
+            raise ValueError(f"a dry run takes at most {_MAX_RULES} rules")
+        globs = [
+            glob
+            for rule in derive
+            if isinstance(rule, dict) and isinstance(rule.get("paths"), list)
+            for glob in rule["paths"]
+        ]
+        if len(globs) > _MAX_GLOBS:
+            raise ValueError(f"a dry run takes at most {_MAX_GLOBS} path globs")
+        if any(isinstance(glob, str) and len(glob) > _MAX_GLOB_LENGTH for glob in globs):
+            raise ValueError(f"a path glob is at most {_MAX_GLOB_LENGTH} characters")
+        if len(globs) * len(info.data.get("changes") or []) > _MAX_PATH_GLOB_PAIRS:
+            raise ValueError(f"changed paths times globs is at most {_MAX_PATH_GLOB_PAIRS}")
+        return rules
 
 
 class ClassifyResponse(BaseModel):

@@ -6,6 +6,7 @@ anonymous caller, and never returns another workspace's rows.
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
@@ -173,6 +174,34 @@ def test_classifications_are_listed_newest_first_and_filtered(
     assert ids(workflow_run_id=str(uuid.uuid4())) == []
 
 
+def test_classifications_are_paged_newest_first(
+    factory: sessionmaker[Session], client_as: Callable[[Principal | None], TestClient]
+) -> None:
+    now = datetime.now(UTC)
+    with factory() as s:
+        for hours in (3, 1, 2):
+            s.add(
+                RiskClassification(
+                    workspace_id=WS,
+                    commit_sha=f"{hours:040d}",
+                    derived_class=RiskClass.LOW,
+                    final_class=RiskClass.LOW,
+                    enforcement_mode="shadow",
+                    created_at=now - timedelta(hours=hours),
+                )
+            )
+        s.commit()
+    client = client_as(_person())
+
+    def ages(**params: str) -> list[str]:
+        rows = client.get("/risk/classifications", params=params).json()
+        return [row["commit_sha"][-1] for row in rows]
+
+    assert ages() == ["1", "2", "3"]
+    assert ages(limit="2") == ["1", "2"]
+    assert ages(limit="1", offset="1") == ["2"]
+
+
 def test_another_workspace_sees_none_of_these_rows(
     factory: sessionmaker[Session], client_as: Callable[[Principal | None], TestClient]
 ) -> None:
@@ -253,6 +282,28 @@ def test_a_dry_run_rejects_invalid_rules_and_changes(
     negative = [{"path": "a.py", "lines_added": -1}]
     assert client.post("/risk/classify", json={"changes": negative}).status_code == 422
     assert client.post("/risk/classify", json={"changes": [{"path": ""}]}).status_code == 422
+
+
+def test_a_dry_run_refuses_oversized_rules_before_it_classifies(
+    client_as: Callable[[Principal | None], TestClient],
+) -> None:
+    client = client_as(_person())
+    one_path = [{"path": "a"}]
+    wide_rule = {"paths": [f"d{i}/**" for i in range(100)], "class": "low"}
+    oversized = [
+        # Too many rules: about 1 MB, which took 21 s to validate and classify unbounded.
+        ([{"paths": ["a"], "class": "low"}] * 30_000, one_path),
+        ([{"paths": ["a"] * 3_000, "class": "low"}], one_path),  # too many globs
+        ([{"paths": ["*a" * 600], "class": "low"}], one_path),  # a glob too long
+        ([wide_rule], [{"path": f"p{i}"} for i in range(2_001)]),  # too many path-glob pairs
+    ]
+
+    started = time.monotonic()
+    for derive, changes in oversized:
+        rules = {"default": "low", "derive": derive}
+        response = client.post("/risk/classify", json={"changes": changes, "rules": rules})
+        assert response.status_code == 422, response.text[:200]
+    assert time.monotonic() - started < 5
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ROUTES)

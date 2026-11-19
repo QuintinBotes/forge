@@ -16,13 +16,14 @@ from typing import Any
 import pytest
 import yaml
 from sqlalchemy import StaticPool, create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 import scf_worker.agent_runner as agent_runner_module
 import scf_worker.risk_classification as risk_module
-from scf_contracts import AgentObjective, AgentRunResult, RiskClass, RunStatus
+from scf_contracts import AgentObjective, AgentRunResult, RiskClass, RiskEvaluation, RunStatus
 from scf_db.base import Base
-from scf_db.models import AgentRun, RiskClassification, Workspace
+from scf_db.models import AgentRun, RiskClassification, TraceabilityCriterionLink, Workspace
 from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_db.risk_repository import RiskRepository
 from scf_policy.loader import POLICY_RELATIVE_PATH
@@ -92,7 +93,12 @@ def _repo(tmp_path: Path, risk_rules: dict[str, Any] | None) -> tuple[Path, str,
 
 
 def _run(
-    factory: sessionmaker[Session], repo: Path, base: str, head: str
+    factory: sessionmaker[Session],
+    repo: Path,
+    base: str,
+    head: str,
+    *,
+    task_id: uuid.UUID | None = None,
 ) -> tuple[PreparedRun, AgentRunResult]:
     run_id = uuid.uuid4()
     context = {
@@ -101,7 +107,7 @@ def _run(
         "workflow_run_id": str(WORKFLOW_RUN),
         "repo_path": str(repo),
     }
-    objective = AgentObjective(objective="Add login", context=context)
+    objective = AgentObjective(objective="Add login", task_id=task_id, context=context)
     with factory() as s:
         s.add(AgentRun(id=run_id, workspace_id=WS, status=DbRunStatus.PENDING, inputs={}))
         s.commit()
@@ -156,6 +162,63 @@ def test_a_run_with_commits_is_classified_once(
     with factory() as s:
         stored = s.get(AgentRun, run.run_id)
         assert stored is not None and stored.status is DbRunStatus.SUCCEEDED
+
+
+def test_a_retried_close_out_records_one_classification(
+    factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    repo, base, head = _repo(tmp_path, RISK_RULES)
+    run, result = _run(factory, repo, base, head)
+
+    close_out_run(run, result, deliver=False)
+    close_out_run(run, result, deliver=False, reuse_existing=True)  # #239 retries close-out
+
+    [row] = _rows(factory)
+    # The database holds it too: one classification per agent run.
+    with factory() as s, pytest.raises(IntegrityError):
+        RiskRepository(s).record_classification(
+            WS,
+            RiskEvaluation(derived_class=RiskClass.LOW, final_class=RiskClass.LOW),
+            commit_sha=head,
+            signals={},
+            enforcement_mode="shadow",
+            agent_run_id=row.agent_run_id,
+        )
+
+
+def test_the_change_identity_carries_the_tasks_spec_and_pull_requests(
+    factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """As the attestation reads them: the traceability links that name the run's task."""
+    repo, base, head = _repo(tmp_path, RISK_RULES)
+    task_id = uuid.uuid4()
+    with factory() as s:
+        s.add(
+            TraceabilityCriterionLink(
+                workspace_id=WS,
+                project_id=uuid.uuid4(),
+                spec_id=uuid.uuid4(),
+                spec_key="SPEC-7",
+                criterion_ext_id="AC-1",
+                criterion_text="logins are rate limited",
+                status="satisfied",
+                task_ids=[str(task_id)],
+                pr_numbers=[12, 9],
+                current_spec_version=3,
+            )
+        )
+        s.commit()
+    workflow_run, delivered = _run(factory, repo, base, head, task_id=task_id)
+    celery_run, opened = _run(factory, repo, base, head, task_id=task_id)
+    opened.artifacts["pull_request"] = {"status": "opened", "number": 31, "url": "u"}
+
+    close_out_run(workflow_run, delivered, deliver=False)
+    close_out_run(celery_run, opened, deliver=False)
+
+    rows = {row.agent_run_id: row for row in _rows(factory)}
+    durable = rows[workflow_run.run_id]
+    assert (durable.spec_key, durable.spec_version, durable.pr_numbers) == ("SPEC-7", 3, [9, 12])
+    assert rows[celery_run.run_id].pr_numbers == [31]  # the pull request this close-out opened
 
 
 def test_an_unreadable_diff_records_the_fallback_class(

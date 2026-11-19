@@ -2,9 +2,9 @@
 
 At close-out, a run that made commits is classified when the repository policy
 has ``risk_rules``: the facts of its diff (:func:`signals_from_diff`) give the
-derived class, and one append-only ``risk_classification`` row records it. The
-rules come from the default branch's policy, as the diff gates' do, so a change
-cannot loosen its own classification. Nothing here alters the run: without
+derived class, and one append-only ``risk_classification`` row per agent run
+records it. The rules come from the default branch's policy, as the diff gates'
+do, so a change cannot loosen its own classification. Nothing here alters the run: without
 ``risk_rules`` nothing is computed, and any failure is logged and swallowed.
 """
 
@@ -18,6 +18,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from scf_api.services.attestation_service import spec_and_prs
 from scf_contracts import AgentObjective, AgentRunResult, ChangeSignals
 from scf_db.risk_repository import RiskRepository
 from scf_risk import derive, evaluate
@@ -119,14 +120,22 @@ def _classify(
     pull_request = artifacts.get("pull_request") or {}
     workflow_run_id = objective.context.get("workflow_run_id")
     with sessions()() as session:
-        RiskRepository(session).record_classification(
+        risk = RiskRepository(session)
+        if risk.list_classifications(workspace_id, agent_run_id=run_id, limit=1):
+            return  # a retried close-out (#239): the run is classified once
+        # The change's identity as its attestation reads it (#193).
+        spec_key, spec_version, link_prs = spec_and_prs(session, workspace_id, objective.task_id)
+        risk.record_classification(
             workspace_id,
             evaluation,
             commit_sha=str(head),
             signals=snapshot,
             enforcement_mode=rules.enforcement,
-            pr_numbers=[pull_request["number"]] if pull_request.get("number") else [],
+            # The pull request this close-out opened; a workflow run opens its own later.
+            pr_numbers=[pull_request["number"]] if pull_request.get("number") else link_prs,
             agent_run_id=run_id,
             workflow_run_id=uuid.UUID(str(workflow_run_id)) if workflow_run_id else None,
+            spec_key=spec_key or None,
+            spec_version=spec_version or None,
         )
         session.commit()

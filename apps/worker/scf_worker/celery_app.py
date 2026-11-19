@@ -30,6 +30,7 @@ celery_app = Celery(
         "scf_worker.indexer",
         "scf_worker.syncer",
         "scf_worker.agent_runner",
+        "scf_worker.launched_runs",
         "scf_worker.tasks.incident",
         "scf_worker.tasks.sandbox",
         "scf_worker.tasks.knowledge_mcp",
@@ -99,10 +100,22 @@ def _init_worker_embedder(**_kwargs: object) -> None:
         raise SystemExit(f"refusing to start worker: {exc}") from exc
 
 
+# #239: an unknown run executor, or one the sandbox tier or backend cannot serve,
+# refuses worker startup the same way.
+def _init_run_executor(**_kwargs: object) -> None:
+    from scf_worker.run_executor import check_run_executor
+
+    try:
+        check_run_executor()
+    except ValueError as exc:
+        raise SystemExit(f"refusing to start worker: {exc}") from exc
+
+
 try:  # connecting the signal is safe at import; it fires only in real workers
     from celery.signals import worker_init
 
     worker_init.connect(_init_worker_embedder, weak=False)
+    worker_init.connect(_init_run_executor, weak=False)
 except Exception:  # pragma: no cover - celery signal API unavailable
     pass
 

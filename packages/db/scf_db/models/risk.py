@@ -35,7 +35,8 @@ class RiskClassification(WorkspaceScopedModel):
     __table_args__ = (
         Index("ix_risk_classification_workspace_created", "workspace_id", "created_at"),
         Index("ix_risk_classification_commit_sha", "commit_sha"),
-        Index("ix_risk_classification_agent_run_id", "agent_run_id"),
+        # One classification per agent run (a retried close-out writes none); NULLs are distinct.
+        Index("uq_risk_classification_agent_run_id", "agent_run_id", unique=True),
         Index("ix_risk_classification_workflow_run_id", "workflow_run_id"),
     )
 
