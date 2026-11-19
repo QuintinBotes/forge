@@ -439,6 +439,11 @@ metrics:
 # TEMPORAL_CODEC_KEY (payload encryption) is a secret: set
 # secrets.data.TEMPORAL_CODEC_KEY, or put it in secrets.existingSecret; mTLS
 # material (TEMPORAL_TLS_CERT / _KEY / _CA) goes in the Secret the same way.
+# The api, Celery worker and Temporal worker containers require the key by
+# secretKeyRef: if the Secret has no TEMPORAL_CODEC_KEY their pods refuse to start
+# (CreateContainerConfigError) rather than send payloads to Temporal unencrypted.
+# The render also refuses a blank key in a Secret the chart creates; it cannot
+# read an existingSecret, so a key present there but BLANK still runs codec-less.
 #
 # The chart does NOT bundle a Temporal server: its persistence (database, schema
 # migrations, retention) is the operator's decision.
@@ -449,6 +454,9 @@ temporal:
   namespace: forge
   taskQueue: forge-feature
   worker:
+    # Keep 1: a run's unpushed branch lives in the pod's own mirror (emptyDir),
+    # and the run's later activities can land on any replica. More replicas need
+    # mirrors on shared storage (#237).
     replicaCount: 1
     resources:
       requests:

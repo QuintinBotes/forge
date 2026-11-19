@@ -22,6 +22,8 @@ image:
 # INTERNAL_SERVICE_TOKEN, FORGE_DATABASE_URL, FORGE_REDIS_URL, object-store creds,
 # GITHUB_*/SLACK_*, TEMPORAL_CODEC_KEY, plus the OPTIONAL BYOK FORGE_MODEL_API_KEY —
 # blank runs the offline scripted model). The chart renders NO Secret of its own.
+# Without TEMPORAL_CODEC_KEY in it, the api and both worker pods refuse to start;
+# a blank value is not caught (the chart cannot read this Secret).
 secrets:
   create: false
   existingSecret: forge-external
@@ -135,7 +137,10 @@ temporal:
   enabled: true
   host: forge-temporal.managed.example.com:7233
   worker:
-    replicaCount: 2
+    # ONE replica: a run's unpushed branch lives in the pod's own mirror
+    # (emptyDir), and the run's later activities can land on any replica.
+    # Scale out only once mirrors are on shared storage (#237).
+    replicaCount: 1
 
 ingress:
   enabled: true

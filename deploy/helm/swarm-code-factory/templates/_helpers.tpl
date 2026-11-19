@@ -116,6 +116,35 @@ imagePullSecrets:
 {{- end -}}
 
 {{/*
+Pod-template annotations summing the env a pod reads at start. envFrom is not
+re-read, so a changed ConfigMap (or chart-created Secret) must change the pod
+template for `helm upgrade` to roll it; the engine workloads must roll together.
+*/}}
+{{- define "swarm-code-factory.envChecksums" -}}
+checksum/config: {{ include "swarm-code-factory.configEnv" . | sha256sum }}
+{{- if .Values.secrets.create }}
+{{- /* The Secret is secrets.data plus URLs built from it and from ConfigMap values. */}}
+checksum/secret: {{ toYaml .Values.secrets.data | sha256sum }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Explicit env of the engine workloads (temporal.enabled): the codec key by a
+required secretKeyRef. The chart cannot read an existingSecret, so a Secret
+without the key must stop the pod from starting rather than let the process run
+without the codec (payloads to Temporal unencrypted and unredacted).
+*/}}
+{{- define "swarm-code-factory.engineEnv" -}}
+env:
+  - name: TEMPORAL_CODEC_KEY
+    valueFrom:
+      secretKeyRef:
+        name: {{ include "swarm-code-factory.secretName" . }}
+        key: TEMPORAL_CODEC_KEY
+        optional: false
+{{- end -}}
+
+{{/*
 envFrom block shared by every workload + hook: non-secret ConfigMap then Secret.
 */}}
 {{- define "swarm-code-factory.envFrom" -}}

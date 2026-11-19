@@ -75,7 +75,7 @@ retrieval (F05) has the `vector` extension.
 | `*.pdb` | enabled, `minAvailable: 1` | `PodDisruptionBudget`. |
 | `worker.keda` | disabled | KEDA `ScaledObject` on Redis list length. |
 | `secrets.create` | `true` | Render an in-chart Secret (dev). Set `false` + `secrets.existingSecret` in production. |
-| `secrets.existingSecret` | `""` | Operator-managed Secret name. |
+| `secrets.existingSecret` | `""` | Operator-managed Secret name. With `temporal.enabled` it must carry a non-blank `TEMPORAL_CODEC_KEY`: without the key the api and both worker pods refuse to start (required `secretKeyRef`); the chart cannot see a blank value. |
 | `secrets.data.*` | dev placeholders | Boot-critical + integration secret keys. |
 | `postgresql.enabled` / `externalDatabase.host` | bundled on | Bundled XOR external Postgres. |
 | `redis.enabled` / `externalRedis.host` | bundled on | Bundled XOR external Redis. |

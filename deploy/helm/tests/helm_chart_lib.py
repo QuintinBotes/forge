@@ -19,16 +19,29 @@ VALUES_DEFAULT = CHART_DIR / "values.yaml"
 VALUES_EXAMPLE = CHART_DIR / "values.example.yaml"
 VALUES_PRODUCTION = CHART_DIR / "values-production.yaml"
 
+# The durable engine on, against an external Temporal frontend (#293).
+ENGINE_HOST = "temporal-frontend.example.com:7233"
+ENGINE_CODEC_KEY = "chart-test-codec-key"
+
 # Profile name -> extra `helm template` args.
 PROFILES: dict[str, list[str]] = {
     "default": [],
     "example": ["-f", str(VALUES_EXAMPLE)],
     "production": ["-f", str(VALUES_PRODUCTION)],
+    "engine": [
+        "--set",
+        "temporal.enabled=true",
+        "--set",
+        f"temporal.host={ENGINE_HOST}",
+        "--set",
+        f"secrets.data.TEMPORAL_CODEC_KEY={ENGINE_CODEC_KEY}",
+    ],
 }
 
 # Every stateless workload; "every workload" assertions parametrize over this so
-# they stay DRY as workloads are added.
-WORKLOADS = ["forge-api", "forge-worker", "forge-web", "forge-mcp-gateway"]
+# they stay DRY as workloads are added. They render the "engine" profile, the only
+# one where all of them exist (the Temporal worker needs the engine on).
+WORKLOADS = ["forge-api", "forge-worker", "forge-web", "forge-mcp-gateway", "forge-temporal-worker"]
 
 HELM = shutil.which("helm")
 KUBECONFORM = shutil.which("kubeconform")

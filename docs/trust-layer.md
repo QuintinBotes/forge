@@ -161,8 +161,11 @@ binds every activity except `forge.resume_agent`:
     (default `postgres_fsm`) and the `TEMPORAL_*` settings to the API and the
     Celery worker. Set `WORKFLOW_ENGINE_BACKEND=temporal` and start the
     `temporal` profile to run repository changes; without that, a production
-    stack refuses them. The Helm chart renders no Temporal yet, so a Helm
-    production install refuses repository-changing runs until it does (#293).
+    stack refuses them. The Helm chart does the same with `temporal.enabled`
+    and `temporal.host` (an external Temporal frontend; the chart bundles no
+    server) and `TEMPORAL_CODEC_KEY` in its Secret: it renders a Temporal worker
+    and gives the API, the Celery worker and that worker the same settings
+    (#293). With the engine off, a Helm install refuses repository changes too.
 - **A cancel** at a gate expires that gate's open request with the reason
   `run_cancelled`, recorded as whoever cancelled the run. The workflow's own
   cancel path does it again, for a request it opened after the cancel arrived.

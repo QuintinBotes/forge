@@ -18,6 +18,8 @@ spec:
     metadata:
       labels:
         {{- include "swarm-code-factory.componentLabels" (dict "ctx" . "component" "temporal-worker") | nindent 8 }}
+      annotations:
+        {{- include "swarm-code-factory.envChecksums" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "swarm-code-factory.serviceAccountName" . }}
       {{- include "swarm-code-factory.imagePullSecrets" . | nindent 6 }}
@@ -32,6 +34,7 @@ spec:
           command: ["python", "-m", "scf_worker.temporal_main"]
           envFrom:
             {{- include "swarm-code-factory.envFrom" . | nindent 12 }}
+          {{- include "swarm-code-factory.engineEnv" . | nindent 10 }}
           resources:
             {{- toYaml .Values.temporal.worker.resources | nindent 12 }}
           volumeMounts:

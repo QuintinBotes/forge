@@ -5,6 +5,12 @@ templates:
   - templates/web/deployment.yaml
   - templates/mcp-gateway/deployment.yaml
   - templates/job-migrate.yaml
+  - templates/temporal-worker/deployment.yaml
+# The Temporal worker renders only with the durable engine on (#293).
+set:
+  temporal.enabled: true
+  temporal.host: temporal-frontend.example.com:7233
+  secrets.data.TEMPORAL_CODEC_KEY: chart-test-codec-key
 tests:
   - it: pod runs as non-root with a seccomp profile
     asserts:

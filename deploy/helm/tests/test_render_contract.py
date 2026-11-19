@@ -64,7 +64,7 @@ def test_every_object_has_recommended_labels() -> None:
 def test_workload_is_hardened(name: str) -> None:
     """§4.2 — every workload renders the hardened securityContext + resources."""
     require_helm()
-    deploy = _named(render_docs("default"), "Deployment", name)
+    deploy = _named(render_docs("engine"), "Deployment", name)
     pod = deploy["spec"]["template"]["spec"]
     assert pod["securityContext"]["runAsNonRoot"] is True
     sc = _containers(deploy)[0]["securityContext"]
@@ -82,7 +82,7 @@ def test_workload_is_hardened(name: str) -> None:
 def test_workload_consumes_config_and_secret(name: str) -> None:
     """§4.2 — each pod reads env from the ConfigMap and the Secret via envFrom."""
     require_helm()
-    deploy = _named(render_docs("default"), "Deployment", name)
+    deploy = _named(render_docs("engine"), "Deployment", name)
     refs = {next(iter(e)) for e in _containers(deploy)[0]["envFrom"]}
     assert {"configMapRef", "secretRef"} <= refs
 
