@@ -47,6 +47,25 @@ def test_same_key_same_body_runs_once_and_replays() -> None:
     assert "idempotency-replayed" not in first.headers
 
 
+def test_the_session_cookie_scopes_a_replay_like_a_credential_header() -> None:
+    """One IP (a reverse proxy) carries many browsers: the cookie, not the IP, is the scope."""
+    client, counter = _client()
+    key = {"Idempotency-Key": "shared"}
+    first = client.post("/work", json={"v": 1}, headers={**key, "cookie": "forge_session=aaa"})
+    other = client.post("/work", json={"v": 1}, headers={**key, "cookie": "forge_session=bbb"})
+    anonymous = client.post("/work", json={"v": 1}, headers=key)
+    assert counter["n"] == 3
+    assert "idempotency-replayed" not in other.headers
+    assert "idempotency-replayed" not in anonymous.headers
+    assert first.json()["run"] != other.json()["run"]
+    again = client.post("/work", json={"v": 1}, headers={**key, "cookie": "forge_session=aaa"})
+    assert again.headers.get("idempotency-replayed") == "true"
+    # An unrelated cookie is not a credential: it shares the anonymous scope.
+    unrelated = client.post("/work", json={"v": 1}, headers={**key, "cookie": "theme=dark"})
+    assert unrelated.headers.get("idempotency-replayed") == "true"
+    assert counter["n"] == 3
+
+
 def test_same_key_different_body_is_422() -> None:
     client, counter = _client()
     headers = {"Idempotency-Key": "k2"}

@@ -13,12 +13,14 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
 from scf_contracts import CommandOutput
+from scf_contracts.attestation import AssistanceIdentity
 
 __all__ = [
     "FINISH_TOOL",
@@ -244,6 +246,20 @@ _SEARCH_MAX_MATCHES = 200
 _SEARCH_MAX_FILE_BYTES = 1_000_000
 _SEARCH_SKIP_DIRS = frozenset({".git", "node_modules", ".venv", "__pycache__", ".mypy_cache"})
 _OUTPUT_TAIL_LINES = 400
+#: Lines SCF writes itself, dropped from an agent's message (#214). Only a person
+#: certifies the DCO, so an agent commit never carries ``Signed-off-by``.
+_OWNED_LINE = re.compile(r"\s*(signed-off-by|assisted-by|Forge-Run)\s*:", re.IGNORECASE)
+#: Where ``git interpret-trailers`` and ``git am`` end a commit message: a line after it
+#: would hide the trailers SCF appends.
+_DIVIDER = re.compile(r"---(\s|$)")
+
+
+def _owned(line: str) -> bool:
+    """Whether ``line`` is one SCF writes, read as GitHub renders it: invisible format
+    characters (Unicode ``Cf``, such as a zero-width space or a BOM) are ignored."""
+    return bool(_OWNED_LINE.match("".join(c for c in line if unicodedata.category(c) != "Cf")))
+
+
 #: Keys looked up in ``policy.commands`` for each command tool, first match wins.
 _COMMAND_TOOLS: tuple[tuple[str, tuple[str, ...], str], ...] = (
     ("run_tests", ("test", "tests"), "Run the repository's declared test command"),
@@ -260,6 +276,7 @@ def agent_tool_belt(
     root: str | Path,
     *,
     run_id: str,
+    model: str | None = None,
     commands: Mapping[str, str] | None = None,
     run_command: CommandRunner | None = None,
     ci_client: GitHubCIClient | None = None,
@@ -271,8 +288,11 @@ def agent_tool_belt(
     only for commands the repository declares in ``.forge/policy.yaml`` and only
     when a sandbox ``run_command`` is supplied. ``git_commit`` commits locally
     with hooks disabled; pushing and opening PRs happen in the run finalizer,
-    never from a tool (ADR-0014). Optional CI reads use a host-side integration
-    client bound to one repository; no client or credentials enter the sandbox.
+    never from a tool (ADR-0014). Each commit carries ``Assisted-by:`` (the agent
+    and ``model``, the agent alone when the model is unknown) and ``Forge-Run:``
+    trailers, and never ``Signed-off-by`` (#214). Optional CI reads use a host-side
+    integration client bound to one repository; no client or credentials enter the
+    sandbox.
     """
     base = Path(root)
     registry = default_tool_registry(base)
@@ -345,10 +365,20 @@ def agent_tool_belt(
                 input_schema={"type": "object", "properties": {}},
             )
 
+    assistance = AssistanceIdentity(model=model or None).trailer
+
     def git_commit(args: dict[str, Any]) -> ToolResult:
-        message = str(args.get("message", "")).strip()
+        lines = str(args.get("message", "")).splitlines()
+        removed = [line.strip() for line in lines if _owned(line)]
+        message = "\n".join(line for line in lines if not _owned(line)).strip()
         if not message:
             return ToolResult(ok=False, error="message is required")
+        if any(_DIVIDER.match(line) for line in message.splitlines()):
+            return ToolResult(
+                ok=False,
+                error="a line starting with '---' ends a commit message for git, which would "
+                "hide its trailers: remove that line or rewrite it, then commit again",
+            )
         git = [
             "git",
             "-c", "core.hooksPath=/dev/null",
@@ -361,8 +391,9 @@ def agent_tool_belt(
         )
         if staged.returncode == 0:
             return ToolResult(ok=False, error="nothing to commit")
+        trailers = f"Assisted-by: {assistance}\nForge-Run: {run_id}"
         subprocess.run(
-            [*git, "commit", "--no-verify", "-m", f"{message}\n\nForge-Run: {run_id}"],
+            [*git, "commit", "--no-verify", "-m", f"{message}\n\n{trailers}"],
             cwd=base,
             check=True,
             capture_output=True,
@@ -370,7 +401,13 @@ def agent_tool_belt(
         sha = subprocess.run(
             [*git, "rev-parse", "HEAD"], cwd=base, check=True, capture_output=True, text=True
         ).stdout.strip()
-        return ToolResult(ok=True, output=f"committed {sha}", data={"sha": sha})
+        output = f"committed {sha}"
+        if removed:
+            output = (
+                f"removed {len(removed)} line{'s' if len(removed) > 1 else ''} SCF writes "
+                f"itself (Signed-off-by, Assisted-by, Forge-Run): {'; '.join(removed)}\n{output}"
+            )
+        return ToolResult(ok=True, output=output, data={"sha": sha, "removed_lines": removed})
 
     registry.add(
         "git_commit",

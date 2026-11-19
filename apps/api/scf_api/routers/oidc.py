@@ -15,7 +15,6 @@ The workspace is resolved from the URL slug, never from token fields
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -24,9 +23,8 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from scf_api.auth.service import get_auth_service
 from scf_api.deps import DbSession, SettingsDep
-from scf_api.routers.saml import SESSION_TTL, _safe_next
+from scf_api.routers.saml import _safe_next, start_session
 from scf_api.settings import Settings
 from scf_api.sso.config_service import SsoConfigService
 from scf_api.sso.errors import OidcValidationError, SsoConfigError
@@ -41,7 +39,7 @@ from scf_api.sso.oidc import (
     new_state,
 )
 from scf_api.sso.provisioning import emit_sso_audit, link_or_jit_provision
-from scf_contracts.enums import APIKeyKind, UserRole
+from scf_contracts.enums import UserRole
 from scf_db.models import OidcConfiguration, Workspace
 from scf_db.models.enums import ExternalIdentityProvider
 
@@ -218,23 +216,12 @@ def oidc_callback(
         details={"protocol": "oidc"},
     )
     session.commit()
-
-    _info, token = get_auth_service().bootstrap_key(
+    return start_session(
+        settings,
         workspace_id=workspace.id,
-        name=f"sso-session-{uuid.uuid4().hex[:8]}",
-        role=UserRole(user.role.value),
         user_id=user.id,
-        kind=APIKeyKind.SYSTEM,
-        expires_at=now + SESSION_TTL,
-        surface="web",
+        role=UserRole(user.role.value),
+        next_path=txn.relay_state,
+        now=now,
+        label="sso-session",
     )
-    response = RedirectResponse(url=_safe_next(txn.relay_state), status_code=status.HTTP_302_FOUND)
-    response.set_cookie(
-        "forge_session",
-        token,
-        httponly=True,
-        secure=settings.public_url.startswith("https://"),
-        samesite="lax",
-        max_age=int(SESSION_TTL.total_seconds()),
-    )
-    return response

@@ -16,10 +16,14 @@ a WebSocket handshake rejection (Starlette only maps that for HTTP routes). So w
 spec's WS-auth contract requires.
 
 Non-browser clients (tervin, spec L §6a) send ``Authorization: Bearer`` or
-``X-API-Key`` instead. A socket opened with a narrowed key, or with a key sent
-in a header, closes after a bounded lifetime (never past the key's expiry), so a
-revoked key stops receiving and the client reconnects. The web's ``?token=``
-socket with an unscoped key, and every session socket, has no lifetime.
+``X-API-Key`` instead. A browser that signed in through SSO is authenticated by
+its ``forge_session`` cookie alone, and only when the handshake comes from SCF's
+own origin: a browser attaches the cookie to a socket any page opens. A socket
+opened with a narrowed key, with a key sent in a header, or with the session
+cookie (whose key sign-out revokes) closes after a bounded lifetime (never past
+the key's expiry), so a revoked key stops receiving and the client reconnects.
+The web's ``?token=`` socket with an unscoped key, and every session-JWT socket,
+has no lifetime.
 """
 
 from __future__ import annotations
@@ -39,8 +43,9 @@ from scf_api.auth.service import (
     AuthService,
     _extract_token,
     get_auth_service,
+    is_own_origin,
 )
-from scf_api.deps import Principal
+from scf_api.deps import SESSION_COOKIE, Principal
 from scf_api.realtime.manager import ConnectionManager, get_connection_manager
 from scf_api.realtime.spec_room import SpecRoomRegistry, get_spec_room_registry
 from scf_spec import SpecNotFoundError
@@ -69,47 +74,46 @@ def get_api_key_socket_lifetime() -> float:
     return seconds if seconds > 0 else DEFAULT_API_KEY_SOCKET_SECONDS
 
 
-def _extract_ws_token(websocket: WebSocket) -> str | None:
-    """Pull the bearer credential from the headers, ``?token=``, or the WS subprotocol.
+def _extract_ws_token(websocket: WebSocket) -> tuple[str | None, str]:
+    """Pull the credential, and where it came from: ``header``, ``url`` or ``cookie``.
 
     Non-browser clients send ``Authorization: Bearer`` or ``X-API-Key``, read
     first exactly as an HTTP request reads them. Browsers cannot set
     ``Authorization`` on a WebSocket handshake, so the token rides the query
     string (matching the web hook). The ``Sec-WebSocket-Protocol`` header is
     accepted as a fallback for clients that prefer to smuggle the credential
-    through the subprotocol negotiation.
+    through the subprotocol negotiation. The session cookie comes last, and only
+    from SCF's own origin (no cross-site WebSocket hijacking).
     """
-    token = _header_token(websocket)
+    headers = websocket.headers
+    token = _extract_token(headers.get("authorization"), headers.get("x-api-key"))
     if token:
-        return token
+        return token, "header"
     token = websocket.query_params.get("token")
     if token:
-        return token.strip()
-    protocol = websocket.headers.get("sec-websocket-protocol")
+        return token.strip(), "url"
+    protocol = headers.get("sec-websocket-protocol")
     if protocol:
         # A subprotocol offer may be a comma-separated list; the credential is
         # the last non-empty entry ("<subprotocol>, <token>" or just "<token>").
         candidate = protocol.split(",")[-1].strip()
         if candidate:
-            return candidate
-    return None
+            return candidate, "url"
+    if is_own_origin(headers.get("origin"), headers.get("sec-fetch-site")):
+        return _extract_token(None, None, websocket.cookies.get(SESSION_COOKIE)), "cookie"
+    return None, "cookie"
 
 
-def _header_token(websocket: WebSocket) -> str | None:
-    headers = websocket.headers
-    return _extract_token(headers.get("authorization"), headers.get("x-api-key"))
-
-
-def _socket_lifetime(principal: Principal, websocket: WebSocket, lifetime: float) -> float | None:
+def _socket_lifetime(principal: Principal, source: str, lifetime: float) -> float | None:
     """How long this socket may stay open; ``None``: until the peer leaves.
 
-    Only an API key that is narrowed or came in a header gets a lifetime, capped
-    at the key's expiry. The web's ``?token=`` socket with an unscoped key and
-    session sockets keep the unbounded behaviour the board hook relies on.
+    Every API key gets a lifetime, capped at the key's expiry, except an unscoped
+    key in the URL: the web's ``?token=`` socket and session-JWT sockets keep the
+    unbounded behaviour the board hook relies on.
     """
     if principal.auth_method != "api_key":
         return None
-    if not (principal.narrowed or _header_token(websocket)):
+    if not principal.narrowed and source == "url":
         return None
     if principal.credential_expires_at is not None:
         left = (principal.credential_expires_at - datetime.now(UTC)).total_seconds()
@@ -144,7 +148,8 @@ async def board_ws(
     """
     await websocket.accept()
 
-    principal = _authenticate_ws(service, _extract_ws_token(websocket))
+    token, source = _extract_ws_token(websocket)
+    principal = _authenticate_ws(service, token)
     if principal is None:
         # A dependency raising HTTPException does NOT reject a WebSocket, so we
         # close explicitly after accepting.
@@ -152,7 +157,7 @@ async def board_ws(
         return
 
     workspace_id = principal.workspace_id
-    lifetime = _socket_lifetime(principal, websocket, api_key_lifetime)
+    lifetime = _socket_lifetime(principal, source, api_key_lifetime)
     await manager.connect(workspace_id, websocket)
     try:
         # Board push is server->client only; we drain inbound frames so the
@@ -178,7 +183,7 @@ async def spec_collab_ws(
 ) -> None:
     """Collaborative spec-editing socket (Yjs binary sync protocol).
 
-    Auth mirrors ``/ws``: a missing/invalid ``?token=`` credential is rejected by
+    Auth mirrors ``/ws``: a missing/invalid credential is rejected by
     accepting the socket then closing 1008 (a ``Depends`` raising
     ``HTTPException`` cannot reject a WebSocket handshake). A spec the caller's
     workspace does not have is denied *before* accept with a 404 — the engine
@@ -189,7 +194,8 @@ async def spec_collab_ws(
     a policy violation and is closed 1008 (mutations are rejected, never applied).
     A token socket closes (1000) when its lifetime ends, exactly as on ``/ws``.
     """
-    principal = _authenticate_ws(service, _extract_ws_token(websocket))
+    token, source = _extract_ws_token(websocket)
+    principal = _authenticate_ws(service, token)
     if principal is None:
         await websocket.accept()
         await websocket.close(code=WS_POLICY_VIOLATION)
@@ -203,7 +209,7 @@ async def spec_collab_ws(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     can_write = can(principal.role, Permission.WRITE)
-    lifetime = _socket_lifetime(principal, websocket, api_key_lifetime)
+    lifetime = _socket_lifetime(principal, source, api_key_lifetime)
     deadline = math.inf if lifetime is None else anyio.current_time() + lifetime
     await websocket.accept()
     await room.connect(websocket)

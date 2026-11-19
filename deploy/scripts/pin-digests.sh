@@ -12,7 +12,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILES=("$REPO_ROOT/deploy/docker-compose.yml" "$REPO_ROOT/deploy/docker-compose.dev.yml")
+COMPOSE_FILES=(
+  "$REPO_ROOT/deploy/docker-compose.yml"
+  "$REPO_ROOT/deploy/docker-compose.dev.yml"
+  "$REPO_ROOT/deploy/docker-compose.single-user.yml"
+)
 MANIFEST="$REPO_ROOT/deploy/build-manifest.json"
 FORGE_VERSION="${FORGE_VERSION:-0.1.0}"
 DIGEST_RE='@sha256:[0-9a-f]{64}$'

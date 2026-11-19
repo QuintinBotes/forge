@@ -139,7 +139,10 @@ PUBLIC_BY_DESIGN: dict[str, str] = {
     "/auth/bootstrap": "first-run bootstrap mints the initial admin key once",
     "/auth/session": "session login exchanges its own credential (not API-key auth)",
     "/auth/login": "session bootstrap (pre-authentication)",
-    "/auth/logout": "stateless logout is idempotent; the client just discards its token",
+    "/auth/logout": "idempotent: 204 without a session cookie; with one it revokes that "
+    "cookie's own key and clears it (from SCF's own origin only)",
+    "/auth/sign-in-link": "a browser opens the one-time link scf-cli admin sign-in-link "
+    "printed, with no credentials: the link's token is the authentication, once (#260)",
     "/saml/metadata": "SP metadata is public by SAML design (no secrets inside)",
     "/saml/acs": "IdP-POSTed assertion is its own signed credential",
     "/saml/login": "SP-initiated login redirect (pre-authentication)",

@@ -12,9 +12,10 @@ the router runs the exact ``scf-verify --run`` verification seam
 Ed25519 over the envelope) against the deployment's verification key, so a
 record this deployment cannot vouch for honestly reads ``verified: false``.
 
-The raw DSSE ``envelope`` is deliberately not exposed here: independent
-(offline) verification goes through ``scf-verify``, which re-reads the row —
-the REST surface never becomes a second source of truth for the signature.
+The raw DSSE ``envelope`` is not part of these records: ``GET
+/attestations/{id}/envelope`` serves it exactly as stored, as the contract's
+:class:`~scf_contracts.attestation.DsseEnvelope`, for ``scf-verify --attestation``
+and other offline verifiers (#214).
 """
 
 from __future__ import annotations

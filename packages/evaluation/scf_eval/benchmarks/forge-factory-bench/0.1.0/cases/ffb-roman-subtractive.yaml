@@ -1,0 +1,51 @@
+cases:
+  - id: ffb-roman-subtractive
+    kind: agent_task
+    tags: [agent_task, bugfix]
+    expected_ids: [REQ-ROMAN-1]
+    query: |
+      to_roman() writes IIII instead of IV
+
+      to_roman(4) returns "IIII" and to_roman(1994) returns "MDCCCCLXXXXIIII". Use
+      the subtractive forms IV, IX, XL, XC, CD and CM, so 1994 is "MCMXCIV". Numbers
+      outside 1 to 3999 must still be refused.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: roman.py
+          content: |
+            _NUMERALS = [(1000, "M"), (500, "D"), (100, "C"), (50, "L"), (10, "X"), (5, "V"), (1, "I")]
+
+
+            def to_roman(number):
+                """Write ``number`` (1 to 3999) in Roman numerals."""
+                if not 0 < number < 4000:
+                    raise ValueError("number must be between 1 and 3999")
+                parts = []
+                for value, numeral in _NUMERALS:
+                    count, number = divmod(number, value)
+                    parts.append(numeral * count)
+                return "".join(parts)
+      held_out:
+        - path: tests/test_roman.py
+          content: |
+            import pytest
+
+            from roman import to_roman
+
+
+            def test_subtractive_forms():
+                assert to_roman(4) == "IV"
+                assert to_roman(9) == "IX"
+                assert to_roman(1994) == "MCMXCIV"
+
+
+            def test_additive_numbers_and_range():
+                assert to_roman(3) == "III"
+                assert to_roman(2023) == "MMXXIII"
+                with pytest.raises(ValueError):
+                    to_roman(0)
+                with pytest.raises(ValueError):
+                    to_roman(4000)
+      fail_to_pass: [tests/test_roman.py::test_subtractive_forms]
+      pass_to_pass: [tests/test_roman.py::test_additive_numbers_and_range]

@@ -331,9 +331,10 @@ async def test_the_pull_request_names_its_signed_attestation(
     assert str(attestation.id) in body
     assert attestation.payload_hash in body and attestation.keyid in body
     statement = decode_statement(attestation.envelope["payload"])
+    # The commit subject names the repository and the run branch's ref (#214).
     assert [(s.name, (s.digest.model_extra or {}).get("gitCommit")) for s in statement.subject][
         1:
-    ] == [(REPO, HEAD)]
+    ] == [(f"{REPO}@refs/heads/{BRANCH}", HEAD)]
     verification = statement.predicate["verification"]
     assert verification["checks_verdict"] == "passed"
     assert verification["checks"] == [{"id": "tests", "outcome": "passed"}]
