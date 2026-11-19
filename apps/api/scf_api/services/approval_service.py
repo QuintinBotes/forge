@@ -39,6 +39,7 @@ from scf_approval import (
     GateRegistry,
     InMemoryActivityBus,
     InMemoryApprovalRepository,
+    NullAuditSink,
 )
 from scf_approval.models import Principal as ApprovalPrincipal
 from scf_approval.models import Role as ApprovalRole
@@ -67,9 +68,11 @@ def build_gate_registry(
 ) -> GateRegistry:
     """Register every available provider/hook (the F36 composition root).
 
-    ``audit`` is where the workflow gate hooks record a failed submit; it
-    defaults to the process audit log, the approval service's own sink.
+    ``audit`` is where the workflow gate hooks record a failed submit: pass the
+    sink the approval service audits to (:func:`get_gate_registry` does). Left
+    out, nothing is audited, as for an :class:`ApprovalService` built without one.
     """
+    hook_audit = audit if audit is not None else NullAuditSink()
     from scf_api.services.attestation_service import PrAttestationResolutionHook
     from scf_api.services.workflow_gate_hook import (
         PlanWorkflowGateHook,
@@ -93,11 +96,11 @@ def build_gate_registry(
         PrWorkflowGateHook(
             wrapped=PrAttestationResolutionHook(_attestation_session),
             engine_factory=engine_factory,
-            audit=audit,
+            audit=hook_audit,
         )
     )
-    registry.register_hook(SpecWorkflowGateHook(engine_factory=engine_factory, audit=audit))
-    registry.register_hook(PlanWorkflowGateHook(engine_factory=engine_factory, audit=audit))
+    registry.register_hook(SpecWorkflowGateHook(engine_factory=engine_factory, audit=hook_audit))
+    registry.register_hook(PlanWorkflowGateHook(engine_factory=engine_factory, audit=hook_audit))
     return registry
 
 
@@ -129,10 +132,15 @@ def get_override_grant_store() -> GrantStore:
     return InMemoryGrantStore()
 
 
+def _approval_audit() -> ApprovalAuditSink:
+    """The one sink for approvals: decisions, gate hooks and gate sync share its chain."""
+    return get_observability_service().audit
+
+
 @lru_cache(maxsize=1)
 def get_gate_registry() -> GateRegistry:
     """Process-wide gate registry (override in tests via DI)."""
-    return build_gate_registry(get_override_grant_store())
+    return build_gate_registry(get_override_grant_store(), audit=_approval_audit())
 
 
 def build_approval_repository() -> ApprovalRepository:
@@ -164,7 +172,7 @@ def get_approval_service() -> ApprovalService:
         get_gate_registry(),
         ApprovalAuthorizer(),
         events=InMemoryActivityBus(),
-        audit=get_observability_service().audit,
+        audit=_approval_audit(),
         redactor=redact_mapping,
     )
 

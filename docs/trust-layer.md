@@ -125,9 +125,12 @@ binds every activity except `forge.resume_agent`:
   (unreachable, or the merge guard: CI has not reported yet), the request's
   `gate_payload.workflow_event.status` reads `failed`, and the audit log gets an
   `approval` entry with status `workflow_event_failed` (the decider, the event
-  and the error) before the decision's own entry (#182). It stays `failed` until
-  `POST /workflow/runs/{id}/gates/{gate}/sync` applies the event (for `pr`, with
-  the same attestation); then it reads `submitted`.
+  and the error) before the decision's own entry (#182). The request's status
+  stays `failed` until `POST /workflow/runs/{id}/gates/{gate}/sync` applies the
+  event (for `pr`, with the same attestation); then the request reads
+  `submitted`, and the audit log gets a further `workflow_event_synced` entry
+  naming who ran the sync (audit entries are never changed). A failed audit
+  write is logged and changes nothing else.
 - **The merge guard reads CI and the spec itself** (#280, FR-011). For each `pr`
   approval, the workflow reads the check runs on the agent's head commit, with a
   token for the one repository that can only read checks. CI is green only when
