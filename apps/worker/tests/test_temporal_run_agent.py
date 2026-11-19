@@ -309,6 +309,22 @@ async def test_a_supervised_task_is_refused_rather_than_run_as_one_agent(
         assert s.scalars(select(AgentRun)).all() == []
 
 
+async def test_a_line_station_input_is_refused_rather_than_run_as_the_tasks_agent(
+    factory: sessionmaker[Session], mirror: Path
+) -> None:
+    """Until a station agent body exists, its role, objective and cap would be ignored."""
+    run_id, task_id = _seed(factory)
+    station = _input(run_id, task_id)
+    station.station_visit_id, station.role, station.objective = uuid.uuid4(), "reviewer", "Review"
+
+    with pytest.raises(ApplicationError) as caught:
+        await _run(factory, station)
+
+    assert (caught.value.type, caught.value.non_retryable) == ("ActivityNotConfigured", True)
+    with factory() as s:
+        assert s.scalars(select(AgentRun)).all() == []
+
+
 async def test_a_run_outside_the_workspace_is_refused(
     factory: sessionmaker[Session], mirror: Path
 ) -> None:

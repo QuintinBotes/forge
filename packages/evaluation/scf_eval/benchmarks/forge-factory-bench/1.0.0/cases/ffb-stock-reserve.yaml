@@ -1,0 +1,60 @@
+cases:
+  - id: ffb-stock-reserve
+    kind: agent_task
+    tags: [agent_task, feature]
+    expected_ids: [REQ-STOCK-1]
+    query: |
+      Reserve stock for an order
+
+      Add Stock.reserve(sku, quantity). It takes the quantity out of the level of that
+      SKU. When less than the quantity is available it raises InsufficientStock, a new
+      exception in stock.py that subclasses ValueError, and leaves the level as it was.
+      receive() and level() keep working as they do now.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: stock.py
+          content: |
+            class Stock:
+                """Units on hand, by SKU."""
+
+                def __init__(self):
+                    self._levels = {}
+
+                def receive(self, sku, quantity):
+                    self._levels[sku] = self._levels.get(sku, 0) + quantity
+
+                def level(self, sku):
+                    return self._levels.get(sku, 0)
+      held_out:
+        - path: tests/test_stock.py
+          content: |
+            import pytest
+
+            from stock import Stock
+
+
+            def test_reserving_takes_units_and_refuses_too_many():
+                from stock import InsufficientStock
+
+                stock = Stock()
+                stock.receive("bolt", 5)
+                stock.reserve("bolt", 3)
+                assert stock.level("bolt") == 2
+                with pytest.raises(InsufficientStock):
+                    stock.reserve("bolt", 3)
+                with pytest.raises(ValueError):
+                    stock.reserve("nut", 1)
+                assert stock.level("bolt") == 2
+                stock.reserve("bolt", 2)
+                assert stock.level("bolt") == 0
+
+
+            def test_receiving_adds_up():
+                stock = Stock()
+                stock.receive("bolt", 2)
+                stock.receive("bolt", 4)
+                assert stock.level("bolt") == 6
+                assert stock.level("nut") == 0
+      fail_to_pass: [tests/test_stock.py::test_reserving_takes_units_and_refuses_too_many]
+      pass_to_pass: [tests/test_stock.py::test_receiving_adds_up]

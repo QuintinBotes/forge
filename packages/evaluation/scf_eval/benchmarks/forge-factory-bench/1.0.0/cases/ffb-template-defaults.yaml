@@ -1,0 +1,45 @@
+cases:
+  - id: ffb-template-defaults
+    kind: agent_task
+    tags: [agent_task, feature]
+    expected_ids: [REQ-TEMPLATE-1]
+    query: |
+      Default values in templates
+
+      render() fills each {name} from the values and raises KeyError when a name is
+      missing. Support a default after a bar: {name|friend} renders "friend" when name
+      is missing and the value when it is given; {name|} renders an empty string. A
+      field without a default still raises KeyError when its name is missing.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: templates.py
+          content: |
+            import re
+
+            _FIELD = re.compile(r"\{(\w+)\}")
+
+
+            def render(template, values):
+                """Fill each ``{name}`` in ``template`` from ``values``."""
+                return _FIELD.sub(lambda match: str(values[match.group(1)]), template)
+      held_out:
+        - path: tests/test_templates.py
+          content: |
+            import pytest
+
+            from templates import render
+
+
+            def test_defaults_fill_missing_names():
+                assert render("Hi {name|friend}!", {}) == "Hi friend!"
+                assert render("Hi {name|friend}!", {"name": "Ada"}) == "Hi Ada!"
+                assert render("[{note|}]", {}) == "[]"
+
+
+            def test_plain_fields():
+                assert render("{a} and {b}", {"a": 1, "b": "two"}) == "1 and two"
+                with pytest.raises(KeyError):
+                    render("{missing}", {})
+      fail_to_pass: [tests/test_templates.py::test_defaults_fill_missing_names]
+      pass_to_pass: [tests/test_templates.py::test_plain_fields]

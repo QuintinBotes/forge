@@ -74,12 +74,14 @@ JUnit report says it ran and passed; a skipped test does not count. Candidate co
 still runs inside the test process, so a change built to tamper with pytest from
 within can still lie; the sandbox is the boundary for that.
 
-Run the seed suite offline with the reference solver (every case should resolve)
-or the empty solver (none should):
+Version 1.0.0 has 20 cases and is frozen;
+[`docs/benchmarks/forge-factory-bench.md`](../../docs/benchmarks/forge-factory-bench.md)
+describes it and its reference baseline. Run it offline with the reference solver
+(every case should resolve) or the empty solver (none should):
 
 ```bash
 uv run python -m scf_api.cli_bench run \
-  --suite-dir packages/evaluation/scf_eval/benchmarks/forge-factory-bench/0.1.0 \
+  --suite-dir packages/evaluation/scf_eval/benchmarks/forge-factory-bench/1.0.0 \
   --solver reference --out bench-out
 ```
 

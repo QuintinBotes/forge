@@ -1,0 +1,90 @@
+cases:
+  - id: ffb-pin-name-split
+    kind: agent_task
+    tags: [agent_task, new_test]
+    expected_ids: [REQ-NAMES-1]
+    query: |
+      Pin split_name() with tests before it is rewritten
+
+      split_name() is about to be rewritten, and its only test covers a two-word name.
+      Add tests to tests/test_names.py that pin its current behaviour, without
+      changing names.py: with three or more words, every word but the last is a given
+      name; a single word is a family name with no given names; extra spaces anywhere
+      are ignored; an empty string gives two empty strings.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: names.py
+          content: |
+            def split_name(full_name):
+                """``"Ada King Lovelace"`` as ``("Ada King", "Lovelace")``: given names, family name."""
+                parts = full_name.split()
+                if not parts:
+                    return "", ""
+                return " ".join(parts[:-1]), parts[-1]
+        - path: tests/test_names.py
+          content: |
+            from names import split_name
+
+
+            def test_two_words():
+                assert split_name("Ada Lovelace") == ("Ada", "Lovelace")
+      held_out:
+        - path: tests/test_names_guard.py
+          content: |
+            import shutil
+            import subprocess
+            import sys
+            from pathlib import Path
+
+            from names import split_name
+
+            ROOT = Path(__file__).resolve().parents[1]
+            #: One rewrite per rule the issue lists, each breaking only that rule:
+            #: three or more words, a single word, extra spaces, the empty string.
+            REWRITES = [
+                "def split_name(full_name):\n"
+                "    parts = full_name.split()\n"
+                "    if not parts:\n"
+                "        return '', ''\n"
+                "    if len(parts) > 2:\n"
+                "        return parts[0], ' '.join(parts[1:])\n"
+                "    return ' '.join(parts[:-1]), parts[-1]\n",
+                "def split_name(full_name):\n"
+                "    parts = full_name.split()\n"
+                "    if not parts:\n"
+                "        return '', ''\n"
+                "    if len(parts) == 1:\n"
+                "        return parts[0], ''\n"
+                "    return ' '.join(parts[:-1]), parts[-1]\n",
+                "def split_name(full_name):\n"
+                "    parts = full_name.split(' ')\n"
+                "    return ' '.join(parts[:-1]), parts[-1]\n",
+                "def split_name(full_name):\n"
+                "    parts = full_name.split()\n"
+                "    return ' '.join(parts[:-1]), parts[-1]\n",
+            ]
+
+
+            def _repository_tests(tmp_path, source):
+                """pytest's exit code for tests/test_names.py run against ``source``."""
+                shutil.copy(ROOT / "tests" / "test_names.py", tmp_path)
+                (tmp_path / "names.py").write_text(source)
+                command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+                return subprocess.run(command, cwd=tmp_path, capture_output=True).returncode
+
+
+            def test_repository_tests_catch_every_rewrite(tmp_path):
+                for number, source in enumerate(REWRITES):
+                    run_dir = tmp_path / str(number)
+                    run_dir.mkdir()
+                    assert _repository_tests(run_dir, source) == 1, number
+
+
+            def test_behaviour_kept_and_repository_tests_pass(tmp_path):
+                assert split_name("Ada King Lovelace") == ("Ada King", "Lovelace")
+                assert split_name("  Plato ") == ("", "Plato")
+                assert split_name("") == ("", "")
+                assert _repository_tests(tmp_path, (ROOT / "names.py").read_text()) == 0
+      fail_to_pass: [tests/test_names_guard.py::test_repository_tests_catch_every_rewrite]
+      pass_to_pass: [tests/test_names_guard.py::test_behaviour_kept_and_repository_tests_pass]
