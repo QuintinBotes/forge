@@ -1,0 +1,43 @@
+cases:
+  - id: ffb-median-even
+    kind: agent_task
+    tags: [agent_task, bugfix]
+    expected_ids: [REQ-MEDIAN-1]
+    query: |
+      median() is wrong for an even number of values
+
+      median([1, 2, 3, 4]) returns 3. With an even number of values the median is the
+      mean of the two middle values: 2.5. Odd counts and unsorted input keep working,
+      and an empty list must still raise ValueError.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: medians.py
+          content: |
+            def median(values):
+                """The middle value of ``values`` once sorted."""
+                if not values:
+                    raise ValueError("median of no values")
+                ordered = sorted(values)
+                return ordered[len(ordered) // 2]
+      held_out:
+        - path: tests/test_medians.py
+          content: |
+            import pytest
+
+            from medians import median
+
+
+            def test_even_count_averages_the_middle_pair():
+                assert median([1, 2, 3, 4]) == 2.5
+                assert median([10, 2]) == 6
+                assert median([4, 1, 3, 2]) == 2.5
+
+
+            def test_odd_count_and_empty_input():
+                assert median([3, 1, 2]) == 2
+                assert median([7]) == 7
+                with pytest.raises(ValueError):
+                    median([])
+      fail_to_pass: [tests/test_medians.py::test_even_count_averages_the_middle_pair]
+      pass_to_pass: [tests/test_medians.py::test_odd_count_and_empty_input]

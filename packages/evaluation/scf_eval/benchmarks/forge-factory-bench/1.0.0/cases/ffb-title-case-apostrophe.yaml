@@ -1,0 +1,68 @@
+cases:
+  - id: ffb-title-case-apostrophe
+    kind: agent_task
+    tags: [agent_task, new_test]
+    expected_ids: [REQ-TITLE-1]
+    query: |
+      title_case() capitalises letters after apostrophes and digits
+
+      title_case("don't stop") returns "Don'T Stop" and title_case("the 2nd act")
+      returns "The 2Nd Act". Only the first character of each space-separated word
+      should be upper-case and the rest lower-case: "Don't Stop", "The 2nd Act".
+      Spaces must be kept as they are. Add a test to tests/test_headings.py that
+      fails on the current code.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: headings.py
+          content: |
+            def title_case(text):
+                """``text`` with each word capitalised."""
+                return text.title()
+        - path: tests/test_headings.py
+          content: |
+            from headings import title_case
+
+
+            def test_plain_words():
+                assert title_case("hello world") == "Hello World"
+                assert title_case("hELLO") == "Hello"
+      held_out:
+        - path: tests/test_headings_guard.py
+          content: |
+            import shutil
+            import subprocess
+            import sys
+            from pathlib import Path
+
+            from headings import title_case
+
+            ROOT = Path(__file__).resolve().parents[1]
+            BEFORE = "def title_case(text):\n    return text.title()\n"
+
+
+            def _repository_tests(tmp_path, source):
+                """pytest's exit code for tests/test_headings.py run against ``source``."""
+                shutil.copy(ROOT / "tests" / "test_headings.py", tmp_path)
+                (tmp_path / "headings.py").write_text(source)
+                command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+                return subprocess.run(command, cwd=tmp_path, capture_output=True).returncode
+
+
+            def test_only_word_starts_are_capitalised():
+                assert title_case("don't stop") == "Don't Stop"
+                assert title_case("the 2nd act") == "The 2nd Act"
+                assert title_case("two  spaces") == "Two  Spaces"
+
+
+            def test_repository_tests_fail_before_the_fix(tmp_path):
+                assert _repository_tests(tmp_path, BEFORE) == 1
+
+
+            def test_repository_tests_pass_after_the_change(tmp_path):
+                assert _repository_tests(tmp_path, (ROOT / "headings.py").read_text()) == 0
+                assert title_case("hELLO world") == "Hello World"
+      fail_to_pass:
+        - tests/test_headings_guard.py::test_only_word_starts_are_capitalised
+        - tests/test_headings_guard.py::test_repository_tests_fail_before_the_fix
+      pass_to_pass: [tests/test_headings_guard.py::test_repository_tests_pass_after_the_change]

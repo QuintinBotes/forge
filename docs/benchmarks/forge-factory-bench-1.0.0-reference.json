@@ -1,0 +1,174 @@
+{
+  "suite_slug": "forge-factory-bench",
+  "suite_version": "1.0.0",
+  "suite_content_hash": "sha256:6ea9dff0fdb2209d87fa6ae5b05e25015924b77098da2667bff12b9a2fe5acb8",
+  "scf_commit": "769b9cae4f53f56c52efd601fad0fa7f9e55f835",
+  "solver": "reference",
+  "models": [],
+  "sandbox_tier": "worktree",
+  "cases": [
+    {
+      "case_id": "ffb-chunk-remainder",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 0.9231319160026032
+    },
+    {
+      "case_id": "ffb-slug-separators",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.0459775000053924
+    },
+    {
+      "case_id": "ffb-roman-subtractive",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.0672456669854
+    },
+    {
+      "case_id": "ffb-duration-validation",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.0885557500005234
+    },
+    {
+      "case_id": "ffb-cart-subtotal-discount",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.0894741670053918
+    },
+    {
+      "case_id": "ffb-leap-century",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.0510124159918632
+    },
+    {
+      "case_id": "ffb-median-even",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.0105607089935802
+    },
+    {
+      "case_id": "ffb-shared-default-tags",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.2480432500015013
+    },
+    {
+      "case_id": "ffb-stock-reserve",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.6498649579880293
+    },
+    {
+      "case_id": "ffb-template-defaults",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.6381858749955427
+    },
+    {
+      "case_id": "ffb-version-bump",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.1142516669933684
+    },
+    {
+      "case_id": "ffb-cache-eviction",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.0425807920109946
+    },
+    {
+      "case_id": "ffb-rename-with-alias",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.249720416002674
+    },
+    {
+      "case_id": "ffb-split-word-module",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.9984507500194013
+    },
+    {
+      "case_id": "ffb-unit-table",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.8028318340075202
+    },
+    {
+      "case_id": "ffb-id-generator-class",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 1.9555705419916194
+    },
+    {
+      "case_id": "ffb-negative-cents",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 5.433475041994825
+    },
+    {
+      "case_id": "ffb-flag-case",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 4.816753958992194
+    },
+    {
+      "case_id": "ffb-title-case-apostrophe",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 3.5634120000177063
+    },
+    {
+      "case_id": "ffb-pin-name-split",
+      "outcome": "resolved",
+      "regressed": [],
+      "reason": null,
+      "cost_usd": null,
+      "wall_time_s": 3.72441695802263
+    }
+  ],
+  "resolve_rate": 1.0,
+  "total_cost_usd": null,
+  "wall_time_s": 38.51351616802276
+}

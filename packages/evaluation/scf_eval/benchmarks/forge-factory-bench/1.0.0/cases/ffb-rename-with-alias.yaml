@@ -1,0 +1,45 @@
+cases:
+  - id: ffb-rename-with-alias
+    kind: agent_task
+    tags: [agent_task, refactor]
+    expected_ids: [REQ-RENAME-1]
+    query: |
+      Rename calc_avg() to mean()
+
+      calc_avg is an unclear name. Rename it to mean, with the same behaviour.
+      Existing callers must keep working for one release: calc_avg stays importable,
+      returns what mean returns, and emits a DeprecationWarning that names mean.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: averages.py
+          content: |
+            def calc_avg(values):
+                """The arithmetic mean of ``values``; no values raises ValueError."""
+                if not values:
+                    raise ValueError("no values")
+                return sum(values) / len(values)
+      held_out:
+        - path: tests/test_averages.py
+          content: |
+            import pytest
+
+            from averages import calc_avg
+
+
+            def test_mean_with_a_deprecated_alias():
+                from averages import mean
+
+                assert mean([1, 2, 3, 4]) == 2.5
+                with pytest.raises(ValueError):
+                    mean([])
+                with pytest.warns(DeprecationWarning, match="mean"):
+                    assert calc_avg([2, 4]) == 3
+
+
+            def test_old_name_still_averages():
+                assert calc_avg([1, 2]) == 1.5
+                with pytest.raises(ValueError):
+                    calc_avg([])
+      fail_to_pass: [tests/test_averages.py::test_mean_with_a_deprecated_alias]
+      pass_to_pass: [tests/test_averages.py::test_old_name_still_averages]

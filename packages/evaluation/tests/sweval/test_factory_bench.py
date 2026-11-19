@@ -1,4 +1,4 @@
-"""forge-factory-bench: the suite contract, the harness and its report (#197).
+"""forge-factory-bench: the suite contract, the harness and its report (#197, #198).
 
 The held-out tests run for real, offline, in the local worktree sandbox.
 """
@@ -18,6 +18,7 @@ import yaml
 
 from scf_agent.sandbox import LocalSandboxProvider
 from scf_eval.benchmark import (
+    BenchmarkContentHashMismatch,
     compute_content_hash,
     load_manifest,
     parse_swe_case_fields,
@@ -40,9 +41,11 @@ SUITE = (
     / "scf_eval"
     / "benchmarks"
     / "forge-factory-bench"
-    / "0.1.0"
+    / "1.0.0"
 )
 _REGRESSED = "tests/test_durations.py::test_hours_and_minutes"
+#: The task kinds the suite covers, one per case, recorded in its tags (#198).
+_KINDS = {"bugfix", "feature", "refactor", "new_test"}
 #: Rejects malformed text (the fail-to-pass test) but no longer adds anything up.
 _VALIDATES_BUT_RETURNS_ZERO = (
     "import re\n\n\n"
@@ -68,11 +71,12 @@ def _run(
 
 
 def _suite_copy(tmp_path: Path, *case_ids: str, **metadata: Any) -> Path:
-    """The shipped suite cut down to ``case_ids``, with ``metadata`` set on each."""
+    """The shipped suite cut down to ``case_ids``, unfrozen, with ``metadata`` set on each."""
     suite = tmp_path / "suite"
     shutil.copytree(SUITE, suite)
     manifest = yaml.safe_load((suite / "manifest.yaml").read_text(encoding="utf-8"))
     manifest["case_files"] = [f"cases/{case_id}.yaml" for case_id in case_ids]
+    manifest["frozen"] = False
     (suite / "manifest.yaml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
     for case_id in case_ids:
         path = suite / "cases" / f"{case_id}.yaml"
@@ -107,10 +111,10 @@ def reference_run() -> tuple[BenchRunReport, list[GoldenCase]]:
     return _run(SUITE, FnSolver(name="reference", fn=solve)), seen
 
 
-def test_suite_loads_with_five_complete_cases() -> None:
+def test_suite_loads_with_twenty_complete_cases() -> None:
     manifest, cases = load_manifest(SUITE)
-    assert (manifest.slug, manifest.version) == ("forge-factory-bench", "0.1.0")
-    assert len(cases) == 5
+    assert (manifest.slug, manifest.version) == ("forge-factory-bench", "1.0.0")
+    assert len(cases) == 20
     validate_freezable(cases)  # every case ends before merge (FR-018)
     for case in cases:
         fields = parse_swe_case_fields(case)
@@ -123,15 +127,40 @@ def test_suite_loads_with_five_complete_cases() -> None:
         assert not held_out & {f.path for f in fields.repo}, case.id
 
 
+def test_cases_cover_the_four_kinds() -> None:
+    _manifest, cases = load_manifest(SUITE)
+    kinds = {case.id: set(case.tags) & _KINDS for case in cases}
+    assert all(len(k) == 1 for k in kinds.values()), kinds
+    assert set().union(*kinds.values()) == _KINDS
+
+
+def test_suite_is_frozen_by_its_content_hash() -> None:
+    manifest, cases = load_manifest(SUITE)
+    assert manifest.frozen
+    assert manifest.content_hash == compute_content_hash(cases, manifest.scoring)
+
+
+@pytest.mark.parametrize("case_file", sorted(p.name for p in (SUITE / "cases").iterdir()))
+def test_editing_any_case_file_rejects_the_frozen_suite(tmp_path: Path, case_file: str) -> None:
+    suite = tmp_path / "suite"
+    shutil.copytree(SUITE, suite)
+    path = suite / "cases" / case_file
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    doc["cases"][0]["query"] += "Edited.\n"
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    with pytest.raises(BenchmarkContentHashMismatch):
+        load_manifest(suite)
+
+
 def test_reference_solver_resolves_every_case(reference_run: Any) -> None:
     report, _seen = reference_run
-    assert [r.outcome for r in report.cases] == [CaseOutcome.RESOLVED] * 5
+    assert [r.outcome for r in report.cases] == [CaseOutcome.RESOLVED] * 20
     assert report.resolve_rate == 1.0
 
 
 def test_empty_patch_resolves_no_case() -> None:
     report = _run(SUITE, empty_solver())
-    assert [r.outcome for r in report.cases] == [CaseOutcome.NOT_RESOLVED] * 5
+    assert [r.outcome for r in report.cases] == [CaseOutcome.NOT_RESOLVED] * 20
     assert all(r.regressed == [] for r in report.cases)  # pass-to-pass holds on the base
     assert report.resolve_rate == 0.0
 
@@ -183,7 +212,7 @@ def test_report_states_provenance_and_serialises(reference_run: Any) -> None:
     manifest, cases = load_manifest(SUITE)
     data = json.loads(report.model_dump_json())
     assert data["suite_slug"] == "forge-factory-bench"
-    assert data["suite_version"] == "0.1.0"
+    assert data["suite_version"] == "1.0.0"
     assert data["suite_content_hash"] == compute_content_hash(cases, manifest.scoring)
     assert data["scf_commit"] == "abc123"
     assert data["solver"] == "reference"
@@ -192,11 +221,11 @@ def test_report_states_provenance_and_serialises(reference_run: Any) -> None:
     assert data["resolve_rate"] == 1.0
     assert data["total_cost_usd"] is None
     assert data["wall_time_s"] > 0
-    assert [c["outcome"] for c in data["cases"]] == ["resolved"] * 5
+    assert [c["outcome"] for c in data["cases"]] == ["resolved"] * 20
     assert BenchRunReport.model_validate(data) == report
 
     markdown = report.to_markdown()
-    for text in ["0.1.0", data["suite_content_hash"], "abc123", "worktree", "5/5"]:
+    for text in ["1.0.0", data["suite_content_hash"], "abc123", "worktree", "20/20"]:
         assert text in markdown
     for case in cases:
         assert case.id in markdown

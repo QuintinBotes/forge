@@ -1,0 +1,42 @@
+# forge-factory-bench 1.0.0: the first released version of the end-to-end benchmark
+# (#198). FROZEN: content_hash is computed by `scf bench freeze` over the sorted cases
+# and the scoring. Editing a case or the scoring makes every benchmark command reject
+# the suite; add a new version directory instead. reference.yaml holds the known-good
+# patches and is not part of what a solver receives. docs/benchmarks/ describes it.
+slug: forge-factory-bench
+version: 1.0.0
+title: SCF factory bench
+description: Issue, repository and held-out tests per case; resolved when every fail-to-pass
+  test passes and no pass-to-pass test fails.
+scoring:
+  primary_metric: benchmark.composite
+  metric_weights:
+    agent.fail_to_pass_rate: 1.0
+  direction:
+    agent.fail_to_pass_rate: higher_is_better
+  category_field: tags
+  k: 10
+case_files:
+- cases/ffb-chunk-remainder.yaml
+- cases/ffb-slug-separators.yaml
+- cases/ffb-roman-subtractive.yaml
+- cases/ffb-duration-validation.yaml
+- cases/ffb-cart-subtotal-discount.yaml
+- cases/ffb-leap-century.yaml
+- cases/ffb-median-even.yaml
+- cases/ffb-shared-default-tags.yaml
+- cases/ffb-stock-reserve.yaml
+- cases/ffb-template-defaults.yaml
+- cases/ffb-version-bump.yaml
+- cases/ffb-cache-eviction.yaml
+- cases/ffb-rename-with-alias.yaml
+- cases/ffb-split-word-module.yaml
+- cases/ffb-unit-table.yaml
+- cases/ffb-id-generator-class.yaml
+- cases/ffb-negative-cents.yaml
+- cases/ffb-flag-case.yaml
+- cases/ffb-title-case-apostrophe.yaml
+- cases/ffb-pin-name-split.yaml
+schema_version: 1
+content_hash: sha256:6ea9dff0fdb2209d87fa6ae5b05e25015924b77098da2667bff12b9a2fe5acb8
+frozen: true

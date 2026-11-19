@@ -146,16 +146,17 @@ def test_scoring_helper_types_roundtrip() -> None:
     assert case.kind == "retrieval"
 
 
-FACTORY_BENCH = Path(scf_eval.__file__).parent / "benchmarks" / "forge-factory-bench" / "0.1.0"
+FACTORY_BENCH = Path(scf_eval.__file__).parent / "benchmarks" / "forge-factory-bench" / "1.0.0"
 
 
 def _one_case_bench(tmp_path: Path, **metadata: object) -> Path:
-    """The shipped factory bench cut down to one case, with ``metadata`` set on it."""
+    """The shipped factory bench cut down to one case, unfrozen, with ``metadata`` set."""
     suite = tmp_path / "suite"
     shutil.copytree(FACTORY_BENCH, suite)
     manifest = yaml.safe_load((suite / "manifest.yaml").read_text())
     case_file = suite / manifest["case_files"][0]
     manifest["case_files"] = manifest["case_files"][:1]
+    manifest["frozen"] = False
     (suite / "manifest.yaml").write_text(yaml.safe_dump(manifest))
     doc = yaml.safe_load(case_file.read_text())
     doc["cases"][0]["metadata"].update(metadata)
