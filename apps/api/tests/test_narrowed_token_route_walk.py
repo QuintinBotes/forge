@@ -146,11 +146,12 @@ UNGUARDED: dict[str, str] = {
     "WS /ws": "Pushes the workspace's events to the caller; what the client sends is ignored",
     "WS /ws/spec/{spec_id}": "Closes a socket that sends an edit without write "
     "(can(principal.role, WRITE)); neither token holds write",
-    **dict.fromkeys(
-        ["POST /world/proposals", "POST /world/decisions"],
-        "Needs write or run_agent (_require_write_or_run_agent): the read token is refused "
-        "(called below); the run token's proposals are recorded as an agent's",
-    ),
+    "POST /world/proposals": "Needs write or run_agent (_require_write_or_run_agent): the "
+    "read token is refused (called below); create_proposal records the run token's "
+    "proposal as an agent's (SourceKind.AGENT)",
+    "POST /world/decisions": "Needs write or run_agent, and refuses every narrowed key "
+    "(_require_decision_recorder), whose decision would be stored as its owner's own: both "
+    "tokens are refused (called below)",
     **dict.fromkeys(
         ["GET /mcp", "POST /mcp"],
         "Hides and refuses write tools without write or run_agent (registry.can_write); "
@@ -291,9 +292,10 @@ def _refused(client: TestClient, admin: str, kind: str) -> list[tuple[str, str, 
         ("PUT", f"/projects/{PROJECT}/visibility", {"visibility": "workspace"}),
         ("POST", f"/projects/{PROJECT}/team-access", access),
         ("DELETE", f"/projects/{PROJECT}/team-access/{team_id}", None),
+        ("POST", "/world/decisions", {"title": "ship it", "fact_ids": []}),
     ]
-    if kind == "read":  # the run token holds run_agent, which these admit
-        calls += [("POST", "/world/proposals", {}), ("POST", "/world/decisions", {})]
+    if kind == "read":  # the run token holds run_agent, which proposing admits
+        calls.append(("POST", "/world/proposals", {}))
     return calls
 
 

@@ -615,19 +615,32 @@ def get_authenticated_principal(
             detail="invalid or expired API key",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
-    if principal.narrowed and principal.role is UserRole.AGENT_RUNNER:
-        current = None
-        if session is not None:
-            # Its own session: the request's stays open for a whole event stream.
-            with Session(session.get_bind()) as lookup:
-                current = owner_role(lookup, principal)
-        if current is None or not can(current, Permission.RUN_AGENT):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="this token's owner may no longer start runs",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    try:
+        ensure_run_token_owner(principal, session)
+    except AuthenticationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
     return principal
+
+
+def ensure_run_token_owner(principal: Principal, session: Session | None) -> None:
+    """Refuse a run-start token whose owner's current role no longer grants ``run_agent``.
+
+    Spec L §6b: checked on every HTTP call and every socket, so demoting, deactivating
+    or removing the owner stops the token at once. Any other principal passes.
+    """
+    if not (principal.narrowed and principal.role is UserRole.AGENT_RUNNER):
+        return
+    current = None
+    if session is not None:
+        # Its own session: the caller's stays open for a whole event stream or socket.
+        with Session(session.get_bind()) as lookup:
+            current = owner_role(lookup, principal)
+    if current is None or not can(current, Permission.RUN_AGENT):
+        raise AuthenticationError("this token's owner may no longer start runs")
 
 
 AuthedPrincipal = Annotated[Principal, Depends(get_authenticated_principal)]
@@ -682,6 +695,7 @@ __all__ = [
     "AuthServiceDep",
     "AuthedPrincipal",
     "AuthenticationError",
+    "ensure_run_token_owner",
     "get_auth_service",
     "get_authenticated_principal",
     "is_own_origin",

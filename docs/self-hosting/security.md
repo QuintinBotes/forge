@@ -446,7 +446,7 @@ carries one of three fixed scope sets:
 |---|---|---|
 | `read` | `"decide": false` (the default) | Read what a workspace viewer reads. |
 | `read`, `approvals:decide` | `"decide": true` | Also decide approvals, as its owner with the owner's current role. |
-| `read`, `runs:execute` | `"start_runs": true` | Also what the agent-runner role may do, such as starting and forking agent runs (`POST /agent/runs`), simulating policy, calling the read tools of a connected MCP server, and proposing world-model facts (recorded as an agent's). |
+| `read`, `runs:execute` | `"start_runs": true` | Also what the agent-runner role may do, such as starting and forking agent runs (`POST /agent/runs`), simulating policy, calling the read tools of a connected MCP server, and proposing world-model facts (recorded as an agent's). It cannot record a world-model decision, which would be stored as the person's own. |
 
 ```bash
 curl -fsS -X POST https://<host>/api/auth/personal-tokens \

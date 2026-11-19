@@ -12,6 +12,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -28,20 +29,22 @@ from scf_api.mcp_server.protocol import FORBIDDEN
 from scf_api.mcp_server.registry import McpTool, ToolRegistry
 from scf_api.observability.audit import AuditLog
 from scf_api.observability.redaction import redact_mapping
+from scf_api.realtime.spec_room import SpecRoomRegistry, get_spec_room_registry
 from scf_api.routers.agent import get_agent_enqueue, get_agent_runner
 from scf_api.routers.mcp_server import get_mcp_server_audit_log, get_mcp_tool_registry
-from scf_api.routers.realtime import _authenticate_ws
+from scf_api.routers.realtime import _authenticate_ws, get_api_key_socket_lifetime
 from scf_api.routers.run_events import get_run_event_session_factory
 from scf_api.services.approval_service import build_gate_registry, get_approval_service
 from scf_approval import ApprovalAuthorizer, ApprovalService, InMemoryApprovalRepository
 from scf_approval.providers import InMemoryGrantStore
 from scf_auth.tokens import encode_session_jwt
-from scf_contracts import AgentObjective
+from scf_contracts import AgentObjective, Requirement
 from scf_contracts.auth import SessionClaims
 from scf_contracts.authz import PrincipalType, ScopeType
 from scf_contracts.enums import UserRole
 from scf_db.models import AgentRun, Project, RoleGrant, User, Workspace
 from scf_db.models.enums import RunStatus
+from scf_spec import FileSpecEngine, spec_id_for_key
 
 AUTH_SECRET = "personal-token-test-secret"
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000e1")
@@ -667,6 +670,44 @@ def test_a_run_token_starts_runs_only_while_its_owner_may(
     assert len(runs) == (2 if expected == 202 else 1)
 
 
+@pytest.fixture
+def spec_id(client: TestClient, db: Any, tmp_path: Path) -> uuid.UUID:
+    """A spec room in the workspace, for ``/ws/spec/{id}``."""
+    engine = FileSpecEngine(root=tmp_path / "specs")
+    manifest = engine.spec_create(uuid.uuid4(), "Runner spec", [Requirement(id="R1", text="x")])
+    rooms = SpecRoomRegistry(
+        engine_for_workspace=lambda _ws: engine, session_factory=db.factory, quiesce_seconds=999
+    )
+    client.app.dependency_overrides[get_spec_room_registry] = lambda: rooms
+    client.app.dependency_overrides[get_api_key_socket_lifetime] = lambda: 0.2
+    return spec_id_for_key(manifest.id)
+
+
+def _close_code(client: TestClient, path: str, token: str) -> int:
+    """How the server closed the socket: 1000 when its lifetime ran out, 1008 when refused."""
+    with client.websocket_connect(path, headers=bearer(token)) as ws:
+        while (message := ws.receive())["type"] != "websocket.close":
+            pass
+    return int(message["code"])
+
+
+@pytest.mark.parametrize("socket", ["/ws", "/ws/spec/{spec_id}"])
+@pytest.mark.parametrize(
+    "change",
+    [_owner_to_viewer, _grant_to_viewer, _deactivate, _delete_owner, _expire_grant, _move_owner],
+)
+def test_a_run_token_opens_no_socket_once_its_owner_may_not_run(
+    client: TestClient, db: Any, spec_id: uuid.UUID, socket: str, change: Any
+) -> None:
+    token = mint_runner(client, session_jwt(ADMIN, UserRole.ADMIN)).json()["token"]
+    path = socket.format(spec_id=spec_id)
+    assert _close_code(client, path, token) == 1000  # open until its lifetime ends
+
+    change(db)
+
+    assert _close_code(client, path, token) == 1008
+
+
 # --------------------------------------------------------------------------- #
 # MCP: a narrowed token is the same principal as on /ws                        #
 # --------------------------------------------------------------------------- #
@@ -708,7 +749,7 @@ def _mcp(client: TestClient, token: str, method: str, params: dict[str, Any]) ->
     [("read", ["whoami"]), ("decide", ["whoami"]), ("start_runs", ["whoami", "propose"])],
 )
 def test_a_narrowed_token_on_mcp_is_narrowed_as_on_ws(
-    client: TestClient, auth: AuthService, scope: str, tools: list[str]
+    client: TestClient, auth: AuthService, db: Any, scope: str, tools: list[str]
 ) -> None:
     overrides = client.app.dependency_overrides
     overrides[get_mcp_tool_registry] = lambda: _MCP_TOOLS
@@ -722,7 +763,8 @@ def test_a_narrowed_token_on_mcp_is_narrowed_as_on_ws(
     ).json()["token"]
 
     who = _mcp(client, token, "tools/call", {"name": "whoami", "arguments": {}})
-    on_ws = _authenticate_ws(auth, token)
+    with db.factory() as session:
+        on_ws = _authenticate_ws(auth, token, session)
     assert on_ws is not None and on_ws.narrowed
     assert who["result"]["structuredContent"]["principal"] == on_ws.model_dump(mode="json")
     listed = _mcp(client, token, "tools/list", {})["result"]["tools"]
