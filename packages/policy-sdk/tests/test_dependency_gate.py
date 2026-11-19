@@ -738,6 +738,43 @@ def test_the_roots_sources_are_local_only_for_its_workspace_members(path: str, a
     assert registry.asked == ([("pypi", "foo", None)] if asked else [])
 
 
+def test_an_exclude_glob_is_read_the_way_uv_reads_it() -> None:
+    """uv's ``exclude`` lets ``*`` cross ``/``, so ``packages/legacy*`` excludes a nested
+    project the members' globs would otherwise include."""
+    root = (
+        '[tool.uv.workspace]\nmembers = ["packages/*", "packages/*/*"]\n'
+        'exclude = ["packages/legacy*"]\n'
+        "[tool.uv.sources]\nfoo = { workspace = true }\n"
+    )
+    member = ('[project]\nname = "m"\n', '[project]\nname = "m"\ndependencies = ["foo"]\n')
+    path = "packages/legacy/sub/pyproject.toml"
+    registry = FakeRegistry({})
+
+    _gate({"pyproject.toml": (root, root), path: member}, registry, changed=[path])
+
+    assert registry.asked == [("pypi", "foo", None)]
+
+
+def test_a_new_project_outside_the_workspace_cannot_verify() -> None:
+    """A pyproject.toml added between a member and the root makes uv, run inside the
+    member, treat the member as a standalone project resolving from PyPI."""
+    member = ('[project]\nname = "m"\n', '[project]\nname = "m"\ndependencies = ["foo"]\n')
+    manifests = {
+        "pyproject.toml": (WORKSPACE_ROOT, WORKSPACE_ROOT),
+        "packages/pyproject.toml": ("", '[project]\nname = "p"\n'),
+        "packages/a/pyproject.toml": member,
+    }
+
+    result = _gate(
+        manifests,
+        FakeRegistry({}),
+        changed=["packages/pyproject.toml", "packages/a/pyproject.toml"],
+    )
+
+    assert result.status == "could_not_verify"
+    assert any(r.startswith("packages/pyproject.toml:") for r in result.reasons)
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -755,7 +792,18 @@ def test_an_install_input_named_in_another_case_cannot_verify(path: str) -> None
 SIX_WHEEL = "vendor/six-1.16.0-py2.py3-none-any.whl"
 
 
-@pytest.mark.parametrize("path", [SIX_WHEEL, "vendor/six-1.16.0.tar.gz", "vendor/six.ZIP"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        SIX_WHEEL,
+        "vendor/six-1.16.0.tar.gz",
+        "vendor/six.ZIP",
+        # uv normalizes the path before it reads the file.
+        f"{SIX_WHEEL}/",
+        f"{SIX_WHEEL}/.",
+        f"{SIX_WHEEL}//",
+    ],
+)
 def test_a_path_source_to_a_committed_archive_is_not_local(path: str) -> None:
     """The base takes six from PyPI; the change moves it onto a binary nobody reviews."""
     before = '[project]\nname = "app"\ndependencies = ["six>=1.0"]\n'

@@ -27,6 +27,7 @@ the registry client.
 from __future__ import annotations
 
 import codecs
+import fnmatch
 import json
 import posixpath
 import re
@@ -214,7 +215,42 @@ def _local_source(source: Any, directory: str) -> bool:
 
 
 def _archive(path: str) -> bool:
-    return re.sub(r"\[[^\]]*\]$", "", path).lower().endswith(_ARCHIVES)
+    # uv normalizes the path first: "x.whl/", "x.whl/." and "x.whl//" still name the wheel.
+    bare = posixpath.normpath(re.sub(r"\[[^\]]*\]$", "", path))
+    return bare.lower().endswith(_ARCHIVES)
+
+
+def _member(directory: str, root: str | None) -> bool:
+    """Whether uv applies the base root's ``[tool.uv.sources]`` to the project in ``directory``."""
+    if not directory:
+        return True
+    workspace = tomllib.loads(root or "").get("tool", {}).get("uv", {}).get("workspace") or {}
+    here = PurePosixPath(directory)
+    # uv's ``exclude`` lets "*" cross "/": excluded if either reading of the glob matches.
+    excluded = any(
+        here.full_match(g) or fnmatch.fnmatchcase(directory, g)
+        for g in workspace.get("exclude", [])
+    )
+    return not excluded and any(here.full_match(g) for g in workspace.get("members", []))
+
+
+def _encloses_members(directory: str, root: str | None) -> bool:
+    """Whether ``directory`` sits above a project the base root's ``members`` may name."""
+    workspace = tomllib.loads(root or "").get("tool", {}).get("uv", {}).get("workspace") or {}
+    parts = PurePosixPath(directory).parts
+    for glob in workspace.get("members", []):
+        pattern = PurePosixPath(glob).parts
+        if "**" in pattern:  # matches at any depth below its fixed prefix
+            pattern = pattern[: pattern.index("**")]
+            if len(parts) >= len(pattern) and all(
+                fnmatch.fnmatchcase(p, q) for p, q in zip(parts, pattern, strict=False)
+            ):
+                return True
+        elif len(pattern) > len(parts) and all(
+            fnmatch.fnmatchcase(p, q) for p, q in zip(parts, pattern, strict=False)
+        ):
+            return True
+    return False
 
 
 def _uv_sources(text: str | None, directory: str) -> dict[str, tuple[Any, str]]:
@@ -354,12 +390,7 @@ def _origin(
     """Where a pyproject.toml's ``[tool.uv.sources]`` (over the root's, for a member of the
     base branch's workspace only: uv resolves any other project's names from PyPI) take
     packages from."""
-    workspace = tomllib.loads(root[0] or "").get("tool", {}).get("uv", {}).get("workspace") or {}
-    here = PurePosixPath(directory)
-    member = not directory or (
-        any(here.full_match(g) for g in workspace.get("members", []))
-        and not any(here.full_match(g) for g in workspace.get("exclude", []))
-    )
+    member = _member(directory, root[0])
     was, now = (
         {**(_uv_sources(top, "") if member else {}), **_uv_sources(text, directory)}
         for text, top in ((before, root[0]), (after, root[1]))
@@ -444,6 +475,20 @@ def check_dependencies(
             continue
         directory = posixpath.dirname(path)
         try:
+            if (
+                kind == "pyproject"
+                and directory
+                and not before.strip()
+                and not _member(directory, root[0])
+                and _encloses_members(directory, root[0])
+            ):
+                # Run inside a member below it, uv stops at the nearest pyproject.toml and
+                # treats the member as a standalone project resolving from PyPI.
+                reasons.append(
+                    f"{path}: a new project above workspace members changes how uv resolves "
+                    "the projects below it"
+                )
+                continue
             origin = _origin(before, after, root, directory) if kind == "pyproject" else {}
             (old, old_other), (new, new_other) = (
                 _entries(kind, before, origin, directory),
