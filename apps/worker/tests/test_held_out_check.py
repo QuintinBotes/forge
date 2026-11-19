@@ -12,7 +12,7 @@ import functools
 import json
 import subprocess
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from temporalio.testing import ActivityEnvironment
 
 import scf_worker.agent_runner as agent_runner_module
+import scf_worker.temporal_services as temporal_services_module
 from scf_agent.testing import ScriptedModelClient, finish_response
 from scf_api.db import get_db
 from scf_api.deps import Principal, get_current_principal
@@ -393,6 +394,17 @@ async def test_a_scenario_that_times_out_or_cannot_start_fails_with_its_reason(
     assert _attempt(factory, run_id)["held_out"]["failed"] == 1
 
 
+def _change(tmp_path: Path, mirror: Path, edit: Callable[[Path], object]) -> None:
+    """Add a commit made by ``edit`` (on the work clone) to the run branch."""
+    work = tmp_path / "work"
+    _git(work, "checkout", "-q", BRANCH)
+    edit(work)
+    _git(work, "add", "-A")
+    _git(work, "commit", "-q", "-m", "more of the change")
+    _git(work, "push", "-q", "-f", str(mirror), BRANCH)
+    _git(work, "checkout", "-q", "main")
+
+
 async def test_a_file_the_change_points_out_of_the_checkout_is_not_written(
     factory: sessionmaker[Session], mirror: Path, tmp_path: Path
 ) -> None:
@@ -400,12 +412,7 @@ async def test_a_file_the_change_points_out_of_the_checkout_is_not_written(
     follow it, and the scenario fails as one that could not start."""
     outside = tmp_path / "outside"
     outside.mkdir()
-    work = tmp_path / "work"
-    _git(work, "checkout", "-q", BRANCH)
-    (work / "held_out").symlink_to(outside)
-    _git(work, "add", "-A")
-    _git(work, "commit", "-q", "-m", "a link out")
-    _git(work, "push", "-q", "-f", str(mirror), BRANCH)
+    _change(tmp_path, mirror, lambda work: (work / "held_out").symlink_to(outside))
     run_id, task_id, _ = _seed(factory, mirror)
     _scenario(factory, task_id)
 
@@ -417,6 +424,218 @@ async def test_a_file_the_change_points_out_of_the_checkout_is_not_written(
     assert list(outside.iterdir()) == []
 
 
+async def test_a_link_at_a_scenarios_path_is_replaced_not_written_through(
+    factory: sessionmaker[Session], mirror: Path, tmp_path: Path
+) -> None:
+    """A link the change commits at a scenario's path, pointing at code under test,
+    does not let the overlay overwrite that code: the scenario's file replaces it."""
+
+    def link(work: Path) -> None:
+        (work / "held_out").mkdir()
+        (work / "held_out" / "check.sh").symlink_to("../health.py")
+
+    _change(tmp_path, mirror, link)
+    run_id, task_id, _ = _seed(factory, mirror)
+    unchanged = [{"path": "held_out/check.sh", "content": "git diff --quiet -- health.py\n"}]
+    _scenario(factory, task_id, files=unchanged, command="sh held_out/check.sh")
+
+    result = await _checks(factory, run_id)
+
+    assert result.results["held_out_scenarios"] is True, "health.py was left as committed"
+
+
+#: A test-run hook the change commits: it turns any failing pytest session into a pass.
+PASSING_HOOK = "def pytest_sessionfinish(session, exitstatus):\n    session.exitstatus = 0\n"
+
+
+async def test_a_change_that_hooks_into_the_test_run_pauses_for_a_person(
+    factory: sessionmaker[Session], mirror: Path, tmp_path: Path
+) -> None:
+    """sec_001: a scenario runs in the change's own checkout, so a ``conftest.py`` the
+    change adds could make every scenario pass. Nothing runs; the run pauses for a
+    person, naming the files, and the builder is not told."""
+    _change(tmp_path, mirror, lambda work: (work / "conftest.py").write_text(PASSING_HOOK))
+    run_id, task_id, _ = _seed(factory, mirror)
+    failing_test = [
+        {"path": "held_out/test_ready.py", "content": f"# {MARKER}\ndef test_ready():\n    0 / 0\n"}
+    ]
+    _scenario(
+        factory,
+        task_id,
+        files=failing_test,
+        command="python -m pytest -q -p no:cacheprovider held_out/test_ready.py",
+    )
+
+    result = await _checks(factory, run_id)
+
+    assert result.pause_reason == "held_out_test_hooks_changed: conftest.py"
+    assert "held_out_scenarios" not in result.results
+    assert _results(factory) == []
+    assert _attempt(factory, run_id)["held_out"] == {
+        "verdict": "could_not_verify",
+        "defined": 1,
+        "passed": 0,
+        "failed": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    ("path", "base", "head", "hooks"),
+    [
+        ("pkg/conftest.py", None, "x = 1\n", True),
+        ("café/conftest.py", None, "x = 1\n", True),  # git would quote the path
+        ("Conftest.py", None, "x = 1\n", True),  # a case-insensitive file system
+        ("pytest.ini", None, "[pytest]\n", True),
+        ("tox.ini", "[tox]\n", "[tox]\nx = 1\n", True),
+        ("setup.cfg", None, "[metadata]\n", True),
+        (
+            "pyproject.toml",
+            "[tool.pytest.ini_options]\n",
+            '[tool.pytest.ini_options]\na = "b"\n',
+            True,
+        ),
+        ("pyproject.toml", "[project]\nname = 'a'\n", "[project]\nname = 'b'\n", False),
+        ("sitecustomize.py", None, "", True),
+        ("lib/usercustomize.py", None, "", True),
+        ("hook.pth", None, "", True),
+        ("pytest.py", None, "", True),
+        ("pytest/__init__.py", None, "", True),
+        ("hypothesis/__init__.py", None, "", True),
+        ("src/pytest.py", None, "", False),
+        ("jest.config.js", None, "", True),
+        ("web/vitest.config.ts", None, "", True),
+        (".mocharc.yml", None, "", True),
+        ("package.json", '{"name": "a"}', '{"name": "a", "scripts": {"test": "true"}}', True),
+        ("package.json", '{"name": "a"}', '{"name": "b"}', False),
+        ("health.py", None, "x = 2\n", False),
+    ],
+)
+def test_files_that_hook_into_the_test_run_are_found(
+    tmp_path: Path, path: str, base: str | None, head: str, hooks: bool
+) -> None:
+    """The deny-list: what a change may not add or modify while scenarios run on it.
+    A top-level module counts when it is named like a scenario's program or ``-m``."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    if base is not None:
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text(base)
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "base files")
+    _git(repo, "checkout", "-q", "-b", "change")
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text(head)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "change")
+
+    from scf_worker.held_out_check import changed_test_hooks
+
+    found = changed_test_hooks(
+        repo, "main", "change", ["cd tests && pytest -q", "python -m hypothesis.extra x"]
+    )
+
+    assert found == ([path] if hooks else [])
+
+
+async def test_a_hung_scenario_is_recorded_as_timed_out_within_the_stage(
+    factory: sessionmaker[Session], mirror: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """cand_001: a scenario has its own limit, well inside the check stage's, whatever
+    the sandbox's per-command limit (here its 1,800 s default)."""
+    monkeypatch.delenv("FORGE_SANDBOX_EXEC_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.setenv("FORGE_HELD_OUT_TIMEOUT_SECONDS", "1")
+    run_id, task_id, _ = _seed(factory, mirror)
+    _scenario(factory, task_id, command="sleep 5")
+
+    await _checks(factory, run_id)
+
+    [outcome] = _results(factory)
+    assert (outcome["reason"], outcome["timed_out"]) == ("timed_out", True)
+
+
+async def test_each_scenario_is_recorded_as_it_finishes(
+    factory: sessionmaker[Session], mirror: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """cand_001: a scenario that finished keeps its entry when a later one fails the
+    activity (a lost worker, a timeout)."""
+    real = temporal_services_module.run_scenario
+    calls: list[str] = []
+
+    def second_one_fails(*args: Any, **kwargs: Any) -> Any:
+        calls.append(kwargs["command"])
+        if len(calls) == 2:
+            raise RuntimeError("the worker was lost")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(temporal_services_module, "run_scenario", second_one_fails)
+    run_id, task_id, _ = _seed(factory, mirror)
+    by_command = {
+        f"{COMMAND} {n}": _scenario(factory, task_id, command=f"{COMMAND} {n}") for n in "ab"
+    }
+
+    with pytest.raises(RuntimeError, match="the worker was lost"):
+        await _checks(factory, run_id)
+
+    assert [r["scenario_id"] for r in _results(factory)] == [str(by_command[calls[0]])]
+
+
+@pytest.mark.parametrize("stopped_by", ["red_team_pause", "review_requests_changes"])
+async def test_no_scenario_runs_when_the_red_team_pauses_or_the_review_asks_for_changes(
+    factory: sessionmaker[Session],
+    mirror: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stopped_by: str,
+) -> None:
+    """cand_004: the scenarios run only once everything before them passed."""
+    run_id, task_id, _ = _seed(factory, mirror)
+    _scenario(factory, task_id)
+    if stopped_by == "red_team_pause":
+        with factory() as s:
+            [adversary] = s.scalars(
+                select(AgentRoleConfig).where(AgentRoleConfig.role == AgentRole.ADVERSARY)
+            ).all()
+            adversary.model_or_tier = "claude-opus-5-1"  # the builder's family
+            s.commit()
+    else:
+        changes = '{"verdict": "request_changes", "findings": []}'
+        monkeypatch.setattr(
+            temporal_main,
+            "run_checks_service",
+            functools.partial(
+                run_checks_service,
+                reviewer=lambda _m: ScriptedModelClient([finish_response(changes)]),
+            ),
+        )
+
+    result = await _checks(factory, run_id)
+
+    assert result.pause_reason is not None or not result.all_passed
+    assert "held_out_scenarios" not in result.results
+    assert _results(factory) == []
+    assert "held_out" not in _attempt(factory, run_id)
+
+
+async def test_a_verifier_draft_stored_before_runs_were_linked_does_not_run(
+    factory: sessionmaker[Session], mirror: Path
+) -> None:
+    """cand_005: a verifier's draft from before migration 0051 names no run, but it was
+    drafted for some run's spec, not this one: it is neither run nor counted."""
+    run_id, task_id, _ = _seed(factory, mirror)
+    legacy = _scenario(factory, task_id, files=FAILING)
+    with factory() as s:
+        row = s.get(HeldOutScenario, legacy)
+        assert row is not None
+        row.drafted_by = f"agent:{uuid.uuid4()}/gpt-6-astra"
+        s.commit()
+
+    result = await _checks(factory, run_id)
+
+    assert result.all_passed and _results(factory) == []
+    assert _attempt(factory, run_id)["held_out"]["verdict"] == "none_defined"
+
+
 @pytest.mark.parametrize(
     ("states", "verdict"),
     [([], "none_defined"), ([SCENARIO_DRAFT, SCENARIO_DRAFT], "none_approved")],
@@ -425,15 +644,21 @@ async def test_with_no_approved_scenario_the_run_proceeds_and_nothing_reports_a_
     factory: sessionmaker[Session], mirror: Path, states: list[str], verdict: str
 ) -> None:
     """Criterion 4: no scenario records ``held_out: none_defined``; only drafts record
-    ``none_approved``. The run proceeds; no check, result or attestation says passed."""
+    ``none_approved``. The run proceeds; no check, result or attestation says passed.
+    The run's own ``held_out``, why the verifier drafted nothing (#258), is kept."""
     run_id, task_id, head = _seed(factory, mirror)
     for state in states:
         _scenario(factory, task_id, state=state)
+    with factory() as s:
+        run = s.get(WorkflowRun, run_id)
+        assert run is not None
+        run.context = {**run.context, "held_out": "verifier_not_configured"}
+        s.commit()
 
     result = await _checks(factory, run_id)
 
     assert result.all_passed and "held_out_scenarios" not in result.results
-    assert _context(factory, run_id)["held_out"] == verdict
+    assert _context(factory, run_id)["held_out"] == "verifier_not_configured"
     assert _attempt(factory, run_id)["held_out"] == {
         "verdict": verdict,
         "defined": len(states),

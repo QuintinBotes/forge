@@ -46,6 +46,9 @@ _MAX_JWT_WINDOW_SECONDS = 600
 _CLOCK_SKEW_SECONDS = 60
 #: Re-mint an installation token this many seconds before it actually expires.
 _REFRESH_MARGIN_SECONDS = 60
+#: The workspace vault entry holding a workspace's GitHub App credentials (#186):
+#: JSON with ``app_id``, ``installation_id`` and ``private_key_pem``.
+WORKSPACE_SECRET_NAME = "github-app"
 
 
 def load_private_key(path: str) -> str:
@@ -202,6 +205,11 @@ class InstallationTokenProvider:
             self._expires_at = 0.0
 
     @property
+    def expires_at(self) -> float:
+        """Epoch seconds at which the current token expires (0 before the first mint)."""
+        return self._expires_at
+
+    @property
     def mint_count(self) -> int:
         """Number of successful token mints (test observability only)."""
         return self._mint_count
@@ -213,6 +221,7 @@ class InstallationTokenProvider:
 __all__ = [
     "API_VERSION",
     "DEFAULT_BASE_URL",
+    "WORKSPACE_SECRET_NAME",
     "InstallationTokenProvider",
     "build_app_jwt",
     "load_private_key",

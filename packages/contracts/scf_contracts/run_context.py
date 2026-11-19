@@ -25,6 +25,7 @@ REVIEWS_KEY = "reviews"
 INDEPENDENT_REVIEW_CHECK = "independent_review"
 #: The check id the held-out scenarios are reported under, as one check (#286).
 HELD_OUT_CHECK = "held_out_scenarios"
-#: On the run, why no held-out scenario ran (#258, #286); on a check attempt, the
-#: held-out counts ``{"verdict", "defined", "passed", "failed"}``. Never ids or titles.
+#: On the run, why the verifier drafted nothing (#258); on a check attempt, the
+#: held-out verdict and counts ``{"verdict", "defined", "passed", "failed"}`` (#286).
+#: Never scenario ids or titles.
 HELD_OUT_KEY = "held_out"

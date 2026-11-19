@@ -8,6 +8,8 @@ GitHub (repo sync, PRs, CI webhooks) and Slack notifications.
   webhook and return the parsed :class:`~scf_contracts.CIStatus` (pure; the
   only route outside the principal dependency so provider callbacks reach it).
 * ``POST /integration/slack/notify``                       — send a Slack message.
+* ``PUT|DELETE /integration/github/app-credentials``        — set or clear the
+  workspace's GitHub App credentials, which its agent runs use (#186).
 
 The GitHub/Slack clients are built from configuration and injected via FastAPI
 dependencies, so tests drive them with an ``httpx.MockTransport`` (no live calls)
@@ -25,12 +27,14 @@ from functools import lru_cache
 from typing import Annotated, Any
 from urllib.parse import parse_qs
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from scf_api.auth.rbac import Permission
+from scf_api.auth.service import AuthService, AuthServiceDep
+from scf_api.auth.vault import SecretNotFoundError
 from scf_api.db import get_session_factory
 from scf_api.deps import Principal, SettingsDep
 from scf_api.observability.audit import AuditCategory, AuditLog
@@ -51,7 +55,7 @@ from scf_contracts import (
     SlackMessage,
     WebhookEvent,
 )
-from scf_contracts.enums import ApprovalStatus
+from scf_contracts.enums import APIKeyKind, ApprovalStatus
 from scf_integrations import (
     AuditSink,
     GitHubAuditEvent,
@@ -65,6 +69,7 @@ from scf_integrations import (
     verify_github_signature,
     verify_slack_signature,
 )
+from scf_integrations.github_auth import WORKSPACE_SECRET_NAME, build_app_jwt
 
 router = APIRouter(
     prefix="/integration",
@@ -77,6 +82,7 @@ router = APIRouter(
 WriteGate = Depends(require_permission(Permission.WRITE))
 WriterDep = Annotated[Principal, Depends(require_permission(Permission.WRITE))]
 ReadGate = Depends(require_permission(Permission.READ))
+KeyManagerDep = Annotated[Principal, Depends(require_permission(Permission.MANAGE_KEYS))]
 
 
 # --------------------------------------------------------------------------- #
@@ -447,6 +453,102 @@ def open_pr(client: GitHubDep, request: PullRequestRequest) -> PullRequest:
         return client.open_pr(request)
     except GitHubError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+class GitHubAppCredentialsIn(BaseModel):
+    """A workspace's GitHub App: the ids are URL path segments, the key never echoes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    app_id: str = Field(pattern=r"^[A-Za-z0-9.]{1,64}$")
+    installation_id: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
+    private_key: SecretStr
+
+
+class GitHubAppCredentialsOut(BaseModel):
+    app_id: str
+    installation_id: str | None
+
+
+async def _github_app_body(request: Request) -> GitHubAppCredentialsIn:
+    """The body, validated here: FastAPI's own 422 (cached for a day) would echo the key."""
+    try:
+        return GitHubAppCredentialsIn.model_validate_json(await request.body())
+    except ValidationError as exc:
+        known = set(GitHubAppCredentialsIn.model_fields)
+        fields = sorted({str(e["loc"][0]) for e in exc.errors() if e["loc"]} & known)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"invalid GitHub App credentials {fields}: expected app_id, an optional "
+            "numeric installation_id and private_key, and nothing else",
+        ) from None
+
+
+GitHubAppBody = Annotated[GitHubAppCredentialsIn, Depends(_github_app_body)]
+
+
+def _github_apps(service: AuthService, workspace_id: uuid.UUID) -> list[uuid.UUID]:
+    stored = service.vault.list_secrets(workspace_id)
+    return [s.id for s in stored if s.name == WORKSPACE_SECRET_NAME]
+
+
+def _drop(service: AuthService, workspace_id: uuid.UUID, secret_ids: list[uuid.UUID]) -> None:
+    for secret_id in secret_ids:
+        with contextlib.suppress(SecretNotFoundError):  # a concurrent call removed it first
+            service.vault.delete_secret(workspace_id, secret_id)
+
+
+@router.put("/github/app-credentials", response_model=GitHubAppCredentialsOut)
+def set_github_app_credentials(
+    principal: KeyManagerDep, body: GitHubAppBody, service: AuthServiceDep
+) -> GitHubAppCredentialsOut:
+    """Store the workspace's GitHub App in its vault, replacing any before (#186).
+
+    A repository connection's installation id wins over this one for its runs.
+    The private key is never returned.
+    """
+    key = body.private_key.get_secret_value()
+    try:
+        build_app_jwt(body.app_id, key)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="private_key is not a usable PEM private key",
+        ) from None
+    shown = GitHubAppCredentialsOut(app_id=body.app_id, installation_id=body.installation_id)
+    existing = _github_apps(service, principal.workspace_id)
+    # New first, then only what was there before: a run never finds none, a failed
+    # write keeps the old ones, and two concurrent calls never remove each other's.
+    service.vault.put_secret(
+        workspace_id=principal.workspace_id,
+        name=WORKSPACE_SECRET_NAME,
+        secret=json.dumps({**shown.model_dump(), "private_key_pem": key}),
+        kind=APIKeyKind.INTEGRATION_TOKEN,
+        provider="github",
+    )
+    _drop(service, principal.workspace_id, existing)
+    service.audit.redactor.register_known_secret(key)
+    service.audit.emit(
+        action="github_app.credentials_set",
+        principal=principal,
+        target_type="workspace",
+        target_id=principal.workspace_id,
+        details=shown.model_dump(),
+    )
+    return shown
+
+
+@router.delete("/github/app-credentials", status_code=status.HTTP_204_NO_CONTENT)
+def clear_github_app_credentials(principal: KeyManagerDep, service: AuthServiceDep) -> Response:
+    """Remove the workspace's GitHub App: its runs can no longer reach GitHub (#186)."""
+    _drop(service, principal.workspace_id, _github_apps(service, principal.workspace_id))
+    service.audit.emit(
+        action="github_app.credentials_cleared",
+        principal=principal,
+        target_type="workspace",
+        target_id=principal.workspace_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

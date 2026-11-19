@@ -106,8 +106,8 @@ def _seed(factory: sessionmaker[Session], *, spec: str | None = None) -> uuid.UU
 def _reads(monkeypatch: pytest.MonkeyPatch, runs: list[dict[str, Any]]) -> list[Any]:
     calls: list[Any] = []
 
-    def check_runs(repo: str, ref: str) -> list[dict[str, Any]]:
-        calls.append((repo, ref))
+    def check_runs(repo: str, ref: str, **kw: Any) -> list[dict[str, Any]]:
+        calls.append((repo, ref, kw["workspace_id"], kw["run_id"]))
         return runs
 
     monkeypatch.setattr(services, "github_check_runs", check_runs)
@@ -171,7 +171,8 @@ async def test_ci_is_green_only_when_every_check_run_completed_and_passed(
     result = await _merge(factory, run_id)
 
     assert result.ci_status_green is green
-    assert calls == [(REPO, HEAD)], "the agent's head commit, on the task's repository"
+    # The agent's head commit, on the task's repository, with this run's workspace (#186).
+    assert calls == [(REPO, HEAD, WS, run_id)]
     recorded = _recorded(factory, run_id)
     assert (recorded["ci_status_green"], recorded["ci_reason"]) == (green, reason)
     assert recorded["head_commit"] == HEAD

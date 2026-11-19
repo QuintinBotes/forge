@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, not_, or_, select
 from sqlalchemy.orm import Session
 
 from scf_api.deps import Principal
@@ -350,7 +350,8 @@ def scenarios_for_run(
     for the task and every one the verifier drafted for this run, not withdrawn.
 
     One drafted for another run of the task was decided against that run's spec,
-    so it does not apply. Only the approved ones are run.
+    so it does not apply; nor does a verifier's draft stored before migration 0051,
+    which names no run but was drafted for one. Only the approved ones are run.
     """
     return list(
         session.scalars(
@@ -359,7 +360,10 @@ def scenarios_for_run(
                 HeldOutScenario.workspace_id == workspace_id,
                 HeldOutScenario.task_id == task_id,
                 or_(
-                    HeldOutScenario.workflow_run_id.is_(None),
+                    and_(
+                        HeldOutScenario.workflow_run_id.is_(None),
+                        not_(HeldOutScenario.drafted_by.startswith("agent:")),
+                    ),
                     HeldOutScenario.workflow_run_id == workflow_run_id,
                 ),
                 HeldOutScenario.state != SCENARIO_WITHDRAWN,

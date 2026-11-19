@@ -195,12 +195,18 @@ binds every activity except `forge.resume_agent`:
   As for the checks, only the container tiers enforce their no-network sandbox.
 - **A retried check attempt runs the held-out scenarios again (#286).** Each run
   adds its own `held_out.ran` entries; the results route returns them all.
-- **The held-out scenarios share the check stage's time limit (#286).** They run
-  one after another in `forge.run_checks`, each within the sandbox's own time
-  limit, so many slow scenarios can run the stage out of time.
+- **The held-out scenarios share the check stage's time limit (#286).** Each has
+  its own limit (`FORGE_HELD_OUT_TIMEOUT_SECONDS`, 300 s by default), so a hung
+  one is recorded as `timed_out`; they run one after another, so many slow ones
+  can still run the stage out of time.
+- **The held-out test-hook guard is a deny-list, not a boundary (#286).** A
+  scenario runs in the change's own checkout. The guard refuses the ways we know
+  for a change to hook into the test run; the boundary is #184's container tier
+  running the scenarios with the base branch's test setup.
 - **Drafts stored before migration `0051` name no run (#288).** The spec gate
   does not list, wait on or withdraw them; decide them through the scenario
-  routes.
+  routes. A verifier's such draft (`drafted_by` `agent:...`) is never run, even
+  approved (#286): it was drafted for some run's spec, not the current one.
 
 ### Held-out acceptance scenarios (#176)
 
@@ -296,29 +302,48 @@ the builder's objective.
   run goes back to the builder within the retry budget.
   - **Which run:** every scenario a person wrote for the task and every one the
     verifier drafted for this run, approved and not withdrawn. One drafted for
-    another run of the task was decided against that run's spec and does not run.
+    another run of the task was decided against that run's spec and does not run,
+    nor does a verifier's draft stored before migration `0051`.
+  - **A change that hooks into the test run:** the scenarios run in the change's
+    own checkout, so a change could make any of them pass, for example with a
+    `conftest.py` that resets pytest's exit status. When `base...head` adds,
+    changes or removes such a file, no scenario runs: the attempt's verdict is
+    `could_not_verify` and the run pauses for a person with the reason
+    `held_out_test_hooks_changed: <files>`. It never goes back to the builder.
+    The deny-list, matched on file names in any letter case: any `conftest.py`,
+    `pytest.ini`, `tox.ini`, `setup.cfg`,
+    `sitecustomize.py`, `usercustomize.py`, `*.pth`, `jest.config.*`,
+    `vitest.config.*` or `.mocharc*`; a `pyproject.toml` whose `[tool.pytest*]`
+    tables changed; a `package.json` whose `scripts`, `jest` or `mocha` changed;
+    and a top-level module or package named like a program, or `-m` module, of
+    an approved scenario's command (`pytest.py` or `pytest/` for `pytest`). It
+    is a deny-list, not a boundary (see the limitations above).
   - **How:** each scenario gets its own fresh, detached worktree of the head
-    commit. Its files are overlaid there (a path the change points out of the
-    checkout through a symlink is refused) and its command runs in the sandbox
-    the declared checks get, with no network. The worktree is removed afterwards,
-    so the overlay never reaches the run branch.
+    commit. Its files are overlaid there, never through a link the change made:
+    a link in a file's directory path is refused, and a link at the file's own
+    path is replaced. Its command runs in the sandbox the declared checks get,
+    with no network, within `FORGE_HELD_OUT_TIMEOUT_SECONDS` (300 s by default,
+    or the sandbox's own limit if lower). The worktree is removed afterwards, so
+    the overlay never reaches the run branch.
   - **Pass or fail:** a scenario passes when its command exits `0` in time. One
     that times out (`timed_out`), cannot start (`could_not_start`: the overlay
     was refused, the sandbox failed, or the shell exited `126` or `127`) or
     exits otherwise (`exited_nonzero`) fails, with that reason.
   - **Where the results go:** each scenario's outcome (pass or fail, exit status,
     whether it timed out, duration, reason, the run, attempt and head commit) is
-    a `held_out.ran` entry in the audit log, by scenario id. The output is not
-    kept. `GET /tasks/{task_id}/held-out-scenarios/results` (optionally
+    a `held_out.ran` entry in the audit log, by scenario id, written as the
+    scenario finishes. The output is not kept.
+    `GET /tasks/{task_id}/held-out-scenarios/results` (optionally
     `?workflow_run_id=`) reads them back by scenario id and title, for people
     with write access only. They are not on the workflow run: its context, which
     `GET /workflow/runs/{id}` serves to readers, keeps only the check and, on
     each check attempt, the counts `held_out: {verdict, defined, passed, failed}`.
     `defined` counts the run's scenarios that are not withdrawn, whatever their
     state.
-  - **No approved scenario:** a run with none records `held_out: none_defined`,
-    and one whose scenarios are all undecided or rejected records `held_out:
-    none_approved`. The run proceeds, and no check reports a pass.
+  - **No approved scenario:** with none, the check attempt records `held_out`
+    with the verdict `none_defined`; with only undecided or rejected ones,
+    `none_approved`. The run proceeds, and no check reports a pass. The run's own
+    `held_out` stays the drafting step's reason (#258).
   - **What the builder learns:** the failing check is left out of the feedback
     its next attempt gets (`failing_checks`); the objective carries only
     `held_out_failed`, the number of scenarios that failed.

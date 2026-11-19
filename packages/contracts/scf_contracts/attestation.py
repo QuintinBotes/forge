@@ -187,7 +187,8 @@ class HeldOutSummary(_Model):
     """The held-out scenarios run on the head commit, as counts only (#286).
 
     ``verdict`` is ``passed`` or ``failed`` over the approved scenarios that ran;
-    ``none_defined`` or ``none_approved`` when none ran, and ``not_run`` when the
+    ``none_defined`` or ``none_approved`` when none ran, ``could_not_verify`` when the
+    change touched a file that hooks into the test run, and ``not_run`` when the
     stage was not reached: none of those is a pass. ``defined`` counts the run's
     scenarios that are not withdrawn, whatever their state; only approved ones run.
     """
