@@ -277,7 +277,14 @@ async def test_an_approved_scenario_runs_on_a_fresh_checkout_of_the_head_commit(
 
     result = await _checks(factory, run_id)
 
-    assert result.results == {"tests": True, "independent_review": True, "held_out_scenarios": True}
+    # The gates on the diff (#187) run beside the declared checks and pass on this change.
+    assert result.results == {
+        "tests": True,
+        "secret_scan": True,
+        "sast": True,
+        "independent_review": True,
+        "held_out_scenarios": True,
+    }
     assert result.all_passed and result.pause_reason is None
     [outcome] = _results(factory)
     assert outcome["scenario_id"] == str(scenario_id)
