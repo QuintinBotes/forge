@@ -586,12 +586,24 @@ def execute_run(run: PreparedRun, *, persist_recording: bool = True) -> AgentRun
     return result
 
 
-def close_out_run(run: PreparedRun, result: AgentRunResult, *, deliver: bool = True) -> None:
-    """After the loop, in the worker: delivery, terminal events, outcome, tracker write-back."""
+def close_out_run(
+    run: PreparedRun, result: AgentRunResult, *, deliver: bool = True, reuse_existing: bool = False
+) -> None:
+    """After the loop, in the worker: delivery, terminal events, outcome, tracker write-back.
+
+    ``reuse_existing`` delivers to a pull request already open for the branch, for a
+    close-out that may be a retry.
+    """
     branch = result.artifacts.get("branch")
     if deliver and branch and result.status == RunStatus.SUCCEEDED:
         with _closed_out_on_failure(run):
-            _finalize(run.objective, result, branch=str(branch), run_id=run.run_id)
+            _finalize(
+                run.objective,
+                result,
+                branch=str(branch),
+                run_id=run.run_id,
+                reuse_existing=reuse_existing,
+            )
     _record_terminal(
         run.objective,
         run.run_id,
@@ -788,7 +800,12 @@ def _commits_ahead(repo_path: Path, base: str, branch: str) -> int:
 
 
 def _finalize(
-    objective: AgentObjective, result: AgentRunResult, *, branch: str, run_id: uuid.UUID
+    objective: AgentObjective,
+    result: AgentRunResult,
+    *,
+    branch: str,
+    run_id: uuid.UUID,
+    reuse_existing: bool = False,
 ) -> None:
     """Open the run's PR when the objective names a GitHub repository (spec G §4).
 
@@ -838,6 +855,7 @@ def _finalize(
             credentials=credentials,
             workspace_id=workspace_id,
             run_id=run_id,
+            reuse_existing=reuse_existing,
         )
     except Exception as exc:  # push or API failure: the change was not delivered
         # The shared redactor knows no PEM block; the canonical one does (#186).

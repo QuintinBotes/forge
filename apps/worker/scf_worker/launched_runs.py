@@ -9,8 +9,12 @@ handoff, then removes the unit. The reconciler (``agent.reconcile_launched_runs`
 beat) closes out exited units, fails a run whose unit is lost with ``executor_lost``,
 and stops a unit past the wall-clock limit plus a grace period, escalating its run.
 
-Close-out happens once (FR-018): it is claimed under the run's row lock, and a run
-whose claim is taken is never closed out again, whoever triggers it.
+Close-out happens once (FR-018): it is claimed under the run's row lock and is done
+once the outcome is recorded. A claim is a lease, not a final mark: one whose worker
+was killed, or whose outcome was not recorded, expires after the hard task time
+limit and the reconciler takes it again. A retry delivers to the pull request the
+first attempt may have opened; terminal events a killed attempt already stored can
+then appear twice.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from scf_auth.redaction import SecretRedactor
@@ -41,20 +46,16 @@ from scf_worker.agent_runner import (
 from scf_worker.beat import RUN_RECONCILE_TASK
 from scf_worker.celery_app import celery_app
 from scf_worker.dispatch import RepositoryUnavailable
-from scf_worker.run_executor import RunExecutor, UnitState, build_executor
-from scf_worker.run_main import (
-    DEFAULT_RUN_TIME_LIMIT,
-    RUN_PROCESS_ALLOWED_ENV,
-    RUN_TIME_LIMIT_ENV,
-    existing_mirror,
-)
+from scf_worker.run_executor import RunExecutor, build_executor, run_deadline_seconds
+from scf_worker.run_main import RUN_PROCESS_ALLOWED_ENV, existing_mirror
 from scf_worker.run_record import EXECUTOR_KEY, HANDOFF_KEY
 from scf_worker.tasks.audit import AUDIT_RECORD_TASK
 
 __all__ = [
     "CLOSE_OUT_TASK",
     "EXECUTOR_LOST",
-    "RECONCILE_GRACE_ENV",
+    "EXECUTOR_UNREACHABLE",
+    "RUN_RECORD_UNREADABLE",
     "WALL_CLOCK_EXCEEDED",
     "close_out_launched_run",
     "close_out_task",
@@ -67,10 +68,10 @@ __all__ = [
 logger = logging.getLogger("scf_worker.launched_runs")
 
 CLOSE_OUT_TASK = "agent.close_out_run"
-RECONCILE_GRACE_ENV = "FORGE_RUN_RECONCILE_GRACE_SECONDS"
-DEFAULT_RECONCILE_GRACE = 300.0
 EXECUTOR_LOST = "executor_lost"
 WALL_CLOCK_EXCEEDED = "wall_clock_limit_exceeded"
+EXECUTOR_UNREACHABLE = "executor_unreachable: the unit may still exist"
+RUN_RECORD_UNREADABLE = "run_record_unreadable"
 
 
 def unit_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -145,61 +146,94 @@ def _launch_once(run: PreparedRun, executor: RunExecutor) -> dict[str, Any] | No
         except Exception as exc:
             reason = SecretRedactor().redact(f"{type(exc).__name__}: {exc}")
             record["error"] = f"the {executor.name} run executor could not launch the run: {reason}"
-            record["closed_out_at"] = record["launched_at"]
+            record["closing_since"] = record["launched_at"]
         row.output = {**(row.output or {}), EXECUTOR_KEY: record}
         session.commit()
         return record
 
 
 def close_out_launched_run(
-    run_id: uuid.UUID, workspace_id: uuid.UUID, *, result: AgentRunResult | None = None
+    run_id: uuid.UUID, workspace_id: uuid.UUID, *, verdict: AgentRunResult | None = None
 ) -> dict[str, Any]:
-    """Close a launched run out once, from its handoff or from the reconciler's ``result``.
+    """Close a launched run out once: from its handoff, else from the reconciler's ``verdict``.
 
     Without either it does nothing: whether the unit was lost is the reconciler's call.
     """
-    claimed = _claim_close_out(run_id, workspace_id, need_handoff=result is None)
+    claimed = _claim_close_out(run_id, workspace_id, verdict)
     if claimed is None:
         return {"closed_out": False, "run_id": str(run_id)}
-    record, inputs, handoff = claimed
-    objective = AgentObjective.model_validate(inputs)
-    context = {**objective.context, "agent_run_id": str(run_id), "workspace_id": str(workspace_id)}
-    objective = objective.model_copy(update={"context": context})
-    with contextlib.suppress(RepositoryUnavailable):
-        objective = existing_mirror(objective)  # delivery pushes the branch the unit left there
+    record, objective, result, reason = claimed
     run = PreparedRun(objective, run_id, workspace_id, True, _event_sink(run_id, workspace_id))
-    status = _finish(run, result or AgentRunResult.model_validate(handoff), record)
-    return {"closed_out": True, "run_id": str(run_id), "status": status}
+    status = _finish(run, result, record)
+    if status is None:
+        return {"closed_out": False, "run_id": str(run_id)}
+    return {"closed_out": True, "run_id": str(run_id), "status": status, "reason": reason}
+
+
+def _close_out_lease() -> timedelta:
+    """How long a claim holds: past the hard task time limit Celery has killed its worker."""
+    return timedelta(seconds=int(celery_app.conf.task_time_limit or 360) + 60)
+
+
+def _claim_held(record: dict[str, Any], now: datetime) -> bool:
+    since = record.get("closing_since")
+    return since is not None and now - datetime.fromisoformat(since) < _close_out_lease()
 
 
 def _claim_close_out(
-    run_id: uuid.UUID, workspace_id: uuid.UUID, *, need_handoff: bool
-) -> tuple[dict[str, Any], dict[str, Any], Any] | None:
-    """Take close-out under the row lock, as ``_record_run_outcome`` does; ``None`` if not ours."""
+    run_id: uuid.UUID, workspace_id: uuid.UUID, verdict: AgentRunResult | None = None
+) -> tuple[dict[str, Any], AgentObjective, AgentRunResult, str] | None:
+    """Take close-out under the row lock, as ``_record_run_outcome`` does; ``None`` if not ours.
+
+    Decided from the locked row: a handoff recorded by now wins over any verdict, and
+    an unreadable run record fails the run rather than stranding it.
+    """
     with create_session_factory()() as session:
         row = session.get(AgentRun, run_id, with_for_update=True)
         if row is None or row.workspace_id != workspace_id or row.completed_at is not None:
             return None
         output = dict(row.output or {})
         record = output.get(EXECUTOR_KEY)
-        if not record or record.get("closed_out_at"):
+        if not record or _claim_held(record, datetime.now(UTC)):
             return None
-        if need_handoff and HANDOFF_KEY not in output:
+        if HANDOFF_KEY in output:
+            reason, source = "handoff", output[HANDOFF_KEY]
+        elif verdict is not None:
+            reason, source = str(verdict.error), verdict.model_dump(mode="json")
+        else:
             return None
-        record = {**record, "closed_out_at": _now()}
+        try:
+            objective = AgentObjective.model_validate(row.inputs or {})
+            result = AgentRunResult.model_validate(source)
+        except ValidationError:
+            reason = RUN_RECORD_UNREADABLE
+            objective = AgentObjective(objective="")
+            result = AgentRunResult(run_id=run_id, status=RunStatus.FAILED, error=reason)
+        record = {**record, "closing_since": _now()}
         row.output = {**output, EXECUTOR_KEY: record}
         session.commit()
-        return record, dict(row.inputs or {}), output.get(HANDOFF_KEY)
+    identity = {"agent_run_id": str(run_id), "workspace_id": str(workspace_id)}
+    objective = objective.model_copy(update={"context": {**objective.context, **identity}})
+    with contextlib.suppress(RepositoryUnavailable):
+        objective = existing_mirror(objective)  # delivery pushes the branch the unit left there
+    return record, objective, result, reason
 
 
-def _finish(run: PreparedRun, result: AgentRunResult, record: dict[str, Any]) -> str:
-    """The claimed close-out: delivery, terminal events, outcome and write-back; then the unit."""
+def _finish(run: PreparedRun, result: AgentRunResult, record: dict[str, Any]) -> str | None:
+    """The claimed close-out: delivery, terminal events, outcome and write-back; then the unit.
+
+    ``None`` when no outcome was recorded: the claim then expires and is retried.
+    """
     try:
-        close_out_run(run, result)
-        status = result.status.value
-    except Exception:  # close_out_run recorded the run failed before raising
+        close_out_run(run, result, reuse_existing=True)
+    except Exception:  # recorded as failed before raising, unless that write failed too
         logger.exception("close-out of run %s failed", run.run_id)
-        status = RunStatus.FAILED.value
+    with create_session_factory()() as session:
+        row = session.get(AgentRun, run.run_id)
+        status = row.status.value if row is not None and row.completed_at is not None else None
+    if status is None:
+        logger.error("run %s recorded no outcome; its close-out is retried", run.run_id)
+        return None
     if record.get("unit"):
         try:
             build_executor(record["name"]).remove(record["unit"])
@@ -212,10 +246,7 @@ def _finish(run: PreparedRun, result: AgentRunResult, record: dict[str, Any]) ->
 def reconcile_launched_runs(*, now: datetime | None = None) -> dict[str, int]:
     """One pass over launched runs not closed out; how many it closed out, by reason (FR-019)."""
     now = now or datetime.now(UTC)
-    limit = timedelta(
-        seconds=float(os.environ.get(RUN_TIME_LIMIT_ENV) or DEFAULT_RUN_TIME_LIMIT)
-        + float(os.environ.get(RECONCILE_GRACE_ENV) or DEFAULT_RECONCILE_GRACE)
-    )
+    overdue_before = now - timedelta(seconds=run_deadline_seconds())
     with create_session_factory()() as session:
         # shortcut: filters every run not completed in Python; a JSON index if that set grows.
         open_runs = select(AgentRun.id, AgentRun.workspace_id, AgentRun.output).where(
@@ -224,13 +255,13 @@ def reconcile_launched_runs(*, now: datetime | None = None) -> dict[str, int]:
         launched = []
         for run_id, workspace_id, output in session.execute(open_runs):
             record = (output or {}).get(EXECUTOR_KEY)
-            if record and not record.get("closed_out_at"):
-                launched.append((run_id, workspace_id, record, HANDOFF_KEY in output))
+            if record and not _claim_held(record, now):
+                launched.append((run_id, workspace_id, record))
     closed: Counter[str] = Counter()
-    for run_id, workspace_id, record, handed_off in launched:
+    for run_id, workspace_id, record in launched:
         try:
-            reason = _reconcile(run_id, workspace_id, record, handed_off, now - limit)
-        except Exception:  # an unreachable runtime decides nothing; the next pass retries
+            reason = _reconcile(run_id, workspace_id, record, overdue_before)
+        except Exception:  # an unreachable runtime decides nothing yet; the next pass retries
             logger.exception("could not reconcile launched run %s", run_id)
             continue
         if reason is not None:
@@ -239,28 +270,32 @@ def reconcile_launched_runs(*, now: datetime | None = None) -> dict[str, int]:
 
 
 def _reconcile(
-    run_id: uuid.UUID,
-    workspace_id: uuid.UUID,
-    record: dict[str, Any],
-    handed_off: bool,
-    overdue_before: datetime,
+    run_id: uuid.UUID, workspace_id: uuid.UUID, record: dict[str, Any], overdue_before: datetime
 ) -> str | None:
-    executor = build_executor(record["name"])
+    """Close the run out if its unit is done or overdue; a handoff wins under the lock."""
     unit: str | None = record.get("unit")
-    state = executor.state(unit) if unit else UnitState("missing")
-    result = None
-    if unit and state.phase == "running":
-        if datetime.fromisoformat(record["launched_at"]) >= overdue_before:
-            return None
-        executor.remove(unit)  # stopped before its run is recorded
-        result = AgentRunResult(
-            run_id=run_id, status=RunStatus.ESCALATED, error=WALL_CLOCK_EXCEEDED
-        )
-    elif not handed_off:
-        result = AgentRunResult(run_id=run_id, status=RunStatus.FAILED, error=EXECUTOR_LOST)
-    if not close_out_launched_run(run_id, workspace_id, result=result)["closed_out"]:
-        return None
-    return result.error if result else "handoff"
+    overdue = datetime.fromisoformat(record["launched_at"]) < overdue_before
+    status, error = RunStatus.FAILED, EXECUTOR_LOST
+    if unit is None:  # a failed launch whose close-out did not finish
+        error = record.get("error") or EXECUTOR_LOST
+    else:
+        executor = build_executor(record["name"])
+        try:
+            phase: str = executor.state(unit).phase
+        except Exception:
+            if not overdue:
+                raise  # an unreachable runtime decides nothing before the deadline
+            phase = "unreachable"
+        if phase == "running":
+            if not overdue:
+                return None
+            executor.remove(unit)  # stopped before its run is recorded
+            status, error = RunStatus.ESCALATED, WALL_CLOCK_EXCEEDED
+        elif phase == "unreachable":
+            status, error = RunStatus.ESCALATED, EXECUTOR_UNREACHABLE
+    verdict = AgentRunResult(run_id=run_id, status=status, error=error)
+    closed = close_out_launched_run(run_id, workspace_id, verdict=verdict)
+    return closed["reason"] if closed["closed_out"] else None
 
 
 def _audit(action: str, run: PreparedRun, record: dict[str, Any], outcome: str) -> None:
@@ -276,7 +311,7 @@ def _audit(action: str, run: PreparedRun, record: dict[str, Any], outcome: str) 
             actor_label="system:run_executor",
             target_type="agent_run",
             target_id=run.run_id,
-            result="error" if outcome == RunStatus.FAILED.value else "success",
+            result="success" if outcome in ("launched", RunStatus.SUCCEEDED.value) else "error",
             details={"executor": record["name"], "unit": record.get("unit"), "outcome": outcome},
         )
         celery_app.send_task(AUDIT_RECORD_TASK, args=[event.model_dump(mode="json")])

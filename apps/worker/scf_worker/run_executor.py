@@ -9,6 +9,7 @@ lifecycle around it (launch, close-out, reconciliation) is in
 
 from __future__ import annotations
 
+import math
 import os
 import uuid
 from collections.abc import Mapping
@@ -18,7 +19,9 @@ from typing import Literal, NoReturn, Protocol
 from scf_contracts import SandboxKind
 
 __all__ = [
+    "DEFAULT_RECONCILE_GRACE",
     "INLINE",
+    "RECONCILE_GRACE_ENV",
     "RUN_EXECUTORS",
     "RUN_EXECUTOR_ENV",
     "SANDBOX_BACKEND_ENV",
@@ -29,6 +32,7 @@ __all__ = [
     "build_executor",
     "check_run_executor",
     "configured_executor",
+    "run_deadline_seconds",
 ]
 
 RUN_EXECUTOR_ENV = "FORGE_RUN_EXECUTOR"
@@ -37,6 +41,9 @@ SANDBOX_BACKEND_ENV = "FORGE_SANDBOX_BACKEND"
 INLINE = "inline"
 #: Each non-inline executor is named after the platform its sandbox backend must match.
 RUN_EXECUTORS = (INLINE, "docker", "kubernetes")
+#: How long past the wall-clock limit a unit may run before the reconciler stops it.
+RECONCILE_GRACE_ENV = "FORGE_RUN_RECONCILE_GRACE_SECONDS"
+DEFAULT_RECONCILE_GRACE = 300.0
 
 
 class ExecutorUnavailable(Exception):
@@ -119,9 +126,39 @@ def configured_executor(env: Mapping[str, str] | None = None) -> str:
     return name
 
 
-def check_run_executor(env: Mapping[str, str] | None = None) -> str:
-    """The configured executor, or ``ValueError`` for a combination the worker refuses (FR-022)."""
+def run_deadline_seconds(env: Mapping[str, str] | None = None) -> float:
+    """How long a unit may run before the reconciler stops it: the wall-clock limit plus grace.
+
+    ``ValueError`` naming a setting that is not a usable number of seconds.
+    """
+    # Imported here: run_main imports the agent runner, which imports this module.
+    from scf_worker.run_main import DEFAULT_RUN_TIME_LIMIT, MAX_RUN_TIME_LIMIT, RUN_TIME_LIMIT_ENV
+
     source = os.environ if env is None else env
+    limit = _seconds(source, RUN_TIME_LIMIT_ENV, DEFAULT_RUN_TIME_LIMIT)
+    grace = _seconds(source, RECONCILE_GRACE_ENV, DEFAULT_RECONCILE_GRACE)
+    if not 0 < limit <= MAX_RUN_TIME_LIMIT:  # also refuses inf and nan
+        raise ValueError(
+            f"{RUN_TIME_LIMIT_ENV} must be seconds, > 0 and at most {MAX_RUN_TIME_LIMIT:.0f}"
+        )
+    if not 0 <= grace <= MAX_RUN_TIME_LIMIT:
+        raise ValueError(
+            f"{RECONCILE_GRACE_ENV} must be seconds, >= 0 and at most {MAX_RUN_TIME_LIMIT:.0f}"
+        )
+    return limit + grace
+
+
+def _seconds(source: Mapping[str, str], name: str, default: float) -> float:
+    try:
+        return float(source.get(name) or default)
+    except ValueError:
+        return math.nan
+
+
+def check_run_executor(env: Mapping[str, str] | None = None) -> str:
+    """The configured executor, or ``ValueError`` for a setting the worker refuses (FR-022)."""
+    source = os.environ if env is None else env
+    run_deadline_seconds(source)
     name = configured_executor(source)
     if name == INLINE:
         return name
