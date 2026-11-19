@@ -256,8 +256,9 @@ def check_route_role_matrix() -> None:
 
     from scf_api.auth.rbac import permissions_for
 
-    # A 429 partway through the sweep would mask the status under test.
-    settings = Settings(ratelimit_enabled=False)
+    # A 429 partway through the sweep would mask the status under test; every
+    # settings-gated route is mounted so the walk sees it.
+    settings = Settings(ratelimit_enabled=False, public_leaderboard_enabled=True)
     walked = {f"{method} {path}": needs for method, path, needs in routes(create_app(settings))}
     # Every route and method of the running app is declared once: guarded, or with a reason.
     undeclared = sorted(walked.keys() - DECLARED.keys() - UNGUARDED.keys())

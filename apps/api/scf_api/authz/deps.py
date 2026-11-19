@@ -27,6 +27,7 @@ from scf_authz.errors import (
     TeamCycleError,
     TeamDepthError,
 )
+from scf_authz.permissions import ROLE_PERMISSIONS
 from scf_contracts.authz import (
     Permission,
     PrincipalContext,
@@ -66,27 +67,30 @@ def get_principal_context(
 ) -> PrincipalContext:
     """Load the caller's :class:`PrincipalContext` (grants + memberships) once.
 
-    A narrowed API key (spec L §6a) is a workspace viewer here, and an agent-runner
-    (an agent's token included) a workspace agent-runner (PT-01, #188): neither holds
-    its owner's grants or team memberships.
+    A narrowed API key (spec L §6a) is a workspace viewer here, holding none of
+    its owner's grants or team memberships. An agent's token keeps its owner's
+    scopes, capped at what an agent-runner holds (PT-01, #188).
     """
-    if principal.narrowed or principal.role is UserRole.AGENT_RUNNER:
+    if principal.narrowed:
         workspace = ScopeRef(type=ScopeType.WORKSPACE, id=principal.workspace_id)
         who = PrincipalRef(type=PrincipalType.USER, id=principal.user_id)
-        grant = RoleGrant(
+        viewer = RoleGrant(
             id=principal.credential_id or principal.user_id,
             workspace_id=principal.workspace_id,
             principal=who,
             scope=workspace,
-            role=UserRole.VIEWER if principal.narrowed else UserRole.AGENT_RUNNER,
+            role=UserRole.VIEWER,
         )
         return PrincipalContext(
             principal=who,
             workspace_id=principal.workspace_id,
-            grants=(grant,),
+            grants=(viewer,),
             team_memberships=(),
         )
-    return service.load_principal_context(principal.workspace_id, principal.user_id)
+    ctx = service.load_principal_context(principal.workspace_id, principal.user_id)
+    if principal.agent:
+        return ctx.model_copy(update={"permission_cap": ROLE_PERMISSIONS[UserRole.AGENT_RUNNER]})
+    return ctx
 
 
 PrincipalContextDep = Annotated[PrincipalContext, Depends(get_principal_context)]

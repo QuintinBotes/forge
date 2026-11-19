@@ -41,9 +41,12 @@ ALLOWED_SCOPE_SETS: tuple[frozenset[str], ...] = (
     frozenset({"read", APPROVALS_DECIDE}),
     frozenset({"read", RUNS_EXECUTE}),
 )
-#: Surfaces a key may name: a personal token's (``tervin`` / ``cli``) or ``web``
-#: for a key an SSO login mints. ``system`` (the sweep) never comes from a key.
-KEY_SURFACES = frozenset({"tervin", "cli", "web"})
+#: The surface of an agent's token (``AuthService.mint_agent_token``), which marks it.
+AGENT_SURFACE = "agent"
+#: Surfaces a key may name: a personal token's (``tervin`` / ``cli``), ``web`` for a
+#: key an SSO login mints, or an agent's token's. ``system`` (the sweep) never comes
+#: from a key.
+KEY_SURFACES = frozenset({"tervin", "cli", "web", AGENT_SURFACE})
 
 
 def generate_api_token(kind: APIKeyKind) -> str:
@@ -254,6 +257,7 @@ class APIKeyStore:
 
 
 __all__ = [
+    "AGENT_SURFACE",
     "ALLOWED_SCOPE_SETS",
     "APPROVALS_DECIDE",
     "KEY_SURFACES",

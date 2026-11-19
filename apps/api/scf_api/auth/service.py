@@ -33,6 +33,7 @@ from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from scf_api.auth.apikeys import (
+    AGENT_SURFACE,
     APPROVALS_DECIDE,
     RUNS_EXECUTE,
     APIKeyBackend,
@@ -342,6 +343,7 @@ class AuthService:
             scopes=[p.value for p in sorted(permissions_for(role))],
             decides=decides,
             narrowed=narrowed,
+            agent=record.surface == AGENT_SURFACE,
             surface=record.surface or "api",
             credential_id=record.id,
             credential_expires_at=record.expires_at,
@@ -383,8 +385,8 @@ class AuthService:
         Satisfies the spec's "automatic expiry for agent tokens": every minted
         agent token carries ``expires_at = now + FORGE_AGENT_TOKEN_TTL`` (default
         24h) so a dormant token cannot outlive its run. ``apikeys.verify`` rejects
-        it once expired. The role is always ``agent-runner``, whoever ``user_id`` is
-        (PT-01, #188).
+        it once expired. The role is always ``agent-runner``, whoever ``user_id`` is,
+        and the ``agent`` surface marks the token as an agent's (PT-01, #188).
         """
         seconds = ttl_seconds if ttl_seconds is not None else _agent_token_ttl_seconds()
         reference = now or datetime.now(UTC)
@@ -395,6 +397,7 @@ class AuthService:
             kind=APIKeyKind.SYSTEM,
             user_id=user_id,
             expires_at=reference + timedelta(seconds=seconds),
+            surface=AGENT_SURFACE,
         )
 
     # -- BYOK model client (HARD-02) ---------------------------------------- #

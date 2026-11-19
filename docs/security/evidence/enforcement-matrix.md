@@ -50,7 +50,7 @@ For every mounted feature router, every route (except the reviewed public-by-des
 
 ### `rbac-route-matrix`
 
-Walks every route and method of create_app() and finds each in tests/security/route_matrix.py exactly once: DECLARED gives the permission its require_permission guard must need, UNGUARDED the reviewed reason it has none. An undeclared route, a stale entry or a guard needing another permission fails. Then, per role (admin, member, viewer, agent-runner), every DECLARED route answers 403 to a role lacking the permission and neither 401 nor 403 to a role holding it.
+Walks every route and method of create_app(), with every settings-gated router (the public leaderboard) mounted, and finds each in tests/security/route_matrix.py exactly once: DECLARED gives the permission its require_permission guard must need, UNGUARDED the reviewed reason it has none. An undeclared route, a stale entry or a guard needing another permission fails. Then, per role (admin, member, viewer, agent-runner), every DECLARED route answers 403 to a role lacking the permission and neither 401 nor 403 to a role holding it.
 
 ### `workspace-selector-scoped`
 

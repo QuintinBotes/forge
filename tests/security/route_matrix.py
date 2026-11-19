@@ -24,8 +24,8 @@ from scf_api.auth.rbac import Permission
 
 _F30 = (
     "F30: authorised in AuthzService against get_principal_context, which gives a narrowed "
-    "key one workspace viewer grant and an agent-runner one workspace agent-runner grant, "
-    "never its owner's; the token walk calls the writes"
+    "key one workspace viewer grant and an agent's token its owner's scopes capped at "
+    "agent-runner; the token walk calls the writes"
 )
 _SIGN_IN = "Sign-in: reads no API key, only what an identity provider or a one-time link returns"
 _WEBHOOK = "Webhook: verified by the sender's signature or shared secret, never an API key"
@@ -34,9 +34,19 @@ _READ = "Reads the caller's own workspace and changes nothing; every role holds 
 _PUBLIC = "Public by design: liveness, service info and API docs read no credential"
 
 #: Every route without a ``require_permission`` guard, and how it authorises instead or why
-#: it is public by design; no narrowed or agent token gains anything there. Each handler was
-#: read before it was listed.
+#: it is public by design. The token walk calls the writes among them that take an API key
+#: with narrowed and agent tokens. Each handler was read before it was listed.
 UNGUARDED: dict[str, str] = {
+    **dict.fromkeys(
+        [
+            "GET /public/benchmarks",
+            "GET /public/leaderboard/{slug}/{version}",
+            "GET /public/leaderboard/{slug}/{version}/submissions/{submission_id}",
+            "GET /public/leaderboard/{slug}/{version}/submissions/{submission_id}/bundles",
+        ],
+        "Public by design, mounted only when FORGE_PUBLIC_LEADERBOARD_ENABLED is on: reads "
+        "published benchmark results through payload-free models, rate limited per IP",
+    ),
     **dict.fromkeys(
         [
             "GET /health",
@@ -129,9 +139,9 @@ UNGUARDED: dict[str, str] = {
     "POST /world/proposals": "Needs write or run_agent (_require_write_or_run_agent): the "
     "read token is refused (the token walk calls it); create_proposal records the run token's "
     "proposal as an agent's (SourceKind.AGENT)",
-    "POST /world/decisions": "Needs write or run_agent, and refuses every narrowed key "
-    "(_require_decision_recorder), whose decision would be stored as its owner's own: both "
-    "narrowed tokens are refused (the token walk calls it)",
+    "POST /world/decisions": "Needs write or run_agent, and refuses every narrowed key and "
+    "agent's token (_require_decision_recorder), whose decision would be stored as its "
+    "owner's own (the token walk calls it)",
     **dict.fromkeys(
         ["GET /mcp", "POST /mcp"],
         "Hides and refuses write tools without write or run_agent (registry.can_write); "

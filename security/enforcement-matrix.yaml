@@ -50,7 +50,8 @@ controls:
     mode: offline
     check: check_route_role_matrix
     asserts: >
-      Walks every route and method of create_app() and finds each in
+      Walks every route and method of create_app(), with every settings-gated
+      router (the public leaderboard) mounted, and finds each in
       tests/security/route_matrix.py exactly once: DECLARED gives the permission
       its require_permission guard must need, UNGUARDED the reviewed reason it has
       none. An undeclared route, a stale entry or a guard needing another

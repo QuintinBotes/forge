@@ -84,8 +84,10 @@ def client(monkeypatch: pytest.MonkeyPatch, workflow_db: Any) -> Iterator[TestCl
         )
         s.add(Project(id=PROJECT, workspace_id=WS, name="Core", key="CORE"))
         s.commit()
-    # Hundreds of calls with one token would trip the per-caller rate limit.
-    app = workflow_db.install(create_app(Settings(ratelimit_enabled=False)))
+    # Hundreds of calls with one token would trip the per-caller rate limit; every
+    # settings-gated route is mounted so the walk sees it.
+    settings = Settings(ratelimit_enabled=False, public_leaderboard_enabled=True)
+    app = workflow_db.install(create_app(settings))
     with TestClient(app) as c:
         yield c
 
@@ -108,9 +110,8 @@ def _refused(client: TestClient, admin: str, kind: str) -> list[tuple[str, str, 
     calls = [
         ("POST", "/auth/personal-tokens", {"name": "t", "surface": "cli"}),
         *_administrative(client, admin),
+        ("POST", "/world/decisions", {"title": "ship it", "fact_ids": []}),
     ]
-    if kind != "agent":  # recording a decision admits run_agent; only a narrowed key is refused
-        calls.append(("POST", "/world/decisions", {"title": "ship it", "fact_ids": []}))
     if kind == "read":  # the run token holds run_agent, which proposing admits
         calls.append(("POST", "/world/proposals", {}))
     return calls
