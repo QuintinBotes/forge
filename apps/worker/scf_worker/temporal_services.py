@@ -45,6 +45,7 @@ from scf_db.models.traceability import TraceabilitySpecRollup
 from scf_integrations.github import GitHubClient
 from scf_worker.agent_runner import _commits_ahead, configured_model, run_agent_objective
 from scf_worker.approval_activity import make_create_approval_fn
+from scf_worker.diff_gates import diff_gate_checks
 from scf_worker.dispatch import (
     RepositoryUnavailable,
     objective_for_task,
@@ -557,7 +558,8 @@ def run_checks_service(
     The commit is the head the latest agent run recorded, so a retry checks the same
     code even if the run branch moved. The commands come from the default branch's
     ``.forge/policy.yaml``, as the pull-request gate's review rules do, so an agent
-    cannot change its own checks. A repository that declares none fails.
+    cannot change its own checks. A repository that declares none fails. Beside them
+    run the gates on the diff (#187): ``secret_scan`` and ``sast``.
 
     When every check passes, an independent reviewer judges the change (#173): its
     verdict is the check ``independent_review``. When it approves, an adversary
@@ -599,10 +601,19 @@ def run_checks_service(
         runs = run_declared_checks(
             mirror, str(head), policy, run_id=agent_run.id, workspace_id=inp.workspace_id
         )
+        gates_pause: str | None = None  # a gate the worker could not run asks a person
+        if runs and policy is not None:  # none declared still fails as no_checks_declared
+            gates, gates_pause = diff_gate_checks(
+                mirror,
+                base=target.base_branch,
+                head=str(head),
+                rules=policy.diff_gates,
+            )
+            runs += gates
         if not runs or not all(r.passed for r in runs):
             _record_checks(factory, inp, head=str(head), runs=runs)
             results = {r.id: r.passed for r in runs} or dict(NO_DECLARED_CHECKS)
-            return ChecksResult(results=results)
+            return ChecksResult(results=results, pause_reason=gates_pause)
         try:
             review = _independent_review(
                 factory,

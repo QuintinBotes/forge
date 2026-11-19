@@ -526,6 +526,31 @@ class PolicySandboxBlock(_Model):
     vm_memory: str | None = None  # guest RAM, e.g. "4g" (isolation: microvm)
 
 
+class DiffGateRules(_Model):
+    """The ``diff_gates`` block: what the gates on an agent's diff allow (#187).
+
+    ``secret_allowed_files`` names files whose secret-scan matches are allowed, and
+    recorded as allowed. Each is one file path relative to the repository root,
+    matched exactly: a wildcard, or a path ending in ``/``, is refused when the policy
+    loads, and a directory's name matches no file under it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    secret_allowed_files: list[str] = Field(default_factory=list)
+    sast_analyzer: Literal["bandit"] = "bandit"
+    sast_severity: Literal["low", "medium", "high"] = "high"
+
+    @field_validator("secret_allowed_files")
+    @classmethod
+    def _named_files_only(cls, paths: list[str]) -> list[str]:
+        for path in paths:
+            parts = path.split("/")
+            if any(c in path for c in "*?[]{}\\") or "" in parts or ".." in parts or "." in parts:
+                raise ValueError(f"secret_allowed_files: {path!r} is not one named file path")
+        return paths
+
+
 #: Whitelisted condition fields available to a :class:`ConditionalRule` (F29).
 #: ``now`` is the runtime-supplied UTC clock (operand for the ``*_time_window``
 #: ops); ``weekday`` (0=Mon..6=Sun) and ``hour`` (0..23, UTC) are derived from it.
@@ -644,6 +669,7 @@ class Policy(_Model):
     skill_profiles: PolicySkillProfiles = Field(default_factory=PolicySkillProfiles)
     subagent_rules: SubagentRules = Field(default_factory=SubagentRules)
     sandbox: PolicySandboxBlock | None = None
+    diff_gates: DiffGateRules = Field(default_factory=DiffGateRules)
     allowed_actions: list[str] = Field(default_factory=list)
     restricted_actions: list[str] = Field(default_factory=list)
     rules: list[ConditionalRule] = Field(default_factory=list)
@@ -1287,6 +1313,7 @@ __all__ = [
     "CrossPRLink",
     "Decision",
     "DeployRules",
+    "DiffGateRules",
     "EpicDTO",
     "EscalationPolicy",
     "ExternalTask",
