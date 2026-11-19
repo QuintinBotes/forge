@@ -294,6 +294,14 @@ class SqlAlchemyWorkflowStore:
             )
             self._session.add(row)
         elif STATION_STATUS_RANK[visit.status] <= STATION_STATUS_RANK[row.status]:
+            if visit.status == "parked" and row.status in ("succeeded", "failed"):
+                # Routing follows the done report (spec K §4.2): parking marks the finished
+                # visit and may add a failure detail; its results and finish time stay.
+                row.status = "parked"
+                row.outcome = visit.outcome or row.outcome
+                row.error_code = visit.error_code or row.error_code
+                row.error_message = visit.error_message or row.error_message
+                self._session.flush()
             return
         row.status = visit.status
         row.outcome = visit.outcome

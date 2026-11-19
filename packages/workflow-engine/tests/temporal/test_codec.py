@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from temporalio.api.common.v1 import Payload
 
-from scf_workflow.temporal.converter import REDACTED, RedactingEncryptionCodec
+from scf_workflow.temporal.converter import REDACTED, RedactingEncryptionCodec, redact_secrets
 
 KEY = "unit-test-codec-key"
 FAKE_AWS = "AKIAIOSFODNN7EXAMPLE"
@@ -54,3 +54,31 @@ async def test_non_codec_payload_passes_through_decode() -> None:
     plain = _payload('{"x": "y"}')
     [decoded] = await RedactingEncryptionCodec(KEY).decode([plain])
     assert decoded.data == plain.data
+
+
+#: A low-entropy stand-in shaped like a GitHub installation token.
+FAKE_GH = "ghs_" + "x" * 24
+
+
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        ("GITHUB_TOKEN=gh-example-value", "gh-example-value"),
+        ("export OPENAI_API_KEY=example-key-value", "example-key-value"),
+        ("db_password: hunter2", "hunter2"),
+        ('{"access_token": "example-access"}', "example-access"),
+        ('{"github_token": "example-github"}', "example-github"),
+        ("Authorization: Basic eC1hY2Nlc3M6c2VjcmV0", "eC1hY2Nlc3M6c2VjcmV0"),
+        ("Authorization: token example-installation", "example-installation"),
+        (f"push refused: --token {FAKE_GH}", FAKE_GH),
+    ],
+)
+def test_redact_secrets_masks_prefixed_names_schemes_and_token_shapes(
+    text: str, secret: str
+) -> None:
+    assert secret not in redact_secrets(text)
+
+
+def test_redact_secrets_keeps_ordinary_names() -> None:
+    text = '{"max_tokens": 4096, "tokens_used": 12, "token_count": 3, "note": "rotate the api key"}'
+    assert redact_secrets(text) == text

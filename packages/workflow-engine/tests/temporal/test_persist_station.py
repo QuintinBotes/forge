@@ -8,11 +8,13 @@ context. Runs on SQLite, and on Postgres when one is configured.
 from __future__ import annotations
 
 import json
+import threading
+import time
 import uuid
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import StaticPool, create_engine, select
+from sqlalchemy import Engine, StaticPool, create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 
@@ -142,22 +144,35 @@ async def test_outputs_and_error_message_are_redacted_and_outputs_capped(
                 run_id,
                 ws_id,
                 "failed",
-                outputs={"token": "s3cr3t-value", "log": ["Authorization: Bearer abc.def.ghi"]},
+                outputs={
+                    "token": "s3cr3t-value",
+                    "log": ["Authorization: Bearer abc.def.ghi", "GITHUB_TOKEN=gh-env-value"],
+                    "access_token": "example-access",
+                    "github_token": "example-github",
+                    "db_password": "example-db",
+                    "OPENAI_API_KEY": "example-openai",
+                    "max_tokens": 4096,
+                },
                 error_message="push failed: password=hunter2",
             )
         )
         await acts.persist_station(
             _visit(run_id, ws_id, "succeeded", visit=2, outputs={"diff": "x" * 20_000})
         )
+        # 12 KB of UTF-8, though six times that as ASCII-escaped JSON: kept whole.
+        accented = {"failure_summary": "é" * 6_000}
+        await acts.persist_station(_visit(run_id, ws_id, "succeeded", visit=3, outputs=accented))
         session.commit()
-        first, second = _rows(session, run_id)
+        first, second, third = _rows(session, run_id)
         stored = json.dumps(first.outputs) + (first.error_message or "")
-        assert "s3cr3t-value" not in stored
-        assert "abc.def.ghi" not in stored
-        assert "hunter2" not in stored
-        assert first.outputs["token"] == "[redacted]"
+        for secret in ("s3cr3t-value", "abc.def.ghi", "hunter2", "gh-env-value"):
+            assert secret not in stored
+        for key in ("token", "access_token", "github_token", "db_password", "OPENAI_API_KEY"):
+            assert first.outputs[key] == "[redacted]"
+        assert first.outputs["max_tokens"] == 4096
         assert len(json.dumps(second.outputs).encode()) <= 16 * 1024
         assert second.outputs["truncated"] is True
+        assert third.outputs == accented
 
 
 async def test_mirrors_latest_outputs_spend_and_parked_into_the_run_context(
@@ -220,15 +235,138 @@ async def test_refuses_a_store_that_cannot_record_visits() -> None:
     assert exc.value.non_retryable
 
 
-async def test_refuses_an_unknown_status_without_retrying(
-    factory: sessionmaker[Session],
+@pytest.mark.parametrize(
+    "bad",
+    [{"status": "done"}, {"kind": "robot"}, {"outcome": "a" * 64}, {"error_code": "x\x00"}],
+)
+async def test_refuses_what_the_visit_row_cannot_hold_without_retrying(
+    factory: sessionmaker[Session], bad: dict[str, str]
 ) -> None:
+    """Postgres refuses an outcome past ``VARCHAR(48)`` or a NUL on every attempt alike."""
     with factory() as session:
         store, ws_id, run_id = _seed_run(session)
+        fields = {"status": "failed", **bad}
         with pytest.raises(ApplicationError) as exc:
-            await WorkflowActivities(store=store).persist_station(_visit(run_id, ws_id, "done"))
-        assert exc.value.non_retryable
+            await WorkflowActivities(store=store).persist_station(
+                _visit(run_id, ws_id, **fields)  # type: ignore[arg-type]
+            )
+        assert (exc.value.type, exc.value.non_retryable) == ("InvalidStationVisit", True)
         assert _rows(session, run_id) == []
+
+
+async def test_nul_and_lone_surrogates_in_stored_text_are_escaped(
+    factory: sessionmaker[Session],
+) -> None:
+    """Postgres text and JSONB refuse both; the activity escapes them as the audit log does."""
+    with factory() as session:
+        store, ws_id, run_id = _seed_run(session)
+        await WorkflowActivities(store=store).persist_station(
+            _visit(
+                run_id,
+                ws_id,
+                "failed",
+                outputs={"log": "a\x00b", "k\x00": "\ud800"},
+                error_message="bad\x00byte",
+            )
+        )
+        session.commit()
+        (row,) = _rows(session, run_id)
+        assert row.outputs == {"log": "a\\x00b", "k\\x00": "\\ud800"}
+        assert row.error_message == "bad\\x00byte"
+
+
+async def test_parking_after_the_done_report_parks_the_visit_and_keeps_its_results(
+    factory: sessionmaker[Session],
+) -> None:
+    """Spec K §4.2 reports done (step 3) before routing parks the run (step 4)."""
+    with factory() as session:
+        store, ws_id, run_id = _seed_run(session)
+        acts = WorkflowActivities(store=store)
+        done = _visit(
+            run_id, ws_id, "succeeded", outcome="low_confidence", outputs={"a": 1}, tokens_used=40
+        )
+        await acts.persist_station(done)
+        session.commit()
+        (row,) = _rows(session, run_id)
+        finished_at = row.finished_at
+
+        parked = _visit(run_id, ws_id, "parked", error_code="context_unavailable")
+        await acts.persist_station(parked)
+        await acts.persist_station(done)  # a late retry of the done report
+        session.commit()
+        (row,) = _rows(session, run_id)
+        assert (row.status, row.outcome, row.error_code) == (
+            "parked",
+            "low_confidence",
+            "context_unavailable",
+        )
+        assert (row.outputs, row.tokens_used, row.finished_at) == ({"a": 1}, 40, finished_at)
+        session.expunge_all()
+        assert store.get(run_id).context["parked"] == {
+            "state": "implement",
+            "visit": 1,
+            "reason": "low_confidence",
+        }
+
+
+def test_the_row_lock_keeps_a_late_report_from_moving_a_finished_visit_back(
+    pg_engine: Engine,
+) -> None:
+    """Postgres only (SQLite has no row locks).
+
+    Without ``FOR UPDATE`` the late ``waiting`` report reads ``running``, waits on the
+    finishing writer's row, then overwrites ``succeeded`` once that commits.
+    """
+    Base.metadata.create_all(pg_engine)
+    factory = sessionmaker(bind=pg_engine, expire_on_commit=False, class_=Session)
+    try:
+        with factory() as setup:
+            store, ws_id, run_id = _seed_run(setup)
+            store.save_station_visit(_visit(run_id, ws_id, "running"))
+            setup.commit()
+        errors: list[BaseException] = []
+
+        with factory() as finishing, factory() as late:
+
+            def report_late() -> None:
+                try:
+                    late_store = SqlAlchemyWorkflowStore(late, workspace_id=ws_id)
+                    late_store.save_station_visit(_visit(run_id, ws_id, "waiting"))
+                    late.commit()
+                except BaseException as exc:
+                    errors.append(exc)
+
+            finishing_store = SqlAlchemyWorkflowStore(finishing, workspace_id=ws_id)
+            finishing_store.save_station_visit(_visit(run_id, ws_id, "succeeded"))  # uncommitted
+            thread = threading.Thread(target=report_late)
+            thread.start()
+            _wait_for_a_lock_wait(pg_engine)
+            finishing.commit()
+            thread.join(timeout=30)
+            assert not thread.is_alive()
+        assert errors == []
+        with factory() as check:
+            (row,) = _rows(check, run_id)
+            assert row.status == "succeeded"
+    finally:
+        Base.metadata.drop_all(pg_engine)
+
+
+def _wait_for_a_lock_wait(engine: Engine) -> None:
+    """Return once some session of this database is blocked on a lock."""
+    deadline = time.monotonic() + 10
+    with engine.connect() as conn:
+        while time.monotonic() < deadline:
+            waiting = conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity "
+                    "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                )
+            ).scalar_one()
+            if waiting:
+                return
+            time.sleep(0.05)
+    raise AssertionError("the late report never waited on the row")
 
 
 async def test_a_foreign_workspace_store_cannot_write_the_visit(

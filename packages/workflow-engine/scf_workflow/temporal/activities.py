@@ -74,6 +74,8 @@ DEFAULT_CHECKS = ("lint", "type_check", "tests", "coverage")
 
 #: A station visit's stored outputs are at most this many bytes of JSON (spec K §4.3).
 STATION_OUTPUTS_CAP = 16 * 1024
+#: ``workflow_station_visit`` column widths; Postgres refuses a longer value, or a NUL.
+_VISIT_WIDTHS = {"state": 64, "outcome": 48, "error_code": 64, "service_name": 64}
 
 #: Seconds between activity heartbeats (the agent activity's heartbeat timeout is 120 s).
 AGENT_HEARTBEAT_EVERY = 30.0
@@ -330,13 +332,20 @@ class WorkflowActivities:
         store = self._store
         if not isinstance(store, StationVisitStore):
             _refuse("forge.persist_station")(rec)
-        if rec.status not in STATION_STATUS_RANK or rec.kind not in STATION_KINDS:
+        unfit = [
+            name
+            for name, width in _VISIT_WIDTHS.items()
+            if (value := getattr(rec, name)) and (len(value) > width or "\x00" in value)
+        ]
+        if rec.status not in STATION_STATUS_RANK or rec.kind not in STATION_KINDS or unfit:
+            # Every retry would fail the same way, so fail now.
             raise ApplicationError(
-                f"no station visit kind {rec.kind!r} with status {rec.status!r}",
+                f"station visit not recordable: kind {rec.kind!r}, status {rec.status!r}, "
+                f"unfit fields {unfit}",
                 type="InvalidStationVisit",
                 non_retryable=True,
             )
-        error = redact_secrets(rec.error_message) if rec.error_message else rec.error_message
+        error = _text(redact_secrets(rec.error_message)) if rec.error_message else None
         store.save_station_visit(
             replace(rec, outputs=_station_outputs(rec.outputs), error_message=error)
         )
@@ -462,16 +471,21 @@ async def _awaited[O](result: Awaitable[O]) -> O:
     return await result
 
 
+def _text(value: str) -> str:
+    """``value`` as Postgres text and JSONB take it: NUL and lone surrogates escaped."""
+    return value.encode("utf-8", "backslashreplace").decode().replace("\x00", "\\x00")
+
+
 def _redacted(value: Any) -> Any:
     """``value`` with secrets masked, as the history codec masks them in its JSON text."""
     if isinstance(value, str):
-        return redact_secrets(value)
+        return _text(redact_secrets(value))
     if isinstance(value, list):
         return [_redacted(item) for item in value]
     if isinstance(value, dict):
-        # A key the codec's ``key=value`` pattern names (``token``, ``password``, ...).
+        # A key the codec's ``key=value`` pattern names (``token``, ``db_password``, ...).
         return {
-            k: REDACTED if redact_secrets(f"{k}=x") != f"{k}=x" else _redacted(v)
+            _text(str(k)): REDACTED if redact_secrets(f"{k}=x") != f"{k}=x" else _redacted(v)
             for k, v in value.items()
         }
     return value
@@ -479,7 +493,9 @@ def _redacted(value: Any) -> Any:
 
 def _station_outputs(outputs: dict[str, Any]) -> dict[str, Any]:
     redacted: dict[str, Any] = _redacted(outputs)
-    size = len(json.dumps(redacted, default=str).encode())
+    # The UTF-8 bytes stored, not the ASCII-escaped JSON six times the size.
+    text = json.dumps(redacted, default=str, ensure_ascii=False)
+    size = len(text.encode("utf-8", "surrogatepass"))
     return redacted if size <= STATION_OUTPUTS_CAP else {"truncated": True, "bytes": size}
 
 
