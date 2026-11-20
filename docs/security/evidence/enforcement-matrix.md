@@ -26,6 +26,7 @@
 | `principal-fails-safe` | Principal.role defaults to the least-privileged role | offline | HARD-09 threat model (fail-open default) | `check_principal_fails_safe` |
 | `vault-no-plaintext` | BYOK vault never exposes plaintext | offline | SCF_SPEC Security ("API keys encrypted at rest") | `check_vault_no_plaintext` |
 | `tenant-isolation` | Vault reads are workspace-scoped | offline | SCF_SPEC Security ("per-workspace isolation") | `check_tenant_isolation` |
+| `tenant-isolation-matrix` | No workspace reaches another workspace's resources by naming them | offline | specs/003-containment FR-023, FR-024, FR-025 (PT-13) | `check_tenant_isolation_matrix` |
 | `crypto-default-fernet` | The default cipher is Fernet (authenticated encryption) | offline | HARD-10 handshake (asserted here as a regression pin) | `check_crypto_default_fernet` |
 | `secret-key-required-prod` | No silent ephemeral secret key outside development | offline | HARD-10 handshake / SPEC-PRODUCTION-HARDENING creds rule 6 | `check_secret_key_required_prod` |
 | `audit-tamper-evident` | The audit hash chain detects tampering; store is append-only | offline | SCF_SPEC Security ("audit log immutable") | `check_audit_tamper_evident` |
@@ -103,6 +104,10 @@ StoredSecret.ciphertext != plaintext; repr(StoredSecret) and SecretInfo carry no
 ### `tenant-isolation`
 
 A secret stored for workspace A is not readable or listable via workspace B (SecretNotFoundError; list returns no cross-tenant rows).
+
+### `tenant-isolation-matrix`
+
+tests/security/tenant_matrix.py maps every WorkspaceScopedModel subclass to the routes that serve it, or to a reviewed reason it has none, and accounts for every route, query and body parameter and MCP tool argument that names a resource. One of each resource is made in workspace A; workspace B's admin names A's identifiers on every such route and tool and gets the same answer as for an identifier of nothing (writes refused with 403 or 404), never sees A's resources in a list, and leaves A's reads unchanged. The defects in OPEN_DEFECTS must still fail until each is fixed.
 
 ### `crypto-default-fernet`
 

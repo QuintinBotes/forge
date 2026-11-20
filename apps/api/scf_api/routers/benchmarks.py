@@ -109,7 +109,7 @@ def _submission_dto(row: BenchmarkSubmission, suite: BenchmarkSuite) -> Submissi
 
 @router.get("", response_model=list[BenchmarkSuiteOut])
 def list_suites(service: ServiceDep, principal: ReaderDep) -> list[BenchmarkSuiteOut]:
-    return [_suite_dto(s) for s in service.list_suites()]
+    return [_suite_dto(s) for s in service.list_suites(workspace_id=principal.workspace_id)]
 
 
 # NOTE: the /submissions/{id} routes are declared BEFORE /{slug}/{version} —
@@ -131,7 +131,7 @@ def get_suite(
     service: ServiceDep, principal: ReaderDep, slug: str, version: str
 ) -> BenchmarkSuiteOut:
     try:
-        return _suite_dto(service.get_suite(slug, version))
+        return _suite_dto(service.get_suite(slug, version, workspace_id=principal.workspace_id))
     except SuiteNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -163,7 +163,7 @@ def submit(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except SubmissionTooLargeError as exc:
         raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
-    suite = service.get_suite(slug, version)
+    suite = service.get_suite(slug, version, workspace_id=principal.workspace_id)
     return _submission_dto(row, suite)
 
 
