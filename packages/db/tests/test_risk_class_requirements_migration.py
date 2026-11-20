@@ -28,7 +28,7 @@ def test_migration_0055_adds_and_drops_the_class_requirements(tmp_path: Path) ->
     command.upgrade(cfg, "0055_risk_class_requirements")
     assert "class_requirements" in _columns(url)
 
-    command.downgrade(cfg, "0053_risk_classification")
+    command.downgrade(cfg, "0054_factory_metrics")
     assert "class_requirements" not in _columns(url)
     assert "final_class" in _columns(url)  # the table itself stays
 

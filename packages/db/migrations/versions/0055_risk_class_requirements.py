@@ -10,7 +10,7 @@ Idempotent like 0051: ``upgrade`` adds the column only when it is missing (a fre
 chain's metadata-driven 0053 already has it); ``downgrade`` drops it only when present.
 
 Revision ID: 0055_risk_class_requirements
-Revises: 0053_risk_classification
+Revises: 0054_factory_metrics
 Create Date: 2026-11-20
 """
 
@@ -25,7 +25,7 @@ from scf_db.base import json_type
 
 # revision identifiers, used by Alembic.
 revision: str = "0055_risk_class_requirements"
-down_revision: str | None = "0053_risk_classification"
+down_revision: str | None = "0054_factory_metrics"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
