@@ -992,6 +992,8 @@ SERVED_UNDER: dict[str, tuple[str, ...]] = {
 
 #: Workspace-scoped models with no API surface, each with the reviewed reason.
 NO_API_SURFACE: dict[str, str] = {
+    "HeldAutomationAction": "Read only by the release hook of its approval request, in that "
+    "request's workspace (swept as ApprovalRequest); no route serves it",
     **dict.fromkeys(
         ["IncidentAlert", "IncidentEvent", "RemediationPlan", "Postmortem", "PostmortemActionItem"],
         "The incident routes keep incidents in process memory per workspace "
