@@ -46,6 +46,7 @@ ENFORCED_GATES: frozenset[ApprovalGate] = frozenset(
         ApprovalGate.PR,
         ApprovalGate.DEPLOY,
         ApprovalGate.POLICY_OVERRIDE,
+        ApprovalGate.AUTOMATION_ACTION,
     }
 )
 

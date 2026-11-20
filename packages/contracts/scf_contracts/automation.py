@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import enum
 import uuid
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
@@ -75,6 +76,52 @@ class AutomationActionType(enum.StrEnum):
     DECLARE_INCIDENT = "declare_incident"  # wired to the incident service
     START_SPRINT = "start_sprint"  # auto-start the next planned sprint
     AUTO_MERGE = "auto_merge"  # DEFAULT OFF; double-gated (opt-in + policy)
+
+
+@dataclass(frozen=True)
+class ActionImpact:
+    """What an action's effect is (FR-026): can it be undone, does it leave SCF?"""
+
+    reversible: bool
+    external: bool
+
+    @property
+    def needs_person(self) -> bool:
+        """An irreversible effect outside SCF runs only after a person approves (FR-027)."""
+        return self.external and not self.reversible
+
+
+_INTERNAL = ActionImpact(reversible=True, external=False)
+_INTERNAL_FINAL = ActionImpact(reversible=False, external=False)
+_EXTERNAL_FINAL = ActionImpact(reversible=False, external=True)
+
+#: The one table of action impacts (#191). Every type has an entry (a test holds it).
+ACTION_IMPACT: dict[AutomationActionType, ActionImpact] = {
+    AutomationActionType.SET_STATUS: _INTERNAL,
+    AutomationActionType.SET_PRIORITY: _INTERNAL,
+    AutomationActionType.SET_ASSIGNEE: _INTERNAL,
+    AutomationActionType.SET_FIELD: _INTERNAL,
+    AutomationActionType.ADD_COMMENT: _INTERNAL,
+    AutomationActionType.CLOSE_LINKED_SPEC_TASKS: _INTERNAL,
+    AutomationActionType.CREATE_TASK: _INTERNAL,
+    AutomationActionType.DECLARE_INCIDENT: _INTERNAL,  # the in-process incident service
+    AutomationActionType.SEND_WORKFLOW_EVENT: _INTERNAL_FINAL,  # a run does not step back
+    AutomationActionType.START_SPRINT: _INTERNAL_FINAL,  # a started sprint is not unstarted
+    # The issue can be closed again (issue #191's default).
+    AutomationActionType.CREATE_EXTERNAL_ISSUE: ActionImpact(reversible=True, external=True),
+    AutomationActionType.SEND_NOTIFICATION: _EXTERNAL_FINAL,  # slack/email cannot be recalled
+    AutomationActionType.WEBHOOK_POST: _EXTERNAL_FINAL,
+    AutomationActionType.TRIGGER_DEPLOY: _EXTERNAL_FINAL,
+    AutomationActionType.AUTO_MERGE: _EXTERNAL_FINAL,
+}
+
+#: What an unclassified type is treated as: the most cautious impact.
+UNCLASSIFIED_IMPACT = _EXTERNAL_FINAL
+
+
+def action_impact(action_type: str) -> ActionImpact:
+    """The declared impact of ``action_type``; unknown types are irreversible and external."""
+    return ACTION_IMPACT.get(action_type, UNCLASSIFIED_IMPACT)  # type: ignore[call-overload]
 
 
 class AutomationExecutionStatus(enum.StrEnum):
@@ -157,7 +204,10 @@ class NullAutomationDispatcher:
 
 
 __all__ = [
+    "ACTION_IMPACT",
     "HUMAN_GATE_EVENTS",
+    "UNCLASSIFIED_IMPACT",
+    "ActionImpact",
     "AutomationActionType",
     "AutomationDispatcher",
     "AutomationEntityType",
@@ -167,4 +217,5 @@ __all__ = [
     "AutomationTriggerType",
     "ConditionOp",
     "NullAutomationDispatcher",
+    "action_impact",
 ]
