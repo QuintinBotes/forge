@@ -1,4 +1,4 @@
-"""Migration 0055: the ``held_automation_action`` table (#191)."""
+"""Migration 0056: the ``held_automation_action`` table (#191)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 
 DB_ROOT = Path(__file__).resolve().parent.parent
-REVISION = "0055_held_automation_action"
+REVISION = "0056_held_automation_action"
 TABLE = "held_automation_action"
 COLUMNS = {
     "id",
@@ -25,7 +25,7 @@ COLUMNS = {
 }
 
 
-def test_migration_0055_creates_and_drops_the_held_action_table(tmp_path: Path) -> None:
+def test_migration_0056_creates_and_drops_the_held_action_table(tmp_path: Path) -> None:
     cfg = Config(str(DB_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(DB_ROOT / "migrations"))
     url = f"sqlite:///{tmp_path / 'scf_test.db'}"
