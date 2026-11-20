@@ -22,7 +22,7 @@ from scf_eval.sweval.bench import (
     reference_solver,
     run_suite,
 )
-from scf_eval.sweval.gate import SelfEvalGate, SelfEvalRegressionError
+from scf_eval.sweval.gate import SelfEvalGate, SelfEvalRegressionError, SelfEvalRequiredError
 from scf_eval.sweval.runner import SweCaseResult, run_swe_case
 from scf_eval.sweval.scf_solver import ScfInstanceSolver
 from scf_eval.sweval.self_eval import SelfEvalScorecard, run_self_eval
@@ -35,6 +35,7 @@ __all__ = [
     "ScfInstanceSolver",
     "SelfEvalGate",
     "SelfEvalRegressionError",
+    "SelfEvalRequiredError",
     "SelfEvalScorecard",
     "Solver",
     "SweCaseResult",

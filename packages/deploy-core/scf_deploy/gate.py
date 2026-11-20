@@ -4,7 +4,8 @@ Composes repo policy ``deploy_rules``, predecessor-success ordering, automated
 checks (CI green, spec validated, security clean), and freeze-window state into a
 :class:`GateEvaluation`. **Deterministic, total, and never raises** — every input
 combination yields a ``GateEvaluation``. Restricted environments **always**
-require human approval; no input can relax that.
+require human approval; no input can relax that. A classified change's risk class
+may gate a deploy too, when its repository enforces risk (#194); it never ungates one.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import uuid
 from typing import Protocol, runtime_checkable
 
+from scf_contracts import GatedChange, RiskReader, gate_decision, tighten_deploy
 from scf_contracts.dtos import DeployRules
 from scf_db.models.deployment import Environment
 from scf_deploy.freeze import Clock, SystemClock, is_frozen
@@ -83,8 +85,10 @@ class DeploymentGateEvaluator:
         validation: ValidationReader | None = None,
         security: SecurityReader | None = None,
         clock: Clock | None = None,
+        risk: RiskReader | None = None,
     ) -> None:
         self.repo = repo
+        self.risk = risk
         self.policy = policy or _NullPolicyReader()
         self.ci = ci or _NullCIReader()
         self.validation = validation or _NullValidationReader()
@@ -115,6 +119,20 @@ class DeploymentGateEvaluator:
 
         agent_blocked = dep.trigger == DeploymentTrigger.AGENT and not rules.allow_agent_deploy
         requires_human_approval = bool(env.is_restricted or env.requires_approval or agent_blocked)
+        change = GatedChange(
+            workspace_id=dep.workspace_id,
+            commit_sha=dep.commit_sha,
+            agent_run_id=dep.agent_run_id,
+            workflow_run_id=dep.workflow_run_id,
+        )
+        mode = gate_decision(
+            self.risk,
+            change,
+            "deploy",
+            "gated" if requires_human_approval else "auto",
+            lambda own, req: tighten_deploy(own, req.deploy_mode),
+        )
+        requires_human_approval = mode == "gated"
         can_proceed = all(c.status != GateCheckStatus.FAILED for c in checks)
         blocking = [c.detail for c in checks if c.status == GateCheckStatus.FAILED]
 

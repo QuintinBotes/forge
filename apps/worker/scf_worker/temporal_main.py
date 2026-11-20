@@ -31,6 +31,7 @@ from scf_contracts import WorkflowRun
 from scf_db import create_session_factory
 from scf_db.models import AgentRun
 from scf_db.models.runs import WorkflowRun as DbWorkflowRun
+from scf_db.risk_repository import DbRiskReader
 from scf_worker.approval_activity import expire_open_gates
 from scf_worker.dispatch import workspace_mirrors
 from scf_worker.held_out_drafting import draft_scenarios_service
@@ -180,7 +181,7 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
         guard_inputs_fn=guard_inputs_service(factory),
         run_agent_fn=agent_run_service(factory),
         notify_fn=notify_service(factory),
-        run_checks_fn=run_checks_service(factory),
+        run_checks_fn=run_checks_service(factory, risk=DbRiskReader(factory)),
         open_pr_fn=open_pr_service(factory),
         approval_fn=approval_service(factory),
         red_team_fn=red_team_service(factory),
