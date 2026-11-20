@@ -271,6 +271,7 @@ def test_approval_gates_match_spec() -> None:
         "deploy",
         "incident_remediation",
         "policy_override",
+        "automation_action",  # a held irreversible automatic action (#191)
     }
 
 

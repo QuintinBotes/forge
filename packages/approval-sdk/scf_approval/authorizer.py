@@ -80,6 +80,7 @@ GATE_MIN_ROLE: dict[GateType, Role] = {
     GateType.DEPLOY: Role.MEMBER,  # + deploy-permission check
     GateType.INCIDENT_REMEDIATION: Role.MEMBER,  # admin once escalated
     GateType.POLICY_OVERRIDE: Role.ADMIN,  # always admin
+    GateType.AUTOMATION_ACTION: Role.MEMBER,  # a held automatic action (#191)
 }
 
 #: Role ranks for the minimum-role comparison. ``agent-runner`` and ``viewer``

@@ -156,16 +156,18 @@ def _ctx(rule_id: uuid.UUID | None = None) -> ActionContext:
 # --------------------------------------------------------------------------- #
 
 
-def test_webhook_post_dispatches_and_is_audited() -> None:
+def test_webhook_post_dispatches_once_released_and_is_audited() -> None:
+    """#191: a webhook is held by ``execute``; ``release`` (after approval) posts it."""
     webhook = _FakeWebhook()
     audit = _FakeAudit()
     executor = ExternalActionExecutor(webhook=webhook, audit=audit)
     ctx = _ctx()
     action = WebhookPostAction(url="https://example.test/hook", payload_template={"k": "v"})
 
-    result = executor.execute(action, ctx)
+    result = executor.release(action, ctx)
 
     assert result.status == "ok"
+    assert "url" not in result.detail  # the audited detail never carries the URL
     assert webhook.calls == [("https://example.test/hook", {"k": "v", **_ids(ctx)})]
     assert audit.records[0]["status"] == "ok"
     assert audit.records[0]["action_type"] is AutomationActionType.WEBHOOK_POST
@@ -221,7 +223,8 @@ def test_trigger_deploy_denied_by_default_policy() -> None:
     assert audit.records[0]["status"] == "forbidden"
 
 
-def test_trigger_deploy_dispatches_when_policy_allows() -> None:
+def test_trigger_deploy_dispatches_once_released_when_policy_allows() -> None:
+    """#191: an allowed deploy is held by ``execute``; ``release`` dispatches it."""
     deploys = _FakeDeployDispatcher()
     audit = _FakeAudit()
     policy = Policy(
@@ -231,7 +234,7 @@ def test_trigger_deploy_dispatches_when_policy_allows() -> None:
     executor = ExternalActionExecutor(policy=policy, deploys=deploys, audit=audit)
     ctx = _ctx()
 
-    result = executor.execute(TriggerDeployAction(environment="staging"), ctx)
+    result = executor.release(TriggerDeployAction(environment="staging"), ctx)
 
     assert result.status == "ok"
     assert result.detail["deploy_id"] == "deploy-1"
@@ -345,7 +348,8 @@ def test_auto_merge_enabled_but_default_policy_still_forbidden() -> None:
     assert merges.calls == []
 
 
-def test_auto_merge_dispatches_when_enabled_and_policy_allows() -> None:
+def test_auto_merge_dispatches_once_released_when_enabled_and_policy_allows() -> None:
+    """#191: an allowed, opted-in merge is held by ``execute``; ``release`` merges it."""
     merges = _FakeMergeDispatcher()
     audit = _FakeAudit()
     policy = Policy(
@@ -355,7 +359,7 @@ def test_auto_merge_dispatches_when_enabled_and_policy_allows() -> None:
     )
     executor = ExternalActionExecutor(policy=policy, merges=merges, audit=audit)
 
-    result = executor.execute(AutoMergeAction(enabled=True, merge_method="squash"), _ctx())
+    result = executor.release(AutoMergeAction(enabled=True, merge_method="squash"), _ctx())
 
     assert result.status == "ok"
     assert merges.calls[0][1] == "squash"
@@ -395,7 +399,7 @@ def test_audit_sink_failure_never_masks_the_action_result() -> None:
 
     webhook = _FakeWebhook()
     executor = ExternalActionExecutor(webhook=webhook, audit=_BoomAudit())
-    result = executor.execute(WebhookPostAction(url="https://example.test/hook"), _ctx())
+    result = executor.release(WebhookPostAction(url="https://example.test/hook"), _ctx())
     assert result.status == "ok"
 
 
