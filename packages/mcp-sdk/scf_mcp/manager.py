@@ -38,9 +38,24 @@ if TYPE_CHECKING:
 TransportFactory = Callable[[MCPConnection], Transport]
 
 
+#: A connection's registry key: the workspace that registered it, and its id.
+_Key = tuple[uuid.UUID | None, str]
+
+
 def _null_transport_factory(conn: MCPConnection) -> Transport:
     """Default factory: a transport that refuses live MCP traffic."""
     return NullTransport()
+
+
+class _Tee:
+    """Records each entry to the shared audit trail and to one connection's own."""
+
+    def __init__(self, shared: AuditSink, own: InMemoryAuditLog) -> None:
+        self._sinks = (shared, own)
+
+    def record(self, entry: MCPAuditEntry) -> None:
+        for sink in self._sinks:
+            sink.record(entry)
 
 
 class MCPConnectionManager:
@@ -61,14 +76,15 @@ class MCPConnectionManager:
         self._policy = policy
         self._evaluator = evaluator
         self._rate_limiter = rate_limiter
-        self._clients: dict[str, MCPGatewayClient] = {}
-        self._connections: dict[str, MCPConnection] = {}
-        # Per-workspace ownership of each connection (Phase-2 bug fix r3). The
-        # frozen ``MCPConnection`` contract carries no ``workspace_id`` field, so
-        # tenancy is tracked alongside the registry. ``None`` means the connection
-        # was registered without a tenant dimension (e.g. the single-tenant
-        # ``apps/mcp-gateway`` service) and is not scoped.
-        self._owners: dict[str, uuid.UUID] = {}
+        # Keyed by (workspace, connection id): a connection's id is a name its workspace
+        # chooses, so two workspaces may both have one called "github" (PT-13). The
+        # frozen ``MCPConnection`` contract carries no ``workspace_id``; ``None`` is a
+        # connection registered without a tenant (the single-tenant ``apps/mcp-gateway``).
+        self._clients: dict[_Key, MCPGatewayClient] = {}
+        self._connections: dict[_Key, MCPConnection] = {}
+        # Each connection's own trail, beside the shared one, so a same-named connection
+        # in another workspace never reads it.
+        self._audits: dict[_Key, InMemoryAuditLog] = {}
 
     # ------------------------------------------------------------------ #
     # Registration                                                       #
@@ -83,46 +99,41 @@ class MCPConnectionManager:
         all later reads/calls/audit must present the same workspace or be treated
         as if the connection does not exist (cross-tenant isolation).
         """
+        key = (workspace_id, conn.id)
+        own = self._audits.setdefault(key, InMemoryAuditLog())
         client = MCPGatewayClient(
             transport=self._transport_factory(conn),
-            audit_log=self._audit,
+            audit_log=_Tee(self._audit, own),
             policy=self._policy,
             evaluator=self._evaluator,
             rate_limiter=self._rate_limiter,
         )
         client.connect(conn)
-        self._clients[conn.id] = client
-        self._connections[conn.id] = conn
-        if workspace_id is not None:
-            self._owners[conn.id] = workspace_id
+        self._clients[key] = client
+        self._connections[key] = conn
         return conn
 
     def list_connections(self, *, workspace_id: uuid.UUID | None = None) -> list[MCPConnection]:
         """List registered connections, scoped to ``workspace_id`` when given."""
-        if workspace_id is None:
-            return list(self._connections.values())
         return [
-            conn for cid, conn in self._connections.items() if self._owners.get(cid) == workspace_id
+            conn
+            for (owner, _), conn in self._connections.items()
+            if workspace_id is None or owner == workspace_id
         ]
 
     def get(self, connection_id: str, *, workspace_id: uuid.UUID | None = None) -> MCPGatewayClient:
-        """Resolve a connection's client, enforcing tenant ownership.
+        """Resolve the client of the connection ``workspace_id`` registered as ``connection_id``.
 
-        A connection that is missing *or* owned by a different workspace raises
+        A connection that is missing *or* registered by another workspace raises
         :class:`MCPConnectionNotFoundError` (mapped to 404) so the control plane
         never leaks the existence of another tenant's MCP server.
         """
         try:
-            client = self._clients[connection_id]
+            return self._clients[workspace_id, connection_id]
         except KeyError as exc:
             raise MCPConnectionNotFoundError(
                 f"no MCP connection registered with id {connection_id!r}"
             ) from exc
-        if workspace_id is not None and self._owners.get(connection_id) != workspace_id:
-            raise MCPConnectionNotFoundError(
-                f"no MCP connection registered with id {connection_id!r}"
-            )
-        return client
 
     # ------------------------------------------------------------------ #
     # Delegated operations                                               #
@@ -170,13 +181,11 @@ class MCPConnectionManager:
     def audit_entries(
         self, connection_id: str | None = None, *, workspace_id: uuid.UUID | None = None
     ) -> list[MCPAuditEntry]:
-        # Enforce tenant ownership before returning a connection's audit trail.
-        if connection_id is not None and workspace_id is not None:
-            self.get(connection_id, workspace_id=workspace_id)
+        if connection_id is not None:
+            self.get(connection_id, workspace_id=workspace_id)  # 404 unless the caller's own
+            return self._audits[workspace_id, connection_id].entries
         if isinstance(self._audit, InMemoryAuditLog):
-            if connection_id is None:
-                return self._audit.entries
-            return self._audit.for_connection(connection_id)
+            return self._audit.entries
         return []
 
 

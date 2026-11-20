@@ -181,6 +181,20 @@ controls:
       A secret stored for workspace A is not readable or listable via
       workspace B (SecretNotFoundError; list returns no cross-tenant rows).
 
+  - id: tenant-isolation-matrix
+    title: No workspace reaches another workspace's resources by naming them
+    spec: specs/003-containment FR-023, FR-024, FR-025 (PT-13)
+    mode: offline
+    check: check_tenant_isolation_matrix
+    asserts: >
+      tests/security/tenant_matrix.py maps every WorkspaceScopedModel subclass to the
+      routes that serve it, or to a reviewed reason it has none, and accounts for every
+      route, query and body parameter and MCP tool argument that names a resource. One of
+      each resource is made in workspace A; workspace B's admin names A's identifiers on
+      every such route and tool and gets the same answer as for an identifier of nothing
+      (writes refused with 403 or 404), never sees A's resources in a list, and leaves A's
+      reads unchanged. The defects in OPEN_DEFECTS must still fail until each is fixed.
+
   - id: crypto-default-fernet
     title: The default cipher is Fernet (authenticated encryption)
     spec: HARD-10 handshake (asserted here as a regression pin)
