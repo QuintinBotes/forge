@@ -85,6 +85,7 @@ from scf_db.models import (
     EstimationScale as EstimationScaleRow,
 )
 from scf_db.models import (
+    Project,
     Sprint,
     SprintBurndownSnapshot,
     SprintMemberCapacity,
@@ -569,6 +570,9 @@ class SprintService:
         if end_date < start_date:
             raise InvalidSprintRequest("end_date must be >= start_date")
         with self._sf() as session:
+            project = session.get(Project, project_id)
+            if project is None or project.workspace_id != workspace_id:
+                raise SprintNotFound(str(project_id))
             sprint = Sprint(
                 workspace_id=workspace_id,
                 project_id=project_id,

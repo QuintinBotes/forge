@@ -24,6 +24,7 @@ from scf_contracts.deployment import (
 )
 from scf_contracts.dtos import DeployRules
 from scf_contracts.enums import UserRole
+from scf_db.models import Project
 from scf_db.models.deployment import Deployment, Environment, EnvironmentPipeline
 from scf_db.risk_repository import DbRiskReader
 from scf_deploy.engine import DeploymentStateMachine
@@ -197,6 +198,9 @@ class DeploymentService:
         resolved = resolve_environments(spec, rules, requested_restricted=requested_restricted)
 
         with self._sf() as session:
+            project = session.get(Project, project_id)
+            if project is None or project.workspace_id != ws:
+                raise PipelineNotFoundError(str(project_id))
             repo = self._repo(session, ws)
             existing = repo.get_pipeline_for_project(project_id)
             if existing is None:
