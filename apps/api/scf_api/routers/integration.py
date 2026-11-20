@@ -41,7 +41,11 @@ from scf_api.observability.audit import AuditCategory, AuditLog
 from scf_api.observability.redaction import redact_mapping, redact_text
 from scf_api.routers._rbac import require_permission
 from scf_api.routers.agent import AgentRunStore, get_agent_store
-from scf_api.services.context_service import record_pull_request_outcome
+from scf_api.services.change_outcomes import record_change_event
+from scf_api.services.context_service import (
+    record_pull_request_outcome,
+    resolve_run_for_pull_request,
+)
 from scf_api.settings import Settings, get_settings
 from scf_contracts import (
     ApprovalRequest,
@@ -381,8 +385,9 @@ def get_github_webhook_secret() -> str | None:
 def get_feedback_session_factory() -> sessionmaker[Session]:
     """Session factory for the webhook's PR-outcome feedback write (spec J).
 
-    Separate (overridable) dependency, opened only for ``pull_request``
-    deliveries, so the offline CI-parsing path never touches the database.
+    Separate (overridable) dependency, opened only for ``pull_request`` and
+    ``pull_request_review`` deliveries, so the offline CI-parsing path never
+    touches the database.
     """
     return get_session_factory()
 
@@ -573,19 +578,31 @@ def github_health(client: GitHubOptionalDep) -> HealthResult:
     return client.health()
 
 
-def _record_pr_feedback(factory: sessionmaker[Session], event: WebhookEvent) -> None:
-    """Write outcome feedback for a closed PR (spec J §2.5); else no-op.
+#: The ``(event, action)`` deliveries that say something about a run's change.
+_CHANGE_DELIVERIES = frozenset(
+    {
+        ("pull_request", "closed"),
+        ("pull_request", "reopened"),
+        ("pull_request", "synchronize"),
+        ("pull_request_review", "submitted"),
+    }
+)
 
-    Only a ``pull_request`` event with ``action == "closed"`` resolves to
-    an agent run (recorded repo + PR number, else the head branch);
-    ``merged`` reinforces every fact/memory in the run's ``context_refs``,
-    an unmerged close weakens them. Idempotent per ``(run_id, fact_id)``;
-    a PR that maps to no run is ignored.
+
+def _record_pr_feedback(factory: sessionmaker[Session], event: WebhookEvent) -> None:
+    """Write what a run's PR delivery says (spec J §2.5, spec 005 FR-009); else no-op.
+
+    A ``pull_request`` ``closed``/``reopened``/``synchronize`` or
+    ``pull_request_review`` ``submitted`` delivery resolves, once, to an agent run
+    (recorded repo + PR number, else the head branch). On ``closed``, ``merged`` reinforces every
+    fact/memory in the run's ``context_refs`` and an unmerged close weakens
+    them, idempotent per ``(run_id, fact_id)``. Every such delivery then records
+    the change outcome, a revert or an intervention (``change_outcomes``),
+    idempotent under redelivery. A PR that maps to no run is ignored.
     """
-    if (event.event_type or "").lower() != "pull_request":
-        return
+    event_type = (event.event_type or "").lower()
     payload: dict[str, Any] = event.payload or {}
-    if payload.get("action") != "closed":
+    if (event_type, payload.get("action")) not in _CHANGE_DELIVERIES:
         return
     pull_request = payload.get("pull_request")
     if not isinstance(pull_request, dict):
@@ -615,13 +632,20 @@ def _record_pr_feedback(factory: sessionmaker[Session], event: WebhookEvent) -> 
         and head_repo_name != base_name
     ):
         effective_head_ref = None
+    repo = repo_full_name if isinstance(repo_full_name, str) else None
     with factory() as session:
-        record_pull_request_outcome(
+        run = resolve_run_for_pull_request(
+            session, repo_full_name=repo, number=number, head_ref=effective_head_ref
+        )
+        if payload.get("action") == "closed":
+            record_pull_request_outcome(session, run=run, merged=pull_request.get("merged") is True)
+        record_change_event(
             session,
-            repo_full_name=repo_full_name if isinstance(repo_full_name, str) else None,
+            run=run,
+            event_type=event_type,
+            payload=payload,
+            repo_full_name=repo,
             number=number,
-            merged=pull_request.get("merged") is True,
-            head_ref=effective_head_ref,
         )
 
 
