@@ -140,9 +140,26 @@ lock always wins over its own verdict:
   deadline. After it, the run is recorded escalated
   (`executor_unreachable: the unit may still exist`).
 
+A unit reaches its run record through SCF's API, never the database. At launch
+the worker issues a token that belongs to that run alone and puts it in the
+unit's environment as `FORGE_RUN_TOKEN`, next to `FORGE_RUN_API_URL`, which the
+worker passes on from its own environment. The run process
+(`python -m scf_worker.run_main`) reads its objective, appends its events and
+records its handoff with that token, and refuses to start when only one of the
+two is set. A request that fails to connect, or gets a server error, is tried up
+to three times; an event keeps its idempotency key across the attempts, so it is
+stored once. A refused token is not retried. When the handoff cannot be recorded,
+the process exits non-zero, naming the HTTP status or the connection error. The
+token lives for the wall-clock limit plus the grace period, or
+`FORGE_RUN_TOKEN_TTL_SECONDS` if that is shorter. Close-out revokes it, whether
+the run ends from its handoff or the reconciler ends it, and so does a failed
+launch. The token is never logged, audited or stored on the run; only its hash
+is kept until it is revoked.
+
 Launch and close-out each write one audit event (`agent_run.launched`,
 `agent_run.closed_out`) with the workspace, run, executor, unit and outcome, and
-no environment value. A failed audit write does not fail the run.
+no environment value. Issuing the token writes `run_token.issued`. A failed audit
+write does not fail the run.
 
 | Env var | Default | Purpose |
 |---|---|---|
@@ -151,6 +168,8 @@ no environment value. A failed audit write does not fail the run.
 | `FORGE_RUN_TIME_LIMIT` | `3600` | a run's wall-clock limit (s), in the run process and the reconciler |
 | `FORGE_RUN_RECONCILE_INTERVAL_SECONDS` | `60` | how often the reconciler runs |
 | `FORGE_RUN_RECONCILE_GRACE_SECONDS` | `300` | how long past the wall-clock limit a unit may run before it is stopped |
+| `FORGE_RUN_API_URL` | unset | the address of SCF's API that a launched unit reaches its run record at; set it on the worker |
+| `FORGE_RUN_TOKEN` | set per unit | the run's own token; the worker issues it at launch, never set it yourself |
 
 ## Related
 
