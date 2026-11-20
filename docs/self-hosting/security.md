@@ -651,6 +651,47 @@ curl -fsS -X POST https://<host>/api/auth/device/approve \
   `authorization_pending`, `slow_down`, `access_denied`, `expired_token` or
   `invalid_grant`.
 
+## Run tokens: a run process reaches only its own run record
+
+A run process that executes one agent run in its own container or Job never
+holds the database credential (spec 011, FR-011). It reaches its run record
+through the API with a **run token**: a token that belongs to exactly one run of
+one workspace and expires. The worker issues one with
+`scf_api.auth.run_token.issue_run_token` and revokes it with `revoke_run_token`.
+Nothing issues one at launch yet, the client a run process uses is #257, and how
+a token reaches a Kubernetes pod is still open (FR-013).
+
+| Route (run token only) | What it does |
+|---|---|
+| `GET /agent/runs/{run_id}/record/inputs` | The run's stored objective. |
+| `POST /agent/runs/{run_id}/record/events` | Appends one event (`type`, `summary`, `payload`). SCF numbers it, redacts and truncates its text as the worker does, and sets its provenance (`enforcement`, `observed_by`, `enforceable`); the caller's claims are ignored. A type outside the event vocabulary gets `422`. A retry with the same `Idempotency-Key` stores one event. |
+| `POST /agent/runs/{run_id}/record/handoff` | Records the run's result for close-out, once: a second attempt gets `409` and the first is kept. |
+
+- **Its own run, nothing else.** These routes accept only the live run token of
+  the run in the path, read from `Authorization: Bearer`. Every other
+  credential gets `401`: API keys of every role, agents' tokens, personal tokens
+  of every scope set, sessions, a token in `X-API-Key` or the session cookie, and
+  another run's token, whether or not that run exists. A run token is not an API
+  key: every other route that reads a credential refuses it with `401`, a
+  socket closes `1008`, and a public route answers it as it answers no
+  credential.
+- **Short-lived.** It lives as long as its run may: the wall-clock limit
+  (`FORGE_RUN_TIME_LIMIT`) plus the reconciler's grace
+  (`FORGE_RUN_RECONCILE_GRACE_SECONDS`), or `FORGE_RUN_TOKEN_TTL_SECONDS` when
+  that is shorter. It is refused once it expires, is revoked, is replaced by a
+  newer token of the same run, or once its run is closed out.
+- **Never written down.** The plaintext is returned once. The run keeps only its
+  SHA-256 and expiry (`agent_run.output["run_token"]`), which close-out removes.
+  Text in events and logs is scrubbed of anything shaped like a run token
+  (`scf_run_…`), such as one an agent read from its environment.
+- **Audited.** Issuing a token (`run_token.issued`) and recording a handoff
+  (`agent_run.handoff_recorded`) each write one audit entry naming the
+  workspace, the run and the token's expiry.
+- **What it is not.** The run process is SCF's own code, trusted like the
+  worker. The token limits what a leaked credential can do (one run's record,
+  for at most one run's lifetime); it is not a sandbox boundary, and it does not
+  protect a run's record from the code running in that run.
+
 ## Enterprise SSO — SAML + SCIM (F33)
 
 - **SAML 2.0 (SCF as SP).** Per-workspace federation with a corporate IdP

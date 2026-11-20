@@ -238,7 +238,7 @@ command.
 | FR-014, FR-016, FR-018, FR-019, FR-021, FR-022, FR-023 | #239 |
 | FR-020 and FR-010 for run containers, FR-030 for Docker per-run execution | #240 |
 | FR-013 (secrets by reference), FR-020 for run Jobs | #241 |
-| FR-013 (the run-scoped token and the API routes a run process uses) | not yet assigned to an issue |
+| FR-013 (the run-scoped token and the API routes a run process uses) | #256; the client a run process uses is #257 |
 | FR-024, FR-030 for Kubernetes per-run execution | #242 |
 | FR-025 to FR-029 | #236 |
 

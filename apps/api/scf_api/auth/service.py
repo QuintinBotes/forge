@@ -46,6 +46,7 @@ from scf_api.auth.models import OAuthChallenge, OAuthResult
 from scf_api.auth.oauth import OAuthClient, UnsupportedOAuthProviderError
 from scf_api.auth.providers import get_default_provider, resolve_secret
 from scf_api.auth.rbac import Permission, PermissionDeniedError, can, ensure
+from scf_api.auth.run_token import RUN_TOKEN_PREFIX
 from scf_api.auth.vault import SecretStore, SecretVault
 from scf_api.db import get_db
 from scf_api.deps import SESSION_COOKIE, Principal, request_method
@@ -295,6 +296,8 @@ class AuthService:
         """
         from scf_api.auth.rbac import permissions_for
 
+        if token.startswith(RUN_TOKEN_PREFIX):  # only its own run's record accepts it (#256)
+            raise AuthenticationError("a run token is accepted only by its own run's record")
         if looks_like_jwt(token):
             if not self._auth_secret:
                 raise AuthenticationError(
@@ -630,12 +633,16 @@ def get_authenticated_principal(
 
 
 def ensure_run_token_owner(principal: Principal, session: Session | None) -> None:
-    """Refuse a run-start token whose owner's current role no longer grants ``run_agent``.
+    """Refuse a token that runs agents for a person whose role no longer grants ``run_agent``.
 
-    Spec L §6b: checked on every HTTP call and every socket, so demoting, deactivating
-    or removing the owner stops the token at once. Any other principal passes.
+    A run-start token (spec L §6b), and an agent's token bound to a person, which would
+    otherwise act as an agent-runner whatever its owner's role (#188, #256). Checked on
+    every HTTP call and every socket, so demoting, deactivating or removing the owner
+    stops the token at once. Any other principal passes, an unbound agent's token too.
     """
-    if not (principal.narrowed and principal.role is UserRole.AGENT_RUNNER):
+    # An unbound key's principal carries the key's own id as its user_id.
+    bound_agent = principal.agent and principal.user_id != principal.credential_id
+    if not (bound_agent or (principal.narrowed and principal.role is UserRole.AGENT_RUNNER)):
         return
     current = None
     if session is not None:
