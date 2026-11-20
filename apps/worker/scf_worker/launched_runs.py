@@ -255,7 +255,7 @@ def _finish(run: PreparedRun, result: AgentRunResult, record: dict[str, Any]) ->
         with create_session_factory()() as session:
             revoke_run_token(session, run_id=run.run_id, workspace_id=run.workspace_id)
     except Exception:  # recording the outcome removes the token too
-        logger.exception("could not revoke the run token of run %s", run.run_id)
+        logger.exception("could not revoke the run process's access for run %s", run.run_id)
     try:
         close_out_run(run, result, reuse_existing=True)
     except Exception:  # recorded as failed before raising, unless that write failed too
