@@ -48,7 +48,15 @@ from scf_contracts.automation import (
     AutomationTriggerEnvelope,
     AutomationTriggerSource,
 )
-from scf_db.models import AutomationExecution, AutomationRule, Milestone, Sprint, Task, User
+from scf_db.models import (
+    AutomationExecution,
+    AutomationRule,
+    Milestone,
+    Project,
+    Sprint,
+    Task,
+    User,
+)
 
 _ACTIONS_ADAPTER: TypeAdapter[list[ActionSpec]] = TypeAdapter(list[ActionSpec])
 
@@ -189,6 +197,9 @@ class AutomationRuleService:
     ) -> AutomationRuleRead:
         spec = AutomationRuleSpec.model_validate(body.model_dump())
         with self._sf() as session:
+            project = session.get(Project, project_id)
+            if project is None or project.workspace_id != workspace_id:
+                raise RuleNotFound(str(project_id))
             warnings = validate_rule(spec, self._ref_context(session, workspace_id, project_id))
             row = AutomationRule(
                 workspace_id=workspace_id,

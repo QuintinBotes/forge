@@ -171,10 +171,20 @@ class BenchmarkService:
         return registered
 
     def list_suites(
-        self, *, published_only: bool = False, public_only: bool = False
+        self,
+        *,
+        published_only: bool = False,
+        public_only: bool = False,
+        workspace_id: uuid.UUID | None = None,
     ) -> list[BenchmarkSuite]:
+        """Every suite; given ``workspace_id``, only global suites and that workspace's own."""
         with self._session_factory() as session:
             stmt = select(BenchmarkSuite).order_by(BenchmarkSuite.slug, BenchmarkSuite.version)
+            if workspace_id is not None:
+                stmt = stmt.where(
+                    BenchmarkSuite.workspace_id.is_(None)
+                    | (BenchmarkSuite.workspace_id == workspace_id)
+                )
             if published_only:
                 stmt = stmt.where(BenchmarkSuite.published.is_(True))
             if public_only:
@@ -191,9 +201,11 @@ class BenchmarkService:
         """True iff the suite may be exposed via the public (unauthenticated) API."""
         return suite.workspace_id is None and not suite.private
 
-    def get_suite(self, slug: str, version: str) -> BenchmarkSuite:
+    def get_suite(
+        self, slug: str, version: str, *, workspace_id: uuid.UUID | None = None
+    ) -> BenchmarkSuite:
         with self._session_factory() as session:
-            suite = self._require_suite(session, slug, version)
+            suite = self._require_suite(session, slug, version, workspace_id)
             return suite
 
     def load_suite_cases(self, suite: BenchmarkSuite) -> tuple[BenchmarkScoring, list[GoldenCase]]:
@@ -236,7 +248,7 @@ class BenchmarkService:
                 f"submission is {payload_bytes} bytes > cap {self._max_bytes}"
             )
         with self._session_factory() as session:
-            suite = self._require_suite(session, slug, version)
+            suite = self._require_suite(session, slug, version, workspace_id)
             if request.suite_content_hash and request.suite_content_hash != suite.content_hash:
                 raise SuiteContentDriftError(
                     f"submitted suite_content_hash {request.suite_content_hash} does not "
@@ -391,7 +403,7 @@ class BenchmarkService:
         self, slug: str, version: str, *, workspace_id: uuid.UUID
     ) -> list[tuple[BenchmarkSubmission, BenchmarkSuite]]:
         with self._session_factory() as session:
-            suite = self._require_suite(session, slug, version)
+            suite = self._require_suite(session, slug, version, workspace_id)
             rows = session.scalars(
                 select(BenchmarkSubmission)
                 .where(
@@ -480,13 +492,17 @@ class BenchmarkService:
         )
 
     @staticmethod
-    def _require_suite(session: Session, slug: str, version: str) -> BenchmarkSuite:
+    def _require_suite(
+        session: Session, slug: str, version: str, workspace_id: uuid.UUID | None = None
+    ) -> BenchmarkSuite:
+        """The suite, or not found; given ``workspace_id``, also when another workspace owns it."""
         suite = session.scalars(
             select(BenchmarkSuite).where(
                 BenchmarkSuite.slug == slug, BenchmarkSuite.version == version
             )
         ).first()
-        if suite is None:
+        foreign = suite is not None and suite.workspace_id not in (None, workspace_id)
+        if suite is None or (workspace_id is not None and foreign):
             raise SuiteNotFoundError(f"{slug}@{version}")
         return suite
 
