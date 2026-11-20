@@ -7,34 +7,55 @@ entry point always gets an explicit environment mapping: the root conftest sets
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 import scf_db.session
 import scf_worker.agent_runner as agent_runner_module
+import scf_worker.api_run_record as api_run_record
 import scf_worker.multi_agent as multi_agent
+import scf_worker.run_main as run_main
 import scf_worker.tasks.pm_dispatch as pm_dispatch
 from scf_agent.testing import ScriptedModelClient, finish_response, tool_response
-from scf_contracts import AgentObjective, AgentRunResult, RunStatus
+from scf_api.auth.run_token import issue_run_token, revoke_run_token
+from scf_api.deps import get_db
+from scf_api.main import create_app
+from scf_api.settings import Settings
+from scf_contracts import (
+    AgentObjective,
+    AgentRunResult,
+    RunEventDraft,
+    RunEventType,
+    RunStatus,
+    Step,
+)
 from scf_db.base import Base
-from scf_db.models import AgentRun, AgentRunEvent, Workspace
+from scf_db.models import AgentRun, AgentRunEvent, AuditLog, Workspace
 from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_worker.agent_runner import close_out_run, execute_run, prepare_run, run_agent_task
+from scf_worker.api_run_record import ATTEMPTS, ApiRunRecord
 from scf_worker.finalizer import GitHubAppCredentials
 from scf_worker.reliability import InMemoryDedupBackend, set_dedup_backend
 from scf_worker.run_main import (
+    RUN_API_URL_ENV,
     RUN_PROCESS_ALLOWED_ENV,
     RUN_PROCESS_DENIED_ENV,
     RUN_TIME_LIMIT_ENV,
+    RUN_TOKEN_ENV,
     main,
 )
 from scf_worker.run_record import HANDOFF_KEY, InProcessRunRecord
@@ -560,3 +581,345 @@ def test_a_supervised_objective_hands_off_what_the_celery_task_returns(
     assert handoff.run_id == process_id and celery.run_id == celery_id
     assert [s.kind for s in handoff.steps] == [s.kind for s in celery.steps]
     assert _row(factory, process_id).status is DbRunStatus.PENDING
+
+
+# --------------------------------------------------------------------------- #
+# #257: the record over SCF's API, with the run's token                       #
+# --------------------------------------------------------------------------- #
+
+API = "http://scf-api.test"
+#: The default wall-clock limit plus the reconciler's default grace.
+DEADLINE = 3_900.0
+
+
+class Wire:
+    """SCF's API reached in-process; it can refuse connections, throttle or lose an answer.
+
+    The faults apply to every call, or only to the call ``only`` names (``"POST handoff"``).
+    """
+
+    def __init__(self, api: TestClient) -> None:
+        self.api = api
+        self.requests: list[httpx.Request] = []
+        self.only: str | None = None
+        self.unreachable = False
+        self.lost_answers = 0
+        self.throttled = 0
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        faulty = self.only in (None, self.calls()[-1])
+        if self.unreachable and faulty:
+            raise httpx.ConnectError("connection refused", request=request)
+        if self.throttled and faulty:  # the rate limiter answers; the route never runs
+            self.throttled -= 1
+            return httpx.Response(429, json={"detail": "slow down"}, headers={"Retry-After": "30"})
+        answer = self.api.request(
+            request.method, request.url.path, headers=request.headers, content=request.content
+        )
+        if self.lost_answers and faulty:  # the API handled the request; its answer never arrives
+            self.lost_answers -= 1
+            raise httpx.ReadError("connection reset by peer", request=request)
+        kind = answer.headers.get("content-type", "application/json")
+        return httpx.Response(
+            answer.status_code, content=answer.content, headers={"content-type": kind}
+        )
+
+    def calls(self) -> list[str]:
+        return [f"{r.method} {r.url.path.rsplit('/', 1)[1]}" for r in self.requests]
+
+
+@pytest.fixture
+def wire(factory: sessionmaker[Session]) -> Iterator[Wire]:
+    """The API application on the test database, request replay off: the key alone dedupes."""
+    app = create_app(Settings(ratelimit_enabled=False, idempotency_enabled=False))
+
+    def database() -> Iterator[Session]:
+        with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = database
+    with TestClient(app) as api:
+        yield Wire(api)
+
+
+@pytest.fixture(autouse=True)
+def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """The pauses the API record takes between attempts, recorded instead of slept."""
+    slept: list[float] = []
+    monkeypatch.setattr(api_run_record, "time", SimpleNamespace(sleep=slept.append))
+    return slept
+
+
+def _token(factory: sessionmaker[Session], run_id: uuid.UUID) -> str:
+    """What the worker issues at launch."""
+    with factory() as s:
+        return issue_run_token(
+            s, run_id=run_id, workspace_id=WS, run_deadline_seconds=DEADLINE
+        ).token
+
+
+def _api_record(wire: Wire, run_id: uuid.UUID, token: str) -> ApiRunRecord:
+    return ApiRunRecord(run_id, WS, api_url=API, token=token, transport=httpx.MockTransport(wire))
+
+
+def _through_api(
+    factory: sessionmaker[Session], wire: Wire, run_id: uuid.UUID, *, token: str | None = None
+) -> int:
+    """The entry point as a unit runs it: its run token and the API's address, no database."""
+    env = {RUN_TOKEN_ENV: token or _token(factory, run_id), RUN_API_URL_ENV: API}
+    with pytest.MonkeyPatch.context() as mp:
+        # Only the network is swapped: the entry point still picks the API record itself.
+        mp.setattr(
+            run_main, "ApiRunRecord", partial(ApiRunRecord, transport=httpx.MockTransport(wire))
+        )
+        for module in (agent_runner_module, multi_agent, scf_db.session):
+            mp.setattr(module, "create_session_factory", _no_database)
+        return main([str(run_id), str(WS)], env=env)
+
+
+def _no_token(text: str, token: str) -> bool:
+    secret = token.split("_", 4)[4]
+    return token not in text and secret not in text
+
+
+# Criterion 1: the port over the API --------------------------------------- #
+
+
+def test_the_api_record_reads_appends_and_hands_off_through_the_run_record_routes(
+    factory, wire
+) -> None:
+    run_id, inputs = _seed(factory, repo=False)
+    token = _token(factory, run_id)
+    record = _api_record(wire, run_id, token)
+
+    assert record.inputs() == inputs
+    assert record.emit(RunEventDraft(type=RunEventType.THREAD_STARTED, summary="started"))
+    record.on_step(Step(output=f"thinking about {SECRET}"))
+    assert record.record_handoff(
+        AgentRunResult(run_id=run_id, status=RunStatus.SUCCEEDED, summary="done")
+    )
+
+    assert wire.calls() == ["GET inputs", "POST events", "POST events", "POST handoff"]
+    assert {r.url.path.rsplit("/", 1)[0] for r in wire.requests} == {f"/agent/runs/{run_id}/record"}
+    assert all(r.headers["authorization"] == f"Bearer {token}" for r in wire.requests)
+    events = _events(factory, run_id)
+    assert [(e.seq, e.type) for e in events] == [(1, "thread.started"), (2, "agent.message")]
+    assert SECRET not in repr([e.summary for e in events])
+    assert _handoff(factory, run_id).summary == "done"
+    row = _row(factory, run_id)
+    assert row.status is DbRunStatus.PENDING and row.completed_at is None
+
+
+# Criterion 2: the entry point picks it, and opens no database connection --- #
+
+
+def test_with_its_token_and_the_api_address_the_entry_point_records_through_the_api(
+    factory, mirror, scripted, wire
+) -> None:
+    run_id, _ = _seed(factory)
+
+    assert _through_api(factory, wire, run_id) == 0
+
+    handoff = _handoff(factory, run_id)
+    assert handoff.status is RunStatus.SUCCEEDED, handoff.error
+    assert handoff.artifacts["branch"] == run_branch("scf", run_id)
+    assert wire.calls()[0] == "GET inputs" and wire.calls()[-1] == "POST handoff"
+    types = _types(factory, run_id)
+    assert types[0] == "thread.started" and "tool.completed" in types
+    assert len(types) == wire.calls().count("POST events")
+    row = _row(factory, run_id)
+    assert row.status is DbRunStatus.PENDING and row.completed_at is None
+
+
+# Criterion 3: the two names ------------------------------------------------ #
+
+
+@pytest.mark.parametrize("held", [RUN_TOKEN_ENV, RUN_API_URL_ENV])
+def test_with_only_one_of_the_token_and_the_api_address_the_process_refuses_to_start(
+    held: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    built: list[object] = []
+
+    code = main(
+        [str(uuid.uuid4()), str(WS)],
+        env={held: "value-that-must-not-print"},
+        record=lambda *a: built.append(a),
+    )
+
+    [missing] = {RUN_TOKEN_ENV, RUN_API_URL_ENV} - {held}
+    err = capsys.readouterr().err
+    assert code == 2 and built == []
+    assert missing in err and "value-that-must-not-print" not in err
+    assert {RUN_TOKEN_ENV, RUN_API_URL_ENV} <= RUN_PROCESS_ALLOWED_ENV
+
+
+# Criterion 4: the same run in process and through the API ----------------- #
+
+
+def test_in_process_and_through_the_api_the_entry_point_leaves_the_same_run(
+    factory, mirror, scripted, wire
+) -> None:
+    rows = []
+    for through_api in (False, True):
+        run_id, inputs = _seed(factory)
+        run, refused = prepare_run(AgentObjective.model_validate(inputs))
+        assert refused is None
+        code = _through_api(factory, wire, run_id) if through_api else _run_process(factory, run_id)
+        assert code == 0
+        close_out_run(run, _handoff(factory, run_id))
+        rows.append(_row(factory, run_id))
+
+    local, remote = rows
+    assert remote.status is local.status is DbRunStatus.SUCCEEDED
+    assert _steps(remote) == _steps(local) != []
+    assert _artifacts(remote) == _artifacts(local)
+    assert remote.confidence == local.confidence == 0.8
+    assert _types(factory, remote.id) == _types(factory, local.id)
+    assert wire.requests and all(f"/runs/{remote.id}/" in r.url.path for r in wire.requests)
+
+
+# Criterion 5: a lost answer ------------------------------------------------ #
+
+
+def test_an_append_whose_answer_is_lost_is_retried_with_its_key_and_stored_once(
+    factory, wire
+) -> None:
+    run_id, _ = _seed(factory, repo=False)
+    record = _api_record(wire, run_id, _token(factory, run_id))
+    wire.lost_answers = 1
+
+    assert record.emit(RunEventDraft(type=RunEventType.AGENT_MESSAGE, summary="first"))
+    assert record.emit(RunEventDraft(type=RunEventType.AGENT_MESSAGE, summary="second"))
+
+    keys = [r.headers["idempotency-key"] for r in wire.requests]
+    assert len(keys) == 3 and keys[0] == keys[1] != keys[2]
+    assert [(e.seq, e.summary) for e in _events(factory, run_id)] == [(1, "first"), (2, "second")]
+
+
+# Criterion 6: refused or unreachable --------------------------------------- #
+
+
+@pytest.mark.parametrize("token", ["revoked", "another run's"])
+def test_a_refused_token_exits_non_zero_without_a_handoff_naming_the_status(
+    token: str, factory, mirror, wire, capsys, caplog
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    run_id, _ = _seed(factory)
+    if token == "revoked":
+        value = _token(factory, run_id)
+        with factory() as s:
+            assert revoke_run_token(s, run_id=run_id, workspace_id=WS)
+    else:
+        value = _token(factory, _seed(factory)[0])
+
+    assert _through_api(factory, wire, run_id, token=value) != 0
+
+    err = capsys.readouterr().err
+    assert "401" in err
+    assert _no_token(err, value) and _no_token(caplog.text, value)
+    assert wire.calls() == ["GET inputs", "POST handoff"]  # a refusal is never retried
+    assert HANDOFF_KEY not in (_row(factory, run_id).output or {})
+
+
+def test_an_unreachable_api_exits_non_zero_after_bounded_attempts_naming_the_error(
+    factory, mirror, wire, capsys, caplog
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    run_id, _ = _seed(factory)
+    token = _token(factory, run_id)
+    wire.unreachable = True
+
+    assert _through_api(factory, wire, run_id, token=token) != 0
+
+    err = capsys.readouterr().err
+    assert "ConnectError" in err
+    assert _no_token(err, token) and _no_token(caplog.text, token)
+    assert wire.calls() == ["GET inputs"] * ATTEMPTS + ["POST handoff"] * ATTEMPTS
+    assert HANDOFF_KEY not in (_row(factory, run_id).output or {})
+
+
+# Review fixes: a large handoff, a lost handoff answer, throttling ----------- #
+
+MIB = 1_048_576
+
+
+def test_a_handoff_over_the_body_limit_is_stored_and_one_over_its_own_cap_is_refused(
+    factory, wire
+) -> None:
+    """Tool output is kept in the steps; the in-process record has no size limit."""
+    run_id, _ = _seed(factory, repo=False)
+    token = _token(factory, run_id)
+    output = "x" * (3 * MIB // 2)
+    result = AgentRunResult(run_id=run_id, status=RunStatus.SUCCEEDED, steps=[Step(output=output)])
+
+    assert _api_record(wire, run_id, token).record_handoff(result)
+
+    assert _handoff(factory, run_id).steps[0].output == output
+    cap = Settings().run_handoff_max_body_bytes
+    record, auth = f"/agent/runs/{run_id}/record", {"Authorization": f"Bearer {token}"}
+    over_cap = wire.api.post(f"{record}/handoff", headers=auth, content=b"x" * (cap + 1))
+    other_route = wire.api.post(f"{record}/events", headers=auth, content=b"x" * (MIB + 1))
+    assert (over_cap.status_code, other_route.status_code) == (413, 413)
+
+
+def test_a_handoff_whose_answer_is_lost_is_recorded_once_and_the_process_exits_zero(
+    factory, mirror, scripted, wire
+) -> None:
+    run_id, _ = _seed(factory)
+    token = _token(factory, run_id)
+    wire.only, wire.lost_answers = "POST handoff", 1
+
+    assert _through_api(factory, wire, run_id, token=token) == 0
+
+    assert wire.calls()[-2:] == ["POST handoff", "POST handoff"]
+    assert _handoff(factory, run_id).status is RunStatus.SUCCEEDED
+    with factory() as s:
+        actions = list(s.scalars(select(AuditLog.action)))
+    assert actions.count("agent_run.handoff_recorded") == 1
+    # A 409 with no earlier attempt in doubt is still a refusal.
+    with pytest.raises(api_run_record.RunRecordError, match="409"):
+        _api_record(wire, run_id, token).record_handoff(AgentRunResult(run_id=run_id))
+
+
+def test_a_throttled_append_waits_and_is_retried_with_its_key_and_stored_once(
+    factory, wire, waits
+) -> None:
+    run_id, _ = _seed(factory, repo=False)
+    record = _api_record(wire, run_id, _token(factory, run_id))
+    wire.throttled = 1
+
+    assert record.emit(RunEventDraft(type=RunEventType.AGENT_MESSAGE, summary="first"))
+
+    keys = [r.headers["idempotency-key"] for r in wire.requests]
+    assert len(keys) == 2 and keys[0] == keys[1]
+    assert waits == [api_run_record.MAX_RETRY_AFTER_SECONDS]  # Retry-After: 30, capped
+    assert [(e.seq, e.summary) for e in _events(factory, run_id)] == [(1, "first")]
+    # A refusal other than 429 is still never retried.
+    assert not record.emit(RunEventDraft(type=RunEventType.THREAD_STATE, summary="mine"))
+    assert len(wire.requests) == 3
+
+
+def test_a_handoff_throttled_on_every_attempt_exits_non_zero_naming_429(
+    factory, mirror, wire, capsys
+) -> None:
+    run_id, _ = _seed(factory)
+    wire.throttled = 2 * ATTEMPTS
+
+    assert _through_api(factory, wire, run_id) != 0
+
+    assert "429" in capsys.readouterr().err
+    assert wire.calls() == ["GET inputs"] * ATTEMPTS + ["POST handoff"] * ATTEMPTS
+    assert HANDOFF_KEY not in (_row(factory, run_id).output or {})
+
+
+def test_a_handoff_without_its_runs_token_is_refused_before_its_body_is_read(factory, wire) -> None:
+    """The handoff's larger limit must not let any caller make the API parse a large body."""
+    run_id, _ = _seed(factory, repo=False)
+    junk = {"Authorization": "Bearer junk", "Content-Type": "application/json"}
+
+    resp = wire.api.post(
+        f"/agent/runs/{run_id}/record/handoff", headers=junk, content=b"{" * (2 * MIB)
+    )
+
+    assert resp.status_code == 401  # not 422: the body was never parsed

@@ -16,6 +16,7 @@ from scf_api.auth.vault import SecretExpiredError
 from scf_api.middleware import install_middleware, lifespan
 from scf_api.observability.redaction import install_log_redaction
 from scf_api.routers import FEATURE_ROUTERS, HEALTH_ROUTER
+from scf_api.routers.run_record import HANDOFF_PATH
 from scf_api.security import (
     BodySizeLimitMiddleware,
     RateLimitMiddleware,
@@ -83,7 +84,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             burst=cfg.ratelimit_burst,
             overrides=cfg.ratelimit_overrides,
         )
-    app.add_middleware(BodySizeLimitMiddleware, max_bytes=cfg.max_body_bytes)
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        max_bytes=cfg.max_body_bytes,
+        path_limits={HANDOFF_PATH: cfg.run_handoff_max_body_bytes},
+    )
 
     if cfg.cors_origins:
         allow_credentials = cfg.cors_allow_credentials

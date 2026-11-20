@@ -8,6 +8,8 @@ the same bound instead of buffering unbounded input into memory.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -38,18 +40,35 @@ async def _send_413(send: Send, max_bytes: int) -> None:
 
 
 class BodySizeLimitMiddleware:
-    """ASGI middleware enforcing ``max_bytes`` on request bodies (413 over)."""
+    """ASGI middleware enforcing ``max_bytes`` on request bodies (413 over).
 
-    def __init__(self, app: ASGIApp, *, max_bytes: int = DEFAULT_MAX_BODY_BYTES) -> None:
-        if max_bytes <= 0:
+    ``path_limits`` maps a path pattern (a regular expression matched against the whole
+    path) to its own bound, for the few routes whose bodies are larger by design.
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_bytes: int = DEFAULT_MAX_BODY_BYTES,
+        path_limits: Mapping[str, int] | None = None,
+    ) -> None:
+        limits = (path_limits or {}).items()
+        if max_bytes <= 0 or any(limit <= 0 for _, limit in limits):
             raise ValueError("max_bytes must be positive")
         self.app = app
         self.max_bytes = max_bytes
+        self.path_limits = [(re.compile(pattern), limit) for pattern, limit in limits]
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        path = scope.get("path", "")
+        max_bytes = next(
+            (limit for pattern, limit in self.path_limits if pattern.fullmatch(path)),
+            self.max_bytes,
+        )
 
         declared: int | None = None
         for name, value in scope.get("headers", []):
@@ -59,8 +78,8 @@ class BodySizeLimitMiddleware:
                 except ValueError:
                     declared = None
                 break
-        if declared is not None and declared > self.max_bytes:
-            await _send_413(send, self.max_bytes)
+        if declared is not None and declared > max_bytes:
+            await _send_413(send, max_bytes)
             return
 
         received = 0
@@ -71,7 +90,7 @@ class BodySizeLimitMiddleware:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:
+                if received > max_bytes:
                     # Fail the in-flight read; the handler sees a broken body
                     # rather than an unbounded buffer.
                     raise BodyTooLargeError
@@ -87,6 +106,6 @@ class BodySizeLimitMiddleware:
             await self.app(scope, counting_receive, tracking_send)
         except BodyTooLargeError:
             if not response_started:
-                await _send_413(send, self.max_bytes)
+                await _send_413(send, max_bytes)
             # If the response already started there is nothing safe to send;
             # the server will terminate the connection.

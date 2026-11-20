@@ -31,6 +31,8 @@ from typing import Any
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from scf_api.auth.run_token import issue_run_token, revoke_run_token
+from scf_api.observability.redaction import redact_text
 from scf_auth.redaction import SecretRedactor
 from scf_contracts import AgentObjective, AgentRunResult, RunStatus
 from scf_contracts.audit import AuditEvent
@@ -47,7 +49,7 @@ from scf_worker.beat import RUN_RECONCILE_TASK
 from scf_worker.celery_app import celery_app
 from scf_worker.dispatch import RepositoryUnavailable
 from scf_worker.run_executor import RunExecutor, build_executor, run_deadline_seconds
-from scf_worker.run_main import RUN_PROCESS_ALLOWED_ENV, existing_mirror
+from scf_worker.run_main import RUN_PROCESS_ALLOWED_ENV, RUN_TOKEN_ENV, existing_mirror
 from scf_worker.run_record import EXECUTOR_KEY, HANDOFF_KEY
 from scf_worker.tasks.audit import AUDIT_RECORD_TASK
 
@@ -74,14 +76,15 @@ EXECUTOR_UNREACHABLE = "executor_unreachable: the unit may still exist"
 RUN_RECORD_UNREADABLE = "run_record_unreadable"
 
 
-def unit_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:
+def unit_environment(run_token: str, env: Mapping[str, str] | None = None) -> dict[str, str]:
     """A unit's whole environment: only the names a run process may hold (FR-011).
 
-    The one place per-unit credentials join it (the run-scoped token is a
-    follow-up); the database credential is never one of them.
+    The one place per-unit credentials join it: the token of the unit's own run
+    (#257). The database credential is never one of them.
     """
     source = os.environ if env is None else env
-    return {name: value for name, value in source.items() if name in RUN_PROCESS_ALLOWED_ENV}
+    allowed = {name: value for name, value in source.items() if name in RUN_PROCESS_ALLOWED_ENV}
+    return {**allowed, RUN_TOKEN_ENV: run_token}
 
 
 def launch_run(parsed: AgentObjective, executor_name: str) -> dict[str, Any]:
@@ -132,6 +135,9 @@ def _launchable(row: AgentRun | None, workspace_id: uuid.UUID) -> bool:
 def _launch_once(run: PreparedRun, executor: RunExecutor) -> dict[str, Any] | None:
     """Launch under the run's row lock, so a concurrent duplicate waits, then sees the record.
 
+    The unit gets its run's token, which must be stored before the unit starts: issuing
+    commits, so the record is first stored as a claim (the close-out lease), which keeps
+    a duplicate delivery and the reconciler off the run until the unit is recorded.
     ``None`` when the run is not launchable. A failed launch takes close-out with it,
     for the caller to perform.
     """
@@ -139,14 +145,35 @@ def _launch_once(run: PreparedRun, executor: RunExecutor) -> dict[str, Any] | No
         row = session.get(AgentRun, run.run_id, with_for_update=True)
         if row is None or not _launchable(row, run.workspace_id):
             return None
-        record: dict[str, Any] = {"name": executor.name, "unit": None, "launched_at": _now()}
+        launched_at = _now()
+        record: dict[str, Any] = {"name": executor.name, "unit": None, "launched_at": launched_at}
         try:
             executor.preflight()
-            record["unit"] = executor.launch(run.run_id, run.workspace_id, env=unit_environment())
+            claim = {**record, "closing_since": launched_at}
+            row.output = {**(row.output or {}), EXECUTOR_KEY: claim}
+            token = issue_run_token(
+                session,
+                run_id=run.run_id,
+                workspace_id=run.workspace_id,
+                run_deadline_seconds=run_deadline_seconds(),
+            ).token
+            record["unit"] = executor.launch(
+                run.run_id, run.workspace_id, env=unit_environment(token)
+            )
         except Exception as exc:
-            reason = SecretRedactor().redact(f"{type(exc).__name__}: {exc}")
+            session.rollback()  # a failed flush or commit while issuing leaves it unusable
+            # Both redactors: a launch error may quote the unit's environment, token included.
+            reason = redact_text(SecretRedactor().redact(f"{type(exc).__name__}: {exc}"))
             record["error"] = f"the {executor.name} run executor could not launch the run: {reason}"
-            record["closing_since"] = record["launched_at"]
+            record["closing_since"] = launched_at
+        # Read afresh under the lock again: the unit may have recorded its handoff by now,
+        # and after a rollback another delivery may have taken the run.
+        row = session.get(AgentRun, run.run_id, with_for_update=True, populate_existing=True)
+        stored = (row.output or {}).get(EXECUTOR_KEY) if row is not None else None
+        if row is None or not (
+            _launchable(row, run.workspace_id) or (stored or {}).get("launched_at") == launched_at
+        ):
+            return None
         row.output = {**(row.output or {}), EXECUTOR_KEY: record}
         session.commit()
         return record
@@ -224,6 +251,11 @@ def _finish(run: PreparedRun, result: AgentRunResult, record: dict[str, Any]) ->
 
     ``None`` when no outcome was recorded: the claim then expires and is retried.
     """
+    try:  # the unit's record closes first: its token is refused from here on
+        with create_session_factory()() as session:
+            revoke_run_token(session, run_id=run.run_id, workspace_id=run.workspace_id)
+    except Exception:  # recording the outcome removes the token too
+        logger.exception("could not revoke the run process's access for run %s", run.run_id)
     try:
         close_out_run(run, result, reuse_existing=True)
     except Exception:  # recorded as failed before raising, unless that write failed too

@@ -657,9 +657,10 @@ A run process that executes one agent run in its own container or Job never
 holds the database credential (spec 011, FR-011). It reaches its run record
 through the API with a **run token**: a token that belongs to exactly one run of
 one workspace and expires. The worker issues one with
-`scf_api.auth.run_token.issue_run_token` and revokes it with `revoke_run_token`.
-Nothing issues one at launch yet, the client a run process uses is #257, and how
-a token reaches a Kubernetes pod is still open (FR-013).
+`scf_api.auth.run_token.issue_run_token` when it launches the run's unit, hands it
+to that unit alone as `FORGE_RUN_TOKEN`, and revokes it with `revoke_run_token` at
+close-out (see [reliability.md](reliability.md#run-executor)). How a token reaches a
+Kubernetes pod is still open (FR-013).
 
 | Route (run token only) | What it does |
 |---|---|

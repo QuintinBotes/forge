@@ -174,4 +174,11 @@ def check_run_executor(env: Mapping[str, str] | None = None) -> str:
             f"{RUN_EXECUTOR_ENV}={name} and {SANDBOX_BACKEND_ENV}={backend} "
             "name different platforms"
         )
+    from scf_worker.run_main import RUN_API_URL_ENV  # imported here, as above
+
+    if not source.get(RUN_API_URL_ENV):
+        raise ValueError(
+            f"{RUN_EXECUTOR_ENV}={name} needs {RUN_API_URL_ENV}: "
+            "its units reach their run record only through SCF's API"
+        )
     return name

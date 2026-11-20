@@ -11,10 +11,11 @@ The process reads the run's stored inputs, appends its events and records its
 handoff only through a :class:`~scf_worker.run_record.RunRecord`; it opens no
 database session itself. Per the owner decision of 2026-11-15 a run process reaches
 its record with a short-lived token scoped to its own run, against SCF's API, and
-never holds the database credential. That implementation is a follow-up: until it
-exists the entry point runs only with the in-process implementation, in tests and
-inline (``main(..., record=InProcessRunRecord-factory)``), and from the command
-line it exits non-zero with no handoff. Nothing launches it yet (#239).
+never holds the database credential: with ``FORGE_RUN_TOKEN`` and
+``FORGE_RUN_API_URL``, which the worker gives each unit it launches (#257), it uses
+:class:`~scf_worker.api_run_record.ApiRunRecord`. Without either it runs only with
+a record passed in (``main(..., record=...)``, in tests), and from the command line
+it exits non-zero with no handoff.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import threading
 import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from functools import partial
 from types import FrameType
 
 from celery.exceptions import SoftTimeLimitExceeded
@@ -34,14 +36,17 @@ from celery.exceptions import SoftTimeLimitExceeded
 from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, RunStatus
 from scf_coordinator import InMemorySubAgentRunSink
 from scf_worker.agent_runner import PreparedRun, execute_run, failure_result
+from scf_worker.api_run_record import ApiRunRecord, RunRecordError
 from scf_worker.dispatch import RepositoryUnavailable, split_repo_name, workspace_mirrors
 from scf_worker.multi_agent import run_supervised_objective
 from scf_worker.run_record import RunRecord
 
 __all__ = [
+    "RUN_API_URL_ENV",
     "RUN_PROCESS_ALLOWED_ENV",
     "RUN_PROCESS_DENIED_ENV",
     "RUN_TIME_LIMIT_ENV",
+    "RUN_TOKEN_ENV",
     "RunTimeLimitExceeded",
     "execute",
     "existing_mirror",
@@ -51,9 +56,12 @@ __all__ = [
 #: The run's wall-clock limit in seconds. A run process has no Celery time limit.
 RUN_TIME_LIMIT_ENV = "FORGE_RUN_TIME_LIMIT"
 DEFAULT_RUN_TIME_LIMIT = 3600.0
+#: The run's own token (issued per unit at launch) and the API address it is used against.
+RUN_TOKEN_ENV = "FORGE_RUN_TOKEN"
+RUN_API_URL_ENV = "FORGE_RUN_API_URL"
 
-#: What a run process may receive: model access, the loop's own settings, the
-#: sandbox backend and the mirrors the worker prepared (FR-011).
+#: What a run process may receive: model access, its run record, the loop's own
+#: settings, the sandbox backend and the mirrors the worker prepared (FR-011).
 RUN_PROCESS_ALLOWED_ENV = frozenset(
     {
         "PATH",
@@ -61,6 +69,8 @@ RUN_PROCESS_ALLOWED_ENV = frozenset(
         "LANG",
         "TMPDIR",
         RUN_TIME_LIMIT_ENV,
+        RUN_TOKEN_ENV,
+        RUN_API_URL_ENV,
         "FORGE_REPO_MIRRORS_DIR",
         "FORGE_AGENT_RUN_TOKEN_BUDGET",
         "FORGE_ALLOW_SCRIPTED_AGENT",
@@ -261,8 +271,9 @@ def main(
 ) -> int:
     """Run one run's loop and record its handoff: 0 when a handoff was recorded.
 
-    ``env`` is the process environment the denied names and the time limit are read
-    from (``os.environ`` by default). ``record`` builds the run's record port.
+    ``env`` is the process environment the denied names, the time limit, the run
+    token and the API address are read from (``os.environ`` by default). ``record``
+    builds the run's record port; without one, the token and address select the API's.
     """
     environ = os.environ if env is None else env
     if threading.current_thread() is not threading.main_thread():
@@ -288,20 +299,31 @@ def main(
             file=sys.stderr,
         )
         return 2
+    token, api_url = environ.get(RUN_TOKEN_ENV), environ.get(RUN_API_URL_ENV)
+    if bool(token) != bool(api_url):
+        missing = RUN_API_URL_ENV if token else RUN_TOKEN_ENV
+        print(f"run process refused to start: {missing} is not set", file=sys.stderr)
+        return 2
     parser = argparse.ArgumentParser(prog="python -m scf_worker.run_main")
     parser.add_argument("run_id", type=uuid.UUID)
     parser.add_argument("workspace_id", type=uuid.UUID)
     args = parser.parse_args(argv)
+    if record is None and token and api_url:
+        record = partial(ApiRunRecord, api_url=api_url, token=token)
     if record is None:
         print(
             "no run record is reachable: a run process never holds the database "
-            "credential, and the API-backed record is not implemented yet",
+            f"credential, and the API-backed record needs {RUN_TOKEN_ENV} and {RUN_API_URL_ENV}",
             file=sys.stderr,
         )
         return 1
     port = record(args.run_id, args.workspace_id)
     result = execute(port, args.run_id, args.workspace_id, time_limit=time_limit)
-    return 0 if port.record_handoff(result) else 1
+    try:
+        return 0 if port.record_handoff(result) else 1
+    except RunRecordError as exc:  # the status or the transport error, never the token
+        print(f"the handoff was not recorded: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

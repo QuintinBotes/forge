@@ -5,6 +5,8 @@ Against a fake executor held in memory and SQLite: no Docker, cluster or broker.
 
 from __future__ import annotations
 
+import json
+import logging
 import threading
 import time
 import uuid
@@ -14,15 +16,17 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 import scf_worker.agent_runner as agent_runner_module
 import scf_worker.launched_runs as launched_runs
 import scf_worker.multi_agent as multi_agent
+from scf_api.auth.run_token import RUN_TOKEN_KEY, require_run_token
 from scf_contracts import AgentObjective, AgentRunResult, RunStatus
 from scf_db.base import Base
-from scf_db.models import AgentRun, AgentRunEvent, Workspace
+from scf_db.models import AgentRun, AgentRunEvent, AuditLog, Workspace
 from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_worker.agent_runner import run_agent_task
 from scf_worker.beat import BEAT_SCHEDULE, RUN_RECONCILE_TASK, run_reconcile_seconds
@@ -44,13 +48,14 @@ from scf_worker.run_executor import (
     UnitState,
     check_run_executor,
 )
-from scf_worker.run_main import RUN_PROCESS_ALLOWED_ENV
+from scf_worker.run_main import RUN_API_URL_ENV, RUN_PROCESS_ALLOWED_ENV, RUN_TOKEN_ENV
 from scf_worker.run_record import EXECUTOR_KEY, HANDOFF_KEY, InProcessRunRecord
 
 WS = uuid.UUID("00000000-0000-0000-0000-000000000239")
 #: A credential a unit may hold, and the one it must never get.
 MODEL_KEY = "sk-" + "m" * 40
 DATABASE_URL = "postgresql://scf:db-password-must-not-leak@db/scf"
+API_URL = "http://scf-api:8000"
 
 
 @dataclass
@@ -187,6 +192,45 @@ def _killed(*_a: Any, **_kw: Any) -> Any:
     raise SystemExit("the worker was killed")
 
 
+def _audit_actions(factory: sessionmaker[Session]) -> list[str]:
+    """The audit chain in the database (issuing a run token writes there, #256)."""
+    with factory() as s:
+        return [entry.action for entry in s.scalars(select(AuditLog).order_by(AuditLog.seq))]
+
+
+def _unit_token(executor: FakeExecutor, unit: int = 0) -> str:
+    return executor.launched[unit]["env"][RUN_TOKEN_ENV]
+
+
+def _refused(factory: sessionmaker[Session], run_id: uuid.UUID, token: str) -> bool:
+    """Whether the run-record routes refuse ``token`` on its run now."""
+    with factory() as s:
+        try:
+            require_run_token(run_id, s, f"Bearer {token}")
+        except HTTPException as exc:
+            assert exc.status_code == 401
+            return True
+    return False
+
+
+def _written(factory: sessionmaker[Session], run_id: uuid.UUID) -> str:
+    """Everything stored for the run: its row, its events and the audit chain."""
+    with factory() as s:
+        row = s.get(AgentRun, run_id)
+        assert row is not None
+        values = {column.name: getattr(row, column.name) for column in AgentRun.__table__.columns}
+        events = s.scalars(select(AgentRunEvent).where(AgentRunEvent.run_id == run_id))
+        audit = s.scalars(select(AuditLog))
+        return json.dumps(
+            [
+                values,
+                [(e.summary, e.payload) for e in events],
+                [(a.details, a.reason, a.actor_label) for a in audit],
+            ],
+            default=str,
+        )
+
+
 # --------------------------------------------------------------------------- #
 # Criterion 1: the setting                                                    #
 # --------------------------------------------------------------------------- #
@@ -217,6 +261,7 @@ def test_inline_or_unset_runs_the_loop_in_the_worker_as_before(
     row = _row(factory, run_id)
     assert row.status is DbRunStatus.SUCCEEDED and EXECUTOR_KEY not in row.output
     assert _types(factory, run_id)[-1] == "thread.completed"
+    assert "run_token.issued" not in _audit_actions(factory)  # #257: inline holds no token
     _init_run_executor()  # starts
 
 
@@ -678,21 +723,36 @@ def test_the_worker_refuses_an_executor_its_sandbox_cannot_serve(
     [
         {},
         {RUN_EXECUTOR_ENV: "inline", "FORGE_SANDBOX_KIND": "worktree"},
-        {RUN_EXECUTOR_ENV: "docker", "FORGE_SANDBOX_KIND": "container"},
+        {RUN_EXECUTOR_ENV: "docker", "FORGE_SANDBOX_KIND": "container", RUN_API_URL_ENV: API_URL},
         {
             RUN_EXECUTOR_ENV: "docker",
             "FORGE_SANDBOX_KIND": "microvm",
             SANDBOX_BACKEND_ENV: "docker",
+            RUN_API_URL_ENV: API_URL,
         },
         {
             RUN_EXECUTOR_ENV: "kubernetes",
             "FORGE_SANDBOX_KIND": "container",
             SANDBOX_BACKEND_ENV: "kubernetes",
+            RUN_API_URL_ENV: API_URL,
         },
     ],
 )
 def test_an_executor_on_its_sandbox_platform_starts(env: dict[str, str]) -> None:
     assert check_run_executor(env) == env.get(RUN_EXECUTOR_ENV, "inline")
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_a_non_inline_executor_without_the_api_address_stops_the_worker_naming_it(
+    value: str | None,
+) -> None:
+    """Its units reach their run record only through SCF's API (#257)."""
+    env = {RUN_EXECUTOR_ENV: "docker", "FORGE_SANDBOX_KIND": "container"}
+    if value is not None:
+        env[RUN_API_URL_ENV] = value
+
+    with pytest.raises(ValueError, match=RUN_API_URL_ENV):
+        check_run_executor(env)
 
 
 # --------------------------------------------------------------------------- #
@@ -744,6 +804,163 @@ def test_an_audit_failure_does_not_fail_the_run(
     executor.units["unit-0"] = UnitState("exited", 0)
     assert close_out_task(str(run_id), str(WS))["status"] == "succeeded"
     assert _row(factory, run_id).status is DbRunStatus.SUCCEEDED
+
+
+# --------------------------------------------------------------------------- #
+# #257: the run token, issued at launch and revoked at close-out              #
+# --------------------------------------------------------------------------- #
+
+
+def test_launch_issues_one_token_per_run_and_hands_it_to_that_unit_alone(
+    factory, executor, no_loop, audits, caplog
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    run_a, inputs_a = _seed(factory)
+    run_b, inputs_b = _seed(factory)
+
+    run_agent_task(inputs_a)
+    run_agent_task(inputs_b)
+    run_agent_task(inputs_a)  # a duplicate delivery issues nothing
+
+    token_a, token_b = _unit_token(executor, 0), _unit_token(executor, 1)
+    assert len(executor.launched) == 2 and token_a != token_b
+    assert not _refused(factory, run_a, token_a) and not _refused(factory, run_b, token_b)
+    assert _refused(factory, run_b, token_a)
+    assert token_a not in repr(executor.launched[1]) and token_b not in repr(executor.launched[0])
+    assert _audit_actions(factory) == ["run_token.issued", "run_token.issued"]
+    # Run A hands off and is closed out; run B's unit is lost.
+    _hand_off(factory, run_a)
+    executor.units["unit-0"] = UnitState("exited", 0)
+    executor.units["unit-1"] = UnitState("exited", 137)
+    assert reconcile_launched_runs() == {"handoff": 1, EXECUTOR_LOST: 1}
+    written = [
+        repr(audits),
+        caplog.text,
+        _written(factory, run_a),
+        _written(factory, run_b),
+    ]
+    assert [text for text in written if token_a in text or token_b in text] == []
+
+
+def test_a_launch_error_that_quotes_the_units_environment_stores_no_token(
+    factory, executor, no_loop, audits, caplog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    launch = executor.launch
+
+    def leaky(run_id: uuid.UUID, workspace_id: uuid.UUID, *, env: Mapping[str, str]) -> str:
+        launch(run_id, workspace_id, env=env)
+        raise RuntimeError(f"container create failed: {dict(env)}")
+
+    monkeypatch.setattr(executor, "launch", leaky)
+    run_id, inputs = _seed(factory)
+
+    returned = run_agent_task(inputs)
+
+    token = _unit_token(executor)
+    assert returned["status"] == "failed" and "container create failed" in returned["error"]
+    written = [json.dumps(returned), repr(audits), caplog.text, _written(factory, run_id)]
+    assert [text for text in written if token in text] == []
+    assert _refused(factory, run_id, token)  # the failed launch's close-out revoked it
+
+
+@pytest.mark.parametrize(
+    "end", ["close-out", "outcome not recorded", EXECUTOR_LOST, WALL_CLOCK_EXCEEDED]
+)
+def test_close_out_and_the_reconciler_revoke_the_runs_token(
+    end: str, factory, executor, no_loop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FORGE_RUN_TIME_LIMIT", "600")
+    monkeypatch.setenv(RECONCILE_GRACE_ENV, "60")
+    run_id, inputs = _seed(factory)
+    run_agent_task(inputs)
+    token = _unit_token(executor)
+    assert not _refused(factory, run_id, token)
+
+    if end in ("close-out", "outcome not recorded"):
+        _hand_off(factory, run_id)
+        executor.units["unit-0"] = UnitState("exited", 0)
+        if end == "outcome not recorded":  # close-out claimed, but its outcome write failed
+            monkeypatch.setattr(agent_runner_module, "_record_run_outcome", lambda *a, **kw: None)
+        closed = close_out_task(str(run_id), str(WS))
+        assert closed["closed_out"] is (end == "close-out")
+    elif end == EXECUTOR_LOST:
+        executor.units.clear()
+        assert reconcile_launched_runs() == {EXECUTOR_LOST: 1}
+    else:
+        later = _launched_at(factory, run_id) + timedelta(seconds=661)
+        assert reconcile_launched_runs(now=later) == {WALL_CLOCK_EXCEEDED: 1}
+        assert _row(factory, run_id).status is DbRunStatus.ESCALATED
+
+    assert _refused(factory, run_id, token)
+
+
+def test_a_database_failure_while_issuing_the_token_fails_the_run_naming_the_launch(
+    factory, executor, no_loop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    issue = launched_runs.issue_run_token
+
+    def database_fails(session: Session, **kwargs: Any) -> Any:
+        session.add(Workspace(id=WS, name="Acme", slug="acme"))  # a duplicate: the flush fails
+        return issue(session, **kwargs)
+
+    monkeypatch.setattr(launched_runs, "issue_run_token", database_fails)
+    run_id, inputs = _seed(factory)
+
+    returned = run_agent_task(inputs)
+
+    assert returned["status"] == "failed"
+    assert returned["error"].startswith("the docker run executor could not launch the run")
+    assert "IntegrityError" in returned["error"]
+    row = _row(factory, run_id)
+    assert row.status is DbRunStatus.FAILED and row.output["error"] == returned["error"]
+    assert RUN_TOKEN_KEY not in row.output and executor.launched == []
+    assert "run_token.issued" not in _audit_actions(factory)
+
+
+# The launch window: the unit is starting and the worker has not recorded it yet.
+
+
+def test_a_handoff_recorded_while_the_unit_starts_is_kept_with_the_unit(
+    factory, executor, no_loop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launch = executor.launch
+
+    def hands_off_at_once(run_id: uuid.UUID, workspace_id: uuid.UUID, **kw: Any) -> str:
+        unit = launch(run_id, workspace_id, **kw)
+        _hand_off(factory, run_id)  # before the worker records the unit
+        return unit
+
+    monkeypatch.setattr(executor, "launch", hands_off_at_once)
+    run_id, inputs = _seed(factory)
+
+    assert run_agent_task(inputs)["launched"] is True
+
+    output = _row(factory, run_id).output
+    assert HANDOFF_KEY in output
+    assert output[EXECUTOR_KEY]["unit"] == "unit-0" and "closing_since" not in output[EXECUTOR_KEY]
+
+
+def test_while_the_unit_starts_neither_the_reconciler_nor_a_duplicate_acts_on_the_run(
+    factory, executor, no_loop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_id, inputs = _seed(factory)
+    during: list[Any] = []
+    launch = executor.launch
+
+    def launch_while_others_look(*args: Any, **kw: Any) -> str:
+        during.append(reconcile_launched_runs())
+        during.append(run_agent_task(inputs))
+        return launch(*args, **kw)
+
+    monkeypatch.setattr(executor, "launch", launch_while_others_look)
+
+    assert run_agent_task(inputs)["launched"] is True
+
+    assert during == [{}, {"launched": False, "run_id": str(run_id)}]
+    assert len(executor.launched) == 1
+    row = _row(factory, run_id)
+    assert row.completed_at is None and row.output[EXECUTOR_KEY]["unit"] == "unit-0"
 
 
 # --------------------------------------------------------------------------- #

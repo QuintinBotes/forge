@@ -13,7 +13,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from scf_api.auth.run_token import RunCaller, audit_run, require_run_token
@@ -24,6 +26,10 @@ from scf_contracts import AgentRunResult, RunEventDraft, RunEventType
 from scf_db.models import AgentRun
 
 router = APIRouter(prefix="/agent/runs/{run_id}/record", tags=["run-record"])
+
+#: The handoff route's path, for its own body bound (``FORGE_RUN_HANDOFF_MAX_BODY_BYTES``):
+#: a handoff carries every step of the run, tool output included.
+HANDOFF_PATH = r"/agent/runs/[^/]+/record/handoff"
 
 RunCallerDep = Annotated[RunCaller, Depends(require_run_token)]
 
@@ -91,12 +97,36 @@ def append_event(
         )
 
 
+async def _handoff_body(request: Request, _caller: RunCallerDep) -> AgentRunResult:
+    """The handoff, read only once the run token is checked.
+
+    Its body may be far larger than any other route's (``HANDOFF_PATH``), so a caller
+    without the run's token must be refused before it is read or parsed.
+    """
+    try:
+        return AgentRunResult.model_validate_json(await request.body())
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors(include_url=False)) from exc
+
+
 @router.post(
     "/handoff",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Record the run's handoff for close-out, once (run token only).",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {"schema": {"$ref": "#/components/schemas/AgentRunResult"}}
+            },
+        }
+    },
 )
-def record_run_handoff(result: AgentRunResult, caller: RunCallerDep, session: DbSession) -> None:
+def record_run_handoff(
+    result: Annotated[AgentRunResult, Depends(_handoff_body)],
+    caller: RunCallerDep,
+    session: DbSession,
+) -> None:
     result = result.model_copy(update={"run_id": caller.run_id})
     with _factory(session)() as writer:
         if not record_handoff(writer, caller.run_id, caller.workspace_id, result):
@@ -108,4 +138,4 @@ def record_run_handoff(result: AgentRunResult, caller: RunCallerDep, session: Db
         writer.commit()
 
 
-__all__ = ["router"]
+__all__ = ["HANDOFF_PATH", "router"]
