@@ -60,12 +60,10 @@ class ObservabilityService:
         self.audit = audit_log or default_audit_log()
         self.assembler = assembler or RunTraceAssembler()
         self.recorder = recorder or get_span_recorder()
-        self._runs: dict[uuid.UUID, RunTrace] = {}
-        # Per-workspace ownership of each recorded run (Phase-2 bug fix r3). The
-        # trace store is keyed by run id; ``None`` means a run was recorded
-        # without a tenant dimension and is not scoped (back-compat for direct
-        # unit tests). The router always records/queries with a workspace.
-        self._run_owners: dict[uuid.UUID, uuid.UUID] = {}
+        # Keyed by (workspace, run id), so a workspace recording a trace under another
+        # workspace's run id records its own (PT-13). ``None`` is a run recorded without
+        # a tenant dimension (direct unit tests); the router always passes a workspace.
+        self._runs: dict[tuple[uuid.UUID | None, uuid.UUID], RunTrace] = {}
 
     def record_run(
         self,
@@ -91,27 +89,22 @@ class ObservabilityService:
                 subagent_steps=subagent_steps,
             )
             key = run_id
-        self._runs[key] = trace
-        if workspace_id is not None:
-            self._run_owners[key] = workspace_id
+        self._runs[workspace_id, key] = trace
         return trace
 
     def get_run_trace(
         self, run_id: uuid.UUID, *, workspace_id: uuid.UUID | None = None
     ) -> RunTrace:
-        """Return a run's trace, scoped to ``workspace_id`` when supplied.
+        """Return the trace ``workspace_id`` recorded for a run.
 
         A run that is unknown *or* owned by a different workspace raises
         :class:`RunNotFoundError` (mapped to 404) so a caller cannot read another
         tenant's run trace by guessing/replaying its id.
         """
         try:
-            trace = self._runs[run_id]
+            return self._runs[workspace_id, run_id]
         except KeyError as exc:
             raise RunNotFoundError(run_id) from exc
-        if workspace_id is not None and self._run_owners.get(run_id) != workspace_id:
-            raise RunNotFoundError(run_id)
-        return trace
 
     def query_audit(
         self,
