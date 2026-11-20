@@ -289,6 +289,17 @@ class TemporalWorkflowEngine:
             raise self._map_update_error(exc, run.current_state, event) from exc
         return state_cast(new_state)
 
+    async def astation_gate_changed(
+        self, run_id: uuid.UUID, approval_request_id: uuid.UUID
+    ) -> None:
+        """Hint a line run that a human station's gate changed; it re-reads the gate."""
+        run = self._store.get(run_id)  # a run outside this workspace is not found
+        wf_id = run.context.get("temporal_workflow_id") or workflow_id(run_id)
+        client = await self._get_client()
+        await client.get_workflow_handle(wf_id).signal(
+            StationWorkflow.station_gate_changed, str(approval_request_id)
+        )
+
     async def aget_run(self, run_id: uuid.UUID) -> WorkflowRun:
         return self._store.get(run_id)
 

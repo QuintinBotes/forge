@@ -39,7 +39,11 @@ from scf_api.services.approval_service import (
     to_decider,
 )
 from scf_api.services.held_out import ScenariosUndecided, ensure_scenarios_decided
-from scf_api.services.workflow_gate_hook import APPROVED_EVENT_BY_GATE, WORKFLOW_RUN_SUBJECT
+from scf_api.services.workflow_gate_hook import (
+    APPROVED_EVENT_BY_GATE,
+    STEP_SUBJECT,
+    WORKFLOW_RUN_SUBJECT,
+)
 from scf_approval import (
     AlreadyResolvedError,
     ApprovalNotFoundError,
@@ -106,14 +110,16 @@ async def create_approval(
 
     Workflow-run gates are opened only by the workflow engines: their
     payload feeds the run's merge guard, so a caller-made one could assert
-    signals (e.g. ``ci_status_green``) SCF never observed (spec K §4.7).
+    signals (e.g. ``ci_status_green``) SCF never observed (spec K §4.7). So are
+    a line's human-station (``step``) gates, whose outcome moves the line (#180).
     """
-    if body.subject_type == WORKFLOW_RUN_SUBJECT and body.gate_type in APPROVED_EVENT_BY_GATE:
+    engine_subjects = (WORKFLOW_RUN_SUBJECT, STEP_SUBJECT)
+    if body.subject_type in engine_subjects and body.gate_type in APPROVED_EVENT_BY_GATE:
         # With or without workflow_run_id: the engine's idempotent open keys on
         # (subject, gate), so a caller-made request would be reused for the run.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="workflow_run gates are opened by the workflow engine",
+            detail=f"{body.subject_type} gates are opened by the workflow engine",
         )
     request = await service.create(
         workspace_id=principal.workspace_id,

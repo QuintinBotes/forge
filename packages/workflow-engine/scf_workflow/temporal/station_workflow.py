@@ -1,6 +1,6 @@
 """The durable line interpreter: ``forge.StationWorkflow`` (spec K §4.2, ADR-0020).
 
-A line run enters a state, runs its station (agent or service), and routes the
+A line run enters a state, runs its station (agent, service or human), and routes the
 station's outcome with the pure :class:`TransitionEvaluator` over string states.
 Every effect is an activity: ``forge.persist_station`` records each visit,
 ``forge.persist_transition`` the run's state and status. Visits are bounded by
@@ -9,8 +9,12 @@ edge parks the run (``escalated``) or fails it. A parked run waits for ``resume`
 (an Update, from a user); ``cancel_run`` (a Signal) cancels the in-flight activity,
 cleans up and ends the run as ``cancelled``.
 
-The params carry the revision's text, so replay never reads the database. Human
-stations are #180's: a line that holds one fails at that station.
+A human station opens its visit's approval request and waits; its outcome and the
+transition's actor are only what ``forge.read_station_gate`` reads from Postgres. The
+``station_gate_changed`` Signal only wakes the wait, which also wakes itself every 15
+minutes and at the gate's deadline (ADR-0020).
+
+The params carry the revision's text, so replay never reads the database.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ with workflow.unsafe.imports_passed_through():
         SUCCEEDED,
         UNROUTABLE_OUTCOMES,
         AgentStation,
+        HumanStation,
         LineDefinition,
         ServiceStation,
         parse_line,
@@ -52,6 +57,8 @@ with workflow.unsafe.imports_passed_through():
         RunAgentInput,
         ServiceStationInput,
         ServiceStationResult,
+        StationGateInput,
+        StationGateResult,
         StationParams,
         StationVisitRecord,
         TransitionRecord,
@@ -59,8 +66,10 @@ with workflow.unsafe.imports_passed_through():
     )
 
 #: An unrouted outcome in this set parks the run; any other unrouted outcome fails it.
+#: A ``pr`` gate approved with no attestation recorded for it: never routable, it parks.
+ATTESTATION_MISSING = "attestation_missing"
 PARK_OUTCOMES = frozenset(
-    {"awaiting_input", "low_confidence", "expired", "visit_limit", "no_checks"}
+    {"awaiting_input", "low_confidence", "expired", "visit_limit", "no_checks", ATTESTATION_MISSING}
 )
 VISIT_LIMIT = "visit_limit"
 BUDGET_EXHAUSTED = "budget_exhausted"
@@ -74,6 +83,11 @@ _HEARTBEAT = timedelta(seconds=120)
 _PERSIST_RETRY = RetryPolicy(maximum_attempts=0)  # 0 == unlimited
 _ONCE = RetryPolicy(maximum_attempts=1)
 _THRICE = RetryPolicy(maximum_attempts=3)
+_GATE_TIMEOUT = timedelta(seconds=60)
+#: A human station re-reads its gate at least this often, Signal or not.
+_GATE_WAKE = timedelta(minutes=15)
+#: Runs recorded before human stations ran failed at them; they replay that way.
+HUMAN_STATIONS_PATCH = "human-stations"
 
 
 class _Cancelled(Exception):
@@ -120,6 +134,7 @@ class StationWorkflow:
         self._cancel_requested = False
         self._cancel_reason = "cancelled"
         self._cancel_actor = "system"
+        self._gate_hint = False
 
     @workflow.run
     async def run(self, params: StationParams) -> str:
@@ -168,6 +183,7 @@ class StationWorkflow:
             status="running",
             service_name=station.service if isinstance(station, ServiceStation) else None,
         )
+        actor = "system"
         if visit > self._limits.get(state, station.max_visits):
             rec.outcome = VISIT_LIMIT
         elif isinstance(station, AgentStation) and self._budget_left(line) <= 0:
@@ -179,7 +195,9 @@ class StationWorkflow:
                 await self._run_agent(line, station, rec)
             elif isinstance(station, ServiceStation):
                 await self._run_service(station, rec)
-            else:  # human stations arrive with #180
+            elif workflow.patched(HUMAN_STATIONS_PATCH):
+                actor = await self._run_human(station, rec)
+            else:
                 rec.outcome, rec.error_code = "failed", "station_kind_unsupported"
             self._running = None
         outcome = rec.outcome or "failed"
@@ -209,7 +227,12 @@ class StationWorkflow:
             await self._park(state, outcome)
             return
         await self._transition(
-            to_state, outcome, terminals.get(to_state, "running"), payload, guards=guards
+            to_state,
+            outcome,
+            terminals.get(to_state, "running"),
+            payload,
+            actor=actor,
+            guards=guards,
         )
 
     def _budget_left(self, line: LineDefinition) -> int:
@@ -334,6 +357,65 @@ class StationWorkflow:
             {prefix + k: v for k, v in result.outputs.items() if isinstance(v, bool)}
         )
 
+    async def _run_human(self, station: HumanStation, rec: StationVisitRecord) -> str:
+        """Open the visit's gate and wait for it; returns the transition's actor.
+
+        Every wake reads the gate; past the deadline the read expires it if it is still
+        pending, so the loop always ends in a decision or ``expired``.
+        """
+        assert self._params is not None
+        deadline = workflow.now() + timedelta(seconds=station.sla_seconds)
+        refs = self._refs()
+        inp = StationGateInput(
+            workflow_run_id=self._params.workflow_run_id,
+            workspace_id=self._params.workspace_id,
+            state=rec.state,
+            visit=rec.visit,
+            gate=station.gate.value,
+            expires_at=deadline,
+            required_approvals=station.required_approvals,
+            summary=PLACEHOLDER_RE.sub(lambda m: str(refs.get(m[1], "")), station.summary or ""),
+        )
+        try:
+            # Cancellable: a pr gate reads the repository's policy, which can stall.
+            gate: StationGateResult = await self._cancellable(
+                workflow.start_activity(
+                    "forge.open_station_gate",
+                    arg=inp,
+                    start_to_close_timeout=_GATE_TIMEOUT,
+                    heartbeat_timeout=_HEARTBEAT,
+                    retry_policy=_PERSIST_RETRY,
+                    result_type=StationGateResult,
+                )
+            )
+            rec.approval_request_id, rec.status = gate.approval_request_id, "waiting"
+            await self._persist_station(rec)
+            while True:
+                left = (deadline - workflow.now()).total_seconds()
+                if left > 0:
+                    with suppress(TimeoutError):
+                        await workflow.wait_condition(
+                            lambda: self._gate_hint or self._cancel_requested,
+                            timeout=min(_GATE_WAKE.total_seconds(), left),
+                        )
+                self._check_cancel()
+                self._gate_hint = False
+                inp.expire = workflow.now() >= deadline
+                gate = await workflow.execute_activity(
+                    "forge.read_station_gate",
+                    arg=inp,
+                    start_to_close_timeout=_GATE_TIMEOUT,
+                    retry_policy=_PERSIST_RETRY,
+                    result_type=StationGateResult,
+                )
+                if gate.status != "pending":
+                    break
+        except ActivityError as exc:
+            _record_error(rec, exc)
+            return "system"
+        rec.outcome = gate.status
+        return gate.actor or "system"
+
     async def _cancellable(self, handle: Any) -> Any:
         """Await an activity; a cancel request cancels it (through its heartbeat)."""
         await workflow.wait_condition(lambda: handle.done() or self._cancel_requested)
@@ -424,6 +506,11 @@ class StationWorkflow:
         if actor:
             self._cancel_actor = actor
 
+    @workflow.signal
+    def station_gate_changed(self, approval_request_id: str) -> None:
+        """Wake a human station to read its gate now. The id is never trusted or used."""
+        self._gate_hint = True
+
     @workflow.query
     def current_state(self) -> str:
         return self._state
@@ -510,4 +597,4 @@ def _record_error(rec: StationVisitRecord, exc: ActivityError) -> None:
     rec.error_message = (cause.message if isinstance(cause, FailureError) else str(exc))[:500]
 
 
-__all__ = ["PARK_OUTCOMES", "StationWorkflow", "load_line"]
+__all__ = ["ATTESTATION_MISSING", "PARK_OUTCOMES", "StationWorkflow", "load_line"]

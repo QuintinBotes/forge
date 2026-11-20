@@ -43,6 +43,8 @@ from scf_worker.temporal_services import (
     guard_inputs_service,
     notify_service,
     open_pr_service,
+    open_station_gate_service,
+    read_station_gate_service,
     red_team_service,
     run_checks_service,
 )
@@ -173,7 +175,8 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
     #251 binds ``forge.run_checks`` and #252 the pull request (opened once).
     ``forge.resume_agent`` still refuses, and so does ``forge.run_agent`` for a line's
     agent station. No line service body is bound yet (#181), so every service
-    station reads ``not_configured``.
+    station reads ``not_configured``. A human station's gate is opened and read
+    through the approval tables (#180).
     """
     factory = factory or create_session_factory()
     return WorkflowActivities(
@@ -187,6 +190,8 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
         red_team_fn=red_team_service(factory),
         draft_scenarios_fn=draft_scenarios_service(factory),
         cleanup_fn=make_cleanup_fn(factory),
+        open_station_gate_fn=open_station_gate_service(factory),
+        read_station_gate_fn=read_station_gate_service(factory),
         allow_fakes=os.environ.get("FORGE_ALLOW_FAKE_ACTIVITIES") == "1",
     )
 

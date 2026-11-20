@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from scf_contracts import WorkflowState
@@ -107,6 +108,34 @@ class ServiceStationResult:
     outputs: dict[str, Any] = field(default_factory=dict)
     error_code: str | None = None
     error_message: str | None = None
+
+
+@dataclass
+class StationGateInput:
+    """Argument to ``forge.open_station_gate`` and ``forge.read_station_gate`` (spec K §4.2).
+
+    It names the visit; the activities find its gate by the visit, never by an id
+    a Signal carried.
+    """
+
+    workflow_run_id: uuid.UUID
+    workspace_id: uuid.UUID
+    state: str
+    visit: int
+    gate: str  # spec | plan | pr
+    expires_at: datetime
+    required_approvals: int = 1
+    summary: str = ""
+    #: ``read_station_gate`` only: the deadline passed, so a gate still pending expires.
+    expire: bool = False
+
+
+@dataclass
+class StationGateResult:
+    approval_request_id: uuid.UUID
+    status: str  # pending | approved | rejected | changes_requested | expired
+    #: ``user:<id>`` of whoever decided a decided gate.
+    actor: str | None = None
 
 
 @dataclass
@@ -360,6 +389,8 @@ __all__ = [
     "RunChecksInput",
     "ServiceStationInput",
     "ServiceStationResult",
+    "StationGateInput",
+    "StationGateResult",
     "StationParams",
     "StationVisitRecord",
     "TransitionRecord",

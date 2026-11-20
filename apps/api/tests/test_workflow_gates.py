@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -994,16 +995,19 @@ def test_pr_approval_without_merge_signals_is_recorded_and_synced_later(
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.parametrize("subject", ["workflow_run", "step"])
 @pytest.mark.parametrize("gate", ["spec", "plan", "pr"])
 def test_post_approvals_refuses_workflow_run_gates(
-    h: Harness, member: TestClient, gate: str
+    h: Harness, member: TestClient, gate: str, subject: str
 ) -> None:
+    """A ``step`` gate is a line's human station: a caller-made one on the visit's
+    (predictable) id would be the gate the station adopts (#180)."""
     run_id = uuid.uuid4()
     resp = member.post(
         "/approvals",
         json={
             "gate_type": gate,
-            "subject_type": "workflow_run",
+            "subject_type": subject,
             "subject_id": str(run_id),
             "workflow_run_id": str(run_id),
             "requested_actor": f"agent:{run_id}",
@@ -1013,6 +1017,91 @@ def test_post_approvals_refuses_workflow_run_gates(
 
     assert resp.status_code == 422, resp.text
     assert asyncio.run(h.repo.list(workspace_id=WS)) == []
+
+
+# --------------------------------------------------------------------------- #
+# 1i. A line's human-station gate only hints its run (#180)                   #
+# --------------------------------------------------------------------------- #
+
+
+class _StationEngine:
+    """Records the ``station_gate_changed`` hints the gate hook sends, or is down."""
+
+    def __init__(self, *, down: bool = False) -> None:
+        self.down = down
+        self.hints: list[tuple[uuid.UUID, uuid.UUID]] = []
+
+    @contextmanager
+    def __call__(self, workspace_id: uuid.UUID) -> Iterator[_StationEngine]:
+        if self.down:
+            raise RuntimeError("temporal unavailable")
+        yield self
+
+    async def astation_gate_changed(self, run_id: uuid.UUID, request_id: uuid.UUID) -> None:
+        self.hints.append((run_id, request_id))
+
+
+def _decide_station_gate(
+    engine: _StationEngine, run_id: str, gate: GateType, decider_id: uuid.UUID
+) -> tuple[ApprovalService, ApprovalRequest, Any]:
+    approvals = ApprovalService(
+        InMemoryApprovalRepository(),
+        build_gate_registry(InMemoryGrantStore(), engine_factory=engine),
+        ApprovalAuthorizer(),
+    )
+    request = asyncio.run(
+        approvals.create(
+            workspace_id=WS,
+            gate_type=gate,
+            subject_type="step",
+            subject_id=uuid.uuid4(),
+            workflow_run_id=uuid.UUID(run_id),
+            requested_actor=f"agent:{run_id}",
+        )
+    )
+    decider = ApprovalPrincipal(
+        kind="user", id=decider_id, role=ApprovalRole.MEMBER, workspace_id=WS
+    )
+    approve = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
+    resolution = asyncio.run(approvals.resolve(request.id, approve, decider, workspace_id=WS))
+    return approvals, request, resolution
+
+
+def test_a_pr_station_gate_attests_then_hints_its_run(
+    h: Harness, member: TestClient, decider_id: uuid.UUID
+) -> None:
+    run_id = _start(h, member)
+    h.seed_pr_evidence(run_id, merge_signals=False)
+    before = _run(member, run_id)["current_state"]
+    engine = _StationEngine()
+
+    approvals, request, resolution = _decide_station_gate(engine, run_id, GateType.PR, decider_id)
+
+    assert resolution.outcome.details["attested"] is True  # the wrapped hook ran unchanged
+    assert _attestations(h, run_id) == 1
+    # The proof the station requires before it takes the approval.
+    stored = asyncio.run(approvals.get(request.id, workspace_id=WS))
+    assert stored.gate_payload["attestation_id"] == resolution.outcome.details["attestation_id"]
+    assert engine.hints == [(uuid.UUID(run_id), request.id)]
+    # No event is submitted: the station reads its gate from the database itself.
+    assert "workflow_event" not in resolution.outcome.details
+    assert _run(member, run_id)["current_state"] == before
+
+
+def test_a_failed_station_hint_is_logged_and_the_decision_stands(
+    h: Harness, member: TestClient, decider_id: uuid.UUID, caplog: pytest.LogCaptureFixture
+) -> None:
+    run_id = _start(h, member)
+
+    with caplog.at_level(logging.ERROR, logger="scf_api.services.workflow_gate_hook"):
+        approvals, request, resolution = _decide_station_gate(
+            _StationEngine(down=True), run_id, GateType.PLAN, decider_id
+        )
+
+    assert resolution.status is GateStatus.APPROVED
+    assert resolution.outcome.completed
+    assert asyncio.run(approvals.get(request.id, workspace_id=WS)).status is GateStatus.APPROVED
+    assert "hinting line run" in caplog.text
 
 
 def test_a_caller_made_request_cannot_take_over_a_runs_gate(
