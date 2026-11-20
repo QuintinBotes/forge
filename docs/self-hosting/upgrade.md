@@ -70,6 +70,15 @@ On the Temporal engine, upgrade the Temporal workers before the API: a worker fr
 before automation lines (#179) would run a line's agent station as the task's own
 agent, so no API that starts lines may run beside one.
 
+Since #181 the release bundles the first line, `implementation_loop` (spec K §4.5),
+read-only: `POST /workflow/runs` with `"definition": "implementation_loop"` starts it
+on the Temporal engine, and a verified `workflow_template` package of that name, once
+installed, takes its place. The worker binds the line's eight service bodies; a worker
+from before #181 ends every such run at its first service station (`not_configured`),
+so upgrade the workers first here too. The line's agent stations still read
+`not_configured` until station agents are bound (#327). Its service bodies need the
+workspace's GitHub App credentials (#186) and a mirror on the worker.
+
 ## Verify after upgrading
 
 - `GET /health` returns 200 on `api` and `mcp-gateway`.

@@ -292,3 +292,49 @@ def test_check_runs_for_ref_reads_every_page_of_a_commits_check_runs() -> None:
     first = rec.requests[0]
     assert first.method == "GET"
     assert first.url.path == "/repos/acme/widgets/commits/abc123/check-runs"
+
+
+# --------------------------------------------------------------------------- #
+# mark_pr_ready (#181)                                                         #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("base_url", "graphql"),
+    [
+        ("https://api.github.com", "https://api.github.com/graphql"),
+        ("https://ghe.example/api/v3", "https://ghe.example/api/graphql"),
+    ],
+)
+@pytest.mark.parametrize("draft", [True, False])
+def test_mark_pr_ready_uses_graphql_only_for_a_draft(
+    base_url: str, graphql: str, draft: bool
+) -> None:
+    rec = RequestRecorder()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        rec.record(request)
+        if request.method == "GET":
+            return httpx.Response(200, json={"number": 7, "node_id": "PR_n7", "draft": draft})
+        return httpx.Response(200, json={"data": {"markPullRequestReadyForReview": {}}})
+
+    client = GitHubClient(token="t", base_url=base_url, transport=make_transport(handler))
+    client.mark_pr_ready("acme/widgets", 7)
+
+    assert rec.requests[0].url.path.endswith("/repos/acme/widgets/pulls/7")
+    if not draft:
+        assert len(rec.requests) == 1  # already ready: nothing to change
+        return
+    sent = rec.requests[1]
+    assert (sent.method, str(sent.url)) == ("POST", graphql)
+    assert json.loads(sent.content)["variables"] == {"id": "PR_n7"}
+
+
+def test_mark_pr_ready_raises_on_a_graphql_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"node_id": "PR_n7", "draft": True})
+        return httpx.Response(200, json={"errors": [{"message": "not permitted"}]})
+
+    with pytest.raises(GitHubError, match="not permitted"):
+        _client(handler).mark_pr_ready("acme/widgets", 7)

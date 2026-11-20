@@ -29,6 +29,7 @@ from scf_api.deps import Principal
 from scf_api.main import create_app
 from scf_api.services import workflow_engine
 from scf_contracts import UserRole
+from scf_contracts.lines import validate_line
 from scf_db.base import Base
 from scf_db.models import Project, Task, Workspace
 from scf_db.models.runs import WorkflowRun as DbWorkflowRun
@@ -37,11 +38,16 @@ from scf_db.models.workflow_editor import (
     WorkflowDefinitionSource,
 )
 from scf_db.models.workflow_editor import WorkflowDefinition as DbDefinition
+from scf_workflow.dsl import parse_definition
 from scf_workflow.editor.errors import UnknownDefinitionError
 from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
 from scf_workflow.editor.schemas import ImportRequest
 from scf_workflow.editor.service import WorkflowEditorService
-from scf_workflow.editor.store import ResolvingDefinitionProvider
+from scf_workflow.editor.store import (
+    ResolvingDefinitionProvider,
+    bundled_line_text,
+    bundled_revision_id,
+)
 from scf_workflow.temporal.payloads import StationParams, WorkflowEventPayload
 
 #: The authenticated principal's workspace (conftest's ``TEST_WORKSPACE_ID``).
@@ -361,6 +367,35 @@ def test_line_starts_as_a_station_run_on_the_temporal_engine(
         "repo": "acme/app",
     }
     assert params.trigger == {"external_ref": "LIN-9"}
+
+
+def test_the_bundled_implementation_loop_starts_by_name(
+    client, workflow_db, line_client: _LineClient
+) -> None:
+    """#181: the first line ships bundled, read-only and valid; it starts with nothing installed."""
+    text = bundled_line_text("implementation_loop")
+    assert text is not None
+    assert validate_line(parse_definition(text)) == []  # type: ignore[arg-type]
+    task_id = workflow_db.seed_task()
+    with workflow_db.factory() as session:
+        task = session.get(Task, task_id)
+        assert task is not None
+        task.repo_targets = [{"repo": "acme/app"}]
+        session.commit()
+
+    resp = _start(client, task_id, definition="implementation_loop")
+
+    assert resp.status_code == 201, resp.text
+    run = resp.json()
+    assert (run["workflow_name"], run["current_state"]) == ("implementation_loop", "prepare")
+    (params,) = line_client.started
+    assert isinstance(params, StationParams)
+    # The revision is the bundled one the editor shows read-only; no definition row exists.
+    revision = bundled_revision_id("implementation_loop")
+    assert (params.definition_revision_id, params.dsl_yaml) == (revision, text)
+    assert _revision_column(workflow_db, run["id"]) == revision
+    with workflow_db.factory() as session:
+        assert session.scalar(select(func.count()).select_from(DbDefinition)) == 0
 
 
 @pytest.mark.usefixtures("temporal")

@@ -240,6 +240,8 @@ class AgentRunResultDTO:
     cost_usd: float | None = None
     priced: bool = False
     decision: str | None = None
+    #: The agent station's ``summary_ref`` output (spec K §4.1); absent from older histories.
+    summary_ref: str | None = None
 
 
 @dataclass

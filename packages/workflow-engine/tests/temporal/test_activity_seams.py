@@ -18,7 +18,11 @@ from temporalio.worker import UnsandboxedWorkflowRunner, Worker
 import scf_workflow.temporal.activities as activities_module
 from scf_contracts import RunStatus, WorkflowRun
 from scf_workflow.store import InMemoryWorkflowStore
-from scf_workflow.temporal.activities import WorkflowActivities
+from scf_workflow.temporal.activities import (
+    WorkflowActivities,
+    heartbeat_from_service,
+    service_cancelled,
+)
 from scf_workflow.temporal.payloads import (
     REDTEAM_SURVIVED,
     AgentRunResultDTO,
@@ -34,6 +38,8 @@ from scf_workflow.temporal.payloads import (
     ResumeAgentInput,
     RunAgentInput,
     RunChecksInput,
+    ServiceStationInput,
+    ServiceStationResult,
     TransitionRecord,
 )
 
@@ -392,3 +398,31 @@ async def test_an_agent_longer_than_the_heartbeat_timeout_completes(
         )
 
     assert result == expected
+
+
+async def test_a_service_body_heartbeats_and_sees_a_cancel_from_its_own_thread() -> None:
+    """#181: a polling body (``forge.await_ci``) heartbeats per poll and stops on cancel."""
+    polled, stopped = threading.Event(), threading.Event()
+
+    def poller(_: ServiceStationInput) -> ServiceStationResult:
+        heartbeat_from_service("poll", 1)
+        polled.set()
+        while not service_cancelled():
+            time.sleep(0.01)
+        stopped.set()
+        return ServiceStationResult()
+
+    env = ActivityEnvironment()
+    beats: list[object] = []
+    env.on_heartbeat = lambda *details: beats.append(details)
+    acts = WorkflowActivities(service_bodies={"forge.await_ci": poller})
+    inp = ServiceStationInput(uuid.uuid4(), WS, "forge.await_ci", "k")
+    task = asyncio.ensure_future(env.run(acts.run_service_station, inp))
+    assert await asyncio.wait_for(asyncio.to_thread(polled.wait, 2), 3)
+    await asyncio.sleep(0.05)  # the loop runs the heartbeat the thread queued
+    assert ("poll", 1) in beats
+    env.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 2)
+    assert await asyncio.to_thread(stopped.wait, 2)
+    assert not service_cancelled()  # outside an activity: never cancelled

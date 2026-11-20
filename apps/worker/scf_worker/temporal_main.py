@@ -35,6 +35,7 @@ from scf_db.risk_repository import DbRiskReader
 from scf_worker.approval_activity import expire_open_gates
 from scf_worker.dispatch import workspace_mirrors
 from scf_worker.held_out_drafting import draft_scenarios_service
+from scf_worker.line_services import line_services
 from scf_worker.run_workspace import remove_run_worktrees
 from scf_worker.tasks.pm_dispatch import post_workflow_writeback
 from scf_worker.temporal_services import (
@@ -140,7 +141,9 @@ def make_cleanup_fn(factory: sessionmaker[Session]) -> Callable[[CleanupInput], 
             mirrors = (
                 [p for p in root.glob("*/*") if (p / "HEAD").is_file()] if root.is_dir() else []
             )
-            remove_run_worktrees(mirrors, agent_runs, deadline=deadline)
+            # A line run's own worktree is on its branch, named for the workflow run (#181).
+            run_ids = [*agent_runs, inp.workflow_run_id]
+            remove_run_worktrees(mirrors, run_ids, deadline=deadline)
         except Exception:
             logger.exception("cleanup_worktree for run %s failed", inp.workflow_run_id)
             cleaned = False
@@ -172,8 +175,7 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
     ``forge.load_guard_inputs``, ``forge.run_agent`` and ``forge.pause_and_notify``;
     #251 binds ``forge.run_checks`` and #252 the pull request (opened once).
     ``forge.resume_agent`` still refuses, and so does ``forge.run_agent`` for a line's
-    agent station. No line service body is bound yet (#181), so every service
-    station reads ``not_configured``.
+    agent station. #181 binds a body for every line service in the catalog.
     """
     factory = factory or create_session_factory()
     return WorkflowActivities(
@@ -187,6 +189,7 @@ def build_activities(factory: sessionmaker[Session] | None = None) -> WorkflowAc
         red_team_fn=red_team_service(factory),
         draft_scenarios_fn=draft_scenarios_service(factory),
         cleanup_fn=make_cleanup_fn(factory),
+        service_bodies=line_services(factory),
         allow_fakes=os.environ.get("FORGE_ALLOW_FAKE_ACTIVITIES") == "1",
     )
 

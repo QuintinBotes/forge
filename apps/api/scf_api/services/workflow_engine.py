@@ -20,7 +20,11 @@ import yaml
 
 from scf_workflow import WorkflowEngineImpl
 from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
-from scf_workflow.editor.store import DbWorkflowDefinitionStore, ResolvingDefinitionProvider
+from scf_workflow.editor.store import (
+    DbWorkflowDefinitionStore,
+    ResolvingDefinitionProvider,
+    start_bundled_loader,
+)
 from scf_workflow.temporal.client import get_temporal_client
 from scf_workflow.temporal.config import TemporalSettings
 from scf_workflow.temporal.engine import TemporalWorkflowEngine
@@ -35,9 +39,13 @@ def resolve_backend(settings: TemporalSettings | None = None) -> str:
 
 
 def build_definition_provider(session: Session) -> ResolvingDefinitionProvider:
-    """Resolve a definition name to the workspace's published revision over the bundled one."""
+    """Resolve a definition name to the workspace's published revision over the bundled one.
+
+    Bundled lines count here too (#181), and nowhere else.
+    """
     return ResolvingDefinitionProvider(
-        DbWorkflowDefinitionStore(DbWorkflowDefinitionRepository(session))
+        DbWorkflowDefinitionStore(DbWorkflowDefinitionRepository(session)),
+        bundled_loader=start_bundled_loader,
     )
 
 

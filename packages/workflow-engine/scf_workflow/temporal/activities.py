@@ -486,8 +486,11 @@ async def _heartbeating[I, O](
 
     # shortcut: a cancelled service thread runs to completion, until services take a cancel token
     loop = asyncio.get_running_loop()
+    context = contextvars.copy_context()
+    if activity.in_activity():
+        context.run(_ACTIVITY_LOOP.set, loop)
     # ``executor=None`` is the loop's default pool, as ``asyncio.to_thread`` uses.
-    work = loop.run_in_executor(executor, contextvars.copy_context().run, call)
+    work = loop.run_in_executor(executor, context.run, call)
     while True:
         if activity.in_activity():  # tests call some activities directly
             activity.heartbeat(details)
@@ -498,6 +501,28 @@ async def _heartbeating[I, O](
 
 async def _awaited[O](result: Awaitable[O]) -> O:
     return await result
+
+
+#: The loop of the activity whose service body runs on this thread (``_heartbeating``).
+_ACTIVITY_LOOP: contextvars.ContextVar[asyncio.AbstractEventLoop | None] = contextvars.ContextVar(
+    "scf_activity_loop", default=None
+)
+
+
+def heartbeat_from_service(*details: object) -> None:
+    """Heartbeat the activity a service body runs in, from the body's own thread.
+
+    An async activity heartbeats on its event loop only, so the call is handed to it.
+    Outside an activity it does nothing.
+    """
+    loop = _ACTIVITY_LOOP.get()
+    if loop is not None:
+        loop.call_soon_threadsafe(activity.heartbeat, *details)
+
+
+def service_cancelled() -> bool:
+    """True once the activity a service body runs in was asked to stop."""
+    return activity.in_activity() and activity.is_cancelled()
 
 
 def _text(value: str) -> str:
@@ -578,4 +603,6 @@ __all__ = [
     "ApprovalFn",
     "ServiceFn",
     "WorkflowActivities",
+    "heartbeat_from_service",
+    "service_cancelled",
 ]

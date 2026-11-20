@@ -8,8 +8,9 @@ in-flight run loads its *pinned* revision so a re-publish never mutates it.
 from __future__ import annotations
 
 from collections.abc import Callable
+from importlib import resources
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from scf_contracts import WorkflowDefinition
 from scf_workflow.dsl import parse_definition
@@ -17,6 +18,35 @@ from scf_workflow.editor.errors import UnknownDefinitionError
 
 #: A bundled loader maps a definition name to its parsed definition (or None).
 BundledLoader = Callable[[str], WorkflowDefinition | None]
+
+#: The namespace of the one read-only revision id each bundled definition has.
+_BUNDLED_NS = UUID("f28f28f2-8f28-4f28-8f28-f28f28f28f28")
+
+#: Lines that ship with the release (spec K §4.5), read-only and never installed. Only a
+#: run's start resolves them, under any published definition of the same name, so the
+#: name stays free for a verified package (ADR-0020), which then takes over.
+#: shortcut: bundled until the owner decides whether the first line must come as a
+#: signed package (spec 002 Assumptions); then install it and drop this.
+BUNDLED_LINES = frozenset({"implementation_loop"})
+
+
+def bundled_line_text(name: str) -> str | None:
+    """The DSL text of a bundled line, or ``None`` when ``name`` is not one."""
+    if name not in BUNDLED_LINES:
+        return None
+    path = resources.files("scf_workflow").joinpath("definitions", f"{name}.yaml")
+    return path.read_text(encoding="utf-8")
+
+
+def bundled_revision_id(name: str) -> UUID:
+    """The id of a bundled definition's read-only revision (as the editor shows it)."""
+    return uuid5(_BUNDLED_NS, name)
+
+
+def start_bundled_loader(name: str) -> WorkflowDefinition | None:
+    """What a run may start by a name nothing published: a bundled definition or line."""
+    line = bundled_line_text(name)
+    return parse_definition(line) if line is not None else default_bundled_loader(name)
 
 
 def default_bundled_loader(name: str) -> WorkflowDefinition | None:
@@ -130,9 +160,13 @@ class DbWorkflowDefinitionStore:
 
 
 __all__ = [
+    "BUNDLED_LINES",
     "BundledLoader",
     "DbWorkflowDefinitionStore",
     "ResolvingDefinitionProvider",
     "WorkflowDefinitionStore",
+    "bundled_line_text",
+    "bundled_revision_id",
     "default_bundled_loader",
+    "start_bundled_loader",
 ]

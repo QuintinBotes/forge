@@ -223,11 +223,13 @@ def push_and_open_pr(
     transport: httpx.BaseTransport | None = None,
     push: Pusher = git_push,
     reuse_existing: bool = False,
+    draft: bool = False,
 ) -> PullRequest:
     """Push the run branch and open a PR with a token scoped to this repository.
 
     ``reuse_existing`` first looks up a pull request for the branch and returns it
-    instead of opening a second one, so a retried caller opens exactly one.
+    instead of opening a second one, so a retried caller opens exactly one. ``draft``
+    opens it as a draft, which a line marks ready later (#181).
     """
     owner, _, name = repo_full_name.partition("/")
     if not owner or not name:
@@ -249,7 +251,12 @@ def push_and_open_pr(
             return existing
         return client.open_pr(
             PullRequestRequest(
-                repo=repo_full_name, title=title, body=body, head=branch, base=base_branch
+                repo=repo_full_name,
+                title=title,
+                body=body,
+                head=branch,
+                base=base_branch,
+                draft=draft,
             )
         )
     finally:

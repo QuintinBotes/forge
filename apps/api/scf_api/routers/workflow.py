@@ -84,6 +84,8 @@ from scf_workflow import (
 )
 from scf_workflow.default_workflow import DEFAULT_WORKFLOW_NAME
 from scf_workflow.editor.errors import UnknownDefinitionError
+from scf_workflow.editor.repository import DbWorkflowDefinitionRepository
+from scf_workflow.editor.store import bundled_line_text, bundled_revision_id
 from scf_workflow.engine import DEFINITION_REVISION_KEY
 from scf_workflow.red_team_gate import (
     RedTeamFn,
@@ -385,16 +387,18 @@ def _admit_definition(
         raise _unparseable_definition(
             engine, session, workspace_id=workspace_id, name=name
         ) from exc
-    if isinstance(definition, LineDefinition):
+    if isinstance(definition, LineDefinition):  # published, or bundled (revision_id None)
+        if revision_id is None and DbWorkflowDefinitionRepository(session).get(workspace_id, name):
+            # An uninstalled or archived line of this name hides the bundled one (§4.4).
+            raise _unknown_definition(name)
         if isinstance(engine, WorkflowEngineImpl):
             raise _durable_engine_required()
-        if revision_id is not None:
-            if validate_line(definition):
-                raise _line_conflict("line_invalid")
-            stations = definition.stations.values()
-            if any(isinstance(s, AgentStation) and s.model is not None for s in stations):
-                raise _line_conflict("model_not_allowed")
-            return revision_id, definition
+        if validate_line(definition):
+            raise _line_conflict("line_invalid")
+        stations = definition.stations.values()
+        if any(isinstance(s, AgentStation) and s.model is not None for s in stations):
+            raise _line_conflict("model_not_allowed")
+        return revision_id, definition
     if isinstance(engine, WorkflowEngineImpl):
         if not all(
             t.from_state in WorkflowState and t.to_state in WorkflowState
@@ -480,7 +484,7 @@ def start_run(
                 raise _durable_engine_required()
         elif isinstance(engine, WorkflowEngineImpl):
             run = engine.start(request.task_id)
-        elif isinstance(definition, LineDefinition) and admitted is not None:
+        elif isinstance(definition, LineDefinition):
             run = _start_line(engine, session, task, definition, admitted, trigger)
         else:
             # default_feature on the Temporal engine (the only name it admits). The
@@ -498,7 +502,7 @@ def _start_line(
     session: Session,
     task: Task,
     line: LineDefinition,
-    revision_id: uuid.UUID,
+    revision_id: uuid.UUID | None,
     trigger: dict[str, object] | None,
 ) -> WorkflowRun:
     """Start a line as a station run on the Temporal engine (spec K §4.2).
@@ -507,8 +511,18 @@ def _start_line(
     which the engine's commit of the new run releases (409
     ``line_concurrency_exceeded``). The workflow gets the revision's text and a
     snapshot of the task; ``task.repo`` is set only for a task with one repository.
+    A bundled line (``revision_id`` None) runs its shipped text under its read-only
+    revision id (#181).
     """
     from scf_api.services.workflow_engine import active_line_runs, revision_text
+
+    if revision_id is None:
+        # shortcut: no definition row to lock, so racing starts of a bundled line can
+        # pass max_active_runs together; lock a row of its own if that matters first.
+        revision_id, dsl_yaml = bundled_revision_id(line.name), bundled_line_text(line.name)
+    else:
+        dsl_yaml = revision_text(session, revision_id)
+    assert dsl_yaml is not None  # admission resolved this bundled name
 
     snapshot = {"key": task.key, "title": task.title, "description": task.description or ""}
     targets = task.repo_targets or []
@@ -526,7 +540,7 @@ def _start_line(
         line.name,
         trigger=trigger,
         definition_revision_id=revision_id,
-        dsl_yaml=revision_text(session, revision_id),
+        dsl_yaml=dsl_yaml,
         task=snapshot,
     )
 

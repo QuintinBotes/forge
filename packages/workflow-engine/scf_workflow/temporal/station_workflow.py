@@ -277,7 +277,11 @@ class StationWorkflow:
             result.cost_usd,
             result.priced,
         )
-        outputs = {"branch": result.branch_name, "head_sha": result.head_commit_sha}
+        outputs = {
+            "branch": result.branch_name,
+            "head_sha": result.head_commit_sha,
+            "summary_ref": result.summary_ref,
+        }
         rec.outputs = {k: v for k, v in outputs.items() if v}
         self._outputs[rec.state] = rec.outputs
         rec.outcome = _agent_outcome(station, result)

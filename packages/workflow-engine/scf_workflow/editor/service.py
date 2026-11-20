@@ -8,7 +8,6 @@ the audit sink, so it is unit-testable with a fake repo.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -48,7 +47,7 @@ from scf_workflow.editor.schemas import (
     RevisionSummary,
     SaveDraftRequest,
 )
-from scf_workflow.editor.store import default_bundled_loader
+from scf_workflow.editor.store import bundled_revision_id, default_bundled_loader
 from scf_workflow.editor.validation import (
     FEATURE_INVARIANTS,
     IssueCode,
@@ -69,8 +68,6 @@ AUDIT_RESOURCE_WORKFLOW_DEFINITION = "workflow_definition"
 AUDIT_ACTION_PUBLISHED = "workflow_definition.published"
 AUDIT_ACTION_ROLLED_BACK = "workflow_definition.rolled_back"
 AUDIT_ACTION_ARCHIVED = "workflow_definition.archived"
-
-_BUNDLED_NS = uuid.UUID("f28f28f2-8f28-4f28-8f28-f28f28f28f28")
 
 
 class AuditSink(Protocol):
@@ -671,7 +668,7 @@ class WorkflowEditorService:
     def _bundled_detail(self, name: str, bundled: WorkflowDefinitionDTO) -> DefinitionDetail:
         graph = definition_to_graph(bundled, title=name.replace("_", " ").title())
         detail = RevisionDetail(
-            id=uuid.uuid5(_BUNDLED_NS, name),
+            id=bundled_revision_id(name),
             revision=0,
             status="published",
             validation_status="valid",

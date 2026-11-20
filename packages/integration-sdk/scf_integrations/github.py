@@ -808,10 +808,43 @@ class GitHubClient:
         return self._pr_ref_sha(repo, number, "head")
 
     def _pr_ref_sha(self, repo: str, number: int, side: str) -> str:
+        return str((self._get_pr(repo, number).get(side) or {}).get("sha") or "")
+
+    def _get_pr(self, repo: str, number: int) -> dict[str, Any]:
         r = self.owner_repo(repo)
         resp = self._request("GET", f"/repos/{r}/pulls/{number}", action="get_pr", repo=r)
         self._raise_for_status(resp)
-        return str((resp.json().get(side) or {}).get("sha") or "")
+        data: dict[str, Any] = resp.json()
+        return data
+
+    def get_pr(self, repo: str, number: int) -> PullRequest:
+        """One pull request (``GET .../pulls/{n}``)."""
+        return self._parse_pr(repo, self._get_pr(repo, number))
+
+    def mark_pr_ready(self, repo: str, number: int) -> None:
+        """Mark a draft pull request ready for review; one already ready is left alone.
+
+        GitHub offers this through GraphQL only, at ``/graphql`` beside the REST root
+        (``/api/graphql`` on Enterprise Server, whose REST root is ``/api/v3``).
+        """
+        data = self._get_pr(repo, number)
+        if not data.get("draft"):
+            return
+        root = str(self._client.base_url).rstrip("/").removesuffix("/v3")
+        resp = self._request(
+            "POST",
+            f"{root}/graphql",
+            json={
+                "query": "mutation($id: ID!) { markPullRequestReadyForReview("
+                "input: {pullRequestId: $id}) { pullRequest { isDraft } } }",
+                "variables": {"id": data["node_id"]},
+            },
+            action="mark_pr_ready",
+            repo=self.owner_repo(repo),
+        )
+        self._raise_for_status(resp)
+        if errors := resp.json().get("errors"):
+            raise GitHubError(str(errors[0].get("message") or errors)[:500])
 
     def close_pr(self, pr: PullRequest) -> PullRequest:
         """Close a PR (``PATCH .../pulls/{n}`` with ``state=closed``)."""
