@@ -20,6 +20,7 @@ from scf_contracts.deployment import (
     DeploymentRequest,
     DeploymentState,
 )
+from scf_db.risk_repository import DbRiskReader
 from scf_deploy.errors import DeploymentConflictError
 from scf_deploy.gate import CIReader, PolicyReader, SecurityReader, ValidationReader
 from scf_deploy.health import HealthChecker, NullHealthChecker
@@ -60,6 +61,7 @@ def _orchestrator(
         ci=ci,
         validation=validation,
         security=security,
+        risk=DbRiskReader(session),
     )
 
 

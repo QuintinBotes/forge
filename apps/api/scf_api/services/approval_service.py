@@ -52,12 +52,13 @@ from scf_approval.providers import (
     PolicyOverrideResolutionHook,
 )
 from scf_authz import ROLE_RANK, max_role_at_scope
-from scf_contracts import UserRole
+from scf_contracts import RiskReader, UserRole
 from scf_contracts.authz import ScopeType
 from scf_db.models import User
 from scf_db.models.enums import PrincipalType as DbPrincipalType
 from scf_db.models.enums import ScopeType as DbScopeType
 from scf_db.models.role_grant import RoleGrant
+from scf_db.risk_repository import DbRiskReader
 
 
 def build_gate_registry(
@@ -164,6 +165,20 @@ def build_approval_repository() -> ApprovalRepository:
     return InMemoryApprovalRepository()
 
 
+def _approval_risk() -> RiskReader | None:
+    """The ``pr`` gate's risk reader (#194): the database, when the approvals live there.
+
+    The ``memory`` backend is the hermetic default with no database to read.
+    """
+    from scf_api.settings import get_settings
+
+    if get_settings().approval_backend != "db":
+        return None
+    from scf_api.db import get_session_factory
+
+    return DbRiskReader(get_session_factory())
+
+
 @lru_cache(maxsize=1)
 def get_approval_service() -> ApprovalService:
     """Process-wide unified approval service (override in tests via DI)."""
@@ -174,6 +189,7 @@ def get_approval_service() -> ApprovalService:
         events=InMemoryActivityBus(),
         audit=_approval_audit(),
         redactor=redact_mapping,
+        risk=_approval_risk(),
     )
 
 

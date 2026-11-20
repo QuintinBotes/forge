@@ -38,6 +38,7 @@ from scf_api.services.workflow_gate_hook import WORKFLOW_RUN_SUBJECT, agent_acto
 from scf_approval import ApprovalAuthorizer, ApprovalService, GateRegistry
 from scf_approval.models import GateType
 from scf_db.models import ApprovalRequest, ApprovalStatus, Task
+from scf_db.risk_repository import DbRiskReader
 from scf_worker.review_rules import review_rules_stamp
 from scf_workflow.temporal.payloads import ApprovalInput
 
@@ -47,7 +48,8 @@ def build_approval_service(factory: sessionmaker[Session]) -> ApprovalService:
 
     Creation needs no gate providers/hooks (those serve context + resolve in
     the API process); the authorizer still applies its required-approvals
-    floor at create time, exactly as in the API composition root.
+    floor at create time, exactly as in the API composition root, and a ``pr``
+    gate's change's risk class may raise it (#194).
     """
     return ApprovalService(
         SqlAlchemyApprovalRepository(factory),
@@ -57,6 +59,7 @@ def build_approval_service(factory: sessionmaker[Session]) -> ApprovalService:
         # whatever FORGE_AUDIT_BACKEND selects for the API.
         audit=AuditLog(DbAuditStore(factory)),
         redactor=redact_mapping,
+        risk=DbRiskReader(factory),
     )
 
 
