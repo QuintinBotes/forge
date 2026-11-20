@@ -47,6 +47,33 @@ cover letter instead. SCF writes `Assisted-by: scf-agent:<model>`, or
 kernel's first definition, but the format is SCF's own. It is one line with no
 email address.
 
+## Pinned for GenAI spans (#213)
+
+The GenAI conventions moved out of the core semantic-conventions repository into
+`open-telemetry/semantic-conventions-genai`. On **2026-11-20** that repository had no
+tag or release, so SCF pins a commit: `622b2b6073b15e5ed886c3c12a65a892b9cd5c70`
+(the head of `main` that day). The pin and every `gen_ai.*` name SCF emits are
+declared once, in `packages/observability/scf_obs/genai.py` (`SEMCONV_COMMIT`,
+`GEN_AI_ATTRIBUTES`); a test fails on any other `gen_ai.*` key.
+
+Read at that commit (`docs/gen-ai/gen-ai-agent-spans.md`, `client-inference.md`,
+`execute-tool.md`; all Development status):
+
+| Span | Name | Kind | Attributes SCF sets |
+|------|------|------|---------------------|
+| Invoke agent internal | `{gen_ai.operation.name} {gen_ai.agent.name}`, or `{gen_ai.operation.name}` when no meaningful agent name exists | INTERNAL | `gen_ai.operation.name` (`invoke_agent`, or `invoke_workflow` for the supervised run's deterministic graph), `gen_ai.agent.name` when known, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` |
+| Client inference | `{gen_ai.operation.name} {gen_ai.request.model}` | CLIENT | `gen_ai.operation.name` (`chat`), `gen_ai.provider.name` (required), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` |
+| Execute tool | `execute_tool {gen_ai.tool.name}` | INTERNAL | `gen_ai.operation.name` (`execute_tool`), `gen_ai.tool.name` (required) |
+
+`error.type` is the stable core attribute (semantic-conventions v1.45.0, which the
+snapshot links). The snapshot defines no cost attribute, so cost is SCF's own
+`scf.cost.usd`. Every name the issue expected (`gen_ai.tool.name`,
+`gen_ai.tool.call.id`, `gen_ai.request.model`, `gen_ai.provider.name`, the two usage
+names) matches the snapshot. `gen_ai.tool.call.id` is not emitted: the tool registry
+never sees the model's call id.
+
+`docs/self-hosting/observability.md` describes the span tree and SCF's own names.
+
 ## Consequences
 
 - No silent behaviour change when a standard moves.

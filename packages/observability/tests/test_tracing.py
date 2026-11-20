@@ -42,3 +42,12 @@ def test_span_error_status_and_always_recorded() -> None:
     (span,) = store.spans()
     assert span.status == "error"
     assert span.duration_s is not None
+
+
+def test_the_store_keeps_only_the_newest_spans() -> None:
+    # Agent runs record spans for every model and tool call in long-lived workers (#213).
+    store = SpanStore(max_spans=2)
+    for name in ("a", "b", "c"):
+        with traced(name, store=store):
+            pass
+    assert [span.name for span in store.spans()] == ["b", "c"]
