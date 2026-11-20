@@ -273,6 +273,30 @@ SEEDS: list[tuple[str, str, dict[str, Any]]] = [
     ),
     ("Users", "POST /scim/v2/Users", {"userName": "scim-a@example.com"}),
     ("Groups", "POST /scim/v2/Groups", {"displayName": "A group"}),
+    (
+        "RiskClassification",
+        "RiskClassification",
+        {
+            "commit_sha": "a" * 40,
+            "agent_run_id": "{AgentRun}",
+            "workflow_run_id": "{WorkflowRun}",
+            "derived_class": "low",
+            "final_class": "low",
+            "enforcement_mode": "shadow",
+        },
+    ),
+    (
+        "RiskGateObservation",
+        "RiskGateObservation",
+        {
+            "classification_id": "{RiskClassification}",
+            "gate_name": "a_only_gate",
+            "actual_decision": "approved",
+            "risk_decision": "approved",
+            "agreed": True,
+        },
+    ),
+    ("RiskGate", "=a_only_gate", {}),
     ("KnowledgeSource", "KnowledgeSource", {"kind": "document", "name": "a", "uri": "a.md"}),
     (
         "RetrievalChunk",
@@ -703,6 +727,8 @@ NAMED: dict[str, str] = {
     "PUT /projects/{project_id}/visibility owner_team_id": "Team",
     "POST /projects/{project_id}/team-access team_id": "Team",
     "GET /ao/role-config project_id": "Project",
+    "GET /risk/classifications agent_run_id": "AgentRun",
+    "GET /risk/classifications workflow_run_id": "WorkflowRun",
     "PUT /ao/role-config/{role} project_id": "Project",
     "DELETE /ao/role-config/{role} project_id": "Project",
     "POST /mcp/connections id": "MCPConnection",
@@ -741,6 +767,9 @@ LISTS: dict[str, tuple[str, ...]] = {
     "GET /access/grants": ("RoleGrant",),
     "GET /projects": ("Project",),
     "GET /benchmarks": ("SuiteSlug",),
+    "GET /risk/classifications": ("RiskClassification",),
+    # Per-gate counts only: a gate only A observed must not appear in B's.
+    "GET /risk/agreement": ("RiskGate",),
     "GET /scim/v2/Users": ("Users",),
     "GET /scim/v2/Groups": ("Groups",),
 }
@@ -806,48 +835,50 @@ OPEN_DEFECTS: dict[str, str] = {
             "PATCH /board/incidents/{incident_id} project_id",
             "GET /sprints/{sprint_id}/goal-alignment",
         ],
-        "Board items (the database board): a task, epic, sprint, milestone or incident must "
+        "#336 Board items (the database board): a task, epic, sprint, milestone or incident must "
         "refuse a project, epic, sprint, milestone, task or assignee of another workspace",
     ),
     **dict.fromkeys(
         ["POST /spec/constitution project_id", *SPEC_EPIC],
-        "Specs: a spec or constitution must refuse an epic or project of another workspace",
+        "#337 Specs: a spec or constitution must refuse an epic or project of another workspace",
     ),
     **dict.fromkeys(
         [f"{route} {p}" for route in WORLD_PROPOSE for p in ("subject_id", "object_id")],
-        "World model: a proposal must refuse an entity of another workspace",
+        "#337 World model: a proposal must refuse an entity of another workspace",
     ),
     **dict.fromkeys(
         [
             f"POST /approvals {p}"
             for p in ("project_id", "task_id", "subject_id", "agent_run_id", "workflow_run_id")
         ],
-        "Approvals: a gate must refuse a project, task or run of another workspace",
+        "#337 Approvals: a gate must refuse a project, task or run of another workspace",
     ),
     **dict.fromkeys(
         [
             *(f"POST /incidents {p}" for p in ("project_id", "commander_id", "repo_id")),
             "POST /integrations/alerts/manual project_id",
         ],
-        "Incidents: an incident must refuse a project, person or repository of another workspace",
+        "#338 Incidents: an incident must refuse a project, person or repository of another "
+        "workspace",
     ),
-    "POST /integrations/pm/connections project_id": "PM connections: must refuse a project "
+    "POST /integrations/pm/connections project_id": "#338 PM connections: must refuse a project "
     "of another workspace, answering as for a project that does not exist",
     **dict.fromkeys(
         [
             f"POST /projects/{{project_id}}/deployments {p}"
             for p in ("agent_run_id", "workflow_run_id")
         ],
-        "Deployments: must refuse a run of another workspace",
+        "#338 Deployments: must refuse a run of another workspace",
     ),
-    "POST /estimation-scales project_id": "Estimation scales: must refuse a project of "
+    "POST /estimation-scales project_id": "#338 Estimation scales: must refuse a project of "
     "another workspace",
-    "PUT /sprints/{sprint_id}/capacity member_id": "Sprint capacity: must refuse a member who "
+    "PUT /sprints/{sprint_id}/capacity member_id": "#338 Sprint capacity: must refuse a member who "
     "is not a person of the workspace",
-    "POST /teams/{team_id}/members user_id": "Teams: must refuse a person of another workspace",
+    "POST /teams/{team_id}/members user_id": "#338 Teams: must refuse a person of another "
+    "workspace",
     **dict.fromkeys(
         ["PUT /ao/role-config/{role} project_id", "DELETE /ao/role-config/{role} project_id"],
-        "Role configuration: must refuse a project of another workspace",
+        "#338 Role configuration: must refuse a project of another workspace",
     ),
 }
 
@@ -951,6 +982,10 @@ SERVED_UNDER: dict[str, tuple[str, ...]] = {
     "WorldEvidence": ("GET /world/entities/{entity_id}",),
     "WorldExtractionDrop": ("POST /world/ingest",),
     "WorldFactFeedback": ("GET /world/facts",),
+    "RiskGateObservation": ("GET /risk/agreement",),
+    # Counted, never listed, in the caller's own factory metrics (no identifier taken).
+    "ChangeOutcome": ("GET /observability/analytics/factory",),
+    "RunIntervention": ("GET /observability/analytics/factory",),
 }
 
 #: Workspace-scoped models with no API surface, each with the reviewed reason.
@@ -980,12 +1015,22 @@ NO_API_SURFACE: dict[str, str] = {
     ),
 }
 
-#: Routes taking a path parameter that names no workspace resource, each with why.
+#: Routes taking a path parameter that the matrix does not sweep, each with why.
 NOT_AN_IDENTIFIER: dict[str, str] = {
     "WS /ws/spec/{spec_id}": "A WebSocket: the spec room resolves the spec in the caller's own "
     "spec root, as the spec routes swept here do",
     "POST /integrations/alerts/{provider}/webhook": "Webhook (a non-goal of #189); its "
     "workspace selector is open defect #321 (UNAUTHENTICATED_WORKSPACE_SELECTORS)",
+    **dict.fromkeys(
+        [
+            "GET /agent/runs/{run_id}/record/inputs",
+            "POST /agent/runs/{run_id}/record/events",
+            "POST /agent/runs/{run_id}/record/handoff",
+        ],
+        "Run token only (require_run_token): every credential but the live token of the run "
+        "in the path gets the same 401, so B's admin is refused whatever it names; "
+        "test_run_token.py refuses another workspace's run token alike for any run id",
+    ),
     **dict.fromkeys(
         [
             "POST /integrations/pm/webhooks/jira/{connection_id}",
@@ -1060,6 +1105,10 @@ NOT_NAMED: dict[str, str] = {
         "A repository's name, matched inside the project named alongside it",
     ),
     "PUT /workspaces/{workspace_id}/oidc client_id": "The identity provider's client id",
+    "POST /agent/runs/{run_id}/record/handoff run_id": "Replaced by the run token's own run "
+    "(test_the_handoff_is_stored_under_its_own_run_whatever_the_body_says)",
+    "POST /agent/runs/{run_id}/record/handoff task_id": "Kept only in the run's own handoff; "
+    "close-out acts on the task in the run's stored objective, never on this field",
     "GET /observability/audit connection_id": "An MCP connection's id: a name its workspace "
     "chooses, matched inside the caller's own audit trail",
     "POST /integrations/alerts/{provider}/webhook workspace_id": "Open defect #321",
