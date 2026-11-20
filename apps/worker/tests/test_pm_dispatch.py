@@ -36,6 +36,7 @@ from scf_api.auth.crypto import HmacAeadCipher
 from scf_api.auth.vault import SecretVault
 from scf_api.observability.audit import AuditLog
 from scf_api.services import pm_service as pm_service_module
+from scf_api.services.agent_dispatch import TaskNotFound
 from scf_api.services.pm_service import PMConnectionService
 from scf_contracts import AgentObjective, AgentRunResult, RunStatus
 from scf_contracts.enums import Direction
@@ -50,6 +51,7 @@ from scf_db.models.pm import PMConnection, PMWebhookDelivery
 from scf_worker.agent_runner import _maybe_tracker_writeback
 from scf_worker.celery_app import celery_app
 from scf_worker.run_record import EXECUTOR_KEY
+from scf_worker.tasks import pm_dispatch as pm_dispatch_module
 from scf_worker.tasks.pm_dispatch import PM_DISPATCH_TASK, maybe_dispatch, post_run_writeback
 from scf_worker.tasks.pm_sync import process_webhook
 
@@ -1432,3 +1434,26 @@ def test_a_durable_engine_that_cannot_start_an_issue_run_skips_it(
         "durable_engine_unavailable",
     )
     assert enqueued == [] and _runs(factory) == []
+
+
+def test_a_board_task_gone_before_the_run_is_created_is_skipped(
+    factory: sessionmaker[Session],
+    connections: PMConnectionService,
+    project_id: uuid.UUID,
+    fake_adapter: FakeGitHubAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The linked task can be deleted while the issue is fetched: a refusal is data (#189)."""
+    connection_id = _seed_connection(factory, project_id)
+    row_id = _seed_delivery(factory, connection_id, payload_hash="hash-task-gone")
+
+    def _task_gone(*_args: Any, **_kwargs: Any) -> None:
+        raise TaskNotFound("the objective's board task is gone")
+
+    monkeypatch.setattr(pm_dispatch_module, "create_and_enqueue_run", _task_gone)
+    result = process_webhook(
+        factory, row_id, connections=connections, payload=_payload(), enqueue_run=lambda _o: None
+    )
+
+    assert (result["dispatch_action"], result["dispatch_reason"]) == ("skipped", "no_board_task")
+    assert _runs(factory) == []
