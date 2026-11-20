@@ -89,7 +89,9 @@ def get_principal_context(
         )
     ctx = service.load_principal_context(principal.workspace_id, principal.user_id)
     if principal.agent:
-        return ctx.model_copy(update={"permission_cap": ROLE_PERMISSIONS[UserRole.AGENT_RUNNER]})
+        # Never role.grant: AuthzService ranks a granting actor by its uncapped roles.
+        cap = ROLE_PERMISSIONS[UserRole.AGENT_RUNNER] - {Permission.ROLE_GRANT}
+        return ctx.model_copy(update={"permission_cap": cap})
     return ctx
 
 

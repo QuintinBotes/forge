@@ -3,8 +3,8 @@
 A run process reads the run's stored inputs, appends its events and records its
 handoff only through :class:`RunRecord`, so it never opens a database session.
 :class:`InProcessRunRecord` is the database-backed implementation the worker and
-the tests use; a run process will use an API-backed one (a follow-up), because it
-never holds the database credential (spec 011 FR-011).
+the tests use; a run process will use an API-backed one (#257) over the run-record
+routes (#256), because it never holds the database credential (spec 011 FR-011).
 """
 
 from __future__ import annotations
@@ -16,17 +16,14 @@ from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
 
+from scf_api.services.run_record import HANDOFF_KEY, RunEventSink, record_handoff
 from scf_contracts import AgentRunResult, RunEventDraft, Step
 from scf_db.models import AgentRun
-from scf_worker.run_events import RunEventSink
 
 __all__ = ["EXECUTOR_KEY", "HANDOFF_KEY", "InProcessRunRecord", "RunRecord"]
 
 logger = logging.getLogger("scf_worker.run_record")
 
-#: The reserved ``agent_run.output`` key a handoff waits under until close-out
-#: records the outcome, which replaces ``output`` and so removes it.
-HANDOFF_KEY = "handoff"
 #: The ``agent_run.output`` key a launched run's executor, unit and close-out claim are
 #: kept under (#239); recording the outcome keeps it.
 EXECUTOR_KEY = "executor"
@@ -80,13 +77,11 @@ class InProcessRunRecord:
         self._events.on_step(step)
 
     def record_handoff(self, result: AgentRunResult) -> bool:
-        """Never sets a terminal status or ``completed_at``: close-out does."""
+        """Once, before close-out; never sets a terminal status or ``completed_at``."""
         try:
             with self._factory() as session:
-                row = session.get(AgentRun, self._run_id, with_for_update=True)
-                if row is None or row.workspace_id != self._workspace_id:
+                if not record_handoff(session, self._run_id, self._workspace_id, result):
                     return False
-                row.output = {**(row.output or {}), HANDOFF_KEY: result.model_dump(mode="json")}
                 session.commit()
                 return True
         except Exception:
