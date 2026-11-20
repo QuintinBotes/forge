@@ -335,6 +335,10 @@ class ApprovalService:
         request = await self.get(approval_id, workspace_id=workspace_id)
         if request.status is not GateStatus.PENDING:
             raise AlreadyResolvedError(approval_id, request.status)
+        if request.gate_type is GateType.AUTOMATION_ACTION and past_deadline(request):
+            # A held action's deadline holds even where no SLA sweep runs (#191).
+            await self.expire(request, actor="system", reason="deadline_passed")
+            raise AlreadyResolvedError(approval_id, GateStatus.EXPIRED)
 
         self._authorizer.check(actor, request, decision)
         if before_decision is not None:
@@ -743,6 +747,10 @@ def _gated_change(request: ApprovalRequest) -> GatedChange | None:
     if request.gate_type is not GateType.PR or run is None:
         return None
     return GatedChange(workspace_id=request.workspace_id, workflow_run_id=run)
+
+
+def past_deadline(request: ApprovalRequest) -> bool:
+    return request.expires_at is not None and request.expires_at <= datetime.now(UTC)
 
 
 def _decision_metadata(actor: Principal) -> dict[str, Any]:

@@ -608,3 +608,22 @@ def test_two_racing_approvals_run_the_hold_once(pg_engine: Any) -> None:
         assert len(stack.ports.calls) == 1
     finally:
         Base.metadata.drop_all(pg_engine)
+
+
+def test_a_hold_past_its_deadline_never_runs_without_a_sweep(stack: Stack, factory: Any) -> None:
+    approval_id = stack.hold()
+    with factory() as session:
+        session.get(ApprovalRequestRow, approval_id).expires_at = datetime.now(UTC) - timedelta(1)
+        session.commit()
+    late = stack.request(approval_id).model_copy(update={"status": GateStatus.APPROVED})
+
+    with pytest.raises(AlreadyResolvedError):
+        stack.decide(approval_id, ApprovalAction.APPROVE)
+    request = stack.request(approval_id)
+    assert request.status is GateStatus.EXPIRED
+    assert request.gate_payload["expired"]["reason"] == "deadline_passed"
+    hook = stack.approvals.resolution_hook(GateType.AUTOMATION_ACTION)
+    assert hook is not None  # a release reached by any other path refuses too
+    decision = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
+    assert asyncio.run(hook.on_resolved(late, decision, person(APPROVER))).completed is False
+    assert stack.ports.calls == []

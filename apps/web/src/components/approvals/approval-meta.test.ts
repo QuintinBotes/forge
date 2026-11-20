@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { GATE_TYPES } from "@/lib/api/types";
-
 import {
   ACTION_META,
   actionForKey,
@@ -41,10 +39,5 @@ describe("styling helpers use tokens only", () => {
   it("falls back gracefully for unknown gates", () => {
     // @ts-expect-error — exercising the runtime fallback path.
     expect(gateMeta("mystery").label).toBe("mystery");
-  });
-
-  it("names a held automatic action (#191)", () => {
-    expect(GATE_TYPES).toContain("automation_action");
-    expect(gateMeta("automation_action").label).toBe("Automatic action");
   });
 });

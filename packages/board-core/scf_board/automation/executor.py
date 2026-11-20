@@ -18,12 +18,9 @@ delegate to ``fallback`` (default: :class:`RecordingActionExecutor`), so it
 composes with the worker's ``DbActionExecutor`` without duplicating the F21
 action set.
 
-#191 adds the impact gate: an action whose declared impact
-(:func:`~scf_contracts.automation.action_impact`) is irreversible and external is
-never dispatched by :meth:`ExternalActionExecutor.execute`. After the policy
-refusals, it goes to the injected :class:`ActionHolder`, which opens an approval
-request, and the result is ``held``. :meth:`ExternalActionExecutor.release` runs
-it once a person approves.
+#191: after the policy refusals, an irreversible external action goes to the
+injected :class:`ActionHolder` (result ``held``); :meth:`ExternalActionExecutor.release`
+runs it once a person approves.
 """
 
 from __future__ import annotations

@@ -57,6 +57,7 @@ from scf_approval.models import (
     Principal,
     ResolutionOutcome,
 )
+from scf_approval.service import past_deadline
 from scf_board.automation.executor import ActionContext, ExternalActionExecutor
 from scf_board.automation.schemas import ActionSpec
 from scf_board.sprint_service import SprintService
@@ -288,9 +289,7 @@ SessionFactory = Callable[[], Session]
 
 
 def _shown(parameters: dict[str, Any]) -> dict[str, Any]:
-    """Parameters a person may see: a URL cut to its origin, since credentials ride
-    in its userinfo, path or query, which the approval service's redactor (applied
-    to every ``gate_payload``) does not recognise."""
+    """Cut a URL to its origin: credentials in userinfo, path or query evade the redactor."""
     shown = dict(parameters)
     url = shown.get("url")
     if isinstance(url, str):
@@ -300,14 +299,8 @@ def _shown(parameters: dict[str, Any]) -> dict[str, Any]:
 
 
 class ApprovalActionHolder:
-    """The executor's :class:`~scf_board.automation.executor.ActionHolder` (#191).
-
-    Opens an ``automation_action`` request in the trigger's workspace, as the
-    rule's author (so the self-approval rule applies to them), and stores the
-    exact action beside it. Idempotent: the subject is derived from the rule,
-    the trigger event and the action, so a redelivered trigger finds the same
-    request, pending or already decided, and never opens a second one.
-    """
+    """Opens an ``automation_action`` request as the rule's author and stores the exact
+    action beside it; a redelivered trigger finds the same request (#191)."""
 
     def __init__(self, approvals: ApprovalService, session_factory: SessionFactory) -> None:
         self._approvals = approvals
@@ -402,11 +395,7 @@ class ApprovalActionHolder:
 def claim_held_action(
     session_factory: SessionFactory, request: ApprovalRequest, *, released_by: uuid.UUID | None
 ) -> tuple[ActionSpec, ActionContext] | None:
-    """Take ``request``'s held action for its one run; ``None`` if already taken or absent.
-
-    The conditional update is the exactly-once guard: of two racing claims, one
-    updates the row and the other finds nothing.
-    """
+    """Take ``request``'s held action for its one run (a conditional update); else ``None``."""
     owned = (
         HeldAutomationAction.approval_request_id == request.id,
         HeldAutomationAction.workspace_id == request.workspace_id,
@@ -426,14 +415,8 @@ def claim_held_action(
 
 
 def release_executor(workspace_id: uuid.UUID, actor: str) -> ExternalActionExecutor:
-    """The executor that runs an approved action in the API process, audited as ``actor``.
-
-    The same ports the worker wires (the deploy and merge dispatchers are the
-    documented mocks), and the secure default policy, so a deploy or merge the
-    policy denies is still refused at release. The webhook leaves from this
-    process, so it passes the API's SSRF guard first (private networks and the
-    allowlist as configured for every other outbound URL).
-    """
+    """Runs an approved action in the API process as ``actor``: the worker's ports, the
+    secure default policy, and the API's SSRF guard on the webhook."""
     from scf_api.observability.service import get_observability_service
 
     settings = get_settings()
@@ -482,9 +465,10 @@ class HeldActionResolutionHook:
         *,
         session: Any = None,
     ) -> ResolutionOutcome:
-        if request.status is not GateStatus.APPROVED:
-            self._record(request, actor, HELD_ACTION_WITHHELD, result="not_run")
-            return ResolutionOutcome(completed=True, follow_up_state="not_run")
+        if request.status is not GateStatus.APPROVED or past_deadline(request):
+            why = "deadline_passed" if request.status is GateStatus.APPROVED else "not_run"
+            self._record(request, actor, HELD_ACTION_WITHHELD, result=why)
+            return ResolutionOutcome(completed=why == "not_run", follow_up_state=why)
         claimed = claim_held_action(self._sf, request, released_by=actor.id)
         if claimed is None:
             self._record(request, actor, HELD_ACTION_RELEASED, result="not_stored")
