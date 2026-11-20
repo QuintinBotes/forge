@@ -66,6 +66,8 @@ from scf_workflow.temporal.payloads import (
     RunChecksInput,
     ServiceStationInput,
     ServiceStationResult,
+    StationGateInput,
+    StationGateResult,
     StationVisitRecord,
     TransitionRecord,
 )
@@ -112,6 +114,8 @@ RedTeamFn = Callable[[RedTeamInput], RedTeamResult]
 DraftScenariosFn = Callable[[DraftScenariosInput], DraftScenariosResult]
 #: A service station's body, bound by catalog name (spec K §4.1).
 ServiceFn = Callable[[ServiceStationInput], ServiceStationResult]
+#: Opens or reads a human station's gate (spec K §4.2); sync or async.
+StationGateFn = Callable[[StationGateInput], StationGateResult | Awaitable[StationGateResult]]
 
 
 def _now() -> datetime:
@@ -225,6 +229,8 @@ class WorkflowActivities:
         red_team_fn: RedTeamFn | None = None,
         draft_scenarios_fn: DraftScenariosFn | None = None,
         service_bodies: Mapping[str, ServiceFn] | None = None,
+        open_station_gate_fn: StationGateFn | None = None,
+        read_station_gate_fn: StationGateFn | None = None,
         allow_fakes: bool = False,
     ) -> None:
         def pick[I, O](
@@ -253,6 +259,9 @@ class WorkflowActivities:
         )
         # No stand-in, even with fakes: an unbound service refuses (``not_configured``).
         self._service_bodies = dict(service_bodies or {})
+        # Nor for a human gate: a stand-in decision would be one nobody made.
+        self._open_station_gate_fn = open_station_gate_fn or _refuse("forge.open_station_gate")
+        self._read_station_gate_fn = read_station_gate_fn or _refuse("forge.read_station_gate")
 
     @property
     def store(self) -> WorkflowStore:
@@ -274,6 +283,8 @@ class WorkflowActivities:
             self.run_red_team_scan,
             self.draft_held_out_scenarios,
             self.run_service_station,
+            self.open_station_gate,
+            self.read_station_gate,
         ]
 
     # -- projection writer (idempotent) ----------------------------------- #
@@ -457,6 +468,18 @@ class WorkflowActivities:
         }
         return result
 
+    # -- line human stations (spec K §4.2) -------------------------------- #
+
+    @activity.defn(name="forge.open_station_gate")
+    async def open_station_gate(self, inp: StationGateInput) -> StationGateResult:
+        """Open the visit's approval request, or return the one it has in any status."""
+        return await _heartbeating(self._open_station_gate_fn, inp, {"phase": "open_gate"})
+
+    @activity.defn(name="forge.read_station_gate")
+    async def read_station_gate(self, inp: StationGateInput) -> StationGateResult:
+        """Read the visit's request and decisions; past the deadline, expire it if pending."""
+        return await _heartbeating(self._read_station_gate_fn, inp, {"phase": "read_gate"})
+
     # -- compensation ----------------------------------------------------- #
 
     @activity.defn(name="forge.cleanup_worktree")
@@ -577,5 +600,6 @@ __all__ = [
     "STATION_OUTPUTS_CAP",
     "ApprovalFn",
     "ServiceFn",
+    "StationGateFn",
     "WorkflowActivities",
 ]

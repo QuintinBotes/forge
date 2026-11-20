@@ -58,6 +58,8 @@ logger = logging.getLogger(__name__)
 
 #: The subject type every feature-run gate request carries (A1/A2).
 WORKFLOW_RUN_SUBJECT = "workflow_run"
+#: The subject type of a line's human-station gate: the visit (spec K §4.2).
+STEP_SUBJECT = "step"
 
 EVENT_SPEC_CHANGES = "spec_changes_requested"
 EVENT_CANCEL = "cancel"
@@ -345,8 +347,10 @@ class _WorkflowRunGateHook:
     The wrapped hook runs first, unchanged (for ``pr`` that is the changeset
     attestation — its outcome and any exception behave exactly as before).
     Only a request opened for a workflow run (``subject_type='workflow_run'``
-    with a ``workflow_run_id``) submits an event; every other gate resolves
-    exactly as it did before this hook existed.
+    with a ``workflow_run_id``) submits an event. A line's human-station request
+    (``subject_type='step'``) only sends its run the ``station_gate_changed``
+    hint, which carries nothing the run trusts (spec K §4.2). Every other gate
+    resolves exactly as it did before this hook existed.
     """
 
     gate_type: ClassVar[GateType]
@@ -387,6 +391,19 @@ class _WorkflowRunGateHook:
                 completed=True, follow_up_state=f"{request.gate_type.value}_{request.status.value}"
             )
 
+        if request.subject_type == STEP_SUBJECT and request.workflow_run_id is not None:
+            # A line's human station reads the decision itself; this only wakes it.
+            try:
+                with self._engine_factory(request.workspace_id) as engine:
+                    await engine.astation_gate_changed(request.workflow_run_id, request.id)
+            except Exception:  # never raised: the decision stands and the run wakes itself
+                logger.exception(
+                    "hinting line run %s that gate %s was decided failed; "
+                    "the run reads its gate within 15 minutes",
+                    request.workflow_run_id,
+                    request.id,
+                )
+            return outcome
         if not for_run or event is None:
             return outcome
         if (
@@ -475,6 +492,7 @@ __all__ = [
     "EVENT_CANCEL",
     "GATE_BY_STATE",
     "GATE_EVENTS",
+    "STEP_SUBJECT",
     "WAITING_STATE_BY_GATE",
     "WORKFLOW_RUN_SUBJECT",
     "EngineFactory",

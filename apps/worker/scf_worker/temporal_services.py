@@ -21,9 +21,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 
 from scf_api.observability.redaction import redact_text
+from scf_api.realtime.approval_events import create_published, relay_url
 from scf_api.services.agent_dispatch import STRIPPED_CONTEXT, repo_connected
 from scf_api.services.attestation_service import AttestationService
 from scf_api.services.held_out import record_result, scenarios_for_run
+from scf_api.services.workflow_gate_hook import STEP_SUBJECT, agent_actor_for_run
+from scf_approval.models import GateType
 from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient, Policy
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.review import ReviewVerdict
@@ -39,18 +42,22 @@ from scf_contracts.run_events import RunEventDraft, RunEventType
 from scf_db.models import (
     AgentRun,
     AgentRunEvent,
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStatus,
     KnowledgeSource,
     SkillProfile,
     Task,
+    User,
     WorkflowRun,
 )
-from scf_db.models.enums import RunStatus
+from scf_db.models.enums import RunStatus, UserRole
 from scf_db.models.held_out import SCENARIO_APPROVED
 from scf_db.models.traceability import TraceabilitySpecRollup
 from scf_integrations.github import GitHubClient
 from scf_policy.dependency_gate import RegistryClient
 from scf_worker.agent_runner import _commits_ahead, configured_model, run_agent_objective
-from scf_worker.approval_activity import make_create_approval_fn
+from scf_worker.approval_activity import build_approval_service, make_create_approval_fn
 from scf_worker.diff_gates import PublicRegistry, diff_gate_checks
 from scf_worker.dispatch import (
     RepositoryUnavailable,
@@ -78,9 +85,10 @@ from scf_worker.review import (
     reviewer_client,
     reviewer_model,
 )
-from scf_worker.review_rules import default_branch_policy
+from scf_worker.review_rules import default_branch_policy, review_rules_stamp
 from scf_worker.run_events import RunEventSink
 from scf_worker.run_workspace import NO_DECLARED_CHECKS, CheckRun, run_declared_checks
+from scf_worker.tasks.approvals import _expire_gate
 from scf_workflow.red_team_gate import REDTEAM_BLOCKED, REDTEAM_NOT_RUN, ensure_red_team_verdict
 from scf_workflow.temporal.activities import (
     ApprovalFn,
@@ -90,7 +98,9 @@ from scf_workflow.temporal.activities import (
     RedTeamFn,
     RunAgentFn,
     RunChecksFn,
+    StationGateFn,
 )
+from scf_workflow.temporal.ids import station_visit_id
 from scf_workflow.temporal.payloads import (
     AgentRunResultDTO,
     ApprovalInput,
@@ -104,6 +114,8 @@ from scf_workflow.temporal.payloads import (
     RedTeamResult,
     RunAgentInput,
     RunChecksInput,
+    StationGateInput,
+    StationGateResult,
 )
 
 __all__ = [
@@ -112,6 +124,8 @@ __all__ = [
     "guard_inputs_service",
     "notify_service",
     "open_pr_service",
+    "open_station_gate_service",
+    "read_station_gate_service",
     "red_team_service",
     "run_checks_service",
 ]
@@ -174,6 +188,147 @@ def approval_service(factory: sessionmaker[Session]) -> ApprovalFn:
         return await create(inp)
 
     return create_for_owned_run
+
+
+def _gate_refused(reason: str) -> ApplicationError:
+    return ApplicationError(reason, type="StationGateRefused", non_retryable=True)
+
+
+def _station_gate(session: Session, inp: StationGateInput) -> ApprovalRequest | None:
+    """The visit's gate in any status; refuses a request on its subject it did not open.
+
+    Only the worker opens ``step`` gates (``POST /approvals`` refuses them), so the
+    visit's one request names its run, gate, state and visit, and the run's agent asked.
+    """
+    run = inp.workflow_run_id
+    rows = session.scalars(
+        select(ApprovalRequest).where(
+            ApprovalRequest.workspace_id == inp.workspace_id,
+            ApprovalRequest.subject_type == STEP_SUBJECT,
+            ApprovalRequest.subject_id == station_visit_id(run, inp.state, inp.visit),
+        )
+    ).all()
+    ours = (run, inp.gate, agent_actor_for_run(run), {"run": str(run), "state": inp.state})
+    for row in rows:
+        payload = {k: row.payload.get(k) for k in ("run", "state")}
+        named = (row.workflow_run_id, row.gate.value, row.requested_actor, payload)
+        if named != ours or row.payload.get("visit") != inp.visit or len(rows) > 1:
+            raise _gate_refused(f"approval request {row.id} is not the gate of this visit")
+    return rows[0] if rows else None
+
+
+def open_station_gate_service(factory: sessionmaker[Session]) -> StationGateFn:
+    """Open a human station visit's approval request, once (spec K §4.2).
+
+    A request the visit already has, in any status, is returned instead: the approval
+    service reuses only a pending one, so a retry after a quick decision would open a
+    second gate. A ``pr`` gate carries the repository's review rules, which may raise
+    its quorum, as a feature run's does.
+    """
+    redis_url = relay_url()
+
+    async def open_gate(inp: StationGateInput) -> StationGateResult:
+        with factory() as session:
+            run = _owned_run(session, inp.workflow_run_id, inp.workspace_id)
+            row = _station_gate(session, inp)
+            if row is not None:
+                return StationGateResult(row.id, row.status.value)
+            task = session.get(Task, run.task_id)
+            task_id, project_id = run.task_id, task.project_id if task is not None else None
+        payload: dict[str, Any] = {
+            "run": str(inp.workflow_run_id),
+            "state": inp.state,
+            "visit": inp.visit,
+            "summary": inp.summary,
+        }
+        if inp.gate == GateType.PR.value:
+            payload |= review_rules_stamp(factory, workspace_id=inp.workspace_id, task_id=task_id)
+        request = await create_published(
+            build_approval_service(factory),
+            redis_url=redis_url,
+            workspace_id=inp.workspace_id,
+            gate_type=GateType(inp.gate),
+            subject_type=STEP_SUBJECT,
+            subject_id=station_visit_id(inp.workflow_run_id, inp.state, inp.visit),
+            workflow_run_id=inp.workflow_run_id,
+            task_id=task_id,
+            project_id=project_id,
+            title=inp.summary or f"{inp.gate} approval for {inp.state}",
+            requested_actor=agent_actor_for_run(inp.workflow_run_id),
+            required_approvals=inp.required_approvals,
+            expires_at=inp.expires_at,
+            gate_payload=payload,
+        )
+        return StationGateResult(request.id, request.status.value)
+
+    return open_gate
+
+
+#: The vote that resolves a gate to each decided status.
+_VOTE_FOR_STATUS = {
+    ApprovalStatus.APPROVED: "approve",
+    ApprovalStatus.REJECTED: "reject",
+    ApprovalStatus.CHANGES_REQUESTED: "request_changes",
+}
+
+
+def _decider(session: Session, row: ApprovalRequest) -> str:
+    """``user:<id>`` of whoever decided ``row``, once every voter is a person of its workspace.
+
+    An agent (an agent-runner user), an outsider, or a status no vote stands behind (an
+    automation or system write) refuses: it is never an outcome (ADR-0020).
+    """
+    votes: dict[uuid.UUID, str] = dict(
+        session.execute(
+            select(ApprovalDecision.approver_user_id, ApprovalDecision.decision).where(
+                ApprovalDecision.approval_request_id == row.id
+            )
+        )
+        .tuples()
+        .all()
+    )
+    people = set(
+        session.scalars(
+            select(User.id).where(
+                User.id.in_(votes),
+                User.workspace_id == row.workspace_id,
+                User.role != UserRole.AGENT_RUNNER,
+            )
+        )
+    )
+    decider = row.decided_by_id
+    vote = votes.get(decider) if decider is not None else None
+    if vote is None or vote != _VOTE_FOR_STATUS.get(row.status) or people != set(votes):
+        raise _gate_refused(f"approval request {row.id} was not decided by a person")
+    return f"user:{decider}"
+
+
+def read_station_gate_service(factory: sessionmaker[Session]) -> StationGateFn:
+    """Read a human station visit's gate and its decisions (spec K §4.2, ADR-0020).
+
+    A decision is the outcome only on this visit's request and only when a person of
+    the run's workspace made it; anything else refuses, so the station fails rather
+    than move on a decision nobody may make. Past the deadline (``expire``) a gate
+    still pending expires with the SLA sweep's conditional update, which never
+    overwrites a decision that landed first.
+    """
+
+    def read(inp: StationGateInput) -> StationGateResult:
+        with factory() as session:
+            _owned_run(session, inp.workflow_run_id, inp.workspace_id)
+            row = _station_gate(session, inp)
+            if row is None:
+                raise _gate_refused(f"{inp.state}#{inp.visit} has no gate")
+            if row.status is ApprovalStatus.PENDING and inp.expire:
+                if _expire_gate(session, row, datetime.now(UTC)):
+                    session.commit()
+                    return StationGateResult(row.id, ApprovalStatus.EXPIRED.value)
+                session.refresh(row)  # decided since it was read
+            if row.status in (ApprovalStatus.PENDING, ApprovalStatus.EXPIRED):
+                return StationGateResult(row.id, row.status.value)
+            return StationGateResult(row.id, row.status.value, actor=_decider(session, row))
+
+    return read
 
 
 def _policy_loads(workspace_id: uuid.UUID, repo: str, run_id: uuid.UUID) -> bool:
