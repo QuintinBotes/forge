@@ -36,11 +36,12 @@ child ``agent_run`` linkage that is still parked (see
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import uuid
 from collections.abc import Callable
 from contextlib import ExitStack, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -74,7 +75,9 @@ from scf_coordinator import (
 )
 from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_db.session import create_session_factory
+from scf_obs.genai import INVOKE_WORKFLOW, agent_span
 from scf_worker.dispatch import RepositoryUnavailable, resolve_run_repository
+from scf_worker.observability.genai import TracedToolRegistry
 from scf_worker.run_workspace import _repo_policy
 
 __all__ = ["run_supervised_objective"]
@@ -210,13 +213,23 @@ class _SubAgentRuntime:
     #: The parent run's resolved mirror (dispatch.resolve_run_repository), never a
     #: caller-supplied path: ``repo_targets[].repo`` is a name, not a filesystem location.
     repo_root: Path | None = None
+    #: The supervised run's context. A fan-out runs roles on pool threads, which start
+    #: with an empty one, so each role runs in a copy to join the run's trace (#213).
+    context: contextvars.Context = field(default_factory=contextvars.copy_context)
 
     def run(self, objective: AgentObjective) -> AgentRunResult:
+        return self.context.copy().run(self._run, objective)
+
+    def _run(self, objective: AgentObjective) -> AgentRunResult:
         role = SubAgentRole(objective.context["role"])
         allowed = ROLE_TOOLS[role].intersection(objective.allowed_actions)
         root = objective.context.get("worktree_path")
         target = objective.primary_repo_target
-        with ExitStack() as stack:
+        run_id = uuid.uuid4()
+        with (
+            agent_span(role.value, run_id=run_id, workspace_id=self.workspace_id),
+            ExitStack() as stack,
+        ):
             # The coordinator only provisions worktrees for code-producing roles.
             if root is None and self.repo_root is not None:
                 root = stack.enter_context(
@@ -225,16 +238,23 @@ class _SubAgentRuntime:
                     )
                 )
             if root is None:
-                return AgentRunner(self.model_client).run(objective)
-            return self._run_in_worktree(objective, Path(root), allowed)
+                tools = _traced(ToolRegistry())
+                result = AgentRunner(self._traced_model(), tools=tools).run(objective)
+                result.run_id = run_id
+                return result
+            return self._run_in_worktree(objective, Path(root), allowed, run_id)
+
+    def _traced_model(self) -> ModelClient:
+        # Local import, as in run_supervised_objective: agent_runner imports this module.
+        from scf_worker.agent_runner import traced_model_client
+
+        return traced_model_client(self.model_client, self.model_client)
 
     def _run_in_worktree(
-        self, objective: AgentObjective, root: Path, allowed: frozenset[str]
+        self, objective: AgentObjective, root: Path, allowed: frozenset[str], run_id: uuid.UUID
     ) -> AgentRunResult:
-        # Local import, as in run_supervised_objective: agent_runner imports this module.
         from scf_worker.agent_runner import assisted_model
 
-        run_id = uuid.uuid4()
         policy = _repo_policy(root)
         settings = SandboxSettings.from_env()
         spec = resolve_sandbox_settings(
@@ -273,7 +293,7 @@ class _SubAgentRuntime:
                     if tool is not None and tool.policy_action in allowed:
                         tools.register(tool)
                 result = AgentRunner(
-                    self.model_client, tools=tools, repo_root=root, use_worktree=False
+                    self._traced_model(), tools=_traced(tools), repo_root=root, use_worktree=False
                 ).run(objective)
                 result.run_id = run_id
                 return result
@@ -291,12 +311,18 @@ def _agent_factory(
     """Build one subagent runtime per dispatch, on the per-role client when the
     coordinator routed one, else the run's shared default client."""
 
+    context = contextvars.copy_context()
+
     def factory(model_client: ModelClient | None = None) -> _SubAgentRuntime:
         return _SubAgentRuntime(
-            model_client or default_client, workspace_id or uuid.UUID(int=0), repo_root
+            model_client or default_client, workspace_id or uuid.UUID(int=0), repo_root, context
         )
 
     return factory
+
+
+def _traced(tools: ToolRegistry) -> ToolRegistry:
+    return cast(ToolRegistry, TracedToolRegistry(tools))
 
 
 def run_supervised_objective(
@@ -350,16 +376,21 @@ def run_supervised_objective(
         sub_agent_sink, session_factory = _resolve_sub_agent_sink(objective)
 
     client = _resolve_model_client(model_client)
-    deps = CoordinatorDeps(
-        agent_factory=_agent_factory(
-            client,
-            workspace_id=_as_uuid(objective.context.get("workspace_id")) or uuid.UUID(int=0),
-            repo_root=Path(repo_path) if repo_path else None,
-        ),
-        sub_agent_sink=sub_agent_sink,
-        settings=settings or CoordinatorSettings.from_env(),
-    )
-    result = Supervisor(deps).run(objective)
+    workspace_id = _as_uuid(objective.context.get("workspace_id")) or uuid.UUID(int=0)
+    # The Supervisor is a deterministic graph: an ``invoke_workflow`` span over the roles.
+    with agent_span(
+        run_id=_as_uuid(objective.context.get("parent_agent_run_id")),
+        workspace_id=workspace_id,
+        operation=INVOKE_WORKFLOW,
+    ):
+        deps = CoordinatorDeps(
+            agent_factory=_agent_factory(
+                client, workspace_id=workspace_id, repo_root=Path(repo_path) if repo_path else None
+            ),
+            sub_agent_sink=sub_agent_sink,
+            settings=settings or CoordinatorSettings.from_env(),
+        )
+        result = Supervisor(deps).run(objective)
     # Supervised runs have no workflow run (ADR-0007): they passed no gate (#277).
     result.artifacts["governance"] = "none"
     if session_factory is not None:

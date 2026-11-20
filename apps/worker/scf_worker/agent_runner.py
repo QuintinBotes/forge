@@ -71,9 +71,11 @@ from scf_contracts import (
 from scf_db.models import AgentRun, RunRecording
 from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_db.session import create_session_factory
+from scf_obs.genai import agent_span
 from scf_worker.celery_app import celery_app
 from scf_worker.dispatch import RepositoryUnavailable, resolve_run_repository
 from scf_worker.finalizer import push_and_open_pr, workspace_credentials
+from scf_worker.observability.genai import TracedModelClient, TracedToolRegistry
 from scf_worker.reliability import ScfTask
 from scf_worker.risk_classification import classify_change
 from scf_worker.run_events import terminal_drafts
@@ -227,6 +229,13 @@ def _resolve_model_client(model_client: ModelClient | None) -> ModelClient:
     return _scripted_client()
 
 
+def traced_model_client(client: ModelClient, resolved: ModelClient) -> TracedModelClient:
+    """``client`` with an inference span per call, labelled from the ``resolved`` client (#213)."""
+    config = None if isinstance(resolved, ScriptedModelClient) else ModelClientConfig.from_env()
+    provider = config.provider.value if config is not None else "scf.scripted"
+    return TracedModelClient(client, provider=provider, model=assisted_model(resolved, None))
+
+
 def build_agent_runner(
     *,
     workspace_id: uuid.UUID | None = None,
@@ -235,6 +244,7 @@ def build_agent_runner(
     repo_root: Path | None = None,
     token_budget: int | None = None,
     on_step: Callable[[Step], None] | None = None,
+    genai_spans: bool = False,
 ) -> AgentRunner:
     """Build the agent runner, resolving a real BYOK ``ModelClient`` when possible.
 
@@ -258,29 +268,29 @@ def build_agent_runner(
     since both boundaries are already constructor-injected. The resulting
     cassette is exposed as ``runner.cassette`` (``None`` when recording is
     disabled) for a caller to persist via :func:`persist_run_recording`.
+
+    ``genai_spans`` wraps both boundaries, outermost, in the GenAI span wrappers
+    (#213); the caller opens the run's agent span.
     """
     del workspace_id  # env-based resolution below; vault path lives in the API
-    client = _resolve_model_client(model_client)
+    resolved = client = _resolve_model_client(model_client)
     if token_budget is not None:
         client = BudgetedModelClient(client, max_tokens=token_budget)
     registry = tools if tools is not None else ToolRegistry()
 
-    if not _recording_enabled():
-        return _RecordableAgentRunner(
-            client, tools=registry, cassette=None, repo_root=repo_root, on_step=on_step
-        )
-
-    cassette = RunCassette.with_env(os.environ, redactor=SecretRedactor())
-    # ``RecordingToolRegistry`` is a duck-typed ``ToolRegistry`` facade (delegates
-    # every attribute it does not itself intercept) rather than a nominal
-    # subclass — see its docstring in ``scf_agent.replay.recorder``.
-    recorded = cast(ToolRegistry, RecordingToolRegistry(registry, cassette))
+    cassette = None
+    if _recording_enabled():
+        cassette = RunCassette.with_env(os.environ, redactor=SecretRedactor())
+        client = RecordingModelClient(client, cassette)
+        # ``RecordingToolRegistry`` is a duck-typed ``ToolRegistry`` facade (delegates
+        # every attribute it does not itself intercept) rather than a nominal
+        # subclass — see its docstring in ``scf_agent.replay.recorder``.
+        registry = cast(ToolRegistry, RecordingToolRegistry(registry, cassette))
+    if genai_spans:
+        client = traced_model_client(client, resolved)
+        registry = cast(ToolRegistry, TracedToolRegistry(registry))
     return _RecordableAgentRunner(
-        RecordingModelClient(client, cassette),
-        tools=recorded,
-        cassette=cassette,
-        repo_root=repo_root,
-        on_step=on_step,
+        client, tools=registry, cassette=cassette, repo_root=repo_root, on_step=on_step
     )
 
 
@@ -574,8 +584,10 @@ def execute_run(run: PreparedRun, *, persist_recording: bool = True) -> AgentRun
             repo_root=workspace.path if workspace else None,
             token_budget=_run_token_budget(),
             on_step=events.on_step if events is not None else None,
+            genai_spans=True,
         )
-        result = run_objective(runner, parsed)
+        with agent_span(run_id=run.run_id, workspace_id=run.workspace_id):
+            result = run_objective(runner, parsed)
         if workspace is not None:
             # The branch outlives the worktree; close-out delivers it.
             result.artifacts["branch"] = workspace.branch

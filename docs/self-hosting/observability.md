@@ -26,6 +26,48 @@ ledger is Postgres, not the metrics stack.
   entry (samples `forge_mcp_freshness_lag_seconds` per MCP connection, 60s).
 - **CLI**: `scf cost compute | price-set | reprice | summary`.
 
+## GenAI spans for agent runs
+
+A task's agent run (single-agent or supervised, from the Celery task, a workflow
+run or a run process) is a trace shaped the way the OpenTelemetry GenAI semantic
+conventions describe, so an operator's own backend can attribute time and money to
+a run. The reviewer run (`scf_worker/review.py`) and the held-out verifier run
+(`scf_worker/held_out_drafting.py`) are not traced yet. The conventions are pinned to commit
+`622b2b6073b15e5ed886c3c12a65a892b9cd5c70` of
+`open-telemetry/semantic-conventions-genai`, read on 2026-11-20 (the repository had
+no tag; ADR-0016). The pin and every `gen_ai.*` name SCF emits live in
+`packages/observability/scf_obs/genai.py`.
+
+```text
+invoke_agent                          INTERNAL  one per run (single-agent path)
+├── chat {gen_ai.request.model}       CLIENT    one per model call
+└── execute_tool {gen_ai.tool.name}   INTERNAL  one per executed tool call
+
+invoke_workflow                       INTERNAL  one per supervised run
+└── invoke_agent {role}               INTERNAL  one per role run, each with the tree above
+```
+
+| Attribute | On | Value |
+|---|---|---|
+| `gen_ai.operation.name` | every span | `invoke_agent`, `invoke_workflow`, `chat` or `execute_tool` |
+| `gen_ai.agent.name` | role spans | the subagent role, such as `implementer` |
+| `gen_ai.provider.name` | `chat` | the configured provider (`anthropic`, `openai`, `openai_compatible`, `local_cli`), or `scf.scripted` for canned output |
+| `gen_ai.request.model` | `chat` | the model the call requested, else the model the client runs |
+| `gen_ai.response.model` | `chat` | the model the provider reported |
+| `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | `chat`, and summed on agent and workflow spans | as the provider reported them; absent when it reported none |
+| `gen_ai.tool.name` | `execute_tool` | the tool's name; `unknown_tool` for a name the model invented that no registered tool has |
+| `error.type` | any failed span | the exception's class name; `tool_error` for a tool that returned a failure; the provider's failure stop reason (such as `budget_exhausted`) for a model call |
+| `scf.cost.usd` | `chat`, and summed on agent and workflow spans | the call's cost in US dollars, priced like the run's `model_usage` artifact; absent when the model has no known price, and absent on an agent or workflow span when any call under it was unpriced |
+| `scf.run.id`, `scf.workspace.id` | agent and workflow spans | the SCF run and workspace; a role span carries the role run's own id |
+
+A tool call the policy gate denies never reaches the tool registry, so it has no
+span. No span carries prompt text, completion text, tool arguments, tool output or
+an exception's message, and every name and value passes through the shared secret
+redactor. Spans always land in the worker's in-memory span store (the newest
+10,000) and also go to the OTLP exporter when one is configured, in which case a
+log line written inside a span carries that exported span's `trace_id` and
+`span_id`. A telemetry failure is logged and never fails the run.
+
 ## Environment
 
 | Variable | Default | Meaning |

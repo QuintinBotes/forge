@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import secrets
 import time
+from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -46,10 +47,14 @@ class Span:
 
 
 class SpanStore:
-    """In-memory sink for finished spans (tests + the run-trace debug surface)."""
+    """In-memory sink for finished spans (tests + the run-trace debug surface).
 
-    def __init__(self) -> None:
-        self._spans: list[Span] = []
+    Bounded to the newest ``max_spans``: a long-lived worker records a span for
+    every model and tool call (#213), and this is a debug surface, not an archive.
+    """
+
+    def __init__(self, max_spans: int = 10_000) -> None:
+        self._spans: deque[Span] = deque(maxlen=max_spans)
 
     def add(self, span: Span) -> None:
         self._spans.append(span)
