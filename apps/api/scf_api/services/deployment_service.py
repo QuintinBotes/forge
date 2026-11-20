@@ -24,6 +24,7 @@ from scf_contracts.deployment import (
 from scf_contracts.dtos import DeployRules
 from scf_contracts.enums import UserRole
 from scf_db.models.deployment import Deployment, Environment, EnvironmentPipeline
+from scf_db.risk_repository import DbRiskReader
 from scf_deploy.engine import DeploymentStateMachine
 from scf_deploy.errors import (
     DeploymentConflictError,
@@ -128,6 +129,7 @@ class DeploymentService:
             validation=self._validation,
             security=self._security,
             clock=self._clock,
+            risk=DbRiskReader(session),
         )
 
     @staticmethod
@@ -448,6 +450,8 @@ class DeploymentService:
                 validation=self._validation,
                 security=self._security,
                 clock=self._clock,
+                # A preview decides nothing, so it shows the risk without recording it.
+                risk=DbRiskReader(session, record=False),
             )
             return evaluator.evaluate(deployment_id, persist=False)
 
@@ -618,6 +622,9 @@ class DeploymentService:
                 environment_name=dep.environment_name,
                 repo_id=dep.repo_id,
                 commit_sha=dep.commit_sha,
+                # The same change: its gate reads the same risk class (#194).
+                workflow_run_id=dep.workflow_run_id,
+                agent_run_id=dep.agent_run_id,
                 artifact_ref=dep.artifact_ref,
                 from_environment_name=dep.from_environment_name,
                 kind=DeploymentKind.PROMOTION,

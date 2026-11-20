@@ -19,9 +19,9 @@ from pathlib import Path
 from sqlalchemy.orm import Session, sessionmaker
 
 from scf_api.services.attestation_service import spec_and_prs
-from scf_contracts import AgentObjective, AgentRunResult, ChangeSignals
+from scf_contracts import AgentObjective, AgentRunResult, ChangeSignals, RiskClass
 from scf_db.risk_repository import RiskRepository
-from scf_risk import derive, evaluate
+from scf_risk import derive, evaluate, requirements_for
 from scf_risk.signals import signals_from_changes
 from scf_worker.review_rules import default_branch_policy
 
@@ -137,5 +137,9 @@ def _classify(
             workflow_run_id=uuid.UUID(str(workflow_run_id)) if workflow_run_id else None,
             spec_key=spec_key or None,
             spec_version=spec_version or None,
+            # What each class requires of the gates, so they need not read the policy (#194).
+            class_requirements={
+                c.value: requirements_for(c, rules).model_dump(mode="json") for c in RiskClass
+            },
         )
         session.commit()

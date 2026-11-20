@@ -2,10 +2,13 @@
 
 No update or delete path: both tables are append-only (the Postgres immutability
 trigger rejects UPDATE and DELETE). Every read is scoped to one workspace.
+:class:`DbRiskReader` is the shipping gates' ``RiskReader`` over them (#194).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -13,10 +16,18 @@ from uuid import UUID
 from sqlalchemy import Integer, func, select
 from sqlalchemy.orm import Session
 
-from scf_contracts import RiskEnforcement, RiskEvaluation
+from scf_contracts import (
+    ClassifiedChange,
+    GatedChange,
+    GateRequirements,
+    RiskClass,
+    RiskEnforcement,
+    RiskEvaluation,
+    RiskGate,
+)
 from scf_db.models.risk import RiskClassification, RiskGateObservation
 
-__all__ = ["RiskRepository"]
+__all__ = ["DbRiskReader", "RiskRepository"]
 
 
 class RiskRepository:
@@ -38,8 +49,12 @@ class RiskRepository:
         workflow_run_id: UUID | None = None,
         spec_key: str | None = None,
         spec_version: int | None = None,
+        class_requirements: dict[str, Any] | None = None,
     ) -> RiskClassification:
-        """Append one classification and flush it (visible within the transaction)."""
+        """Append one classification and flush it (visible within the transaction).
+
+        ``class_requirements`` maps each class name to its ``GateRequirements``.
+        """
         row = RiskClassification(
             workspace_id=workspace_id,
             commit_sha=commit_sha,
@@ -57,6 +72,7 @@ class RiskRepository:
             override_reason=evaluation.override_reason,
             enforcement_mode=enforcement_mode,
             fallback_applied=evaluation.fallback_applied,
+            class_requirements=class_requirements,
         )
         self._session.add(row)
         self._session.flush()
@@ -91,6 +107,28 @@ class RiskRepository:
         self._session.add(row)
         self._session.flush()
         return row
+
+    def latest_for(self, change: GatedChange) -> RiskClassification | None:
+        """The newest classification of ``change`` by its most specific identity that has one."""
+        rc = RiskClassification
+        identities: list[tuple[Any, object]] = [
+            (rc.commit_sha, change.commit_sha),
+            (rc.agent_run_id, change.agent_run_id),
+            (rc.workflow_run_id, change.workflow_run_id),
+        ]
+        for column, value in identities:
+            if value is None:
+                continue
+            query = (
+                select(rc)
+                .where(rc.workspace_id == change.workspace_id, column == value)
+                .order_by(rc.created_at.desc(), rc.id.desc())
+                .limit(1)
+            )
+            row = self._session.scalars(query).first()
+            if row is not None:
+                return row
+        return None
 
     def list_classifications(
         self,
@@ -127,3 +165,62 @@ class RiskRepository:
         )
         rows = self._session.execute(query)
         return [(gate, total, int(agreed or 0)) for gate, total, agreed in rows]
+
+
+class DbRiskReader:
+    """The shipping gates' ``RiskReader`` over the stored classifications (#194).
+
+    Given a ``Session`` it works in the caller's transaction: an observation is
+    flushed and commits with the gate's own decision. Given a session factory, each
+    call opens a session and commits its observation. With ``record=False`` it
+    observes nothing: for a preview of a gate that decides nothing.
+    """
+
+    def __init__(self, sessions: Session | Callable[[], Session], *, record: bool = True) -> None:
+        self._sessions = sessions
+        self._record = record
+
+    @contextmanager
+    def _session(self) -> Iterator[Session]:
+        if isinstance(self._sessions, Session):
+            # A SAVEPOINT: a failed read or observation rolls back only itself and
+            # leaves the gate's own transaction usable (FR-013).
+            with self._sessions.begin_nested():
+                yield self._sessions
+            return
+        with self._sessions() as session:
+            yield session
+            session.commit()
+
+    def risk_for(self, change: GatedChange) -> ClassifiedChange | None:
+        with self._session() as session:
+            row = RiskRepository(session).latest_for(change)
+        if row is None:
+            return None
+        named = bool((row.override_approver or "").strip() and (row.override_reason or "").strip())
+        # Only a named override ships a change below its derived class (spec A §3.1).
+        ships_as = row.final_class if named else max(row.derived_class, row.final_class)
+        raw = (row.class_requirements or {}).get(RiskClass(ships_as).value)
+        if raw is None:
+            return None  # recorded before the requirements were: nothing to tighten with
+        return ClassifiedChange(
+            classification_id=row.id,
+            workspace_id=row.workspace_id,
+            enforcement=row.enforcement_mode,  # type: ignore[arg-type]  # validated
+            requirements=GateRequirements.model_validate(raw),
+        )
+
+    def observe(
+        self, risk: ClassifiedChange, *, gate: RiskGate, actual: str, risk_decision: str
+    ) -> None:
+        if not self._record:
+            return
+        with self._session() as session:
+            RiskRepository(session).record_gate_observation(
+                risk.workspace_id,
+                classification_id=risk.classification_id,
+                gate_name=gate,
+                actual_decision=actual,
+                risk_decision=risk_decision,
+                agreed=actual == risk_decision,
+            )

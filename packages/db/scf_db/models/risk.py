@@ -64,6 +64,9 @@ class RiskClassification(WorkspaceScopedModel):
     enforcement_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     #: True when the diff could not be read and the policy's fallback class applied.
     fallback_applied: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: ``GateRequirements`` per class name, from the policy's ``risk_rules`` (#194): the
+    #: gates read the requirements of the class a change ships as. Absent on older rows.
+    class_requirements: Mapped[dict[str, Any] | None] = mapped_column(json_type(), nullable=True)
 
 
 class RiskGateObservation(WorkspaceScopedModel):
