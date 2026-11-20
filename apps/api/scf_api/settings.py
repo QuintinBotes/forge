@@ -328,6 +328,9 @@ class Settings(BaseSettings):
     # ``outbound_allowlist`` names exact hostnames always permitted.
     ssrf_allow_private: bool = False
     outbound_allowlist: list[str] = []
+    # #191: how long a held automatic action waits for a person before the SLA
+    # sweep expires it, so a stale trigger never runs. ``FORGE_HELD_ACTION_TTL_HOURS``.
+    held_action_ttl_hours: int = Field(default=72, ge=1)
 
     # --- HARD-03 live cross-encoder reranker --------------------------------
     # Process-level reranker selection (BYOK keys are NOT stored here — they are

@@ -236,6 +236,7 @@ export const GATE_TYPES = [
   "deploy",
   "incident_remediation",
   "policy_override",
+  "automation_action",
 ] as const;
 export type GateType = (typeof GATE_TYPES)[number];
 

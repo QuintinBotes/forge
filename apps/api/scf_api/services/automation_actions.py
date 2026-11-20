@@ -33,7 +33,8 @@ import json
 import logging
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any, ClassVar
 from urllib.parse import urlsplit
 
@@ -43,7 +44,10 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from scf_api.observability.audit import AuditCategory, AuditLog
+from scf_api.realtime.approval_events import create_published, relay_url
+from scf_api.security.ssrf import assert_safe_url
 from scf_api.services.incident_service import IncidentService
+from scf_api.settings import get_settings
 from scf_approval import ApprovalAuditSink, ApprovalService
 from scf_approval.models import (
     ApprovalDecisionRequest,
@@ -119,13 +123,22 @@ class AutomationActionAuditSink:
 
 
 class HttpxWebhookSender:
-    """Posts an automation webhook action over real HTTP."""
+    """Posts an automation webhook over HTTP once ``url_validator`` (SSRF guard) passes."""
 
-    def __init__(self, *, timeout: float = 5.0, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        timeout: float = 5.0,
+        client: httpx.Client | None = None,
+        url_validator: Callable[[str], str] | None = None,
+    ) -> None:
         self._timeout = timeout
         self._client = client
+        self._validate = url_validator
 
     def send(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._validate is not None:
+            self._validate(url)
         if self._client is not None:
             response = self._client.post(url, json=payload, timeout=self._timeout)
         else:
@@ -323,7 +336,12 @@ class ApprovalActionHolder:
             )
         if decided is not None:
             return decided
-        request = await self._approvals.create(
+        # Announced on /ws like every gate the worker opens; undecided, it expires
+        # under the SLA sweep after FORGE_HELD_ACTION_TTL_HOURS and never runs.
+        request = await create_published(
+            self._approvals,
+            redis_url=relay_url(),
+            expires_at=datetime.now(UTC) + timedelta(hours=get_settings().held_action_ttl_hours),
             workspace_id=ctx.envelope.workspace_id,
             gate_type=GateType.AUTOMATION_ACTION,
             subject_type=HELD_ACTION_SUBJECT,
@@ -343,21 +361,42 @@ class ApprovalActionHolder:
                 "entity_id": str(ctx.snapshot.entity_id),
             },
         )
+        try:
+            self._store(request, stored, ctx)
+        except Exception:
+            # The trigger is not evaluated again: a request with nothing behind it
+            # must not wait for an approval that would run nothing.
+            if not self._stored(request.id):  # another delivery may have stored it
+                await self._approvals.expire(
+                    request, actor="automation", reason="held_action_not_stored"
+                )
+            raise
+        return request.id
+
+    def _stored(self, approval_id: uuid.UUID) -> bool:
         with self._sf() as session:
-            held = select(HeldAutomationAction.id).where(
-                HeldAutomationAction.approval_request_id == request.id
-            )
-            if session.scalar(held) is None:
-                session.add(
-                    HeldAutomationAction(
-                        workspace_id=request.workspace_id,
-                        approval_request_id=request.id,
-                        action=stored,
-                        context=_CONTEXT.dump_python(ctx, mode="json"),
+            return (
+                session.scalar(
+                    select(HeldAutomationAction.id).where(
+                        HeldAutomationAction.approval_request_id == approval_id
                     )
                 )
-                session.commit()
-        return request.id
+                is not None
+            )
+
+    def _store(self, request: ApprovalRequest, stored: dict[str, Any], ctx: ActionContext) -> None:
+        if self._stored(request.id):
+            return
+        with self._sf() as session:
+            session.add(
+                HeldAutomationAction(
+                    workspace_id=request.workspace_id,
+                    approval_request_id=request.id,
+                    action=stored,
+                    context=_CONTEXT.dump_python(ctx, mode="json"),
+                )
+            )
+            session.commit()
 
 
 def claim_held_action(
@@ -391,12 +430,20 @@ def release_executor(workspace_id: uuid.UUID, actor: str) -> ExternalActionExecu
 
     The same ports the worker wires (the deploy and merge dispatchers are the
     documented mocks), and the secure default policy, so a deploy or merge the
-    policy denies is still refused at release.
+    policy denies is still refused at release. The webhook leaves from this
+    process, so it passes the API's SSRF guard first (private networks and the
+    allowlist as configured for every other outbound URL).
     """
     from scf_api.observability.service import get_observability_service
 
+    settings = get_settings()
+    guard = partial(
+        assert_safe_url,
+        allow_private=settings.ssrf_allow_private,
+        allowlist=settings.outbound_allowlist,
+    )
     return ExternalActionExecutor(
-        webhook=HttpxWebhookSender(),
+        webhook=HttpxWebhookSender(url_validator=guard),
         deploys=MockDeployDispatcher(),
         merges=MockGitHubMergeDispatcher(),
         audit=AutomationActionAuditSink(
@@ -459,7 +506,11 @@ class HeldActionResolutionHook:
             completed=ran,
             follow_up_state=f"dispatch_{result.status}",
             blocking_reasons=[] if ran else [f"the approved action did not run: {result.status}"],
-            details={"dispatch_status": result.status},
+            # The error is a type name only (e.g. SsrfBlockedError): never a URL.
+            details={
+                "dispatch_status": result.status,
+                "dispatch_error": result.detail.get("error"),
+            },
         )
 
     def _record(

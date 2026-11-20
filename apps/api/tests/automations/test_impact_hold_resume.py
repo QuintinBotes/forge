@@ -10,19 +10,23 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import uuid
 from collections.abc import Iterator
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import StaticPool, create_engine, select, update
+from sqlalchemy import StaticPool, create_engine, event, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from scf_api.main import create_app
 from scf_api.observability.audit import AuditLog
 from scf_api.observability.redaction import redact_mapping
+from scf_api.realtime import approval_events
 from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from scf_api.services.approval_service import get_approval_service
 from scf_api.services.automation_actions import (
@@ -30,7 +34,9 @@ from scf_api.services.automation_actions import (
     AutomationActionAuditSink,
     HeldActionResolutionHook,
     claim_held_action,
+    release_executor,
 )
+from scf_api.settings import get_settings
 from scf_approval import (
     AlreadyResolvedError,
     ApprovalAuthorizer,
@@ -111,6 +117,7 @@ class Stack:
         *,
         repo: ApprovalRepository | None = None,
         forbid_self_approval: bool = False,
+        release: Any = None,  # the production ``release_executor`` instead of fake ports
     ) -> None:
         self.factory = factory
         self.ports = Ports()
@@ -121,7 +128,7 @@ class Stack:
             HeldActionResolutionHook(
                 audit=self.approval_audit,
                 session_factory=factory,
-                executor_factory=self.executor,
+                executor_factory=release or self.executor,
             )
         )
         self.approvals = ApprovalService(
@@ -189,12 +196,13 @@ class Stack:
         *,
         by: uuid.UUID = APPROVER,
         note: str | None = None,
+        role: Role = Role.MEMBER,
     ) -> Any:
         return asyncio.run(
             self.approvals.resolve(
                 approval_id,
                 ApprovalDecisionRequest(decision=decision, note=note),
-                person(by),
+                person(by, role),
                 workspace_id=WS,
             )
         )
@@ -391,19 +399,30 @@ def test_a_hold_with_no_stored_action_runs_nothing(
     assert stack.ports.calls == []
 
 
-def test_a_hold_expired_while_it_is_being_approved_never_runs(
-    stack: Stack, factory: sessionmaker[Session]
+@pytest.mark.parametrize(
+    ("decision", "meanwhile"),
+    [
+        (ApprovalAction.APPROVE, DbApprovalStatus.EXPIRED),
+        (ApprovalAction.ESCALATE, DbApprovalStatus.REJECTED),
+    ],
+    ids=["approve-vs-expiry", "escalate-vs-reject"],
+)
+def test_a_decision_racing_another_outcome_never_reopens_or_runs_the_hold(
+    stack: Stack,
+    factory: sessionmaker[Session],
+    decision: ApprovalAction,
+    meanwhile: DbApprovalStatus,
 ) -> None:
-    """The SLA sweep expires with a conditional update; the approval that read the
-    request as pending a moment earlier must not overwrite that and run the action."""
+    """An expiry or reject lands after this decision read the request as pending: the
+    decision must not overwrite it, so a later approval cannot run the action."""
     approval_id = stack.hold()
 
-    def expire_meanwhile(_: Any) -> None:
+    def land_meanwhile(_: Any) -> None:
         with factory() as session:
             session.execute(
                 update(ApprovalRequestRow)
                 .where(ApprovalRequestRow.id == approval_id)
-                .values(status=DbApprovalStatus.EXPIRED)
+                .values(status=meanwhile)
             )
             session.commit()
 
@@ -411,14 +430,16 @@ def test_a_hold_expired_while_it_is_being_approved_never_runs(
         asyncio.run(
             stack.approvals.resolve(
                 approval_id,
-                ApprovalDecisionRequest(decision=ApprovalAction.APPROVE),
+                ApprovalDecisionRequest(decision=decision),
                 person(APPROVER),
                 workspace_id=WS,
-                before_decision=expire_meanwhile,
+                before_decision=land_meanwhile,
             )
         )
+    assert stack.request(approval_id).status.value == meanwhile.value
+    with pytest.raises(AlreadyResolvedError):
+        stack.decide(approval_id, ApprovalAction.APPROVE, by=SECOND, role=Role.ADMIN)
     assert stack.ports.calls == []
-    assert stack.request(approval_id).status is GateStatus.EXPIRED
 
 
 def test_a_redelivered_trigger_opens_no_second_hold_after_a_decision(stack: Stack) -> None:
@@ -491,3 +512,99 @@ def test_a_caller_cannot_open_an_automation_action_gate(
     )
     assert response.status_code == 422, response.text
     assert "automation executor" in response.text
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8080/hook", "http://169.254.169.254/latest"])
+def test_an_approved_webhook_to_an_internal_address_is_refused_unsent(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    posts: list[Any] = []
+    monkeypatch.setattr(httpx, "post", lambda *a, **kw: posts.append(a))
+    stack = Stack(factory, release=release_executor)
+    approval_id = stack.hold(WebhookPostAction(url=url))
+
+    resolution = stack.decide(approval_id, ApprovalAction.APPROVE)
+
+    assert posts == []
+    assert resolution.outcome.completed is False
+    assert resolution.outcome.details["dispatch_error"] == "SsrfBlockedError"
+    assert stack.request(approval_id).gate_payload["dispatch"]["status"] == "error"
+
+
+def test_opening_a_hold_announces_it_once(stack: Stack, monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[Any] = []
+    monkeypatch.setattr(approval_events, "publish_sync", lambda _url, event: events.append(event))
+    approval_id = stack.hold()
+    assert [(e.type.value, e.approval_id) for e in events] == [("approval.requested", approval_id)]
+
+
+def test_a_hold_whose_action_was_not_stored_is_expired(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _fail(*_: Any) -> None:
+        raise RuntimeError("held row not written")
+
+    monkeypatch.setattr(ApprovalActionHolder, "_store", _fail)
+    assert stack.executor(WS).execute(webhook(), stack.ctx()).status == "error"
+
+    [hold] = asyncio.run(stack.approvals.list(workspace_id=WS, actor=person(APPROVER)))
+    request = stack.request(hold.id)
+    assert request.status is GateStatus.EXPIRED
+    assert request.gate_payload["expired"]["reason"] == "held_action_not_stored"
+
+
+def test_a_hold_expires_after_the_configured_window(stack: Stack) -> None:
+    request = stack.request(stack.hold())
+    assert request.expires_at is not None
+    window = request.expires_at - request.requested_at
+    ttl = timedelta(hours=get_settings().held_action_ttl_hours)
+    assert abs(window - ttl) < timedelta(seconds=5)
+
+
+@pytest.mark.postgres
+def test_two_racing_approvals_run_the_hold_once(pg_engine: Any) -> None:
+    """Both read the request as pending; the row lock lets only one write its outcome."""
+    Base.metadata.create_all(pg_engine)
+    try:
+        factory = sessionmaker(bind=pg_engine, expire_on_commit=False)
+        with factory() as session:
+            session.add(Workspace(id=WS, name="Acme", slug=f"acme-{uuid.uuid4().hex[:6]}"))
+            session.flush()
+            for user_id in (AUTHOR, APPROVER, SECOND):
+                session.add(
+                    User(id=user_id, workspace_id=WS, email=f"{user_id}@acme.test", name="P")
+                )
+            session.commit()
+        stack = Stack(factory)
+        approval_id = stack.hold()
+        voted, barrier = threading.local(), threading.Barrier(2)
+
+        @event.listens_for(pg_engine, "after_cursor_execute")
+        def _pause(_c: Any, _cur: Any, statement: str, *_: Any) -> None:
+            if statement.startswith("INSERT INTO approval_decision"):
+                voted.yes = True
+            elif getattr(voted, "yes", False) and "FROM approval_request" in statement:
+                voted.yes = False  # this thread's status write read the row: wait for the other
+                with suppress(threading.BrokenBarrierError):
+                    barrier.wait(timeout=3)
+
+        outcomes: list[str] = []
+
+        def _approve(by: uuid.UUID) -> None:
+            try:
+                stack.decide(approval_id, ApprovalAction.APPROVE, by=by)
+                outcomes.append("approved")
+            except AlreadyResolvedError:
+                outcomes.append("refused")
+
+        threads = [threading.Thread(target=_approve, args=(u,)) for u in (APPROVER, SECOND)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        event.remove(pg_engine, "after_cursor_execute", _pause)
+
+        assert sorted(outcomes) == ["approved", "refused"]
+        assert len(stack.ports.calls) == 1
+    finally:
+        Base.metadata.drop_all(pg_engine)

@@ -12,6 +12,7 @@ import {
   Rocket,
   ShieldAlert,
   Siren,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,6 +35,7 @@ export const GATE_META: Record<GateType, GateMeta> = {
   deploy: { label: "Deploy", icon: Rocket },
   incident_remediation: { label: "Incident remediation", icon: Siren },
   policy_override: { label: "Policy override", icon: ShieldAlert },
+  automation_action: { label: "Automatic action", icon: Zap },
 };
 
 export function gateMeta(gate: GateType): GateMeta {

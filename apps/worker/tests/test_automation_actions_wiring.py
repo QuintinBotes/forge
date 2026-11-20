@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -29,7 +30,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from scf_api.services.automation_actions import HeldActionResolutionHook
-from scf_approval import ApprovalAuthorizer, ApprovalService, GateRegistry, NullAuditSink
+from scf_api.settings import get_settings
+from scf_approval import (
+    AlreadyResolvedError,
+    ApprovalAuthorizer,
+    ApprovalService,
+    GateRegistry,
+    NullAuditSink,
+)
 from scf_approval.models import ApprovalAction, ApprovalDecisionRequest, Principal, Role
 from scf_contracts.automation import (
     AutomationEntityType,
@@ -42,6 +50,7 @@ from scf_contracts.enums import IncidentSeverity
 from scf_db.base import Base
 from scf_db.models import AutomationRule, Project, Sprint, Task, User, Workspace
 from scf_db.models.enums import SprintState, TaskStatus
+from scf_worker.tasks.approvals import run_sla_sweep
 from scf_worker.tasks.automations import evaluate_envelope
 
 WS_ID = uuid.uuid4()
@@ -188,11 +197,18 @@ def test_auto_merge_is_forbidden_by_default_through_the_worker_dispatch_path(
     assert result["detail"]["reason"] == "auto_merge_disabled"
 
 
-def test_webhook_post_is_held_and_posts_over_real_http_once_a_person_approves(
+@pytest.fixture
+def test_hooks_allowed(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The release path's SSRF guard resolves hosts; the test host is allowlisted."""
+    monkeypatch.setenv("FORGE_OUTBOUND_ALLOWLIST", '["hooks.example.test"]')
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def _hold_webhook(
     factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """#191: the worker holds the webhook as an approval request; the real HTTP
-    call happens only when a person approves it, through the gate's hook."""
+) -> tuple[uuid.UUID, list[tuple[str, dict[str, Any]]]]:
     project_id, task_id = _seed_task(factory)
     _add_rule(
         factory,
@@ -230,7 +246,10 @@ def test_webhook_post_is_held_and_posts_over_real_http_once_a_person_approves(
     result = executions[0].action_results[0]
     assert result["status"] == "held"
     assert calls == []
+    return uuid.UUID(result["detail"]["approval_id"]), calls
 
+
+def _approve(factory: sessionmaker[Session], approval_id: uuid.UUID) -> Any:
     approver = uuid.uuid4()
     with factory() as session:
         session.add(User(id=approver, workspace_id=WS_ID, email="ops@acme.test", name="Ops"))
@@ -240,14 +259,25 @@ def test_webhook_post_is_held_and_posts_over_real_http_once_a_person_approves(
     approvals = ApprovalService(
         SqlAlchemyApprovalRepository(factory), registry, ApprovalAuthorizer()
     )
-    resolution = asyncio.run(
+    return asyncio.run(
         approvals.resolve(
-            uuid.UUID(result["detail"]["approval_id"]),
+            approval_id,
             ApprovalDecisionRequest(decision=ApprovalAction.APPROVE),
             Principal(kind="user", id=approver, role=Role.MEMBER, workspace_id=WS_ID),
             workspace_id=WS_ID,
         )
     )
+
+
+@pytest.mark.usefixtures("test_hooks_allowed")
+def test_webhook_post_is_held_and_posts_over_real_http_once_a_person_approves(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#191: the worker holds the webhook as an approval request; the real HTTP
+    call happens only when a person approves it, through the gate's hook."""
+    approval_id, calls = _hold_webhook(factory, monkeypatch)
+
+    resolution = _approve(factory, approval_id)
 
     assert resolution.outcome.completed is True
     assert len(calls) == 1
@@ -255,6 +285,18 @@ def test_webhook_post_is_held_and_posts_over_real_http_once_a_person_approves(
     assert url == "https://hooks.example.test/ci"
     assert payload["event"] == "status_changed"
     assert payload["rule_name"] == "rule-task_status_changed"
+
+
+def test_an_undecided_held_webhook_expires_in_the_sla_sweep_and_never_posts(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    approval_id, calls = _hold_webhook(factory, monkeypatch)
+    with factory() as session:  # a month on: well past the hold's window
+        assert run_sla_sweep(session, now=datetime.now(UTC) + timedelta(days=30)).expired == 1
+
+    with pytest.raises(AlreadyResolvedError):
+        _approve(factory, approval_id)
+    assert calls == []
 
 
 def test_sprint_completed_auto_starts_the_next_planned_sprint_through_the_worker_path(
