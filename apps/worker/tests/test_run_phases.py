@@ -911,3 +911,15 @@ def test_a_handoff_throttled_on_every_attempt_exits_non_zero_naming_429(
     assert "429" in capsys.readouterr().err
     assert wire.calls() == ["GET inputs"] * ATTEMPTS + ["POST handoff"] * ATTEMPTS
     assert HANDOFF_KEY not in (_row(factory, run_id).output or {})
+
+
+def test_a_handoff_without_its_runs_token_is_refused_before_its_body_is_read(factory, wire) -> None:
+    """The handoff's larger limit must not let any caller make the API parse a large body."""
+    run_id, _ = _seed(factory, repo=False)
+    junk = {"Authorization": "Bearer junk", "Content-Type": "application/json"}
+
+    resp = wire.api.post(
+        f"/agent/runs/{run_id}/record/handoff", headers=junk, content=b"{" * (2 * MIB)
+    )
+
+    assert resp.status_code == 401  # not 422: the body was never parsed
