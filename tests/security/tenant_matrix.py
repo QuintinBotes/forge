@@ -833,7 +833,7 @@ OPEN_DEFECTS: dict[str, str] = {
             "PATCH /board/sprints/{sprint_id} task_ids",
             "PATCH /board/milestones/{milestone_id} project_id",
             "PATCH /board/incidents/{incident_id} project_id",
-            "GET /sprints/{sprint_id}/goal-alignment",
+            "GET /sprints/{sprint_id}/goal-alignment (A changed)",
         ],
         "#336 Board items (the database board): a task, epic, sprint, milestone or incident must "
         "refuse a project, epic, sprint, milestone, task or assignee of another workspace",
@@ -851,7 +851,9 @@ OPEN_DEFECTS: dict[str, str] = {
             f"POST /approvals {p}"
             for p in ("project_id", "task_id", "subject_id", "agent_run_id", "workflow_run_id")
         ],
-        "#337 Approvals: a gate must refuse a project, task or run of another workspace",
+        "#337 Approvals: a gate must refuse a project, task or run of another workspace; "
+        "B's pending gate on A's subject also blocks A's own gate (the pending-unique index "
+        "has no workspace)",
     ),
     **dict.fromkeys(
         [
@@ -862,7 +864,8 @@ OPEN_DEFECTS: dict[str, str] = {
         "workspace",
     ),
     "POST /integrations/pm/connections project_id": "#338 PM connections: must refuse a project "
-    "of another workspace, answering as for a project that does not exist",
+    "of another workspace, answering as for a project that does not exist; B's connection on "
+    "A's project also blocks A's own (project and provider are unique across workspaces)",
     **dict.fromkeys(
         [
             f"POST /projects/{{project_id}}/deployments {p}"
@@ -906,9 +909,8 @@ QUERIES: dict[str, dict[str, Any]] = {
     "GET /knowledge/document": {"path": "a.md"},
 }
 
-#: The types workspace B makes too, so that B's own calls name B's parents. Types a
-#: workspace names itself (a spec key, a definition name, a connection id, a slug) are
-#: left out, so that B naming A's names nothing of B's.
+#: The types workspace B makes too, so B's own calls name B's parents. Types a workspace
+#: names itself (spec key, definition name, connection id, slug) are left out.
 B_SEEDS = {
     "Project",
     "Workspace",
@@ -1183,10 +1185,6 @@ def coverage() -> list[str]:
     return wrong
 
 
-# --------------------------------------------------------------------------- #
-# The running application                                                      #
-# --------------------------------------------------------------------------- #
-
 _BACKENDS = (
     "BOARD",
     "AUDIT",
@@ -1289,6 +1287,9 @@ def tenants() -> Iterator[Tenants]:
         with (
             mock.patch.dict(os.environ, env),
             mock.patch("scf_api.services.automations.ApiAutomationDispatcher.dispatch"),
+            # Module-global services: built against this env, the process's restored on exit.
+            mock.patch("scf_api.auth.service._default_service", None),
+            mock.patch("scf_api.observability.service._default_service", None),
         ):
             _clear_cached_services()
             try:
@@ -1310,11 +1311,6 @@ def tenants() -> Iterator[Tenants]:
             finally:
                 _clear_cached_services()
                 engine.dispose()
-
-
-# --------------------------------------------------------------------------- #
-# Requests                                                                     #
-# --------------------------------------------------------------------------- #
 
 
 def _schema_body(spec: dict[str, Any], method: str, path: str) -> Any:
@@ -1549,8 +1545,7 @@ def sweep(world: Tenants) -> list[str]:
         if resp.status_code != 200 or seen:
             wrong.append(f"{key}: B's list -> {resp.status_code}, shows A's {seen}")
     # Reads before writes, so a write B wrongly made cannot hide or fake a read's answer;
-    # writes naming A's resource in the path before those naming it in a body, which make
-    # B's own resources.
+    # path writes before body writes, which make B's own resources.
     for key in reads:
         _expect_hidden(world, wrong, key, paths[key])
     for key, param, name in named:
@@ -1571,7 +1566,7 @@ def sweep(world: Tenants) -> list[str]:
     world.act_as(WORKSPACE_A)
     for key, answer in stable.items():
         if _send(world, key, paths[key]) != answer:
-            wrong.append(f"{key}: A's resource changed after B's calls")
+            wrong.append(f"{key} (A changed): A's resource changed after B's calls")
     return wrong
 
 
