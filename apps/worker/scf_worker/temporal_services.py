@@ -21,11 +21,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 
 from scf_api.observability.redaction import redact_text
-from scf_api.realtime.approval_events import create_published, relay_url
+from scf_api.realtime.approval_events import create_published, decided, publish_sync, relay_url
 from scf_api.services.agent_dispatch import STRIPPED_CONTEXT, repo_connected
 from scf_api.services.attestation_service import AttestationService
 from scf_api.services.held_out import record_result, scenarios_for_run
-from scf_api.services.workflow_gate_hook import STEP_SUBJECT, agent_actor_for_run
+from scf_api.services.workflow_gate_hook import GATE_BLOCKED, STEP_SUBJECT, agent_actor_for_run
+from scf_approval.models import ApprovalRequest as DomainApprovalRequest
 from scf_approval.models import GateType
 from scf_contracts import (
     AgentObjective,
@@ -53,14 +54,16 @@ from scf_db.models import (
     ApprovalDecision,
     ApprovalRequest,
     ApprovalStatus,
+    Attestation,
     KnowledgeSource,
     SkillProfile,
     Task,
     User,
     WorkflowRun,
 )
-from scf_db.models.enums import RunStatus, UserRole
+from scf_db.models.enums import ApprovalGate, RunStatus, UserRole
 from scf_db.models.held_out import SCENARIO_APPROVED
+from scf_db.models.runs import WorkflowStationVisit
 from scf_db.models.traceability import TraceabilitySpecRollup
 from scf_integrations.github import GitHubClient
 from scf_policy.dependency_gate import RegistryClient
@@ -96,7 +99,7 @@ from scf_worker.review import (
 from scf_worker.review_rules import default_branch_policy, review_rules_stamp
 from scf_worker.run_events import RunEventSink
 from scf_worker.run_workspace import NO_DECLARED_CHECKS, CheckRun, run_declared_checks
-from scf_worker.tasks.approvals import _expire_gate
+from scf_worker.tasks.approvals import _expire_gate, _to_domain
 from scf_workflow.red_team_gate import (
     RED_TEAM_REQUIRED,
     REDTEAM_BLOCKED,
@@ -131,6 +134,7 @@ from scf_workflow.temporal.payloads import (
     StationGateInput,
     StationGateResult,
 )
+from scf_workflow.temporal.station_workflow import ATTESTATION_MISSING
 
 __all__ = [
     "agent_run_service",
@@ -249,6 +253,7 @@ def open_station_gate_service(factory: sessionmaker[Session]) -> StationGateFn:
                 return StationGateResult(row.id, row.status.value)
             task = session.get(Task, run.task_id)
             task_id, project_id = run.task_id, task.project_id if task is not None else None
+            targets = task.repo_targets if task is not None else []
         payload: dict[str, Any] = {
             "run": str(inp.workflow_run_id),
             "state": inp.state,
@@ -256,9 +261,16 @@ def open_station_gate_service(factory: sessionmaker[Session]) -> StationGateFn:
             "summary": inp.summary,
         }
         if inp.gate == GateType.PR.value:
+            target = AgentObjective(objective="review rules", repo_targets=targets)
+            if (repo := target.primary_repo_target) is not None:
+                try:  # fetched as an agent run fetches it; review_rules_stamp needs the mirror
+                    _mirror(inp.workspace_id, repo.repo, inp.workflow_run_id)
+                except RepositoryUnavailable as exc:
+                    raise _gate_refused(f"the pr gate cannot read {repo.repo}: {exc}") from exc
             payload |= review_rules_stamp(factory, workspace_id=inp.workspace_id, task_id=task_id)
+        service = build_approval_service(factory)
         request = await create_published(
-            build_approval_service(factory),
+            service,
             redis_url=redis_url,
             workspace_id=inp.workspace_id,
             gate_type=GateType(inp.gate),
@@ -273,9 +285,54 @@ def open_station_gate_service(factory: sessionmaker[Session]) -> StationGateFn:
             expires_at=inp.expires_at,
             gate_payload=payload,
         )
+        if _visit_cancelled(factory, inp):
+            # Cancelled while this opened: the cancel's cleanup may have run before the
+            # request existed. The visit is marked cancelled before that cleanup runs.
+            await service.expire(request, actor="system", reason="run_cancelled")
+            _announce_expired(redis_url, request)
         return StationGateResult(request.id, request.status.value)
 
     return open_gate
+
+
+def _visit_cancelled(factory: sessionmaker[Session], inp: StationGateInput) -> bool:
+    visit_id = station_visit_id(inp.workflow_run_id, inp.state, inp.visit)
+    with factory() as session:
+        return (
+            session.scalar(
+                select(WorkflowStationVisit.status).where(WorkflowStationVisit.id == visit_id)
+            )
+            == "cancelled"
+        )
+
+
+def _announce_expired(redis_url: str | None, request: DomainApprovalRequest) -> None:
+    """Tell ``/ws`` clients the gate expired, as the SLA sweep does."""
+    publish_sync(redis_url, decided(request, decided_by="system", surface="system"))
+
+
+def _attested(session: Session, row: ApprovalRequest) -> bool | None:
+    """Whether an approved ``pr`` gate's attestation is recorded for its run.
+
+    ``None`` while the gate hook may still be recording it: the decision is written
+    before the hook runs, and the hook stamps either the attestation's id or a block.
+    """
+    proof = row.payload.get("attestation_id")
+    if proof is None:
+        blocked = (row.payload.get("workflow_event") or {}).get("status") == GATE_BLOCKED
+        return False if blocked else None
+    try:
+        attestation_id = uuid.UUID(str(proof))
+    except ValueError:
+        return False
+    found = session.scalar(
+        select(Attestation.id).where(
+            Attestation.id == attestation_id,
+            Attestation.workspace_id == row.workspace_id,
+            Attestation.workflow_run_id == row.workflow_run_id,
+        )
+    )
+    return found is not None
 
 
 #: The vote that resolves a gate to each decided status.
@@ -297,9 +354,7 @@ def _decider(session: Session, row: ApprovalRequest) -> str:
             select(ApprovalDecision.approver_user_id, ApprovalDecision.decision).where(
                 ApprovalDecision.approval_request_id == row.id
             )
-        )
-        .tuples()
-        .all()
+        ).all()
     )
     people = set(
         session.scalars(
@@ -322,10 +377,14 @@ def read_station_gate_service(factory: sessionmaker[Session]) -> StationGateFn:
 
     A decision is the outcome only on this visit's request and only when a person of
     the run's workspace made it; anything else refuses, so the station fails rather
-    than move on a decision nobody may make. Past the deadline (``expire``) a gate
-    still pending expires with the SLA sweep's conditional update, which never
-    overwrites a decision that landed first.
+    than move on a decision nobody may make. An approved ``pr`` gate counts only once
+    the attestation for it is recorded; without one the outcome is
+    ``attestation_missing``, which parks the run (fail closed, as feature runs block).
+    Past the deadline (``expire``) a gate still pending expires with the SLA sweep's
+    conditional update, which never overwrites a decision that landed first, and the
+    expiry is announced as the sweep announces it.
     """
+    redis_url = relay_url()
 
     def read(inp: StationGateInput) -> StationGateResult:
         with factory() as session:
@@ -336,13 +395,37 @@ def read_station_gate_service(factory: sessionmaker[Session]) -> StationGateFn:
             if row.status is ApprovalStatus.PENDING and inp.expire:
                 if _expire_gate(session, row, datetime.now(UTC)):
                     session.commit()
+                    _announce_expired(redis_url, _to_domain(row))
                     return StationGateResult(row.id, ApprovalStatus.EXPIRED.value)
                 session.refresh(row)  # decided since it was read
             if row.status in (ApprovalStatus.PENDING, ApprovalStatus.EXPIRED):
                 return StationGateResult(row.id, row.status.value)
-            return StationGateResult(row.id, row.status.value, actor=_decider(session, row))
+            actor = _decider(session, row)
+            if row.gate is ApprovalGate.PR and row.status is ApprovalStatus.APPROVED:
+                attested = _attested(session, row)
+                if attested is None and not inp.expire:
+                    return StationGateResult(row.id, ApprovalStatus.PENDING.value)
+                if not attested:
+                    return StationGateResult(row.id, ATTESTATION_MISSING, actor=actor)
+            return StationGateResult(row.id, row.status.value, actor=actor)
 
     return read
+
+
+def _mirror(workspace_id: uuid.UUID, repo: str, run_id: uuid.UUID) -> Path:
+    """The workspace's mirror of ``repo``, fetched first when GitHub App credentials exist.
+
+    Raises :class:`RepositoryUnavailable` with no credentials and no mirror.
+    """
+    objective = AgentObjective(
+        objective="mirror",
+        context={
+            "repo_full_name": repo,
+            "workspace_id": str(workspace_id),
+            "workflow_run_id": str(run_id),
+        },
+    )
+    return Path(str(resolve_run_repository(objective).context["repo_path"]))
 
 
 def _policy_loads(workspace_id: uuid.UUID, repo: str, run_id: uuid.UUID) -> bool:
@@ -351,16 +434,8 @@ def _policy_loads(workspace_id: uuid.UUID, repo: str, run_id: uuid.UUID) -> bool
     The mirror is fetched first when GitHub App credentials exist, so the file is the
     default branch's current one; with no credentials and no mirror nothing is readable.
     """
-    objective = AgentObjective(
-        objective="guard inputs",
-        context={
-            "repo_full_name": repo,
-            "workspace_id": str(workspace_id),
-            "workflow_run_id": str(run_id),
-        },
-    )
     try:
-        mirror = Path(str(resolve_run_repository(objective).context["repo_path"]))
+        mirror = _mirror(workspace_id, repo, run_id)
     except RepositoryUnavailable:
         return False
     try:

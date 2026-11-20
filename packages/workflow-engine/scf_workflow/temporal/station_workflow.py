@@ -66,8 +66,10 @@ with workflow.unsafe.imports_passed_through():
     )
 
 #: An unrouted outcome in this set parks the run; any other unrouted outcome fails it.
+#: A ``pr`` gate approved with no attestation recorded for it: never routable, it parks.
+ATTESTATION_MISSING = "attestation_missing"
 PARK_OUTCOMES = frozenset(
-    {"awaiting_input", "low_confidence", "expired", "visit_limit", "no_checks"}
+    {"awaiting_input", "low_confidence", "expired", "visit_limit", "no_checks", ATTESTATION_MISSING}
 )
 VISIT_LIMIT = "visit_limit"
 BUDGET_EXHAUSTED = "budget_exhausted"
@@ -595,4 +597,4 @@ def _record_error(rec: StationVisitRecord, exc: ActivityError) -> None:
     rec.error_message = (cause.message if isinstance(cause, FailureError) else str(exc))[:500]
 
 
-__all__ = ["PARK_OUTCOMES", "StationWorkflow", "load_line"]
+__all__ = ["ATTESTATION_MISSING", "PARK_OUTCOMES", "StationWorkflow", "load_line"]

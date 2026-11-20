@@ -11,19 +11,23 @@ the run and a cancel expires its open gate. Hermetic SQLite.
 from __future__ import annotations
 
 import asyncio
+import threading
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import StaticPool, create_engine, select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 
+import scf_api.db
 import scf_worker.temporal_main as tm
+import scf_worker.temporal_services as ts
 from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from scf_api.services.approval_service import build_gate_registry
 from scf_approval import ApprovalAuthorizer, ApprovalService
@@ -32,6 +36,7 @@ from scf_approval.providers import InMemoryGrantStore
 from scf_contracts import RunStatus, UserRole
 from scf_db.base import Base
 from scf_db.models import (
+    AgentRun,
     ApprovalDecision,
     ApprovalRequest,
     ApprovalStatus,
@@ -49,7 +54,7 @@ from scf_worker.temporal_services import open_station_gate_service, read_station
 from scf_workflow.store import SqlAlchemyWorkflowStore
 from scf_workflow.temporal.engine import TemporalWorkflowEngine
 from scf_workflow.temporal.ids import station_visit_id
-from scf_workflow.temporal.payloads import StationGateInput
+from scf_workflow.temporal.payloads import StationGateInput, StationGateResult
 from scf_workflow.temporal.worker import build_temporal_worker
 
 WS = uuid.UUID("00000000-0000-0000-0000-0000000000e1")
@@ -90,9 +95,11 @@ async def time_skip_env() -> AsyncIterator[Any]:
 
 
 @pytest.fixture
-def factory() -> Iterator[sessionmaker[Session]]:
+def factory(tmp_path: Path) -> Iterator[sessionmaker[Session]]:
+    # A file, so the worker's activity threads and the approval service each get their
+    # own connection: one shared in-memory connection interleaves their statements.
     engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        f"sqlite:///{tmp_path / 'gates.db'}", connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     yield sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
@@ -115,7 +122,12 @@ def _user(s: Session, workspace_id: uuid.UUID, role: UserRole) -> uuid.UUID:
     return user.id
 
 
-def _seed(factory: sessionmaker[Session], *, with_run: bool = True) -> Seed:
+def _seed(
+    factory: sessionmaker[Session],
+    *,
+    with_run: bool = True,
+    repo_targets: list[dict[str, str]] | None = None,
+) -> Seed:
     with factory() as s:
         for ws, slug in ((WS, "acme"), (WS2, "rival")):
             if s.get(Workspace, ws) is None:
@@ -125,7 +137,13 @@ def _seed(factory: sessionmaker[Session], *, with_run: bool = True) -> Seed:
         s.add(project)
         s.flush()
         key = f"T-{uuid.uuid4().hex[:6]}"
-        task = Task(workspace_id=WS, project_id=project.id, key=key, title="reviewed work")
+        task = Task(
+            workspace_id=WS,
+            project_id=project.id,
+            key=key,
+            title="reviewed work",
+            repo_targets=repo_targets or [],
+        )
         s.add(task)
         s.flush()
         run_id = uuid.uuid4()
@@ -454,3 +472,162 @@ async def test_cancelling_a_run_at_a_human_station_expires_its_gate_as_run_cance
         "actor": f"user:{seed.member}",
     }
     assert _visit_status(factory, run_id) == "cancelled"
+
+
+# --------------------------------------------------------------------------- #
+# Review round: attestation, a cancel during the open, the expiry, mirrors    #
+# --------------------------------------------------------------------------- #
+
+
+class _Hints:
+    """An engine factory that records the gate hook's ``station_gate_changed`` hints."""
+
+    def __init__(self) -> None:
+        self.sent: list[uuid.UUID] = []
+
+    @contextmanager
+    def __call__(self, workspace_id: uuid.UUID) -> Iterator[_Hints]:
+        yield self
+
+    async def astation_gate_changed(self, run_id: uuid.UUID, request_id: uuid.UUID) -> None:
+        self.sent.append(request_id)
+
+
+def _approve_in_db(factory: sessionmaker[Session], request_id: uuid.UUID, user: uuid.UUID) -> None:
+    """The decision recorded, as ``ApprovalService.resolve`` writes it before its hook runs."""
+    with factory() as s:
+        row = s.get(ApprovalRequest, request_id)
+        assert row is not None
+        row.status, row.decided_by_id = ApprovalStatus.APPROVED, user
+        s.add(
+            ApprovalDecision(
+                workspace_id=WS,
+                approval_request_id=row.id,
+                approver_user_id=user,
+                decision="approve",
+            )
+        )
+        s.commit()
+
+
+@pytest.mark.parametrize("attestable", [True, False], ids=["attested", "attestation_raises"])
+async def test_an_approved_pr_station_gate_counts_only_once_its_attestation_is_recorded(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch, attestable: bool
+) -> None:
+    # The pr attestation hook opens its own session from the API's factory.
+    monkeypatch.setattr(scf_api.db, "get_session_factory", lambda: factory)
+    monkeypatch.delenv("FORGE_ATTEST_SIGNING_KEY", raising=False)
+    seed = _seed(factory)
+    if attestable:  # without an agent run to attest (no line has one yet), attesting raises
+        with factory() as s:
+            s.add(
+                AgentRun(
+                    workspace_id=WS,
+                    workflow_run_id=seed.run_id,
+                    task_id=seed.task_id,
+                    role="implementer",
+                    model="claude-sonnet-4-5",
+                    sandbox_kind="gvisor",
+                )
+            )
+            s.commit()
+    opened = await open_station_gate_service(factory)(_inp(seed, gate="pr"))
+    hints = _Hints()
+    approvals = ApprovalService(
+        SqlAlchemyApprovalRepository(factory),
+        build_gate_registry(InMemoryGrantStore(), engine_factory=hints),
+        ApprovalAuthorizer(),
+    )
+
+    approve = ApprovalDecisionRequest(decision=ApprovalAction.APPROVE)
+    await approvals.resolve(
+        opened.approval_request_id, approve, _member(seed.member), workspace_id=WS
+    )
+    result = read_station_gate_service(factory)(_inp(seed, gate="pr"))
+
+    assert result.status == ("approved" if attestable else "attestation_missing")
+    assert hints.sent == [opened.approval_request_id]  # either way the run hears of it now
+
+
+async def test_a_pr_approval_whose_attestation_is_not_yet_recorded_waits_then_parks(
+    factory: sessionmaker[Session],
+) -> None:
+    """Decided, but the hook has not recorded the attestation (it is still running, or
+    its process died): the station waits, and parks at the deadline. An attestation id
+    that names none of this run's attestations proves nothing."""
+    seed = _seed(factory)
+    opened = await open_station_gate_service(factory)(_inp(seed, gate="pr"))
+    _approve_in_db(factory, opened.approval_request_id, seed.member)
+    read = read_station_gate_service(factory)
+
+    assert read(_inp(seed, gate="pr")).status == "pending"
+    assert read(_inp(seed, gate="pr", expire=True)).status == "attestation_missing"
+    with factory() as s:
+        row = s.get(ApprovalRequest, opened.approval_request_id)
+        assert row is not None
+        row.payload = {**row.payload, "attestation_id": str(uuid.uuid4())}
+        s.commit()
+    assert read(_inp(seed, gate="pr")).status == "attestation_missing"
+
+
+async def test_a_cancel_while_the_gate_opens_leaves_no_pending_request(
+    time_skip_env: Any, factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cancel's cleanup runs while the open is still on its way to the database."""
+    real = open_station_gate_service(factory)
+    entered, release, done = threading.Event(), threading.Event(), threading.Event()
+
+    async def slow_open(inp: StationGateInput) -> StationGateResult:
+        entered.set()
+        await asyncio.to_thread(release.wait, 10)
+        try:
+            return await real(inp)
+        finally:
+            done.set()
+
+    monkeypatch.setattr(tm, "open_station_gate_service", lambda _factory: slow_open)
+    seed = _seed(factory, with_run=False)
+    activities = tm.build_activities(factory)
+    async with build_temporal_worker(time_skip_env.client, activities, task_queue=TASK_QUEUE):
+        engine, run_id = await _start_line(time_skip_env, factory, seed)
+        await _until(entered.is_set)
+        await engine.atransition(run_id, "cancel", actor=f"user:{seed.member}", reason="stop")
+        await _until(lambda: _run(factory, run_id).status is RunStatus.CANCELLED)
+        release.set()
+        await _until(done.is_set)
+
+    assert _pending_gate(factory) is None
+    [request] = _requests(factory)
+    assert request.status is ApprovalStatus.EXPIRED
+    assert request.payload["expired"]["reason"] == "run_cancelled"
+
+
+async def test_an_expiry_by_the_station_is_announced_once(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[Any] = []
+    monkeypatch.setattr(ts, "publish_sync", lambda _url, event: events.append(event))
+    seed = _seed(factory)
+    opened = await open_station_gate_service(factory)(_inp(seed))
+
+    read_station_gate_service(factory)(_inp(seed, expire=True))
+
+    [event] = events
+    assert (event.type.value, event.approval_id) == ("approval.decided", opened.approval_request_id)
+    assert (event.payload["status"], event.payload["decided_by"]) == ("expired", "system")
+
+
+async def test_a_pr_station_on_a_repository_with_no_mirror_fails_naming_it(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No mirror and no GitHub App credentials to fetch one: refused, not retried forever."""
+    monkeypatch.setenv("FORGE_REPO_MIRRORS_DIR", str(tmp_path / "mirrors"))
+    for name in ("FORGE_GITHUB_APP_ID", "FORGE_GITHUB_INSTALLATION_ID"):
+        monkeypatch.delenv(name, raising=False)
+    seed = _seed(factory, repo_targets=[{"repo": "acme/app", "base_branch": "main"}])
+
+    with pytest.raises(ApplicationError) as refused:
+        await open_station_gate_service(factory)(_inp(seed, gate="pr"))
+
+    assert refused.value.non_retryable and "acme/app" in str(refused.value)
+    assert _requests(factory) == []

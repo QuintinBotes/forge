@@ -1075,10 +1075,13 @@ def test_a_pr_station_gate_attests_then_hints_its_run(
     before = _run(member, run_id)["current_state"]
     engine = _StationEngine()
 
-    _, request, resolution = _decide_station_gate(engine, run_id, GateType.PR, decider_id)
+    approvals, request, resolution = _decide_station_gate(engine, run_id, GateType.PR, decider_id)
 
     assert resolution.outcome.details["attested"] is True  # the wrapped hook ran unchanged
     assert _attestations(h, run_id) == 1
+    # The proof the station requires before it takes the approval.
+    stored = asyncio.run(approvals.get(request.id, workspace_id=WS))
+    assert stored.gate_payload["attestation_id"] == resolution.outcome.details["attestation_id"]
     assert engine.hints == [(uuid.UUID(run_id), request.id)]
     # No event is submitted: the station reads its gate from the database itself.
     assert "workflow_event" not in resolution.outcome.details

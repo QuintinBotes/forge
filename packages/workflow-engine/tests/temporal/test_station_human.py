@@ -211,3 +211,24 @@ async def test_a_gate_still_pending_at_its_deadline_expires_and_parks_the_run(
     assert (parked.current_state, parked.status) == ("review", RunStatus.ESCALATED)
     assert parked.context["parked"] == {"state": "review", "visit": 1, "reason": "expired"}
     assert h.transitions(run)[-1]["actor"] == "system"
+
+
+async def test_an_approval_whose_attestation_is_missing_parks_the_run_naming_it(
+    harness: Any,
+) -> None:
+    """A ``pr`` gate approved without a recorded attestation never advances."""
+    gate = Gate()
+    gate.decision = ("attestation_missing", "user:decider")
+    h = _harness(harness, gate)
+    async with h.worker():
+        run = await _start(h)
+        await _until(lambda: _waiting(h))
+        assert run.id is not None
+        await h.engine.astation_gate_changed(run.id, gate.id)
+        await h.wait_awaiting(run, {"resume"})
+        parked = h.engine.get_run(run.id)
+
+    assert (parked.current_state, parked.status) == ("review", RunStatus.ESCALATED)
+    reason = "attestation_missing"
+    assert parked.context["parked"] == {"state": "review", "visit": 1, "reason": reason}
+    assert h.store.reports[-1].status == "parked"

@@ -366,6 +366,19 @@ class _WorkflowRunGateHook:
         self._engine_factory = engine_factory or _default_engine_factory
         self._audit = audit
 
+    async def _hint_station(self, request: ApprovalRequest) -> None:
+        """Wake the line run at this gate; it reads the decision itself (spec K §4.2)."""
+        try:
+            with self._engine_factory(request.workspace_id) as engine:
+                await engine.astation_gate_changed(request.workflow_run_id, request.id)
+        except Exception:  # never raised: the decision stands and the run wakes itself
+            logger.exception(
+                "hinting line run %s that gate %s was decided failed; "
+                "the run reads its gate within 15 minutes",
+                request.workflow_run_id,
+                request.id,
+            )
+
     async def on_resolved(
         self,
         request: ApprovalRequest,
@@ -377,32 +390,31 @@ class _WorkflowRunGateHook:
         for_run = (
             request.subject_type == WORKFLOW_RUN_SUBJECT and request.workflow_run_id is not None
         )
+        step = request.subject_type == STEP_SUBJECT and request.workflow_run_id is not None
         event = event_for_resolution(request.gate_type, request.status)
         if self._wrapped is not None:
             try:
                 outcome = await self._wrapped.on_resolved(request, decision, actor, session=session)
             except Exception:
-                if for_run:
+                if for_run or step:
                     # A failed pr attestation blocks the gate: the run never moves on it.
                     mark_blocked(request, event=event, actor_ref=actor.actor_ref)
+                if step:
+                    await self._hint_station(request)
                 raise
         else:
             outcome = ResolutionOutcome(
                 completed=True, follow_up_state=f"{request.gate_type.value}_{request.status.value}"
             )
 
-        if request.subject_type == STEP_SUBJECT and request.workflow_run_id is not None:
-            # A line's human station reads the decision itself; this only wakes it.
-            try:
-                with self._engine_factory(request.workspace_id) as engine:
-                    await engine.astation_gate_changed(request.workflow_run_id, request.id)
-            except Exception:  # never raised: the decision stands and the run wakes itself
-                logger.exception(
-                    "hinting line run %s that gate %s was decided failed; "
-                    "the run reads its gate within 15 minutes",
-                    request.workflow_run_id,
-                    request.id,
-                )
+        if step:
+            attestation = outcome.details.get("attestation_id")
+            if outcome.completed and attestation:
+                # A line's pr station takes an approval only with this proof.
+                request.gate_payload = {**request.gate_payload, "attestation_id": attestation}
+            elif self._wrapped is not None and request.status == GateStatus.APPROVED:
+                mark_blocked(request, event=event, actor_ref=actor.actor_ref)
+            await self._hint_station(request)
             return outcome
         if not for_run or event is None:
             return outcome
