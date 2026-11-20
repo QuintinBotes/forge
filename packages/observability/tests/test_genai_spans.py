@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 import uuid
 from collections.abc import Iterator
@@ -19,6 +21,7 @@ from opentelemetry.trace import SpanKind, StatusCode
 
 from scf_contracts import TokenUsage
 from scf_obs import genai
+from scf_obs.logging import JsonLogFormatter
 from scf_obs.tracing import get_span_store
 
 RUN_ID = uuid.uuid4()
@@ -99,6 +102,34 @@ def test_agent_span_parents_inference_and_tool_spans_in_one_trace(
     assert _attrs(agent)[genai.SCF_COST_USD] == 0.5
     keys = {key for span in exported.get_finished_spans() for key in _attrs(span)}
     assert {key for key in keys if key.startswith("gen_ai.")} <= genai.GEN_AI_ATTRIBUTES
+
+
+def test_a_log_line_inside_an_exported_span_carries_that_spans_trace_id(
+    exported: InMemorySpanExporter,
+) -> None:
+    record = logging.LogRecord("scf.test", logging.INFO, __file__, 1, "inside", None, None)
+    with genai.agent_span(run_id=RUN_ID, workspace_id=WORKSPACE_ID):
+        line = json.loads(JsonLogFormatter("test").format(record))
+
+    (agent,) = exported.get_finished_spans()
+    assert line["trace_id"] == format(agent.context.trace_id, "032x")
+    assert line["span_id"] == format(agent.context.span_id, "016x")
+
+
+@pytest.mark.parametrize(("reviewer_cost", "total"), [(0.25, 0.5), (None, None)])
+def test_a_workflow_span_carries_the_sum_of_its_role_spans(
+    exported: InMemorySpanExporter, reviewer_cost: float | None, total: float | None
+) -> None:
+    with genai.agent_span(run_id=RUN_ID, operation=genai.INVOKE_WORKFLOW):
+        for role, cost in (("implementer", 0.25), ("reviewer", reviewer_cost)):
+            with genai.agent_span(role), genai.inference_span(provider="p", model="m") as call:
+                usage = TokenUsage(input_tokens=10, output_tokens=2)
+                genai.record_inference(call, response_model=None, usage=usage, cost_usd=cost)
+
+    workflow = _attrs(_by_name(exported)["invoke_workflow"])
+    assert workflow[genai.GEN_AI_USAGE_INPUT_TOKENS] == 20
+    assert workflow[genai.GEN_AI_USAGE_OUTPUT_TOKENS] == 4
+    assert workflow.get(genai.SCF_COST_USD) == total
 
 
 def test_an_unpriced_call_carries_no_cost_and_leaves_the_run_total_absent(

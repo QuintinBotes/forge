@@ -225,7 +225,11 @@ class _SubAgentRuntime:
         allowed = ROLE_TOOLS[role].intersection(objective.allowed_actions)
         root = objective.context.get("worktree_path")
         target = objective.primary_repo_target
-        with agent_span(role.value, workspace_id=self.workspace_id), ExitStack() as stack:
+        run_id = uuid.uuid4()
+        with (
+            agent_span(role.value, run_id=run_id, workspace_id=self.workspace_id),
+            ExitStack() as stack,
+        ):
             # The coordinator only provisions worktrees for code-producing roles.
             if root is None and self.repo_root is not None:
                 root = stack.enter_context(
@@ -234,10 +238,11 @@ class _SubAgentRuntime:
                     )
                 )
             if root is None:
-                return AgentRunner(self._traced_model(), tools=_traced(ToolRegistry())).run(
-                    objective
-                )
-            return self._run_in_worktree(objective, Path(root), allowed)
+                tools = _traced(ToolRegistry())
+                result = AgentRunner(self._traced_model(), tools=tools).run(objective)
+                result.run_id = run_id
+                return result
+            return self._run_in_worktree(objective, Path(root), allowed, run_id)
 
     def _traced_model(self) -> ModelClient:
         # Local import, as in run_supervised_objective: agent_runner imports this module.
@@ -246,11 +251,10 @@ class _SubAgentRuntime:
         return traced_model_client(self.model_client, self.model_client)
 
     def _run_in_worktree(
-        self, objective: AgentObjective, root: Path, allowed: frozenset[str]
+        self, objective: AgentObjective, root: Path, allowed: frozenset[str], run_id: uuid.UUID
     ) -> AgentRunResult:
         from scf_worker.agent_runner import assisted_model
 
-        run_id = uuid.uuid4()
         policy = _repo_policy(root)
         settings = SandboxSettings.from_env()
         spec = resolve_sandbox_settings(

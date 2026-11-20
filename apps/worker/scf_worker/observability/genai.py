@@ -61,7 +61,8 @@ class TracedToolRegistry:
         self._inner = inner
 
     def dispatch(self, name: str, arguments: dict[str, Any]) -> ToolResult:
-        with tool_span(name) as span:
+        # A name the model invented is model output: never a span name.
+        with tool_span(name if self._inner.has(name) else "unknown_tool") as span:
             result = self._inner.dispatch(name, arguments)
             if not result.ok:
                 record_error(span, "tool_error")

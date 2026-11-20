@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -30,7 +31,7 @@ from scf_obs import genai
 from scf_obs.tracing import get_span_store
 from scf_worker import agent_runner as agent_runner_module
 from scf_worker.agent_runner import build_agent_runner, run_agent_task
-from scf_worker.multi_agent import run_supervised_objective
+from scf_worker.multi_agent import _agent_factory, run_supervised_objective
 from scf_worker.observability.genai import TracedModelClient, TracedToolRegistry
 
 PRICED = "claude-sonnet-4-6"
@@ -186,7 +187,12 @@ def test_no_span_carries_content_and_secret_shaped_values_are_redacted(
     assert len(recorded) == 2 * (1 + 5 + 3)
     for marker in (*CONTENT, SECRET_TOOL):
         assert marker not in repr(recorded)
-    assert "execute_tool [REDACTED]" in {name for name, _ in recorded}
+    # A tool the model invented is labelled, never named from model output.
+    unknown = [attrs for name, attrs in recorded if name == "execute_tool unknown_tool"]
+    assert len(unknown) == 2
+    for attrs in unknown:
+        assert attrs[genai.GEN_AI_TOOL_NAME] == "unknown_tool"
+        assert attrs[genai.ERROR_TYPE] == "tool_error"
 
 
 def test_every_gen_ai_key_a_run_emits_is_declared_beside_the_pin(
@@ -275,6 +281,26 @@ def test_a_supervised_run_has_one_agent_span_per_role_under_one_trace(
     for agent in agents:
         assert agent.parent is not None and agent.parent.span_id == workflow.context.span_id
     assert len(_operation(spans, "chat")) == len(roles)
+    # The workflow span sums its roles, which a fan-out ends on pool threads.
+    assert _attrs(workflow)[genai.GEN_AI_USAGE_INPUT_TOKENS] == 100 * len(roles)
+    one_call = cost_usd(PRICED, TokenUsage(input_tokens=100, output_tokens=20))
+    assert _attrs(workflow)[genai.SCF_COST_USD] == pytest.approx(len(roles) * one_call)
+
+
+@pytest.mark.parametrize("in_worktree", [False, True], ids=["no_worktree", "worktree"])
+def test_each_role_span_carries_its_role_runs_id(
+    exported: InMemorySpanExporter, tmp_path: Path, in_worktree: bool
+) -> None:
+    context = {"role": "implementer", **({"worktree_path": str(tmp_path)} if in_worktree else {})}
+    model = ScriptedModelClient([], default=finish_response("done", confidence=0.9))
+
+    result = _agent_factory(model, workspace_id=WORKSPACE_ID)().run(
+        AgentObjective(objective="Do the assigned work", context=context)
+    )
+
+    (role,) = _operation(exported.get_finished_spans(), "invoke_agent")
+    assert _attrs(role)[genai.SCF_RUN_ID] == str(result.run_id)
+    assert _attrs(role)[genai.SCF_WORKSPACE_ID] == str(WORKSPACE_ID)
 
 
 def _tree(exporter: InMemorySpanExporter) -> list[tuple[str, str | None]]:

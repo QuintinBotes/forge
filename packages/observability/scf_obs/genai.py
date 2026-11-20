@@ -16,6 +16,7 @@ failure is logged, never raised into the run (FR-017).
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack, contextmanager
@@ -87,6 +88,17 @@ class _RunTotals:
 
 
 _TOTALS: ContextVar[_RunTotals | None] = ContextVar("scf_obs_genai_totals", default=None)
+#: Fan-out roles end concurrently on pool threads and add into one workflow's totals.
+_TOTALS_LOCK = threading.Lock()
+
+
+def _add(totals: _RunTotals, other: _RunTotals) -> None:
+    with _TOTALS_LOCK:
+        totals.calls += other.calls
+        totals.input_tokens += other.input_tokens
+        totals.output_tokens += other.output_tokens
+        if totals.cost_usd is not None:
+            totals.cost_usd = None if other.cost_usd is None else totals.cost_usd + other.cost_usd
 
 
 def _tracer() -> Any:
@@ -132,6 +144,11 @@ def _span(
                     name, kind=kind, record_exception=False, set_status_on_exception=False
                 )
             )
+            # Logs stamp the in-memory ids: make them the exported span's.
+            context = otel.get_span_context()
+            if context.is_valid:
+                span.trace_id = format(context.trace_id, "032x")
+                span.span_id = format(context.span_id, "016x")
     except Exception:
         _log.warning("could not start OTel span %s", name, exc_info=True)
     try:
@@ -165,7 +182,11 @@ def agent_span(
     workspace_id: uuid.UUID | None = None,
     operation: str = INVOKE_AGENT,
 ) -> Iterator[Span]:
-    """The agent (or ``invoke_workflow``) span; it ends carrying the run's totals."""
+    """The agent (or ``invoke_workflow``) span; it ends carrying the run's totals.
+
+    A nested agent span adds its totals into the enclosing one's when it ends.
+    """
+    parent = _TOTALS.get()
     totals = _RunTotals()
     token = _TOTALS.set(totals)
     attributes = {
@@ -189,6 +210,8 @@ def agent_span(
                     )
     finally:
         _TOTALS.reset(token)
+        if parent is not None and totals.calls:
+            _add(parent, totals)
 
 
 @contextmanager
@@ -214,13 +237,8 @@ def record_inference(
     )
     set_attributes(span, {GEN_AI_RESPONSE_MODEL: response_model, **reported})
     totals = _TOTALS.get()
-    if usage is None or totals is None:
-        return
-    totals.calls += 1
-    totals.input_tokens += usage.input_tokens
-    totals.output_tokens += usage.output_tokens
-    if totals.cost_usd is not None:
-        totals.cost_usd = None if cost_usd is None else totals.cost_usd + cost_usd
+    if usage is not None and totals is not None:
+        _add(totals, _RunTotals(usage.input_tokens, usage.output_tokens, 1, cost_usd))
 
 
 @contextmanager
