@@ -75,6 +75,7 @@ from scf_worker.celery_app import celery_app
 from scf_worker.dispatch import RepositoryUnavailable, resolve_run_repository
 from scf_worker.finalizer import push_and_open_pr, workspace_credentials
 from scf_worker.reliability import ScfTask
+from scf_worker.risk_classification import classify_change
 from scf_worker.run_events import terminal_drafts
 from scf_worker.run_executor import INLINE, configured_executor
 from scf_worker.run_record import EXECUTOR_KEY, InProcessRunRecord, RunRecord
@@ -589,7 +590,7 @@ def execute_run(run: PreparedRun, *, persist_recording: bool = True) -> AgentRun
 def close_out_run(
     run: PreparedRun, result: AgentRunResult, *, deliver: bool = True, reuse_existing: bool = False
 ) -> None:
-    """After the loop, in the worker: delivery, terminal events, outcome, tracker write-back.
+    """After the loop, in the worker: delivery, risk, terminal events, outcome, write-back.
 
     ``reuse_existing`` delivers to a pull request already open for the branch, for a
     close-out that may be a retry.
@@ -604,6 +605,15 @@ def close_out_run(
                 run_id=run.run_id,
                 reuse_existing=reuse_existing,
             )
+    if run.persisted_row:  # best effort: never alters the run (#193)
+        classify_change(
+            run.objective,
+            result,
+            run_id=run.run_id,
+            workspace_id=run.workspace_id,
+            sessions=create_session_factory,
+            redact=_default_redactor(),
+        )
     _record_terminal(
         run.objective,
         run.run_id,

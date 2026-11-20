@@ -1,0 +1,44 @@
+cases:
+  - id: ffb-version-bump
+    kind: agent_task
+    tags: [agent_task, feature]
+    expected_ids: [REQ-VERSION-1]
+    query: |
+      Add a function that bumps a version
+
+      Add bump(version, part) to versions.py. It returns the next version as text.
+      part is "major", "minor" or "patch", and the parts after it reset to 0:
+      bump("1.4.2", "minor") is "1.5.0" and bump("1.4.2", "major") is "2.0.0". Any
+      other part raises ValueError. parse_version() keeps working as it does now.
+    metadata:
+      expected_terminal_state: awaiting_review
+      repo:
+        - path: versions.py
+          content: |
+            def parse_version(text):
+                """``"1.4.2"`` as ``(1, 4, 2)``."""
+                major, minor, patch = (int(part) for part in text.split("."))
+                return major, minor, patch
+      held_out:
+        - path: tests/test_versions.py
+          content: |
+            import pytest
+
+            from versions import parse_version
+
+
+            def test_bumping_resets_the_lower_parts():
+                from versions import bump
+
+                assert bump("1.4.2", "patch") == "1.4.3"
+                assert bump("1.4.2", "minor") == "1.5.0"
+                assert bump("1.4.2", "major") == "2.0.0"
+                with pytest.raises(ValueError):
+                    bump("1.4.2", "build")
+
+
+            def test_parsing_versions():
+                assert parse_version("1.4.2") == (1, 4, 2)
+                assert parse_version("10.0.7") == (10, 0, 7)
+      fail_to_pass: [tests/test_versions.py::test_bumping_resets_the_lower_parts]
+      pass_to_pass: [tests/test_versions.py::test_parsing_versions]

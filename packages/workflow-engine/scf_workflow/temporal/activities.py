@@ -36,6 +36,7 @@ from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
 from scf_contracts import RunStatus, WorkflowRun, WorkflowState
+from scf_contracts.lines import SERVICE_CATALOG
 from scf_workflow.red_team_gate import evaluate_red_team
 from scf_workflow.store import (
     STATION_KINDS,
@@ -63,6 +64,8 @@ from scf_workflow.temporal.payloads import (
     ResumeAgentInput,
     RunAgentInput,
     RunChecksInput,
+    ServiceStationInput,
+    ServiceStationResult,
     StationVisitRecord,
     TransitionRecord,
 )
@@ -107,6 +110,8 @@ CleanupFn = Callable[[CleanupInput], bool]
 ApprovalFn = Callable[[ApprovalInput], uuid.UUID | Awaitable[uuid.UUID]]
 RedTeamFn = Callable[[RedTeamInput], RedTeamResult]
 DraftScenariosFn = Callable[[DraftScenariosInput], DraftScenariosResult]
+#: A service station's body, bound by catalog name (spec K §4.1).
+ServiceFn = Callable[[ServiceStationInput], ServiceStationResult]
 
 
 def _now() -> datetime:
@@ -219,6 +224,7 @@ class WorkflowActivities:
         approval_fn: ApprovalFn | None = None,
         red_team_fn: RedTeamFn | None = None,
         draft_scenarios_fn: DraftScenariosFn | None = None,
+        service_bodies: Mapping[str, ServiceFn] | None = None,
         allow_fakes: bool = False,
     ) -> None:
         def pick[I, O](
@@ -245,6 +251,8 @@ class WorkflowActivities:
         self._draft_scenarios_fn = pick(
             draft_scenarios_fn, _default_draft_scenarios, "forge.draft_held_out_scenarios"
         )
+        # No stand-in, even with fakes: an unbound service refuses (``not_configured``).
+        self._service_bodies = dict(service_bodies or {})
 
     @property
     def store(self) -> WorkflowStore:
@@ -265,6 +273,7 @@ class WorkflowActivities:
             self.create_approval,
             self.run_red_team_scan,
             self.draft_held_out_scenarios,
+            self.run_service_station,
         ]
 
     # -- projection writer (idempotent) ----------------------------------- #
@@ -428,6 +437,26 @@ class WorkflowActivities:
         details = {"phase": "red_team", "idempotency_key": inp.idempotency_key}
         return await _heartbeating(self._red_team_fn, inp, details)
 
+    # -- line service stations (spec K §4.2) ------------------------------ #
+
+    @activity.defn(name="forge.run_service_station")
+    async def run_service_station(self, inp: ServiceStationInput) -> ServiceStationResult:
+        """Run the body bound to ``inp.name``; an unbound name refuses (``not_configured``).
+
+        Only the outputs the catalog declares, of their declared type, are kept.
+        """
+        body = self._service_bodies.get(inp.name) or _refuse(inp.name)
+        details = {"phase": "service_station", "service": inp.name}
+        result = await _heartbeating(body, inp, details, executor=_CHECK_THREADS)
+        entry = SERVICE_CATALOG.get(inp.name)
+        declared = entry.outputs if entry else {}
+        result.outputs = {
+            k: v
+            for k, v in result.outputs.items()
+            if k in declared and isinstance(v, declared[k][0])
+        }
+        return result
+
     # -- compensation ----------------------------------------------------- #
 
     @activity.defn(name="forge.cleanup_worktree")
@@ -547,5 +576,6 @@ __all__ = [
     "DEFAULT_CHECKS",
     "STATION_OUTPUTS_CAP",
     "ApprovalFn",
+    "ServiceFn",
     "WorkflowActivities",
 ]

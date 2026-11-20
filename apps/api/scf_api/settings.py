@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     dev_insecure: bool = False
     # Default lifetime (seconds) for minted agent-runner tokens (auto-expiry).
     agent_token_ttl: int = 86_400
+    # #256: the longest a run token lives. Unset, it lives as long as its run may: the
+    # wall-clock limit plus the reconciler's grace; a value is used only when shorter.
+    run_token_ttl_seconds: int | None = Field(default=None, gt=0)
     # HashiCorp Vault KV-v2 knobs (integration-only; secret_provider=vault).
     vault_addr: str | None = None
     vault_token: str | None = None

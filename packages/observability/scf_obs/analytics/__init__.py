@@ -4,6 +4,8 @@ live Grafana/OTLP dashboards.
 * :mod:`scf_obs.analytics.incidents` — MTTA/MTTR/remediation accept rate.
 * :mod:`scf_obs.analytics.dora` — deploy frequency, lead time, change-failure
   rate, MTTR from deploy events.
+* :mod:`scf_obs.analytics.factory` — the five factory metrics (spec 005,
+  ``docs/metrics/factory-metrics.md``).
 * :mod:`scf_obs.analytics.fx` + :mod:`scf_obs.analytics.budgets` — spend
   budgets with hard-cap alerts, multi-currency via an FX rate table.
 * :mod:`scf_obs.analytics.skill_snapshot` — immutable per-run skill-profile
@@ -22,6 +24,11 @@ from scf_obs.analytics.coverage import (
     compute_coverage_pct,
 )
 from scf_obs.analytics.dora import DoraMetrics, SqlDoraReader, compute_dora_metrics
+from scf_obs.analytics.factory import (
+    FactoryMetricsReport,
+    SqlFactoryMetricsReader,
+    compute_factory_metrics,
+)
 from scf_obs.analytics.fx import DbFxRateBook, FxRate, FxRateBook, InMemoryFxRateBook, convert
 from scf_obs.analytics.incidents import (
     IncidentReliabilityMetrics,
@@ -41,6 +48,7 @@ __all__ = [
     "CoverageTrendPoint",
     "DbFxRateBook",
     "DoraMetrics",
+    "FactoryMetricsReport",
     "FxRate",
     "FxRateBook",
     "InMemoryFxRateBook",
@@ -49,11 +57,13 @@ __all__ = [
     "SqlBudgetReader",
     "SqlCoverageRepository",
     "SqlDoraReader",
+    "SqlFactoryMetricsReader",
     "SqlIncidentReliabilityReader",
     "SqlSkillProfileSnapshotRepository",
     "build_directives_payload",
     "compute_coverage_pct",
     "compute_dora_metrics",
+    "compute_factory_metrics",
     "compute_incident_reliability",
     "convert",
     "evaluate_budget",

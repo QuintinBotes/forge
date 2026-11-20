@@ -72,6 +72,44 @@ class WorkflowParams:
 
 
 @dataclass
+class StationParams:
+    """Start argument for ``StationWorkflow.run`` (spec K §4.2).
+
+    The revision's text rides in the params, so a run never reads its definition
+    from the database and a later publish never reaches it.
+    """
+
+    workflow_run_id: uuid.UUID
+    workspace_id: uuid.UUID
+    task_id: uuid.UUID
+    definition_revision_id: uuid.UUID
+    dsl_yaml: str
+    #: The task's ``key``, ``title``, ``description`` and (one target only) ``repo``.
+    task: dict[str, str] = field(default_factory=dict)
+    trigger: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ServiceStationInput:
+    """Argument to ``forge.run_service_station``: one service station visit."""
+
+    workflow_run_id: uuid.UUID
+    workspace_id: uuid.UUID
+    name: str
+    idempotency_key: str
+    params: dict[str, Any] = field(default_factory=dict)
+    inputs: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ServiceStationResult:
+    outcome: str = "succeeded"
+    outputs: dict[str, Any] = field(default_factory=dict)
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+@dataclass
 class WorkflowEventPayload:
     """An Update/Signal argument carrying a human/agent gate decision."""
 
@@ -320,6 +358,9 @@ __all__ = [
     "RetryPolicyDTO",
     "RunAgentInput",
     "RunChecksInput",
+    "ServiceStationInput",
+    "ServiceStationResult",
+    "StationParams",
     "StationVisitRecord",
     "TransitionRecord",
     "WorkflowEventPayload",

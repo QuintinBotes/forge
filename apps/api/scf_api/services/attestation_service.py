@@ -115,6 +115,7 @@ __all__ = [
     "AttestationService",
     "PrAttestationResolutionHook",
     "compute_policy_version_hash",
+    "spec_and_prs",
 ]
 
 #: Agent runs on a workflow run that judge or draft checks, never build the change.
@@ -237,7 +238,7 @@ class AttestationService:
         base_commit = artifacts.get("base_commit") if recorded else None
         branch = artifacts.get("branch") if recorded else None
 
-        spec_key, spec_version, link_prs = self._spec_and_prs(workspace_id, run.task_id)
+        spec_key, spec_version, link_prs = spec_and_prs(self._session, workspace_id, run.task_id)
         resolved_prs = pr_numbers if pr_numbers is not None else link_prs
         prompt_spec_revision = self._prompt_spec_revision(workspace_id, spec_key, spec_version)
         policy_source = policy if policy is not None else _run_policy(run)
@@ -441,37 +442,6 @@ class AttestationService:
                 return run
         return builders[0] if builders else (runs[0] if runs else None)
 
-    def _spec_and_prs(
-        self, workspace_id: uuid.UUID, task_id: uuid.UUID | None
-    ) -> tuple[str, int, list[int]]:
-        """Derive ``(spec_key, spec_version, pr_numbers)`` from traceability.
-
-        Links the run to its acceptance-criterion rows by ``task_id`` (a
-        ``TraceabilityCriterionLink`` carries the ``task_ids`` a criterion is
-        served by, plus the ``pr_numbers`` that satisfied it and the spec it
-        belongs to). Degrades to ``("", 0, [])`` when no traceability exists.
-        """
-        if task_id is None:
-            return "", 0, []
-        links = self._session.scalars(
-            select(TraceabilityCriterionLink).where(
-                TraceabilityCriterionLink.workspace_id == workspace_id
-            )
-        ).all()
-        spec_key = ""
-        spec_version = 0
-        prs: list[int] = []
-        for link in links:
-            if task_id not in {_as_uuid(t) for t in link.task_ids}:
-                continue
-            if not spec_key:
-                spec_key = link.spec_key
-                spec_version = link.current_spec_version
-            for number in link.pr_numbers:
-                if isinstance(number, int) and number not in prs:
-                    prs.append(number)
-        return spec_key, spec_version, sorted(prs)
-
     def _prompt_spec_revision(self, workspace_id: uuid.UUID, spec_key: str, fallback: int) -> int:
         """Latest recorded :attr:`SpecVersion.version_number` for ``spec_key``."""
         if not spec_key:
@@ -486,6 +456,39 @@ class AttestationService:
             .limit(1)
         ).first()
         return latest if latest is not None else fallback
+
+
+def spec_and_prs(
+    session: Session, workspace_id: uuid.UUID, task_id: uuid.UUID | None
+) -> tuple[str, int, list[int]]:
+    """Derive ``(spec_key, spec_version, pr_numbers)`` from traceability.
+
+    Links the run to its acceptance-criterion rows by ``task_id`` (a
+    ``TraceabilityCriterionLink`` carries the ``task_ids`` a criterion is
+    served by, plus the ``pr_numbers`` that satisfied it and the spec it
+    belongs to). Degrades to ``("", 0, [])`` when no traceability exists.
+    The risk classification of a run's change reads its identity the same way.
+    """
+    if task_id is None:
+        return "", 0, []
+    links = session.scalars(
+        select(TraceabilityCriterionLink).where(
+            TraceabilityCriterionLink.workspace_id == workspace_id
+        )
+    ).all()
+    spec_key = ""
+    spec_version = 0
+    prs: list[int] = []
+    for link in links:
+        if task_id not in {_as_uuid(t) for t in link.task_ids}:
+            continue
+        if not spec_key:
+            spec_key = link.spec_key
+            spec_version = link.current_spec_version
+        for number in link.pr_numbers:
+            if isinstance(number, int) and number not in prs:
+                prs.append(number)
+    return spec_key, spec_version, sorted(prs)
 
 
 def _as_uuid(value: Any) -> uuid.UUID | None:

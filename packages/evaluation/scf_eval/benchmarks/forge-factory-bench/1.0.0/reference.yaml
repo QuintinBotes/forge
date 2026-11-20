@@ -1,0 +1,357 @@
+# Known-good patches, by case id: the files each fix writes. Only the reference
+# solver reads this file; it is not part of any case a solver receives.
+ffb-chunk-remainder:
+  - path: batching.py
+    content: |
+      def chunked(items, size):
+          """Split ``items`` into lists of ``size`` items, in order; the last may be shorter."""
+          if size < 1:
+              raise ValueError("size must be at least 1")
+          return [items[i : i + size] for i in range(0, len(items), size)]
+ffb-slug-separators:
+  - path: slugs.py
+    content: |
+      import re
+
+
+      def slugify(text):
+          """Lower-case ``text`` and join its words with single hyphens."""
+          return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+ffb-roman-subtractive:
+  - path: roman.py
+    content: |
+      _NUMERALS = [
+          (1000, "M"),
+          (900, "CM"),
+          (500, "D"),
+          (400, "CD"),
+          (100, "C"),
+          (90, "XC"),
+          (50, "L"),
+          (40, "XL"),
+          (10, "X"),
+          (9, "IX"),
+          (5, "V"),
+          (4, "IV"),
+          (1, "I"),
+      ]
+
+
+      def to_roman(number):
+          """Write ``number`` (1 to 3999) in Roman numerals."""
+          if not 0 < number < 4000:
+              raise ValueError("number must be between 1 and 3999")
+          parts = []
+          for value, numeral in _NUMERALS:
+              count, number = divmod(number, value)
+              parts.append(numeral * count)
+          return "".join(parts)
+ffb-duration-validation:
+  - path: durations.py
+    content: |
+      import re
+
+      _PART = re.compile(r"(\d+)([hms])")
+      _WHOLE = re.compile(r"(?:\d+[hms])+")
+      _SECONDS = {"h": 3600, "m": 60, "s": 1}
+
+
+      def parse_duration(text):
+          """Parse a duration such as ``"1h30m"`` or ``"45s"`` into seconds."""
+          if not _WHOLE.fullmatch(text):
+              raise ValueError(f"not a duration: {text!r}")
+          return sum(int(amount) * _SECONDS[unit] for amount, unit in _PART.findall(text))
+ffb-cart-subtotal-discount:
+  - path: cart.py
+    content: |
+      from pricing import apply_discount
+
+
+      class Cart:
+          def __init__(self):
+              self._lines = []
+
+          def add(self, price_cents, quantity=1):
+              self._lines.append((price_cents, quantity))
+
+          def total(self, discount_percent=0):
+              """What the cart costs in cents, after ``discount_percent`` on the subtotal."""
+              subtotal = sum(price * quantity for price, quantity in self._lines)
+              return apply_discount(subtotal, discount_percent)
+ffb-leap-century:
+  - path: leapyears.py
+    content: |
+      def is_leap_year(year):
+          """Whether ``year`` has a 29 February in the Gregorian calendar."""
+          return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+ffb-median-even:
+  - path: medians.py
+    content: |
+      def median(values):
+          """The middle value of ``values`` once sorted; for an even count, the middle pair's mean."""
+          if not values:
+              raise ValueError("median of no values")
+          ordered = sorted(values)
+          middle = len(ordered) // 2
+          if len(ordered) % 2:
+              return ordered[middle]
+          return (ordered[middle - 1] + ordered[middle]) / 2
+ffb-shared-default-tags:
+  - path: tagging.py
+    content: |
+      def add_tag(tag, tags=None):
+          """Append ``tag`` to ``tags`` (a new list when none is given) and return the list."""
+          if tags is None:
+              tags = []
+          tags.append(tag)
+          return tags
+ffb-stock-reserve:
+  - path: stock.py
+    content: |
+      class InsufficientStock(ValueError):
+          """Fewer units are available than were asked for."""
+
+
+      class Stock:
+          """Units on hand, by SKU."""
+
+          def __init__(self):
+              self._levels = {}
+
+          def receive(self, sku, quantity):
+              self._levels[sku] = self._levels.get(sku, 0) + quantity
+
+          def level(self, sku):
+              return self._levels.get(sku, 0)
+
+          def reserve(self, sku, quantity):
+              available = self.level(sku)
+              if quantity > available:
+                  raise InsufficientStock(f"{sku}: {quantity} asked, {available} available")
+              self._levels[sku] = available - quantity
+ffb-template-defaults:
+  - path: templates.py
+    content: |
+      import re
+
+      _FIELD = re.compile(r"\{(\w+)(?:\|([^}]*))?\}")
+
+
+      def render(template, values):
+          """Fill each ``{name}`` or ``{name|default}`` in ``template`` from ``values``."""
+
+          def fill(match):
+              name, default = match.groups()
+              if name in values:
+                  return str(values[name])
+              if default is None:
+                  raise KeyError(name)
+              return default
+
+          return _FIELD.sub(fill, template)
+ffb-version-bump:
+  - path: versions.py
+    content: |
+      _PARTS = ("major", "minor", "patch")
+
+
+      def parse_version(text):
+          """``"1.4.2"`` as ``(1, 4, 2)``."""
+          major, minor, patch = (int(part) for part in text.split("."))
+          return major, minor, patch
+
+
+      def bump(version, part):
+          """The version after ``version`` when ``part`` changes; later parts reset to 0."""
+          if part not in _PARTS:
+              raise ValueError(f"part must be one of {_PARTS}: {part!r}")
+          index = _PARTS.index(part)
+          numbers = list(parse_version(version))
+          numbers[index] += 1
+          numbers[index + 1 :] = [0] * (2 - index)
+          return ".".join(str(number) for number in numbers)
+ffb-cache-eviction:
+  - path: memo.py
+    content: |
+      from collections import OrderedDict
+
+
+      class Cache:
+          """A key-value cache; with ``max_items``, the least recently used key is evicted."""
+
+          def __init__(self, max_items=None):
+              self._items = OrderedDict()
+              self._max_items = max_items
+
+          def get(self, key, default=None):
+              if key not in self._items:
+                  return default
+              self._items.move_to_end(key)
+              return self._items[key]
+
+          def put(self, key, value):
+              self._items[key] = value
+              self._items.move_to_end(key)
+              if self._max_items is not None and len(self._items) > self._max_items:
+                  self._items.popitem(last=False)
+
+          def __len__(self):
+              return len(self._items)
+ffb-rename-with-alias:
+  - path: averages.py
+    content: |
+      import warnings
+
+
+      def mean(values):
+          """The arithmetic mean of ``values``; no values raises ValueError."""
+          if not values:
+              raise ValueError("no values")
+          return sum(values) / len(values)
+
+
+      def calc_avg(values):
+          """Deprecated: use :func:`mean`."""
+          warnings.warn("calc_avg is deprecated; use mean", DeprecationWarning, stacklevel=2)
+          return mean(values)
+ffb-split-word-module:
+  - path: words.py
+    content: |
+      def count_words(text):
+          """The number of whitespace-separated words in ``text``."""
+          return len(text.split())
+  - path: textstats.py
+    content: |
+      from words import count_words
+
+      WORDS_PER_MINUTE = 200
+
+
+      def reading_minutes(text):
+          """Whole minutes to read ``text``, rounded up."""
+          return -(-count_words(text) // WORDS_PER_MINUTE)
+ffb-unit-table:
+  - path: lengths.py
+    content: |
+      #: The size of each unit, in metres.
+      FACTORS = {"mm": 0.001, "cm": 0.01, "m": 1, "km": 1000}
+
+
+      def to_metres(value, unit):
+          """``value`` in ``unit`` (a key of ``FACTORS``), as metres."""
+          if unit not in FACTORS:
+              raise ValueError(f"unknown unit: {unit}")
+          return value * FACTORS[unit]
+ffb-id-generator-class:
+  - path: ids.py
+    content: |
+      class IdGenerator:
+          """Numbers identifiers from 1, independently of every other generator."""
+
+          def __init__(self):
+              self._counter = 0
+
+          def next_id(self, prefix="id"):
+              """The next identifier: ``id-1``, then ``id-2``, and so on."""
+              self._counter += 1
+              return f"{prefix}-{self._counter}"
+
+
+      _default = IdGenerator()
+
+
+      def next_id(prefix="id"):
+          """The next identifier from the module's shared generator."""
+          return _default.next_id(prefix)
+ffb-negative-cents:
+  - path: money.py
+    content: |
+      def format_cents(cents):
+          """``cents`` as a decimal amount: 1234 is "12.34" and -150 is "-1.50"."""
+          sign = "-" if cents < 0 else ""
+          whole, part = divmod(abs(cents), 100)
+          return f"{sign}{whole}.{part:02d}"
+  - path: tests/test_money.py
+    content: |
+      from money import format_cents
+
+
+      def test_whole_and_part_amounts():
+          assert format_cents(1234) == "12.34"
+          assert format_cents(5) == "0.05"
+
+
+      def test_negative_amounts():
+          assert format_cents(-150) == "-1.50"
+          assert format_cents(-5) == "-0.05"
+ffb-flag-case:
+  - path: flags.py
+    content: |
+      def parse_flag(text):
+          """Read a flag in any case and spacing: true, yes and 1 are True; false, no and 0 False."""
+          word = text.strip().lower()
+          if word in ("true", "yes", "1"):
+              return True
+          if word in ("false", "no", "0"):
+              return False
+          raise ValueError(f"not a flag: {text!r}")
+  - path: tests/test_flags.py
+    content: |
+      import pytest
+
+      from flags import parse_flag
+
+
+      def test_lower_case_words():
+          assert parse_flag("yes") is True
+          assert parse_flag("0") is False
+          with pytest.raises(ValueError):
+              parse_flag("maybe")
+
+
+      def test_any_case_and_surrounding_spaces():
+          assert parse_flag(" TRUE ") is True
+          assert parse_flag("No\n") is False
+ffb-title-case-apostrophe:
+  - path: headings.py
+    content: |
+      def title_case(text):
+          """``text`` with the first character of each word upper-case and the rest lower-case."""
+          return " ".join(word[:1].upper() + word[1:].lower() for word in text.split(" "))
+  - path: tests/test_headings.py
+    content: |
+      from headings import title_case
+
+
+      def test_plain_words():
+          assert title_case("hello world") == "Hello World"
+          assert title_case("hELLO") == "Hello"
+
+
+      def test_letters_after_apostrophes_and_digits_stay_lower_case():
+          assert title_case("don't stop") == "Don't Stop"
+          assert title_case("the 2nd act") == "The 2nd Act"
+ffb-pin-name-split:
+  - path: tests/test_names.py
+    content: |
+      from names import split_name
+
+
+      def test_two_words():
+          assert split_name("Ada Lovelace") == ("Ada", "Lovelace")
+
+
+      def test_every_word_but_the_last_is_a_given_name():
+          assert split_name("Ada King Lovelace") == ("Ada King", "Lovelace")
+
+
+      def test_single_word_is_a_family_name():
+          assert split_name("Plato") == ("", "Plato")
+
+
+      def test_extra_spaces_are_ignored():
+          assert split_name("  Ada   Lovelace ") == ("Ada", "Lovelace")
+
+
+      def test_empty_name():
+          assert split_name("") == ("", "")
