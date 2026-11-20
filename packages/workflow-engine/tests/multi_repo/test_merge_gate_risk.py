@@ -37,7 +37,10 @@ def _shadow(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> 
     def with_risk(
         statuses: list[RepoMergeStatus], merge_order: list[str] | None = None, **_: Any
     ) -> MultiRepoMergeGateResult:
-        return evaluate(statuses, merge_order, risk=reader, change=CHANGE)
+        result = evaluate(statuses, merge_order, risk=reader, change=CHANGE)
+        # Shadow records the gate's own decision as the actual one.
+        assert reader.observed[-1]["actual"] == ("pass" if result.can_merge else "block")
+        return result
 
     monkeypatch.setattr(MultiRepoMergeGate, "evaluate", staticmethod(with_risk))
     yield

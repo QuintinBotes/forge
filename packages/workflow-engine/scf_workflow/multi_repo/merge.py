@@ -15,7 +15,10 @@ The gate/merger operate on plain DTOs and a tiny ``RepoMergeClient`` protocol so
 they are exercised end-to-end with an in-memory fake GitHub adapter and no DB.
 
 Risk (#194): when the change's repository enforces risk and its class requires
-approvals, every changed repo needs its review, required for merge or not.
+approvals, every changed repo needs its review, required for merge or not. That
+review is reported as a block reason only when nothing else blocks the gate:
+``gate_decision`` does not tell the gate its mode, and in shadow mode the result
+must stay the gate's own.
 """
 
 from __future__ import annotations
