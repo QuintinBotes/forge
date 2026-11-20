@@ -20,7 +20,7 @@ from scf_api.auth.run_token import RunCaller, audit_run, require_run_token
 from scf_api.deps import DbSession
 from scf_api.observability.redaction import redact_text
 from scf_api.services.run_record import RunEventSink, record_handoff
-from scf_contracts import AgentRunResult, RunEventDraft
+from scf_contracts import AgentRunResult, RunEventDraft, RunEventType
 from scf_db.models import AgentRun
 
 router = APIRouter(prefix="/agent/runs/{run_id}/record", tags=["run-record"])
@@ -38,6 +38,24 @@ def _factory(session: Session) -> Callable[[], Session]:
 def read_inputs(caller: RunCallerDep, session: DbSession) -> dict[str, Any]:
     row = session.get(AgentRun, caller.run_id)
     return dict(row.inputs or {}) if row is not None else {}
+
+
+#: What a run process emits itself (its start and its steps). The workflow's
+#: ``thread.state`` notices and close-out's ``artifact.created``, ``cost.updated`` and
+#: terminal events are SCF's own record: a run that could write them could hide an
+#: escalation or end every follower's stream.
+RUN_PROCESS_EVENT_TYPES = frozenset(
+    {
+        RunEventType.THREAD_STARTED,
+        RunEventType.AGENT_MESSAGE,
+        RunEventType.TOOL_REQUESTED,
+        RunEventType.TOOL_COMPLETED,
+        RunEventType.PERMISSION_REQUESTED,
+        RunEventType.PERMISSION_GRANTED,
+        RunEventType.PERMISSION_DENIED,
+        RunEventType.GIT_CHANGED,
+    }
+)
 
 
 @router.post(
@@ -58,6 +76,11 @@ def append_event(
     Only the draft's type, summary and payload are read: the sequence number, time and
     provenance (``enforcement``, ``observed_by``, ``enforceable``) are SCF's.
     """
+    if draft.type not in RUN_PROCESS_EVENT_TYPES:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{draft.type} events are SCF's own record, not the run's",
+        )
     sink = RunEventSink(
         caller.run_id, caller.workspace_id, session_factory=_factory(session), redact=redact_text
     )

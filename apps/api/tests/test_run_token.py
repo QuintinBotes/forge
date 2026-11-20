@@ -559,6 +559,25 @@ def test_an_event_type_outside_the_vocabulary_is_refused(
     assert _events(db, RUN_A) == []
 
 
+@pytest.mark.parametrize(
+    "kind",
+    ["thread.state", "thread.completed", "thread.failed", "artifact.created", "cost.updated"],
+)
+def test_an_event_only_scf_writes_is_refused_from_the_run(
+    client: TestClient, db: Any, kind: str
+) -> None:
+    """The workflow's pause notices and close-out's terminal events are SCF's own record:
+    a run that could write them could hide an escalation or end every follower's stream."""
+    resp = client.post(
+        f"{RECORD.format(run=RUN_A)}/events",
+        headers=bearer(issue(db)),
+        json={**EVENT, "type": kind},
+    )
+
+    assert resp.status_code == 422
+    assert _events(db, RUN_A) == []
+
+
 # --------------------------------------------------------------------------- #
 # Criterion 7: once                                                            #
 # --------------------------------------------------------------------------- #
