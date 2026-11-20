@@ -8,10 +8,11 @@ import pytest
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from scf_contracts import GateRequirements, RiskClass
 from scf_contracts.deployment import DeploymentRequest, DeploymentState
 from scf_contracts.dtos import DeployRules
 from scf_db.base import Base
-from scf_db.models import Project, User, Workspace
+from scf_db.models import Project, RiskClassification, User, Workspace
 from scf_db.models.deployment import Environment, EnvironmentPipeline
 from scf_deploy.orchestrator import DeploymentOrchestrator
 from scf_deploy.repository import DeploymentRepository
@@ -99,6 +100,37 @@ def test_requester_protocol(seeded) -> None:
     # No policy/ci wired -> ci_green cannot confirm -> gate_rejected (fail-closed).
     assert dto is not None
     assert dto.state == DeploymentState.GATE_REJECTED
+
+
+def test_a_class_its_repository_enforces_as_gated_waits_for_a_person(seeded) -> None:
+    """#194: the worker's deploy gate reads the change's classification."""
+    factory, project_id = seeded
+    gated = GateRequirements(
+        risk_class=RiskClass.HIGH, approvals=2, deploy_mode="gated", red_team=False, self_eval=True
+    )
+    with factory() as s:
+        s.add(
+            RiskClassification(
+                workspace_id=WS_ID,
+                commit_sha="abc123",
+                derived_class=RiskClass.HIGH,
+                final_class=RiskClass.HIGH,
+                enforcement_mode="enforcing",
+                class_requirements={"high": gated.model_dump(mode="json")},
+            )
+        )
+        s.commit()
+    dto = request_deployment_sync(
+        factory,
+        workspace_id=WS_ID,
+        project_id=project_id,
+        request=DeploymentRequest(environment="dev", commit_sha="abc123"),
+        initiated_by="system:auto_promote",
+        policy=_Policy(),
+        ci=_CI(),
+    )
+    assert dto is not None
+    assert dto.state == DeploymentState.AWAITING_APPROVAL
 
 
 def test_unknown_pipeline_returns_none(seeded) -> None:

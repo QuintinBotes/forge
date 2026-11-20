@@ -24,6 +24,7 @@ from typing import Any
 
 from scf_api.db import get_session_factory
 from scf_api.services.self_eval_service import SelfEvalService
+from scf_db.risk_repository import DbRiskReader
 from scf_eval.sweval import SelfEvalGate, SelfEvalScorecard
 
 __all__ = ["build_self_eval_gate", "get_self_eval_gate"]
@@ -39,11 +40,17 @@ def build_self_eval_gate(
     eval_runner: Any | None = None,
     session_factory: Any | None = None,
 ) -> SelfEvalGate:
-    """Build the Self-Eval Gate with the real baseline lookup + an eval runner."""
-    service = SelfEvalService(session_factory=session_factory or get_session_factory())
+    """Build the Self-Eval Gate with the real baseline lookup + an eval runner.
+
+    Its risk reader applies only to a check that names a classified change (#194);
+    the config-change routes name none, so they are decided as before.
+    """
+    factory = session_factory or get_session_factory()
+    service = SelfEvalService(session_factory=factory)
     return SelfEvalGate(
         eval_runner=eval_runner or _unavailable_runner,
         baseline_for=service.workspace_baseline,
+        risk=DbRiskReader(factory),
     )
 
 

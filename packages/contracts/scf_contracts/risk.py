@@ -12,16 +12,23 @@ the policy is loaded, never when a change is classified.
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
+from collections.abc import Callable
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+logger = logging.getLogger(__name__)
 
 #: ``shadow`` records what risk would decide; ``enforcing`` lets it tighten gates.
 RiskEnforcement = Literal["shadow", "enforcing"]
 #: How a class wants deploys to run (consumed by milestone M10, recorded here).
 RiskDeployMode = Literal["auto", "gated"]
+#: The five shipping gates risk may tighten (spec A §5.4).
+RiskGate = Literal["deploy", "merge", "approval", "red_team", "self_eval"]
 
 
 class RiskClass(StrEnum):
@@ -196,16 +203,115 @@ class GateRequirements(_Model):
     self_eval: bool
 
 
+class GatedChange(_Model):
+    """The change a shipping gate is deciding, by whatever identity the gate has (#194).
+
+    A reader looks for its classification by the most specific identity given: the
+    commit, then the agent run, then the workflow run.
+    """
+
+    workspace_id: UUID
+    commit_sha: str | None = None
+    agent_run_id: UUID | None = None
+    workflow_run_id: UUID | None = None
+
+
+class ClassifiedChange(_Model):
+    """A change's stored classification as the gates see it."""
+
+    classification_id: UUID
+    workspace_id: UUID
+    #: Read from the repository policy in force when the change was classified.
+    enforcement: RiskEnforcement
+    requirements: GateRequirements
+
+
+@runtime_checkable
+class RiskReader(Protocol):
+    """What a shipping gate asks of risk; the gates never import ``scf_risk``."""
+
+    def risk_for(self, change: GatedChange) -> ClassifiedChange | None:
+        """The change's classification, or ``None`` when it has none."""
+        ...
+
+    def observe(
+        self, risk: ClassifiedChange, *, gate: RiskGate, actual: str, risk_decision: str
+    ) -> None:
+        """Record a gate's own decision beside what the class requires of it."""
+        ...
+
+
+def tighten_approvals(existing: int, required: int) -> int:
+    """An approval count: never fewer than either side asks for."""
+    return max(existing, required)
+
+
+def tighten_deploy(existing: RiskDeployMode, required: RiskDeployMode) -> RiskDeployMode:
+    """A deploy mode: gated when either side gates it."""
+    return "gated" if "gated" in (existing, required) else "auto"
+
+
+def tighten_check(passes: bool, *, required: bool, satisfied: bool) -> bool:
+    """A pass/block check: a required control that was not satisfied blocks; nothing unblocks."""
+    return passes and (satisfied or not required)
+
+
+def _label(decision: object) -> str:
+    if isinstance(decision, bool):
+        return "pass" if decision else "block"
+    return str(decision)
+
+
+def gate_decision[D](
+    risk: RiskReader | None,
+    change: GatedChange | None,
+    gate: RiskGate,
+    own: D,
+    tighten: Callable[[D, GateRequirements], D],
+) -> D:
+    """A shipping gate's decision under risk (spec A §4.1, §5.4, §8).
+
+    The gate decides ``own`` exactly as without risk. For a classified change the
+    reader records ``own`` beside ``tighten(own, requirements)``; in shadow mode the
+    gate returns ``own``, when enforcing the tightened decision. A reader that fails
+    is logged and changes nothing; an observation that fails leaves the decision to
+    the mode.
+    """
+    if risk is None or change is None:
+        return own
+    try:
+        found = risk.risk_for(change)
+        if found is None:
+            return own
+        tightened = tighten(own, found.requirements)
+    except Exception:
+        logger.exception("risk for the %s gate is unavailable; the gate decides alone", gate)
+        return own
+    try:
+        risk.observe(found, gate=gate, actual=_label(own), risk_decision=_label(tightened))
+    except Exception:
+        logger.exception("could not record the %s gate's risk observation", gate)
+    return tightened if found.enforcement == "enforcing" else own
+
+
 __all__ = [
     "ChangeSignals",
+    "ClassifiedChange",
     "DerivedRisk",
     "GateRequirements",
+    "GatedChange",
     "RiskClass",
     "RiskClassRequirements",
     "RiskDeployMode",
     "RiskEnforcement",
     "RiskEvaluation",
+    "RiskGate",
     "RiskOverride",
+    "RiskReader",
     "RiskRule",
     "RiskRules",
+    "gate_decision",
+    "tighten_approvals",
+    "tighten_check",
+    "tighten_deploy",
 ]

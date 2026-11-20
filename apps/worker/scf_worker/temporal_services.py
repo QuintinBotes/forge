@@ -27,7 +27,15 @@ from scf_api.services.attestation_service import AttestationService
 from scf_api.services.held_out import record_result, scenarios_for_run
 from scf_api.services.workflow_gate_hook import STEP_SUBJECT, agent_actor_for_run
 from scf_approval.models import GateType
-from scf_contracts import AgentObjective, AgentRunResult, ExecutionMode, ModelClient, Policy
+from scf_contracts import (
+    AgentObjective,
+    AgentRunResult,
+    ExecutionMode,
+    GatedChange,
+    ModelClient,
+    Policy,
+    RiskReader,
+)
 from scf_contracts import RunStatus as ResultStatus
 from scf_contracts.review import ReviewVerdict
 from scf_contracts.run_context import (
@@ -89,7 +97,13 @@ from scf_worker.review_rules import default_branch_policy, review_rules_stamp
 from scf_worker.run_events import RunEventSink
 from scf_worker.run_workspace import NO_DECLARED_CHECKS, CheckRun, run_declared_checks
 from scf_worker.tasks.approvals import _expire_gate
-from scf_workflow.red_team_gate import REDTEAM_BLOCKED, REDTEAM_NOT_RUN, ensure_red_team_verdict
+from scf_workflow.red_team_gate import (
+    RED_TEAM_REQUIRED,
+    REDTEAM_BLOCKED,
+    REDTEAM_NOT_RUN,
+    ensure_red_team_verdict,
+    red_team_passes,
+)
 from scf_workflow.temporal.activities import (
     ApprovalFn,
     GuardInputsFn,
@@ -728,6 +742,7 @@ def run_checks_service(
     reviewer: Callable[[str], ModelClient] = reviewer_client,
     adversary: Callable[[str], ModelClient] = reviewer_client,
     registry: RegistryClient | None = None,
+    risk: RiskReader | None = None,
 ) -> RunChecksFn:
     """Run the repository's declared checks on the agent's commit (#251).
 
@@ -742,8 +757,10 @@ def run_checks_service(
     verdict is the check ``independent_review``. When it approves, an adversary
     attacks the change (#283): its verdict is the check ``red_team``. With no
     reviewer or adversary it can use, the result asks the workflow to pause for a
-    person instead. When all of that passes, the run's approved held-out scenarios
-    run on the change (#286): the check ``held_out_scenarios``.
+    person instead; so does a scan the change's enforced risk class requires and
+    the workspace turned off (#194, read through ``risk``). When all of that passes,
+    the run's approved held-out scenarios run on the change (#286): the check
+    ``held_out_scenarios``.
     """
 
     def run(inp: RunChecksInput) -> ChecksResult:
@@ -821,6 +838,7 @@ def run_checks_service(
                 task=task,
                 policy=policy,
                 adversary=adversary,
+                risk=risk,
             )
             runs += [scan] if scan is not None else []
         held_out: dict[str, Any] | None = None
@@ -926,11 +944,14 @@ def _red_team(
     task: Task,
     policy: Policy | None,
     adversary: Callable[[str], ModelClient],
+    risk: RiskReader | None,
 ) -> tuple[CheckRun | None, str | None]:
     """Attack the change with an adversary of another model family, once per head commit.
 
     Returns the check ``red_team`` and the reason to pause for a person, if any. A scan
     the workspace turned off is no check and no pause; the record says ``not_run``.
+    When the change's repository enforces a class that requires red-team, only a
+    survived scan lets it through (#194): an unrun one pauses for a person.
     """
     started_at = datetime.now(UTC)
     with factory() as session:
@@ -963,8 +984,15 @@ def _red_team(
         session.commit()
         verdict, kind, evidence = row.verdict, row.kind, dict(row.evidence)
         by = row.adversary_model
+    reason = str(evidence.get("reason")) if verdict == REDTEAM_NOT_RUN else None
+    own = verdict != REDTEAM_BLOCKED and reason in (None, RED_TEAM_OFF)
+    change = GatedChange(
+        workspace_id=inp.workspace_id, commit_sha=head, workflow_run_id=inp.workflow_run_id
+    )
+    decided = red_team_passes(verdict, passes=own, risk=risk, change=change)  # observed
+    if own and not decided:
+        return None, RED_TEAM_REQUIRED
     if verdict == REDTEAM_NOT_RUN:
-        reason = str(evidence.get("reason"))
         return None, (None if reason == RED_TEAM_OFF else reason)
     test = evidence.get("failing_test") or {}
     violation = evidence.get("violation") or {}

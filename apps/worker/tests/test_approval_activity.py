@@ -7,15 +7,23 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import StaticPool, create_engine
+from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 
 import scf_worker.temporal_main as tm
 from scf_api.services.approval_repository_db import SqlAlchemyApprovalRepository
 from scf_approval.models import GateStatus, GateType
+from scf_contracts import GateRequirements, RiskClass
 from scf_db.base import Base
-from scf_db.models import Project, Task, WorkflowRun, Workspace
+from scf_db.models import (
+    Project,
+    RiskClassification,
+    RiskGateObservation,
+    Task,
+    WorkflowRun,
+    Workspace,
+)
 from scf_worker.approval_activity import make_create_approval_fn
 from scf_workflow.temporal.activities import WorkflowActivities
 from scf_workflow.temporal.payloads import ApprovalInput
@@ -85,6 +93,37 @@ async def test_create_approval_opens_one_workflow_run_request_while_pending(
 
     # Idempotency is per gate: the plan gate is its own request.
     assert await create(_input(task_id, run_id, "plan")) != first
+
+
+async def test_a_pr_request_needs_the_approvals_its_changes_class_enforces(
+    factory: sessionmaker[Session],
+) -> None:
+    """#194 criterion 9: the worker's approval gate reads the run's classification."""
+    task_id, run_id = _seed_run(factory)
+    requirements = GateRequirements(
+        risk_class=RiskClass.HIGH, approvals=2, deploy_mode="gated", red_team=False, self_eval=True
+    )
+    with factory() as s:
+        s.add(
+            RiskClassification(
+                workspace_id=WS,
+                commit_sha="c" * 40,
+                workflow_run_id=run_id,
+                derived_class=RiskClass.HIGH,
+                final_class=RiskClass.HIGH,
+                enforcement_mode="enforcing",
+                class_requirements={"high": requirements.model_dump(mode="json")},
+            )
+        )
+        s.commit()
+
+    await make_create_approval_fn(factory)(_input(task_id, run_id, "pr"))
+
+    [request] = await SqlAlchemyApprovalRepository(factory).list(workspace_id=WS)
+    assert (request.gate_type, request.required_approvals) == (GateType.PR, 2)
+    with factory() as s:
+        [seen] = s.scalars(select(RiskGateObservation)).all()
+    assert (seen.gate_name, seen.actual_decision, seen.risk_decision) == ("approval", "1", "2")
 
 
 async def test_the_spec_request_names_the_drafted_scenarios_by_id_and_title(
