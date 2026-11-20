@@ -6,16 +6,28 @@ checks (CI green, spec validated, security clean), and freeze-window state into 
 combination yields a ``GateEvaluation``. Restricted environments **always**
 require human approval; no input can relax that. A classified change's risk class
 may gate a deploy too, when its repository enforces risk (#194); it never ungates one.
+Risk reads the change by its full hash, which the repository host resolves a branch
+name or an abbreviated hash to; when the host cannot, a repository that enforces
+risk refuses the deploy (#335).
 """
 
 from __future__ import annotations
 
+import logging
+import re
 import uuid
+from collections.abc import Callable
 from typing import Protocol, runtime_checkable
 
-from scf_contracts import GatedChange, RiskReader, gate_decision, tighten_deploy
+from scf_contracts import (
+    GatedChange,
+    RiskEnforcement,
+    RiskReader,
+    gate_decision,
+    tighten_deploy,
+)
 from scf_contracts.dtos import DeployRules
-from scf_db.models.deployment import Environment
+from scf_db.models.deployment import Deployment, Environment
 from scf_deploy.freeze import Clock, SystemClock, is_frozen
 from scf_deploy.repository import DeploymentRepository
 from scf_deploy.schemas import (
@@ -29,6 +41,25 @@ from scf_deploy.states import (
     GateCheckName,
     GateCheckStatus,
 )
+
+logger = logging.getLogger(__name__)
+
+#: A full commit hash, SHA-1 or SHA-256: the one name risk takes as given (#335).
+_FULL_SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+#: The repository host's full hash for a commit name in a repository; ``None`` if it cannot say.
+CommitResolver = Callable[[str, str], str | None]
+#: The same for any workspace: ``(workspace_id, repo_id, ref)``, bound per workspace by callers.
+WorkspaceCommitResolver = Callable[[uuid.UUID, str, str], str | None]
+
+
+@runtime_checkable
+class RepositoryRiskReader(RiskReader, Protocol):
+    """A risk reader that also knows the mode of a repository's risk rules (#335)."""
+
+    def enforcement(self, workspace_id: uuid.UUID, repo_id: str) -> RiskEnforcement | None:
+        """The mode recorded with the repository's newest classified change; ``None`` if none."""
+        ...
 
 
 @runtime_checkable
@@ -86,9 +117,11 @@ class DeploymentGateEvaluator:
         security: SecurityReader | None = None,
         clock: Clock | None = None,
         risk: RiskReader | None = None,
+        commits: CommitResolver | None = None,
     ) -> None:
         self.repo = repo
         self.risk = risk
+        self.commits = commits
         self.policy = policy or _NullPolicyReader()
         self.ci = ci or _NullCIReader()
         self.validation = validation or _NullValidationReader()
@@ -119,12 +152,7 @@ class DeploymentGateEvaluator:
 
         agent_blocked = dep.trigger == DeploymentTrigger.AGENT and not rules.allow_agent_deploy
         requires_human_approval = bool(env.is_restricted or env.requires_approval or agent_blocked)
-        change = GatedChange(
-            workspace_id=dep.workspace_id,
-            commit_sha=dep.commit_sha,
-            agent_run_id=dep.agent_run_id,
-            workflow_run_id=dep.workflow_run_id,
-        )
+        change = self._risk_change(dep, checks)
         mode = gate_decision(
             self.risk,
             change,
@@ -154,6 +182,61 @@ class DeploymentGateEvaluator:
             checks=checks,
             blocking_reasons=blocking,
         )
+
+    # ------------------------------------------------------------------ risk
+    def _risk_change(self, dep: Deployment, checks: list[GateCheckResult]) -> GatedChange | None:
+        """The change risk reads, named by its full hash when the host can say (#335).
+
+        Only a repository with a classified change is asked about. When the host
+        cannot resolve the name, risk reads nothing, and an enforcing repository
+        refuses the deploy.
+        """
+        change = GatedChange(
+            workspace_id=dep.workspace_id,
+            commit_sha=dep.commit_sha,
+            agent_run_id=dep.agent_run_id,
+            workflow_run_id=dep.workflow_run_id,
+        )
+        if (
+            self.commits is None
+            or _FULL_SHA.fullmatch(dep.commit_sha)
+            or not isinstance(self.risk, RepositoryRiskReader)
+        ):
+            return change
+        try:
+            mode = self.risk.enforcement(dep.workspace_id, dep.repo_id)
+        except Exception:
+            logger.exception(
+                "risk enforcement of %s is unavailable; the gate decides alone", dep.repo_id
+            )
+            return change
+        if mode is None:
+            return change
+        full = self._full_sha(self.commits, dep.repo_id, dep.commit_sha)
+        if full is not None:
+            return change.model_copy(update={"commit_sha": full})
+        if mode == "enforcing":
+            checks.append(
+                GateCheckResult(
+                    name=GateCheckName.POLICY_ALLOWS,
+                    status=GateCheckStatus.FAILED,
+                    detail=(
+                        f"commit {dep.commit_sha!r} could not be resolved to a full hash through "
+                        f"the repository host, and {dep.repo_id} enforces risk rules: "
+                        "name the full commit hash"
+                    ),
+                )
+            )
+        return None
+
+    @staticmethod
+    def _full_sha(commits: CommitResolver, repo_id: str, ref: str) -> str | None:
+        try:
+            full = commits(repo_id, ref)
+        except Exception:
+            logger.exception("the repository host could not resolve a commit of %s", repo_id)
+            return None
+        return full if isinstance(full, str) and _FULL_SHA.fullmatch(full) else None
 
     # ----------------------------------------------------------- check impls
     def _safe_deploy_rules(self, repo_id: str) -> DeployRules:
@@ -294,8 +377,11 @@ class DeploymentGateEvaluator:
 
 __all__ = [
     "CIReader",
+    "CommitResolver",
     "DeploymentGateEvaluator",
     "PolicyReader",
+    "RepositoryRiskReader",
     "SecurityReader",
     "ValidationReader",
+    "WorkspaceCommitResolver",
 ]

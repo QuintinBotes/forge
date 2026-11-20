@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from scf_api.auth.crypto import FernetCipher
 from scf_api.auth.vault import SecretVault
+from scf_api.services import github_app as github_app_module
 from scf_api.settings import get_settings
 from scf_contracts import AgentObjective, AgentRunResult, RunStatus
 from scf_contracts.enums import APIKeyKind
@@ -131,7 +132,7 @@ def _store(vault: SecretVault, ws: uuid.UUID, app_id: str, key: str, installatio
 @pytest.fixture
 def vault(monkeypatch: pytest.MonkeyPatch) -> SecretVault:
     vault = SecretVault(cipher=FernetCipher(b"v" * 32))
-    monkeypatch.setattr(finalizer_module, "_workspace_vault", lambda: vault)
+    monkeypatch.setattr(github_app_module, "_workspace_vault", lambda: vault)
     return vault
 
 
@@ -146,8 +147,8 @@ def github(
     def provider(**kwargs: Any) -> InstallationTokenProvider:
         return InstallationTokenProvider(**{**kwargs, "transport": transport})
 
-    monkeypatch.setattr(finalizer_module, "InstallationTokenProvider", provider)
-    monkeypatch.setattr(finalizer_module, "create_session_factory", lambda: factory)
+    monkeypatch.setattr(github_app_module, "InstallationTokenProvider", provider)
+    monkeypatch.setattr(github_app_module, "create_session_factory", lambda: factory)
     monkeypatch.setattr(
         agent_runner_module,
         "push_and_open_pr",
@@ -317,7 +318,7 @@ def test_the_api_route_stores_what_the_worker_resolves(
     from scf_contracts import UserRole
 
     service = AuthService(secret_key=b"r" * 32)
-    monkeypatch.setattr(finalizer_module, "_workspace_vault", lambda: service.vault)
+    monkeypatch.setattr(github_app_module, "_workspace_vault", lambda: service.vault)
     app = create_app()
     app.dependency_overrides[get_auth_service] = lambda: service
     app.dependency_overrides[get_current_principal] = lambda: Principal(

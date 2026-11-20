@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from functools import partial
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -38,10 +39,12 @@ from scf_deploy.errors import (
 from scf_deploy.freeze import Clock, SystemClock
 from scf_deploy.gate import (
     CIReader,
+    CommitResolver,
     DeploymentGateEvaluator,
     PolicyReader,
     SecurityReader,
     ValidationReader,
+    WorkspaceCommitResolver,
 )
 from scf_deploy.health import HealthChecker, NullHealthChecker
 from scf_deploy.orchestrator import DeploymentOrchestrator
@@ -99,6 +102,7 @@ class DeploymentService:
         provider_resolver: Callable[[dict], DeployProvider] | None = None,
         health_resolver: Callable[[dict], HealthChecker] | None = None,
         clock: Clock | None = None,
+        commit_resolver: WorkspaceCommitResolver | None = None,
     ) -> None:
         self._sf = session_factory
         self._audit = audit or AuditLog()
@@ -109,6 +113,7 @@ class DeploymentService:
         self._provider_resolver = provider_resolver or _default_provider_resolver
         self._health_resolver = health_resolver or _default_health_resolver
         self._clock = clock or SystemClock()
+        self._commit_resolver = commit_resolver
 
     # ------------------------------------------------------------- helpers
     def _repo(self, session: Session, ws: uuid.UUID) -> DeploymentRepository:
@@ -116,6 +121,10 @@ class DeploymentService:
 
     def _engine(self, session: Session, ws: uuid.UUID) -> DeploymentStateMachine:
         return DeploymentStateMachine(session, workspace_id=ws)
+
+    def _commits(self, ws: uuid.UUID) -> CommitResolver | None:
+        """The repository host as ``ws`` reaches it, to name a deploy's commit (#335)."""
+        return partial(self._commit_resolver, ws) if self._commit_resolver else None
 
     def _orchestrator(self, session: Session, ws: uuid.UUID) -> DeploymentOrchestrator:
         return DeploymentOrchestrator(
@@ -130,6 +139,7 @@ class DeploymentService:
             security=self._security,
             clock=self._clock,
             risk=DbRiskReader(session),
+            commits=self._commits(ws),
         )
 
     @staticmethod
@@ -452,6 +462,7 @@ class DeploymentService:
                 clock=self._clock,
                 # A preview decides nothing, so it shows the risk without recording it.
                 risk=DbRiskReader(session, record=False),
+                commits=self._commits(ws),
             )
             return evaluator.evaluate(deployment_id, persist=False)
 

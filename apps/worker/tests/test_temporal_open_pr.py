@@ -305,10 +305,10 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 def vault(monkeypatch: pytest.MonkeyPatch) -> Any:
     from scf_api.auth.crypto import FernetCipher
     from scf_api.auth.vault import SecretVault
-    from scf_worker import finalizer
+    from scf_api.services import github_app
 
     vault = SecretVault(cipher=FernetCipher(b"o" * 32))
-    monkeypatch.setattr(finalizer, "_workspace_vault", lambda: vault)
+    monkeypatch.setattr(github_app, "_workspace_vault", lambda: vault)
     return vault
 
 

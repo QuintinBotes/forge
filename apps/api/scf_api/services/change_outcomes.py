@@ -4,7 +4,9 @@ Called by the GitHub webhook after its signature check, beside the PR outcome
 feedback of spec J. Every write is keyed so a redelivery writes nothing new:
 
 * ``pull_request`` ``closed`` stores the run's outcome (landed or closed) and its
-  time. A later outcome replaces an earlier close; a landing is never replaced.
+  time, and for a landing the merge commit's full hash, by which the deploy gate
+  finds the change's classification (#335). A later outcome replaces an earlier
+  close; a landing is never replaced.
   ``reopened`` removes a close it follows: the pull request is open again.
 * A landed pull request whose body carries GitHub's revert reference
   (``Reverts owner/repo#N``) marks change ``N`` of the same repository reverted.
@@ -33,7 +35,7 @@ __all__ = ["record_change_event"]
 
 #: The first line GitHub's "Revert" button writes into the new pull request's body.
 _REVERT_RE = re.compile(r"(?m)^Reverts ([\w.-]+/[\w.-]+)#(\d{1,9})\b")
-#: A pushed head: SHA-1 or SHA-256 hex. Anything else is not keyed or stored.
+#: A pushed head or a merge commit: SHA-1 or SHA-256 hex. Anything else is not keyed or stored.
 _SHA_RE = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
@@ -79,7 +81,10 @@ def record_change_event(
             _mark_reverted(session, pull_request.get("body"), repo_full_name, number, at)
         if run is not None and repo_full_name and number is not None:
             outcome = CHANGE_LANDED if merged else CHANGE_CLOSED
-            _record_outcome(session, run, repo_full_name, number, outcome, at)
+            # An unmerged pull request reports a test merge's hash: never the change's.
+            merge = pull_request.get("merge_commit_sha") if merged else None
+            merge = merge if isinstance(merge, str) and _SHA_RE.fullmatch(merge) else None
+            _record_outcome(session, run, repo_full_name, number, outcome, at, merge)
     elif run is None:
         return
     elif event_type == "pull_request" and action == "reopened":
@@ -114,7 +119,13 @@ def record_change_event(
 
 
 def _record_outcome(
-    session: Session, run: AgentRun, repo: str, number: int, outcome: str, at: datetime
+    session: Session,
+    run: AgentRun,
+    repo: str,
+    number: int,
+    outcome: str,
+    at: datetime,
+    merge_commit_sha: str | None,
 ) -> None:
     existing = session.scalar(select(ChangeOutcome).where(ChangeOutcome.agent_run_id == run.id))
     if existing is None:
@@ -126,10 +137,12 @@ def _record_outcome(
                 pr_number=number,
                 outcome=outcome,
                 outcome_at=at,
+                merge_commit_sha=merge_commit_sha,
             )
         )
     elif existing.outcome == CHANGE_CLOSED and at > _utc(existing.outcome_at):
         existing.outcome, existing.outcome_at = outcome, at
+        existing.merge_commit_sha = merge_commit_sha
 
 
 def _record_intervention(

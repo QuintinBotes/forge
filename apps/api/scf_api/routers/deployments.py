@@ -15,7 +15,7 @@ are handled in the deployment domain via ``POST /deployments/{id}/decision``
 from __future__ import annotations
 
 import uuid
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -34,6 +34,7 @@ from scf_api.schemas.deployments import (
     PipelineUpsert,
 )
 from scf_api.services.deployment_service import DeploymentService, NotInitiatorError
+from scf_api.services.github_app import resolve_commit
 from scf_contracts.deployment import (
     DeploymentRequest,
     DeploymentState,
@@ -61,7 +62,13 @@ AdminDep = Annotated[Principal, Depends(require_permission(Permission.ADMIN))]
 
 @lru_cache(maxsize=1)
 def _service_singleton() -> DeploymentService:
-    return DeploymentService(session_factory=get_session_factory(), audit=AuditLog())
+    factory = get_session_factory()
+    return DeploymentService(
+        session_factory=factory,
+        audit=AuditLog(),
+        # A deploy's commit name is resolved as its workspace's GitHub App (#335).
+        commit_resolver=partial(resolve_commit, session_factory=factory),
+    )
 
 
 def get_deployment_service() -> DeploymentService:

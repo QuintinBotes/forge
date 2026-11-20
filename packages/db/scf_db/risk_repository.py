@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Integer, func, select
+from sqlalchemy import Integer, func, or_, select
 from sqlalchemy.orm import Session
 
 from scf_contracts import (
@@ -25,7 +25,9 @@ from scf_contracts import (
     RiskEvaluation,
     RiskGate,
 )
+from scf_db.models.factory_metrics import ChangeOutcome
 from scf_db.models.risk import RiskClassification, RiskGateObservation
+from scf_db.models.runs import AgentRun
 
 __all__ = ["DbRiskReader", "RiskRepository"]
 
@@ -109,19 +111,30 @@ class RiskRepository:
         return row
 
     def latest_for(self, change: GatedChange) -> RiskClassification | None:
-        """The newest classification of ``change`` by its most specific identity that has one."""
+        """The newest classification of ``change`` by its most specific identity that has one.
+
+        A commit names a change by its head or, once its pull request landed, by the
+        merge commit recorded against its run (#335).
+        """
         rc = RiskClassification
-        identities: list[tuple[Any, object]] = [
-            (rc.commit_sha, change.commit_sha),
-            (rc.agent_run_id, change.agent_run_id),
-            (rc.workflow_run_id, change.workflow_run_id),
+        merged_runs = select(ChangeOutcome.agent_run_id).where(
+            ChangeOutcome.workspace_id == change.workspace_id,
+            ChangeOutcome.merge_commit_sha == change.commit_sha,
+        )
+        identities: list[tuple[object, Any]] = [
+            (
+                change.commit_sha,
+                or_(rc.commit_sha == change.commit_sha, rc.agent_run_id.in_(merged_runs)),
+            ),
+            (change.agent_run_id, rc.agent_run_id == change.agent_run_id),
+            (change.workflow_run_id, rc.workflow_run_id == change.workflow_run_id),
         ]
-        for column, value in identities:
+        for value, matches in identities:
             if value is None:
                 continue
             query = (
                 select(rc)
-                .where(rc.workspace_id == change.workspace_id, column == value)
+                .where(rc.workspace_id == change.workspace_id, matches)
                 .order_by(rc.created_at.desc(), rc.id.desc())
                 .limit(1)
             )
@@ -129,6 +142,30 @@ class RiskRepository:
             if row is not None:
                 return row
         return None
+
+    def enforcement_of(self, workspace_id: UUID, repo: str) -> str | None:
+        """The mode recorded with the newest classified change of ``repo``; ``None`` if none (#335).
+
+        A change's repository is its agent run's ``owner/name``. ``repo`` may carry a
+        host or URL around it, and matches case-insensitively, as GitHub names do.
+        """
+        rc = RiskClassification
+        run_repo = AgentRun.inputs["context"]["repo_full_name"].as_string()
+        owner_name = "/".join(
+            repo.strip().strip("/").removesuffix(".git").replace(":", "/").split("/")[-2:]
+        )
+        query = (
+            select(rc.enforcement_mode)
+            .join(AgentRun, AgentRun.id == rc.agent_run_id)
+            .where(
+                rc.workspace_id == workspace_id,
+                AgentRun.workspace_id == workspace_id,
+                func.lower(run_repo) == owner_name.lower(),
+            )
+            .order_by(rc.created_at.desc(), rc.id.desc())
+            .limit(1)
+        )
+        return self._session.scalar(query)
 
     def list_classifications(
         self,
@@ -209,6 +246,12 @@ class DbRiskReader:
             enforcement=row.enforcement_mode,  # type: ignore[arg-type]  # validated
             requirements=GateRequirements.model_validate(raw),
         )
+
+    def enforcement(self, workspace_id: UUID, repo_id: str) -> RiskEnforcement | None:
+        """The mode of ``repo_id``'s risk rules, as its newest classified change recorded it."""
+        with self._session() as session:
+            mode = RiskRepository(session).enforcement_of(workspace_id, repo_id)
+        return mode  # type: ignore[return-value]  # written from a validated policy
 
     def observe(
         self, risk: ClassifiedChange, *, gate: RiskGate, actual: str, risk_decision: str

@@ -12,7 +12,7 @@ from scf_contracts import GateRequirements, RiskClass
 from scf_contracts.deployment import DeploymentRequest, DeploymentState
 from scf_contracts.dtos import DeployRules
 from scf_db.base import Base
-from scf_db.models import Project, RiskClassification, User, Workspace
+from scf_db.models import AgentRun, Project, RiskClassification, RunStatus, User, Workspace
 from scf_db.models.deployment import Environment, EnvironmentPipeline
 from scf_deploy.orchestrator import DeploymentOrchestrator
 from scf_deploy.repository import DeploymentRepository
@@ -131,6 +131,58 @@ def test_a_class_its_repository_enforces_as_gated_waits_for_a_person(seeded) -> 
     )
     assert dto is not None
     assert dto.state == DeploymentState.AWAITING_APPROVAL
+
+
+def test_the_worker_resolves_a_deploys_commit_name_through_the_host(seeded) -> None:
+    """#335: the worker's gate reads risk by the full hash the host gives a name."""
+    factory, project_id = seeded
+    head = "3d" * 20
+    gated = GateRequirements(
+        risk_class=RiskClass.HIGH, approvals=2, deploy_mode="gated", red_team=False, self_eval=True
+    )
+    with factory() as s:
+        run = AgentRun(
+            workspace_id=WS_ID,
+            status=RunStatus.SUCCEEDED,
+            inputs={"context": {"repo_full_name": "org/api"}},
+        )
+        s.add(run)
+        s.flush()
+        s.add(
+            RiskClassification(
+                workspace_id=WS_ID,
+                commit_sha=head,
+                agent_run_id=run.id,
+                derived_class=RiskClass.HIGH,
+                final_class=RiskClass.HIGH,
+                enforcement_mode="enforcing",
+                class_requirements={"high": gated.model_dump(mode="json")},
+            )
+        )
+        s.commit()
+    asked: list[tuple[uuid.UUID, str, str]] = []
+
+    def host(workspace_id: uuid.UUID, repo_id: str, ref: str) -> str | None:
+        asked.append((workspace_id, repo_id, ref))
+        return head if ref == "main" else None
+
+    states = []
+    for name in ("release-candidate", "main"):  # the refused one leaves the environment free
+        dto = request_deployment_sync(
+            factory,
+            workspace_id=WS_ID,
+            project_id=project_id,
+            request=DeploymentRequest(environment="dev", commit_sha=name),
+            initiated_by="system:auto_promote",
+            policy=_Policy(),
+            ci=_CI(),
+            commit_resolver=host,
+        )
+        assert dto is not None
+        states.append(dto.state)
+
+    assert states == [DeploymentState.GATE_REJECTED, DeploymentState.AWAITING_APPROVAL]
+    assert asked == [(WS_ID, REPO_ID, "release-candidate"), (WS_ID, REPO_ID, "main")]
 
 
 def test_unknown_pipeline_returns_none(seeded) -> None:

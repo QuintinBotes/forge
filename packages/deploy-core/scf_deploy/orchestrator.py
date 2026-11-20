@@ -20,6 +20,7 @@ from scf_deploy.engine import DeploymentStateMachine
 from scf_deploy.freeze import Clock, SystemClock
 from scf_deploy.gate import (
     CIReader,
+    CommitResolver,
     DeploymentGateEvaluator,
     PolicyReader,
     SecurityReader,
@@ -69,6 +70,7 @@ class DeploymentOrchestrator:
         clock: Clock | None = None,
         max_steps: int = 64,
         risk: RiskReader | None = None,
+        commits: CommitResolver | None = None,
     ) -> None:
         self.session = session
         self.workspace_id = workspace_id
@@ -85,6 +87,7 @@ class DeploymentOrchestrator:
             security=security,
             clock=self.clock,
             risk=risk,
+            commits=commits,
         )
         self.max_steps = max_steps
 

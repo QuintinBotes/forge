@@ -36,7 +36,10 @@ class ChangeOutcome(WorkspaceScopedModel):
     """The final outcome of one attempt's pull request, and its revert if any."""
 
     __tablename__ = "change_outcome"
-    __table_args__ = (Index("ix_change_outcome_pull_request", "repo_full_name", "pr_number"),)
+    __table_args__ = (
+        Index("ix_change_outcome_pull_request", "repo_full_name", "pr_number"),
+        Index("ix_change_outcome_merge_commit", "merge_commit_sha"),
+    )
 
     agent_run_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
@@ -53,6 +56,9 @@ class ChangeOutcome(WorkspaceScopedModel):
     #: When a later landed pull request reverted it; never cleared.
     reverted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reverted_by_pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: The full hash of the commit a landed pull request put on its base branch (#335):
+    #: the name a deploy usually gives the change, whose classification has the head's.
+    merge_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class RunIntervention(WorkspaceScopedModel):

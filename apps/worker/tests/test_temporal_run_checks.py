@@ -257,10 +257,11 @@ async def test_the_token_the_checks_mint_is_audited_under_their_workflow_run(
 
     from scf_api.auth.crypto import FernetCipher
     from scf_api.auth.vault import SecretVault
+    from scf_api.services import github_app
     from scf_contracts.enums import APIKeyKind
     from scf_db.models import AuditLog
     from scf_integrations.github_auth import WORKSPACE_SECRET_NAME, InstallationTokenProvider
-    from scf_worker import dispatch, finalizer
+    from scf_worker import dispatch
 
     _, mirror = repo
     pem = (
@@ -282,10 +283,10 @@ async def test_the_token_the_checks_mint_is_audited_under_their_workflow_run(
     tokens = httpx.MockTransport(
         lambda _: httpx.Response(201, json={"token": "ghs_" + "c" * 36, "expires_at": None})
     )
-    monkeypatch.setattr(finalizer, "_workspace_vault", lambda: vault)
-    monkeypatch.setattr(finalizer, "create_session_factory", lambda: factory)
+    monkeypatch.setattr(github_app, "_workspace_vault", lambda: vault)
+    monkeypatch.setattr(github_app, "create_session_factory", lambda: factory)
     monkeypatch.setattr(
-        finalizer,
+        github_app,
         "InstallationTokenProvider",
         lambda **kw: InstallationTokenProvider(**{**kw, "transport": tokens}),
     )

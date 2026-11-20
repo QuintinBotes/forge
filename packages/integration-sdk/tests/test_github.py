@@ -292,3 +292,30 @@ def test_check_runs_for_ref_reads_every_page_of_a_commits_check_runs() -> None:
     first = rec.requests[0]
     assert first.method == "GET"
     assert first.url.path == "/repos/acme/widgets/commits/abc123/check-runs"
+
+
+# --------------------------------------------------------------------------- #
+# commit_sha (#335)                                                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_commit_sha_asks_for_the_full_hash_a_name_points_at() -> None:
+    rec = RequestRecorder()
+    full = "7e" * 20
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        rec.record(request)
+        return httpx.Response(200, text=full)
+
+    assert _client(handler).commit_sha("github.com/acme/widgets", "release/1.2") == full
+    sent = rec.last
+    assert (sent.method, sent.url.raw_path) == ("GET", b"/repos/acme/widgets/commits/release%2F1.2")
+    assert sent.headers["accept"] == "application/vnd.github.sha"
+
+
+def test_commit_sha_raises_when_the_host_knows_no_such_name() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"message": "No commit found for SHA: nope"})
+
+    with pytest.raises(GitHubError):
+        _client(handler).commit_sha("acme/widgets", "nope")

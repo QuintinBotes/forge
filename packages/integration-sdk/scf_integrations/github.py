@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -548,6 +549,20 @@ class GitHubClient:
                 max_pages=10,
             )
         )
+
+    def commit_sha(self, repo: str, ref: str) -> str:
+        """The full hash ``ref`` (a branch, tag or abbreviated hash) names in ``repo`` (#335)."""
+        r = self.owner_repo(repo)
+        resp = self._request(
+            "GET",
+            # Encoded whole, so a name never reaches another path of the API.
+            f"/repos/{r}/commits/{quote(ref, safe='')}",
+            headers={"Accept": "application/vnd.github.sha"},
+            action="commit_sha",
+            repo=r,
+        )
+        self._raise_for_status(resp)
+        return resp.text.strip()
 
     def request_reviews(self, pr: PullRequest, reviewers: list[str]) -> None:
         repo = self.owner_repo(pr.repo)

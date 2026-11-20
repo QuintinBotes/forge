@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from functools import partial
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from scf_api.services.github_app import resolve_commit
 from scf_contracts.deployment import (
     DeploymentDTO,
     DeploymentRequest,
@@ -22,7 +24,13 @@ from scf_contracts.deployment import (
 )
 from scf_db.risk_repository import DbRiskReader
 from scf_deploy.errors import DeploymentConflictError
-from scf_deploy.gate import CIReader, PolicyReader, SecurityReader, ValidationReader
+from scf_deploy.gate import (
+    CIReader,
+    PolicyReader,
+    SecurityReader,
+    ValidationReader,
+    WorkspaceCommitResolver,
+)
 from scf_deploy.health import HealthChecker, NullHealthChecker
 from scf_deploy.orchestrator import DeploymentOrchestrator
 from scf_deploy.providers import DeployProvider, NullDeployProvider
@@ -51,6 +59,7 @@ def _orchestrator(
     security: SecurityReader | None,
     provider_resolver: ProviderResolver | None,
     health_resolver: HealthResolver | None,
+    commit_resolver: WorkspaceCommitResolver | None,
 ) -> DeploymentOrchestrator:
     return DeploymentOrchestrator(
         session,
@@ -62,6 +71,7 @@ def _orchestrator(
         validation=validation,
         security=security,
         risk=DbRiskReader(session),
+        commits=partial(commit_resolver, workspace_id) if commit_resolver else None,
     )
 
 
@@ -78,12 +88,14 @@ def request_deployment_sync(
     security: SecurityReader | None = None,
     provider_resolver: ProviderResolver | None = None,
     health_resolver: HealthResolver | None = None,
+    commit_resolver: WorkspaceCommitResolver | None = None,
 ) -> DeploymentDTO | None:
     """Create a deployment and drive it to a terminal/wait state.
 
     Returns ``None`` when no pipeline/environment matches the request; raises
     :class:`DeploymentConflictError` if the environment already has an active
-    deployment.
+    deployment. ``commit_resolver`` names the deploy's commit by its full hash
+    through the repository host for the gate's risk read (#335).
     """
     with session_factory() as session:
         repo = DeploymentRepository(session, workspace_id=workspace_id)
@@ -128,6 +140,7 @@ def request_deployment_sync(
             security=security,
             provider_resolver=provider_resolver,
             health_resolver=health_resolver,
+            commit_resolver=commit_resolver,
         ).advance(dep_id)
         session.commit()
         return DeploymentDTO.model_validate(repo.get_or_404(dep_id))
@@ -144,6 +157,7 @@ def advance_deployment_sync(
     security: SecurityReader | None = None,
     provider_resolver: ProviderResolver | None = None,
     health_resolver: HealthResolver | None = None,
+    commit_resolver: WorkspaceCommitResolver | None = None,
 ) -> DeploymentState:
     """Resume driving a deployment (e.g. after a provider status callback)."""
     with session_factory() as session:
@@ -156,6 +170,7 @@ def advance_deployment_sync(
             security=security,
             provider_resolver=provider_resolver,
             health_resolver=health_resolver,
+            commit_resolver=commit_resolver,
         ).advance(deployment_id)
         session.commit()
         return state
@@ -200,10 +215,13 @@ def _session_factory() -> sessionmaker[Session]:  # pragma: no cover - prod seam
 def advance_deployment(
     deployment_id: str, workspace_id: str
 ) -> str:  # pragma: no cover - prod seam
+    factory = _session_factory()
     state = advance_deployment_sync(
-        _session_factory(),
+        factory,
         workspace_id=uuid.UUID(workspace_id),
         deployment_id=uuid.UUID(deployment_id),
+        # A deploy's commit name is resolved as its workspace's GitHub App (#335).
+        commit_resolver=partial(resolve_commit, session_factory=factory),
     )
     return state.value
 
@@ -215,12 +233,14 @@ def request_deployment_task(
     request: dict,
     initiated_by: str,
 ) -> str | None:  # pragma: no cover - prod seam
+    factory = _session_factory()
     dto = request_deployment_sync(
-        _session_factory(),
+        factory,
         workspace_id=uuid.UUID(workspace_id),
         project_id=uuid.UUID(project_id),
         request=DeploymentRequest.model_validate(request),
         initiated_by=initiated_by,
+        commit_resolver=partial(resolve_commit, session_factory=factory),
     )
     return str(dto.id) if dto else None
 
