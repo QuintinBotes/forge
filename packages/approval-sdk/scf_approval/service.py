@@ -335,6 +335,10 @@ class ApprovalService:
         request = await self.get(approval_id, workspace_id=workspace_id)
         if request.status is not GateStatus.PENDING:
             raise AlreadyResolvedError(approval_id, request.status)
+        if request.gate_type is GateType.AUTOMATION_ACTION and past_deadline(request):
+            # A held action's deadline holds even where no SLA sweep runs (#191).
+            await self.expire(request, actor="system", reason="deadline_passed")
+            raise AlreadyResolvedError(approval_id, GateStatus.EXPIRED)
 
         self._authorizer.check(actor, request, decision)
         if before_decision is not None:
@@ -363,7 +367,9 @@ class ApprovalService:
         request.resolved_at = now
         request.resolver_user_id = actor.id
         request.decision_note = decision.note
-        request = await self._repo.update(request)
+        # Only from pending: a racing decision or expiry that landed first stands,
+        # and this one's hook (which may run a held action) never runs.
+        request = await self._write_pending_only(request, decision, actor)
 
         hook = self._registry.hook(request.gate_type)
         if hook is None:
@@ -668,6 +674,29 @@ class ApprovalService:
             ),
         )
 
+    async def _write_pending_only(
+        self, request: ApprovalRequest, decision: ApprovalDecisionRequest, actor: Principal
+    ) -> ApprovalRequest:
+        """Write only while still pending; a refused (already stored) vote is audited."""
+        try:
+            return await self._repo.update(request, from_status=GateStatus.PENDING)
+        except AlreadyResolvedError as exc:
+            self._audit.record_approval(
+                request.gate_type.value,
+                status="decision_refused",
+                actor=actor.actor_ref,
+                run_id=request.workflow_run_id or request.agent_run_id,
+                request_id=request.id,
+                workspace_id=request.workspace_id,
+                detail=decision.note,
+                metadata={
+                    **_decision_metadata(actor),
+                    "decision": decision.decision.value,
+                    "reason": f"already_{exc.status.value}",
+                },
+            )
+            raise
+
     async def _escalate(
         self,
         request: ApprovalRequest,
@@ -677,7 +706,8 @@ class ApprovalService:
         """Escalate: keep pending, raise risk to critical + required role to admin."""
         request.risk_level = "critical"
         request.escalated = True
-        request = await self._repo.update(request)
+        # Never writes a gate decided meanwhile back to pending (a later approval would run it).
+        request = await self._write_pending_only(request, decision, actor)
         self._audit.record_approval(
             request.gate_type.value,
             status="escalated",
@@ -717,6 +747,10 @@ def _gated_change(request: ApprovalRequest) -> GatedChange | None:
     if request.gate_type is not GateType.PR or run is None:
         return None
     return GatedChange(workspace_id=request.workspace_id, workflow_run_id=run)
+
+
+def past_deadline(request: ApprovalRequest) -> bool:
+    return request.expires_at is not None and request.expires_at <= datetime.now(UTC)
 
 
 def _decision_metadata(actor: Principal) -> dict[str, Any]:

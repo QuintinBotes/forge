@@ -76,7 +76,13 @@ class ApprovalRepository(Protocol):
         project_id: uuid.UUID | None = None,
     ) -> list[ApprovalRequest]: ...
 
-    async def update(self, request: ApprovalRequest) -> ApprovalRequest: ...
+    async def update(
+        self, request: ApprovalRequest, *, from_status: GateStatus | None = None
+    ) -> ApprovalRequest:
+        """Write ``request``. With ``from_status``, only while the stored status
+        still is that, else :class:`AlreadyResolvedError` (a decision never
+        overwrites an outcome recorded meanwhile)."""
+        ...
 
     async def add_decision(self, record: ApprovalDecisionRecord) -> ApprovalDecisionRecord: ...
 
@@ -148,10 +154,15 @@ class InMemoryApprovalRepository:
             rows = [i for i in rows if i.project_id == project_id]
         return [i.model_copy(deep=True) for i in rows]
 
-    async def update(self, request: ApprovalRequest) -> ApprovalRequest:
+    async def update(
+        self, request: ApprovalRequest, *, from_status: GateStatus | None = None
+    ) -> ApprovalRequest:
         with self._lock:
             if request.id not in self._items:
                 raise ApprovalNotFoundError(request.id)
+            stored = self._items[request.id].status
+            if from_status is not None and stored is not from_status:
+                raise AlreadyResolvedError(request.id, stored)
             self._items[request.id] = request.model_copy(deep=True)
         return request.model_copy(deep=True)
 

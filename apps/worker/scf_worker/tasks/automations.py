@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from scf_api.observability.audit import AuditLog
 from scf_api.observability.audit_db import build_audit_store
 from scf_api.services.automation_actions import (
+    ApprovalActionHolder,
     AutomationActionAuditSink,
     HttpxWebhookSender,
     IncidentServiceDeclarer,
@@ -88,6 +89,7 @@ from scf_contracts.pm import PMAdapter
 from scf_db.models import AutomationExecution, AutomationRule, Sprint, Task, TaskDependency
 from scf_db.models.enums import Priority as DbPriority
 from scf_db.models.enums import TaskStatus as DbTaskStatus
+from scf_worker.approval_activity import build_approval_service
 from scf_worker.celery_app import celery_app
 
 EVALUATE_TASK = "forge.automations.evaluate_trigger"
@@ -321,6 +323,9 @@ def _build_executor(
     sprints = SprintServiceAutoStarter(
         SprintService(session_factory), workspace_id=envelope.workspace_id
     )
+    # #191: irreversible external actions are held as approval requests in Postgres;
+    # the API runs one when a person approves it.
+    holds = ApprovalActionHolder(build_approval_service(session_factory), session_factory)
     return ExternalActionExecutor(
         fallback=DbActionExecutor(session),
         webhook=HttpxWebhookSender(),
@@ -330,6 +335,7 @@ def _build_executor(
         sprints=sprints,
         merges=MockGitHubMergeDispatcher(),
         audit=audit,
+        holds=holds,
     )
 
 

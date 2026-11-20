@@ -28,6 +28,7 @@ from scf_board.automation.errors import (
 from scf_board.automation.executor import (
     ActionContext,
     ActionExecutor,
+    ActionHolder,
     AutomationAuditSink,
     DeployDispatcher,
     ExternalActionExecutor,
@@ -83,6 +84,7 @@ __all__ = [
     "ActionContext",
     "ActionExecutor",
     "ActionForbiddenError",
+    "ActionHolder",
     "ActionResult",
     "ActionSpec",
     "AddCommentAction",
