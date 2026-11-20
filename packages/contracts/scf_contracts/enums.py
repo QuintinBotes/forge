@@ -206,6 +206,8 @@ class ApprovalGate(enum.StrEnum):
     DEPLOY = "deploy"
     INCIDENT_REMEDIATION = "incident_remediation"
     POLICY_OVERRIDE = "policy_override"
+    #: An irreversible external automatic action held for a person (#191).
+    AUTOMATION_ACTION = "automation_action"
 
 
 class ApprovalStatus(enum.StrEnum):

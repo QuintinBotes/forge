@@ -17,6 +17,10 @@ reported to an injected audit sink. Actions this executor does not own
 delegate to ``fallback`` (default: :class:`RecordingActionExecutor`), so it
 composes with the worker's ``DbActionExecutor`` without duplicating the F21
 action set.
+
+#191: after the policy refusals, an irreversible external action goes to the
+injected :class:`ActionHolder` (result ``held``); :meth:`ExternalActionExecutor.release`
+runs it once a person approves.
 """
 
 from __future__ import annotations
@@ -38,7 +42,11 @@ from scf_board.automation.schemas import (
     WebhookPostAction,
 )
 from scf_contracts import Decision, Policy, ToolCall
-from scf_contracts.automation import AutomationActionType, AutomationTriggerEnvelope
+from scf_contracts.automation import (
+    AutomationActionType,
+    AutomationTriggerEnvelope,
+    action_impact,
+)
 from scf_contracts.enums import IncidentSeverity
 from scf_policy import evaluate as evaluate_policy
 
@@ -140,6 +148,19 @@ class AutomationAuditSink(Protocol):
     ) -> None: ...
 
 
+@runtime_checkable
+class ActionHolder(Protocol):
+    """Holds an irreversible external action for a person (#191).
+
+    ``parameters`` are what dispatching it would send, for the person to see.
+    Returns the id of the approval request that now holds it.
+    """
+
+    def hold(
+        self, action: ActionSpec, ctx: ActionContext, parameters: dict[str, Any]
+    ) -> uuid.UUID: ...
+
+
 class ExternalActionExecutor:
     """Dispatches the F40 external/incident/sprint/merge actions.
 
@@ -163,6 +184,7 @@ class ExternalActionExecutor:
         sprints: SprintStarter | None = None,
         merges: MergeDispatcher | None = None,
         audit: AutomationAuditSink | None = None,
+        holds: ActionHolder | None = None,
     ) -> None:
         self._fallback = fallback or RecordingActionExecutor()
         # A policy-less caller gets the secure-by-default ``Policy()``: deploys
@@ -176,24 +198,103 @@ class ExternalActionExecutor:
         self._sprints = sprints
         self._merges = merges
         self._audit = audit
+        self._holds = holds
 
     def execute(self, action: ActionSpec, ctx: ActionContext) -> ActionResult:
-        if isinstance(action, WebhookPostAction):
-            result = self._webhook_post(action, ctx)
-        elif isinstance(action, CreateExternalIssueAction):
-            result = self._create_issue(action, ctx)
-        elif isinstance(action, TriggerDeployAction):
-            result = self._trigger_deploy(action, ctx)
-        elif isinstance(action, DeclareIncidentAction):
-            result = self._declare_incident(action, ctx)
-        elif isinstance(action, StartSprintAction):
-            result = self._start_sprint(action, ctx)
-        elif isinstance(action, AutoMergeAction):
-            result = self._auto_merge(action, ctx)
-        else:
+        result = self._refusal(action)
+        if result is None and action_impact(action.type).needs_person:
+            result = self._hold(action, ctx)
+        if result is None:
+            result = self._dispatch(action, ctx)
+        if result is None:
             return self._fallback.execute(action, ctx)
         self._record(action, ctx, result)
         return result
+
+    def release(self, action: ActionSpec, ctx: ActionContext) -> ActionResult:
+        """Run an action a person approved: the refusals still apply; it is never held again."""
+        result = self._refusal(action) or self._dispatch(action, ctx)
+        if result is None:
+            result = ActionResult(
+                type=action.type, status="error", detail={"error": "action_not_releasable"}
+            )
+        self._record(action, ctx, result)
+        return result
+
+    def parameters(self, action: ActionSpec, ctx: ActionContext) -> dict[str, Any]:
+        """What dispatching ``action`` sends, rendered for ``ctx`` (a hold shows these)."""
+        if isinstance(action, WebhookPostAction):
+            payload = {
+                **action.payload_template,
+                "rule_id": str(ctx.rule_id),
+                "rule_name": ctx.rule_name,
+            }
+            return {"url": action.url, "payload": payload}
+        if isinstance(action, TriggerDeployAction):
+            return {"environment": action.environment, "ref": _render(action.ref_template, ctx)}
+        if isinstance(action, AutoMergeAction):
+            return {"ref": str(ctx.snapshot.entity_id), "method": action.merge_method}
+        return action.model_dump(mode="json", exclude={"type"})
+
+    def _refusal(self, action: ActionSpec) -> ActionResult | None:
+        """The policy refusals, which come before any hold (a denied action is ``forbidden``)."""
+        if isinstance(action, AutoMergeAction) and not action.enabled:
+            return ActionResult(
+                type=action.type, status="forbidden", detail={"reason": "auto_merge_disabled"}
+            )
+        if isinstance(action, TriggerDeployAction):
+            decision = self._gate(tool="deploy", action_name=f"deploy_{action.environment}")
+        elif isinstance(action, AutoMergeAction):
+            decision = self._gate(tool="merge", action_name="merge")
+        else:
+            return None
+        if decision.allowed:
+            return None
+        return ActionResult(
+            type=action.type,
+            status="forbidden",
+            detail={"reason": decision.reason or "denied_by_policy"},
+        )
+
+    def _hold(self, action: ActionSpec, ctx: ActionContext) -> ActionResult:
+        if not isinstance(action, _HANDLED):
+            # Nothing here could run it after an approval: refused, not held for nothing.
+            return ActionResult(
+                type=action.type,
+                status="forbidden",
+                detail={"reason": "irreversible_external_action_unreleasable"},
+            )
+        if self._holds is None:
+            return ActionResult(
+                type=action.type, status="error", detail={"error": "action_holder_unavailable"}
+            )
+        try:
+            approval_id = self._holds.hold(action, ctx, self.parameters(action, ctx))
+        except Exception as exc:
+            return ActionResult(
+                type=action.type,
+                status="error",
+                detail={"error": "action_hold_failed", "error_type": type(exc).__name__},
+            )
+        return ActionResult(
+            type=action.type, status="held", detail={"approval_id": str(approval_id)}
+        )
+
+    def _dispatch(self, action: ActionSpec, ctx: ActionContext) -> ActionResult | None:
+        """Run one of this executor's own actions; ``None`` for any other type."""
+        if isinstance(action, WebhookPostAction):
+            return self._webhook_post(action, ctx)
+        if isinstance(action, CreateExternalIssueAction):
+            return self._create_issue(action, ctx)
+        if isinstance(action, TriggerDeployAction):
+            return self._trigger_deploy(action, ctx)
+        if isinstance(action, DeclareIncidentAction):
+            return self._declare_incident(action, ctx)
+        if isinstance(action, StartSprintAction):
+            return self._start_sprint(action, ctx)
+        if isinstance(action, AutoMergeAction):
+            return self._auto_merge(action, ctx)
+        return None
 
     # ------------------------------------------------------------------ #
     # per-action handlers                                                 #
@@ -204,18 +305,16 @@ class ExternalActionExecutor:
             return ActionResult(
                 type=action.type, status="error", detail={"error": "webhook_sender_unavailable"}
             )
-        payload = {
-            **action.payload_template,
-            "rule_id": str(ctx.rule_id),
-            "rule_name": ctx.rule_name,
-        }
+        params = self.parameters(action, ctx)
         try:
-            response = self._webhook.send(action.url, payload)
+            response = self._webhook.send(params["url"], params["payload"])
         except Exception as exc:
-            return ActionResult(type=action.type, status="error", detail={"error": str(exc)})
-        return ActionResult(
-            type=action.type, status="ok", detail={"url": action.url, "response": response}
-        )
+            # The type only: an HTTP error's text can carry the URL and its credentials.
+            return ActionResult(
+                type=action.type, status="error", detail={"error": type(exc).__name__}
+            )
+        # No URL in the result, which is audited: it can carry credentials.
+        return ActionResult(type=action.type, status="ok", detail={"response": response})
 
     def _create_issue(self, action: CreateExternalIssueAction, ctx: ActionContext) -> ActionResult:
         if self._issues is None:
@@ -234,21 +333,14 @@ class ExternalActionExecutor:
         )
 
     def _trigger_deploy(self, action: TriggerDeployAction, ctx: ActionContext) -> ActionResult:
-        decision = self._gate(tool="deploy", action_name=f"deploy_{action.environment}")
-        if not decision.allowed:
-            return ActionResult(
-                type=action.type,
-                status="forbidden",
-                detail={"reason": decision.reason or "denied_by_policy"},
-            )
         if self._deploys is None:
             return ActionResult(
                 type=action.type, status="error", detail={"error": "deploy_dispatcher_unavailable"}
             )
-        ref = _render(action.ref_template, ctx)
+        params = self.parameters(action, ctx)
         try:
             deploy_id = self._deploys.trigger_deploy(
-                environment=action.environment, ref=ref, ctx=ctx
+                environment=params["environment"], ref=params["ref"], ctx=ctx
             )
         except Exception as exc:
             return ActionResult(type=action.type, status="error", detail={"error": str(exc)})
@@ -292,24 +384,13 @@ class ExternalActionExecutor:
         return ActionResult(type=action.type, status="ok", detail={"sprint_id": sprint_id})
 
     def _auto_merge(self, action: AutoMergeAction, ctx: ActionContext) -> ActionResult:
-        if not action.enabled:
-            return ActionResult(
-                type=action.type, status="forbidden", detail={"reason": "auto_merge_disabled"}
-            )
-        decision = self._gate(tool="merge", action_name="merge")
-        if not decision.allowed:
-            return ActionResult(
-                type=action.type,
-                status="forbidden",
-                detail={"reason": decision.reason or "denied_by_policy"},
-            )
         if self._merges is None:
             return ActionResult(
                 type=action.type, status="error", detail={"error": "merge_dispatcher_unavailable"}
             )
-        ref = str(ctx.snapshot.entity_id)
+        params = self.parameters(action, ctx)
         try:
-            merge_id = self._merges.merge(ref=ref, method=action.merge_method, ctx=ctx)
+            merge_id = self._merges.merge(ref=params["ref"], method=params["method"], ctx=ctx)
         except Exception as exc:
             return ActionResult(type=action.type, status="error", detail={"error": str(exc)})
         return ActionResult(
@@ -338,6 +419,17 @@ class ExternalActionExecutor:
             )
 
 
+#: The action types :meth:`ExternalActionExecutor._dispatch` runs, and so can release.
+_HANDLED = (
+    WebhookPostAction,
+    CreateExternalIssueAction,
+    TriggerDeployAction,
+    DeclareIncidentAction,
+    StartSprintAction,
+    AutoMergeAction,
+)
+
+
 def _render(template: str, ctx: ActionContext) -> str:
     """Render the small ``{{rule.name}}`` / ``{{entity.*}}`` token set.
 
@@ -358,6 +450,7 @@ def _render(template: str, ctx: ActionContext) -> str:
 __all__ = [
     "ActionContext",
     "ActionExecutor",
+    "ActionHolder",
     "AutomationAuditSink",
     "DeployDispatcher",
     "ExternalActionExecutor",

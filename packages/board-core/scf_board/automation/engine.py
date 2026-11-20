@@ -132,7 +132,7 @@ class AutomationEngine:
         if not results:
             return AutomationExecutionStatus.NO_OP
         statuses = {r.status for r in results}
-        if statuses <= {"no_op"}:
+        if statuses <= {"no_op", "held"}:  # a held action has not run (#191)
             return AutomationExecutionStatus.NO_OP
         has_error = any(s in ("error", "forbidden") for s in statuses)
         has_ok = any(s == "ok" for s in statuses)
