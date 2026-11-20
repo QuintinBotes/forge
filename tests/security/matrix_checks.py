@@ -583,6 +583,18 @@ def check_tenant_isolation() -> None:
         clients[ws_a].delete(route)
 
 
+def check_tenant_isolation_matrix() -> None:
+    from tenant_matrix import OPEN_DEFECTS, coverage, run
+
+    assert coverage() == [], f"resource types or identifiers not in the matrix: {coverage()}"
+    wrong = run()
+    failing = {entry.split(": ", 1)[0] for entry in wrong}
+    unexpected = [entry for entry in wrong if entry.split(": ", 1)[0] not in OPEN_DEFECTS]
+    assert unexpected == [], f"another workspace's resource reached or revealed: {unexpected}"
+    fixed = sorted(OPEN_DEFECTS.keys() - failing)
+    assert fixed == [], f"open defects that now hold; remove them from OPEN_DEFECTS: {fixed}"
+
+
 def check_crypto_default_fernet() -> None:
     from scf_api.auth.crypto import FernetCipher, default_cipher
 

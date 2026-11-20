@@ -46,6 +46,7 @@ from scf_api.schemas.pm import PMDispatchConfig
 from scf_api.services.agent_dispatch import (
     AgentEnqueueFailed,
     RepoNotConnected,
+    TaskNotFound,
     UngovernedRunRefused,
     build_tracker_objective,
     create_and_enqueue_run,
@@ -334,6 +335,9 @@ def maybe_dispatch(
             )
         except RepoNotConnected:
             return skipped("repository_not_connected")
+        except TaskNotFound:
+            # The linked task was deleted while the issue was fetched.
+            return skipped("no_board_task")
         except UngovernedRunRefused:
             # Outside development an issue never runs without a workflow run (#277).
             return skipped("ungoverned_run_refused")
