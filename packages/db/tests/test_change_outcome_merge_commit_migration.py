@@ -32,7 +32,7 @@ def test_migration_0057_adds_and_drops_the_merge_commit(tmp_path: Path) -> None:
     columns, indexes = _schema(url)
     assert "merge_commit_sha" in columns and "ix_change_outcome_merge_commit" in indexes
 
-    command.downgrade(cfg, "0055_risk_class_requirements")
+    command.downgrade(cfg, "0056_held_automation_action")
     columns, indexes = _schema(url)
     assert "merge_commit_sha" not in columns and "ix_change_outcome_merge_commit" not in indexes
     assert "outcome" in columns  # the table itself stays

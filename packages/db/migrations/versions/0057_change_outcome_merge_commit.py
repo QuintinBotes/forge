@@ -9,7 +9,7 @@ fresh chain's metadata-driven 0054 already has them); ``downgrade`` drops them
 only when present.
 
 Revision ID: 0057_change_outcome_merge_commit
-Revises: 0055_risk_class_requirements
+Revises: 0056_held_automation_action
 Create Date: 2026-11-20
 """
 
@@ -22,7 +22,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0057_change_outcome_merge_commit"
-down_revision: str | None = "0055_risk_class_requirements"
+down_revision: str | None = "0056_held_automation_action"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
