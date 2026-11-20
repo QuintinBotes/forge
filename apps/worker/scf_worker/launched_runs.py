@@ -161,14 +161,20 @@ def _launch_once(run: PreparedRun, executor: RunExecutor) -> dict[str, Any] | No
                 run.run_id, run.workspace_id, env=unit_environment(token)
             )
         except Exception as exc:
+            session.rollback()  # a failed flush or commit while issuing leaves it unusable
             # Both redactors: a launch error may quote the unit's environment, token included.
             reason = redact_text(SecretRedactor().redact(f"{type(exc).__name__}: {exc}"))
             record["error"] = f"the {executor.name} run executor could not launch the run: {reason}"
             record["closing_since"] = launched_at
-        # Read afresh under the lock again: the unit may have recorded its handoff by now.
+        # Read afresh under the lock again: the unit may have recorded its handoff by now,
+        # and after a rollback another delivery may have taken the run.
         row = session.get(AgentRun, run.run_id, with_for_update=True, populate_existing=True)
-        if row is not None:
-            row.output = {**(row.output or {}), EXECUTOR_KEY: record}
+        stored = (row.output or {}).get(EXECUTOR_KEY) if row is not None else None
+        if row is None or not (
+            _launchable(row, run.workspace_id) or (stored or {}).get("launched_at") == launched_at
+        ):
+            return None
+        row.output = {**(row.output or {}), EXECUTOR_KEY: record}
         session.commit()
         return record
 

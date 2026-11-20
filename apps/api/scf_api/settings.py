@@ -292,6 +292,8 @@ class Settings(BaseSettings):
     ratelimit_overrides: dict[str, str] = {}
     # Maximum request body size before 413 (1 MiB default).
     max_body_bytes: int = 1_048_576
+    # A run's handoff carries every step, tool output included, so it gets its own bound.
+    run_handoff_max_body_bytes: int = Field(default=16 * 1_048_576, gt=0)
 
     # --- HARD-11 reliability primitives -------------------------------------
     # Request idempotency: a retry carrying the same ``Idempotency-Key`` returns

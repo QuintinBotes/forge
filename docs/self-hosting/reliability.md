@@ -106,8 +106,9 @@ itself in place of a failed executor.
 The worker refuses to start when the value is unknown, when a non-inline executor
 is combined with the `worktree` sandbox tier, when the executor and
 `FORGE_SANDBOX_BACKEND` name different platforms (an unset backend means
-`docker`), or when `FORGE_RUN_TIME_LIMIT` or `FORGE_RUN_RECONCILE_GRACE_SECONDS`
-is not a usable number of seconds.
+`docker`), when a non-inline executor has no `FORGE_RUN_API_URL`, or when
+`FORGE_RUN_TIME_LIMIT` or `FORGE_RUN_RECONCILE_GRACE_SECONDS` is not a usable
+number of seconds.
 
 With a non-inline executor, `forge.agent.run` prepares the run in the worker,
 launches one unit for it, records the executor and unit under the run's
@@ -146,10 +147,15 @@ unit's environment as `FORGE_RUN_TOKEN`, next to `FORGE_RUN_API_URL`, which the
 worker passes on from its own environment. The run process
 (`python -m scf_worker.run_main`) reads its objective, appends its events and
 records its handoff with that token, and refuses to start when only one of the
-two is set. A request that fails to connect, or gets a server error, is tried up
-to three times; an event keeps its idempotency key across the attempts, so it is
-stored once. A refused token is not retried. When the handoff cannot be recorded,
-the process exits non-zero, naming the HTTP status or the connection error. The
+two is set. A request that fails to connect, gets a server error or is
+rate-limited (`429`, after waiting its `Retry-After`, at most 10 seconds) is
+tried up to three times; an event keeps its idempotency key across the attempts,
+so it is stored once. If the answer to a handoff is lost and the retry finds the
+handoff already stored (`409`), it counts as recorded. Any other refusal is not
+retried. When the handoff cannot be recorded, the process exits non-zero, naming
+the HTTP status or the connection error. A handoff carries every step of the run,
+so its request body may be up to `FORGE_RUN_HANDOFF_MAX_BODY_BYTES` (16 MiB);
+every other route keeps the 1 MiB request limit. The
 token lives for the wall-clock limit plus the grace period, or
 `FORGE_RUN_TOKEN_TTL_SECONDS` if that is shorter. Close-out revokes it, whether
 the run ends from its handoff or the reconciler ends it, and so does a failed
@@ -168,7 +174,8 @@ write does not fail the run.
 | `FORGE_RUN_TIME_LIMIT` | `3600` | a run's wall-clock limit (s), in the run process and the reconciler |
 | `FORGE_RUN_RECONCILE_INTERVAL_SECONDS` | `60` | how often the reconciler runs |
 | `FORGE_RUN_RECONCILE_GRACE_SECONDS` | `300` | how long past the wall-clock limit a unit may run before it is stopped |
-| `FORGE_RUN_API_URL` | unset | the address of SCF's API that a launched unit reaches its run record at; set it on the worker |
+| `FORGE_RUN_API_URL` | unset | the address of SCF's API that a launched unit reaches its run record at; set it on the worker (required with a non-inline executor) |
+| `FORGE_RUN_HANDOFF_MAX_BODY_BYTES` | `16777216` | the largest handoff the API accepts (set on the API) |
 | `FORGE_RUN_TOKEN` | set per unit | the run's own token; the worker issues it at launch, never set it yourself |
 
 ## Related

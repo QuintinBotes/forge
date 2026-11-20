@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -43,7 +44,7 @@ from scf_contracts import (
     Step,
 )
 from scf_db.base import Base
-from scf_db.models import AgentRun, AgentRunEvent, Workspace
+from scf_db.models import AgentRun, AgentRunEvent, AuditLog, Workspace
 from scf_db.models.enums import RunStatus as DbRunStatus
 from scf_worker.agent_runner import close_out_run, execute_run, prepare_run, run_agent_task
 from scf_worker.api_run_record import ATTEMPTS, ApiRunRecord
@@ -592,22 +593,31 @@ DEADLINE = 3_900.0
 
 
 class Wire:
-    """SCF's API reached in-process; it can refuse connections or lose an answer."""
+    """SCF's API reached in-process; it can refuse connections, throttle or lose an answer.
+
+    The faults apply to every call, or only to the call ``only`` names (``"POST handoff"``).
+    """
 
     def __init__(self, api: TestClient) -> None:
         self.api = api
         self.requests: list[httpx.Request] = []
+        self.only: str | None = None
         self.unreachable = False
         self.lost_answers = 0
+        self.throttled = 0
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        if self.unreachable:
+        faulty = self.only in (None, self.calls()[-1])
+        if self.unreachable and faulty:
             raise httpx.ConnectError("connection refused", request=request)
+        if self.throttled and faulty:  # the rate limiter answers; the route never runs
+            self.throttled -= 1
+            return httpx.Response(429, json={"detail": "slow down"}, headers={"Retry-After": "30"})
         answer = self.api.request(
             request.method, request.url.path, headers=request.headers, content=request.content
         )
-        if self.lost_answers:  # the API handled the request; its answer never arrives
+        if self.lost_answers and faulty:  # the API handled the request; its answer never arrives
             self.lost_answers -= 1
             raise httpx.ReadError("connection reset by peer", request=request)
         kind = answer.headers.get("content-type", "application/json")
@@ -634,8 +644,11 @@ def wire(factory: sessionmaker[Session]) -> Iterator[Wire]:
 
 
 @pytest.fixture(autouse=True)
-def _no_retry_delay(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(api_run_record, "RETRY_DELAY_SECONDS", 0.0)
+def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """The pauses the API record takes between attempts, recorded instead of slept."""
+    slept: list[float] = []
+    monkeypatch.setattr(api_run_record, "time", SimpleNamespace(sleep=slept.append))
+    return slept
 
 
 def _token(factory: sessionmaker[Session], run_id: uuid.UUID) -> str:
@@ -822,5 +835,79 @@ def test_an_unreachable_api_exits_non_zero_after_bounded_attempts_naming_the_err
     err = capsys.readouterr().err
     assert "ConnectError" in err
     assert _no_token(err, token) and _no_token(caplog.text, token)
+    assert wire.calls() == ["GET inputs"] * ATTEMPTS + ["POST handoff"] * ATTEMPTS
+    assert HANDOFF_KEY not in (_row(factory, run_id).output or {})
+
+
+# Review fixes: a large handoff, a lost handoff answer, throttling ----------- #
+
+MIB = 1_048_576
+
+
+def test_a_handoff_over_the_body_limit_is_stored_and_one_over_its_own_cap_is_refused(
+    factory, wire
+) -> None:
+    """Tool output is kept in the steps; the in-process record has no size limit."""
+    run_id, _ = _seed(factory, repo=False)
+    token = _token(factory, run_id)
+    output = "x" * (3 * MIB // 2)
+    result = AgentRunResult(run_id=run_id, status=RunStatus.SUCCEEDED, steps=[Step(output=output)])
+
+    assert _api_record(wire, run_id, token).record_handoff(result)
+
+    assert _handoff(factory, run_id).steps[0].output == output
+    cap = Settings().run_handoff_max_body_bytes
+    record, auth = f"/agent/runs/{run_id}/record", {"Authorization": f"Bearer {token}"}
+    over_cap = wire.api.post(f"{record}/handoff", headers=auth, content=b"x" * (cap + 1))
+    other_route = wire.api.post(f"{record}/events", headers=auth, content=b"x" * (MIB + 1))
+    assert (over_cap.status_code, other_route.status_code) == (413, 413)
+
+
+def test_a_handoff_whose_answer_is_lost_is_recorded_once_and_the_process_exits_zero(
+    factory, mirror, scripted, wire
+) -> None:
+    run_id, _ = _seed(factory)
+    token = _token(factory, run_id)
+    wire.only, wire.lost_answers = "POST handoff", 1
+
+    assert _through_api(factory, wire, run_id, token=token) == 0
+
+    assert wire.calls()[-2:] == ["POST handoff", "POST handoff"]
+    assert _handoff(factory, run_id).status is RunStatus.SUCCEEDED
+    with factory() as s:
+        actions = list(s.scalars(select(AuditLog.action)))
+    assert actions.count("agent_run.handoff_recorded") == 1
+    # A 409 with no earlier attempt in doubt is still a refusal.
+    with pytest.raises(api_run_record.RunRecordError, match="409"):
+        _api_record(wire, run_id, token).record_handoff(AgentRunResult(run_id=run_id))
+
+
+def test_a_throttled_append_waits_and_is_retried_with_its_key_and_stored_once(
+    factory, wire, waits
+) -> None:
+    run_id, _ = _seed(factory, repo=False)
+    record = _api_record(wire, run_id, _token(factory, run_id))
+    wire.throttled = 1
+
+    assert record.emit(RunEventDraft(type=RunEventType.AGENT_MESSAGE, summary="first"))
+
+    keys = [r.headers["idempotency-key"] for r in wire.requests]
+    assert len(keys) == 2 and keys[0] == keys[1]
+    assert waits == [api_run_record.MAX_RETRY_AFTER_SECONDS]  # Retry-After: 30, capped
+    assert [(e.seq, e.summary) for e in _events(factory, run_id)] == [(1, "first")]
+    # A refusal other than 429 is still never retried.
+    assert not record.emit(RunEventDraft(type=RunEventType.THREAD_STATE, summary="mine"))
+    assert len(wire.requests) == 3
+
+
+def test_a_handoff_throttled_on_every_attempt_exits_non_zero_naming_429(
+    factory, mirror, wire, capsys
+) -> None:
+    run_id, _ = _seed(factory)
+    wire.throttled = 2 * ATTEMPTS
+
+    assert _through_api(factory, wire, run_id) != 0
+
+    assert "429" in capsys.readouterr().err
     assert wire.calls() == ["GET inputs"] * ATTEMPTS + ["POST handoff"] * ATTEMPTS
     assert HANDOFF_KEY not in (_row(factory, run_id).output or {})

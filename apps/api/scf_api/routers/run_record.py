@@ -25,6 +25,10 @@ from scf_db.models import AgentRun
 
 router = APIRouter(prefix="/agent/runs/{run_id}/record", tags=["run-record"])
 
+#: The handoff route's path, for its own body bound (``FORGE_RUN_HANDOFF_MAX_BODY_BYTES``):
+#: a handoff carries every step of the run, tool output included.
+HANDOFF_PATH = r"/agent/runs/[^/]+/record/handoff"
+
 RunCallerDep = Annotated[RunCaller, Depends(require_run_token)]
 
 
@@ -108,4 +112,4 @@ def record_run_handoff(result: AgentRunResult, caller: RunCallerDep, session: Db
         writer.commit()
 
 
-__all__ = ["router"]
+__all__ = ["HANDOFF_PATH", "router"]
