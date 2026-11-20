@@ -46,17 +46,13 @@ from scf_api.observability.audit import AuditCategory, AuditLog
 from scf_api.services.incident_service import IncidentService
 from scf_approval import ApprovalAuditSink, ApprovalService
 from scf_approval.models import (
-    ApprovalAction,
-    ApprovalContext,
     ApprovalDecisionRequest,
     ApprovalRequest,
     GateStatus,
     GateType,
     Principal,
     ResolutionOutcome,
-    RiskFlag,
 )
-from scf_approval.registry import default_actions
 from scf_board.automation.executor import ActionContext, ExternalActionExecutor
 from scf_board.automation.schemas import ActionSpec
 from scf_board.sprint_service import SprintService
@@ -415,34 +411,6 @@ def _default_session_factory() -> Session:
     return get_session_factory()()
 
 
-class HeldActionGateProvider:
-    """The ``automation_action`` gate's context: what would run, and that it is final."""
-
-    gate_type: ClassVar[GateType] = GateType.AUTOMATION_ACTION
-
-    async def build_context(
-        self, request: ApprovalRequest, *, session: Any = None
-    ) -> ApprovalContext:
-        return ApprovalContext(
-            approval_id=request.id,
-            gate_type=request.gate_type,
-            goal=request.title or "An automatic action is waiting for a person",
-            risk_flags=[
-                RiskFlag(
-                    severity="warning",
-                    category="impact",
-                    message="Irreversible and outside SCF: it runs only if a person approves.",
-                    source="impact_gate",
-                )
-            ],
-            available_actions=self.available_actions(request),
-            gate_payload=request.gate_payload,
-        )
-
-    def available_actions(self, request: ApprovalRequest) -> list[ApprovalAction]:
-        return default_actions(request.gate_type)
-
-
 class HeldActionResolutionHook:
     """Runs a held action once a person approves it; any other outcome runs nothing."""
 
@@ -518,7 +486,6 @@ __all__ = [
     "HELD_ACTION_WITHHELD",
     "ApprovalActionHolder",
     "AutomationActionAuditSink",
-    "HeldActionGateProvider",
     "HeldActionResolutionHook",
     "HttpxWebhookSender",
     "IncidentServiceDeclarer",

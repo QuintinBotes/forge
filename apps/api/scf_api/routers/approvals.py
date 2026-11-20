@@ -116,7 +116,7 @@ async def create_approval(
             detail="workflow_run gates are opened by the workflow engine",
         )
     if body.gate_type is GateType.AUTOMATION_ACTION:
-        # Approving one runs a stored action, and its decisions become precedent (#191).
+        # Approving one runs the action the automation executor stored for it (#191).
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="automation_action gates are opened by the automation executor",

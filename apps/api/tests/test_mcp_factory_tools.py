@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
 from collections.abc import Iterator
@@ -30,13 +29,6 @@ from scf_approval import (
     InMemoryActivityBus,
     InMemoryApprovalRepository,
 )
-from scf_approval.models import (
-    ApprovalAction,
-    ApprovalDecisionRequest,
-    GateType,
-    Role,
-)
-from scf_approval.models import Principal as ApprovalPrincipal
 from scf_approval.providers import InMemoryGrantStore
 from scf_board import InMemoryBoardService
 from scf_contracts import AgentRunResult, EpicDTO, RunStatus, UserRole
@@ -52,7 +44,6 @@ FACTORY_TOOLS = {
     "spec_get",
     "board_items",
     "approvals_pending",
-    "approval_precedents",
     "run_status",
     # Spec J: the context-assembly read tool (context_tools).
     "assemble_context",
@@ -227,49 +218,6 @@ def test_approvals_pending_lists_only_pending_requests(world: World) -> None:
         items = _provenance(_structured(mcp.call_tool("approvals_pending", {})))["items"]
     assert [item["title"] for item in items] == ["Merge the search PR"]
     assert all(item["status"] == "pending" for item in items)
-
-
-def _decided_hold(world: World, ws: uuid.UUID, action_type: str, note: str | None) -> uuid.UUID:
-    """A held action a person rejected (rejecting runs nothing, so no store is needed)."""
-
-    async def _go() -> uuid.UUID:
-        request = await world.approvals.create(
-            workspace_id=ws,
-            gate_type=GateType.AUTOMATION_ACTION,
-            subject_type="automation_action",
-            subject_id=uuid.uuid4(),
-            gate_payload={"action_type": action_type},
-        )
-        await world.approvals.resolve(
-            request.id,
-            ApprovalDecisionRequest(decision=ApprovalAction.REJECT, note=note),
-            ApprovalPrincipal(kind="user", id=uuid.uuid4(), role=Role.ADMIN, workspace_id=ws),
-            workspace_id=ws,
-        )
-        return request.id
-
-    return asyncio.run(_go())
-
-
-@pytest.mark.parametrize("role", [UserRole.VIEWER, UserRole.AGENT_RUNNER])
-def test_approval_precedents_let_an_agent_cite_a_decision_and_its_reason(
-    world: World, role: UserRole
-) -> None:
-    quoted = _decided_hold(world, WS, "webhook_post", "the relay is being replaced")
-    silent = _decided_hold(world, WS, "webhook_post", None)
-    _decided_hold(world, WS, "trigger_deploy", "another kind")
-    _decided_hold(world, OTHER_WS, "webhook_post", "another tenant")
-
-    with _mcp(world.client(role)) as mcp:
-        args = {"action_type": "webhook_post"}
-        items = _provenance(_structured(mcp.call_tool("approval_precedents", args)))["items"]
-
-    assert [(i["approval_id"], i["reason"]) for i in items] == [
-        (str(silent), None),
-        (str(quoted), "the relay is being replaced"),
-    ]
-    assert all(i["decision_id"] and i["decision"] == "reject" for i in items)
-    assert all(i["decider_id"] and i["decided_at"] for i in items)
 
 
 def test_run_status_summarises_a_run(world: World) -> None:

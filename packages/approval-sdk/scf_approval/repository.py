@@ -90,18 +90,6 @@ class ApprovalRepository(Protocol):
         self, approval_id: uuid.UUID
     ) -> builtins.list[ApprovalDecisionRecord]: ...
 
-    async def held_action_decisions(
-        self,
-        *,
-        workspace_id: uuid.UUID,
-        action_type: str,
-        limit: int,
-        exclude: uuid.UUID | None = None,
-    ) -> builtins.list[ApprovalDecisionRecord]:
-        """Decisions on this workspace's ``automation_action`` requests for
-        ``action_type`` (``exclude``'s left out), newest first, at most ``limit``."""
-        ...
-
 
 class InMemoryApprovalRepository:
     """Hermetic repository honouring the DB invariants (pending-unique,
@@ -191,27 +179,6 @@ class InMemoryApprovalRepository:
 
     async def decisions_for(self, approval_id: uuid.UUID) -> builtins.list[ApprovalDecisionRecord]:
         return [v.model_copy(deep=True) for v in self._decisions.get(approval_id, [])]
-
-    async def held_action_decisions(
-        self,
-        *,
-        workspace_id: uuid.UUID,
-        action_type: str,
-        limit: int,
-        exclude: uuid.UUID | None = None,
-    ) -> builtins.list[ApprovalDecisionRecord]:
-        held = [
-            i.id
-            for i in self._items.values()
-            if i.workspace_id == workspace_id
-            and i.gate_type is GateType.AUTOMATION_ACTION
-            and i.gate_payload.get("action_type") == action_type
-            and i.id != exclude
-        ]
-        votes = [v for request_id in held for v in self._decisions.get(request_id, [])]
-        # Insertion order breaks equal timestamps, so "newest first" is total.
-        ranked = sorted(enumerate(votes), key=lambda p: (p[1].created_at, p[0]), reverse=True)
-        return [v.model_copy(deep=True) for _, v in ranked[:limit]]
 
 
 __all__ = [

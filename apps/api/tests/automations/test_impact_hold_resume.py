@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, StaticPool, create_engine, select, update
+from sqlalchemy import StaticPool, create_engine, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from scf_api.main import create_app
@@ -28,7 +28,6 @@ from scf_api.services.approval_service import get_approval_service
 from scf_api.services.automation_actions import (
     ApprovalActionHolder,
     AutomationActionAuditSink,
-    HeldActionGateProvider,
     HeldActionResolutionHook,
     claim_held_action,
 )
@@ -56,7 +55,6 @@ from scf_board.automation import (
     ActionSpec,
     EntitySnapshot,
     ExternalActionExecutor,
-    TriggerDeployAction,
     WebhookPostAction,
 )
 from scf_contracts import DeployRules, Policy, ReviewRules
@@ -119,7 +117,6 @@ class Stack:
         self.approval_audit = RecordingAuditSink()
         self.automation_log = AuditLog()
         registry = GateRegistry()
-        registry.register_provider(HeldActionGateProvider())
         registry.register_hook(
             HeldActionResolutionHook(
                 audit=self.approval_audit,
@@ -221,20 +218,6 @@ def factory() -> Iterator[sessionmaker[Session]]:
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
-    yield _seeded(engine)
-    engine.dispose()
-
-
-@pytest.fixture
-def pg_factory(pg_engine: Engine) -> Iterator[sessionmaker[Session]]:
-    """Postgres, where the precedent query filters the JSONB payload."""
-    try:
-        yield _seeded(pg_engine)
-    finally:
-        Base.metadata.drop_all(pg_engine)
-
-
-def _seeded(engine: Engine) -> sessionmaker[Session]:
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as session:
@@ -247,7 +230,8 @@ def _seeded(engine: Engine) -> sessionmaker[Session]:
                 User(id=user_id, workspace_id=WS, email=f"{user_id.hex[-4:]}@acme.test", name="P")
             )
         session.commit()
-    return factory
+    yield factory
+    engine.dispose()
 
 
 @pytest.fixture
@@ -464,70 +448,6 @@ def test_a_held_action_is_claimed_only_in_its_own_workspace(stack: Stack) -> Non
     assert claimed is not None
     assert claimed[0] == webhook()
     assert claim_held_action(stack.factory, request, released_by=APPROVER) is None
-
-
-def test_approving_precedents_never_release_the_next_hold(stack: Stack) -> None:
-    for n in range(3):
-        stack.decide(stack.hold(), ApprovalAction.APPROVE, note=f"fine, round {n}")
-    assert len(stack.ports.calls) == 3
-
-    new = stack.hold()
-
-    assert len(stack.ports.calls) == 3
-    assert stack.request(new).status is GateStatus.PENDING
-    context = asyncio.run(stack.approvals.get_context(new, workspace_id=WS))
-    assert [p.reason for p in context.precedents or []] == [
-        "fine, round 2",
-        "fine, round 1",
-        "fine, round 0",
-    ]
-    assert {p.decider_id for p in context.precedents or []} == {APPROVER}
-
-
-@pytest.mark.parametrize(
-    "backend", ["factory", pytest.param("pg_factory", marks=pytest.mark.postgres)]
-)
-def test_the_database_returns_precedents_of_this_workspace_and_gate_only(
-    request: pytest.FixtureRequest, backend: str
-) -> None:
-    stack = Stack(request.getfixturevalue(backend))
-    mine = stack.hold()
-    stack.decide(mine, ApprovalAction.REJECT, note="not on a Friday")
-    deploy = stack.hold(TriggerDeployAction(environment="staging"))
-    stack.decide(deploy, ApprovalAction.APPROVE)
-    other_gate = asyncio.run(
-        stack.approvals.create(
-            workspace_id=WS,
-            gate_type=GateType.DEPLOY,
-            subject_type="deployment",
-            subject_id=uuid.uuid4(),
-            gate_payload={"action_type": "webhook_post"},
-        )
-    )
-    stack.decide(other_gate.id, ApprovalAction.REJECT, note="a deploy gate, not a hold")
-    foreign = asyncio.run(
-        stack.approvals.create(
-            workspace_id=OTHER_WS,
-            gate_type=GateType.AUTOMATION_ACTION,
-            subject_type="automation_action",
-            subject_id=uuid.uuid4(),
-            gate_payload={"action_type": "webhook_post"},
-        )
-    )
-    asyncio.run(
-        stack.approvals.resolve(
-            foreign.id,
-            ApprovalDecisionRequest(decision=ApprovalAction.APPROVE, note="other tenant"),
-            Principal(kind="user", id=SECOND, role=Role.ADMIN, workspace_id=OTHER_WS),
-            workspace_id=OTHER_WS,
-        )
-    )
-
-    precedents = asyncio.run(
-        stack.approvals.precedents(workspace_id=WS, action_type="webhook_post")
-    )
-
-    assert [(p.approval_id, p.reason) for p in precedents] == [(mine, "not on a Friday")]
 
 
 def test_the_hold_and_its_decision_are_audited_without_a_secret(stack: Stack) -> None:

@@ -27,7 +27,6 @@ from scf_db.base import Base
 
 # revision identifiers, used by Alembic.
 revision: str = "0055_held_automation_action"
-# 0054 is taken by an open change; rebase this onto it if that lands first.
 down_revision: str | None = "0054_factory_metrics"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
