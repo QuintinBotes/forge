@@ -42,6 +42,7 @@ from scf_db.models import (
     ApprovalStatus,
     AuditLog,
     Project,
+    RepositoryConnection,
     Task,
     User,
     Workspace,
@@ -625,9 +626,31 @@ async def test_a_pr_station_on_a_repository_with_no_mirror_fails_naming_it(
     for name in ("FORGE_GITHUB_APP_ID", "FORGE_GITHUB_INSTALLATION_ID"):
         monkeypatch.delenv(name, raising=False)
     seed = _seed(factory, repo_targets=[{"repo": "acme/app", "base_branch": "main"}])
+    _connect(factory, "acme/app")
 
     with pytest.raises(ApplicationError) as refused:
         await open_station_gate_service(factory)(_inp(seed, gate="pr"))
 
     assert refused.value.non_retryable and "acme/app" in str(refused.value)
     assert _requests(factory) == []
+
+
+def _connect(factory: sessionmaker[Session], repo: str) -> None:
+    with factory() as s:
+        s.add(RepositoryConnection(workspace_id=WS, repo_id=repo, name=repo))
+        s.commit()
+
+
+async def test_a_pr_station_on_a_repository_not_connected_is_refused_unfetched(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Like every other run path, a line reads only a repository its workspace connected."""
+    fetched: list[str] = []
+    monkeypatch.setattr(ts, "_mirror", lambda _ws, repo, _run: fetched.append(repo))
+    seed = _seed(factory, repo_targets=[{"repo": "acme/unconnected", "base_branch": "main"}])
+
+    with pytest.raises(ApplicationError) as refused:
+        await open_station_gate_service(factory)(_inp(seed, gate="pr"))
+
+    assert refused.value.non_retryable and "acme/unconnected" in str(refused.value)
+    assert (fetched, _requests(factory)) == ([], [])

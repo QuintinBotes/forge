@@ -263,6 +263,9 @@ def open_station_gate_service(factory: sessionmaker[Session]) -> StationGateFn:
         if inp.gate == GateType.PR.value:
             target = AgentObjective(objective="review rules", repo_targets=targets)
             if (repo := target.primary_repo_target) is not None:
+                with factory() as session:  # only a repository this workspace connected
+                    if not repo_connected(session, inp.workspace_id, repo.repo):
+                        raise _gate_refused(f"{repo.repo} is not connected to this workspace")
                 try:  # fetched as an agent run fetches it; review_rules_stamp needs the mirror
                     _mirror(inp.workspace_id, repo.repo, inp.workflow_run_id)
                 except RepositoryUnavailable as exc:
