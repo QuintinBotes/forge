@@ -17,11 +17,18 @@ import pytest
 from sqlalchemy import StaticPool, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from scf_contracts import GatedChange, GateRequirements, RiskClass, RiskReader
+from scf_contracts import (
+    GatedChange,
+    GateRequirements,
+    RiskClass,
+    RiskReader,
+    gate_decision,
+    tighten_deploy,
+)
 from scf_db.base import Base
 from scf_db.models import AgentRun, RiskClassification, RiskGateObservation, Workspace
 from scf_db.models.enums import RunStatus
-from scf_db.risk_repository import DbRiskReader
+from scf_db.risk_repository import DbRiskReader, RiskRepository
 
 WS = uuid.UUID("00000000-0000-0000-0000-000000000194")
 OTHER_WS = uuid.UUID("00000000-0000-0000-0000-000000000195")
@@ -197,3 +204,32 @@ def test_each_observation_is_one_row_naming_the_gate_both_decisions_and_agreemen
         risk_decision,
     )
     assert row.agreed is agreed
+
+
+def test_a_failed_observation_leaves_the_gates_own_transaction_usable(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Given the gate's session (the deploy gate's), the reader's failure stays its own (FR-013)."""
+    _classify(factory)
+
+    def failing_insert(self: RiskRepository, workspace_id: uuid.UUID, **_: Any) -> None:
+        self._session.add(RiskGateObservation(workspace_id=workspace_id))  # NOT NULL columns unset
+        self._session.flush()
+
+    monkeypatch.setattr(RiskRepository, "record_gate_observation", failing_insert)
+    with factory() as s:
+        s.add(Workspace(name="Gate", slug="gate-own-work"))  # the gate's own write
+        s.flush()
+        decided = gate_decision(
+            DbRiskReader(s),
+            GatedChange(workspace_id=WS, commit_sha="c" * 40),
+            "deploy",
+            "auto",
+            lambda own, req: tighten_deploy(own, req.deploy_mode),
+        )
+        s.commit()
+
+    assert decided == "auto"  # shadow: the gate's own decision
+    with factory() as s:
+        assert s.scalar(select(Workspace.id).where(Workspace.slug == "gate-own-work")) is not None
+        assert s.scalars(select(RiskGateObservation)).all() == []

@@ -622,6 +622,9 @@ class DeploymentService:
                 environment_name=dep.environment_name,
                 repo_id=dep.repo_id,
                 commit_sha=dep.commit_sha,
+                # The same change: its gate reads the same risk class (#194).
+                workflow_run_id=dep.workflow_run_id,
+                agent_run_id=dep.agent_run_id,
                 artifact_ref=dep.artifact_ref,
                 from_environment_name=dep.from_environment_name,
                 kind=DeploymentKind.PROMOTION,

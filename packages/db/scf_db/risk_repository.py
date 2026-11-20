@@ -183,7 +183,10 @@ class DbRiskReader:
     @contextmanager
     def _session(self) -> Iterator[Session]:
         if isinstance(self._sessions, Session):
-            yield self._sessions
+            # A SAVEPOINT: a failed read or observation rolls back only itself and
+            # leaves the gate's own transaction usable (FR-013).
+            with self._sessions.begin_nested():
+                yield self._sessions
             return
         with self._sessions() as session:
             yield session

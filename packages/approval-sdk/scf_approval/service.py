@@ -707,17 +707,16 @@ class ApprovalService:
 
 
 def _gated_change(request: ApprovalRequest) -> GatedChange | None:
-    """The change a ``pr`` gate approves: its run's. Other gates approve no change."""
-    run = request.workflow_run_id or (
-        request.subject_id if request.subject_type == "workflow_run" else None
-    )
-    if request.gate_type is not GateType.PR or (run is None and request.agent_run_id is None):
+    """The change a ``pr`` gate approves: the run the workflow engine opened it on.
+
+    Only the engine opens a gate whose subject is a workflow run (the API refuses
+    one from a caller). A caller's gate approves no classified change, so it neither
+    reads nor records risk: its observations would be the caller's to choose.
+    """
+    run = request.subject_id if request.subject_type == "workflow_run" else None
+    if request.gate_type is not GateType.PR or run is None:
         return None
-    return GatedChange(
-        workspace_id=request.workspace_id,
-        agent_run_id=request.agent_run_id,
-        workflow_run_id=run,
-    )
+    return GatedChange(workspace_id=request.workspace_id, workflow_run_id=run)
 
 
 def _decision_metadata(actor: Principal) -> dict[str, Any]:

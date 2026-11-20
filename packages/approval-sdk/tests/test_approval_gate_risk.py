@@ -116,3 +116,21 @@ async def test_a_gate_that_approves_no_change_is_not_classified() -> None:
 
     assert (spec.required_approvals, unattached.required_approvals) == (1, 1)
     assert reader.looked_up == []
+
+
+async def test_a_pr_gate_a_caller_opens_naming_a_run_reads_and_records_no_risk() -> None:
+    """Only the workflow engine opens a gate whose subject is the run; a caller's gate
+    naming a classified run must not add observations the caller chose (#194 review)."""
+    reader = RecordingRiskReader("enforcing", approvals=3)
+    service = _service(reader)
+
+    gate = await _open(
+        service,
+        subject_type="pull_request",
+        subject_id=uuid.uuid4(),
+        agent_run_id=uuid.uuid4(),
+        required_approvals=1,
+    )
+
+    assert gate.required_approvals == 1
+    assert (reader.looked_up, reader.observed) == ([], [])
