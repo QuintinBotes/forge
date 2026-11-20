@@ -106,7 +106,7 @@ class MCPConnectionManager:
             audit_log=_Tee(self._audit, own),
             policy=self._policy,
             evaluator=self._evaluator,
-            rate_limiter=self._rate_limiter,
+            rate_limiter=_scoped_limiter(self._rate_limiter, workspace_id),
         )
         client.connect(conn)
         self._clients[key] = client
@@ -190,3 +190,26 @@ class MCPConnectionManager:
 
 
 __all__ = ["MCPConnectionManager", "TransportFactory"]
+
+
+class _WorkspaceRateLimiter:
+    """One workspace's buckets in a shared limiter: its keys are prefixed with it, so a
+    same-named connection of another workspace never draws on this one's budget."""
+
+    def __init__(self, limiter: RateLimiter, workspace_id: uuid.UUID) -> None:
+        self._limiter = limiter
+        self._prefix = f"{workspace_id}:"
+
+    def allow(self, key: str) -> bool:
+        return self._limiter.allow(self._prefix + key)
+
+    def retry_after_s(self) -> float:
+        return self._limiter.retry_after_s()
+
+
+def _scoped_limiter(
+    limiter: RateLimiter | None, workspace_id: uuid.UUID | None
+) -> RateLimiter | None:
+    if limiter is None or workspace_id is None:
+        return limiter
+    return _WorkspaceRateLimiter(limiter, workspace_id)
