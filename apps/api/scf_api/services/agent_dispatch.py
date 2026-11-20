@@ -165,6 +165,10 @@ def create_and_enqueue_run(
     refused here (``UngovernedRunRefused``), before anything is persisted (#277).
     """
     refuse_ungoverned(objective)
+    if objective.task_id is not None:
+        task = session.get(Task, objective.task_id)
+        if task is None or task.workspace_id != workspace_id:
+            raise TaskNotFound(str(objective.task_id))
     run_id = uuid.uuid4()
     context = {k: v for k, v in objective.context.items() if k not in _STRIPPED_CONTEXT}
     context |= {"agent_run_id": str(run_id), "workspace_id": str(workspace_id)}
