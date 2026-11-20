@@ -26,6 +26,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from temporalio.exceptions import ApplicationError
 
 import scf_worker.temporal_main as tm
 from scf_contracts.lines import (
@@ -38,6 +39,7 @@ from scf_db.base import Base
 from scf_db.models import Project, RepositoryConnection, Task, WorkflowRun, Workspace
 from scf_db.models.enums import PMConnectionStatus, PMProvider, PMSyncDirection
 from scf_db.models.pm import PMTaskLink
+from scf_worker.dispatch import ensure_mirror
 from scf_worker.finalizer import RUN_TOKEN_PERMISSIONS, GitHubAppCredentials, git_push
 from scf_worker.line_services import CiPolling, line_services, run_worktree
 from scf_worker.run_workspace import run_branch
@@ -48,6 +50,7 @@ from scf_workflow.temporal.payloads import (
     AgentRunResultDTO,
     RunAgentInput,
     ServiceStationInput,
+    WorkflowEventPayload,
 )
 from scf_workflow.temporal.station_workflow import StationWorkflow
 from scf_workflow.temporal.worker import build_temporal_worker
@@ -244,9 +247,11 @@ def bind(
     return _bind
 
 
-def _seed_task(s: Session) -> Task:
+def _seed_task(s: Session, active: bool | None = True) -> Task:
+    """The task on ``REPO``: connected, deactivated (False) or never connected (None)."""
     s.add(Workspace(id=WS, name="Acme", slug="acme"))
-    s.add(RepositoryConnection(workspace_id=WS, repo_id=REPO, name=REPO))
+    if active is not None:
+        s.add(RepositoryConnection(workspace_id=WS, repo_id=REPO, name=REPO, is_active=active))
     s.flush()
     project = Project(workspace_id=WS, name="Core", key="CORE")
     s.add(project)
@@ -275,10 +280,10 @@ def _seed_task(s: Session) -> Task:
     return task
 
 
-def _seed(factory: sessionmaker[Session]) -> uuid.UUID:
+def _seed(factory: sessionmaker[Session], active: bool | None = True) -> uuid.UUID:
     """A workflow run of the task; returns its id."""
     with factory() as s:
-        task = _seed_task(s)
+        task = _seed_task(s, active)
         run = WorkflowRun(workspace_id=WS, task_id=task.id, engine_backend="temporal")
         s.add(run)
         s.commit()
@@ -326,6 +331,38 @@ def test_prepare_makes_one_worktree_per_run_on_the_run_branch(
     assert _prepared(services, run_id, mirror) == worktree
     other = services["forge.prepare_worktree"](_inp("forge.prepare_worktree", run_id, repo="x/y"))
     assert (other.outcome, other.error_code) == ("failed", "repo_mismatch")
+
+
+@pytest.mark.parametrize("active", [None, False], ids=["never_connected", "deactivated"])
+def test_no_service_touches_a_repository_the_workspace_has_not_connected(
+    factory: sessionmaker[Session],
+    make_repo: Callable[..., Path],
+    bind: Any,
+    github: FakeGitHub,
+    tmp_path: Path,
+    active: bool | None,
+) -> None:
+    """Review fix: refused with a reason naming it; no token, no clone, no push."""
+    pushed: list[str] = []
+    run_id = _seed(factory, active)
+    services = bind(push=lambda _path, branch, *_: pushed.append(branch))
+    with factory() as s:
+        task_id = str(s.get(WorkflowRun, run_id).task_id)  # type: ignore[union-attr]
+    calls = {
+        "forge.prepare_worktree": {"repo": REPO},
+        "forge.confirm_red": {},
+        "forge.run_checks": {},
+        "forge.open_pr": {"task": task_id},
+        "forge.push_branch": {"pr": "acme/app#1"},
+        "forge.await_ci": {"pr": "acme/app#1"},
+        "forge.mark_pr_ready": {"pr": "acme/app#1"},
+    }
+    for name, inputs in calls.items():
+        with pytest.raises(ApplicationError, match="'acme/app' is not connected") as refused:
+            services[name](_inp(name, run_id, **inputs))
+        assert (refused.value.type, refused.value.non_retryable) == ("RepoNotConnected", True)
+    assert (github.tokens, github.prs, pushed) == ([], [], [])
+    assert not (tmp_path / "mirrors").exists()  # nothing cloned
 
 
 # --------------------------------------------------------------------------- #
@@ -448,6 +485,22 @@ def test_branch_delivery_pushes_only_the_run_branch_with_a_one_repository_token(
     assert len(pushed) == 1
 
 
+def test_a_pushed_line_branch_leaves_the_shared_mirror_fetchable(
+    factory: sessionmaker[Session], make_repo: Callable[..., Path], bind: Any, tmp_path: Path
+) -> None:
+    """Review fix: a feature run's ``ensure_mirror`` still fetches while a line holds its branch."""
+    mirror, run_id, services = make_repo(), _seed(factory), bind()
+    branch = run_branch("forge", run_id)
+    _commit(_prepared(services, run_id, mirror), RED)
+    remote, work = tmp_path / "remotes" / "acme" / "app.git", tmp_path / "work"
+    _git(mirror, "push", "-q", str(remote), branch)  # as the draft pull request pushes it
+    moved = _commit(work, {"later.txt": "x"})
+    _git(work, "push", "-q", str(remote), "main")
+    ensure_mirror(REPO, root=mirror.parents[1], remote_url=remote.as_uri())
+    assert _git(mirror, "rev-parse", "main") == moved
+    assert run_worktree(mirror, branch) is not None
+
+
 # --------------------------------------------------------------------------- #
 # Criterion 5: the CI wait                                                      #
 # --------------------------------------------------------------------------- #
@@ -460,15 +513,25 @@ def _run(name: str, status: str = "completed", conclusion: str | None = "success
 @pytest.mark.parametrize(
     ("polls", "outcome", "summary"),
     [
-        ([[_run("tests", "queued", None)], [_run("tests"), _run("lint")]], "succeeded", None),
+        (
+            [[_run("tests", "queued", None)], [_run("tests"), _run("lint", conclusion="skipped")]],
+            "succeeded",
+            None,
+        ),
         (
             [[_run("tests", "in_progress", None), _run("lint", conclusion="failure")]],
             "checks_failed",
             "lint: failure",
         ),
         ([[]] * 4, "no_checks", None),
+        # Review fix: CI gated off (a draft) reports every job skipped; nothing ran.
+        (
+            [[_run("lint", conclusion="skipped"), _run("e2e", conclusion="neutral")]],
+            "no_checks",
+            None,
+        ),
     ],
-    ids=["green_after_a_pending_poll", "one_run_fails", "zero_check_runs"],
+    ids=["green_after_a_pending_poll", "one_run_fails", "zero_check_runs", "nothing_succeeded"],
 )
 def test_the_ci_wait_heartbeats_every_poll_and_reads_the_run_branch_head(
     factory: sessionmaker[Session],
@@ -657,6 +720,14 @@ async def _start_line(env: Any, factory: sessionmaker[Session]) -> tuple[Any, uu
     return engine.workflow_handle(run.id), run.id
 
 
+async def _parked(handle: Any) -> None:
+    for _ in range(3000):
+        if await handle.query(StationWorkflow.awaiting) == ["resume"]:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError("the run never parked")
+
+
 def _transitions(factory: sessionmaker[Session], run_id: uuid.UUID) -> tuple[Any, list]:
     with factory() as s:
         row = s.get(WorkflowRun, run_id)
@@ -735,6 +806,7 @@ async def test_the_line_retries_failed_checks_and_ci_then_ends_ready_for_review(
     # Criterion 11: main never moved, and nothing asked GitHub to merge.
     assert _git(remote, "rev-parse", "main") == main
     assert not [r for r in github.requests if "merge" in r[1]]
+    assert run_worktree(mirror, run_branch("forge", run_id)) is None  # removed once finished
 
 
 async def test_ci_failing_every_time_parks_the_run_at_the_implementer_visit_limit(
@@ -744,25 +816,40 @@ async def test_ci_failing_every_time_parks_the_run_at_the_implementer_visit_limi
     github: FakeGitHub,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Criterion 9: six implementer visits, then ``visit_limit`` parks; the PR stays a draft."""
+    """Criterion 9: six implementer visits, then ``visit_limit`` parks; the PR stays a draft.
+
+    A person's resume then grants the implementer one more visit, and its whole loop
+    (local checks, push, CI) runs again before it parks once more.
+    """
     mirror, services = e2e
     github.ci = lambda _sha: [_run("tests", conclusion="failure")]
     agents = Agents(mirror, implement=lambda visit: {"feature.txt": f"{visit}\n"})
     async with _worker(time_skip_env, factory, agents, services, monkeypatch):
         handle, run_id = await _start_line(time_skip_env, factory)
-        for _ in range(3000):
-            if await handle.query(StationWorkflow.awaiting) == ["resume"]:
-                break
-            await asyncio.sleep(0.05)
+        await _parked(handle)
+        row, path = _transitions(factory, run_id)
+        assert agents.entered.count("implement") == 6
+        assert path[-1] == ("implement", "visit_limit")
+        assert (row.current_state, row.status.value) == ("implement", "escalated")
+        assert row.context["parked"] == {"state": "implement", "visit": 7, "reason": "visit_limit"}
+        [pr] = github.prs
+        assert pr["draft"] is True
+        assert ("POST", "/graphql") not in github.requests
+        assert run_worktree(mirror, run_branch("forge", run_id)) is not None  # kept while parked
+
+        resume = WorkflowEventPayload(type="resume", actor=f"user:{uuid.uuid4()}")
+        await handle.execute_update(StationWorkflow.submit_event, resume)
+        await _parked(handle)
 
     row, path = _transitions(factory, run_id)
-    assert agents.entered.count("implement") == 6
-    assert path[-1] == ("implement", "visit_limit")
-    assert (row.current_state, row.status.value) == ("implement", "escalated")
-    assert row.context["parked"] == {"state": "implement", "visit": 7, "reason": "visit_limit"}
-    [pr] = github.prs
-    assert pr["draft"] is True
-    assert ("POST", "/graphql") not in github.requests
+    assert path[path.index(("implement", "resume")) + 1 :] == [
+        ("implement", "succeeded"),
+        ("local_checks", "succeeded"),
+        ("push", "succeeded"),
+        ("await_ci", "checks_failed"),
+        ("implement", "visit_limit"),
+    ]
+    assert row.context["parked"] == {"state": "implement", "visit": 9, "reason": "visit_limit"}
 
 
 async def test_already_done_posts_one_tracker_comment_and_opens_no_pull_request(
@@ -792,3 +879,4 @@ async def test_already_done_posts_one_tracker_comment_and_opens_no_pull_request(
     assert tracker.transitions == []
     assert github.prs == []
     assert agents.entered == ["assess"]
+    assert run_worktree(mirror, run_branch("forge", run_id)) is None

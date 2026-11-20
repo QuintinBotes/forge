@@ -55,6 +55,7 @@ from scf_api.realtime import approval_events
 from scf_api.realtime.broadcaster import Broadcaster, emit_event, get_broadcaster
 from scf_api.routers._rbac import require_permission
 from scf_api.schemas.red_team import RedTeamGateOut, RedTeamRecordOut, RedTeamTriggerOut
+from scf_api.services.agent_dispatch import repo_connected
 from scf_api.services.approval_service import get_approval_service, to_approval_principal
 from scf_api.services.workflow_gate_hook import (
     EVENT_CANCEL,
@@ -526,6 +527,13 @@ def _start_line(
 
     snapshot = {"key": task.key, "title": task.title, "description": task.description or ""}
     targets = task.repo_targets or []
+    for target in targets:  # as every run path: only repositories the workspace connected
+        repo = str(target.get("repo")) if isinstance(target, dict) else ""
+        if not repo_connected(session, task.workspace_id, repo):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"repository {repo!r} is not connected to this workspace",
+            )
     if len(targets) == 1 and isinstance(targets[0], dict) and targets[0].get("repo"):
         snapshot["repo"] = str(targets[0]["repo"])
     elif _reads_task_repo(line):  # spec K §4.1: no target or several

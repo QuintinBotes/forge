@@ -5,8 +5,9 @@ initial: prepare
 terminals: {done_proposed: succeeded, ready_for_review: succeeded}
 budget: {max_tokens: 3000000, max_usd: 60}
 concurrency: {max_active_runs: 3}
-# The services in the implement loop run once per implementer visit, so they share
-# its limit of 6: the implementer's limit, not theirs, ends a loop that never passes.
+# The services in the implement loop run once per implementer visit, so they take the
+# schema's cap of 20: the implementer's limit of 6, and a person's resume that raises it,
+# are what end or extend a loop that never passes.
 stations:
   prepare:       {kind: service, service: forge.prepare_worktree, inputs: {repo: task.repo}}
   assess:
@@ -36,9 +37,9 @@ stations:
     objective: "Make the failing tests pass. Last failure: {{outputs.local_checks.failure_summary}} {{outputs.await_ci.failure_summary}}"
     max_visits: 6
     budget: {max_tokens: 600000}
-  local_checks:  {kind: service, service: forge.run_checks, max_visits: 6}
-  push:          {kind: service, service: forge.push_branch, inputs: {pr: outputs.open_draft_pr.pr_ref}, retry: {max_attempts: 3}, max_visits: 6}
-  await_ci:      {kind: service, service: forge.await_ci, inputs: {pr: outputs.open_draft_pr.pr_ref}, timeout_seconds: 3600, max_visits: 6}
+  local_checks:  {kind: service, service: forge.run_checks, max_visits: 20}
+  push:          {kind: service, service: forge.push_branch, inputs: {pr: outputs.open_draft_pr.pr_ref}, retry: {max_attempts: 3}, max_visits: 20}
+  await_ci:      {kind: service, service: forge.await_ci, inputs: {pr: outputs.open_draft_pr.pr_ref}, timeout_seconds: 3600, max_visits: 20}
   mark_ready:    {kind: service, service: forge.mark_pr_ready, inputs: {pr: outputs.open_draft_pr.pr_ref}}
 transitions:
   - {from: prepare,       to: assess,           when: succeeded}

@@ -31,7 +31,7 @@ from scf_api.services import workflow_engine
 from scf_contracts import UserRole
 from scf_contracts.lines import validate_line
 from scf_db.base import Base
-from scf_db.models import Project, Task, Workspace
+from scf_db.models import Project, RepositoryConnection, Task, Workspace
 from scf_db.models.runs import WorkflowRun as DbWorkflowRun
 from scf_db.models.workflow_editor import (
     RevisionValidationStatus,
@@ -253,6 +253,23 @@ def _publish_line(workflow_db, workspace_id: uuid.UUID = TEST_WORKSPACE_ID) -> u
     return _publish_raw(workflow_db, workspace_id)
 
 
+def _task_on(workflow_db, repo: str = "acme/app", *, active: bool | None = True) -> uuid.UUID:
+    """A task whose one target is ``repo``: connected, deactivated (False) or never (None)."""
+    task_id = workflow_db.seed_task()
+    with workflow_db.factory() as session:
+        task = session.get(Task, task_id)
+        assert task is not None
+        task.repo_targets = [{"repo": repo}]
+        if active is not None:
+            session.add(
+                RepositoryConnection(
+                    workspace_id=task.workspace_id, repo_id=repo, name=repo, is_active=active
+                )
+            )
+        session.commit()
+    return task_id
+
+
 def _start(client: TestClient, task_id: uuid.UUID, **body: object):
     return client.post("/workflow/runs", json={"task_id": str(task_id), **body})
 
@@ -337,13 +354,9 @@ def test_line_starts_as_a_station_run_on_the_temporal_engine(
     client, workflow_db, line_client: _LineClient
 ) -> None:
     revision_id = _publish_line(workflow_db)
-    task_id = workflow_db.seed_task()
+    task_id = _task_on(workflow_db)
     with workflow_db.factory() as session:
-        task = session.get(Task, task_id)
-        assert task is not None
-        task.repo_targets = [{"repo": "acme/app"}]
-        task_key = task.key
-        session.commit()
+        task_key = session.get(Task, task_id).key  # type: ignore[union-attr]
 
     resp = _start(client, task_id, definition="tiny_line", trigger={"external_ref": "LIN-9"})
 
@@ -376,12 +389,7 @@ def test_the_bundled_implementation_loop_starts_by_name(
     text = bundled_line_text("implementation_loop")
     assert text is not None
     assert validate_line(parse_definition(text)) == []  # type: ignore[arg-type]
-    task_id = workflow_db.seed_task()
-    with workflow_db.factory() as session:
-        task = session.get(Task, task_id)
-        assert task is not None
-        task.repo_targets = [{"repo": "acme/app"}]
-        session.commit()
+    task_id = _task_on(workflow_db)
 
     resp = _start(client, task_id, definition="implementation_loop")
 
@@ -396,6 +404,17 @@ def test_the_bundled_implementation_loop_starts_by_name(
     assert _revision_column(workflow_db, run["id"]) == revision
     with workflow_db.factory() as session:
         assert session.scalar(select(func.count()).select_from(DbDefinition)) == 0
+
+
+@pytest.mark.parametrize("active", [None, False], ids=["never_connected", "deactivated"])
+def test_a_line_on_a_repository_the_workspace_has_not_connected_is_refused(
+    client, workflow_db, line_client: _LineClient, active: bool | None
+) -> None:
+    """#181 fix: as every other run path, a line acts only on a connected repository."""
+    resp = _start(client, _task_on(workflow_db, active=active), definition="implementation_loop")
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "repository 'acme/app' is not connected to this workspace"
+    assert (_run_rows(workflow_db), line_client.started) == (0, [])
 
 
 @pytest.mark.usefixtures("temporal")

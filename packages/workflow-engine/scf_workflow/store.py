@@ -114,6 +114,10 @@ class SqlAlchemyWorkflowStore:
         self._session = session
         self._workspace_id = workspace_id
 
+    @property
+    def workspace_id(self) -> uuid.UUID:
+        return self._workspace_id
+
     @staticmethod
     def _to_dto(model: DbWorkflowRun) -> WorkflowRun:
         # ``scf_db`` defines its own enum classes (same values as the contract

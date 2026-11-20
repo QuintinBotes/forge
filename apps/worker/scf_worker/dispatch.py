@@ -25,6 +25,11 @@ from scf_worker.finalizer import GitHubAppCredentials, mint_token, workspace_cre
 
 #: The only permission a mirror-fetch token carries.
 MIRROR_TOKEN_PERMISSIONS: dict[str, str] = {"contents": "read"}
+#: Run branches are never fetched back: they are made here and only pushed. A line run
+#: keeps its branch checked out in a worktree of the mirror, and git refuses a fetch
+#: into a checked-out branch, so fetching them would fail every fetch of the repository
+#: (#181). A negative refspec needs git 2.29 or later.
+RUN_BRANCHES_UNFETCHED = "^refs/heads/forge/run-*"
 
 TokenMinter = Callable[[str], str]
 
@@ -144,7 +149,14 @@ def ensure_mirror(
         )
     else:
         subprocess.run(
-            [*git, "fetch", "--quiet", remote_url, "+refs/heads/*:refs/heads/*"],
+            [
+                *git,
+                "fetch",
+                "--quiet",
+                remote_url,
+                "+refs/heads/*:refs/heads/*",
+                RUN_BRANCHES_UNFETCHED,
+            ],
             cwd=path,
             env=_git_env(token),
             check=True,

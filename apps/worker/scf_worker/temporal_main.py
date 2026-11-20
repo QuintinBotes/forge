@@ -23,11 +23,12 @@ import os
 import time
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from scf_contracts import WorkflowRun
+from scf_contracts import RunStatus, WorkflowRun
 from scf_db import create_session_factory
 from scf_db.models import AgentRun
 from scf_db.models.runs import WorkflowRun as DbWorkflowRun
@@ -89,10 +90,18 @@ class SessionPerCallStore:
 
     def update(self, run: WorkflowRun) -> WorkflowRun:
         with self._factory() as session:
-            result = self._store_for(session, run.id).update(run)
+            store = self._store_for(session, run.id)
+            result = store.update(run)
             session.commit()
         # The issue a governed run came from hears its state (#278); this never raises.
         post_workflow_writeback(self._factory, result)
+        line = result.context.get("dsl_version") == "2"
+        if line and result.id is not None and result.status in _FINISHED:
+            # A finished line run's worktree goes; its branch stays for the pull request.
+            try:
+                remove_run_worktrees(_mirrors(store.workspace_id), [result.id])
+            except Exception:  # never fail the transition over a cleanup
+                logger.exception("removing the worktree of line run %s failed", result.id)
         return result
 
     def save_station_visit(self, visit: StationVisitRecord) -> None:
@@ -109,6 +118,16 @@ class SessionPerCallStore:
 
     def list_by_task(self, task_id: uuid.UUID) -> list[WorkflowRun]:
         raise NotImplementedError("task lookups need a workspace; the worker has none")
+
+
+#: A line run in one of these has no further use for its worktree.
+_FINISHED = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
+
+
+def _mirrors(workspace_id: uuid.UUID) -> list[Path]:
+    """The workspace's bare mirrors on this worker."""
+    root = workspace_mirrors(workspace_id)
+    return [p for p in root.glob("*/*") if (p / "HEAD").is_file()] if root.is_dir() else []
 
 
 #: Below the workflow's 60 s start-to-close for ``forge.cleanup_worktree``: a slow
@@ -137,13 +156,9 @@ def make_cleanup_fn(factory: sessionmaker[Session]) -> Callable[[CleanupInput], 
                         AgentRun.workspace_id == inp.workspace_id,
                     )
                 ).all()
-            root = workspace_mirrors(inp.workspace_id)
-            mirrors = (
-                [p for p in root.glob("*/*") if (p / "HEAD").is_file()] if root.is_dir() else []
-            )
             # A line run's own worktree is on its branch, named for the workflow run (#181).
             run_ids = [*agent_runs, inp.workflow_run_id]
-            remove_run_worktrees(mirrors, run_ids, deadline=deadline)
+            remove_run_worktrees(_mirrors(inp.workspace_id), run_ids, deadline=deadline)
         except Exception:
             logger.exception("cleanup_worktree for run %s failed", inp.workflow_run_id)
             cleaned = False

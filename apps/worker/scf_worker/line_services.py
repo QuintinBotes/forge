@@ -26,6 +26,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, sessionmaker
 from temporalio.exceptions import ApplicationError
 
+from scf_api.services.agent_dispatch import repo_connected
 from scf_api.services.pm_service import PMConnectionService
 from scf_contracts import AgentObjective
 from scf_contracts.lines import OpenPrParams
@@ -34,7 +35,6 @@ from scf_db.models.pm import PMTaskLink
 from scf_integrations.github import GitHubClient
 from scf_worker.dispatch import (
     MIRROR_TOKEN_PERMISSIONS,
-    _git_env,
     ensure_mirror,
     split_repo_name,
     workspace_mirrors,
@@ -144,10 +144,19 @@ def line_services(
                 objective=task.title, repo_targets=task.repo_targets
             ).primary_repo_target
             task_id, title = task.id, f"{task.key + ': ' if task.key else ''}{task.title}"
-        if target is None:
-            raise ApplicationError(
-                f"task {task_id} names no repository", type="RepoTargetMissing", non_retryable=True
-            )
+            if target is None:
+                raise ApplicationError(
+                    f"task {task_id} names no repository",
+                    type="RepoTargetMissing",
+                    non_retryable=True,
+                )
+            # As on every other run path: never a repository the workspace has not connected.
+            if not repo_connected(session, inp.workspace_id, target.repo):
+                raise ApplicationError(
+                    f"repository {target.repo!r} is not connected to this workspace",
+                    type="RepoNotConnected",
+                    non_retryable=True,
+                )
         owner, name = split_repo_name(target.repo)
         return _Run(
             task_id=task_id,
@@ -213,30 +222,17 @@ def line_services(
             return _failed("repo_mismatch", "the repo input is not the task's repository")
         creds = creds_of(inp, run.repo)
         if creds is not None:
-            secret = token(inp, creds, run, MIRROR_TOKEN_PERMISSIONS)
-            remote = f"{creds.git_base_url}/{run.repo}.git"
-            if (run.mirror / "HEAD").is_file():
-                # Only the base branch: a run branch a worktree holds is never overwritten.
-                refspec = f"+refs/heads/{run.base}:refs/heads/{run.base}"
-                subprocess.run(
-                    ["git", "-c", "core.hooksPath=/dev/null", "fetch", "-q", remote, refspec],
-                    cwd=run.mirror,
-                    env=_git_env(secret),
-                    check=True,
-                    capture_output=True,
-                )
-            else:
-                ensure_mirror(
-                    run.repo,
-                    root=workspace_mirrors(inp.workspace_id),
-                    remote_url=remote,
-                    token=secret,
-                )
+            ensure_mirror(
+                run.repo,
+                root=workspace_mirrors(inp.workspace_id),
+                remote_url=f"{creds.git_base_url}/{run.repo}.git",
+                token=token(inp, creds, run, MIRROR_TOKEN_PERMISSIONS),
+            )
         elif not (run.mirror / "HEAD").is_file():
             return _failed("repository_unavailable", f"no mirror of {run.repo} to work in")
         if run_worktree(run.mirror, run.branch) is None:
-            # shortcut: kept until the run is cancelled; finished runs leave it, until a
-            # terminal cleanup lands. The holder's prefix is what that cleanup removes.
+            # Removed when the run finishes or is cancelled; the holder's prefix is what
+            # that cleanup removes.
             tree = str(Path(tempfile.mkdtemp(prefix="forge-wt-")) / "tree")
             exists = not subprocess.run(
                 ["git", "-C", str(run.mirror), "rev-parse", "-q", "--verify", run.branch],
@@ -352,7 +348,9 @@ def line_services(
                     text = "\n".join(map(_ci_failure, failed))
                     return ServiceStationResult("checks_failed", outputs=_summary(text))
                 if runs and all(r.get("status") == "completed" for r in runs):
-                    return ServiceStationResult()
+                    # All skipped or neutral (CI gated off for drafts, say): nothing ran.
+                    ran = any(r.get("conclusion") == "success" for r in runs)
+                    return ServiceStationResult() if ran else ServiceStationResult("no_checks")
                 if not runs and polling.clock() - started >= polling.no_checks_after:
                     return ServiceStationResult("no_checks")  # never green (lore #2361)
                 polling.sleep(polling.poll_seconds)
