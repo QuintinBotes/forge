@@ -13,6 +13,9 @@ guarantee:
 
 The gate/merger operate on plain DTOs and a tiny ``RepoMergeClient`` protocol so
 they are exercised end-to-end with an in-memory fake GitHub adapter and no DB.
+
+Risk (#194): when the change's repository enforces risk and its class requires
+approvals, every changed repo needs its review, required for merge or not.
 """
 
 from __future__ import annotations
@@ -20,10 +23,14 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from scf_contracts import (
+    GatedChange,
     MergeGroupOutcome,
     MultiRepoMergeGateResult,
     PRGroup,
     RepoMergeStatus,
+    RiskReader,
+    gate_decision,
+    tighten_check,
 )
 
 
@@ -45,13 +52,17 @@ class MultiRepoMergeGate:
     def evaluate(
         statuses: list[RepoMergeStatus],
         merge_order: list[str] | None = None,
+        *,
+        risk: RiskReader | None = None,
+        change: GatedChange | None = None,
     ) -> MultiRepoMergeGateResult:
         """Aggregate ``statuses`` into a :class:`MultiRepoMergeGateResult`.
 
         ``can_merge`` is true **iff every required, changed repo** is
         review-approved AND CI-green AND spec-validated. Repos that are not
         ``required_for_merge`` or have no changes are excluded from the gate.
-        Each unmet condition is recorded prefixed by its repo id.
+        Each unmet condition is recorded prefixed by its repo id. A ``risk`` reader
+        and the ``change`` it classifies may only tighten this (see the module note).
         """
         evaluated: list[RepoMergeStatus] = []
         flat: list[str] = []
@@ -71,6 +82,22 @@ class MultiRepoMergeGate:
             evaluated.append(status.model_copy(update={"blocking_reasons": reasons}))
             flat.extend(reasons)
 
+        unreviewed = [s for s in evaluated if s.has_changes and not s.review_approved]
+        passes = gate_decision(
+            risk,
+            change,
+            "merge",
+            not flat,
+            lambda own, req: tighten_check(
+                own, required=req.approvals > 0, satisfied=not unreviewed
+            ),
+        )
+        if not flat and not passes:  # only the risk class blocks it
+            for status in unreviewed:
+                reason = f"{status.repo_id}: review required by the change's risk class"
+                status.blocking_reasons.append(reason)
+                flat.append(reason)
+
         order = merge_order if merge_order is not None else [s.repo_id for s in statuses]
         return MultiRepoMergeGateResult(
             can_merge=not flat,
@@ -83,13 +110,16 @@ class MultiRepoMergeGate:
 class MultiRepoMerger:
     """Merge a PR group in dependency order, halting on the first failure."""
 
-    def __init__(self, github: RepoMergeClient) -> None:
+    def __init__(self, github: RepoMergeClient, *, risk: RiskReader | None = None) -> None:
         self._github = github
+        self._risk = risk
 
     def merge_in_order(
         self,
         group: PRGroup,
         statuses: list[RepoMergeStatus],
+        *,
+        change: GatedChange | None = None,
     ) -> MergeGroupOutcome:
         """Re-check the gate, then merge ``group`` PRs in ``merge_order``.
 
@@ -101,7 +131,9 @@ class MultiRepoMerger:
           ``needs_human_input`` (AC 12).
         * On full success → ``"merged"`` and route the workflow to ``merged``.
         """
-        gate = MultiRepoMergeGate.evaluate(statuses, group.merge_order)
+        gate = MultiRepoMergeGate.evaluate(
+            statuses, group.merge_order, risk=self._risk, change=change
+        )
         if not gate.can_merge:
             return MergeGroupOutcome(
                 status="blocked",
