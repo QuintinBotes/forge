@@ -22,6 +22,7 @@ from scf_api.routers.deployments import get_deployment_service
 from scf_api.services.deployment_service import DeploymentService
 from scf_contracts import UserRole
 from scf_contracts.dtos import DeployRules
+from scf_db.models import Deployment
 from scf_deploy.freeze import FakeClock
 
 SATURDAY = FakeClock(datetime(2026, 6, 27, 12, 0, tzinfo=UTC))
@@ -134,3 +135,47 @@ def test_freeze_blocks_then_admin_override_clears(
     resp = admin.post(f"/deployments/{prod['id']}/freeze-override", json={"reason": "hotfix"})
     assert resp.status_code == 200, resp.text
     assert resp.json()["state"] == "awaiting_approval"
+
+
+def test_a_freeze_override_names_the_same_runs_as_the_deployment_it_replaces(
+    session_factory: sessionmaker[Session], project_id: uuid.UUID
+) -> None:
+    """The redeploy is the same change, so its gate reads the same risk class (#194)."""
+    rules = DeployRules(
+        allow_agent_deploy=False,
+        environments=["dev"],
+        restricted_environments=["staging", "production"],
+    )
+    svc = DeploymentService(
+        session_factory=session_factory,
+        policy_reader=FakePolicy(rules),
+        ci_reader=FakeGitHub("success"),
+        clock=SATURDAY,
+    )
+    admin = _client(session_factory, svc, UserRole.ADMIN, MEMBER_ID)
+    member = _client(session_factory, svc, UserRole.MEMBER, MEMBER_ID)
+    approver = _client(session_factory, svc, UserRole.MEMBER, APPROVER_ID)
+    runs = {"workflow_run_id": str(uuid.uuid4()), "agent_run_id": str(uuid.uuid4())}
+
+    admin.put(f"/projects/{project_id}/pipeline", json=_frozen_body())
+    deploy = f"/projects/{project_id}/deployments"
+    member.post(deploy, json={"environment": "dev", "commit_sha": "abc123", **runs})
+    staging = member.post(
+        deploy, json={"environment": "staging", "commit_sha": "abc123", **runs}
+    ).json()
+    approver.post(f"/deployments/{staging['id']}/decision", json={"decision": "approve"})
+    prod = member.post(
+        deploy, json={"environment": "production", "commit_sha": "abc123", **runs}
+    ).json()
+    assert prod["state"] == "gate_rejected"
+
+    resp = admin.post(f"/deployments/{prod['id']}/freeze-override", json={"reason": "hotfix"})
+
+    assert resp.status_code == 200, resp.text
+    with session_factory() as s:
+        new = s.get(Deployment, uuid.UUID(resp.json()["id"]))
+        assert new is not None
+        assert (str(new.workflow_run_id), str(new.agent_run_id)) == (
+            runs["workflow_run_id"],
+            runs["agent_run_id"],
+        )

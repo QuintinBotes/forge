@@ -5,7 +5,8 @@ workspace's private per-repo suite, its resolution rate drops below the recorded
 baseline. The eval runner and baseline lookup are injected (production wires the
 agent runtime + sandbox + a persisted baseline; tests inject a fake), and the
 gate is a no-op on cold start (no baseline / no private suite) so existing config
-flows stay green until a suite exists.
+flows stay green until a suite exists. For a classified change whose class requires
+a Self-Eval and whose repository enforces risk, it must run and pass (#194).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+from scf_contracts import GatedChange, RiskReader, gate_decision, tighten_check
 from scf_eval.sweval.self_eval import SelfEvalScorecard
 
 #: Run the private-suite Self-Eval for a proposed config; None = no private suite.
@@ -36,20 +38,56 @@ class SelfEvalRegressionError(Exception):
         )
 
 
+class SelfEvalRequiredError(Exception):
+    """Raised when a change's enforced risk class requires a Self-Eval that did not run (#194)."""
+
+
 @dataclass(frozen=True)
 class SelfEvalGate:
     """Gate a config change on the private-suite resolution rate."""
 
     eval_runner: EvalRunner
     baseline_for: BaselineLookup
+    risk: RiskReader | None = None
 
     async def check_config(
-        self, workspace_id: UUID, proposed_config: Any, *, force: bool = False
+        self,
+        workspace_id: UUID,
+        proposed_config: Any,
+        *,
+        force: bool = False,
+        change: GatedChange | None = None,
     ) -> SelfEvalScorecard | None:
         """Raise :class:`SelfEvalRegressionError` if ``proposed_config`` regresses.
 
         Returns the passing scorecard (or None on cold start / forced override).
+        Raises :class:`SelfEvalRequiredError` when ``change``'s class, enforced,
+        requires a Self-Eval and none ran: a cold start or a force does not satisfy it.
         """
+        scorecard: SelfEvalScorecard | None = None
+        regression: SelfEvalRegressionError | None = None
+        try:
+            scorecard = await self._check(workspace_id, proposed_config, force=force)
+        except SelfEvalRegressionError as exc:
+            regression = exc
+        passes = gate_decision(
+            self.risk,
+            change,
+            "self_eval",
+            regression is None,
+            lambda own, req: tighten_check(
+                own, required=req.self_eval, satisfied=scorecard is not None
+            ),
+        )
+        if regression is not None:
+            raise regression
+        if not passes:
+            raise SelfEvalRequiredError("the change's risk class requires a Self-Eval; none ran")
+        return scorecard
+
+    async def _check(
+        self, workspace_id: UUID, proposed_config: Any, *, force: bool
+    ) -> SelfEvalScorecard | None:
         if force:
             return None
         baseline = self.baseline_for(workspace_id)
