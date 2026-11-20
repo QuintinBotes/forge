@@ -36,6 +36,7 @@ from scf_approval.models import (
     ApprovalContext,
     ApprovalDecisionRecord,
     ApprovalDecisionRequest,
+    ApprovalPrecedent,
     ApprovalRequest,
     ApprovalResolution,
     ApprovalSummary,
@@ -64,9 +65,13 @@ logger = logging.getLogger(__name__)
 #: ``ResolutionOutcome.details["error_code"]`` when the gate's hook raised.
 HOOK_FAILED = "resolution_hook_failed"
 
+#: How many precedents a held action shows by default, and at most (#191).
+PRECEDENT_LIMIT = 10
+PRECEDENT_MAX = 50
+
 
 class ApprovalService:
-    """Create, list, contextualize, and resolve approval gates (all six types)."""
+    """Create, list, contextualize, and resolve approval gates (every gate type)."""
 
     def __init__(
         self,
@@ -253,10 +258,50 @@ class ApprovalService:
         try:
             provider = self._registry.provider(request.gate_type)
         except MissingProviderError:
-            return self._fallback_context(request)
-        context = await provider.build_context(request, session=session)
-        context.gate_payload = self._redact(context.gate_payload)
+            context = self._fallback_context(request)
+        else:
+            context = await provider.build_context(request, session=session)
+            context.gate_payload = self._redact(context.gate_payload)
+        action_type = request.gate_payload.get("action_type")
+        if request.gate_type is GateType.AUTOMATION_ACTION and isinstance(action_type, str):
+            context.precedents = await self.precedents(
+                workspace_id=workspace_id, action_type=action_type, exclude=request.id
+            )
         return context
+
+    async def precedents(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        action_type: str,
+        limit: int = PRECEDENT_LIMIT,
+        exclude: uuid.UUID | None = None,
+    ) -> builtins.list[ApprovalPrecedent]:
+        """People's earlier decisions on held ``action_type`` actions here, newest first.
+
+        Only a person decides (the authorizer refuses anyone else), so every
+        recorded decision is a person's; an expiry records none. Precedent is
+        returned to inform: nothing here resolves a request (FR-030).
+        """
+        records = await self._repo.held_action_decisions(
+            workspace_id=workspace_id,
+            action_type=action_type,
+            limit=max(1, min(limit, PRECEDENT_MAX)),
+            exclude=exclude,
+        )
+        return [
+            ApprovalPrecedent(
+                approval_id=r.approval_request_id,
+                decision_id=r.id,
+                action_type=action_type,
+                decision=r.decision,
+                decider_id=r.approver_user_id,
+                decided_at=r.created_at,
+                # A blank note recorded before notes were normalised is no reason.
+                reason=r.note if r.note and r.note.strip() else None,
+            )
+            for r in records
+        ]
 
     async def latest_for_gate(
         self,
@@ -355,7 +400,9 @@ class ApprovalService:
         request.resolved_at = now
         request.resolver_user_id = actor.id
         request.decision_note = decision.note
-        request = await self._repo.update(request)
+        # Only from pending: a racing decision or expiry that landed first stands,
+        # and this one's hook (which may run a held action) never runs.
+        request = await self._repo.update(request, from_status=GateStatus.PENDING)
 
         hook = self._registry.hook(request.gate_type)
         if hook is None:
@@ -722,4 +769,4 @@ _STATUS_FOR_ACTION: dict[ApprovalAction, GateStatus] = {
 }
 
 
-__all__ = ["HOOK_FAILED", "ApprovalService"]
+__all__ = ["HOOK_FAILED", "PRECEDENT_LIMIT", "PRECEDENT_MAX", "ApprovalService"]

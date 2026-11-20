@@ -1,7 +1,8 @@
 """SCF's factory records over MCP, for desktop clients and IDEs (spec L seam 1).
 
 Each tool calls the handler its REST route serves, so the two answers cannot drift;
-a domain error raised as HTTP comes back as an in-band tool error. All five are
+a domain error raised as HTTP comes back as an in-band tool error
+(``approval_precedents`` has no route: it calls the approval service). All six are
 reads. Every result carries the provenance fields of ADR-0015: SCF observed this
 record, when, and that reading it enforces nothing.
 """
@@ -24,6 +25,7 @@ from scf_api.routers import board as board_router
 from scf_api.routers import spec as spec_router
 from scf_api.services.approval_service import get_approval_service, to_approval_principal
 from scf_approval.models import GateStatus
+from scf_approval.service import PRECEDENT_LIMIT, PRECEDENT_MAX
 from scf_contracts import RunStatus
 
 
@@ -77,6 +79,11 @@ class BoardItemsIn(BaseModel):
 
 class ApprovalsPendingIn(BaseModel):
     project_id: uuid.UUID | None = None
+
+
+class ApprovalPrecedentsIn(BaseModel):
+    action_type: str = Field(description="An automatic action type, e.g. webhook_post")
+    limit: int = Field(default=PRECEDENT_LIMIT, ge=1, le=PRECEDENT_MAX)
 
 
 class RunStatusIn(BaseModel):
@@ -152,6 +159,18 @@ def _approvals_pending(ctx: ToolContext, args: ApprovalsPendingIn) -> BaseModel:
     return _observed({"items": pending})
 
 
+def _approval_precedents(ctx: ToolContext, args: ApprovalPrecedentsIn) -> BaseModel:
+    service = ctx.provide(get_approval_service)
+    precedents = _run_async(
+        lambda: service.precedents(
+            workspace_id=ctx.principal.workspace_id,
+            action_type=args.action_type,
+            limit=args.limit,
+        )
+    )
+    return _observed({"items": precedents})
+
+
 def _run_status(ctx: ToolContext, args: RunStatusIn) -> BaseModel:
     override = ctx.overrides.get(agent_router.get_agent_store)
     store = override() if override is not None else agent_router.AgentRunStore(ctx.session)
@@ -192,6 +211,14 @@ FACTORY_TOOLS: tuple[McpTool, ...] = (
         "Approval requests still waiting for a decision, highest risk first.",
         ApprovalsPendingIn,
         _approvals_pending,
+    ),
+    McpTool(
+        "approval_precedents",
+        "People's earlier decisions on held automatic actions of one type, newest first, "
+        "each with its decision id and the reason when one was given. They inform a "
+        "proposal; they never approve one.",
+        ApprovalPrecedentsIn,
+        _approval_precedents,
     ),
     McpTool(
         "run_status",

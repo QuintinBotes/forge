@@ -19,9 +19,9 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from scf_contracts.enums import ApprovalGate, UserRole
 
@@ -46,6 +46,7 @@ ENFORCED_GATES: frozenset[ApprovalGate] = frozenset(
         ApprovalGate.PR,
         ApprovalGate.DEPLOY,
         ApprovalGate.POLICY_OVERRIDE,
+        ApprovalGate.AUTOMATION_ACTION,
     }
 )
 
@@ -122,6 +123,22 @@ class RiskFlag(BaseModel):
     source: str | None = None
 
 
+class ApprovalPrecedent(BaseModel):
+    """One earlier decision by a person on a held action of the same type (FR-029).
+
+    Precedent informs; it never decides (FR-030). ``reason`` is the decision's
+    note when one was given.
+    """
+
+    approval_id: UUID
+    decision_id: UUID
+    action_type: str
+    decision: ApprovalAction
+    decider_id: UUID
+    decided_at: datetime | None = None
+    reason: str | None = None
+
+
 class ApprovalContext(BaseModel):
     """The spec's nine "must-show" items; ``None``/empty sections are hidden."""
 
@@ -138,6 +155,8 @@ class ApprovalContext(BaseModel):
     run_trace_ref: dict[str, Any] | None = None  # 8 — {workflow_run_id, agent_run_id}
     available_actions: list[ApprovalAction] = Field(default_factory=list)  # 9
     gate_payload: dict[str, Any] = Field(default_factory=dict)  # gate-specific extras
+    #: A held action's earlier decisions of the same type, newest first (#191).
+    precedents: list[ApprovalPrecedent] | None = None
 
 
 class ApprovalRequest(BaseModel, _Provenance):
@@ -184,15 +203,25 @@ class ApprovalSummary(BaseModel, _Provenance):
 
 
 class ApprovalDecisionRequest(BaseModel):
-    """Body of a resolve call — one reviewer's decision."""
+    """Body of a resolve call — one reviewer's decision.
+
+    ``note`` is the reason: optional on every decision (owner decision of
+    2026-11-15, FR-028); a blank one is no reason.
+    """
 
     decision: ApprovalAction
     note: str | None = None
+
+    @field_validator("note")
+    @classmethod
+    def _blank_is_none(cls, note: str | None) -> str | None:
+        return note if note and note.strip() else None
 
 
 class ApprovalDecisionRecord(BaseModel):
     """One immutable per-approver decision row."""
 
+    id: UUID = Field(default_factory=uuid4)
     approval_request_id: UUID
     approver_user_id: UUID
     decision: ApprovalAction
@@ -256,6 +285,7 @@ __all__ = [
     "ApprovalContext",
     "ApprovalDecisionRecord",
     "ApprovalDecisionRequest",
+    "ApprovalPrecedent",
     "ApprovalRequest",
     "ApprovalResolution",
     "ApprovalSummary",

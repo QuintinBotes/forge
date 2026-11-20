@@ -238,7 +238,8 @@ class AutomationRuleSpecWithMeta(BaseModel):
 
 class ActionResult(BaseModel):
     type: AutomationActionType
-    status: Literal["ok", "no_op", "error", "forbidden"]
+    #: ``held``: waiting for a person's approval (#191); ``detail`` names the request.
+    status: Literal["ok", "no_op", "error", "forbidden", "held"]
     detail: dict[str, Any] = Field(default_factory=dict)
 
 

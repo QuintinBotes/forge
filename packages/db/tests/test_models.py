@@ -79,6 +79,7 @@ EXPECTED_MODELS = [
     # F21 automation tables.
     "AutomationRule",
     "AutomationExecution",
+    "HeldAutomationAction",
     # F22 multi-repo execution tables.
     "PRGroup",
     "AgentRepoWorkspace",

@@ -101,6 +101,14 @@ def build_gate_registry(
     )
     registry.register_hook(SpecWorkflowGateHook(engine_factory=engine_factory, audit=hook_audit))
     registry.register_hook(PlanWorkflowGateHook(engine_factory=engine_factory, audit=hook_audit))
+    # #191: a held automatic action runs only when its request is approved.
+    from scf_api.services.automation_actions import (
+        HeldActionGateProvider,
+        HeldActionResolutionHook,
+    )
+
+    registry.register_provider(HeldActionGateProvider())
+    registry.register_hook(HeldActionResolutionHook(audit=hook_audit))
     return registry
 
 

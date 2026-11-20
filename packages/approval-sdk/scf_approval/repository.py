@@ -76,13 +76,31 @@ class ApprovalRepository(Protocol):
         project_id: uuid.UUID | None = None,
     ) -> list[ApprovalRequest]: ...
 
-    async def update(self, request: ApprovalRequest) -> ApprovalRequest: ...
+    async def update(
+        self, request: ApprovalRequest, *, from_status: GateStatus | None = None
+    ) -> ApprovalRequest:
+        """Write ``request``. With ``from_status``, only while the stored status
+        still is that, else :class:`AlreadyResolvedError` (a decision never
+        overwrites an outcome recorded meanwhile)."""
+        ...
 
     async def add_decision(self, record: ApprovalDecisionRecord) -> ApprovalDecisionRecord: ...
 
     async def decisions_for(
         self, approval_id: uuid.UUID
     ) -> builtins.list[ApprovalDecisionRecord]: ...
+
+    async def held_action_decisions(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        action_type: str,
+        limit: int,
+        exclude: uuid.UUID | None = None,
+    ) -> builtins.list[ApprovalDecisionRecord]:
+        """Decisions on this workspace's ``automation_action`` requests for
+        ``action_type`` (``exclude``'s left out), newest first, at most ``limit``."""
+        ...
 
 
 class InMemoryApprovalRepository:
@@ -148,10 +166,15 @@ class InMemoryApprovalRepository:
             rows = [i for i in rows if i.project_id == project_id]
         return [i.model_copy(deep=True) for i in rows]
 
-    async def update(self, request: ApprovalRequest) -> ApprovalRequest:
+    async def update(
+        self, request: ApprovalRequest, *, from_status: GateStatus | None = None
+    ) -> ApprovalRequest:
         with self._lock:
             if request.id not in self._items:
                 raise ApprovalNotFoundError(request.id)
+            stored = self._items[request.id].status
+            if from_status is not None and stored is not from_status:
+                raise AlreadyResolvedError(request.id, stored)
             self._items[request.id] = request.model_copy(deep=True)
         return request.model_copy(deep=True)
 
@@ -168,6 +191,27 @@ class InMemoryApprovalRepository:
 
     async def decisions_for(self, approval_id: uuid.UUID) -> builtins.list[ApprovalDecisionRecord]:
         return [v.model_copy(deep=True) for v in self._decisions.get(approval_id, [])]
+
+    async def held_action_decisions(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        action_type: str,
+        limit: int,
+        exclude: uuid.UUID | None = None,
+    ) -> builtins.list[ApprovalDecisionRecord]:
+        held = [
+            i.id
+            for i in self._items.values()
+            if i.workspace_id == workspace_id
+            and i.gate_type is GateType.AUTOMATION_ACTION
+            and i.gate_payload.get("action_type") == action_type
+            and i.id != exclude
+        ]
+        votes = [v for request_id in held for v in self._decisions.get(request_id, [])]
+        # Insertion order breaks equal timestamps, so "newest first" is total.
+        ranked = sorted(enumerate(votes), key=lambda p: (p[1].created_at, p[0]), reverse=True)
+        return [v.model_copy(deep=True) for _, v in ranked[:limit]]
 
 
 __all__ = [

@@ -13,10 +13,12 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -124,4 +126,27 @@ class AutomationExecution(WorkspaceScopedModel):
 attach_immutability_trigger(AutomationExecution.__table__)
 
 
-__all__ = ["AutomationExecution", "AutomationRule"]
+class HeldAutomationAction(WorkspaceScopedModel):
+    """The exact automatic action an ``automation_action`` approval request holds (#191).
+
+    The request's payload shows a redacted copy for people; this row keeps the
+    action and its context as they were, for the one run an approval allows.
+    ``released_at`` is set by a conditional update, so the action runs at most once.
+    """
+
+    __tablename__ = "held_automation_action"
+
+    approval_request_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("approval_request.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    action: Mapped[dict[str, Any]] = mapped_column(json_type(), nullable=False)
+    context: Mapped[dict[str, Any]] = mapped_column(json_type(), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The deciding person; no FK, like ``approval_request.project_id``: the record outlives them.
+    released_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+
+
+__all__ = ["AutomationExecution", "AutomationRule", "HeldAutomationAction"]

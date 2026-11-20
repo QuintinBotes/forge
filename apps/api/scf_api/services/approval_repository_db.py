@@ -56,6 +56,7 @@ from scf_approval.models import (
     RiskLevel,
 )
 from scf_approval.repository import (
+    AlreadyResolvedError,
     ApprovalNotFoundError,
     DuplicateDecisionError,
 )
@@ -159,6 +160,7 @@ class SqlAlchemyApprovalRepository:
 
     def _decision_to_domain(self, row: ApprovalDecisionRow) -> ApprovalDecisionRecord:
         return ApprovalDecisionRecord(
+            id=row.id,
             approval_request_id=row.approval_request_id,
             approver_user_id=row.approver_user_id,
             decision=ApprovalAction(row.decision),
@@ -236,11 +238,18 @@ class SqlAlchemyApprovalRepository:
             rows = session.scalars(stmt).all()
             return [self._to_domain(r) for r in rows]
 
-    async def update(self, request: ApprovalRequest) -> ApprovalRequest:
+    async def update(
+        self, request: ApprovalRequest, *, from_status: GateStatus | None = None
+    ) -> ApprovalRequest:
         with self._sf() as session:
-            row = session.get(ApprovalRequestRow, request.id)
+            # The row lock makes the status check and the write one step (Postgres).
+            row = session.get(
+                ApprovalRequestRow, request.id, with_for_update=from_status is not None
+            )
             if row is None:
                 raise ApprovalNotFoundError(request.id)
+            if from_status is not None and _gate_status(row.status) is not from_status:
+                raise AlreadyResolvedError(request.id, _gate_status(row.status))
             self._apply(row, request)
             session.commit()
         return request.model_copy(deep=True)
@@ -255,6 +264,7 @@ class SqlAlchemyApprovalRepository:
                 raise ApprovalNotFoundError(stored.approval_request_id)
             session.add(
                 ApprovalDecisionRow(
+                    id=stored.id,
                     workspace_id=parent.workspace_id,
                     approval_request_id=stored.approval_request_id,
                     approver_user_id=stored.approver_user_id,
@@ -280,3 +290,29 @@ class SqlAlchemyApprovalRepository:
                 .order_by(ApprovalDecisionRow.created_at.asc(), ApprovalDecisionRow.id.asc())
             ).all()
             return [self._decision_to_domain(r) for r in rows]
+
+    async def held_action_decisions(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        action_type: str,
+        limit: int,
+        exclude: uuid.UUID | None = None,
+    ) -> builtins.list[ApprovalDecisionRecord]:
+        stmt = (
+            select(ApprovalDecisionRow)
+            .join(
+                ApprovalRequestRow, ApprovalDecisionRow.approval_request_id == ApprovalRequestRow.id
+            )
+            .where(
+                ApprovalRequestRow.workspace_id == workspace_id,
+                ApprovalRequestRow.gate == GateType.AUTOMATION_ACTION,
+                ApprovalRequestRow.payload["action_type"].as_string() == action_type,
+            )
+            .order_by(ApprovalDecisionRow.created_at.desc(), ApprovalDecisionRow.id.desc())
+            .limit(limit)
+        )
+        if exclude is not None:
+            stmt = stmt.where(ApprovalRequestRow.id != exclude)
+        with self._sf() as session:
+            return [self._decision_to_domain(r) for r in session.scalars(stmt).all()]

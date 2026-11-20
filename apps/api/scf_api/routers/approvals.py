@@ -115,6 +115,12 @@ async def create_approval(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="workflow_run gates are opened by the workflow engine",
         )
+    if body.gate_type is GateType.AUTOMATION_ACTION:
+        # Approving one runs a stored action, and its decisions become precedent (#191).
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="automation_action gates are opened by the automation executor",
+        )
     request = await service.create(
         workspace_id=principal.workspace_id,
         gate_type=body.gate_type,

@@ -66,6 +66,28 @@ describe("DecisionBar", () => {
     expect(props.onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it("offers an optional reason field beside every action", () => {
+    const props = setup({ offerReason: true });
+    const field = screen.getByLabelText(/reason \(optional\)/i);
+    expect(field).not.toBeRequired();
+    for (const action of ACTIONS) {
+      expect(screen.getByTestId(`decision-${action}`)).toBeEnabled();
+    }
+    fireEvent.change(field, { target: { value: "agreed with ops" } });
+    expect(props.onNoteChange).toHaveBeenCalledWith("agreed with ops");
+  });
+
+  it("shows no reason field to a parent that would not send it", () => {
+    setup();
+    expect(screen.queryByLabelText(/reason \(optional\)/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the reason optional in the composer", () => {
+    setup({ activeNote: "reject", note: "" });
+    expect(screen.getByLabelText(/reason for rejecting/i)).not.toBeRequired();
+    expect(screen.getByTestId("confirm-decision")).toBeEnabled();
+  });
+
   it("surfaces a decision error", () => {
     setup({ errorMessage: "This gate was already resolved." });
     expect(screen.getByRole("alert")).toHaveTextContent(

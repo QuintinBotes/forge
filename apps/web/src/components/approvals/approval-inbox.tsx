@@ -153,14 +153,14 @@ export function ApprovalInbox({ client = apiClient }: ApprovalInboxProps) {
       if (!selected || decide.isPending) return;
       if (!availableActions.includes(action)) return;
       if (ACTION_META[action].requiresNote) {
+        // The composer keeps any reason already typed in the decision bar.
         setDecisionError(null);
-        setNote("");
         setNoteAction(action as "reject" | "request_changes");
       } else {
-        submitDecision(action);
+        submitDecision(action, note.trim() || undefined);
       }
     },
-    [availableActions, decide.isPending, selected, submitDecision],
+    [availableActions, decide.isPending, note, selected, submitDecision],
   );
 
   const moveSelection = useCallback(
@@ -317,6 +317,7 @@ export function ApprovalInbox({ client = apiClient }: ApprovalInboxProps) {
                 activeNote={noteAction}
                 note={note}
                 onNoteChange={setNote}
+                offerReason
                 pending={decide.isPending}
                 errorMessage={decisionError}
                 onTrigger={triggerAction}

@@ -123,6 +123,40 @@ describe("ApprovalInbox", () => {
     );
   });
 
+  it("approves with the reason typed in the decision bar", async () => {
+    const client = makeClient();
+    renderInbox(client);
+    await screen.findByTestId("review-panel");
+
+    fireEvent.change(screen.getByLabelText(/reason \(optional\)/i), {
+      target: { value: "  staging relay, agreed with ops  " },
+    });
+    fireEvent.click(screen.getByTestId("decision-approve"));
+
+    await waitFor(() =>
+      expect(client.decideApproval).toHaveBeenCalledWith("a1", {
+        decision: "approve",
+        note: "staging relay, agreed with ops",
+      }),
+    );
+  });
+
+  it("rejects without a reason when the field is left empty", async () => {
+    const client = makeClient();
+    renderInbox(client);
+    await screen.findByTestId("review-panel");
+
+    fireEvent.keyDown(screen.getByTestId("approval-inbox"), { key: "x" });
+    fireEvent.click(await screen.findByTestId("confirm-decision"));
+
+    await waitFor(() =>
+      expect(client.decideApproval).toHaveBeenCalledWith("a1", {
+        decision: "reject",
+        note: null,
+      }),
+    );
+  });
+
   it("opens the reason composer on 'x' and rejects with a note", async () => {
     const client = makeClient();
     renderInbox(client);

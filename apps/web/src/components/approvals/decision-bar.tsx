@@ -35,6 +35,9 @@ export interface DecisionBarProps {
   note: string;
   onNoteChange: (value: string) => void;
   pending: boolean;
+  /** Show the optional reason field beside every action; only for a parent that
+   *  sends `note` with every decision (the approval inbox), so none is dropped. */
+  offerReason?: boolean;
   disabled?: boolean;
   errorMessage?: string | null;
   onTrigger: (action: ApprovalAction) => void;
@@ -43,9 +46,10 @@ export interface DecisionBarProps {
 }
 
 /**
- * The decision surface (must-show item 9). Approve is the single ember primary;
- * reject/request-changes reveal an inline reason composer (keyboard-first: the
- * `a/r/x/e` map lives in {@link ApprovalInbox}). Cmd/Ctrl+Enter confirms a
+ * The decision surface (must-show item 9). Approve is the single ember primary.
+ * Every decision carries the optional reason typed beside the actions;
+ * reject/request-changes open it as an inline composer to confirm (keyboard-first:
+ * the `a/r/x/e` map lives in {@link ApprovalInbox}). Cmd/Ctrl+Enter confirms a
  * composed reason, Escape cancels.
  */
 export function DecisionBar({
@@ -54,6 +58,7 @@ export function DecisionBar({
   note,
   onNoteChange,
   pending,
+  offerReason = false,
   disabled = false,
   errorMessage,
   onTrigger,
@@ -122,6 +127,24 @@ export function DecisionBar({
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
+          {/* A reason is never required (FR-028): an empty field decides with none. */}
+          {offerReason ? (
+            <>
+              <label htmlFor="decision-reason" className="sr-only">
+                Reason (optional)
+              </label>
+              <input
+                id="decision-reason"
+                type="text"
+                value={note}
+                onChange={(e) => onNoteChange(e.target.value)}
+                placeholder="Reason (optional)"
+                disabled={disabled || pending}
+                data-testid="decision-reason"
+                className="h-8 min-w-0 flex-1 basis-48 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </>
+          ) : null}
           {ordered.map((action) => {
             const meta = ACTION_META[action];
             const Icon = ACTION_ICON[action];

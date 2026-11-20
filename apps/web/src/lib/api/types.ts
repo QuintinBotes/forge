@@ -228,7 +228,7 @@ export interface NotImplementedResponse {
 // Hand-maintained mirror of `scf_approval.models` (Pydantic v2). Enum string
 // values match the Python StrEnum members verbatim.
 
-/** The six approval gate types (scf_contracts.enums.ApprovalGate). */
+/** The approval gate types (scf_contracts.enums.ApprovalGate). */
 export const GATE_TYPES = [
   "spec",
   "plan",
@@ -236,6 +236,7 @@ export const GATE_TYPES = [
   "deploy",
   "incident_remediation",
   "policy_override",
+  "automation_action",
 ] as const;
 export type GateType = (typeof GATE_TYPES)[number];
 
