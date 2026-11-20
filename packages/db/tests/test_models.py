@@ -197,6 +197,9 @@ EXPECTED_MODELS = [
     "RiskGateObservation",
     # #207: pending device sign-ins for a CLI client (code hashes only).
     "DeviceAuthorization",
+    # #196: the factory metrics' change outcomes and interventions from GitHub.
+    "ChangeOutcome",
+    "RunIntervention",
     # J retrieval (ADR-0017): incrementally maintained BM25 corpus statistics —
     # per-workspace document frequencies + per-workspace corpus totals.
     "RetrievalTermStat",
