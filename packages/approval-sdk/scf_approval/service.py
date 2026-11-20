@@ -2,7 +2,8 @@
 
 Orchestrates repository + authorizer + registry + activity bus + audit +
 redaction. Any slice creates a gate with :meth:`create`; any surface resolves
-through :meth:`resolve` (identical authorization + audit everywhere).
+through :meth:`resolve` (identical authorization + audit everywhere). A ``pr``
+gate's quorum may be raised by its change's risk class (#194), never lowered.
 """
 
 from __future__ import annotations
@@ -58,6 +59,7 @@ from scf_approval.repository import (
     ApprovalNotFoundError,
     ApprovalRepository,
 )
+from scf_contracts import GatedChange, RiskReader, gate_decision, tighten_approvals
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +78,10 @@ class ApprovalService:
         events: ActivityBus | None = None,
         audit: ApprovalAuditSink | None = None,
         redactor: Redactor | None = None,
+        risk: RiskReader | None = None,
     ) -> None:
         self._repo = repo
+        self._risk = risk
         self._registry = registry
         self._authorizer = authorizer
         self._events = events or InMemoryActivityBus()
@@ -145,8 +149,12 @@ class ApprovalService:
         )
         # Policy-driven quorum: a repo raising review_rules.min_approvals turns the
         # PR gate into a multi-approver quorum even if the caller passed 1.
-        request.required_approvals = max(
-            request.required_approvals, self._authorizer.min_approvals_for(request)
+        request.required_approvals = gate_decision(
+            self._risk,
+            _gated_change(request),
+            "approval",
+            max(request.required_approvals, self._authorizer.min_approvals_for(request)),
+            lambda count, req: tighten_approvals(count, req.approvals),
         )
         stored = await self._repo.add(request)
 
@@ -698,6 +706,19 @@ class ApprovalService:
         if items is None:  # pragma: no cover — DB-backed repos sweep in the worker
             return []
         return [i.model_copy(deep=True) for i in items.values() if i.status is GateStatus.PENDING]
+
+
+def _gated_change(request: ApprovalRequest) -> GatedChange | None:
+    """The change a ``pr`` gate approves: the run the workflow engine opened it on.
+
+    Only the engine opens a gate whose subject is a workflow run (the API refuses
+    one from a caller). A caller's gate approves no classified change, so it neither
+    reads nor records risk: its observations would be the caller's to choose.
+    """
+    run = request.subject_id if request.subject_type == "workflow_run" else None
+    if request.gate_type is not GateType.PR or run is None:
+        return None
+    return GatedChange(workspace_id=request.workspace_id, workflow_run_id=run)
 
 
 def _decision_metadata(actor: Principal) -> dict[str, Any]:

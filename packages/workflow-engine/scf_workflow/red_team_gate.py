@@ -17,9 +17,11 @@ layer (``temporal/activities.py``); this module EXTRACTS it so the V1
   session-in recorders the V1 gate path and the trigger endpoint call: evaluate,
   then append the verdict to the append-only ``red_team_record`` table via
   :func:`scf_db.redteam.record_red_team_verdict` (which chains the
-  ``redteam.survived`` audit event on a survive).
+  ``redteam.survived`` audit event on a survive);
+* :func:`red_team_passes` — the gate's decision under the change's risk class (#194).
 
-Module-level imports stay pure (dataclasses only): ``temporal/payloads.py``
+Module-level imports stay pure (dataclasses and ``scf_contracts``, which
+``temporal/payloads.py`` imports too): ``temporal/payloads.py``
 imports this module inside the workflow determinism sandbox, so the DB pieces
 are imported lazily inside the recorder functions (the ``store.py`` precedent).
 """
@@ -31,6 +33,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from scf_contracts import GatedChange, RiskReader, gate_decision, tighten_check
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
@@ -40,12 +44,14 @@ __all__ = [
     "REDTEAM_BLOCKED",
     "REDTEAM_NOT_RUN",
     "REDTEAM_SURVIVED",
+    "RED_TEAM_REQUIRED",
     "RedTeamFn",
     "RedTeamInput",
     "RedTeamResult",
     "ensure_red_team_verdict",
     "evaluate_red_team",
     "not_run_verdict",
+    "red_team_passes",
     "run_and_record_red_team",
 ]
 
@@ -55,6 +61,8 @@ __all__ = [
 REDTEAM_BLOCKED = "blocked"
 REDTEAM_SURVIVED = "survived"
 REDTEAM_NOT_RUN = "not_run"
+#: Why a gate holds a change whose enforced risk class requires a scan it did not survive.
+RED_TEAM_REQUIRED = "red_team_required_by_risk_class"
 
 
 @dataclass
@@ -120,6 +128,30 @@ def evaluate_red_team(inp: RedTeamInput, red_team_fn: RedTeamFn | None = None) -
     if red_team_fn is not None:
         return red_team_fn(inp)
     return not_run_verdict(inp.phase)
+
+
+def red_team_passes(
+    verdict: str,
+    *,
+    passes: bool,
+    risk: RiskReader | None = None,
+    change: GatedChange | None = None,
+) -> bool:
+    """The Red-Team Gate's decision under the change's risk class (#194).
+
+    ``passes`` is the gate's own decision on ``verdict``. A class that requires
+    red-team is satisfied only by a ``survived`` scan, never by ``not_run`` (#174):
+    when the repository enforces risk, such a change does not pass.
+    """
+    return gate_decision(
+        risk,
+        change,
+        "red_team",
+        passes,
+        lambda own, req: tighten_check(
+            own, required=req.red_team, satisfied=verdict == REDTEAM_SURVIVED
+        ),
+    )
 
 
 def run_and_record_red_team(

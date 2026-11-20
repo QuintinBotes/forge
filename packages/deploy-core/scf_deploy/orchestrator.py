@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
+from scf_contracts import RiskReader
 from scf_db.models.deployment import Deployment, Environment
 from scf_deploy.engine import DeploymentStateMachine
 from scf_deploy.freeze import Clock, SystemClock
@@ -67,6 +68,7 @@ class DeploymentOrchestrator:
         security: SecurityReader | None = None,
         clock: Clock | None = None,
         max_steps: int = 64,
+        risk: RiskReader | None = None,
     ) -> None:
         self.session = session
         self.workspace_id = workspace_id
@@ -82,6 +84,7 @@ class DeploymentOrchestrator:
             validation=validation,
             security=security,
             clock=self.clock,
+            risk=risk,
         )
         self.max_steps = max_steps
 

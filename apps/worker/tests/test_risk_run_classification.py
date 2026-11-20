@@ -221,6 +221,40 @@ def test_the_change_identity_carries_the_tasks_spec_and_pull_requests(
     assert rows[celery_run.run_id].pr_numbers == [31]  # the pull request this close-out opened
 
 
+def test_the_row_carries_each_classs_requirements_and_the_repositorys_mode(
+    factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """#194: the gates read what each class requires, and the mode, from this
+    repository's own policy as it stood when the change was classified."""
+    rules = {
+        **RISK_RULES,
+        "enforcement": "enforcing",
+        "classes": {
+            "low": {"approvals": 1, "self_eval": True},
+            "high": {"approvals": 2, "deploy": "gated", "self_eval": True},
+        },
+    }
+    repo, base, head = _repo(tmp_path, rules)
+    run, result = _run(factory, repo, base, head)
+
+    close_out_run(run, result, deliver=False)
+
+    [row] = _rows(factory)
+    assert row.enforcement_mode == "enforcing"
+    assert row.class_requirements is not None
+    assert set(row.class_requirements) == {c.value for c in RiskClass}
+    assert row.class_requirements["high"] == {
+        "risk_class": "high",
+        "approvals": 2,
+        "deploy_mode": "gated",
+        "red_team": False,
+        "self_eval": True,
+    }
+    # An unconfigured class takes the highest configured one below it (scf_risk).
+    assert row.class_requirements["critical"]["approvals"] == 2
+    assert row.class_requirements["minimal"]["approvals"] == 0
+
+
 def test_an_unreadable_diff_records_the_fallback_class(
     factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
